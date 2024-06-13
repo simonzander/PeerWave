@@ -57,6 +57,7 @@ docker run -d -p 4000:4000 peerwave
 ```
 
 ### Docker Hub
+Image: [simonzander/peerwave](https://hub.docker.com/r/simonzander/peerwave)
 
 ```bash
 # Pull the image from Docker Hub
