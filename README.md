@@ -6,7 +6,7 @@
 </div>
 <br>
 <p align="center">
-  <a href="https://github.com/simonzander/peerwave/actions/workflows/ci.yml">
+  <a href="https://github.com/simonzander/PeerWave/actions/workflows/docker-image.yml">
     <img src="https://github.com/simonzander/peerwave/actions/workflows/docker-image.yml/badge.svg" alt="Build Status">
   </a>
   <img src="https://img.shields.io/github/last-commit/simonzander/peerwave" alt="GitHub last commit">
