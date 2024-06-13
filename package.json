@@ -1,0 +1,24 @@
+{
+  "name": "PeerWave",
+  "version": "0.0.1a",
+  "description": "WebRTC to stream and share files with peers",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "WebRTC",
+    "SocketIO"
+  ],
+  "author": "Simon Zander",
+  "license": "MIT",
+  "dependencies": {
+    "bulma-toast": "^2.4.4",
+    "express": "^4.18.2",
+    "pug": "^3.0.3",
+    "socket.io": "^4.6.1"
+  },
+  "devDependencies": {
+    "eslint": "8.34.0"
+  }
+}

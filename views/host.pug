@@ -1,0 +1,107 @@
+extends layout
+
+block content
+    .cell.is-fullheight(style="height: 95.7vh;")
+        .tabs.is-centered.is-boxed.is-medium
+            ul.mt-4
+                li#tab_stream.is-active
+                    a
+                        span.icon.is-small
+                            i.fa.fa-video(aria-hidden="true")
+                        span Stream
+                li#tab_files
+                    a
+                        span.icon.is-small
+                            i.fa.fa-file(aria-hidden="true")
+                        span Files
+        #tab_stream_content
+            section.hero.is-primary
+                .hero-body
+                    .grid
+                        .cell
+                            button#startStreaming.button.is-large.is-black
+                                span.icon.is-large
+                                    i.fa.fa-video
+                                span Start Stream
+
+                        .cell
+                            #copy_viewerurl.control.has-icons-right
+                                input#viewerurl.input.is-large.is-black(type="text", placeholder="filled with viewer url", readonly, style="cursor: pointer;")
+                                span.icon.is-medium.is-right
+                                    i.fa.fa-clipboard
+                        .cell.is-col-span-2
+                            p.subtitle Click on this button to select your window or screen for streaming. You receive a link for sharing with your audience. Your audience will also share your stream to increase your upload bandwidth with peering.
+            div
+                #overlay_pause(style="height: 60vh; width: 100vh; position: absolute; z-index: 1; background-color: rgba(0,0,0, 0.8); visibility: hidden;")
+                    article.message(style="padding: 20vh;")
+                        .message-header
+                            p Note
+                            button.delete.close_pause(aria-label="delete")
+                        .message-body
+                            div.mb-4
+                                b Your stream is still running! We've just paused this preview to save your resources. Close this window to continue the preview.
+                            div.has-text-centered
+                                button.button.is-primary.close_pause
+                                    span Close
+                video(controls autoplay muted poster="./novideo.jpg", style="height: 60vh; width: 100vh;")
+            footer.footer
+                nav.level
+                    .level-item.has-text-centered
+                        div
+                            p.heading upload speed
+                            p.title.upload_speed 0.00 KB/s
+                    .level-item.has-text-centered
+                        div
+                            p.heading audience
+                            p.title#countAudience 0
+                    .level-item.has-text-centered
+                        div
+                            p.heading max peers
+                            p.title
+                                input.input.is-normal.is-primary.max_peers(type="number", min="1", value="5")
+        #tab_files_content.is-hidden
+            section.hero.is-primary
+                .hero-body
+                    .grid
+                        .cell
+                            button#uploadbutton.button.is-large.is-black
+                                span.icon.is-large
+                                    i.fa.fa-upload
+                                span Share Files
+                            input#filesinput(type="file", multiple, name="files[]", style="display: none;")
+                        .cell
+                            #copy_shareurl.control.has-icons-right
+                                input#shareurl.input.is-large.is-black(type="text", placeholder="filled with share url", readonly, style="cursor: pointer;")
+                                span.icon.is-medium.is-right
+                                    i.fa.fa-clipboard
+                        .cell.is-col-span-2
+                            p.subtitle Click on this button to select your files for sharing. You receive a link for sharing with your audience. Your audience will also share your files if they downloaded it.
+            div
+                article#fileList.panel.is-link(style="height: 58vh; width: 95vh; margin: 1rem auto;")
+                    p.panel-heading Files
+                    a.panel-block
+                        span.panel-icon
+                            i.fa.fa-file(aria-hidden="true")
+                        div.columns(style="width: 100%")
+                            div.column.has-text-weight-bold Filename
+                            div.column.has-text-weight-bold Upload
+                            div.column.has-text-weight-bold Size
+                            div.column.has-text-weight-bold Seeders
+                            div.column.has-text-weight-bold Delete
+                    div#filecontent
+            footer.footer
+                nav.level
+                    .level-item.has-text-centered
+                        div
+                            p.heading upload speed
+                            p.title.upload_speed 0.00 kbit/s
+                    .level-item.has-text-centered
+                        div
+                            p.heading current peers
+                            p.title#countPeers 0
+                    .level-item.has-text-centered
+                        div
+                            p.heading max peers
+                            p.title
+                                input.input.is-normal.is-primary.max_peers(type="number", min="1", value="8")
+    script(type="module" src="/host.js")

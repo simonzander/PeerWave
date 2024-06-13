@@ -1,0 +1,42 @@
+doctype html
+html
+    head
+        title PeerWave v0.0.1a
+        meta(charset="UTF-8")
+        link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css")
+        //script(src="https://kit.fontawesome.com/de4a047423.js", crossorigin="anonymous")
+        link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/fork-awesome@1.2.0/css/fork-awesome.min.css", integrity="sha256-XoaMnoYC5TH6/+ihMEnospgm0J1PM/nioxbOUdnM8HY=", crossorigin="anonymous")
+        script(src="/bulma-toast.min.js")
+        script(src="/socket.io/socket.io.js")
+    body
+        nav.navbar.is-primary(role="navigation", aria-label="main navigation")
+            .navbar-brand
+                a.navbar-item(href="/")
+                    img(src="/logo_28.png", width="28", height="28", style="margin-right: 0.5rem;")
+                    span.has-text-weight-bold PeerWave 
+                    span.mt-1.is-size-7.has-text-weight-light.is-family-monospace &nbsp;v0.0.1a
+            div.navbar-start
+                a.navbar-item(href="/host") 
+                    button.button.is-link
+                                span.icon
+                                    i.fa.fa-share-alt
+                                span Host
+                a.navbar-item(href="/") About
+            div.navbar-end
+                div.navbar-item
+                    div.buttons
+                        a(href="https://buymeacoffee.com/simonz", target="_blank")
+                            button.button.is-warning
+                                span.icon
+                                    i.fa.fa-buymeacoffee
+                                span Buy me a coffee
+                        a(href="https://github.com/simonzander/PeerWave", target="_blank")
+                            button.button
+                                span.icon
+                                    i.fa.fa-github
+                                span GitHub
+        .fixed-grid.has-1-cols-mobile.has-1-cols-tablet.has-2-cols-desktop(style="margin: 0;")
+            .grid.is-gap-0
+                .cell.is-hidden-touch(style="height: 95.7vh; background-image: url(/logo_43.png); background-repeat: no-repeat; background-size: contain; background-position: center;")
+                .cell.is-fullheight(style="height: 95.7vh;")
+                    block content
