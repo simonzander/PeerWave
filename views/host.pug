@@ -1,6 +1,53 @@
 extends layout
 
 block content
+    .modal(id="settingsModal")
+        .modal-background
+        .modal-card
+            header.modal-card-head
+                p.modal-card-title Advanced Settings
+                button.delete.close-modal(aria-label="close")
+            section.modal-card-body
+                .content 
+                    div
+                        label.checkbox.mb-4
+                            input(type="checkbox" name="enableCropping" id="enableCropping")
+                            |  Enable Cropping (above Chrome 94, Edge 94 and Opera 80)
+                        input.input(id="top" name="top", type="number", placeholder="top")
+                        input.input(id="left" name="left", type="number", placeholder="left")
+                        input.input(id="bottom" name="bottom", type="number", placeholder="bottom")
+                        input.input(id="right" name="right", type="number", placeholder="right")
+                    div.mt-4
+                        label.checkbox
+                            input(type="checkbox" name="enableResizing" id="enableResizing")
+                            |  Enable Resizing (above Chrome 94, Edge 94 and Opera 80)
+                        div.mt-4.columns
+                            label.column.is-10 Aspect Ratio
+                            .select 
+                                select(name="ratio" id="ratio" autocomplete="off") 
+                                    option(selected="selected" value="16:9") 16:9
+                                    option(value="16:10") 16:10
+                                    option(value="4:3") 4:3
+                        div.mt-4.columns
+                            label.column.is-10 Resolution
+                            .select
+                                select(name="res" id="res" autocomplete="off") 
+                                    option(value="4320") 4320p
+                                    option(value="2160") 2160p
+                                    option(value="1440") 1440p
+                                    option(selected="selected" value="1080") 1080p
+                                    option(value="720") 720p
+                                    option(value="480") 480p
+                                    option(value="360") 360p
+                                    option(value="240") 240p
+                                    option(value="144") 144p
+                        .subtitle Custom
+                        input.input(type="number", name="width", id="width", placeholder="width")
+                        input.input(type="number" name="height", id="height", placeholder="height")
+            footer.modal-card-foot
+                .buttons
+                    button.button.is-success.close-modal#saveSettings Save changes
+                    button.button.close-modal Cancel
     .cell.is-fullheight(style="height: 95.7vh;")
         .tabs.is-centered.is-boxed.is-medium
             ul.mt-4
@@ -23,6 +70,10 @@ block content
                                 span.icon.is-large
                                     i.fa.fa-video
                                 span Start Stream
+                            button#openSettings.button.is-primary.is-dark.ml-4.mt-3
+                                span.icon.is-large
+                                    i.fa.fa-gear
+                                span Advanced Settings
 
                         .cell
                             #copy_viewerurl.control.has-icons-right

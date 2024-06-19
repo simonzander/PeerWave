@@ -24,6 +24,9 @@ This is achieved using the [WebRTC](https://webrtc.org/) standard. A Google [STU
 - [How it works?](#how-it-works)
 - [Table of Contents](#table-of-contents)
 - [Try It](#try-it)
+- [Stream Settings](#stream-settings)
+  - [Cropping](#cropping)
+  - [Resizing](#resizing)
 - [Getting Started](#getting-started)
   - [Node](#node)
   - [Docker Build](#docker-build)
@@ -35,6 +38,11 @@ This is achieved using the [WebRTC](https://webrtc.org/) standard. A Google [STU
 ## Try It
 You can find a running instance at [peerwave.org](https://peerwave.org)
 
+## Stream Settings
+### Cropping 
+You can crop the hosted video with an experimental API that has not yet been standardized. As of 2024-06-19, this API is available in Chrome 94, Edge 94 and Opera 80.
+### Resizing
+You can resize the hosted video with an experimental API that has not yet been standardized. As of 2024-06-19, this API is available in Chrome 94, Edge 94 and Opera 80. 
 ## Getting Started
 ### Node
 

@@ -1,3 +1,4 @@
+/* global MediaStreamTrackProcessor, MediaStreamTrackGenerator, VideoFrame, VideoDecoder VideoEncoder */
 /**
  * Represents a WebRTC class with a constructor.
  * @constructor
@@ -739,4 +740,89 @@ class RTC {
         return this.room;
     }
   }
-  export { Client, Host };
+
+  /**
+   * Represents a class that crops and resizes a media stream.
+   *
+    * @param {Stream} stream - The input stream.
+    * @param {number} x - The x-coordinate.
+    * @param {number} y - The y-coordinate.
+    * @param {number} right - The right boundary.
+    * @param {number} bottom - The bottom boundary.
+    * @param {number} width - The width.
+    * @param {number} height - The height.
+    * @param {boolean} crop - Whether to crop the image.
+    * @param {boolean} resize - Whether to resize the image.
+    */
+  class MediaStreamCropperResizer {
+    constructor(stream, x, y, right, bottom, width, height, crop, resize) {
+      this.stream = stream;
+      this.x = x;
+      this.y = y;
+      this.right = right;
+      this.bottom = bottom;
+      this.width = width;
+      this.height = height;
+      this.crop = crop;
+      this.resize = resize;
+      this.outputStream = null;
+      this.processStream();
+    }
+
+    processStream() {
+      const [track] = this.stream.getTracks();
+      if (!track || typeof MediaStreamTrackProcessor === 'undefined' || typeof MediaStreamTrackGenerator === 'undefined' || typeof VideoFrame === 'undefined' || typeof VideoDecoder === 'undefined' || typeof VideoEncoder === 'undefined') {
+        throw new Error('Cannot process stream. Make sure the browser supports the necessary APIs.');
+      }
+
+      const processor = new MediaStreamTrackProcessor({track});
+      const generator = new MediaStreamTrackGenerator({kind: 'video'});
+
+      const {readable} = processor;
+      const {writable} = generator;
+
+      this.outputStream = new MediaStream([generator]);
+
+      const transform = (frame, controller) => {
+          let x = 0;
+          let y = 0;
+          let widthCrop = frame.displayWidth;
+          let heightCrop = frame.displayHeight;
+          let displayWidth = frame.displayWidth;
+          let displayHeight = frame.displayHeight;
+          if (this.crop) {
+              x = Number(this.x);
+              y = Number(this.y);
+              widthCrop = widthCrop - Number(this.right) - Number(this.x);
+              heightCrop = heightCrop - Number(this.bottom) - Number(this.y);
+          }
+          if (this.resize) {
+              displayWidth = this.width;
+              displayHeight = this.height;
+          }
+          const newFrame = new VideoFrame(frame, {
+              visibleRect: {
+                  x: x,
+                  width: widthCrop,
+                  y: y,
+                  height: heightCrop,
+              },
+              displayWidth: displayWidth,
+              displayHeight: displayHeight
+          });
+          controller.enqueue(newFrame);
+          frame.close();
+      };
+
+    const processFrame = async () => {
+      readable.pipeThrough(new TransformStream({transform})).pipeTo(writable);
+    };
+    processFrame();
+  }
+
+    getProcessedStream() {
+      return this.outputStream;
+    }
+  }
+
+  export { Client, Host, MediaStreamCropperResizer };

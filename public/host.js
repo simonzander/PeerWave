@@ -1,5 +1,5 @@
 /* global io, bulmaToast */
-import { Host } from '/class.js';
+import { Host, MediaStreamCropperResizer } from '/class.js';
 const socket = io.connect(window.location.origin);
 const config = {
   iceServers: [
@@ -13,6 +13,7 @@ const config = {
     // },
   ],
 };
+let stream, processedStream;
 
 document.getElementById("shareurl").value = "";
 document.getElementById("viewerurl").value = "";
@@ -155,7 +156,8 @@ Array.from(document.getElementsByClassName("max_peers")).forEach((el) => {
 
 document.getElementById("filesinput").onchange = fileInputChange;
 document.getElementById("startStreaming").onclick = async function() {
-    let stream;
+  stopStream(stream);
+  stopStream(processedStream);
     try {
       stream = await navigator.mediaDevices.getDisplayMedia({
           video: {
@@ -168,9 +170,25 @@ document.getElementById("startStreaming").onclick = async function() {
           surfaceSwitching: "include",
           monitorTypeSurfaces: "include",
         });
-      host.setStream(stream);
-      setStreamLink();
-      showStream(stream);
+      const enableCropping = document.getElementById("enableCropping").checked;
+      const enableResizing = document.getElementById("enableResizing").checked;
+      if (enableCropping === true || enableResizing === true) {
+        const x = document.getElementById("left").value;
+        const y = document.getElementById("top").value;
+        const right = document.getElementById("right").value;
+        const bottom = document.getElementById("bottom").value;
+        const widthResize = document.getElementById("width").value;
+        const heightResize = document.getElementById("height").value;
+        const manipulateStream = new MediaStreamCropperResizer(stream, x, y, right, bottom, widthResize, heightResize, enableCropping, enableResizing);
+        processedStream = manipulateStream.getProcessedStream();
+        host.setStream(processedStream);
+        setStreamLink();
+        showStream(processedStream);
+      } else {
+        host.setStream(stream);
+        setStreamLink();
+        showStream(stream);
+      }
     } catch (err) {
       host.toast(`Error: ${err}`, "error");
     }
@@ -209,4 +227,66 @@ document.getElementById("tab_files").addEventListener("click", function() {
     document.getElementById("overlay_pause").style.visibility = "hidden";
     document.querySelector("video").play();
   });
+});
+
+document.getElementById("enableCropping").addEventListener("change", function() {
+  if (this.checked === false)  return;
+  if (typeof MediaStreamTrackProcessor === 'undefined' ||
+    typeof MediaStreamTrackGenerator === 'undefined') {
+  alert('Your browser does not support the MediaStreamTrack API for Insertable Streams of Media.');
+  return;
+  }
+});
+
+document.getElementById("enableResizing").addEventListener("change", function() {
+  if (this.checked === false)  return;
+  if (typeof MediaStreamTrackProcessor === 'undefined' ||
+    typeof MediaStreamTrackGenerator === 'undefined') {
+  alert('Your browser does not support the MediaStreamTrack API for Insertable Streams of Media.');
+  return;
+  }
+  setWidthHeight();
+});
+
+document.getElementById("res").addEventListener("change", function() {
+  if (this.checked === false)  return;
+  setWidthHeight();
+});
+
+document.getElementById("ratio").addEventListener("change", function() {
+  if (this.checked === false)  return;
+  setWidthHeight();
+});
+
+function setWidthHeight() {
+  const ratio = document.getElementById("ratio").value;
+  const res = document.getElementById("res").value;
+  const width = document.getElementById("width");
+  const height = document.getElementById("height");
+
+  height.value = Number(res);
+
+  if (ratio === "16:9") width.value = Math.round(16 / 9 * Number(height.value));
+  if (ratio === "16:10") width.value = Math.round(16 / 10 * Number(height.value));
+  if (ratio === "4:3") width.value = Math.round(4 / 3 * Number(height.value));
+}
+
+function stopStream(stream) {
+  if (stream instanceof MediaStream)  {
+    stream.getTracks().forEach(track => track.stop());
+  }
+}
+
+Array.from(document.getElementsByClassName("close-modal")).forEach((el) => {
+  el.addEventListener("click", () => {
+    el.closest(".modal").classList.remove("is-active");
+  });
+});
+
+document.getElementById("openSettings").addEventListener("click", () => {
+  document.getElementById("settingsModal").classList.add("is-active");
+});
+
+document.getElementById("saveSettings").addEventListener("click", () => {
+  document.getElementById("startStreaming").click();
 });
