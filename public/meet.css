@@ -1,0 +1,121 @@
+.inline-block {
+    display: inline-block;
+}
+#attendees {
+    width: 100vw;
+}
+.attendee-name {
+    position: relative;
+    bottom: 4vh;
+    text-align: center;
+}
+.flex-meeting {
+    display: flex; 
+    align-items: start; 
+    flex-wrap: wrap; 
+    padding: 64px;
+    justify-content: space-evenly;
+    height: 90vh;
+    overflow: hidden;
+}
+.flex-meeting > * {
+    width: 95vw;
+    height: 85vh;
+}
+.flex-meeting > * > :first-child{
+    width: 100%;
+    height: 100%;
+}
+.attendee-novideo {
+    align-items: center;
+    justify-content: center;
+    display: flex;
+    /*width: 40vh;
+    height: 25vh;*/
+}
+.attendee-novideo span {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin-top: 1rem;
+    width: 15vh !important;
+    height: 15vh !important;
+    background-color: blueviolet;
+    border: 0.5rem solid white;
+    color: white;
+    font-size: 5rem;
+    border-radius: 100%;
+}
+.attendee-video {
+    border: 0.25rem solid #14161a;
+    /*width: 40vh;
+    height: 25vh;*/
+    
+}
+.attendee-spotlight {
+    height: 85vh;
+    width: 900vw;
+}
+.p-center {
+    text-align: center;
+    width: 100%;
+    font-size: 5vh;
+}
+.attendee-more span p {
+    font-size:3vh;
+}
+
+.speak-animation-novideo {
+    animation-name: speak-animation-novideo;
+    animation-duration: 500ms;
+}
+.speak-animation-video {
+    animation-name: speak-animation-video;
+    animation-duration: 500ms;
+}
+
+@keyframes speak-animation-novideo {
+    from {border-color: white;}
+    to {border-color: rgb(66, 88, 255); }
+  }
+
+@keyframes speak-animation-video {
+from {border-color: #14161a; }
+to {border-color: rgb(66, 88, 255);}
+}
+
+.control {
+    max-width: 35rem;
+}
+
+button.is-disabled span i {
+    color: red;
+}
+
+#spotlight {
+    display: none;
+}
+#chat {
+    position: fixed;
+    right: 1rem;
+    bottom: 5rem;
+    width: 25vw;
+    height: 90vh;
+    background-color: whitesmoke;
+    z-index: 1;
+    border-radius: 2rem;
+    border: 1px solid gray;
+}
+#chatcontent {
+    height: 82vh;
+    overflow-y: scroll;
+    color: black;
+}
+#chatinput {
+    background-color: lightgray;
+    color: black;
+    border: 1px solid lightgray;
+}
+#chatinput::placeholder {
+    color: black;
+}

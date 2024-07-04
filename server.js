@@ -53,6 +53,13 @@ app.use(express.static(__dirname + "/public"));
 app.set("view engine", "pug");
 
 /**
+ * Route for a meeting
+ */
+app.get("/meet", (req, res) => {
+  res.render("meet");
+});
+
+/**
  * Route for hosting a room
  */
 app.get("/host", (req, res) => {
@@ -75,6 +82,14 @@ app.get("/view/:room", ({ params: { room } }, res) => {
 });
 
 /**
+ * Route for join a meeting room
+ * @param {string} room - The ID of the room to meet
+ */
+app.get("/meet/:room", ({ params: { room } }, res) => {
+  res.render("meet", { room });
+});
+
+/**
  * Route for sharing a room
  * @param {string} room - The ID of the room to share
  */
@@ -93,7 +108,7 @@ io.sockets.on("connection", socket => {
   socket.on("host", (slots, callback) => {
     const room = randomUUID();
     const seeders = {[socket.id]: {slots: Number(slots), peers: 0, level: 0, score: 100.0}};
-    rooms[room] = {host: socket.id, seeders: seeders, stream: false, share: {}};
+    rooms[room] = {host: socket.id, seeders: seeders, stream: false, share: {}, meeting: false, meetingSettings: {}};
 
     socket.join(room);
     callbackHandler(callback, room);
@@ -191,9 +206,16 @@ io.sockets.on("connection", socket => {
   socket.on("disconnect", () => {
     if (!rooms) return;
 
+
     Object.keys(rooms).forEach((room) => {
         const roomSeeders = rooms[room].seeders;
         const roomFiles = rooms[room].share && rooms[room].share.files;
+        const roomParticipants = rooms[room].participants;
+
+        if (roomParticipants && roomParticipants[socket.id]) {
+          delete roomParticipants[socket.id];
+          socket.to(room).emit("message", socket.id, "leave", "");
+        }
 
         if (!roomSeeders) return;
 
@@ -279,68 +301,74 @@ io.sockets.on("connection", socket => {
   });
 
   /**
-   * Event handler for offering a file for download in a room
+   * Event handler for creating a meeting room
    * @param {string} room - The ID of the room
-   * @param {Object} file - The file object containing name and size
+   * @param {string} host - The ID of the host socketst socket
+   * @param {Object} settings - The meeting settings
    */
-  socket.on("offerFile", (room, file) => {
+  socket.on("createMeeting", (room, host, settings) => {
     if (!rooms[room]) return;
-
-    const roomFiles = rooms[room].share.files || {};
-
-    if (rooms[room].host === socket.id) {
-        roomFiles[file.name] = { size: file.size, seeders: [socket.id] };
-    } else if (roomFiles[file.name] &&
-        roomFiles[file.name].size === file.size &&
-        !roomFiles[file.name].seeders.includes(socket.id)) {
-        roomFiles[file.name].seeders.push(socket.id);
-    }
-
-    rooms[room].share.files = roomFiles;
-    socket.to(room).emit("getFiles", roomFiles);
-    socket.to(rooms[room].host).emit("currentFilePeers", file.name, Object.keys(rooms[room].share.files[file.name].seeders).length);
+    rooms[room].meeting = true;
+    rooms[room].meetingSettings = settings;
   });
 
-  /**
-   * Event handler for getting the shared files in a room
-   * @param {string} room - The ID of the room
-   * @param {Callback} callback - Callback function to be invoked with the shared files
-   */
-  socket.on("getFiles", (room, callback) => {
-    if (!rooms[room] || !rooms[room].share.files) return;
+  socket.on("message", (room, type, message) => {
+    socket.to(room).emit("message", socket.id, type, message);
+  });
 
+  /*socket.on("meeting", (room, callback) => {
+    if (!rooms[room] && rooms[room].meeting) return;
+    const roomData = rooms[room];
+    if (!rooms[room] && rooms[room].meeting) {
+        callbackHandler(callback, {message: "Room not found", room});
+        return;
+    }
     socket.join(room);
-    socket.to(socket.id).emit("getFiles", rooms[room].share.files);
+    const participants = Object.entries(rooms[room].participants);
 
-    if (typeof callback === "function") {
-        callback(rooms[room].share.files);
+    for (const [participant, value] of participants) {
+        if (participant !== socket.id) continue;
+
+        socket.to(participant).emit("meeting", socket.id);
+        callbackHandler(callback, {message: "Client connected", room, participant: participant});
+        return;
     }
-  });
-
+  });*/
   /**
-   * Event handler for deleting a file from a room
-   * @param {string} filename - The name of the file to delete
-   */
-  socket.on("deleteFile", (filename) => {
-    Object.entries(rooms).forEach(([id, room]) => {
-        if (room.host !== socket.id) return;
-        if (!room.share.files || !room.share.files[filename]) return;
-
-        delete room.share.files[filename];
-        socket.to(id).emit("getFiles", room.share.files);
-    });
-  });
-
-  /**
-   * Event handler for downloading a file from a room
+   * Event handler for getting meeting settings
    * @param {string} room - The ID of the room
-   * @param {Object} file - The file object to download
-   * @param {string} host - The ID of the host socket
+   * @param {Callback} callback - Callback function to be invoked with the meeting settings
    */
-  socket.on("downloadFile", (room, file, host) => {
-    if (!rooms[room]) return;
+  socket.on("getMeetingSettings", (room, callback) => {
+    if (!rooms[room] || !rooms[room].meeting) {
+      callbackHandler(callback, { message: "Meeting not found", room });
+      return;
+    }
+    const settings = rooms[room].meetingSettings;
+    callbackHandler(callback, { message: "Meeting settings retrieved", room, settings });
+  });
 
-    socket.to(host).emit("downloadFile", socket.id, file);
+  socket.on("getParticipants", (room, callback) => {
+    if (!rooms[room] || !rooms[room].meeting) {
+      callbackHandler(callback, { message: "Meeting not found", room });
+      return;
+    }
+    const participants = rooms[room].participants;
+    callbackHandler(callback, { message: "Meeting settings retrieved", room, participants });
+  });
+  /**
+   * Event handler for joining a meeting
+   * @param {string} room - The ID of the meeting room
+   * @param {string} name - The name of the participant
+   */
+  socket.on("joinMeeting", (room, name, callback) => {
+    if (!rooms[room] || !rooms[room].meeting) return;
+    socket.join(room);
+    if (!rooms[room].participants) rooms[room].participants = {};
+    rooms[room].participants[socket.id] = {name: name, id: socket.id};
+    socket.to(room).emit("participantJoined", rooms[room].participants[socket.id]);
+    socket.to(room).emit("message", socket.id, "join", "");
+    callbackHandler(callback, { message: "meeting joined", participants: rooms[room].participants, id: socket.id });
   });
 });
 

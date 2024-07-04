@@ -1,4 +1,5 @@
 /* global MediaStreamTrackProcessor, MediaStreamTrackGenerator, VideoFrame, VideoDecoder VideoEncoder */
+
 /**
  * Represents a WebRTC class with a constructor.
  * @constructor
@@ -110,7 +111,9 @@ class RTC {
      * @param {RTCSessionDescription} description - The answer description received from the peer.
      */
     handleAnswer(id, description) {
-      this.peerConnections[id].setRemoteDescription(description);
+      if (this.peerConnections[id].signalingState === "have-local-offer") {
+        this.peerConnections[id].setRemoteDescription(description);
+      }
     }
 
     /**
@@ -414,7 +417,6 @@ class RTC {
       this.socket.emit("stream", this.room, this.host);
       this.socket.emit("setSlots", this.room, this.slots);
     }
-
     /**
      * Updates the sharing files and emits the necessary events.
      *
@@ -739,7 +741,190 @@ class RTC {
     getRoom() {
         return this.room;
     }
+    /**
+     * Creates a meeting with the specified settings.
+     * @param {Object} settings - The settings for the meeting.
+     */
+    createMeeting(settings) {
+      this.socket.emit("createMeeting", this.room, this.host, settings);
+    }
   }
+
+  class Meet extends RTC {
+      constructor(socket, config, room) {
+        super(socket, config);
+        this.room = room;
+        this.callbackParticipantJoined = function() {};
+        this.callbackMessage = function() {};
+      }
+      getMeetingSettings(callback) {
+        this.socket.emit("getMeetingSettings", this.room, callback);
+        this.settings = callback.settings;
+      }
+      handleParticipantJoined(participant) {
+        this.toast(`Participant ${participant.name} joined the meeting`, "info");
+        this.handleParticipant(participant.id);
+        this.callbackParticipantJoined(participant, this.peerConnections[participant.id]);
+      }
+
+      handleMessage(id, type, message) {
+          this.callbackMessage(id, this.participants[id].name, type, message);
+      }
+
+      sendMessage(type, message = "") {
+        this.socket.emit("message", this.room, type, message);
+      }
+
+      /**
+     * Sets the media stream for the current instance.
+     *
+     * @param {MediaStream} stream - The media stream to set.
+     */
+    setStream(stream) {
+      if (!(stream instanceof MediaStream)) return;
+      console.log(stream)
+      this.stream = stream;
+    }
+  
+      /**
+       * Joins the meeting.
+       */
+      join(name, callback) {
+        this.name = name;
+        //this.ensureListener('participantJoined', (participant) => this.getParticipants());
+        this.ensureListener("offer", (id, description) => this.handleOffer(id, description));
+        this.ensureListener('answer', (id, description) => this.handleAnswer(id, description));
+        this.ensureListener('candidate', (id, candidate) => this.handleCandidate(id, candidate));
+        this.ensureListener('message', (id, type, message) => this.handleMessage(id, type, message));
+        
+        this.socket.emit("joinMeeting", this.room, name, (response) => {
+          this.id = response.id;
+          Object.entries(response.participants).forEach(([id, participant]) => {
+            if (id !== this.id) this.handleParticipant(id);
+            console.log(`connect from ${this.id} to ${id}`);
+          });
+          callback(response);
+          console.log(this.peerConnections);
+         });
+      }
+  
+      /**
+       * Handles the meet operation for a given ID.
+       *
+       * @param {string} id - The ID of the meet operation.
+       * @returns {void}
+       */
+      handleParticipant(id) {
+        if (this.peerConnections[id] !== undefined) return;
+        console.log("handleParticipant", id);
+        const peerConnection = new RTCPeerConnection(this.config);
+        this.peerConnections[id] = peerConnection;
+
+        console.log("SET STREAM", this.stream);
+  
+        this.stream.getTracks().forEach(track => peerConnection.addTrack(track, this.stream));
+  
+        peerConnection.onicecandidate = event => {
+          if (event.candidate) {
+            this.socket.emit("candidate", id, event.candidate);
+          }
+        };
+  
+        peerConnection.oniceconnectionstatechange = () => {
+          this.toast(`Connection to ${id} is ${peerConnection.iceConnectionState}`, "info");
+          if (peerConnection.iceConnectionState === "connected") {
+            this.getParticipants();
+          }
+        };
+
+        this.peerConnections[id].ontrack = (event) => {
+          console.log("ontrack", event.streams);
+          this.toast(`Stream from ${id} is available`, "info");
+          this.getParticipants().then((participants) => {
+            this.callbackParticipantJoined(participants[id], event.streams);
+          });
+        };
+  
+        peerConnection
+          .createOffer()
+          .then(sdp => peerConnection.setLocalDescription(sdp))
+          .then(() => {
+            this.socket.emit("offer", id, peerConnection.localDescription);
+          }).catch(error => {
+            this.toast(`Error creating offer or setting local description: ${error}`, "error");
+            // Handle the error appropriately
+          });
+      }
+      getParticipants() {
+        return new Promise((resolve, reject) => {
+          this.socket.emit("getParticipants", this.room, (response) => {
+            if (response.error) {
+              reject(response.error);
+            } else {
+              this.participants = response.participants;
+              resolve(this.participants);
+            }
+          });
+        });
+      }
+  
+      /**
+       * Handles the offer received from a peer and establishes a connection.
+       * @param {string} id - The ID of the peer.
+       * @param {RTCSessionDescription} description - The offer description received from the peer.
+       */
+      handleOffer(id, description) {
+        console.log("my id", this.id, "offer from ", id);
+        this.peerConnections[id] = new RTCPeerConnection(this.config);
+        this.peerConnections[id].oniceconnectionstatechange = () => {
+          this.toast(`Connection to ${id} is ${this.peerConnections[id].iceConnectionState}`, "info");
+          /*if (this.peerConnections[id].iceConnectionState === "disconnected") {
+            this.socket.emit("meeting", this.room, (response) => {
+              if (response.host !== undefined) {
+                this.host = response.host;
+                this.toast(`Connected to ${response.host}`, "info");
+              } else {
+                this.toast(response.message, "error");
+              }
+            });
+          }*/
+        };
+
+        this.peerConnections[id].ontrack = (event) => {
+          console.log("ontrack", event.streams);
+          this.toast(`Stream from ${id} is available`, "info");
+          this.getParticipants().then((participants) => {
+            this.callbackParticipantJoined(participants[id], event.streams);
+          });
+        };
+
+        if (this.peerConnections[id].signalingState === "stable") {
+
+          this.stream.getTracks().forEach(track => this.peerConnections[id].addTrack(track, this.stream));
+
+          this.getParticipants();
+          this.peerConnections[id]
+            .setRemoteDescription(description)
+            .then(() => this.peerConnections[id].createAnswer())
+            .then((sdp) => this.peerConnections[id].setLocalDescription(sdp))
+            .then(() => {
+              this.socket.emit("answer", id, this.peerConnections[id].localDescription);
+            });
+        }
+        this.peerConnections[id].onicecandidate = (event) => {
+          if (event.candidate) {
+            this.socket.emit("candidate", id, event.candidate);
+          }
+        };
+      }
+  
+      /**
+       * Leaves the meeting.
+       */
+      leaveMeeting() {
+        this.socket.emit("leaveMeeting", this.room);
+      }
+    }
 
   /**
    * Represents a class that crops and resizes a media stream.
@@ -825,4 +1010,4 @@ class RTC {
     }
   }
 
-  export { Client, Host, MediaStreamCropperResizer };
+  export { Client, Host, Meet, MediaStreamCropperResizer };

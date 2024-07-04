@@ -1,0 +1,171 @@
+doctype html
+html
+    head
+        title PeerWave v0.0.1a
+        meta(charset="UTF-8")
+        link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css")
+        //script(src="https://kit.fontawesome.com/de4a047423.js", crossorigin="anonymous")
+        link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/fork-awesome@1.2.0/css/fork-awesome.min.css", integrity="sha256-XoaMnoYC5TH6/+ihMEnospgm0J1PM/nioxbOUdnM8HY=", crossorigin="anonymous")
+        link(rel="stylesheet", href="/meet.css")
+        script(src="/bulma-toast.min.js")
+        script(src="/socket.io/socket.io.js")
+    body
+        <!-- canvas#canvastest(style="position: absolute; top: 0; left: 0%; z-index: 10; width: 250px; height: 250px; background-color: white;") !-->
+        #postsettings.content.has-text-centered(style="position: absolute; bottom: 4rem; display: flex; justify-content: center; width: 100%; z-index: 1;")
+            div#postmediasettings.is-hidden(style="padding: 0.5rem; background-color: #1f2229; border-radius: 1rem; display: inline-flex;")
+                div#controlpostmicrophone.control.has-icons-left.is-hidden
+                                    div.select
+                                        select#postmicrophone
+                                    div.icon.is-small.is-left
+                                        i.fa.fa-microphone
+                div#controlpostcamera.control.has-icons-left.is-hidden
+                                    div.select
+                                        select#postcamera
+                                    div.icon.is-small.is-left
+                                        i.fa.fa-video-camera
+        #chat(style="display: none;")
+            div
+                button#closechat.button.px-4.mr-2.mt-2.ml-2(style="background-color: whitesmoke; border:none; box-shadow: none;")
+                    span.icon
+                        i.fa.fa-arrow-right(style="color: black;")
+            #chatcontent.ml-4.mr-4
+            footer#chatfooter.ml-4.mr-4
+                .field
+                    p.control.has-icons-right(style="max-width: 100%;")
+                        input.input(type="text", id="chatinput", autocomplete="false" value="" placeholder="Type a message" style="cursor: pointer;")
+                        span#chatbutton.icon.is-small.is-right
+                            i.fa.fa-paper-plane
+        input#room(type="hidden", value=room)
+        #joinmeetingmodal.modal.is-active
+            .modal-background
+            .modal-content(style="width: 50vw") 
+                .box
+                    .content
+                        .subtitle.has-text-centered You want to enter the meeting 
+                                    span(id="meetingname") not found
+                        .columns(style="flex-wrap: wrap;")
+                            .column
+                                video#videoPreview
+                            .column
+                                label.label Meeting Date 
+                                p(id="meetingdate") !{new Date().toUTCString()}
+                                label.label Description
+                                p(id="meetingdescription") 
+                                .field
+                                    label.label Name
+                                    .control.has-icons-left
+                                        input.input(type="text", placeholder="Name", id="name", name="name" required)
+                                        span.icon.is-small.is-left
+                                            i.fa.fa-user
+                                p(style="font-weight: bold; display: flex; align-items: center; flex-flow: row; justify-content: space-evenly;")
+                                    span Mute Audio 
+                                    button#preaudiobutton.button.is-rounded.px-4.mr-2
+                                        span.icon.is-small
+                                            i.fa.fa-microphone
+                                    span Hide Camera
+                                    button#prevideobutton.button.is-rounded.px-4.mr-2
+                                        span.icon.is-small
+                                            i.fa.fa-video
+                                p(style="font-weight: bold; text-align: center;")
+                                    button(disabled)#joinmeeting.button.is-large.is-primary Join The Meeting
+                        .columns(style="flex-wrap: wrap;")
+                            .column
+                                label.label Camera (Optional)
+                                div.control.has-icons-left
+                                    div.select
+                                        select#camera
+                                    div.icon.is-small.is-left
+                                        i.fa.fa-video-camera
+                            .column
+                                label.label Sound Output
+                                div.control.has-icons-left
+                                    div.select
+                                        select#soundoutput
+                                    div.icon.is-small.is-left
+                                        i.fa.fa-volume-up
+                                button#testsound.button.is-link
+                                    span.icon
+                                        i.fa.fa-volume-up
+                                    span Test Sound
+                                p(style="font-size: 0.6rem;") Emotional Piano and Violin by UNIVERSFIELD -- https://freesound.org/s/741364/ -- License: Attribution 4.0
+                        .columns(style="flex-wrap: wrap;")
+                            .column
+                                label.label Microphone
+                                div.control.has-icons-left
+                                    div.select
+                                        select#microphone
+                                    div.icon.is-small.is-left
+                                        i.fa.fa-microphone
+        nav.navbar.is-primary(role="navigation", aria-label="main navigation")
+            .navbar-brand
+                a.navbar-item(href="/")
+                    img(src="/logo_28.png", width="28", height="28", style="margin-right: 0.5rem;")
+                    span.has-text-weight-bold PeerWave 
+                    span.mt-1.is-size-7.has-text-weight-light.is-family-monospace &nbsp;v0.0.1a
+            div.navbar-start
+                a.navbar-item(href="/host") 
+                    button.button.is-link
+                                span.icon
+                                    i.fa.fa-share-alt
+                                span Host
+                a.navbar-item(href="/") About
+            div.navbar-end
+                div.navbar-item
+                    div.buttons
+                        a(href="https://buymeacoffee.com/simonz", target="_blank")
+                            button.button.is-warning
+                                span.icon
+                                    i.fa.fa-buymeacoffee
+                                span Buy me a coffee
+                        a(href="https://github.com/simonzander/PeerWave", target="_blank")
+                            button.button
+                                span.icon
+                                    i.fa.fa-github
+                                span GitHub
+        .fixed-grid.has-1-cols-mobile.has-1-cols-tablet.has-1-cols-desktop(style="margin: 0;")
+            .grid.is-gap-0(style="margin: 0;")
+                .cell.is-fullheight(style="height: 90.2vh;display: flex")
+                    #spotlight.flex-meeting 
+                        <!-- <img class="attendee-spotlight" src="https://bulma.io/assets/images/placeholders/1280x960.png" alt=""> !-->
+                    #attendees.flex-meeting
+                    #sidebar
+                footer.footer.pt-4.pb-4
+                    .content.has-text-centered
+                        p.buttons.mb-0.inline-block
+                            
+                            button#audioselectbutton.button.px-4(style="width: 3.5rem; position: relative;left: 2rem;border-radius: 3rem;")
+                                span.icon.is-small
+                                    i.fa.fa-chevron-up(style="margin-right: 1.6rem;font-size: 0.7rem;")
+                            button#audiobutton.is-disabled.button.is-rounded.px-4.mr-2
+                                span.icon.is-small
+                                    i.fa.fa-microphone
+                            button#videoselectbutton.button.is-rounded.px-4.mr-2(style="width: 3.5rem; border-radius: 3rem;")
+                                span.icon.is-small
+                                    i.fa.fa-chevron-up(style="margin-right: 1.6rem;font-size: 0.7rem;")
+                            button#videobutton.is-disabled.button.is-rounded.px-4.mr-2(style="position: relative; right: 2.5rem;")
+                                span.icon.is-small
+                                    i.fa.fa-video
+                            div.posr-25(style="display: inline-block; position: relative; right: 2.5rem;")
+                                button.button.is-rounded.px-4.mr-2 
+                                    span.icon.is-small
+                                        i.fa.fa-cc
+                                button.button.is-rounded.px-4.mr-2 
+                                    span.icon.is-small
+                                        i.fa.fa-smile-o
+                                button.button.is-rounded.px-4.mr-2 
+                                    span.icon.is-small
+                                        i.fa.fa-desktop
+                                button#raisehandbutton.button.is-rounded.px-4.mr-2
+                                    span.icon.is-small
+                                        i.fa.fa-hand-paper-o
+                                button.button.is-rounded.px-4.mr-2
+                                    span.icon.is-small
+                                        i.fa.fa-ellipsis-v
+                                button#leavemeetingbutton.button.is-dark.is-danger.is-rounded.px-5
+                                    span.icon.is-small
+                                        i.fa.fa-phone(style="rotate: 135deg;font-size: 1.3rem;height: 1.3rem;")
+                            div(style="position: absolute; right: 1rem; bottom: 1.2rem;")
+                                button#chatopenbutton.button.is-rounded.px-4.mr-2(style="height: 2.2rem;")
+                                span.icon.is-small
+                                    i.fa.fa-comment(style="margin-right: 4rem; z-index: 1; margin-top: 1rem;")                           
+            script(type="module" src="/meet.js")
