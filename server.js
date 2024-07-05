@@ -301,6 +301,71 @@ io.sockets.on("connection", socket => {
   });
 
   /**
+ * Event handler for offering a file for download in a room
+ * @param {string} room - The ID of the room
+ * @param {Object} file - The file object containing name and size
+ */
+  socket.on("offerFile", (room, file) => {
+    if (!rooms[room]) return;
+
+    const roomFiles = rooms[room].share.files || {};
+
+    if (rooms[room].host === socket.id) {
+        roomFiles[file.name] = { size: file.size, seeders: [socket.id] };
+    } else if (roomFiles[file.name] &&
+        roomFiles[file.name].size === file.size &&
+        !roomFiles[file.name].seeders.includes(socket.id)) {
+        roomFiles[file.name].seeders.push(socket.id);
+    }
+
+    rooms[room].share.files = roomFiles;
+    socket.to(room).emit("getFiles", roomFiles);
+    socket.to(rooms[room].host).emit("currentFilePeers", file.name, Object.keys(rooms[room].share.files[file.name].seeders).length);
+  });
+
+  /**
+   * Event handler for getting the shared files in a room
+   * @param {string} room - The ID of the room
+   * @param {Callback} callback - Callback function to be invoked with the shared files
+   */
+  socket.on("getFiles", (room, callback) => {
+    if (!rooms[room] || !rooms[room].share.files) return;
+
+    socket.join(room);
+    socket.to(socket.id).emit("getFiles", rooms[room].share.files);
+
+    if (typeof callback === "function") {
+        callback(rooms[room].share.files);
+    }
+  });
+
+  /**
+   * Event handler for deleting a file from a room
+   * @param {string} filename - The name of the file to delete
+   */
+  socket.on("deleteFile", (filename) => {
+    Object.entries(rooms).forEach(([id, room]) => {
+        if (room.host !== socket.id) return;
+        if (!room.share.files || !room.share.files[filename]) return;
+
+        delete room.share.files[filename];
+        socket.to(id).emit("getFiles", room.share.files);
+    });
+  });
+
+  /**
+   * Event handler for downloading a file from a room
+   * @param {string} room - The ID of the room
+   * @param {Object} file - The file object to download
+   * @param {string} host - The ID of the host socket
+   */
+  socket.on("downloadFile", (room, file, host) => {
+    if (!rooms[room]) return;
+
+    socket.to(host).emit("downloadFile", socket.id, file);
+  });
+
+  /**
    * Event handler for creating a meeting room
    * @param {string} room - The ID of the room
    * @param {string} host - The ID of the host socketst socket
