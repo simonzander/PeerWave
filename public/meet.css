@@ -94,6 +94,7 @@ button.is-disabled span i {
 
 #spotlight {
     display: none;
+    width: 80vw;
 }
 #chat {
     position: fixed;
@@ -119,3 +120,20 @@ button.is-disabled span i {
 #chatinput::placeholder {
     color: black;
 }
+.emoji {
+    cursor: pointer;
+}
+.emote {
+    font-size: 6rem;
+    position: absolute;
+    bottom: -8rem;
+    left: 1rem;
+    animation: emoteAnimate 5s;
+    animation-fill-mode: forwards;
+}
+
+@keyframes emoteAnimate {
+    0% { opacity: 0;}
+    10% { bottom: 5%; opacity: 1;}
+    90% { bottom: 45%;}
+    100% { opacity: 0; bottom: 50%;}

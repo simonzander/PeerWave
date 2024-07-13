@@ -239,6 +239,11 @@ document.getElementById("tab_files").addEventListener("click", function() {
   bulmaToast.toast({ message: "Copied to clipboard", type: "is-info", position: "bottom-left" });
  });
 
+ document.getElementById("copy_meetingurl").addEventListener("click", function() {
+  navigator.clipboard.writeText(document.getElementById("meetingurl").value);
+  bulmaToast.toast({ message: "Copied to clipboard", type: "is-info", position: "bottom-left" });
+ });
+
  Array.from(document.getElementsByClassName("close_pause")).forEach((el) => {
   el.addEventListener("click", () => {
     document.getElementById("overlay_pause").style.visibility = "hidden";
@@ -310,11 +315,11 @@ document.getElementById("saveSettings").addEventListener("click", () => {
 
 document.getElementById("startmeetingbutton").addEventListener("click", () => {
   setMeetingLink();
+
   const meetingName = document.getElementById("meetingname").value;
   const meetingDescription = document.getElementById("meetingdesc").value;
   const instantMeeting = document.getElementById("instantmeeting").checked;
   const scheduledMeeting = document.getElementById("schedulemeeting").checked;
-  const meetingDate = document.getElementById("meetingdate").value;
   const voiceOnly = document.getElementById("voiceonly").checked;
   const enableChat = document.getElementById("enablechat").checked;
   const enableSharing = document.getElementById("enablesharing").checked;
@@ -322,6 +327,12 @@ document.getElementById("startmeetingbutton").addEventListener("click", () => {
   const muted = document.getElementById("muted").checked;
   const cameraOff = document.getElementById("camoff").checked;
   const maxCamResolution = document.getElementById("camres").value;
+
+  let meetingDate = document.getElementById("meetingdate").value;
+
+  if (meetingDate === "" || instantMeeting) meetingDate = new Date().getTime();
+  if (meetingDate !== "" && scheduledMeeting) meetingDate = new Date(meetingDate).getTime();
+
 
   const settings = {
     meetingName: meetingName,

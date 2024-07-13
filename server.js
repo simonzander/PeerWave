@@ -215,6 +215,11 @@ io.sockets.on("connection", socket => {
         if (roomParticipants && roomParticipants[socket.id]) {
           delete roomParticipants[socket.id];
           socket.to(room).emit("message", socket.id, "leave", "");
+          const hourFuture = new Date(Date.now() + 60 * 60 * 1000).getTime();
+          const meetingTime = new Date(rooms[room].meetingSettings.meetingDate).getTime();
+          if (Object.keys(roomParticipants).length === 0 && hourFuture < meetingTime) {
+            delete rooms[room];
+          }
         }
 
         if (!roomSeeders) return;

@@ -756,6 +756,7 @@ class RTC {
         this.room = room;
         this.callbackParticipantJoined = function() {};
         this.callbackMessage = function() {};
+        this.participants = {};
       }
       getMeetingSettings(callback) {
         this.socket.emit("getMeetingSettings", this.room, callback);
@@ -768,7 +769,9 @@ class RTC {
       }
 
       handleMessage(id, type, message) {
-          this.callbackMessage(id, this.participants[id].name, type, message);
+          if (this.participants[id] !== undefined) {
+            this.callbackMessage(id, this.participants[id].name, type, message);
+          }
       }
 
       sendMessage(type, message = "") {
@@ -782,8 +785,25 @@ class RTC {
      */
     setStream(stream) {
       if (!(stream instanceof MediaStream)) return;
-      console.log(stream)
       this.stream = stream;
+      this.socket.emit("message", this.room, "mediaDevice", stream.id);
+      this.join(this.name, function() {});
+      /*Object.entries(this.peerConnections).forEach(([id, peerConnection]) => {
+        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+
+        console.log("set stream", peerConnection);
+
+        /*peerConnection
+        .createOffer({iceRestart: true})
+        .then(sdp => peerConnection.setLocalDescription(sdp))
+        .then(() => {
+          this.socket.emit("message", this.room, "mediaDevice", stream.id);
+          this.socket.emit("offer", id, peerConnection.localDescription);
+        }).catch(error => {
+          this.toast(`Error creating offer or setting local description: ${error}`, "error");
+          // Handle the error appropriately
+        });*/
+      //});
     }
   
       /**
@@ -815,7 +835,7 @@ class RTC {
        * @returns {void}
        */
       handleParticipant(id) {
-        if (this.peerConnections[id] !== undefined) return;
+        //if (this.peerConnections[id] !== undefined) return;
         console.log("handleParticipant", id);
         const peerConnection = new RTCPeerConnection(this.config);
         this.peerConnections[id] = peerConnection;
@@ -823,6 +843,13 @@ class RTC {
         console.log("SET STREAM", this.stream);
   
         this.stream.getTracks().forEach(track => peerConnection.addTrack(track, this.stream));
+
+        if (this.screenShareStream) {
+          console.log("SET STREAM", this.screenShareStream);
+          this.screenShareStream.getTracks().forEach(track => peerConnection.addTrack(track, this.screenShareStream));
+        }
+
+        //peerConnection.getTracks().forEach(track => console.log("track", track));
   
         peerConnection.onicecandidate = event => {
           if (event.candidate) {
@@ -837,11 +864,34 @@ class RTC {
           }
         };
 
-        this.peerConnections[id].ontrack = (event) => {
-          console.log("ontrack", event.streams);
+       this.peerConnections[id].ontrack = (event) => {
+          //let stream = new MediaStream([event.track]);
+          console.log("ontrack", event, event.streams, event.track);
           this.toast(`Stream from ${id} is available`, "info");
-          this.getParticipants().then((participants) => {
-            this.callbackParticipantJoined(participants[id], event.streams);
+          this.getParticipants().then(() => {
+
+            if (!this.participants[id].streams.some(stream => stream.id === event.streams[0].id)) {
+              this.participants[id].streams.push(event.streams[0]);
+            } else {
+              this.participants[id].streams = this.participants[id].streams.map(stream => {
+                if (stream.id === event.streams[0].id) {
+                  return event.streams[0];
+                }
+                return stream;
+              });
+            }
+            if (!this.participants[id].tracks.some(track => track.id === event.track.id)) {
+              this.participants[id].tracks.push(event.track);
+            } else {
+              this.participants[id].tracks = this.participants[id].tracks.map(track => {
+                if (track.id === event.track.id) {
+                  return event.track;
+                }
+                return track;
+              });
+            }
+
+            this.callbackParticipantJoined(this.participants[id]);
           });
         };
   
@@ -861,7 +911,14 @@ class RTC {
             if (response.error) {
               reject(response.error);
             } else {
-              this.participants = response.participants;
+              Object.entries(response.participants).forEach(([id, participant]) => {
+                if (!Object.prototype.hasOwnProperty.call(this.participants, id)) {
+                  this.participants[id] = participant;
+                  this.participants[id].peerConnection = this.peerConnections[id];
+                  this.participants[id].streams = [];
+                  this.participants[id].tracks = [];
+                }
+              });
               resolve(this.participants);
             }
           });
@@ -876,6 +933,38 @@ class RTC {
       handleOffer(id, description) {
         console.log("my id", this.id, "offer from ", id);
         this.peerConnections[id] = new RTCPeerConnection(this.config);
+
+        this.peerConnections[id].ontrack = (event) => {
+          //let stream = new MediaStream([event.track]);
+          console.log("ontrack", event, event.streams, event.track);
+          this.toast(`Stream from ${id} is available`, "info");
+          this.getParticipants().then(() => {
+
+            if (!this.participants[id].streams.some(stream => stream.id === event.streams[0].id)) {
+              this.participants[id].streams.push(event.streams[0]);
+            } else {
+              this.participants[id].streams = this.participants[id].streams.map(stream => {
+                if (stream.id === event.streams[0].id) {
+                  return event.streams[0];
+                }
+                return stream;
+              });
+            }
+            if (!this.participants[id].tracks.some(track => track.id === event.track.id)) {
+              this.participants[id].tracks.push(event.track);
+            } else {
+              this.participants[id].tracks = this.participants[id].tracks.map(track => {
+                if (track.id === event.track.id) {
+                  return event.track;
+                }
+                return track;
+              });
+            }
+
+            this.callbackParticipantJoined(this.participants[id]);
+          });
+        };
+
         this.peerConnections[id].oniceconnectionstatechange = () => {
           this.toast(`Connection to ${id} is ${this.peerConnections[id].iceConnectionState}`, "info");
           /*if (this.peerConnections[id].iceConnectionState === "disconnected") {
@@ -888,19 +977,24 @@ class RTC {
               }
             });
           }*/
+          /*if (this.peerConnections[id].iceConnectionState === "connected") {
+            this.peerConnections[id].onaddtrack = (event) => {
+              console.log("onaddtrack", event.streams);
+            };
+          }*/
         };
 
-        this.peerConnections[id].ontrack = (event) => {
-          console.log("ontrack", event.streams);
-          this.toast(`Stream from ${id} is available`, "info");
-          this.getParticipants().then((participants) => {
-            this.callbackParticipantJoined(participants[id], event.streams);
-          });
-        };
 
         if (this.peerConnections[id].signalingState === "stable") {
 
           this.stream.getTracks().forEach(track => this.peerConnections[id].addTrack(track, this.stream));
+
+          console.log("SET STREAM", this.stream);
+  
+        if (this.screenShareStream) {
+          console.log("SET STREAM", this.screenShareStream);
+          this.screenShareStream.getTracks().forEach(track => this.peerConnections[id].addTrack(track, this.screenShareStream));
+        }
 
           this.getParticipants();
           this.peerConnections[id]
@@ -923,6 +1017,24 @@ class RTC {
        */
       leaveMeeting() {
         this.socket.emit("leaveMeeting", this.room);
+      }
+      setScreenShareStream(stream) {
+        if (!(stream instanceof MediaStream)) return;
+        this.screenShareStream = stream;
+        this.socket.emit("message", this.room, "screenshare", stream.id);
+        /*Object.entries(this.peerConnections).forEach(([id, peerConnection]) => {
+            stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+          peerConnection
+          .createOffer({iceRestart: true})
+          .then(sdp => peerConnection.setLocalDescription(sdp))
+          .then(() => {
+            //this.socket.emit("message", this.room, "screenshare", stream.id);
+            this.socket.emit("offer", id, peerConnection.localDescription);
+          }).catch(error => {
+            this.toast(`Error creating offer or setting local description: ${error}`, "error");
+            // Handle the error appropriately
+          });
+        });*/
       }
     }
 
