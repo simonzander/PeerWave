@@ -1,0 +1,505 @@
+doctype html
+html
+    head
+        title PeerWave v0.0.3
+        meta(charset="UTF-8")
+        link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css")
+        //script(src="https://kit.fontawesome.com/de4a047423.js", crossorigin="anonymous")
+        link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/fork-awesome@1.2.0/css/fork-awesome.min.css", integrity="sha256-XoaMnoYC5TH6/+ihMEnospgm0J1PM/nioxbOUdnM8HY=", crossorigin="anonymous")
+        link(rel="stylesheet", href="/meet.css")
+        script(src="/bulma-toast.min.js")
+        script(src="/socket.io/socket.io.js")
+    body
+        <!-- canvas#canvastest(style="position: absolute; top: 0; left: 0%; z-index: 10; width: 250px; height: 250px; background-color: white;") !-->
+        #postsettings.content.has-text-centered(style="position: absolute; bottom: 4rem; display: flex; justify-content: center; width: 100%; z-index: 1;")
+            div#emojipanel.is-hidden(style="font-size: 1.8rem; justify-content: center; padding: 0.5rem; background-color: #1f2229; border-radius: 1rem; display: inline-flex; max-width: 500px; flex-wrap: wrap;")
+                div 
+                    ul(style="list-style-type: none; margin-inline-start: 0; margin-top: 0;")
+                        li(style= "display:inline;")
+                            button#openemojismile.is-rounded
+                                span &#x1F600;
+                        li(style= "display:inline;")
+                            button#openemojicat.is-rounded
+                                span &#x1F638;
+                        li(style= "display:inline;")
+                            button#openemojitransport.is-rounded
+                                span &#x1F680;
+                        li(style= "display:inline;") 
+                            button#openemojioffice.is-rounded
+                                span &#x1F4BC;
+                        li(style= "display:inline;") 
+                            button#openemojijobs.is-rounded
+                                span &#x1F46E;
+                        li(style= "display:inline;") 
+                            button#openemojianimals.is-rounded
+                                span &#x1F40B;
+                hr(style="width: 100%; border: 0; border-top: 1px solid #2c2f33; margin: 0; padding: 0;")
+                #emojismile
+                    span.emoji &#x1F600;
+                    span.emoji &#x1F601;
+                    span.emoji &#x1F602;
+                    span.emoji &#x1F603;
+                    span.emoji &#x1F604;
+                    span.emoji &#x1F605;
+                    span.emoji &#x1F606;
+                    span.emoji &#x1F607;
+                    span.emoji &#x1F608;
+                    span.emoji &#x1F609;
+                    span.emoji &#x1F60A;
+                    span.emoji &#x1F60B;
+                    span.emoji &#x1F60C;
+                    span.emoji &#x1F60D;
+                    span.emoji &#x1F60E;
+                    span.emoji &#x1F60F;
+                    span.emoji &#x1F610;
+                    span.emoji &#x1F611;
+                    span.emoji &#x1F612;
+                    span.emoji &#x1F613;
+                    span.emoji &#x1F614;
+                    span.emoji &#x1F615;
+                    span.emoji &#x1F616;
+                    span.emoji &#x1F617;
+                    span.emoji &#x1F618;
+                    span.emoji &#x1F619;
+                    span.emoji &#x1F61A;
+                    span.emoji &#x1F61B;
+                    span.emoji &#x1F61C;
+                    span.emoji &#x1F61D;
+                    span.emoji &#x1F61E;
+                    span.emoji &#x1F61F;
+                    span.emoji &#x1F620;
+                    span.emoji &#x1F621;
+                    span.emoji &#x1F622;
+                    span.emoji &#x1F623;
+                    span.emoji &#x1F624;
+                    span.emoji &#x1F625;
+                    span.emoji &#x1F626;
+                    span.emoji &#x1F627;
+                    span.emoji &#x1F628;
+                    span.emoji &#x1F629;
+                    span.emoji &#x1F62A;
+                    span.emoji &#x1F62B;
+                    span.emoji &#x1F62C;
+                    span.emoji &#x1F62D;
+                    span.emoji &#x1F62E;
+                    span.emoji &#x1F62F;
+                    span.emoji &#x1F630;
+                    span.emoji &#x1F631;
+                    span.emoji &#x1F632;
+                    span.emoji &#x1F633;
+                    span.emoji &#x1F634;
+                    span.emoji &#x1F635;
+                    span.emoji &#x1F636;
+                    span.emoji &#x1F637;
+                #emojicat.is-hidden
+                    span.emoji &#x1F638;
+                    span.emoji &#x1F639;
+                    span.emoji &#x1F63A;
+                    span.emoji &#x1F63B;
+                    span.emoji &#x1F63C;
+                    span.emoji &#x1F63D;
+                    span.emoji &#x1F63E;
+                    span.emoji &#x1F63F;
+                    span.emoji &#x1F640;
+                #emojitransport.is-hidden
+                    span.emoji &#x1F680;
+                    span.emoji &#x1F681;
+                    span.emoji &#x1F682;
+                    span.emoji &#x1F683;
+                    span.emoji &#x1F684;
+                    span.emoji &#x1F685;
+                    span.emoji &#x1F686;
+                    span.emoji &#x1F687;
+                    span.emoji &#x1F688;
+                    span.emoji &#x1F689;
+                    span.emoji &#x1F68A;
+                    span.emoji &#x1F68B;
+                    span.emoji &#x1F68C;
+                    span.emoji &#x1F68D;
+                    span.emoji &#x1F68E;
+                    span.emoji &#x1F68F;
+                    span.emoji &#x1F690;
+                    span.emoji &#x1F691;
+                    span.emoji &#x1F692;
+                    span.emoji &#x1F693;
+                    span.emoji &#x1F694;
+                    span.emoji &#x1F695;
+                    span.emoji &#x1F696;
+                    span.emoji &#x1F697;
+                    span.emoji &#x1F698;
+                    span.emoji &#x1F699;
+                    span.emoji &#x1F69A;
+                    span.emoji &#x1F69B;
+                    span.emoji &#x1F69C;
+                    span.emoji &#x1F69D;
+                    span.emoji &#x1F69E;
+                    span.emoji &#x1F69F;
+                    span.emoji &#x1F6A0;
+                    span.emoji &#x1F6A1;
+                    span.emoji &#x1F6A2;
+                    span.emoji &#x1F6A3;
+                    span.emoji &#x1F6A4;
+                #emojioffice.is-hidden 
+                    span.emoji &#x1F4BA;
+                    span.emoji &#x1F4BB;
+                    span.emoji &#x1F4BC;
+                    span.emoji &#x1F4BD;
+                    span.emoji &#x1F4BE;
+                    span.emoji &#x1F4BF;
+                    span.emoji &#x1F4C0;
+                    span.emoji &#x1F4C1;
+                    span.emoji &#x1F4C2;
+                    span.emoji &#x1F4C3;
+                    span.emoji &#x1F4C4;
+                    span.emoji &#x1F4C5;
+                    span.emoji &#x1F4C6;
+                    span.emoji &#x1F4C7;
+                    span.emoji &#x1F4C8;
+                    span.emoji &#x1F4C9;
+                    span.emoji &#x1F4CA;
+                    span.emoji &#x1F4CB;
+                    span.emoji &#x1F4CC;
+                    span.emoji &#x1F4CD;
+                    span.emoji &#x1F4CE;
+                    span.emoji &#x1F4CF;
+                    span.emoji &#x1F4D0;
+                    span.emoji &#x1F4D1;
+                    span.emoji &#x1F4D2;
+                    span.emoji &#x1F4D3;
+                    span.emoji &#x1F4D4;
+                    span.emoji &#x1F4D5;
+                    span.emoji &#x1F4D6;
+                    span.emoji &#x1F4D7;
+                    span.emoji &#x1F4D8;
+                    span.emoji &#x1F4D9;
+                    span.emoji &#x1F4DA;
+                    span.emoji &#x1F4DB;
+                    span.emoji &#x1F4DC;
+                    span.emoji &#x1F4DD;
+                    span.emoji &#x1F4DE;
+                    span.emoji &#x1F4DF;
+                    span.emoji &#x1F4E0;
+                    span.emoji &#x1F4E1;
+                    span.emoji &#x1F4E2;
+                    span.emoji &#x1F4E3;
+                    span.emoji &#x1F4E4;
+                    span.emoji &#x1F4E5;
+                    span.emoji &#x1F4E6;
+                    span.emoji &#x1F4E7;
+                    span.emoji &#x1F4E8;
+                    span.emoji &#x1F4E9;
+                    span.emoji &#x1F4EA;
+                    span.emoji &#x1F4EB;
+                    span.emoji &#x1F4EC;
+                    span.emoji &#x1F4ED;
+                    span.emoji &#x1F4EE;
+                    span.emoji &#x1F4EF;
+                    span.emoji &#x1F4F0;
+                    span.emoji &#x1F4F1;
+                    span.emoji &#x1F4F2;
+                    span.emoji &#x1F4F3;
+                    span.emoji &#x1F4F4;
+                    span.emoji &#x1F4F5;
+                    span.emoji &#x1F4F6;
+                    span.emoji &#x1F4F7;
+                    span.emoji &#x1F4F8;
+                    span.emoji &#x1F4F9;
+                    span.emoji &#x1F4FA;
+                    span.emoji &#x1F4FB;
+                    span.emoji &#x1F4FC;
+                    span.emoji &#x1F4FD;
+                    span.emoji &#x1F4FE;
+                    span.emoji &#x1F4FF;
+                #emojianimals.is-hidden
+                    span.emoji &#x1F400;
+                    span.emoji &#x1F401;
+                    span.emoji &#x1F402;
+                    span.emoji &#x1F403;
+                    span.emoji &#x1F404;
+                    span.emoji &#x1F405;
+                    span.emoji &#x1F406;
+                    span.emoji &#x1F407;
+                    span.emoji &#x1F408;
+                    span.emoji &#x1F409;
+                    span.emoji &#x1F40A;
+                    span.emoji &#x1F40B;
+                    span.emoji &#x1F40C;
+                    span.emoji &#x1F40D;
+                    span.emoji &#x1F40E;
+                    span.emoji &#x1F40F;
+                    span.emoji &#x1F410;
+                    span.emoji &#x1F411;
+                    span.emoji &#x1F412;
+                    span.emoji &#x1F413;
+                    span.emoji &#x1F414;
+                    span.emoji &#x1F415;
+                    span.emoji &#x1F416;
+                    span.emoji &#x1F417;
+                    span.emoji &#x1F418;
+                    span.emoji &#x1F419;
+                    span.emoji &#x1F41A;
+                    span.emoji &#x1F41B;
+                    span.emoji &#x1F41C;
+                    span.emoji &#x1F41D;
+                    span.emoji &#x1F41E;
+                    span.emoji &#x1F41F;
+                    span.emoji &#x1F420;
+                    span.emoji &#x1F421;
+                    span.emoji &#x1F422;
+                    span.emoji &#x1F423;
+                    span.emoji &#x1F424;
+                    span.emoji &#x1F425;
+                    span.emoji &#x1F426;
+                    span.emoji &#x1F427;
+                    span.emoji &#x1F428;
+                    span.emoji &#x1F429;
+                    span.emoji &#x1F42A;
+                    span.emoji &#x1F42B;
+                    span.emoji &#x1F42C;
+                    span.emoji &#x1F42D;
+                    span.emoji &#x1F42E;
+                    span.emoji &#x1F42F;
+                    span.emoji &#x1F430;
+                    span.emoji &#x1F431;
+                    span.emoji &#x1F432;
+                    span.emoji &#x1F433;
+                    span.emoji &#x1F434;
+                    span.emoji &#x1F435;
+                    span.emoji &#x1F436;
+                    span.emoji &#x1F437;
+                    span.emoji &#x1F438;
+                    span.emoji &#x1F439;
+                    span.emoji &#x1F43A;
+                    span.emoji &#x1F43B;
+                    span.emoji &#x1F43C;
+                    span.emoji &#x1F43D;
+                    span.emoji &#x1F43E;
+                    span.emoji &#x1F43F;
+            div#postmediasettings.is-hidden(style="padding: 0.5rem; background-color: #1f2229; border-radius: 1rem; display: inline-flex;")
+                div#controlpostmicrophone.control.has-icons-left.is-hidden
+                                    div.select
+                                        select#postmicrophone
+                                    div.icon.is-small.is-left
+                                        i.fa.fa-microphone
+                div#controlpostcamera.control.has-icons-left.is-hidden
+                                    div.select
+                                        select#postcamera
+                                    div.icon.is-small.is-left
+                                        i.fa.fa-video-camera
+        #chat(style="display: none;")
+            div
+                button#closechat.button.px-4.mr-2.mt-2.ml-2(style="background-color: whitesmoke; border:none; box-shadow: none;")
+                    span.icon
+                        i.fa.fa-arrow-right(style="color: black;")
+            #chatcontent.ml-4.mr-4
+            footer#chatfooter.ml-4.mr-4
+                .field
+                    p.control.has-icons-right(style="max-width: 100%;")
+                        input.input(type="text", id="chatinput", autocomplete="false" value="" placeholder="Type a message" style="cursor: pointer;")
+                        span#chatbutton.icon.is-small.is-right
+                            i.fa.fa-paper-plane
+        input#room(type="hidden", value=room)
+        #moreoptions.modal 
+            .modal-background 
+            .modal-card 
+                .modal-card-head 
+                    p.modal-card-title More Options
+                    button#closemoreoptions.delete(aria-label="close")
+                .modal-card-body
+                    .columns 
+                        .column 
+                            aside.menu
+                                ul.menu-list
+                                    li
+                                        a Information
+                        .column 
+                            b Meeting ID  
+                            p#moremeetingid 
+                            b Meeting Link 
+                            p#moremeetinglink  
+                            b Name 
+                            p#moremeetingname 
+                            b Description
+                            p#moremeetingdescription  
+        #subtitlemodal.modal 
+            .modal-background
+            .modal-card
+                .modal-card-head
+                    p.modal-card-title Caption Settings
+                    button#closesubtitlemodal.delete(aria-label="close")
+                .modal-card-body
+                    div.tabs
+                        ul#opencaption
+                            li.is-active
+                                a#opencaptionwindows Windows 11
+                            li
+                                a#opencaptionchrome Chrome
+                            li
+                                a#opencaptionsafari Safari
+                            li
+                                a#opencaptionfirefox Firefox 
+                            li 
+                                a#opencaptionedge Edge
+                    ul#captionwindows.captiondesc(style="list-style: decimal") 
+                        li Open Settings: Click on the Start menu and select the gear icon to open Settings.
+                        li Ease of Access: Navigate to "Accessibility" from the sidebar menu.
+                        li Caption Settings: Under the "Hearing" section, click on "Captions."
+                        li Customize Captions: Here, you can turn on captions and customize their appearance, such as font size, color, and background.
+                        li Automatic Subtitles: Some applications and browsers like Chrome will use these settings to display captions. 
+                    ul#captionchrome.is-hidden.captiondesc(style="list-style: decimal")
+                        li Open Google Chrome: Make sure you have the latest version of Chrome installed.
+                        li Access Settings: Click the three vertical dots (menu) in the upper-right corner and select "Settings."
+                        li Advanced Settings: Scroll down and click on "Advanced" to expand more settings options.
+                        li Accessibility Settings: Under the "Accessibility" section, find and toggle on "Live Caption."
+                        li Customization: You can further customize the appearance and language of the subtitles in the settings.
+                    ul#captionsafari.is-hidden.captiondesc(style="list-style: decimal")
+                        li Open Safari: Ensure your Safari browser is up-to-date.
+                        li Preferences: Go to Safari > Preferences from the top menu.
+                        li Websites: Click on the "Websites" tab.
+                        li Captions: Scroll down to "Captions" and check the options for subtitles and captions.
+                        li Customization: Customize the appearance of captions under System Preferences > Accessibility > Captions.
+                    ul#captionfirefox.is-hidden.captiondesc(style="list-style: decimal")
+                        li Open Firefox: Ensure Firefox is updated to the latest version.
+                        li Access Settings: Click the three horizontal lines (menu) in the upper-right corner and select "Settings."
+                        li Preferences: Go to "General" and scroll down to the "Language" section.
+                        li Enable Captions: There is no direct live caption feature, but you can enable closed captions for supported media.
+                    ul#captionedge.is-hidden.captiondesc(style="list-style: decimal")
+                        li Open Microsoft Edge: Ensure Edge is updated to the latest version.
+                        li Access Settings: Click the three horizontal dots (menu) in the upper-right corner and select "Settings."
+                        li Advanced Settings: Scroll down and click on "Advanced" to expand more settings options.
+                        li Accessibility Settings: Under the "Accessibility" section, find and toggle on "Live Caption."
+                        li Customization: Customize the appearance and language of the subtitles in the settings.                                                          
+        #joinmeetingmodal.modal.is-active
+            .modal-background
+            .modal-content(style="width: 50vw") 
+                .box
+                    .content
+                        .subtitle.has-text-centered You want to enter the meeting 
+                                    span(id="meetingname") not found
+                        .columns(style="flex-wrap: wrap;")
+                            .column
+                                video#videoPreview
+                            .column
+                                label.label Meeting Date 
+                                p(id="meetingdate") 
+                                label.label Description
+                                p(id="meetingdescription") 
+                                .field
+                                    label.label Name
+                                    .control.has-icons-left
+                                        input.input(type="text", placeholder="Name", id="name", name="name" required)
+                                        span.icon.is-small.is-left
+                                            i.fa.fa-user
+                                p(style="font-weight: bold; display: flex; align-items: center; flex-flow: row; justify-content: space-evenly;")
+                                    span Mute Audio 
+                                    button#preaudiobutton.button.is-rounded.px-4.mr-2
+                                        span.icon.is-small
+                                            i.fa.fa-microphone
+                                    span Hide Camera
+                                    button#prevideobutton.button.is-rounded.px-4.mr-2
+                                        span.icon.is-small
+                                            i.fa.fa-video
+                                p(style="font-weight: bold; text-align: center;")
+                                    button(disabled)#joinmeeting.button.is-large.is-primary Join The Meeting
+                                #joininfo.has-text-warning(style="text-align: center;")
+                        .columns(style="flex-wrap: wrap;")
+                            .column
+                                label.label Camera (Optional)
+                                div.control.has-icons-left
+                                    div.select
+                                        select#camera
+                                    div.icon.is-small.is-left
+                                        i.fa.fa-video-camera
+                            .column
+                                label.label Sound Output
+                                div.control.has-icons-left
+                                    div.select
+                                        select#soundoutput
+                                    div.icon.is-small.is-left
+                                        i.fa.fa-volume-up
+                                button#testsound.button.is-link
+                                    span.icon
+                                        i.fa.fa-volume-up
+                                    span Test Sound
+                                p(style="font-size: 0.6rem;") Emotional Piano and Violin by UNIVERSFIELD -- https://freesound.org/s/741364/ -- License: Attribution 4.0
+                        .columns(style="flex-wrap: wrap;")
+                            .column
+                                label.label Microphone
+                                div.control.has-icons-left
+                                    div.select
+                                        select#microphone
+                                    div.icon.is-small.is-left
+                                        i.fa.fa-microphone
+        nav.navbar.is-primary(role="navigation", aria-label="main navigation")
+            .navbar-brand
+                a.navbar-item(href="/")
+                    img(src="/logo_28.png", width="28", height="28", style="margin-right: 0.5rem;")
+                    span.has-text-weight-bold PeerWave 
+                    span.mt-1.is-size-7.has-text-weight-light.is-family-monospace &nbsp;v0.0.1a
+            div.navbar-start
+                a.navbar-item(href="/host") 
+                    button.button.is-link
+                                span.icon
+                                    i.fa.fa-share-alt
+                                span Host
+                a.navbar-item(href="/") About
+            div.navbar-end
+                div.navbar-item
+                    div.buttons
+                        a(href="https://buymeacoffee.com/simonz", target="_blank")
+                            button.button.is-warning
+                                span.icon
+                                    i.fa.fa-buymeacoffee
+                                span Buy me a coffee
+                        a(href="https://github.com/simonzander/PeerWave", target="_blank")
+                            button.button
+                                span.icon
+                                    i.fa.fa-github
+                                span GitHub
+        .fixed-grid.has-1-cols-mobile.has-1-cols-tablet.has-1-cols-desktop(style="margin: 0;")
+            .grid.is-gap-0(style="margin: 0;")
+                .cell.is-fullheight(style="height: 90.2vh;display: flex")
+                    #spotlight.flex-meeting 
+                        <!-- <img class="attendee-spotlight" src="https://bulma.io/assets/images/placeholders/1280x960.png" alt=""> !-->
+                    #attendees.flex-meeting
+                    #sidebar
+                footer.footer.pt-4.pb-4
+                    .content.has-text-centered
+                        p.buttons.mb-0.inline-block
+                            
+                            button#audioselectbutton.button.px-4(style="width: 3.5rem; position: relative;left: 2rem;border-radius: 3rem;")
+                                span.icon.is-small
+                                    i.fa.fa-chevron-up(style="margin-right: 1.6rem;font-size: 0.7rem;")
+                            button#audiobutton.is-disabled.button.is-rounded.px-4.mr-2
+                                span.icon.is-small
+                                    i.fa.fa-microphone
+                            button#videoselectbutton.button.is-rounded.px-4.mr-2(style="width: 3.5rem; border-radius: 3rem;")
+                                span.icon.is-small
+                                    i.fa.fa-chevron-up(style="margin-right: 1.6rem;font-size: 0.7rem;")
+                            button#videobutton.is-disabled.button.is-rounded.px-4.mr-2(style="position: relative; right: 2.5rem;")
+                                span.icon.is-small
+                                    i.fa.fa-video
+                            div.posr-25(style="display: inline-block; position: relative; right: 2.5rem;")
+                                button#opensubtitle.button.is-rounded.px-4.mr-2 
+                                    span.icon.is-small
+                                        i.fa.fa-cc
+                                button#openemoji.button.is-rounded.px-4.mr-2 
+                                    span.icon.is-small
+                                        i.fa.fa-smile-o
+                                button#screensharebutton.button.is-rounded.px-4.mr-2 
+                                    span.icon.is-small
+                                        i.fa.fa-desktop
+                                button#raisehandbutton.button.is-rounded.px-4.mr-2
+                                    span.icon.is-small
+                                        i.fa.fa-hand-paper-o
+                                button#openmoreoptions.button.is-rounded.px-4.mr-2
+                                    span.icon.is-small
+                                        i.fa.fa-ellipsis-v
+                                button#leavemeetingbutton.button.is-dark.is-danger.is-rounded.px-5
+                                    span.icon.is-small
+                                        i.fa.fa-phone(style="rotate: 135deg;font-size: 1.3rem;height: 1.3rem;")
+                            div(style="position: absolute; right: 1rem; bottom: 1.2rem;")
+                                button#chatopenbutton.button.is-rounded.px-4.mr-2(style="height: 2.2rem;")
+                                span.icon.is-small
+                                    i.fa.fa-comment(style="margin-right: 4rem; z-index: 1; margin-top: 1rem;")                           
+            script(type="module" src="/meet.js")

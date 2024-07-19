@@ -61,6 +61,11 @@ block content
                         span.icon.is-small
                             i.fa.fa-file(aria-hidden="true")
                         span Files
+                li#tab_meeting
+                    a
+                        span.icon.is-small
+                            i.fa.fa-users(aria-hidden="true")
+                        span Meeting
         #tab_stream_content
             section.hero.is-primary
                 .hero-body
@@ -155,4 +160,87 @@ block content
                             p.heading max peers
                             p.title
                                 input.input.is-normal.is-primary.max_peers(type="number", min="1", value="8")
+        #tab_meeting_content.is-hidden
+            section.hero.is-primary
+                .hero-body
+                    .grid
+                        .cell
+                            button#startmeetingbutton.button.is-large.is-black
+                                span.icon.is-large
+                                    i.fa.fa-user
+                                span Start Meeting
+                        .cell
+                            #copy_meetingurl.control.has-icons-right
+                                input#meetingurl.input.is-large.is-black(type="text", placeholder="filled with meeting url", readonly, style="cursor: pointer;")
+                                span.icon.is-medium.is-right
+                                    i.fa.fa-clipboard
+                        .cell.is-col-span-2
+                            p.subtitle Click on this button to start instant or schedule this meeting. Depending on your settings below. You receive a link for sharing with your audience.
+            div(style="overflow: auto; height: 80vh; padding: 3rem;")
+                .subtitle.mt-4 General
+                .field 
+                    label.label Meeting Name
+                    .control
+                        input.input(type="text", name="meetingname", id="meetingname", placeholder="Meeting Name")
+                .field
+                    label.label Meeting Description
+                    .control
+                        textarea.textarea(name="meetingdesc", id="meetingdesc", placeholder="Meeting Description")
+                .field 
+                    label.label Meeting Time
+                    .control
+                        label.radio
+                            input(type="radio", name="meetingtype" id="instantmeeting", value="instant", checked)
+                            |  Instant
+                        label.radio
+                            input(type="radio", name="meetingtype", id="schedulemeeting" value="schedule")
+                            |  Schedule
+                        label.label Start Date (local time)
+                    .control
+                        input.input(type="datetime-local", name="meetingdate", id="meetingdate", placeholder="Meeting Date")
+                .subtitle Options
+                .columns 
+                    .column
+                        .field
+                            .control
+                                label.checkbox
+                                    input(type="checkbox", name="voiceonly", id="voiceonly")
+                                    |  Voice Only
+                        .field 
+                            .control
+                                label.checkbox
+                                    input(type="checkbox", name="enablechat", id="enablechat" checked)
+                                    |  Enable Chat
+                        .field
+                            .control
+                                label.checkbox
+                                    input(type="checkbox", name="recording", id="recording" checked)
+                                    |  Allow Recording
+                    .column
+                        .field
+                            .control
+                                label.checkbox
+                                    input(type="checkbox", name="muted", id="muted")
+                                    |  Start Muted
+                        .field
+                            .control
+                                label.checkbox
+                                    input(type="checkbox", name="camoff", id="camoff")
+                                    |  Start Camera Off
+                        .field 
+                label.label Max Camera Resolution 
+                .control
+                    .select
+                        select(name="camres", id="camres", autocomplete="off") 
+                            option(value="4320") 4320p
+                            option(value="2160") 2160p
+                            option(value="1440") 1440p
+                            option(value="1080") 1080p
+                            option(value="720") 720p
+                            option(selected="selected" value="480") 480p
+                            option(value="360") 360p
+                            option(value="240") 240p
+                            option(value="144") 144p
+                
+
     script(type="module" src="/host.js")

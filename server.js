@@ -53,6 +53,13 @@ app.use(express.static(__dirname + "/public"));
 app.set("view engine", "pug");
 
 /**
+ * Route for a meeting
+ */
+app.get("/meet", (req, res) => {
+  res.render("meet");
+});
+
+/**
  * Route for hosting a room
  */
 app.get("/host", (req, res) => {
@@ -75,6 +82,14 @@ app.get("/view/:room", ({ params: { room } }, res) => {
 });
 
 /**
+ * Route for join a meeting room
+ * @param {string} room - The ID of the room to meet
+ */
+app.get("/meet/:room", ({ params: { room } }, res) => {
+  res.render("meet", { room });
+});
+
+/**
  * Route for sharing a room
  * @param {string} room - The ID of the room to share
  */
@@ -93,7 +108,7 @@ io.sockets.on("connection", socket => {
   socket.on("host", (slots, callback) => {
     const room = randomUUID();
     const seeders = {[socket.id]: {slots: Number(slots), peers: 0, level: 0, score: 100.0}};
-    rooms[room] = {host: socket.id, seeders: seeders, stream: false, share: {}};
+    rooms[room] = {host: socket.id, seeders: seeders, stream: false, share: {}, meeting: false, meetingSettings: {}};
 
     socket.join(room);
     callbackHandler(callback, room);
@@ -158,6 +173,10 @@ io.sockets.on("connection", socket => {
     callbackHandler(callback, {message: "no available stream slot, please try later", room});
   });
 
+  socket.on("negotiationneeded", (id) => {
+    socket.to(id).emit("negotiationneeded", socket.id);
+  });
+
   /**
    * Event handler for offering a WebRTC connection
    * @param {string} id - The ID of the recipient socket
@@ -165,6 +184,10 @@ io.sockets.on("connection", socket => {
    */
   socket.on("offer", (id, message) => {
     socket.to(id).emit("offer", socket.id, message);
+  });
+
+  socket.on("offerScreenshare", (id, message) => {
+    socket.to(id).emit("offerScreenshare", socket.id, message);
   });
 
   /**
@@ -176,6 +199,10 @@ io.sockets.on("connection", socket => {
     socket.to(id).emit("answer", socket.id, message);
   });
 
+  socket.on("answerScreenshare", (id, message) => {
+    socket.to(id).emit("answerScreenshare", socket.id, message);
+  });
+
   /**
    * Event handler for sending ICE candidate information
    * @param {string} id - The ID of the recipient socket
@@ -185,15 +212,31 @@ io.sockets.on("connection", socket => {
     socket.to(id).emit("candidate", socket.id, message);
   });
 
+  socket.on("candidateScreenshare", (id, message) => {
+    socket.to(id).emit("candidateScreenshare", socket.id, message);
+  });
+
   /**
    * Event handler for disconnecting from a room
    */
   socket.on("disconnect", () => {
     if (!rooms) return;
 
+
     Object.keys(rooms).forEach((room) => {
         const roomSeeders = rooms[room].seeders;
         const roomFiles = rooms[room].share && rooms[room].share.files;
+        const roomParticipants = rooms[room].participants;
+
+        if (roomParticipants && roomParticipants[socket.id]) {
+          delete roomParticipants[socket.id];
+          socket.to(room).emit("message", socket.id, "leave", "");
+          const hourFuture = new Date(Date.now() + 60 * 60 * 1000).getTime();
+          const meetingTime = new Date(rooms[room].meetingSettings.meetingDate).getTime();
+          if (Object.keys(roomParticipants).length === 0 && hourFuture < meetingTime) {
+            delete rooms[room];
+          }
+        }
 
         if (!roomSeeders) return;
 
@@ -279,10 +322,10 @@ io.sockets.on("connection", socket => {
   });
 
   /**
-   * Event handler for offering a file for download in a room
-   * @param {string} room - The ID of the room
-   * @param {Object} file - The file object containing name and size
-   */
+ * Event handler for offering a file for download in a room
+ * @param {string} room - The ID of the room
+ * @param {Object} file - The file object containing name and size
+ */
   socket.on("offerFile", (room, file) => {
     if (!rooms[room]) return;
 
@@ -341,6 +384,77 @@ io.sockets.on("connection", socket => {
     if (!rooms[room]) return;
 
     socket.to(host).emit("downloadFile", socket.id, file);
+  });
+
+  /**
+   * Event handler for creating a meeting room
+   * @param {string} room - The ID of the room
+   * @param {string} host - The ID of the host socketst socket
+   * @param {Object} settings - The meeting settings
+   */
+  socket.on("createMeeting", (room, host, settings) => {
+    if (!rooms[room]) return;
+    rooms[room].meeting = true;
+    rooms[room].meetingSettings = settings;
+  });
+
+  socket.on("message", (room, type, message) => {
+    socket.to(room).emit("message", socket.id, type, message);
+  });
+
+  /*socket.on("meeting", (room, callback) => {
+    if (!rooms[room] && rooms[room].meeting) return;
+    const roomData = rooms[room];
+    if (!rooms[room] && rooms[room].meeting) {
+        callbackHandler(callback, {message: "Room not found", room});
+        return;
+    }
+    socket.join(room);
+    const participants = Object.entries(rooms[room].participants);
+
+    for (const [participant, value] of participants) {
+        if (participant !== socket.id) continue;
+
+        socket.to(participant).emit("meeting", socket.id);
+        callbackHandler(callback, {message: "Client connected", room, participant: participant});
+        return;
+    }
+  });*/
+  /**
+   * Event handler for getting meeting settings
+   * @param {string} room - The ID of the room
+   * @param {Callback} callback - Callback function to be invoked with the meeting settings
+   */
+  socket.on("getMeetingSettings", (room, callback) => {
+    if (!rooms[room] || !rooms[room].meeting) {
+      callbackHandler(callback, { message: "Meeting not found", room });
+      return;
+    }
+    const settings = rooms[room].meetingSettings;
+    callbackHandler(callback, { message: "Meeting settings retrieved", room, settings });
+  });
+
+  socket.on("getParticipants", (room, callback) => {
+    if (!rooms[room] || !rooms[room].meeting) {
+      callbackHandler(callback, { message: "Meeting not found", room });
+      return;
+    }
+    const participants = rooms[room].participants;
+    callbackHandler(callback, { message: "Meeting settings retrieved", room, participants });
+  });
+  /**
+   * Event handler for joining a meeting
+   * @param {string} room - The ID of the meeting room
+   * @param {string} name - The name of the participant
+   */
+  socket.on("joinMeeting", (room, name, callback) => {
+    if (!rooms[room] || !rooms[room].meeting) return;
+    socket.join(room);
+    if (!rooms[room].participants) rooms[room].participants = {};
+    rooms[room].participants[socket.id] = {name: name, id: socket.id};
+    socket.to(room).emit("participantJoined", rooms[room].participants[socket.id]);
+    socket.to(room).emit("message", socket.id, "join", "");
+    callbackHandler(callback, { message: "meeting joined", participants: rooms[room].participants, id: socket.id });
   });
 });
 

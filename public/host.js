@@ -17,6 +17,7 @@ let stream, processedStream;
 
 document.getElementById("shareurl").value = "";
 document.getElementById("viewerurl").value = "";
+document.getElementById("meetingurl").value = "";
 
 const host = new Host(socket, config, "fileshare", document.getElementsByClassName("max_peers")[0].value);
 
@@ -26,6 +27,10 @@ function setFileShareLink() {
 
 function setStreamLink() {
   document.getElementById("viewerurl").value = window.location.origin + "/view/" + host.getRoom();
+}
+
+function setMeetingLink() {
+  document.getElementById("meetingurl").value = window.location.origin + "/meet/" + host.getRoom();
 }
 
 host.statsCallback = function(stats) {
@@ -203,6 +208,8 @@ document.getElementById("tab_files").addEventListener("click", function() {
   document.getElementById("tab_stream_content").classList.add("is-hidden");
   document.getElementById("tab_stream").classList.remove("is-active");
   document.getElementById("tab_files_content").classList.remove("is-hidden");
+  document.getElementById("tab_meeting").classList.remove("is-active");
+  document.getElementById("tab_meeting_content").classList.add("is-hidden");
  });
 
  document.getElementById("tab_stream").addEventListener("click", function() {
@@ -210,6 +217,17 @@ document.getElementById("tab_files").addEventListener("click", function() {
   document.getElementById("tab_files_content").classList.add("is-hidden");
   document.getElementById("tab_files").classList.remove("is-active");
   document.getElementById("tab_stream_content").classList.remove("is-hidden");
+  document.getElementById("tab_meeting").classList.remove("is-active");
+  document.getElementById("tab_meeting_content").classList.add("is-hidden");
+ });
+
+ document.getElementById("tab_meeting").addEventListener("click", function() {
+  document.getElementById("tab_meeting").classList.add("is-active");
+  document.getElementById("tab_meeting_content").classList.remove("is-hidden");
+  document.getElementById("tab_files").classList.remove("is-active");
+  document.getElementById("tab_stream_content").classList.add("is-hidden");
+  document.getElementById("tab_stream").classList.remove("is-active");
+  document.getElementById("tab_files_content").classList.add("is-hidden");
  });
 
  document.getElementById("copy_shareurl").addEventListener("click", function() {
@@ -219,6 +237,11 @@ document.getElementById("tab_files").addEventListener("click", function() {
 
  document.getElementById("copy_viewerurl").addEventListener("click", function() {
   navigator.clipboard.writeText(document.getElementById("viewerurl").value);
+  bulmaToast.toast({ message: "Copied to clipboard", type: "is-info", position: "bottom-left" });
+ });
+
+ document.getElementById("copy_meetingurl").addEventListener("click", function() {
+  navigator.clipboard.writeText(document.getElementById("meetingurl").value);
   bulmaToast.toast({ message: "Copied to clipboard", type: "is-info", position: "bottom-left" });
  });
 
@@ -289,4 +312,42 @@ document.getElementById("openSettings").addEventListener("click", () => {
 
 document.getElementById("saveSettings").addEventListener("click", () => {
   document.getElementById("startStreaming").click();
+});
+
+document.getElementById("startmeetingbutton").addEventListener("click", () => {
+  setMeetingLink();
+
+  const meetingName = document.getElementById("meetingname").value;
+  const meetingDescription = document.getElementById("meetingdesc").value;
+  const instantMeeting = document.getElementById("instantmeeting").checked;
+  const scheduledMeeting = document.getElementById("schedulemeeting").checked;
+  const voiceOnly = document.getElementById("voiceonly").checked;
+  const enableChat = document.getElementById("enablechat").checked;
+  //const enableSharing = document.getElementById("enablesharing").checked;
+  const enableRecording = document.getElementById("recording").checked;
+  const muted = document.getElementById("muted").checked;
+  const cameraOff = document.getElementById("camoff").checked;
+  const maxCamResolution = document.getElementById("camres").value;
+
+  let meetingDate = document.getElementById("meetingdate").value;
+
+  if (meetingDate === "" || instantMeeting) meetingDate = new Date().getTime();
+  if (meetingDate !== "" && scheduledMeeting) meetingDate = new Date(meetingDate).getTime();
+
+
+  const settings = {
+    meetingName: meetingName,
+    meetingDescription: meetingDescription,
+    instantMeeting: instantMeeting,
+    scheduledMeeting: scheduledMeeting,
+    meetingDate: meetingDate,
+    voiceOnly: voiceOnly,
+    enableChat: enableChat,
+    //enableSharing: enableSharing,
+    enableRecording: enableRecording,
+    muted: muted,
+    cameraOff: cameraOff,
+    maxCamResolution: maxCamResolution
+  };
+  host.createMeeting(settings);
 });
