@@ -44,8 +44,6 @@ const adjustChildSizes = () => {
   const divHeight = flexMeeting.offsetHeight;
 
   const windowWidth = window.innerWidth;
-  const windowHeight = window.innerHeight;
-
 
   // Determine the smallest width and height among children
   const children = Array.from(flexMeeting.children);
@@ -90,7 +88,6 @@ window.addEventListener('resize', adjustChildSizes);
 meet.callbackMessage = function(id, name, type, message) {
   if (id === meet.id) return;
   const divAttendee = document.querySelector(`[data-id="${id}"]`);
-  const divAttendeeSpotlight = document.querySelector(`[data-id="${id}-screenshare"]`);
   const muteSpan = document.getElementById(`${id}-mute`);
   const handSpan = document.getElementById(`${id}-hand`);
   const chatContent = document.getElementById('chatcontent');
@@ -509,7 +506,6 @@ function buildLayout() {
 }
 
 function getParticipants(res) {
-  const participants = res.participants;
   bulmaToast.toast({ message: res.message, type: "is-info", position: "bottom-left"});
   buildLayout();
   document.getElementById("joinmeetingmodal").classList.remove("is-active");
@@ -556,7 +552,7 @@ function stopTestSound() {
 }
 function getUserMedia(audio = true, video = true) {
   navigator.mediaDevices.getUserMedia({audio: audio, video: video})
-  .then(stream => {
+  .then(() => {
     let startDate = new Date(settings.meetingDate);
     document.getElementById("meetingdate").innerText = startDate.toUTCString();
     if (startDate > new Date(new Date().getTime() + 30 * 60000)) {
@@ -604,23 +600,23 @@ function getUserMedia(audio = true, video = true) {
   });
 }
 
-selectCamera.addEventListener('change', event => {
+selectCamera.addEventListener('change', () => {
     selectPostCamera.value = selectCamera.value;
     setConstraints(selectCamera.value, selectMicrophone.value, selectSoundOutput.value, !settings.voiceOnly);
 });
-selectPostCamera.addEventListener('change', async event => {
+selectPostCamera.addEventListener('change', async () => {
   await setConstraints(selectPostCamera.value, selectPostMicrophone.value, selectSoundOutput.value, !settings.voiceOnly);
   selectPostCamera.parentElement.parentElement.classList.add('is-hidden');
   selectPostCamera.parentElement.parentElement.parentElement.classList.add('is-hidden');
 });
-selectSoundOutput.addEventListener('change', event => {
+selectSoundOutput.addEventListener('change', () => {
     setConstraints(selectCamera.value, selectMicrophone.value, selectSoundOutput.value, !settings.voiceOnly);
 });
-selectMicrophone.addEventListener('change', event => {
+selectMicrophone.addEventListener('change', () => {
     selectMicrophone.value = selectPostMicrophone.value;
     setConstraints(selectCamera.value, selectMicrophone.value, selectSoundOutput.value, !settings.voiceOnly);
 });
-selectPostMicrophone.addEventListener('change', async event => {
+selectPostMicrophone.addEventListener('change', async () => {
   await setConstraints(selectPostCamera.value, selectPostMicrophone.value, selectSoundOutput.value, !settings.voiceOnly);
   selectPostMicrophone.parentElement.parentElement.classList.add('is-hidden');
   selectPostMicrophone.parentElement.parentElement.parentElement.classList.add('is-hidden');
@@ -642,7 +638,11 @@ async function setConstraints(camera, microphone, soundoutput, video = true) {
       if ("setSinkId" in AudioContext.prototype && soundoutput !== 'default') {
         await audioContext.setSinkId(soundoutput);
       }
-      navigator.mediaDevices.getUserMedia(newConstraints).then(gotStream).catch(error => { console.error('Error :', error); });
+      navigator.mediaDevices.getUserMedia(newConstraints)
+      .then(gotStream)
+      .catch(error => {
+         console.error('Error :', error);
+      });
 }
 
 function gotStream(stream) {
@@ -656,7 +656,7 @@ function gotStream(stream) {
     meet.setStream(stream);
     video.srcObject = stream;
     video.muted = true;
-    video.onloadedmetadata = function(e) {
+    video.onloadedmetadata = function() {
         video.play();
     };
 }
@@ -1078,7 +1078,7 @@ document.getElementById('opencaptionedge').addEventListener('click', event => {
   document.getElementById('captionedge').classList.remove('is-hidden');
 });
 
-document.getElementById('openmoreoptions').addEventListener('click', event => {
+document.getElementById('openmoreoptions').addEventListener('click', () => {
   const moreoptions = document.getElementById('moreoptions');
   moreoptions.classList.add('is-active');
 });
