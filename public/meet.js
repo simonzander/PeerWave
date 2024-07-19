@@ -13,15 +13,38 @@ const config = {
     // },
   ],
 };
+
+let screenShareStream;
+
 const participants = {};
 
 const meet = new Meet(socket, config, document.getElementById("room").value);
 
+meet.toastCallback = function(message, type) {
+  switch (type) {
+    case "error":
+      bulmaToast.toast({ message: message, type: "is-danger", position: "bottom-left"});
+      break;
+    case "success":
+      bulmaToast.toast({ message: message, type: "is-success", position: "bottom-left" });
+      break;
+    case "info":
+      bulmaToast.toast({ message: message, type: "is-info", position: "bottom-left" });
+      break;
+    default:
+      bulmaToast.toast({ message: message, type: "is-primary", position: "bottom-left" });
+  }
+};
+
 const flexMeeting = document.getElementById('attendees');
 
 const adjustChildSizes = () => {
+
   const divWidth = flexMeeting.offsetWidth;
   const divHeight = flexMeeting.offsetHeight;
+
+  const windowWidth = window.innerWidth;
+  const windowHeight = window.innerHeight;
 
 
   // Determine the smallest width and height among children
@@ -30,45 +53,49 @@ const adjustChildSizes = () => {
 
   children.forEach(child => {
         switch (true) {
-          case childrenCount === 1:
+          case childrenCount === 1 && windowWidth === divWidth:
             child.style.width = `calc(${divWidth}px - 64px)`;
             child.style.height = `calc(${divHeight}px - 64px)`;
             break;
-          case childrenCount === 2:
+          case childrenCount === 2 && windowWidth === divWidth:
             child.style.width = `calc(${divWidth / 2}px - 64px)`;
             child.style.height = `calc(${divHeight}px - 64px)`;
             break;
-          case childrenCount === 3 || childrenCount === 4:
+          case (childrenCount === 3 || childrenCount === 4) && windowWidth === divWidth:
             child.style.width = `calc(${divWidth / 2}px - 64px)`;
             child.style.height = `calc(${divHeight / 2}px - 64px)`;
             break;
-          case childrenCount >= 5 && childrenCount <= 12 :
+          case childrenCount >= 5 && childrenCount <= 12 && windowWidth === divWidth:
             child.style.width = `calc(${divWidth / 4}px - 64px)`;
             child.style.height = `calc(${divHeight / 3}px - 64px)`;
+            break;
+          case childrenCount <= 3 && windowWidth !== divWidth:
+            child.style.width = `calc(${divWidth}px - 64px)`;
+            child.style.height = `calc(${divHeight / 3}px - 64px)`;
+            break;
+          case childrenCount >= 4 && windowWidth !== divWidth:
+            child.style.width = `calc(${divWidth / 2}px - 64px)`;
+            child.style.height = `calc(${divHeight / 4}px - 64px)`;
             break;
           default:
             child.style.width = `calc(${divWidth / 4}px - 64px)`;
             child.style.height = `calc(${divHeight / 4}px - 64px)`;
             break;
         }
-        
   });
-
-  // Set all child elements to have this width and height
-  /*Array.from(flexMeeting.children).forEach(child => {
-      child.style.width = `${minWidth}px`;
-      child.style.height = `${minHeight}px`;
-  });*/
 };
+
+window.addEventListener('resize', adjustChildSizes);
 
 meet.callbackMessage = function(id, name, type, message) {
   if (id === meet.id) return;
   const divAttendee = document.querySelector(`[data-id="${id}"]`);
+  const divAttendeeSpotlight = document.querySelector(`[data-id="${id}-screenshare"]`);
   const muteSpan = document.getElementById(`${id}-mute`);
   const handSpan = document.getElementById(`${id}-hand`);
   const chatContent = document.getElementById('chatcontent');
   const messageElement = document.createElement('p');
-  const participantColor = participants[id].color;
+  const participantColor = participants[id].color || colors[Math.floor(Math.random() * colors.length)];
   const currentTime = new Date().toLocaleTimeString();
 
   switch (type) {
@@ -104,6 +131,7 @@ meet.callbackMessage = function(id, name, type, message) {
       break;
     case 'leave':
       // Handle leave message
+      participants[id].hideScreenShare();
       delete participants[id];
       divAttendee.remove();
       adjustChildSizes();
@@ -112,8 +140,15 @@ meet.callbackMessage = function(id, name, type, message) {
       bulmaToast.toast({ message: `${name} joined the meeting`, type: "is-info", position: "bottom-left"});
       break;
     case 'screenshare':
-      console.log("SCREEN SHARE ON", message);
-      participants[id].screenshareId = message;
+      if (meet.screenShareStream) {
+        screenShareStream.getTracks().forEach(track => track.stop());
+        screenShareStream = null;
+        meet.sendMessage('screenshareoff', me.screenshareId);
+        me.hideScreenShare();
+        meet.setScreenShareStream(null);
+        screenShareButton.click();
+      }
+      participants[id].updateScreenShare(message);
       break;
     case 'screenshareoff':
       participants[id].screenshareId = null;
@@ -121,8 +156,7 @@ meet.callbackMessage = function(id, name, type, message) {
       adjustChildSizes();
       break;
     case 'mediaDevice':
-      console.log("MEDIA DEVICE", message);
-      participants[id].mediaDeviceId = message;
+      participants[id].updateMediaDevice(message);
       break;
   }
 };
@@ -165,6 +199,7 @@ const chatInput = document.getElementById('chatinput');
 const chatClose = document.getElementById('closechat');
 const chatOpen = document.getElementById('chatopenbutton');
 const openEmoji = document.getElementById('openemoji');
+const openSubtitle = document.getElementById('opensubtitle');
 
 const openEmojiSmile = document.getElementById('openemojismile');
 const openEmojiCat = document.getElementById('openemojicat');
@@ -175,89 +210,86 @@ const openEmojiAnimals = document.getElementById('openemojianimals');
   // Create a class for each participant
   class Participant {
     constructor(participant, muted = false) {
-      /*if (!(stream instanceof MediaStream)) {
-        console.error("stream is not an instance of MediaStream", stream);
-        return; // Optionally, handle this case more gracefully
-      }*/
+
       this.name = participant.name;
       this.id = participant.id;
       this.streams = participant.streams;
+      this.screenshareStreams = participant.screenshareStreams || [];
+      this.screenshareTracks = participant.screenshareTracks || [];
       this.tracks = participant.tracks;
       this.peerConnection = participant.peerConnection;
 
       this.mediaDeviceId = this.streams[0].id;
+      if (participant.screenshareStreams !== undefined) {
+        this.screenshareId = participant.screenshareStreams.length > 0 ? participant.screenshareStreams[0].id : null;
+      }
 
       this.muted = muted;
-
-      //this.streams = [];
-
-      //this.streams.push(stream);
-
-      //console.log(stream, stream.getVideoTracks(), stream.getAudioTracks(), stream.getTracks());
-
-      /*Object.values(stream).forEach(stream => {
-        this.pushStream(stream);
-      });*/
-
-      //console.log("STREAMS", this.streams, stream.getVideoTracks());
 
       this.hasVideo = this.streams[0].getVideoTracks().length > 0;
       this.hasAudio = this.streams[0].getAudioTracks().length > 0;
 
       this.color = colors[Math.floor(Math.random() * colors.length)];
-      /*streams[0].onaddtrack = (event) => {
-        console.log("TRACK ADDED", event, event.track);
-      };*/
-      //this.hasVideo = this.peerConnection.getReceivers().find(receiver => receiver.track.kind === 'video');
-      //this.hasAudio = this.peerConnection.getReceivers().find(receiver => receiver.track.kind === 'audio');
+
+    }
+
+    updateScreenShare(streamId) {
+      this.screenshareId = streamId;
+
+      if (this.screenshareStreams.length > 0) {
+        this.showScreenShare(this.screenshareStreams.length - 1);
+      }
+    }
+
+    updateMediaDevice(streamId) {
+      this.mediaDeviceId = streamId;
+
+      if (this.streams.length > 0) {
+        this.hasVideo = this.streams[this.streams.length - 1].getVideoTracks().length > 0;
+        this.hasAudio = this.streams[this.streams.length - 1].getAudioTracks().length > 0;
+        if (this.hasVideo) {
+          this.cameraOn(this.streams.length - 1);
+        } else {
+          this.cameraOff(this.streams.length - 1);
+        }
+      }
     }
 
     update(participant) {
       this.name = participant.name;
       this.id = participant.id;
       this.streams = participant.streams;
+
       this.tracks = participant.tracks;
       this.peerConnection = participant.peerConnection;
+      this.pcScreenshare = participant.pcScreenshare;
+      this.screenshareStreams = participant.screenshareStreams;
+      this.screenshareTracks = participant.screenshareTracks;
 
-      let indexMediaDevice = this.streams.findIndex(s => s.id === this.mediaDeviceId);
-      let indexScreenShare = this.streams.findIndex(s => s.id === this.screenshareId);
-
-      this.hasVideo = this.streams[indexMediaDevice].getVideoTracks().length > 0;
-      this.hasAudio = this.streams[indexMediaDevice].getAudioTracks().length > 0;
-
-      console.log("INDEXES", indexMediaDevice, indexScreenShare, this.screenshareId, this.streams);
-      if (indexScreenShare !== -1) {
-        this.showScreenShare(indexScreenShare);
+      if (this.screenshareStreams.length > 0) {
+        this.screenshareId = this.screenshareStreams[this.screenshareStreams.length - 1].id;
       }
 
-      if (indexMediaDevice !== -1) {
+      if (this.streams.length > 0) {
+        this.mediaDeviceId = this.streams[this.streams.length - 1].id;
+      }
+
+      if (this.streams.length > 0) {
+        this.hasVideo = this.streams[this.streams.length - 1].getVideoTracks().length > 0;
+        this.hasAudio = this.streams[this.streams.length - 1].getAudioTracks().length > 0;
         if (this.hasVideo) {
-          this.cameraOn(indexMediaDevice);
+          this.cameraOn(this.streams.length - 1);
         } else {
-          this.cameraOff(indexMediaDevice);
+          this.cameraOff(this.streams.length - 1);
         }
+      } else {
+        this.hasVideo = false;
+        this.hasAudio = false;
       }
 
-      console.log("PARTICIPANT CLASS STREAMS", this.streams);
-    }
-
-    pushStream(stream) {
-      this.streams.push(stream);
-      console.log(stream.getTracks());
-      /*if (!this.streams.some(s => s.id === stream.id)) {
-        this.streams.push(stream);
+      if (this.screenshareStreams.length > 0) {
+        this.showScreenShare(this.screenshareStreams.length - 1);
       }
-      for (let i = 0; i < this.streams.length; i++) {
-        if (this.streams[i].id === stream.id) {
-          this.streams[i] = stream;
-        }
-      }*/
-      const indexMediaDevice = this.streams.findIndex(s => s.id === this.mediaDeviceId);
-      const indexScreenShare = this.streams.findIndex(s => s.id === this.screenshareId);
-
-      console.log("INDEXES", indexMediaDevice, indexScreenShare);
-      if (indexScreenShare !== -1) this.showScreenShare(indexScreenShare);
-      if (indexMediaDevice !== -1) this.cameraOn(indexMediaDevice);
     }
 
     cameraOff(arrayId = 0) {
@@ -274,18 +306,18 @@ const openEmojiAnimals = document.getElementById('openemojianimals');
       audioElement.srcObject = this.streams[arrayId];
       audioElement.autoplay = true;
       audioElement.muted = this.muted;
-      
+
       divAttendee.innerHTML = `<span style="background-color: ${this.color}"><p class="p-center">${this.name.charAt(0)}</p></span>`;
       divAttendee.appendChild(audioElement);
       div.appendChild(divAttendee);
 
-      /*const divName = document.createElement("div");
+      const divName = document.createElement("div");
       divName.classList.add("attendee-name");
-      divName.innerHTML = `${this.name}`;
-      divAttendee.appendChild(divName);*/
+      divName.innerHTML = `<span id="${this.id}-mute"></span><span id="${this.id}-hand"></span><span>${this.name}</span>`;
+      divAttendee.appendChild(divName);
     }
 
-    showScreenShare(index = 1) {
+    showScreenShare(index = 0) {
       const div = document.getElementById("spotlight");
       const attendees = document.getElementById("attendees");
       div.style.display = "block";
@@ -296,8 +328,7 @@ const openEmojiAnimals = document.getElementById('openemojianimals');
       divSpotlight.setAttribute("data-id", this.id + "-screenshare");
       const videoElement = document.createElement("video");
       videoElement.muted = true;
-      console.log(this.streams[1].getVideoTracks(), meet.peerConnections);
-      videoElement.srcObject = this.streams[index];
+      videoElement.srcObject = this.screenshareStreams[index];
       videoElement.autoplay = true;
       divSpotlight.appendChild(videoElement);
       div.appendChild(divSpotlight);
@@ -338,130 +369,52 @@ const openEmojiAnimals = document.getElementById('openemojianimals');
     }
 
     addToDOM() {
-      const div = document.getElementById("attendees");
-      let divAttendee = div.querySelector(`[data-id="${this.id}"]`);
-      if (!divAttendee) {
-        divAttendee = document.createElement("div");
-        divAttendee.setAttribute("data-id", this.id);
-      }
-      divAttendee.innerHTML = ``;
-
-     // console.log("STREAMS", this.streams[0].getVideoTracks(), this.streams[0].getAudioTracks());
-
      if (this.hasVideo) {
-      divAttendee.classList.remove('attendee-novideo');
-      divAttendee.classList.add('attendee-video');
-      const videoElement = document.createElement("video");
-      videoElement.muted = this.muted;
-      videoElement.srcObject = this.streams[0];
-      videoElement.autoplay = true;
-      divAttendee.appendChild(videoElement);
+      this.cameraOn();
      }
      if (this.hasAudio && !this.hasVideo) {
-      divAttendee.classList.add('attendee-novideo');
-      divAttendee.classList.remove('attendee-video');
-      const audioElement = document.createElement("audio");
-      //audioElement.srcObject = this.streams[0];
-      audioElement.autoplay = true;
-      audioElement.muted = this.muted;
-      divAttendee.innerHTML = `<span><p class="p-center">${this.name.charAt(0)}</p></span>`;
-      divAttendee.appendChild(audioElement);
+      this.cameraOff();
      }
 
-     const divName = document.createElement("div");
-     divName.classList.add("attendee-name");
-     divName.innerHTML = `<span id="${this.id}-mute"></span><span id="${this.id}-hand"></span><span>${this.name}</span>`;
-     divAttendee.appendChild(divName);
-      
-      /*const audioCtx = new AudioContext();
-      const source = audioCtx.createMediaStreamSource(this.streams[0]);
+      const div = document.getElementById("attendees");
+      const divAttendee = div.querySelector(`[data-id="${this.id}"]`);
+
+      const audioCtx = new AudioContext();
+      const source = audioCtx.createMediaStreamSource(this.streams[this.streams.length - 1]);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
 
       const bufferLength = analyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
 
-      source.connect(analyser);*/
-      //analyser.connect(audioCtx.destination);
+      source.connect(analyser);
 
-      /*const canvas = document.getElementById("canvastest");
-      const canvasCtx = canvas.getContext("2d");*/
-
-      /*const visualize = async () => {
+      const visualize = async () => {
         if (divAttendee.classList.contains("attendee-video")) divAttendee.classList.remove("speak-animation-video");
         if (divAttendee.classList.contains("attendee-novideo")) divAttendee.firstChild.classList.remove("speak-animation-novideo");
 
         requestAnimationFrame(visualize);
 
-        /*canvasCtx.fillStyle = "rgb(0, 0, 0)";
-        canvasCtx.fillRect(0, 0, 250, 250);*/
+       analyser.getByteFrequencyData(dataArray);
 
-       /* analyser.getByteFrequencyData(dataArray);
-
-        /*const barWidth = (250 / bufferLength) * 2.5;
-        let x = 0;*/
-
-       /* for (let i = 0; i < bufferLength; i++) {
-          /*const barHeight = dataArray[i];
-
-          canvasCtx.fillStyle = "rgb(" + (barHeight + 100) + ",50,50)";
-          canvasCtx.fillRect(
-            x,
-            250 - barHeight / 2,
-            barWidth,
-            barHeight / 2
-          );
-
-          x += barWidth + 1;*/
-
-         /* if (dataArray[i] > 128 && divAttendee.classList.contains("attendee-video")) divAttendee.classList.add("speak-animation-video");
+        for (let i = 0; i < bufferLength; i++) {
+          if (dataArray[i] > 128 && divAttendee.classList.contains("attendee-video")) divAttendee.classList.add("speak-animation-video");
           if (dataArray[i] > 128 && divAttendee.classList.contains("attendee-novideo")) divAttendee.firstChild.classList.add("speak-animation-novideo");
-
-        
         }
+      };
 
-      }; */
+      visualize();
 
-      //visualize();
-      
-      /*if (this.hasVideo) {
-        const videoElement = document.createElement("video");
-        const videoTrack = this.peerConnection.getReceivers().find(receiver => receiver.track.kind === 'video').track;
-        videoElement.srcObject = videoTrack;
-        videoElement.autoplay = true;
-        divAttendee.appendChild(videoElement);
-      }*/
-      /*if (this.hasAudio && !this.hasVideo) {
-        const audioElement = document.createElement("audio");
-        const audioTrack = this.peerConnection.getReceivers().find(receiver => receiver.track.kind === 'audio').track;
-        const audioStream = new MediaStream([audi  if (Object.prototype.hasOwnProperty.call(participants, participant.id)) {eam;
-        audioElement.autoplay = true;
-        divAttendee.innerHTML = `
-        <span><p class="p-center">${this.name.charAt(0)}</p></span>
-      `;
-        divAttendee.appendChild(audioElement);
-      }*/
-      div.appendChild(divAttendee);
     }
   }
 
 meet.callbackParticipantJoined = function(participant) {
-  console.log("PARTICIPANT JOINED", participant);
+
+  if (videoButton.classList.contains('is-disabled')) meet.sendMessage("camoff", meet.stream.id);
+  if (audioButton.classList.contains('is-disabled')) meet.sendMessage("mute", meet.stream.id);
+
   if (Object.prototype.hasOwnProperty.call(participants, participant.id)) {
     participants[participant.id].update(participant);
-    //participants[participant.id].pushStream(stream);
-    //participants[participant.id].streams.push(streams[0]);
-    /*console.log("got new stream", streams, typeof streams);
-    streams.forEach(stream => {
-      console.log(stream.getVideoTracks());
-      if (!participants[participant.id].streams.some(s => s.id === stream.id)) {
-        participants[participant.id].pushStream(stream);
-      }
-
-    });*/
-    /*if (participants[participant.id].streams[0].id !== streams[0].id) {
-      participants[participant.id].showScreenShare(streams[0]);
-    }*/
   } else {
     // Create a new Participant instance and add it to the DOM
     participants[participant.id] = new Participant(participant);
@@ -495,9 +448,23 @@ function getMeetingSettings(res) {
     return;
   }
   settings = res.settings;
-  console.log(new Date(settings.meetingDate).toUTCString());
   document.getElementById("meetingname").innerText = settings.meetingName;
   document.getElementById("meetingdescription").innerText = settings.meetingDescription;
+  document.getElementById("moremeetingname").innerText = settings.meetingName;
+  document.getElementById("moremeetingdescription").innerText = settings.meetingDescription;
+
+  const url = window.location.href;
+  const meetingid = url.substring(url.lastIndexOf('/') + 1);
+
+  document.getElementById("moremeetingid").innerText = meetingid;
+  document.getElementById("moremeetinglink").innerText = url;
+
+  if (!settings.enableChat) {
+    document.getElementById("chatopenbutton").remove();
+    document.getElementById("chat").remove();
+  }
+
+
   getUserMedia(true, !settings.voiceOnly);
   if (settings.voiceOnly) {
     videoButton.classList.add("is-disabled");
@@ -519,28 +486,26 @@ function buildLayout() {
   me.mediaDeviceId = meet.stream.id;
   me.screenshareId = null;
 
-  if (!me.hasAudio) {
+  if (!me.hasAudio || preAudioButton.classList.contains("is-disabled")) {
     audioButton.classList.add("is-disabled");
+    me.muted = true;
+    meet.stream.getAudioTracks().forEach(track => {
+      track.enabled = !track.enabled;
+    });
+    meet.sendMessage("mute", meet.stream.id);
   } else {
     audioButton.classList.remove("is-disabled");
   }
-  if (!me.hasVideo) {
+  if (!me.hasVideo || preVideoButton.classList.contains("is-disabled")) {
     videoButton.classList.add("is-disabled");
+    me.cameraOff();
+    meet.sendMessage("camoff", meet.stream.id);
   } else {
     videoButton.classList.remove("is-disabled");
   }
 
-
-  /*Object.entries(participants).forEach(([id, participant]) => {
-    console.log(participant);
-    const divAttendee = document.createElement("div");
-    divAttendee.classList.add("attendee-novideo");
-    divAttendee.setAttribute("data-id", id);
-    divAttendee.innerHTML = `
-      <span><p class="p-center">${participant.name.charAt(0)}</p></span>
-    `;
-    div.appendChild(divAttendee);
-  });*/
+  if (settings.muted) preAudioButton.click();
+  if (settings.cameraOff) preVideoButton.click();
 }
 
 function getParticipants(res) {
@@ -635,7 +600,7 @@ function getUserMedia(audio = true, video = true) {
     });
   })
   .catch(error => {
-    console.log('Error :', error);
+    console.error('Error :', error);
   });
 }
 
@@ -647,7 +612,6 @@ selectPostCamera.addEventListener('change', async event => {
   await setConstraints(selectPostCamera.value, selectPostMicrophone.value, selectSoundOutput.value, !settings.voiceOnly);
   selectPostCamera.parentElement.parentElement.classList.add('is-hidden');
   selectPostCamera.parentElement.parentElement.parentElement.classList.add('is-hidden');
-  //meet.join(document.getElementById("name").value, getParticipants);
 });
 selectSoundOutput.addEventListener('change', event => {
     setConstraints(selectCamera.value, selectMicrophone.value, selectSoundOutput.value, !settings.voiceOnly);
@@ -660,7 +624,6 @@ selectPostMicrophone.addEventListener('change', async event => {
   await setConstraints(selectPostCamera.value, selectPostMicrophone.value, selectSoundOutput.value, !settings.voiceOnly);
   selectPostMicrophone.parentElement.parentElement.classList.add('is-hidden');
   selectPostMicrophone.parentElement.parentElement.parentElement.classList.add('is-hidden');
-  //meet.join(document.getElementById("name").value, getParticipants);
 });
 
 async function setConstraints(camera, microphone, soundoutput, video = true) {
@@ -825,7 +788,6 @@ preAudioButton.addEventListener('click', () => {
 });
 
 leaveMeetingButton.addEventListener('click', () => {
-  //meet.leave();
   window.location.reload();
 });
 
@@ -980,7 +942,7 @@ screenShareButton.addEventListener('click', async () => {
     screenShareButton.classList.remove('is-warning');
     if (meet.screenShareStream) {
       me.screenshareId = null;
-      me.update({name: meet.name, id: meet.id, streams: [meet.stream], tracks: meet.stream.getTracks()});
+      me.update({name: meet.name, id: meet.id, streams: [meet.stream], screenshareStreams: [], tracks: meet.stream.getTracks() , screenshareTracks: []});
       me.hideScreenShare();
       meet.screenShareStream.getTracks().forEach(track => track.stop());
       meet.sendMessage('screenshareoff', me.screenshareId);
@@ -988,7 +950,7 @@ screenShareButton.addEventListener('click', async () => {
     }
   } else {
     screenShareButton.classList.add('is-warning');
-    const screenShareStream = await navigator.mediaDevices.getDisplayMedia({
+    screenShareStream = await navigator.mediaDevices.getDisplayMedia({
       video: {
         displaySurface: "browser",
       },
@@ -1000,18 +962,18 @@ screenShareButton.addEventListener('click', async () => {
       monitorTypeSurfaces: "include",
     });
     me.screenshareId = screenShareStream.id;
-    me.update({name: meet.name, id: meet.id, streams: [meet.stream, screenShareStream], tracks: [...meet.stream.getTracks(), ...screenShareStream.getTracks()]});
+    me.update({name: meet.name, id: meet.id, streams: [meet.stream], screenshareStreams: [screenShareStream], tracks: meet.stream.getTracks(), screenshareTracks: screenShareStream.getTracks()});
     meet.setScreenShareStream(screenShareStream);
+    meet.sendMessage('screenshare', me.screenshareId);
     screenShareStream.getVideoTracks()[0].addEventListener('ended', () => {
       me.screenshareId = null;
-      me.update({name: meet.name, id: meet.id, streams: [meet.stream], tracks: meet.stream.getTracks()});
+      me.update({name: meet.name, id: meet.id, streams: [meet.stream], screenshareStreams: [],  tracks: meet.stream.getTracks(), screenshareTracks: []});
       me.hideScreenShare();
       meet.screenShareStream.getTracks().forEach(track => track.stop());
       screenShareButton.classList.remove('is-warning');
       meet.sendMessage('screenshareoff', me.screenshareId);
       // Handle the stop action here, e.g., clean up or UI update
     });
-    meet.join(document.getElementById("name").value, getParticipants);
   }
 });
 
@@ -1024,4 +986,99 @@ nameInput.addEventListener('input', () => {
       }
     }
     if (nameInput.value === "") document.getElementById("joinmeeting").setAttribute("disabled", "disabled");
+});
+
+openSubtitle.addEventListener('click', () => {
+  const subtitle = document.getElementById('subtitlemodal');
+    subtitle.classList.add('is-active');
+});
+
+document.getElementById('closesubtitlemodal').addEventListener('click', () => {
+  const subtitle = document.getElementById('subtitlemodal');
+  subtitle.classList.remove('is-active');
+});
+
+document.getElementById('closemoreoptions').addEventListener('click', () => {
+  const subtitle = document.getElementById('moreoptions');
+  subtitle.classList.remove('is-active');
+});
+
+document.getElementById('opencaptionwindows').addEventListener('click', event => {
+  const opencaption = document.getElementById('opencaption');
+  Array.from(opencaption.children).forEach(li => {
+    li.classList.remove('is-active');
+  });
+  event.target.parentElement.classList.add('is-active');
+
+  const captionDescElements = document.querySelectorAll('.captiondesc');
+  captionDescElements.forEach(element => {
+    element.classList.add('is-hidden');
+  });
+
+  document.getElementById('captionwindows').classList.remove('is-hidden');
+});
+
+document.getElementById('opencaptionchrome').addEventListener('click', event => {
+  const opencaption = document.getElementById('opencaption');
+  Array.from(opencaption.children).forEach(li => {
+    li.classList.remove('is-active');
+  });
+  event.target.parentElement.classList.add('is-active');
+
+  const captionDescElements = document.querySelectorAll('.captiondesc');
+  captionDescElements.forEach(element => {
+    element.classList.add('is-hidden');
+  });
+
+  document.getElementById('captionchrome').classList.remove('is-hidden');
+});
+
+document.getElementById('opencaptionsafari').addEventListener('click', event => {
+  const opencaption = document.getElementById('opencaption');
+  Array.from(opencaption.children).forEach(li => {
+    li.classList.remove('is-active');
+  });
+  event.target.parentElement.classList.add('is-active');
+
+  const captionDescElements = document.querySelectorAll('.captiondesc');
+  captionDescElements.forEach(element => {
+    element.classList.add('is-hidden');
+  });
+
+  document.getElementById('captionsafari').classList.remove('is-hidden');
+});
+
+document.getElementById('opencaptionfirefox').addEventListener('click', event => {
+  const opencaption = document.getElementById('opencaption');
+  Array.from(opencaption.children).forEach(li => {
+    li.classList.remove('is-active');
+  });
+  event.target.parentElement.classList.add('is-active');
+
+  const captionDescElements = document.querySelectorAll('.captiondesc');
+  captionDescElements.forEach(element => {
+    element.classList.add('is-hidden');
+  });
+
+  document.getElementById('captionfirefox').classList.remove('is-hidden');
+});
+
+document.getElementById('opencaptionedge').addEventListener('click', event => {
+  const opencaption = document.getElementById('opencaption');
+  Array.from(opencaption.children).forEach(li => {
+    li.classList.remove('is-active');
+  });
+  event.target.parentElement.classList.add('is-active');
+
+  const captionDescElements = document.querySelectorAll('.captiondesc');
+  captionDescElements.forEach(element => {
+    element.classList.add('is-hidden');
+  });
+
+  document.getElementById('captionedge').classList.remove('is-hidden');
+});
+
+document.getElementById('openmoreoptions').addEventListener('click', event => {
+  const moreoptions = document.getElementById('moreoptions');
+  moreoptions.classList.add('is-active');
 });

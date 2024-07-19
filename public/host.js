@@ -17,6 +17,7 @@ let stream, processedStream;
 
 document.getElementById("shareurl").value = "";
 document.getElementById("viewerurl").value = "";
+document.getElementById("meetingurl").value = "";
 
 const host = new Host(socket, config, "fileshare", document.getElementsByClassName("max_peers")[0].value);
 
@@ -322,7 +323,7 @@ document.getElementById("startmeetingbutton").addEventListener("click", () => {
   const scheduledMeeting = document.getElementById("schedulemeeting").checked;
   const voiceOnly = document.getElementById("voiceonly").checked;
   const enableChat = document.getElementById("enablechat").checked;
-  const enableSharing = document.getElementById("enablesharing").checked;
+  //const enableSharing = document.getElementById("enablesharing").checked;
   const enableRecording = document.getElementById("recording").checked;
   const muted = document.getElementById("muted").checked;
   const cameraOff = document.getElementById("camoff").checked;
@@ -342,7 +343,7 @@ document.getElementById("startmeetingbutton").addEventListener("click", () => {
     meetingDate: meetingDate,
     voiceOnly: voiceOnly,
     enableChat: enableChat,
-    enableSharing: enableSharing,
+    //enableSharing: enableSharing,
     enableRecording: enableRecording,
     muted: muted,
     cameraOff: cameraOff,

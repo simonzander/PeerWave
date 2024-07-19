@@ -173,6 +173,10 @@ io.sockets.on("connection", socket => {
     callbackHandler(callback, {message: "no available stream slot, please try later", room});
   });
 
+  socket.on("negotiationneeded", (id) => {
+    socket.to(id).emit("negotiationneeded", socket.id);
+  });
+
   /**
    * Event handler for offering a WebRTC connection
    * @param {string} id - The ID of the recipient socket
@@ -180,6 +184,10 @@ io.sockets.on("connection", socket => {
    */
   socket.on("offer", (id, message) => {
     socket.to(id).emit("offer", socket.id, message);
+  });
+
+  socket.on("offerScreenshare", (id, message) => {
+    socket.to(id).emit("offerScreenshare", socket.id, message);
   });
 
   /**
@@ -191,6 +199,10 @@ io.sockets.on("connection", socket => {
     socket.to(id).emit("answer", socket.id, message);
   });
 
+  socket.on("answerScreenshare", (id, message) => {
+    socket.to(id).emit("answerScreenshare", socket.id, message);
+  });
+
   /**
    * Event handler for sending ICE candidate information
    * @param {string} id - The ID of the recipient socket
@@ -198,6 +210,10 @@ io.sockets.on("connection", socket => {
    */
   socket.on("candidate", (id, message) => {
     socket.to(id).emit("candidate", socket.id, message);
+  });
+
+  socket.on("candidateScreenshare", (id, message) => {
+    socket.to(id).emit("candidateScreenshare", socket.id, message);
   });
 
   /**

@@ -299,6 +299,76 @@ html
                         span#chatbutton.icon.is-small.is-right
                             i.fa.fa-paper-plane
         input#room(type="hidden", value=room)
+        #moreoptions.modal 
+            .modal-background 
+            .modal-card 
+                .modal-card-head 
+                    p.modal-card-title More Options
+                    button#closemoreoptions.delete(aria-label="close")
+                .modal-card-body
+                    .columns 
+                        .column 
+                            aside.menu
+                                ul.menu-list
+                                    li
+                                        a Information
+                        .column 
+                            b Meeting ID  
+                            p#moremeetingid 
+                            b Meeting Link 
+                            p#moremeetinglink  
+                            b Name 
+                            p#moremeetingname 
+                            b Description
+                            p#moremeetingdescription  
+        #subtitlemodal.modal 
+            .modal-background
+            .modal-card
+                .modal-card-head
+                    p.modal-card-title Caption Settings
+                    button#closesubtitlemodal.delete(aria-label="close")
+                .modal-card-body
+                    div.tabs
+                        ul#opencaption
+                            li.is-active
+                                a#opencaptionwindows Windows 11
+                            li
+                                a#opencaptionchrome Chrome
+                            li
+                                a#opencaptionsafari Safari
+                            li
+                                a#opencaptionfirefox Firefox 
+                            li 
+                                a#opencaptionedge Edge
+                    ul#captionwindows.captiondesc(style="list-style: decimal") 
+                        li Open Settings: Click on the Start menu and select the gear icon to open Settings.
+                        li Ease of Access: Navigate to "Accessibility" from the sidebar menu.
+                        li Caption Settings: Under the "Hearing" section, click on "Captions."
+                        li Customize Captions: Here, you can turn on captions and customize their appearance, such as font size, color, and background.
+                        li Automatic Subtitles: Some applications and browsers like Chrome will use these settings to display captions. 
+                    ul#captionchrome.is-hidden.captiondesc(style="list-style: decimal")
+                        li Open Google Chrome: Make sure you have the latest version of Chrome installed.
+                        li Access Settings: Click the three vertical dots (menu) in the upper-right corner and select "Settings."
+                        li Advanced Settings: Scroll down and click on "Advanced" to expand more settings options.
+                        li Accessibility Settings: Under the "Accessibility" section, find and toggle on "Live Caption."
+                        li Customization: You can further customize the appearance and language of the subtitles in the settings.
+                    ul#captionsafari.is-hidden.captiondesc(style="list-style: decimal")
+                        li Open Safari: Ensure your Safari browser is up-to-date.
+                        li Preferences: Go to Safari > Preferences from the top menu.
+                        li Websites: Click on the "Websites" tab.
+                        li Captions: Scroll down to "Captions" and check the options for subtitles and captions.
+                        li Customization: Customize the appearance of captions under System Preferences > Accessibility > Captions.
+                    ul#captionfirefox.is-hidden.captiondesc(style="list-style: decimal")
+                        li Open Firefox: Ensure Firefox is updated to the latest version.
+                        li Access Settings: Click the three horizontal lines (menu) in the upper-right corner and select "Settings."
+                        li Preferences: Go to "General" and scroll down to the "Language" section.
+                        li Enable Captions: There is no direct live caption feature, but you can enable closed captions for supported media.
+                    ul#captionedge.is-hidden.captiondesc(style="list-style: decimal")
+                        li Open Microsoft Edge: Ensure Edge is updated to the latest version.
+                        li Access Settings: Click the three horizontal dots (menu) in the upper-right corner and select "Settings."
+                        li Advanced Settings: Scroll down and click on "Advanced" to expand more settings options.
+                        li Accessibility Settings: Under the "Accessibility" section, find and toggle on "Live Caption."
+                        li Customization: Customize the appearance and language of the subtitles in the settings.                                                          
         #joinmeetingmodal.modal.is-active
             .modal-background
             .modal-content(style="width: 50vw") 
@@ -410,7 +480,7 @@ html
                                 span.icon.is-small
                                     i.fa.fa-video
                             div.posr-25(style="display: inline-block; position: relative; right: 2.5rem;")
-                                button.button.is-rounded.px-4.mr-2 
+                                button#opensubtitle.button.is-rounded.px-4.mr-2 
                                     span.icon.is-small
                                         i.fa.fa-cc
                                 button#openemoji.button.is-rounded.px-4.mr-2 
@@ -422,7 +492,7 @@ html
                                 button#raisehandbutton.button.is-rounded.px-4.mr-2
                                     span.icon.is-small
                                         i.fa.fa-hand-paper-o
-                                button.button.is-rounded.px-4.mr-2
+                                button#openmoreoptions.button.is-rounded.px-4.mr-2
                                     span.icon.is-small
                                         i.fa.fa-ellipsis-v
                                 button#leavemeetingbutton.button.is-dark.is-danger.is-rounded.px-5

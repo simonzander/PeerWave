@@ -104,6 +104,11 @@ class RTC {
       this.peerConnections[id].addIceCandidate(new RTCIceCandidate(candidate)).catch(e => this.toast(e, "error"));
     }
 
+    handleCandidateScreenshare(id, candidate) {
+      this.pcScreenshare[id].addIceCandidate(new RTCIceCandidate(candidate)).catch(e => this.toast(e, "error"));
+    }
+
+
     /**
      * Handles the answer received from a peer.
      *
@@ -113,6 +118,12 @@ class RTC {
     handleAnswer(id, description) {
       if (this.peerConnections[id].signalingState === "have-local-offer") {
         this.peerConnections[id].setRemoteDescription(description);
+      }
+    }
+
+    handleAnswerScreenshare(id, description) {
+      if (this.pcScreenshare[id].signalingState === "have-local-offer") {
+        this.pcScreenshare[id].setRemoteDescription(description);
       }
     }
 
@@ -655,7 +666,6 @@ class RTC {
         this.ensureListener('disconnectPeer', id => this.handleDisconnectPeer(id));
         this.ensureListener('currentPeers', peers => this.currentPeersCallback(peers));
         this.ensureListener('currentFilePeers', (filename, peers) => this.currentFilePeersCallback(filename, peers));
-
       });
     }
 
@@ -757,23 +767,48 @@ class RTC {
         this.callbackParticipantJoined = function() {};
         this.callbackMessage = function() {};
         this.participants = {};
+        this.pcScreenshare = {};
       }
+      /**
+       * Retrieves the meeting settings from the server.
+       *
+       * @param {Function} callback - The callback function to be called with the meeting settings.
+       */
       getMeetingSettings(callback) {
         this.socket.emit("getMeetingSettings", this.room, callback);
         this.settings = callback.settings;
       }
+      /**
+       * Handles the event when a participant joins the meeting.
+       *
+       * @param {Object} participant - The participant object.
+       * @param {string} participant.name - The name of the participant.
+       * @param {string} participant.id - The ID of the participant.
+       */
       handleParticipantJoined(participant) {
         this.toast(`Participant ${participant.name} joined the meeting`, "info");
         this.handleParticipant(participant.id);
-        this.callbackParticipantJoined(participant, this.peerConnections[participant.id]);
       }
 
+      /**
+       * Handles incoming messages from participants.
+       *
+       * @param {string} id - The ID of the participant sending the message.
+       * @param {string} type - The type of the message.
+       * @param {string} message - The content of the message.
+       */
       handleMessage(id, type, message) {
           if (this.participants[id] !== undefined) {
             this.callbackMessage(id, this.participants[id].name, type, message);
           }
       }
 
+      /**
+       * Sends a message to the server.
+       *
+       * @param {string} type - The type of the message.
+       * @param {string} [message=""] - The content of the message (optional).
+       */
       sendMessage(type, message = "") {
         this.socket.emit("message", this.room, type, message);
       }
@@ -785,49 +820,126 @@ class RTC {
      */
     setStream(stream) {
       if (!(stream instanceof MediaStream)) return;
-      this.stream = stream;
+      if (this.stream) {
+        this.stream = stream;
+        Object.entries(this.peerConnections).forEach(([id, peerConnection]) => {
+          peerConnection.close();
+          delete this.peerConnections[id];
+          this.handleParticipant(id);
+        });
+      } else {
+        this.stream = null;
+        this.stream = stream;
+      }
+
       this.socket.emit("message", this.room, "mediaDevice", stream.id);
-      this.join(this.name, function() {});
-      /*Object.entries(this.peerConnections).forEach(([id, peerConnection]) => {
-        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-
-        console.log("set stream", peerConnection);
-
-        /*peerConnection
-        .createOffer({iceRestart: true})
-        .then(sdp => peerConnection.setLocalDescription(sdp))
-        .then(() => {
-          this.socket.emit("message", this.room, "mediaDevice", stream.id);
-          this.socket.emit("offer", id, peerConnection.localDescription);
-        }).catch(error => {
-          this.toast(`Error creating offer or setting local description: ${error}`, "error");
-          // Handle the error appropriately
-        });*/
-      //});
     }
-  
+
       /**
        * Joins the meeting.
        */
       join(name, callback) {
         this.name = name;
-        //this.ensureListener('participantJoined', (participant) => this.getParticipants());
+
         this.ensureListener("offer", (id, description) => this.handleOffer(id, description));
         this.ensureListener('answer', (id, description) => this.handleAnswer(id, description));
         this.ensureListener('candidate', (id, candidate) => this.handleCandidate(id, candidate));
+
+        this.ensureListener("offerScreenshare", (id, description) => this.handleOfferScreenshare(id, description));
+        this.ensureListener('answerScreenshare', (id, description) => this.handleAnswerScreenshare(id, description));
+        this.ensureListener('candidateScreenshare', (id, candidate) => this.handleCandidateScreenshare(id, candidate));
+
         this.ensureListener('message', (id, type, message) => this.handleMessage(id, type, message));
-        
+        this.ensureListener('negotiationneeded', id => this.handleNegotiationNeeded(id));
+
         this.socket.emit("joinMeeting", this.room, name, (response) => {
           this.id = response.id;
-          Object.entries(response.participants).forEach(([id, participant]) => {
-            if (id !== this.id) this.handleParticipant(id);
-            console.log(`connect from ${this.id} to ${id}`);
+          Object.keys(response.participants).forEach(id => {
+            if (id !== this.id) {
+              this.handleParticipant(id).then(res => {
+                this.toast(res.message, "success");
+              }).catch(error => {
+                this.toast(error.message, "error");
+                console.error(error);
+              });
+            }
           });
           callback(response);
-          console.log(this.peerConnections);
          });
       }
-  
+
+      /**
+       * Handles the negotiation needed event for a specific peer connection.
+       * @param {string} id - The ID of the peer connection.
+       */
+      handleNegotiationNeeded(id) {
+        this.peerConnections[id].createOffer().then(offer => {
+          return this.peerConnections[id].setLocalDescription(offer);
+        }).then(() => {
+          this.socket.emit("offer", id, this.peerConnections[id].localDescription);
+        });
+      }
+
+      /**
+       * Handles the screenshare for a participant.
+       *
+       * @param {string} id - The ID of the participant.
+       * @returns {Promise} A promise that resolves when the screenshare connection is established, or rejects with an error.
+       */
+      handleParticipantScreenshare(id) {
+        return new Promise((resolve, reject) => {
+          if ( this.pcScreenshare[id] !== undefined) reject({message: "Peer connection screenshare already exists", peerConnection:  this.pcScreenshare[id]});
+
+          this.getParticipants().then(participants => {
+            if (participants[id] === undefined) reject({message: `Participant not found with ${id}`, participants: participants});
+              const peerConnection = new RTCPeerConnection(this.config);
+              this.pcScreenshare[id] = peerConnection;
+
+              participants[id].pcScreenshare = peerConnection;
+
+              if (!this.screenShareStream) reject({message: "No screenshare stream available", screenShareStream: this.screenShareStream});
+
+              this.screenShareStream.getTracks().forEach(track => peerConnection.addTrack(track, this.screenShareStream));
+
+              peerConnection.onicecandidate = event => {
+                if (event.candidate) {
+                  this.socket.emit("candidateScreenshare", id, event.candidate);
+                }
+              };
+
+              peerConnection.oniceconnectionstatechange = () => {
+                this.toast(`Screenshare connection to ${participants[id].name} (${id}) is ${peerConnection.iceConnectionState}`, "info");
+                if (peerConnection.iceConnectionState === "disconnected" || peerConnection.iceConnectionState === "failed") {
+                  delete this.pcScreenshare[id];
+                }
+                if (peerConnection.iceConnectionState === "connected") {
+                  resolve({message: `Peer connection screenshare established to ${participants[id].name} (${id})`, peerConnection: peerConnection});
+                }
+              };
+
+              peerConnection
+              .createOffer()
+              .then(sdp => {
+                this.toast(`Step 1: Creating offer screenshare for ${participants[id].name} (${id})`, "info");
+                return peerConnection.setLocalDescription(sdp);
+              })
+              .then(() => {
+                this.toast(`Step 2: Setting local description screenshare for ${participants[id].name} (${id})`, "info");
+                this.socket.emit("offerScreenshare", id, peerConnection.localDescription);
+              })
+              .catch(error => {
+                this.toast(`Error creating offer or setting local description for ${participants[id].name} (${id}): ${error}`, "error");
+                console.error(`Error creating offer or setting local description for ${participants[id].name} (${id}):`, error);
+                reject({message: `Error creating offer or setting local description for ${participants[id].name} (${id})`, error: error});
+              });
+
+
+              }).catch(error => {
+                reject({message: `Error getting participants with id ${id} `, error: error});
+              });
+        });
+      }
+
       /**
        * Handles the meet operation for a given ID.
        *
@@ -835,76 +947,97 @@ class RTC {
        * @returns {void}
        */
       handleParticipant(id) {
-        //if (this.peerConnections[id] !== undefined) return;
-        console.log("handleParticipant", id);
-        const peerConnection = new RTCPeerConnection(this.config);
-        this.peerConnections[id] = peerConnection;
+        return new Promise((resolve, reject) => {
+          if (this.peerConnections[id] !== undefined) reject({message: "Peer connection already exists", peerConnection: this.peerConnections[id]});
 
-        console.log("SET STREAM", this.stream);
-  
-        this.stream.getTracks().forEach(track => peerConnection.addTrack(track, this.stream));
+          this.getParticipants().then(participants => {
+            if (participants[id] === undefined) reject({message: `Participant not found with ${id}`, participants: participants});
 
-        if (this.screenShareStream) {
-          console.log("SET STREAM", this.screenShareStream);
-          this.screenShareStream.getTracks().forEach(track => peerConnection.addTrack(track, this.screenShareStream));
-        }
+            const peerConnection = new RTCPeerConnection(this.config);
+            this.peerConnections[id] = peerConnection;
 
-        //peerConnection.getTracks().forEach(track => console.log("track", track));
-  
-        peerConnection.onicecandidate = event => {
-          if (event.candidate) {
-            this.socket.emit("candidate", id, event.candidate);
-          }
-        };
-  
-        peerConnection.oniceconnectionstatechange = () => {
-          this.toast(`Connection to ${id} is ${peerConnection.iceConnectionState}`, "info");
-          if (peerConnection.iceConnectionState === "connected") {
-            this.getParticipants();
-          }
-        };
+            if (!this.stream) reject({message: "No stream available", stream: this.stream});
 
-       this.peerConnections[id].ontrack = (event) => {
-          //let stream = new MediaStream([event.track]);
-          console.log("ontrack", event, event.streams, event.track);
-          this.toast(`Stream from ${id} is available`, "info");
-          this.getParticipants().then(() => {
+            this.stream.getTracks().forEach(track => peerConnection.addTrack(track, this.stream));
 
-            if (!this.participants[id].streams.some(stream => stream.id === event.streams[0].id)) {
-              this.participants[id].streams.push(event.streams[0]);
-            } else {
-              this.participants[id].streams = this.participants[id].streams.map(stream => {
-                if (stream.id === event.streams[0].id) {
-                  return event.streams[0];
-                }
-                return stream;
-              });
-            }
-            if (!this.participants[id].tracks.some(track => track.id === event.track.id)) {
-              this.participants[id].tracks.push(event.track);
-            } else {
-              this.participants[id].tracks = this.participants[id].tracks.map(track => {
-                if (track.id === event.track.id) {
-                  return event.track;
-                }
-                return track;
+            if (this.screenShareStream) {
+              this.handleParticipantScreenshare(id).then(res => {
+                this.toast(res.message, "success");
+                this.socket.emit("message", this.room, "screenshare", this.screenShareStream.id);
+              }).catch(error => {
+                this.toast(error.message, "error");
+                console.error(error);
               });
             }
 
-            this.callbackParticipantJoined(this.participants[id]);
-          });
-        };
-  
-        peerConnection
-          .createOffer()
-          .then(sdp => peerConnection.setLocalDescription(sdp))
-          .then(() => {
-            this.socket.emit("offer", id, peerConnection.localDescription);
+            peerConnection.onicecandidate = event => {
+              if (event.candidate) {
+                this.socket.emit("candidate", id, event.candidate);
+              }
+            };
+
+            peerConnection.ontrack = (event) => {
+              this.toast(`Stream from ${participants[id].name} (${id}) is available`, "success");
+                if (!participants[id].streams.some(stream => stream.id === event.streams[0].id)) {
+                  participants[id].streams.push(event.streams[0]);
+                } else {
+                  participants[id].streams = participants[id].streams.map(stream => {
+                    if (stream.id === event.streams[0].id) {
+                      return event.streams[0];
+                    }
+                    return stream;
+                  });
+                }
+                if (!participants[id].tracks.some(track => track.id === event.track.id)) {
+                  participants[id].tracks.push(event.track);
+                } else {
+                  participants[id].tracks = participants[id].tracks.map(track => {
+                    if (track.id === event.track.id) {
+                      return event.track;
+                    }
+                    return track;
+                  });
+                }
+                this.callbackParticipantJoined(participants[id]);
+            };
+
+            peerConnection.oniceconnectionstatechange = () => {
+              this.toast(`Connection to ${participants[id].name} (${id}) is ${peerConnection.iceConnectionState}`, "info");
+              if (peerConnection.iceConnectionState === "disconnected" || peerConnection.iceConnectionState === "failed") {
+                delete this.peerConnections[id];
+              }
+              if (peerConnection.iceConnectionState === "connected") {
+                resolve({message: `Peer connection established to ${participants[id].name} (${id})`, peerConnection: peerConnection});
+              }
+            };
+
+            peerConnection
+            .createOffer()
+            .then(sdp => {
+              this.toast(`Step 1: Creating offer for ${participants[id].name} (${id})`, "info");
+              return peerConnection.setLocalDescription(sdp);
+            })
+            .then(() => {
+              this.toast(`Step 2: Setting local description for ${participants[id].name} (${id})`, "info");
+              this.socket.emit("offer", id, peerConnection.localDescription);
+            })
+            .catch(error => {
+              this.toast(`Error creating offer or setting local description for ${participants[id].name} (${id}): ${error}`, "error");
+              console.error(`Error creating offer or setting local description for ${participants[id].name} (${id}):`, error);
+              reject({message: `Error creating offer or setting local description for ${participants[id].name} (${id})`, error: error});
+            });
+
           }).catch(error => {
-            this.toast(`Error creating offer or setting local description: ${error}`, "error");
-            // Handle the error appropriately
+              reject({message: `Error getting participants with id ${id} `, error: error});
           });
+        });
       }
+
+      /**
+       * Retrieves the participants of the room.
+       * @returns {Promise<Object>} A promise that resolves with the participants object.
+       * @throws {Error} If there is an error retrieving the participants.
+       */
       getParticipants() {
         return new Promise((resolve, reject) => {
           this.socket.emit("getParticipants", this.room, (response) => {
@@ -915,8 +1048,11 @@ class RTC {
                 if (!Object.prototype.hasOwnProperty.call(this.participants, id)) {
                   this.participants[id] = participant;
                   this.participants[id].peerConnection = this.peerConnections[id];
+                  this.participants[id].pcScreenshare = this.pcScreenshare[id];
                   this.participants[id].streams = [];
                   this.participants[id].tracks = [];
+                  this.participants[id].screenshareStreams = [];
+                  this.participants[id].screenshareTracks = [];
                 }
               });
               resolve(this.participants);
@@ -924,117 +1060,238 @@ class RTC {
           });
         });
       }
-  
+
+      /**
+       * Handles the offer for screensharing from a participant.
+       *
+       * @param {string} id - The ID of the participant.
+       * @param {RTCSessionDescription} description - The description of the offer.
+       * @returns {void}
+       */
+      handleOfferScreenshare(id, description) {
+
+        this.getParticipants().then(participants => {
+          if (participants[id] === undefined) {
+            this.toast(`Participant not found with ${id}`, "error");
+            console.error(`Participant not found with ${id}`);
+            return;
+          }
+
+          this.toast(`Screenshare offer received from ${participants[id].name} (${id})`, "info");
+
+          const peerConnection = new RTCPeerConnection(this.config);
+          this.pcScreenshare[id] = peerConnection;
+
+          participants[id].pcScreenshare = peerConnection;
+
+          peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+              this.socket.emit("candidateScreenshare", id, event.candidate);
+            }
+          };
+
+          peerConnection.oniceconnectionstatechange = () => {
+            this.toast(`screenshare connection to ${participants[id].name} (${id}) is ${peerConnection.iceConnectionState}`, "info");
+            if (peerConnection.iceConnectionState === "disconnected" || peerConnection.iceConnectionState === "failed") {
+              delete this.pcScreenshare[id];
+            }
+          };
+
+          peerConnection.ontrack = (event) => {
+              this.toast(`Screenshare stream from ${participants[id].name} (${id}) is available`, "info");
+
+              if (!this.participants[id].screenshareStreams.some(stream => stream.id === event.streams[0].id)) {
+                this.participants[id].screenshareStreams.push(event.streams[0]);
+              } else {
+                this.participants[id].screenshareStreams = this.participants[id].screenshareStreams.map(stream => {
+                  if (stream.id === event.streams[0].id) {
+                    return event.streams[0];
+                  }
+                  return stream;
+                });
+              }
+              if (!this.participants[id].screenshareTracks.some(track => track.id === event.track.id)) {
+                this.participants[id].screenshareTracks.push(event.track);
+              } else {
+                this.participants[id].screenshareTracks = this.participants[id].screenshareTracks.map(track => {
+                  if (track.id === event.track.id) {
+                    return event.track;
+                  }
+                  return track;
+                });
+              }
+              this.callbackParticipantJoined(participants[id]);
+          };
+
+          peerConnection
+            .setRemoteDescription(description)
+            .then(() => {
+              this.toast(`Step 4: Screenshare setting remote description for ${participants[id].name} (${id})`, "info");
+            })
+            .then(() => {
+              this.toast(`Step 5: Screenshare creating answer for ${participants[id].name} (${id})`, "info");
+              return this.pcScreenshare[id].createAnswer();
+            })
+            .then((sdp) => {
+              this.toast(`Step 6: Screenshare setting local description for ${participants[id].name} (${id})`, "info");
+              return this.pcScreenshare[id].setLocalDescription(sdp);
+            })
+            .then(() => {
+              this.toast(`Step 7: Screenshare sending answer for ${participants[id].name} (${id})`, "info");
+              this.socket.emit("answerScreenshare", id, this.pcScreenshare[id].localDescription);
+            }).catch(error => {
+              this.toast(`Error Screenshare creating/sending answer or setting remote/local description for ${participants[id].name} (${id}): ${error}`, "error");
+              console.error(`Error Screenshare creating/sending answer or setting remote/local description for ${participants[id].name} (${id}):`, error);
+            });
+
+        }).catch(error => {
+          this.toast(`Error getting participants with id ${id} `, "error");
+          console.error(`Error getting participants with id ${id} `, error);
+        });
+      }
+
       /**
        * Handles the offer received from a peer and establishes a connection.
        * @param {string} id - The ID of the peer.
        * @param {RTCSessionDescription} description - The offer description received from the peer.
        */
       handleOffer(id, description) {
-        console.log("my id", this.id, "offer from ", id);
-        this.peerConnections[id] = new RTCPeerConnection(this.config);
 
-        this.peerConnections[id].ontrack = (event) => {
-          //let stream = new MediaStream([event.track]);
-          console.log("ontrack", event, event.streams, event.track);
-          this.toast(`Stream from ${id} is available`, "info");
-          this.getParticipants().then(() => {
+        this.getParticipants().then(participants => {
+          if (participants[id] === undefined) {
+            this.toast(`Participant not found with ${id}`, "error");
+            console.error(`Participant not found with ${id}`);
+            return;
+          }
 
-            if (!this.participants[id].streams.some(stream => stream.id === event.streams[0].id)) {
-              this.participants[id].streams.push(event.streams[0]);
+          this.toast(`Offer received from ${participants[id].name} (${id})`, "info");
+
+          this.peerConnections[id] = new RTCPeerConnection(this.config);
+          const peerConnection = this.peerConnections[id];
+
+          if (!this.stream) {
+            this.toast("No stream available", "error");
+            console.error("No stream available");
+            return;
+          }
+
+          this.toast(`Step 3: Adding tracks from stream to ${participants[id].name} (${id})`, "info");
+          this.stream.getTracks().forEach(track => peerConnection.addTrack(track, this.stream));
+
+          if (this.screenShareStream) {
+            this.handleParticipantScreenshare(id).then(res => {
+              this.toast(res.message, "success");
+              this.socket.emit("message", this.room, "screenshare", this.screenShareStream.id);
+            }).catch(error => {
+              this.toast(error.message, "error");
+              console.error(error);
+            });
+          }
+
+          peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+              this.socket.emit("candidate", id, event.candidate);
+            }
+          };
+
+          peerConnection.oniceconnectionstatechange = () => {
+            this.toast(`Connection to ${participants[id].name} (${id}) is ${peerConnection.iceConnectionState}`, "info");
+            if (peerConnection.iceConnectionState === "disconnected" || peerConnection.iceConnectionState === "failed") {
+              delete this.peerConnections[id];
+            }
+          };
+
+          peerConnection.ontrack = (event) => {
+            this.toast(`Stream from ${participants[id].name} (${id}) is available`, "info");
+            if (!participants[id].streams.some(stream => stream.id === event.streams[0].id)) {
+              participants[id].streams.push(event.streams[0]);
             } else {
-              this.participants[id].streams = this.participants[id].streams.map(stream => {
+              participants[id].streams = participants[id].streams.map(stream => {
                 if (stream.id === event.streams[0].id) {
                   return event.streams[0];
                 }
                 return stream;
               });
             }
-            if (!this.participants[id].tracks.some(track => track.id === event.track.id)) {
-              this.participants[id].tracks.push(event.track);
+            if (!participants[id].tracks.some(track => track.id === event.track.id)) {
+              participants[id].tracks.push(event.track);
             } else {
-              this.participants[id].tracks = this.participants[id].tracks.map(track => {
+              participants[id].tracks = participants[id].tracks.map(track => {
                 if (track.id === event.track.id) {
                   return event.track;
                 }
                 return track;
               });
             }
+            this.callbackParticipantJoined(participants[id]);
+          };
 
-            this.callbackParticipantJoined(this.participants[id]);
-          });
-        };
-
-        this.peerConnections[id].oniceconnectionstatechange = () => {
-          this.toast(`Connection to ${id} is ${this.peerConnections[id].iceConnectionState}`, "info");
-          /*if (this.peerConnections[id].iceConnectionState === "disconnected") {
-            this.socket.emit("meeting", this.room, (response) => {
-              if (response.host !== undefined) {
-                this.host = response.host;
-                this.toast(`Connected to ${response.host}`, "info");
-              } else {
-                this.toast(response.message, "error");
-              }
-            });
-          }*/
-          /*if (this.peerConnections[id].iceConnectionState === "connected") {
-            this.peerConnections[id].onaddtrack = (event) => {
-              console.log("onaddtrack", event.streams);
-            };
-          }*/
-        };
-
-
-        if (this.peerConnections[id].signalingState === "stable") {
-
-          this.stream.getTracks().forEach(track => this.peerConnections[id].addTrack(track, this.stream));
-
-          console.log("SET STREAM", this.stream);
-  
-        if (this.screenShareStream) {
-          console.log("SET STREAM", this.screenShareStream);
-          this.screenShareStream.getTracks().forEach(track => this.peerConnections[id].addTrack(track, this.screenShareStream));
-        }
-
-          this.getParticipants();
-          this.peerConnections[id]
+          peerConnection
             .setRemoteDescription(description)
-            .then(() => this.peerConnections[id].createAnswer())
-            .then((sdp) => this.peerConnections[id].setLocalDescription(sdp))
             .then(() => {
+              this.toast(`Step 4: Setting remote description for ${participants[id].name} (${id})`, "info");
+            })
+            .then(() => {
+              this.toast(`Step 5: Creating answer for ${participants[id].name} (${id})`, "info");
+              return this.peerConnections[id].createAnswer();
+            })
+            .then((sdp) => {
+              this.toast(`Step 6: Setting local description for ${participants[id].name} (${id})`, "info");
+              return this.peerConnections[id].setLocalDescription(sdp);
+            })
+            .then(() => {
+              this.toast(`Step 7: Sending answer for ${participants[id].name} (${id})`, "info");
               this.socket.emit("answer", id, this.peerConnections[id].localDescription);
+            }).catch(error => {
+              this.toast(`Error creating/sending answer or setting remote/local description for ${participants[id].name} (${id}): ${error}`, "error");
+              console.error(`Error creating/sending answer or setting remote/local description for ${participants[id].name} (${id}):`, error);
             });
-        }
-        this.peerConnections[id].onicecandidate = (event) => {
-          if (event.candidate) {
-            this.socket.emit("candidate", id, event.candidate);
-          }
-        };
+
+        }).catch(error => {
+            this.toast(`Error getting participants with id ${id} `, "error");
+            console.error(`Error getting participants with id ${id} `, error);
+      });
       }
-  
+
       /**
        * Leaves the meeting.
        */
       leaveMeeting() {
         this.socket.emit("leaveMeeting", this.room);
       }
+
+
+      /**
+       * Sets the screen share stream and handles participant screenshare.
+       * @param {MediaStream} stream - The screen share stream to set.
+       */
       setScreenShareStream(stream) {
+        if (!stream) {
+          this.screenShareStream = null;
+          Object.entries(this.pcScreenshare).forEach(([id, peerConnection]) => {
+            peerConnection.close();
+            delete this.pcScreenshare[id];
+          });
+        }
         if (!(stream instanceof MediaStream)) return;
         this.screenShareStream = stream;
-        this.socket.emit("message", this.room, "screenshare", stream.id);
-        /*Object.entries(this.peerConnections).forEach(([id, peerConnection]) => {
-            stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-          peerConnection
-          .createOffer({iceRestart: true})
-          .then(sdp => peerConnection.setLocalDescription(sdp))
-          .then(() => {
-            //this.socket.emit("message", this.room, "screenshare", stream.id);
-            this.socket.emit("offer", id, peerConnection.localDescription);
-          }).catch(error => {
-            this.toast(`Error creating offer or setting local description: ${error}`, "error");
-            // Handle the error appropriately
+
+        Object.entries(this.pcScreenshare).forEach(([id, peerConnection]) => {
+          peerConnection.close();
+          delete this.pcScreenshare[id];
+        });
+
+        Promise.all(Object.keys(this.peerConnections).map(id => {
+          return this.handleParticipantScreenshare(id);
+        })).then(responses => {
+          responses.forEach(response => {
+            this.toast(response.message, "success");
           });
-        });*/
+          this.socket.emit("message", this.room, "screenshare", stream.id);
+        }).catch(error => {
+            this.toast(error.message, "error");
+            console.error(error);
+        });
       }
     }
 
@@ -1066,6 +1323,10 @@ class RTC {
       this.processStream();
     }
 
+    /**
+     * Processes the stream by cropping and resizing video frames.
+     * @throws {Error} Throws an error if the necessary APIs are not supported by the browser.
+     */
     processStream() {
       const [track] = this.stream.getTracks();
       if (!track || typeof MediaStreamTrackProcessor === 'undefined' || typeof MediaStreamTrackGenerator === 'undefined' || typeof VideoFrame === 'undefined' || typeof VideoDecoder === 'undefined' || typeof VideoEncoder === 'undefined') {
@@ -1117,6 +1378,10 @@ class RTC {
     processFrame();
   }
 
+    /**
+     * Returns the processed stream.
+     * @returns {Stream} The processed stream.
+     */
     getProcessedStream() {
       return this.outputStream;
     }
