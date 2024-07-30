@@ -13,6 +13,7 @@
   "author": "Simon Zander",
   "license": "MIT",
   "dependencies": {
+    "@sequelize/sqlite3": "^7.0.0-alpha.41",
     "bulma-toast": "^2.4.4",
     "express": "^4.18.2",
     "pug": "^3.0.3",

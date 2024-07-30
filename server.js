@@ -1,10 +1,30 @@
 /**
  * Required modules
  */
+const config = require('./config/config');
 const express = require("express");
 const { randomUUID } = require('crypto');
 const http = require("http");
 const app = express();
+
+
+if (config.channels) {
+
+  const { Sequelize } = require('@sequelize/core');
+  const { SqliteDialect } = require('@sequelize/sqlite3');
+  const sequelize = new Sequelize({
+    dialect: SqliteDialect,
+    storage: './db/peerwave.sqlite',
+  });
+
+  try {
+    sequelize.authenticate().then(() => {
+      console.log('Connection to sqlite database has been established successfully.');
+    });
+  } catch (error) {
+    console.error('Unable to connect to the database:', error);
+  }
+}
 
 /**
  * Room data object to store information about each room
@@ -31,7 +51,7 @@ const app = express();
  */
 
 const rooms = {};
-const port = 4000;
+const port = config.port || 3000;
 
 const server = http.createServer(app);
 const io = require("socket.io")(server);
