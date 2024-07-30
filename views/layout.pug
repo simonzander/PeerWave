@@ -1,10 +1,20 @@
 doctype html
-html
+html(lang="en")
     head
-        title PeerWave v0.0.4
+        title PeerWave v0.0.4 - Share Peer to Peer Effortlessly
         meta(charset="UTF-8")
+        meta(name="description" content="PeerWave allows you to share your screen, window, tab, multiple files or hold a meeting directly between peers without a server in the middle. Utilizing WebRTC for a seamless sharing experience.")
+        meta(name="keywords" content="PeerWave, WebRTC, peer to peer sharing, peer to peer sharing, file sharing, screen sharing, meeting, webrtc server, webrtc video streaming, webrtc screen sharing, webrtc meeting, webrtc file sharing, peer to peer video streaming, online meeting without registration, online meeting without cam, online meeting")
         link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css")
-        //script(src="https://kit.fontawesome.com/de4a047423.js", crossorigin="anonymous")
+        link(rel="canonical" href="https://www.peerwave.org")
+        script(type="application/ld+json").
+            {
+              "@context": "http://schema.org",
+              "@type": "SoftwareApplication",
+              "name": "PeerWave",
+              "description": "Share your screen, window, tab, or multiple files directly between peers.",
+              "url": "https://www.peerwave.org"
+            }
         link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/fork-awesome@1.2.0/css/fork-awesome.min.css", integrity="sha256-XoaMnoYC5TH6/+ihMEnospgm0J1PM/nioxbOUdnM8HY=", crossorigin="anonymous")
         script(src="/bulma-toast.min.js")
         script(src="/socket.io/socket.io.js")
