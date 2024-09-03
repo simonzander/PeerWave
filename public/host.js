@@ -129,22 +129,55 @@ function displayFile(file) {
   let entry = document.createElement('a');
   entry.classList.add("panel-block");
   entry.setAttribute("data-filename", file.name);
-  entry.innerHTML = `
-    <span class="panel-icon">
-      <i class="fa fa-file" aria-hidden="true"></i>
-    </span>
-    <div class="columns" style="width: 100%">
-      <div class="column">${file.name}</div>
-      <div class="column"><progress id="${file.name}-upload" max="${file.size}" value="0"></progress></div>
-      <div class="column">${Math.round(file.size / 1024 / 1024)} MB</div>
-      <div class="column peers">1</div>
-      <div class="column"><i class="fa fa-trash"></i></div>
-    </div>
-  `;
-  document.getElementById("filecontent").append(entry);
+
+  let panelIcon = document.createElement('span');
+  panelIcon.classList.add("panel-icon");
+  let icon = document.createElement('i');
+  icon.classList.add("fa", "fa-file");
+  icon.setAttribute("aria-hidden", "true");
+  panelIcon.appendChild(icon);
+  entry.appendChild(panelIcon);
+
+  let columns = document.createElement('div');
+  columns.classList.add("columns");
+  columns.style.width = "100%";
+
+  let nameColumn = document.createElement('div');
+  nameColumn.classList.add("column");
+  nameColumn.textContent = file.name;
+  columns.appendChild(nameColumn);
+
+  let progressColumn = document.createElement('div');
+  progressColumn.classList.add("column");
+  let progress = document.createElement('progress');
+  progress.id = `${file.name}-upload`;
+  progress.max = file.size;
+  progress.value = 0;
+  progressColumn.appendChild(progress);
+  columns.appendChild(progressColumn);
+
+  let sizeColumn = document.createElement('div');
+  sizeColumn.classList.add("column");
+  sizeColumn.textContent = `${Math.round(file.size / 1024 / 1024)} MB`;
+  columns.appendChild(sizeColumn);
+
+  let peersColumn = document.createElement('div');
+  peersColumn.classList.add("column", "peers");
+  peersColumn.textContent = "1";
+  columns.appendChild(peersColumn);
+
+  let trashColumn = document.createElement('div');
+  trashColumn.classList.add("column");
+  let trashIcon = document.createElement('i');
+  trashIcon.classList.add("fa", "fa-trash");
+  trashColumn.appendChild(trashIcon);
+  columns.appendChild(trashColumn);
+
+  entry.appendChild(columns);
+
+  document.getElementById("filecontent").appendChild(entry);
 
   // Find the trash icon within the newly added entry and attach click event
-  const trashIcon = entry.querySelector('.fa-trash');
   trashIcon.addEventListener('click', () => deleteFile(file.name));
 }
 

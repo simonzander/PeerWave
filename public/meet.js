@@ -813,7 +813,19 @@ chatInput.addEventListener('keydown', (event) => {
     const sanMessage = document.createTextNode(message);
     // Do something with the message
     meet.sendMessage('chat', sanMessage.textContent);
-    messageElement.innerHTML = `<span style="color: ${participantColor}">${me.name}:</span> ${sanMessage.textContent} <span style="color:grey">${currentTime}</span>`;
+
+    const nameElement = document.createElement('span');
+    nameElement.style.color = participantColor;
+    nameElement.textContent = me.name;
+    messageElement.appendChild(nameElement);
+
+    messageElement.append(` ${sanMessage.textContent} `);
+
+    const timeElement = document.createElement('span');
+    timeElement.style.color = 'grey';
+    timeElement.textContent = currentTime;
+    messageElement.appendChild(timeElement);
+
     chatContent.appendChild(messageElement);
     // Clear the chat input
     chatInput.value = '';
@@ -830,8 +842,21 @@ chatInput.addEventListener('click', () => {
   const message = chatInput.value;
   const sanMessage = document.createTextNode(message);
   meet.sendMessage('chat', sanMessage.textContent);
-  messageElement.innerHTML = `<span style="color: ${participantColor}">${me.name}:</span> ${sanMessage.textContent} <span style="color:grey">${currentTime}</span>`;
+
+  const nameElement = document.createElement('span');
+  nameElement.style.color = participantColor;
+  nameElement.textContent = me.name;
+  messageElement.appendChild(nameElement);
+
+  messageElement.append(` ${sanMessage.textContent} `);
+
+  const timeElement = document.createElement('span');
+  timeElement.style.color = 'grey';
+  timeElement.textContent = currentTime;
+  messageElement.appendChild(timeElement);
+
   chatContent.appendChild(messageElement);
+  // Clear the chat input
   chatInput.value = '';
 });
 
