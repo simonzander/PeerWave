@@ -10,20 +10,10 @@ const app = express();
 
 if (config.channels) {
 
-  const { Sequelize } = require('@sequelize/core');
-  const { SqliteDialect } = require('@sequelize/sqlite3');
-  const sequelize = new Sequelize({
-    dialect: SqliteDialect,
-    storage: './db/peerwave.sqlite',
-  });
+  const authRoutes = require('./routes/auth');
 
-  try {
-    sequelize.authenticate().then(() => {
-      console.log('Connection to sqlite database has been established successfully.');
-    });
-  } catch (error) {
-    console.error('Unable to connect to the database:', error);
-  }
+  // Register and signin webpages
+  app.use(authRoutes);
 }
 
 /**
@@ -51,7 +41,7 @@ if (config.channels) {
  */
 
 const rooms = {};
-const port = config.port || 3000;
+const port = config.port || 4000;
 
 const server = http.createServer(app);
 const io = require("socket.io")(server);

@@ -1,0 +1,42 @@
+.modal#usersettings-modal
+    .modal-background
+    .modal-card
+        form#usersettings-form
+            .modal-card-head
+                p.modal-card-title Settings
+                button.delete
+            .modal-card-body
+                .columns
+                    .column.is-one-quarter
+                        .menu
+                            ul.menu-list
+                                li
+                                    a.is-active General
+                    .column
+                        .field
+                            label.label Your Profile
+                            .control#profile-picture-container
+                                if !user.dataValues.picture
+                                    i.bi.bi-person-circle(style="font-size: 28px; margin-right: 10px;")
+                                else
+                                    - const imageSrc = `data:image/jpeg;base64,${user.dataValues.pictureBase64}`;
+                                    img.profile-picture(src=imageSrc, alt="Profile Picture", style="border-radius: 50%; width: 28px; height: 28px; margin-right: 10px;")
+                        .field
+                            label.label Profile Picture
+                            .control
+                                input.input#profile-picture-input(name="picture" type="file" accept="image/*")
+                        .field
+                            label.label Email
+                            .control
+                                input.input(type="email" readonly disabled value=user.dataValues.email)
+                        .field
+                            label.label UUID
+                            .control
+                                input.input(type="text" readonly disabled value=user.dataValues.uuid)
+                        .field
+                            label.label Display Name
+                            .control
+                                input.input(name="displayname" type="text" placeholder="Enter display name" value=user.dataValues.displayName)
+            .modal-card-foot
+                button.button.is-primary(type="submit") Save
+                button.button Cancel

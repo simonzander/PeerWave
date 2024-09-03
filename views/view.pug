@@ -2,7 +2,8 @@ extends layout
 
 block content
     input#room(type="hidden", value=room)
-    .cell.is-fullheight(style="height: 100vh;")
+    include sidelogo.pug
+    .cell.is-fullheight(style="height: 95.7vh;")
         #tab_stream_content.mt-6
             section.hero.is-primary
                 .hero-body

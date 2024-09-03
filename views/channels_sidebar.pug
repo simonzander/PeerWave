@@ -1,0 +1,60 @@
+#createchannelmodal.modal
+        .modal-background
+        .modal-content
+            // Modal content
+            form#addchannelform
+                .field
+                    label.label Name
+                    .control
+                        input.input(type="text" name="name" placeholder="Enter name", required)
+                .field
+                    label.label Description
+                    .control
+                        input.input(type="text" name="description" placeholder="Enter description")
+                .field
+                    label.checkbox
+                        input(type="checkbox" name="isPrivate")
+                        | Is Private
+                .field
+                    label.label Members
+                    .control
+                        select(name="members")
+                            option(value="member1") Member 1
+                            option(value="member2") Member 2
+                            option(value="member3") Member 3
+                .field
+                    label.label Type
+                    .control
+                        select(name="type")
+                            option(value="text") Text
+                            option(value="voice") Voice
+                .field.is-grouped
+                    .control
+                        button#createchannelbutton.button.is-primary(type="submit") Create Channel
+                    .control
+                        button.button(type="button") Cancel
+.column.has-background-black-ter.is-one-fifth(style="width: 10%")
+    aside.menu(style="height: 100%; display: flex;")
+        div(style="display: flex; flex-direction: column; flex-grow: 1;")
+            div(style="flex-grow: 1; overflow-y: auto;")
+                p.menu-label peerwave.org
+                ul.menu-list
+                    li: a(href="/channels") Threads
+                p.menu-label 
+                    | Channels 
+                    a(href="#", id="add-channel")
+                        i.bi.bi-plus-square
+                ul.menu-list
+                    each channel in channels
+                        li: a(href=`/channel/${channel.dataValues.name}`)!= channel.dataValues.type === 'text' ? '#' + channel.dataValues.name : channel.dataValues.type === 'voice' ? '&#128360;' + channel.dataValues.name : channel.dataValues.name
+            div(style="flex-shrink: 0;") 
+                p.menu-label Your Profile
+                div(style="display: flex; align-items: center; justify-content: space-between;")
+                    div(style="display: flex; align-items: center;")
+                        if !user.dataValues.picture
+                            i.bi.bi-person-circle(style="font-size: 28px; margin-right: 10px;")
+                        else
+                           - const imageSrc = `data:image/jpeg;base64,${user.dataValues.pictureBase64}`;
+                            img.profile-picture(src=imageSrc, alt="Profile Picture", style="border-radius: 50%; width: 28px; height: 28px; margin-right: 10px;")
+                        p.display-name= user.dataValues.displayName || user.dataValues.email
+                    i.bi.bi-gear#usersettings-button(style="font-size: 20px;cursor: pointer;")

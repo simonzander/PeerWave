@@ -16,6 +16,7 @@ html(lang="en")
               "url": "https://www.peerwave.org"
             }
         link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/fork-awesome@1.2.0/css/fork-awesome.min.css", integrity="sha256-XoaMnoYC5TH6/+ihMEnospgm0J1PM/nioxbOUdnM8HY=", crossorigin="anonymous")
+        link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.3.0/font/bootstrap-icons.css")
         script(src="/bulma-toast.min.js")
         script(src="/socket.io/socket.io.js")
     body
@@ -29,8 +30,13 @@ html(lang="en")
                 a.navbar-item(href="/host") 
                     button.button.is-link
                                 span.icon
-                                    i.fa.fa-share-alt
+                                    i.bi.bi-share-fill
                                 span Host
+                a.navbar-item(href="/channels") 
+                    button.button.is-danger
+                                span.icon
+                                    i.bi.bi-chat-square-quote-fill
+                                span Channels
                 a.navbar-item(href="/") About
             div.navbar-end
                 div.navbar-item
@@ -43,10 +49,8 @@ html(lang="en")
                         a(href="https://github.com/simonzander/PeerWave", target="_blank")
                             button.button
                                 span.icon
-                                    i.fa.fa-github
+                                    i.bi.bi-github
                                 span GitHub
         .fixed-grid.has-1-cols-mobile.has-1-cols-tablet.has-2-cols-desktop(style="margin: 0;")
             .grid.is-gap-0
-                .cell.is-hidden-touch(style="height: 95.7vh; background-image: url(/logo_43.png); background-repeat: no-repeat; background-size: contain; background-position: center;")
-                .cell.is-fullheight(style="height: 95.7vh;")
-                    block content
+                block content
