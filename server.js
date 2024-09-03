@@ -5,6 +5,7 @@ const express = require("express");
 const { randomUUID } = require('crypto');
 const http = require("http");
 const app = express();
+const sanitizeHtml = require('sanitize-html');
 
 /**
  * Room data object to store information about each room
@@ -399,7 +400,16 @@ io.sockets.on("connection", socket => {
   });
 
   socket.on("message", (room, type, message) => {
-    socket.to(room).emit("message", socket.id, type, message);
+    // Sanitize the message to prevent XSS
+    const sanMessage = sanitizeHtml(message, {
+      allowedTags: [], // Remove all HTML tags
+      allowedAttributes: {} // Remove all attributes
+    });
+    const sanType = sanitizeHtml(type, {
+      allowedTags: [], // Remove all HTML tags
+      allowedAttributes: {} // Remove all attributes
+    });
+    socket.to(room).emit("message", socket.id, sanType, sanMessage);
   });
 
   /*socket.on("meeting", (room, callback) => {

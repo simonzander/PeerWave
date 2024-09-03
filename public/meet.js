@@ -810,9 +810,10 @@ chatInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     // Handle the chat input here
     const message = chatInput.value;
+    const sanMessage = document.createTextNode(message);
     // Do something with the message
-    meet.sendMessage('chat', message);
-    messageElement.innerHTML = `<span style="color: ${participantColor}">${me.name}:</span> ${message} <span style="color:grey">${currentTime}</span>`;
+    meet.sendMessage('chat', sanMessage.textContent);
+    messageElement.innerHTML = `<span style="color: ${participantColor}">${me.name}:</span> ${sanMessage.textContent} <span style="color:grey">${currentTime}</span>`;
     chatContent.appendChild(messageElement);
     // Clear the chat input
     chatInput.value = '';
@@ -827,8 +828,9 @@ chatInput.addEventListener('click', () => {
   const currentTime = new Date().toLocaleTimeString();
 
   const message = chatInput.value;
-  meet.sendMessage('chat', message);
-  messageElement.innerHTML = `<span style="color: ${participantColor}">${me.name}:</span> ${message} <span style="color:grey">${currentTime}</span>`;
+  const sanMessage = document.createTextNode(message);
+  meet.sendMessage('chat', sanMessage.textContent);
+  messageElement.innerHTML = `<span style="color: ${participantColor}">${me.name}:</span> ${sanMessage.textContent} <span style="color:grey">${currentTime}</span>`;
   chatContent.appendChild(messageElement);
   chatInput.value = '';
 });
