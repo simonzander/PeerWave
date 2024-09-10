@@ -6,6 +6,13 @@ const express = require("express");
 const { randomUUID } = require('crypto');
 const http = require("http");
 const app = express();
+const sanitizeHtml = require('sanitize-html');
+
+// Function to validate UUID
+function isValidUUID(uuid) {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(uuid);
+}
 
 
 if (config.channels) {
@@ -281,7 +288,7 @@ io.sockets.on("connection", socket => {
    * @param {number} slots - The number of download slots
    */
   socket.on("setSlots", (room, slots) => {
-    if (!rooms[room]) return;
+    if (!isValidUUID(room) || !rooms[room]) return;
 
     const seeder = rooms[room].seeders[socket.id] || (rooms[room].seeders[socket.id] = { peers: 0, slots: 0 });
 
@@ -294,7 +301,7 @@ io.sockets.on("connection", socket => {
    * @param {number} peers - The number of connected peers
    */
   socket.on("setPeers", (room, peers) => {
-    if (!rooms[room]) return;
+    if (!isValidUUID(room) || !rooms[room]) return;
 
     const seeder = rooms[room].seeders[socket.id] || (rooms[room].seeders[socket.id] = { peers: 0 });
 
@@ -313,7 +320,7 @@ io.sockets.on("connection", socket => {
    * @param {string} host - The ID of the host socket
    */
   socket.on("stream", (room, host) => {
-    if (!rooms[room]) return;
+    if (!isValidUUID(room) || !rooms[room]) return;
 
     const seeder = rooms[room].seeders[socket.id] || (rooms[room].seeders[socket.id] = {});
 
@@ -337,7 +344,7 @@ io.sockets.on("connection", socket => {
  * @param {Object} file - The file object containing name and size
  */
   socket.on("offerFile", (room, file) => {
-    if (!rooms[room]) return;
+    if (!isValidUUID(room) || !rooms[room]) return;
 
     const roomFiles = rooms[room].share.files || {};
 
@@ -391,7 +398,7 @@ io.sockets.on("connection", socket => {
    * @param {string} host - The ID of the host socket
    */
   socket.on("downloadFile", (room, file, host) => {
-    if (!rooms[room]) return;
+    if (!isValidUUID(room) || !rooms[room]) return;
 
     socket.to(host).emit("downloadFile", socket.id, file);
   });
@@ -403,13 +410,22 @@ io.sockets.on("connection", socket => {
    * @param {Object} settings - The meeting settings
    */
   socket.on("createMeeting", (room, host, settings) => {
-    if (!rooms[room]) return;
+    if (!isValidUUID(room) || !rooms[room]) return;
     rooms[room].meeting = true;
     rooms[room].meetingSettings = settings;
   });
 
   socket.on("message", (room, type, message) => {
-    socket.to(room).emit("message", socket.id, type, message);
+    // Sanitize the message to prevent XSS
+    const sanMessage = sanitizeHtml(message, {
+      allowedTags: [], // Remove all HTML tags
+      allowedAttributes: {} // Remove all attributes
+    });
+    const sanType = sanitizeHtml(type, {
+      allowedTags: [], // Remove all HTML tags
+      allowedAttributes: {} // Remove all attributes
+    });
+    socket.to(room).emit("message", socket.id, sanType, sanMessage);
   });
 
   /*socket.on("meeting", (room, callback) => {

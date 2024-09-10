@@ -23,10 +23,10 @@
     "passport": "^0.7.0",
     "passport-fido2-webauthn": "^0.1.0",
     "pug": "^3.0.3",
-    "sequelize": "^6.37.3",
+    "sanitize-html": "^2.13.0",
     "socket.io": "^4.6.1"
   },
   "devDependencies": {
-    "eslint": "8.34.0"
+    "eslint": "9.9.1"
   }
 }
