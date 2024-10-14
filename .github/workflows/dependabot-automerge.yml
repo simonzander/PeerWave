@@ -1,0 +1,45 @@
+name: Dependabot Auto Merge
+
+on:
+  pull_request:
+    types:
+      - synchronize
+      - reopened
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '14'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm test
+
+      - name: Debug Environment Variables
+        run: env
+
+      - name: Merge Dependabot PR
+        if: success()
+        uses: actions/github-script@v4
+        with:
+          script: |
+            const { context, github } = require('@actions/github');
+            const pr = context.payload.pull_request;
+            if (pr.user.login === 'dependabot[bot]' && pr.mergeable_state === 'clean') {
+              await github.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                merge_method: 'squash'
+              });
+            }

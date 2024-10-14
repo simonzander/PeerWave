@@ -6,6 +6,13 @@ const { randomUUID } = require('crypto');
 const http = require("http");
 const app = express();
 const sanitizeHtml = require('sanitize-html');
+const fs = require('fs');
+const path = require('path');
+
+// Read package.json to get the version
+const packageJsonPath = path.join(__dirname, 'package.json');
+const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+const appVersion = packageJson.version;
 
 // Function to validate UUID
 function isValidUUID(uuid) {
@@ -63,21 +70,21 @@ app.set("view engine", "pug");
  * Route for a meeting
  */
 app.get("/meet", (req, res) => {
-  res.render("meet");
+  res.render("meet", { appVersion });
 });
 
 /**
  * Route for hosting a room
  */
 app.get("/host", (req, res) => {
-  res.render("host");
+  res.render("host", { appVersion });
 });
 
 /**
  * Default route
  */
 app.get("/", (req, res) => {
-  res.render("about");
+  res.render("about", { appVersion });
 });
 
 /**
@@ -85,7 +92,7 @@ app.get("/", (req, res) => {
  * @param {string} room - The ID of the room to view
  */
 app.get("/view/:room", ({ params: { room } }, res) => {
-  res.render("view", { room });
+  res.render("view", { room, appVersion });
 });
 
 /**
@@ -93,7 +100,7 @@ app.get("/view/:room", ({ params: { room } }, res) => {
  * @param {string} room - The ID of the room to meet
  */
 app.get("/meet/:room", ({ params: { room } }, res) => {
-  res.render("meet", { room });
+  res.render("meet", { room, appVersion });
 });
 
 /**
@@ -101,7 +108,7 @@ app.get("/meet/:room", ({ params: { room } }, res) => {
  * @param {string} room - The ID of the room to share
  */
 app.get("/share/:room", ({ params: { room } }, res) => {
-  res.render("share", { room });
+  res.render("share", { room, appVersion });
 });
 
 io.sockets.on("error", e => console.log(e));
@@ -475,3 +482,11 @@ io.sockets.on("connection", socket => {
 });
 
 server.listen(port, () => console.log(`Server is running on port ${port}`));
+
+module.exports = {
+  isValidUUID,
+  callbackHandler,
+  server,
+  io,
+  app// other exports
+};

@@ -1,10 +1,11 @@
 {
-  "name": "PeerWave",
-  "version": "0.0.2",
+  "name": "peerwave",
+  "version": "0.0.5",
   "description": "WebRTC to stream and share files with peers",
   "main": "server.js",
   "scripts": {
-    "test": "jest"
+    "test": "jest",
+    "release": "standard-version"
   },
   "keywords": [
     "WebRTC",
