@@ -27,7 +27,9 @@ jobs:
             git config --global user.name 'github-actions[bot]'
             git config --global user.email 'github-actions[bot]@users.noreply.github.com'
             npx standard-version
+            git status
             git add .
+            git status
             git commit -m "chore(release): bump version"
             git push --follow-tags
         env:
