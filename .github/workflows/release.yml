@@ -3,10 +3,11 @@ name: Release
 on:
   pull_request:
     types: [closed]
+  workflow_dispatch:
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
@@ -22,7 +23,7 @@ jobs:
         run: npm install
 
       - name: Bump version and generate changelog
-        run: npx standard-version --release-as minor
+        run: npx standard-version
 
       - name: Commit and push changes
         run: |
