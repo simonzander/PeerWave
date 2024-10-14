@@ -23,7 +23,10 @@ jobs:
         run: npm install
 
       - name: Bump version and generate changelog
-        run: npx standard-version
+        run: |
+            git config --global user.name 'github-actions[bot]'
+            git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+            npx standard-version
 
       - name: Commit and push changes
         run: |
