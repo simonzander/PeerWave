@@ -29,8 +29,7 @@ jobs:
             npx standard-version
             git status
             git add .
-            git status
-            git commit -m "chore(release): bump version"
+            git commit -m "chore(release): bump version" || echo "No changes to commit"
             git push --follow-tags
         env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
