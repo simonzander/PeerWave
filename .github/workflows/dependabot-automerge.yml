@@ -5,6 +5,7 @@ on:
     types:
       - synchronize
       - reopened
+      - opened
 
 jobs:
   automerge:
