@@ -34,12 +34,12 @@ jobs:
         uses: actions/github-script@v4
         with:
           script: |
-            const { context, github } = require('@actions/github');
-            const pr = context.payload.pull_request;
+            const { con, github } = require('@actions/github');
+            const pr = con.payload.pull_request;
             if (pr.user.login === 'dependabot[bot]' && pr.mergeable_state === 'clean') {
               await github.pulls.merge({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
+                owner: con.repo.owner,
+                repo: con.repo.repo,
                 pull_number: pr.number,
                 merge_method: 'squash'
               });
