@@ -34,13 +34,15 @@ jobs:
         uses: actions/github-script@v4
         with:
           script: |
-            const { con, gh } = require('@actions/github');
-            const pr = con.payload.pull_request;
+            const { context, github } = require('@actions/github');
+            const pr = context.payload.pull_request;
             if (pr.user.login === 'dependabot[bot]' && pr.mergeable_state === 'clean') {
-              await gh.pulls.merge({
-                owner: con.repo.owner,
-                repo: con.repo.repo,
+              await github.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
                 pull_number: pr.number,
                 merge_method: 'squash'
               });
+            } else {
+              console.log(`PR not mergeable or not from dependabot: user=${pr.user.login}, mergeable_state=${pr.mergeable_state}`);
             }
