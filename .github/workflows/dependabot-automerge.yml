@@ -31,7 +31,7 @@ jobs:
 
       - name: Merge Dependabot PR
         if: success()
-        uses: actions/github-script@v4
+        uses: actions/github-script@v7
         with:
           script: |
             const { context, github } = require('@actions/github');
