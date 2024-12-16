@@ -34,7 +34,6 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            let { context, github } = require('@actions/github');
             let pr = context.payload.pull_request;
             if (pr.user.login === 'dependabot[bot]' && pr.mergeable_state === 'clean') {
               await github.pulls.merge({
