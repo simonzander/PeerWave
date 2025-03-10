@@ -1,6 +1,6 @@
 {
   "name": "peerwave",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "description": "WebRTC to stream and share files with peers",
   "main": "server.js",
   "scripts": {
