@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import '../services/auth_service.dart';
 import 'dashboard_page.dart';
-import 'profile_page.dart';
+import 'server_panel.dart';
+import '../auth/auth_layout.dart';
 
 class AppLayout extends StatefulWidget {
   const AppLayout({super.key});
@@ -13,51 +12,86 @@ class AppLayout extends StatefulWidget {
 
 class _AppLayoutState extends State<AppLayout> {
   Widget currentPage = const DashboardPage();
+  bool showLogin = false;
 
-  void _setPage(Widget page) {
+  // Removed unused _setPage method
+
+  void _showLoginPage() {
     setState(() {
-      currentPage = page;
+      showLogin = true;
+    });
+  }
+
+  void _hideLoginPage() {
+    setState(() {
+      showLogin = false;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Row(
+      body: Stack(
         children: [
-          // Sidebar
-          Container(
-            width: 200,
-            color: const Color(0xFF2F3136),
-            child: Column(
-              children: [
-                const SizedBox(height: 40),
-                ListTile(
-                  title: const Text("Dashboard"),
-                  onTap: () => _setPage(const DashboardPage()),
+          Row(
+            children: [
+              // Discord-like Server Panel
+              ServerPanel(
+                onAddServer: _showLoginPage,
+                serverIcons: [
+                  // Example server icons
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: CircleAvatar(
+                      radius: 24,
+                      backgroundColor: Colors.blue,
+                      child: const Text('S1', style: TextStyle(color: Colors.white)),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: CircleAvatar(
+                      radius: 24,
+                      backgroundColor: Colors.green,
+                      child: const Text('S2', style: TextStyle(color: Colors.white)),
+                    ),
+                  ),
+                ],
+              ),
+              // Main content
+              Expanded(
+                child: Container(
+                  color: const Color(0xFF36393F),
+                  child: currentPage,
                 ),
-                ListTile(
-                  title: const Text("Profil"),
-                  onTap: () => _setPage(const ProfilePage()),
-                ),
-                const Spacer(),
-                ListTile(
-                  title: const Text("Logout"),
-                  onTap: () {
-                    AuthService.logout();
-                    context.go("/login");
-                  },
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-          // Content
-          Expanded(
-            child: Container(
-              color: const Color(0xFF36393F),
-              child: currentPage,
+          if (showLogin)
+            Container(
+              color: Colors.black.withOpacity(0.7),
+              child: Center(
+                child: SizedBox(
+                  width: 350,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Stack(
+                      children: [
+                        AuthLayout(),
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white),
+                            onPressed: _hideLoginPage,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );

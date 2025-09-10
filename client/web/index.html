@@ -34,5 +34,76 @@
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
+  <script>
+window.webauthnLogin = async function(serverUrl, email) {
+    // Helper functions for URL-safe base64 encoding and decoding
+    function base64UrlEncode(buffer) {
+        return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+    }
+
+    function base64UrlDecode(base64) {
+        base64 = base64
+            .replace(/-/g, '+')
+            .replace(/_/g, '/');
+        while (base64.length % 4) {
+            base64 += '=';
+        }
+        return Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer;
+    }
+
+    try {
+        if (!window.PublicKeyCredential) {
+            throw new Error('WebAuthn is not supported');
+        }
+
+        // Request challenge from server
+        const credential = await fetch(serverUrl + '/webauthn/authenticate-challenge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        }).then(response => response.json());
+
+        credential.challenge = base64UrlDecode(credential.challenge);
+        credential.allowCredentials.forEach(cred => {
+            cred.id = base64UrlDecode(cred.id);
+        });
+
+        // Perform WebAuthn authentication
+        const assertion = await navigator.credentials.get({ publicKey: credential });
+
+        // Send assertion to server for verification
+        await fetch(serverUrl + '/webauthn/authenticate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email,
+                assertion: {
+                    id: assertion.id,
+                    rawId: base64UrlEncode(assertion.rawId),
+                    type: assertion.type,
+                    response: {
+                        authenticatorData: base64UrlEncode(assertion.response.authenticatorData),
+                        clientDataJSON: base64UrlEncode(assertion.response.clientDataJSON),
+                        signature: base64UrlEncode(assertion.response.signature),
+                        userHandle: assertion.response.userHandle
+    ? base64UrlEncode(assertion.response.userHandle)
+    : ""
+                    }
+                }
+            })
+        }).then(response => {
+            if (response.redirected) {
+                window.location.href = response.url;
+            }
+        });
+
+    } catch (error) {
+        console.error('WebAuthn authentication failed:', error);
+    }
+};
+</script>
 </body>
 </html>

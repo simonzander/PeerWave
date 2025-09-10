@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "compounds": [
+    {
+      "name": "Debug Server and Client",
+      "configurations": ["Debug Node.js Server", "Debug Flutter Client"]
+    }
+  ],
+  "configurations": [
+    {
+      "name": "Debug Node.js Server",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/server/server.js",
+      "cwd": "${workspaceFolder}/server",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Debug Flutter Client",
+      "type": "dart",
+      "request": "launch",
+      "program": "${workspaceFolder}/client/lib/main.dart",
+      "cwd": "${workspaceFolder}/client"
+    }
+  ]
+}

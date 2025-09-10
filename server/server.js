@@ -1,12 +1,13 @@
 /**
  * Required modules
  */
-const config = require('../config/config');
+const config = require('./config/config');
 const express = require("express");
 const { randomUUID } = require('crypto');
 const http = require("http");
 const app = express();
 const sanitizeHtml = require('sanitize-html');
+const cors = require('cors');
 
 // Function to validate UUID
 function isValidUUID(uuid) {
@@ -14,10 +15,14 @@ function isValidUUID(uuid) {
   return uuidRegex.test(uuid);
 }
 
+app.use(cors({
+  origin: /^http:\/\/localhost:\d+$/,
+  credentials: true
+}));
 
 if (config.channels) {
 
-  const authRoutes = require('../routes/auth');
+  const authRoutes = require('./routes/auth');
 
   // Register and signin webpages
   app.use(authRoutes);

@@ -7,6 +7,10 @@ function base64UrlEncode(buffer) {
 }
 
 function base64UrlDecode(base64) {
+    if (typeof base64 !== 'string') {
+        console.error('base64UrlDecode expected a string, got:', base64, 'Type:', typeof base64);
+        throw new TypeError('Expected input to be a string');
+    }
     base64 = base64
         .replace(/-/g, '+')
         .replace(/_/g, '/');

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import '../services/auth_service.dart';
+import 'package:flutter/foundation.dart';
+import 'webauthn_helper.dart'
+  if (dart.library.js) 'webauthn_helper_web.dart';
 
 class AuthLayout extends StatelessWidget {
   final TextEditingController emailController = TextEditingController();
-  final TextEditingController passwordController = TextEditingController();
+  final TextEditingController serverController = TextEditingController();
 
   AuthLayout({super.key});
 
@@ -27,6 +28,17 @@ class AuthLayout extends StatelessWidget {
                   style: TextStyle(fontSize: 20, color: Colors.white)),
               const SizedBox(height: 20),
               TextField(
+                controller: serverController,
+                decoration: const InputDecoration(
+                  hintText: "Server URL",
+                  filled: true,
+                  fillColor: Color(0xFF40444B),
+                  border: OutlineInputBorder(),
+                ),
+                style: const TextStyle(color: Colors.white),
+              ),
+              const SizedBox(height: 10),
+              TextField(
                 controller: emailController,
                 decoration: const InputDecoration(
                   hintText: "E-Mail",
@@ -36,18 +48,7 @@ class AuthLayout extends StatelessWidget {
                 ),
                 style: const TextStyle(color: Colors.white),
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  hintText: "Passwort",
-                  filled: true,
-                  fillColor: Color(0xFF40444B),
-                  border: OutlineInputBorder(),
-                ),
-                style: const TextStyle(color: Colors.white),
-              ),
+              // Password field removed for WebAuthn-only authentication
               const SizedBox(height: 20),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -55,12 +56,16 @@ class AuthLayout extends StatelessWidget {
                   backgroundColor: Colors.blueAccent,
                 ),
                 onPressed: () async {
-                  final success = await AuthService.login(
-                    emailController.text,
-                    passwordController.text,
-                  );
-                  if (success && context.mounted) {
-                    context.go("/app");
+                  final serverUrl = serverController.text.trim();
+                  final email = emailController.text.trim();
+                  if (kIsWeb) {
+                    try {
+                      webauthnLogin(serverUrl, email);
+                    } catch (e) {
+                      debugPrint('WebAuthn JS call failed: $e');
+                    }
+                  } else {
+                    debugPrint('WebAuthn is only available on Flutter web.');
                   }
                 },
                 child: const Text("Login"),
