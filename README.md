@@ -51,8 +51,9 @@ We're excited to announce our latest feature! You can now create a room for inst
   - [Docker Build](#docker-build)
   - [Docker Hub](#docker-hub)
 - [Limitations](#limitations)
-- [Source Code](#source-code)
 - [Support](#support)
+- [License](#license)
+  - [Commercial Licensing](#commercial-licensing)
 
 ## Try It
 You can find a running instance at [peerwave.org](https://peerwave.org)
@@ -148,8 +149,25 @@ The main limitation is your upload speed, which is shared with your direct peers
 
 If you are sharing files, the file size and the number of files increase your memory usage. The files are splitted in chunks and your peers share also your downloaded file and hold the data in their memory.
 
-## Source Code
-This is an open-source project licensed under the MIT license.
-
 ## Support
 If you like this project, you can support me by [buying me a coffee](https://buymeacoffee.com/simonz). Feature requests and bug reports are welcome.
+
+## License
+
+This project is licensed under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/).  
+You may use it for personal, educational, or noncommercial purposes free of charge.  
+
+**Commercial use requires a paid license.**
+
+### Commercial Licensing
+
+For companies or organizations wishing to use this software commercially:
+
+- Small companies (<50 employees): €500 / year  
+- Medium companies (50–250 employees): €2,000 / year  
+- Large companies (>250 employees): €5,000 / year  
+- Enterprise: Contact for custom pricing  
+
+To request a commercial license, please email me at: commercial@peerwave.org
+
+⚠️ Note: Versions up to v0.x were licensed under MIT. Starting from v1.0.0, this project is licensed under the PolyForm Noncommercial License.

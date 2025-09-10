@@ -1,6 +1,6 @@
 {
   "name": "PeerWave",
-  "version": "0.0.1a",
+  "version": "1.0.0",
   "description": "WebRTC to stream and share files with peers",
   "main": "server.js",
   "scripts": {
@@ -11,7 +11,7 @@
     "SocketIO"
   ],
   "author": "Simon Zander",
-  "license": "MIT",
+  "license": "PolyForm Noncommercial License 1.0.0",
   "dependencies": {
     "@sequelize/sqlite3": "^7.0.0-alpha.41",
     "bulma-toast": "^2.4.4",
