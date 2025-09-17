@@ -7,6 +7,7 @@
     }
   ],
   "configurations": [
+
     {
       "name": "Debug Node.js Server",
       "type": "node",
@@ -21,6 +22,15 @@
       "request": "launch",
       "program": "${workspaceFolder}/client/lib/main.dart",
       "cwd": "${workspaceFolder}/client"
+    },
+    {
+      "name": "Debug Flutter Chrome",
+      "type": "dart",
+      "request": "launch",
+      "program": "${workspaceFolder}/client/lib/main.dart",
+      "cwd": "${workspaceFolder}/client",
+      "deviceId": "chrome",
+      "args": ["--web-port=55831"]
     }
   ]
 }

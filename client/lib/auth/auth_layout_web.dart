@@ -1,24 +1,29 @@
-/*import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:url_launcher/url_launcher.dart';
+//import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
 import '../web_config.dart';
+//import 'webauthn_js_web.dart';
+import 'dart:js_interop';
+//import 'package:js/js.dart';
+import 'package:go_router/go_router.dart';
+@JS('webauthnLogin')
+external JSPromise webauthnLoginJs(String serverUrl, String email);
+@JS('onWebAuthnSuccess')
+external set _onWebAuthnSuccess(AuthCallback callback);
 
-// Conditional import for web-only JS interop
-// Create a stub for non-web platforms
-// File: webauthn_js_stub.dart
-//   webauthnLoginJs(String serverUrl, String email) => throw UnimplementedError();
-// File: webauthn_js_web.dart
-//   import 'dart:js_interop';
-//   import 'package:js/js.dart';
-//   @JS('webauthnLogin')
-//   external JSPromise webauthnLoginJs(String serverUrl, String email);
-import 'webauthn_js_stub.dart'
-  if (dart.library.js_interop) 'webauthn_js_web.dart';
+@JS()
+extension type AuthCallback(JSFunction _) {}
+
+void setupWebAuthnCallback(void Function(int) callback) {
+  _onWebAuthnSuccess = AuthCallback((int status) {
+    callback(status);
+  }.toJS);
+}
 
 class AuthLayout extends StatefulWidget {
   const AuthLayout({super.key});
@@ -60,6 +65,16 @@ class _AuthLayoutState extends State<AuthLayout> {
           }
         }
       }
+    });
+    // Setup JS callback for WebAuthn success using dart:js_interop
+    setupWebAuthnCallback((status) {
+      setState(() {
+        _loginStatus = 'Login successful! Status: $status';
+        if(status == 200) {
+          GoRouter.of(context).go('/app');
+        }
+        // Handle token, e.g. store, navigate, etc.
+      });
     });
   }
 
@@ -110,17 +125,6 @@ class _AuthLayoutState extends State<AuthLayout> {
                     border: OutlineInputBorder(),
                   ),
                   style: const TextStyle(color: Colors.white),
-                )
-              else
-                TextField(
-                  controller: serverController,
-                  decoration: const InputDecoration(
-                    hintText: "Server URL",
-                    filled: true,
-                    fillColor: Color(0xFF40444B),
-                    border: OutlineInputBorder(),
-                  ),
-                  style: const TextStyle(color: Colors.white),
                 ),
               const SizedBox(height: 20),
               ElevatedButton(
@@ -141,20 +145,6 @@ class _AuthLayoutState extends State<AuthLayout> {
                       await webauthnLogin(urlString, email);
                     } catch (e) {
                       debugPrint('WebAuthn JS call failed: $e');
-                    }
-                  } else {
-                    // Automatically open the web app login URL
-                    String urlString = serverUrl;
-                    if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
-                      urlString = 'https://$urlString';
-                    }
-                    final url = Uri.parse('$urlString/magic/login');
-                    if (await canLaunchUrl(url)) {
-                      await launchUrl(url, mode: LaunchMode.externalApplication);
-                    } else {
-                      setState(() {
-                        _loginStatus = urlString;
-                      });
                     }
                   }
                 },
@@ -217,4 +207,4 @@ class _AuthLayoutState extends State<AuthLayout> {
       ),
     );
   }
-}*/
+}

@@ -17,7 +17,7 @@ function base64UrlEncode(buffer) {
 
 function base64UrlDecode(base64) {
     if (typeof base64 !== 'string') {
-        throw new TypeError('Expected input to be a string');
+        throw new TypeError('Expected input to be a string but type was: ' + typeof base64);
     }
     base64 = base64
         .replace(/-/g, '+')
@@ -510,49 +510,69 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
 
 // Verify authentication response
 authRoutes.post('/webauthn/authenticate', async (req, res) => {
-    const { email, assertion } = req.body;
-    //const user = users[username];
+    try {
+        const { email, assertion } = req.body;
+        //const user = users[username];
 
-    assertion.rawId = base64UrlDecode(assertion.rawId);
-    assertion.response.authenticatorData = base64UrlDecode(assertion.response.authenticatorData);
-    assertion.response.clientDataJSON = base64UrlDecode(assertion.response.clientDataJSON);
-    assertion.response.signature = base64UrlDecode(assertion.response.signature);
-    assertion.response.userHandle = base64UrlDecode(assertion.response.userHandle);
+        assertion.rawId = base64UrlDecode(assertion.rawId);
+        assertion.response.authenticatorData = base64UrlDecode(assertion.response.authenticatorData);
+        assertion.response.clientDataJSON = base64UrlDecode(assertion.response.clientDataJSON);
+        assertion.response.signature = base64UrlDecode(assertion.response.signature);
+        assertion.response.userHandle = base64UrlDecode(assertion.response.userHandle);
 
-    const user = await User.findOne({ where: { email: email } });
-    console.log(user);
-    user.credentials = JSON.parse(user.credentials);
-    const credential = user.credentials.find(cred => cred.id === assertion.id);
+        const user = await User.findOne({ where: { email: email } });
+        console.log(user);
+        user.credentials = JSON.parse(user.credentials);
+        const credential = user.credentials.find(cred => cred.id === assertion.id);
 
-    if (credential) {
-        // Credential found, proceed with authentication
-    } else {
-        // Credential not found, handle authentication failure
+        if (credential) {
+            // Credential found, proceed with authentication
+        } else {
+            // Credential not found, handle authentication failure
+        }
+        const challenge = base64UrlDecode(req.session.challenge);
+
+    const allowedOrigins = [
+        "http://localhost:3000",
+        "http://localhost:55831"
+        ];
+        let origin = req.headers.origin || "http://localhost:3000";
+        if (!allowedOrigins.includes(origin)) {
+        console.warn("Unexpected origin for WebAuthn:", origin);
+        origin = "http://localhost:3000";
+        }
+
+        const assertionExpectations = {
+            challenge: challenge,
+            origin: origin,
+            factor: "either",
+            publicKey: credential.publicKey,
+            prevCounter: 0,
+            userHandle: assertion.response.userHandle,
+        };
+
+        const authnResult = await fido2.assertionResult(assertion, assertionExpectations);
+
+        if (authnResult.audit.complete) {
+            // Authentication was successful
+            req.session.authenticated = true;
+            req.session.email = email;
+            req.session.uuid = user.uuid;
+            //res.redirect('/channels');
+            res.status(200).json({ status: "ok", message: "Authentication successful" });
+        } else {
+            // Authentication failed
+            res.status(400).json({ status: "failed", message: "Authentication failed" });
+        }
+    } catch (error) {
+        console.error('Error during authentication:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
     }
+});
 
-    const challenge = base64UrlDecode(req.session.challenge);
-
-   const assertionExpectations = {
-        challenge: challenge,
-        origin: "http://localhost:3000",
-        factor: "either",
-        publicKey: credential.publicKey,
-        prevCounter: 0,
-        userHandle: assertion.response.userHandle,
-    };
-
-    const authnResult = await fido2.assertionResult(assertion, assertionExpectations);
-
-    if (authnResult.audit.complete) {
-        // Authentication was successful
-        req.session.authenticated = true;
-        req.session.email = email;
-        req.session.uuid = user.uuid;
-        res.redirect('/channels');
-    } else {
-        // Authentication failed
-        res.status(400).json({ status: "failed", message: "Authentication failed" });
-    }
+authRoutes.get("/webauthn/check", (req, res) => {
+    if(req.session.authenticated) res.status(200).json({authenticated: true});
+    else res.status(401).json({authenticated: false});
 });
 
 authRoutes.get("/channels", async (req, res) => {

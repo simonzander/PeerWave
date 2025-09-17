@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'dashboard_page.dart';
+import 'profile_card.dart';
+import 'sidebar_panel.dart';
 import 'server_panel.dart';
-import '../auth/auth_layout.dart';
+import '../auth/auth_layout_web.dart' if (dart.library.io) '../auth/auth_layout_native.dart';
+
 
 class AppLayout extends StatefulWidget {
   const AppLayout({super.key});
@@ -13,8 +17,6 @@ class AppLayout extends StatefulWidget {
 class _AppLayoutState extends State<AppLayout> {
   Widget currentPage = const DashboardPage();
   bool showLogin = false;
-
-  // Removed unused _setPage method
 
   void _showLoginPage() {
     setState(() {
@@ -28,18 +30,24 @@ class _AppLayoutState extends State<AppLayout> {
     });
   }
 
+
   @override
   Widget build(BuildContext context) {
+    final bool isWeb = kIsWeb;
+    final double sidebarWidth = isWeb ? 350 : 300;
+    final double serverPanelWidth = isWeb ? 0 : 80;
+
     return Scaffold(
-      body: Stack(
+      body: Row(
         children: [
-          Row(
-            children: [
-              // Discord-like Server Panel
-              ServerPanel(
+          // ServerPanel (native only)
+          if (!isWeb)
+            Container(
+              width: serverPanelWidth,
+              color: Colors.black,
+              child: ServerPanel(
                 onAddServer: _showLoginPage,
                 serverIcons: [
-                  // Example server icons
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: CircleAvatar(
@@ -58,17 +66,35 @@ class _AppLayoutState extends State<AppLayout> {
                   ),
                 ],
               ),
-              // Main content
-              Expanded(
-                child: Container(
-                  color: const Color(0xFF36393F),
-                  child: currentPage,
-                ),
-              ),
-            ],
+            ),
+          // SidebarPanel (responsive)
+          LayoutBuilder(
+            builder: (context, constraints) {
+              double width = sidebarWidth;
+              if (constraints.maxWidth < 600) {
+                width = 80; // Collapse sidebar for small screens
+              }
+              return SizedBox(
+                width: width,
+                child: SidebarPanel(panelWidth: width, buildProfileCard: () => const ProfileCard()),
+              );
+            },
           ),
-          if (showLogin)
-            Container(
+          // Main content (dashboard)
+          Expanded(
+            child: Container(
+              color: const Color(0xFF36393F),
+              child: currentPage,
+            ),
+          ),
+        ],
+      ),
+      // Overlay login for web
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      // Show login overlay if needed
+      floatingActionButton: (showLogin && isWeb)
+          ? Container(
               color: Colors.black.withOpacity(0.7),
               child: Center(
                 child: SizedBox(
@@ -91,9 +117,8 @@ class _AppLayoutState extends State<AppLayout> {
                   ),
                 ),
               ),
-            ),
-        ],
-      ),
+            )
+          : null,
     );
   }
 }

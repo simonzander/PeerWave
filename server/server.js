@@ -16,16 +16,26 @@ function isValidUUID(uuid) {
 }
 
 app.use(cors({
-  origin: /^http:\/\/localhost:\d+$/,
+  origin: function(origin, callback) {
+    // Allow any localhost port and specifically http://localhost:57044/
+    if (
+      /^http:\/\/localhost:\d+$/.test(origin) ||
+      origin === 'http://localhost:55831'
+    ) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
 
 if (config.channels) {
-
   const authRoutes = require('./routes/auth');
-
+  const magicRoutes = require('./routes/magic');
   // Register and signin webpages
   app.use(authRoutes);
+  app.use(magicRoutes);
 }
 
 /**

@@ -35,7 +35,6 @@
 <body>
   <script src="flutter_bootstrap.js" async></script>
   <script>
-window.webauthnLogin = async function(serverUrl, email) {
     // Helper functions for URL-safe base64 encoding and decoding
     function base64UrlEncode(buffer) {
         return btoa(String.fromCharCode(...new Uint8Array(buffer)))
@@ -45,41 +44,63 @@ window.webauthnLogin = async function(serverUrl, email) {
     }
 
     function base64UrlDecode(base64) {
+        if (typeof base64 !== 'string') {
+            console.error('base64UrlDecode expected a string, got:', base64, 'Type:', typeof base64);
+            throw new TypeError('Expected input to be a string');
+        }
         base64 = base64
             .replace(/-/g, '+')
             .replace(/_/g, '/');
+        // Pad with '=' to make the length a multiple of 4
         while (base64.length % 4) {
             base64 += '=';
         }
         return Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer;
     }
 
-    try {
+    window.webauthnLogin = async function(serverUrl, email) {
+        try {
+        // Check if WebAuthn is supported by the browser
         if (!window.PublicKeyCredential) {
             throw new Error('WebAuthn is not supported');
         }
 
-        // Request challenge from server
+        // Request a new WebAuthn credential from the server
         const credential = await fetch(serverUrl + '/webauthn/authenticate-challenge', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email })
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({ email: email })
+            // Add any necessary headers and body for the request
         }).then(response => response.json());
 
+        console.log(credential);
+
+        // Create a new PublicKeyCredential object
         credential.challenge = base64UrlDecode(credential.challenge);
         credential.allowCredentials.forEach(cred => {
             cred.id = base64UrlDecode(cred.id);
         });
 
-        // Perform WebAuthn authentication
+        // Use the PublicKeyCredential object to perform the WebAuthn authentication
         const assertion = await navigator.credentials.get({ publicKey: credential });
-
-        // Send assertion to server for verification
-        await fetch(serverUrl + '/webauthn/authenticate', {
+        
+        // test
+        console.log('base64UrlDecode input:', assertion.rawId, typeof assertion.rawId);
+        const rawId = base64UrlEncode(assertion.rawId)
+        console.log('base64UrlDecode input:', rawId, typeof rawId);
+        // test end
+        // Send the authentication assertion to the server for verification
+        const response = await fetch(serverUrl + '/webauthn/authenticate', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
             body: JSON.stringify({
-                email,
+                email: email,
                 assertion: {
                     id: assertion.id,
                     rawId: base64UrlEncode(assertion.rawId),
@@ -88,22 +109,31 @@ window.webauthnLogin = async function(serverUrl, email) {
                         authenticatorData: base64UrlEncode(assertion.response.authenticatorData),
                         clientDataJSON: base64UrlEncode(assertion.response.clientDataJSON),
                         signature: base64UrlEncode(assertion.response.signature),
-                        userHandle: assertion.response.userHandle
-    ? base64UrlEncode(assertion.response.userHandle)
-    : ""
+                        userHandle: assertion.response.userHandle ? base64UrlEncode(assertion.response.userHandle) : null
                     }
-                }
+                } 
             })
         }).then(response => {
+            if (response.status === 200) {
+                if (window.onWebAuthnSuccess) {
+                    window.onWebAuthnSuccess(200); // or whatever data you want to pass
+                }
+
+            }
             if (response.redirected) {
                 window.location.href = response.url;
             }
+            //response.json());
         });
+            
+
+        // Handle the server response and perform any necessary actions
+        // based on the authentication result
 
     } catch (error) {
         console.error('WebAuthn authentication failed:', error);
     }
-};
+}
 </script>
 </body>
 </html>

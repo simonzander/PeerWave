@@ -1,4 +1,4 @@
-/*import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:async';
 import 'package:http/http.dart' as http;
@@ -6,19 +6,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
-import '../web_config.dart';
+import 'package:go_router/go_router.dart';
+//import '../web_config.dart';
+import 'webauthn_js_stub.dart';
+import 'magic_link_native.dart';
 
-// Conditional import for web-only JS interop
-// Create a stub for non-web platforms
-// File: webauthn_js_stub.dart
-//   webauthnLoginJs(String serverUrl, String email) => throw UnimplementedError();
-// File: webauthn_js_web.dart
-//   import 'dart:js_interop';
-//   import 'package:js/js.dart';
-//   @JS('webauthnLogin')
-//   external JSPromise webauthnLoginJs(String serverUrl, String email);
-import 'webauthn_js_stub.dart'
-  if (dart.library.js_interop) 'webauthn_js_web.dart';
 
 class AuthLayout extends StatefulWidget {
   const AuthLayout({super.key});
@@ -100,28 +92,16 @@ class _AuthLayoutState extends State<AuthLayout> {
               const Text("Login",
                   style: TextStyle(fontSize: 20, color: Colors.white)),
               const SizedBox(height: 20),
-              if (kIsWeb)
-                TextField(
-                  controller: emailController,
-                  decoration: const InputDecoration(
-                    hintText: "Email",
-                    filled: true,
-                    fillColor: Color(0xFF40444B),
-                    border: OutlineInputBorder(),
-                  ),
-                  style: const TextStyle(color: Colors.white),
-                )
-              else
-                TextField(
-                  controller: serverController,
-                  decoration: const InputDecoration(
-                    hintText: "Server URL",
-                    filled: true,
-                    fillColor: Color(0xFF40444B),
-                    border: OutlineInputBorder(),
-                  ),
-                  style: const TextStyle(color: Colors.white),
+              TextField(
+                controller: serverController,
+                decoration: const InputDecoration(
+                  hintText: "Server URL",
+                  filled: true,
+                  fillColor: Color(0xFF40444B),
+                  border: OutlineInputBorder(),
                 ),
+                style: const TextStyle(color: Colors.white),
+              ),
               const SizedBox(height: 20),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -130,32 +110,22 @@ class _AuthLayoutState extends State<AuthLayout> {
                 ),
                 onPressed: () async {
                   final serverUrl = serverController.text.trim();
-                  final email = emailController.text.trim();
-                  if (kIsWeb) {
-                    try {
-                      final apiServer = await loadWebApiServer();
-                      String urlString = apiServer ?? '';
-                      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
-                        urlString = 'https://$urlString';
-                      }
-                      await webauthnLogin(urlString, email);
-                    } catch (e) {
-                      debugPrint('WebAuthn JS call failed: $e');
+                  String urlString = serverUrl;
+                  if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+                    urlString = 'https://$urlString';
+                  }
+                  final url = Uri.parse('$urlString/login?from=magic-link');
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                    if (mounted) {
+                      // Use GoRouter to navigate to /magic-link and pass serverUrl as extra
+                      // ignore: use_build_context_synchronously
+                      GoRouter.of(context).go('/magic-link', extra: urlString);
                     }
                   } else {
-                    // Automatically open the web app login URL
-                    String urlString = serverUrl;
-                    if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
-                      urlString = 'https://$urlString';
-                    }
-                    final url = Uri.parse('$urlString/magic/login');
-                    if (await canLaunchUrl(url)) {
-                      await launchUrl(url, mode: LaunchMode.externalApplication);
-                    } else {
-                      setState(() {
-                        _loginStatus = urlString;
-                      });
-                    }
+                    setState(() {
+                      _loginStatus = urlString;
+                    });
                   }
                 },
                 child: const Text("Login"),
@@ -217,4 +187,4 @@ class _AuthLayoutState extends State<AuthLayout> {
       ),
     );
   }
-}*/
+}
