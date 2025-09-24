@@ -69,9 +69,16 @@ class _AuthLayoutState extends State<AuthLayout> {
     // Setup JS callback for WebAuthn success using dart:js_interop
     setupWebAuthnCallback((status) {
       setState(() {
+        
         _loginStatus = 'Login successful! Status: $status';
         if(status == 200) {
-          GoRouter.of(context).go('/app');
+          final uri = Uri.base;
+          final fromParam = uri.queryParameters['from'];
+          if (fromParam == 'magic-link') {
+            context.go('/magic-link');
+          } else {
+            context.go('/app');
+          }
         }
         // Handle token, e.g. store, navigate, etc.
       });

@@ -6,7 +6,6 @@ import 'sidebar_panel.dart';
 import 'server_panel.dart';
 import '../auth/auth_layout_web.dart' if (dart.library.io) '../auth/auth_layout_native.dart';
 
-
 class AppLayout extends StatefulWidget {
   const AppLayout({super.key});
 
@@ -30,7 +29,6 @@ class _AppLayoutState extends State<AppLayout> {
     });
   }
 
-
   @override
   Widget build(BuildContext context) {
     final bool isWeb = kIsWeb;
@@ -47,24 +45,6 @@ class _AppLayoutState extends State<AppLayout> {
               color: Colors.black,
               child: ServerPanel(
                 onAddServer: _showLoginPage,
-                serverIcons: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: CircleAvatar(
-                      radius: 24,
-                      backgroundColor: Colors.blue,
-                      child: const Text('S1', style: TextStyle(color: Colors.white)),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: CircleAvatar(
-                      radius: 24,
-                      backgroundColor: Colors.green,
-                      child: const Text('S2', style: TextStyle(color: Colors.white)),
-                    ),
-                  ),
-                ],
               ),
             ),
           // SidebarPanel (responsive)

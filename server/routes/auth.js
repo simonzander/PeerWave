@@ -6,6 +6,9 @@ const bodyParser = require('body-parser'); // Import body-parser
 const nodemailer = require("nodemailer");
 const crypto = require('crypto');
 const session = require('express-session');
+const cors = require('cors');
+const magicLinks = require('../store/magicLinksStore');
+const { User, OTP } = require('../db/model');
 
 // Helper functions for URL-safe base64 encoding and decoding
 function base64UrlEncode(buffer) {
@@ -42,7 +45,7 @@ const transporter = nodemailer.createTransport(config.smtp);
 
 const authRoutes = express.Router();
 
-const sequelize = new Sequelize({
+/*const sequelize = new Sequelize({
     dialect: 'sqlite',
     storage: './db/peerwave.sqlite',
 });
@@ -100,6 +103,23 @@ const User = sequelize.define('User', {
         type: DataTypes.BLOB,
         allowNull: true
     },
+});
+
+// Define client model
+const Client = sequelize.define('Client', {
+    owner: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    clientid: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true
+    }
 });
 
 // Define public key model
@@ -241,6 +261,7 @@ Thread.belongsTo(User, { as: 'user', foreignKey: 'sender' });
 User.hasMany(PublicKey, { foreignKey: 'owner' });
 User.hasMany(PublicKey, { foreignKey: 'reciever' });
 Channel.hasMany(PublicKey, { foreignKey: 'channel' });
+User.hasMany(Client, { foreignKey: 'owner' });
 
 // Create the User table in the database
 User.sync({ alter: true })
@@ -296,6 +317,15 @@ PublicKey.sync({ alter: true })
         console.error('Error creating PublicKey table:', error);
     });
 
+// Create the Client table in the database
+Client.sync({ alter: true })
+    .then(() => {
+        console.log('Client table created successfully.');
+    })
+    .catch(error => {
+        console.error('Error creating Client table:', error);
+    });
+*/
 // Add body-parser middleware
 authRoutes.use(bodyParser.urlencoded({ extended: true }));
 authRoutes.use(bodyParser.json());
@@ -575,6 +605,62 @@ authRoutes.get("/webauthn/check", (req, res) => {
     else res.status(401).json({authenticated: false});
 });
 
+authRoutes.get("/magic/generate", (req, res) => {
+    
+    if (req.session.authenticated && req.session.email && req.session.uuid) {
+        // Perform magic link generation logic
+        const key = crypto.randomBytes(32).toString('hex');
+        const serverHexInfo = Buffer.from(JSON.stringify({ serverUrl: `${req.protocol}://${req.get('host')}`, mail: req.session.email })).toString('hex');
+        magicLinks[key] = { email: req.session.email, uuid: req.session.uuid, expires: Date.now() + 15 * 60 * 1000 }; // 15 min expiry
+        res.json({ magicKey: `${key + serverHexInfo}`  });
+        Object.keys(magicLinks).forEach(key => {
+            if (magicLinks[key].expires < Date.now()) {
+                delete magicLinks[key];
+            }
+        });
+    } else {
+        res.status(401).json({authenticated: false});
+    }
+});
+/*
+authRoutes.post("/magic/verify", cors({ origin: true, credentials: true }), async (req, res) => {
+    const { key, clientid } = req.body;
+    const entry = magicLinks[key];
+    if (entry && entry.expires > Date.now()) {
+        // Valid magic link
+        req.session.authenticated = true;
+        req.session.email = entry.email;
+        req.session.uuid = entry.uuid;
+        const client = await Client.create({ owner: entry.uuid, clientid: clientid });
+        res.status(200).json({ status: "ok", message: "Magic link verified" });
+    } else {
+        // Invalid or expired magic link
+        res.status(400).json({ status: "failed", message: "Invalid or expired magic link" });
+    }
+});
+
+authRoutes.post("/client/login", async (req, res) => {
+    const { clientid, email } = req.body;
+    try {
+        const owner = await User.findOne({ where: { email: email } });
+        if (!owner) {
+            return res.status(401).json({ status: "failed", message: "Invalid email" });
+        }
+        const client = await Client.findOne({ where: { clientid: clientid, owner: owner.uuid } });
+        if (client) {
+            req.session.authenticated = true;
+            req.session.email = owner.email;
+            req.session.uuid = client.owner;
+            res.status(200).json({ status: "ok", message: "Client login successful" });
+        } else {
+            res.status(401).json({ status: "failed", message: "Invalid client ID or not authorized" });
+        }
+    } catch (error) {
+        console.error('Error during client login:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
 authRoutes.get("/channels", async (req, res) => {
     try {
         let threads = [];
@@ -795,6 +881,7 @@ authRoutes.post("/usersettings", async (req, res) => {
         res.json({ message: "Error updating user settings" });
     }
 });
+*/
 
 /*authRoutes.post("/webauthn/sign-challenge", (req, res) => {
     let user = {

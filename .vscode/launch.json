@@ -2,6 +2,14 @@
   "version": "0.2.0",
   "compounds": [
     {
+      "name": "Debug Server, Flutter Client, and Flutter Chrome",
+      "configurations": [
+        "Debug Node.js Server",
+        "Debug Flutter Client",
+        "Debug Flutter Chrome"
+      ]
+    },
+    {
       "name": "Debug Server and Client",
       "configurations": ["Debug Node.js Server", "Debug Flutter Client"]
     }

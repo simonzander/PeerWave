@@ -1,11 +1,14 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../services/auth_service_native.dart';
+import 'package:go_router/go_router.dart';
 
 class MagicLinkWebPageWithServer extends StatefulWidget {
   final String serverUrl;
-  const MagicLinkWebPageWithServer({Key? key, required this.serverUrl}) : super(key: key);
+  final String? clientId;
+
+  const MagicLinkWebPageWithServer({Key? key, required this.serverUrl, this.clientId}) : super(key: key);
 
   @override
   State<MagicLinkWebPageWithServer> createState() => _MagicLinkWebPageWithServerState();
@@ -14,14 +17,16 @@ class MagicLinkWebPageWithServer extends StatefulWidget {
 class _MagicLinkWebPageWithServerState extends State<MagicLinkWebPageWithServer> {
   @override
   Widget build(BuildContext context) {
-    return MagicLinkWebPageWithInjectedServer(serverUrl: widget.serverUrl);
+    print('[MagicLinkWebPageWithServer] clientId: ${widget.clientId}');
+    return MagicLinkWebPageWithInjectedServer(serverUrl: widget.serverUrl, clientId: widget.clientId);
   }
 }
 
 // Internal widget to inject serverUrl into MagicLinkWebPage
 class MagicLinkWebPageWithInjectedServer extends StatefulWidget {
   final String serverUrl;
-  const MagicLinkWebPageWithInjectedServer({Key? key, required this.serverUrl}) : super(key: key);
+  final String? clientId;
+  const MagicLinkWebPageWithInjectedServer({Key? key, required this.serverUrl, this.clientId}) : super(key: key);
 
   @override
   State<MagicLinkWebPageWithInjectedServer> createState() => _MagicLinkWebPageWithInjectedServerState();
@@ -30,14 +35,17 @@ class MagicLinkWebPageWithInjectedServer extends StatefulWidget {
 class _MagicLinkWebPageWithInjectedServerState extends State<MagicLinkWebPageWithInjectedServer> {
   @override
   Widget build(BuildContext context) {
-    return MagicLinkWebPageWithServerUrl(serverUrl: widget.serverUrl);
+    print('[MagicLinkWebPageWithInjectedServer] clientId: ${widget.clientId}');
+    return MagicLinkWebPageWithServerUrl(serverUrl: widget.serverUrl, clientId: widget.clientId);
   }
 }
 
 // MagicLinkWebPage with serverUrl injected into controller
 class MagicLinkWebPageWithServerUrl extends MagicLinkWebPage {
   final String serverUrl;
-  MagicLinkWebPageWithServerUrl({Key? key, required this.serverUrl}) : super(key: key);
+  final String? clientId;
+
+  MagicLinkWebPageWithServerUrl({Key? key, required this.serverUrl, this.clientId}) : super(key: key, clientId: clientId);
 
   @override
   State<MagicLinkWebPage> createState() => _MagicLinkWebPageWithServerUrlState();
@@ -47,12 +55,14 @@ class _MagicLinkWebPageWithServerUrlState extends _MagicLinkWebPageState {
   @override
   void initState() {
     super.initState();
+    print('[MagicLinkWebPageWithServerUrl] clientId: ${(widget as MagicLinkWebPageWithServerUrl).clientId}');
     serverController.text = (widget as MagicLinkWebPageWithServerUrl).serverUrl;
   }
 }
 
 class MagicLinkWebPage extends StatefulWidget {
-  const MagicLinkWebPage({super.key});
+  final String? clientId;
+  const MagicLinkWebPage({super.key, this.clientId});
 
   @override
   State<MagicLinkWebPage> createState() => _MagicLinkWebPageState();
@@ -64,9 +74,25 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
   String? _status;
   bool _loading = false;
 
+  String hexToString(String hex) {
+    final bytes = <int>[];
+    for (var i = 0; i < hex.length; i += 2) {
+      bytes.add(int.parse(hex.substring(i, i + 2), radix: 16));
+    }
+    return String.fromCharCodes(bytes);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    print('[MagicLinkWebPage] clientId: ${widget.clientId}');
+  }
+
   Future<void> _evaluateMagicKey() async {
     final magicKey = magicKeyController.text.trim();
     final serverUrl = serverController.text.trim();
+    final clientId = widget.clientId; // Use the passed clientId
+    print('[MagicLinkWebPageState:_evaluateMagicKey] clientId: $clientId');
     if (magicKey.isEmpty || serverUrl.isEmpty) {
       setState(() {
         _status = 'Please enter both magic key and server URL.';
@@ -78,13 +104,29 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
       _status = null;
     });
     try {
-      final url = Uri.parse('$serverUrl/magic/evaluate');
+      print('[try block] clientId: $clientId');
+      final keyHex = magicKey.substring(0, 64); // First 64 chars = 32 bytes key
+      final serverHexInfo = magicKey.substring(64); // Rest = hostname in hex
+      print('Server Hex Info: $serverHexInfo'); // Debug output
+      final decodedServerInfo = hexToString(serverHexInfo);
+      print( 'Decoded Server Info: $decodedServerInfo'); // Debug output
+      final Map<String, dynamic> jsonData = jsonDecode(decodedServerInfo);
+      print(jsonData); // Debug output
+      final String hostname = jsonData['serverUrl'] ?? '';
+      final String mail = jsonData['mail'] ?? '';
+      //final url = Uri.parse('http://localhost:3000/magic/verify');
+      final url = Uri.parse('$hostname/magic/verify');
       final resp = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'magic_key': magicKey}),
+        body: jsonEncode({'key': keyHex, 'clientid': clientId}),
       );
+      print('Request URL: $url');
+      print('Status: ${resp.statusCode}');
+      print('Headers: ${resp.headers}');
+      print('Body: ${resp.body}');
       if (resp.statusCode == 200) {
+        await AuthService().saveHostMailList(hostname, mail); // <-- Add host to persistent list
         setState(() {
           _status = 'Magic key evaluated successfully!';
         });
@@ -106,9 +148,18 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
 
   @override
   Widget build(BuildContext context) {
-  // Show UI on all platforms
+    // ...existing UI code...
     return Scaffold(
       backgroundColor: const Color(0xFF2C2F33),
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () {
+            GoRouter.of(context).go("/app");
+          },
+        ),
+        title: const Text('Magic Key Evaluation'),
+      ),
       body: Center(
         child: Container(
           padding: const EdgeInsets.all(20),

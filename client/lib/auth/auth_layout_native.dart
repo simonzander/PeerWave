@@ -78,6 +78,15 @@ class _AuthLayoutState extends State<AuthLayout> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF2C2F33),
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () {
+            GoRouter.of(context).go("/app");
+          },
+        ),
+        title: const Text('Login'),
+      ),
       body: Center(
         child: Container(
           padding: const EdgeInsets.all(20),
@@ -129,6 +138,16 @@ class _AuthLayoutState extends State<AuthLayout> {
                   }
                 },
                 child: const Text("Login"),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 45),
+                  backgroundColor: Colors.greenAccent,
+                ),
+                onPressed: () {
+                  GoRouter.of(context).go('/magic-link');
+                },
+                child: const Text("Evaluate Magic Key"),
               ),
               if (_loginStatus != null) ...[
                 const SizedBox(height: 20),

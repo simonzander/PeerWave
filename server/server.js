@@ -8,6 +8,9 @@ const http = require("http");
 const app = express();
 const sanitizeHtml = require('sanitize-html');
 const cors = require('cors');
+const session = require('express-session');
+const sharedSession = require('socket.io-express-session');
+const { User, Channel, Thread, Client } = require('./db/model');
 
 // Function to validate UUID
 function isValidUUID(uuid) {
@@ -15,122 +18,49 @@ function isValidUUID(uuid) {
   return uuidRegex.test(uuid);
 }
 
-app.use(cors({
-  origin: function(origin, callback) {
-    // Allow any localhost port and specifically http://localhost:57044/
-    if (
-      /^http:\/\/localhost:\d+$/.test(origin) ||
-      origin === 'http://localhost:55831'
-    ) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true
-}));
+// Configure session middleware
 
-if (config.channels) {
+const sessionMiddleware = session({
+    secret: config.session.secret, // Replace with a strong secret key
+    resave: config.session.resave,
+    saveUninitialized: config.session.saveUninitialized,
+    cookie: config.cookie // Set to true if using HTTPS
+});
+
+// Use session middleware in Express
+app.use(sessionMiddleware);
+
+
   const authRoutes = require('./routes/auth');
-  const magicRoutes = require('./routes/magic');
-  // Register and signin webpages
-  app.use(authRoutes);
-  app.use(magicRoutes);
-}
+  const clientRoutes = require('./routes/client');
 
-/**
- * Room data object to store information about each room
- * @typedef {Object} RoomData
- * @property {string} host - The ID of the host socket
- * @property {Object} seeders - Object containing information about seeders in the room
- * @property {boolean} stream - Indicates if the room is currently streaming
- * @property {Object} share - Object containing shared files in the room
- */
+  app.use(clientRoutes);
 
-/**
- * Object to store information about each seeder in a room
- * @typedef {Object} SeederData
- * @property {number} slots - Number of available download slots for the seeder
- * @property {number} peers - Number of connected peers to the seeder
- * @property {number} level - Level of the seeder in the streaming hierarchy
- * @property {number} score - Score of the seeder based on level and number of peers
- */
-
-/**
- * Callback function type
- * @callback Callback
- * @param {any} data - The data to be passed to the callback function
- */
-
+  //SOCKET.IO
 const rooms = {};
 const port = config.port || 4000;
 
 const server = http.createServer(app);
 const io = require("socket.io")(server);
 
-/**
- * Handles the callback function by invoking it with the provided data.
- *
- * @param {Callback} callback - The callback function to be invoked.
- * @param {any} data - The data to be passed to the callback function.
- */
-function callbackHandler(callback, data) {
-  if (typeof callback === "function") {
-    callback(data);
-  }
-}
-
-app.use(express.static(__dirname + "/public"));
-
-app.set("view engine", "pug");
-
-/**
- * Route for a meeting
- */
-app.get("/meet", (req, res) => {
-  res.render("meet");
-});
-
-/**
- * Route for hosting a room
- */
-app.get("/host", (req, res) => {
-  res.render("host");
-});
-
-/**
- * Default route
- */
-app.get("/", (req, res) => {
-  res.render("about");
-});
-
-/**
- * Route for viewing a room
- * @param {string} room - The ID of the room to view
- */
-app.get("/view/:room", ({ params: { room } }, res) => {
-  res.render("view", { room });
-});
-
-/**
- * Route for join a meeting room
- * @param {string} room - The ID of the room to meet
- */
-app.get("/meet/:room", ({ params: { room } }, res) => {
-  res.render("meet", { room });
-});
-
-/**
- * Route for sharing a room
- * @param {string} room - The ID of the room to share
- */
-app.get("/share/:room", ({ params: { room } }, res) => {
-  res.render("share", { room });
-});
+io.use(sharedSession(sessionMiddleware, { autoSave: true }));
 
 io.sockets.on("error", e => console.log(e));
 io.sockets.on("connection", socket => {
+
+  socket.on("authenticate", async() => {
+    // Here you would normally check the clientid and mail against your database
+    try {
+      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.authenticated === true) {
+        socket.emit("authenticated", { authenticated: true });
+      } else {
+        socket.emit("authenticated", { authenticated: false });
+      }
+    } catch (error) {
+      console.error('Error during authentication:', error);
+      socket.emit("authenticated", { authenticated: false });
+    }
+  });
 
   /**
    * Event handler for hosting a room
@@ -497,6 +427,114 @@ io.sockets.on("connection", socket => {
     socket.to(room).emit("message", socket.id, "join", "");
     callbackHandler(callback, { message: "meeting joined", participants: rooms[room].participants, id: socket.id });
   });
+});
+  // SOCKET.IO END
+
+  app.use(cors({
+  origin: function(origin, callback) {
+      // Allow any localhost port and specifically http://localhost:57044/
+      if (
+        /^http:\/\/localhost:\d+$/.test(origin) ||
+        origin === 'http://localhost:55831'
+      ) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true
+  }));
+
+  // Register and signin webpages
+  app.use(authRoutes);
+
+
+
+/**
+ * Room data object to store information about each room
+ * @typedef {Object} RoomData
+ * @property {string} host - The ID of the host socket
+ * @property {Object} seeders - Object containing information about seeders in the room
+ * @property {boolean} stream - Indicates if the room is currently streaming
+ * @property {Object} share - Object containing shared files in the room
+ */
+
+/**
+ * Object to store information about each seeder in a room
+ * @typedef {Object} SeederData
+ * @property {number} slots - Number of available download slots for the seeder
+ * @property {number} peers - Number of connected peers to the seeder
+ * @property {number} level - Level of the seeder in the streaming hierarchy
+ * @property {number} score - Score of the seeder based on level and number of peers
+ */
+
+/**
+ * Callback function type
+ * @callback Callback
+ * @param {any} data - The data to be passed to the callback function
+ */
+
+
+
+/**
+ * Handles the callback function by invoking it with the provided data.
+ *
+ * @param {Callback} callback - The callback function to be invoked.
+ * @param {any} data - The data to be passed to the callback function.
+ */
+function callbackHandler(callback, data) {
+  if (typeof callback === "function") {
+    callback(data);
+  }
+}
+
+app.use(express.static(__dirname + "/public"));
+
+app.set("view engine", "pug");
+
+/**
+ * Route for a meeting
+ */
+app.get("/meet", (req, res) => {
+  res.render("meet");
+});
+
+/**
+ * Route for hosting a room
+ */
+app.get("/host", (req, res) => {
+  res.render("host");
+});
+
+/**
+ * Default route
+ */
+app.get("/", (req, res) => {
+  res.render("about");
+});
+
+/**
+ * Route for viewing a room
+ * @param {string} room - The ID of the room to view
+ */
+app.get("/view/:room", ({ params: { room } }, res) => {
+  res.render("view", { room });
+});
+
+/**
+ * Route for join a meeting room
+ * @param {string} room - The ID of the room to meet
+ */
+app.get("/meet/:room", ({ params: { room } }, res) => {
+  res.render("meet", { room });
+});
+
+/**
+ * Route for sharing a room
+ * @param {string} room - The ID of the room to share
+ */
+app.get("/share/:room", ({ params: { room } }, res) => {
+  res.render("share", { room });
 });
 
 server.listen(port, () => console.log(`Server is running on port ${port}`));

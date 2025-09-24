@@ -135,5 +135,14 @@
     }
 }
 </script>
+    <script>
+        window.fetchMagicKey = async function(url) {
+            const response = await fetch(url, {
+                method: 'GET',
+                credentials: 'include'
+            });
+            return await response.text();
+        }
+    </script>
 </body>
 </html>
