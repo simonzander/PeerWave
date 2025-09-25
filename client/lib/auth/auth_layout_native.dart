@@ -20,6 +20,17 @@ class AuthLayout extends StatefulWidget {
 }
 
 class _AuthLayoutState extends State<AuthLayout> {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final extra = GoRouterState.of(context).extra;
+    if (extra is Map && extra['host'] is String) {
+      final host = extra['host'] as String;
+      if (serverController.text != host) {
+        serverController.text = host;
+      }
+    }
+  }
   final TextEditingController emailController = TextEditingController();
   final TextEditingController serverController = TextEditingController();
   StreamSubscription<Uri>? _sub;
@@ -122,6 +133,9 @@ class _AuthLayoutState extends State<AuthLayout> {
                   String urlString = serverUrl;
                   if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
                     urlString = 'https://$urlString';
+                  }
+                  if (urlString.endsWith('/')) {
+                    urlString = urlString.substring(0, urlString.length - 1);
                   }
                   final url = Uri.parse('$urlString/login?from=magic-link');
                   if (await canLaunchUrl(url)) {

@@ -130,6 +130,9 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
         setState(() {
           _status = 'Magic key evaluated successfully!';
         });
+        if (mounted) {
+          GoRouter.of(context).go('/app');
+        }
       } else {
         setState(() {
           _status = 'Error: ${resp.body}';

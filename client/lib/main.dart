@@ -1,4 +1,5 @@
 import 'package:uni_links/uni_links.dart';
+import 'package:uni_links/uni_links.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,7 @@ import 'auth/auth_layout_web.dart' if (dart.library.io) 'auth/auth_layout_native
 import 'auth/magic_link_web.dart' if (dart.library.io) 'auth/magic_link_native.dart';
 import 'auth/magic_link_native.dart' show MagicLinkWebPageWithServer;
 import 'app/app_layout.dart';
+import 'app/dashboard_page.dart';
 // Use conditional import for 'services/auth_service.dart'
 import 'services/auth_service_web.dart' if (dart.library.io) 'services/auth_service_native.dart';
 // Import clientid logic only for native
@@ -81,41 +83,72 @@ class _MyAppState extends State<MyApp> {
     if (!kIsWeb && _magicKey != null) {
       return MagicLinkWebPageWithServer(serverUrl: _magicKey!, clientId: widget.clientId);
     }
-    // ...existing MaterialApp.router or other app code...
-    final List<GoRoute> routes = [
-      GoRoute(
-        path: '/magic-link',
-        builder: (context, state) {
-          final extra = state.extra;
-          print('Navigated to /magic-link with extra: $extra, kIsWeb: $kIsWeb, clientId: ${widget.clientId}, extra is String: ${extra is String}');
-          if (!kIsWeb && extra is String && extra.isNotEmpty) {
-            print("Rendering MagicLinkWebPageWithServer, clientId: ${widget.clientId}");
-            return MagicLinkWebPageWithServer(serverUrl: extra, clientId: widget.clientId);
-          }
-          return const MagicLinkWebPage();
-        },
-      ),
-      GoRoute(
-        path: '/login',
-        pageBuilder: (context, state) {
-          // Use fullscreenDialog for native, standard for web
-          if (!kIsWeb) {
-            return MaterialPage(
-              fullscreenDialog: true,
-              child: const AuthLayout(),
-            );
-          } else {
-            return MaterialPage(
-              child: const AuthLayout(),
-            );
-          }
-        },
-      ),
-      GoRoute(
-        path: '/app',
-        builder: (context, state) => const AppLayout(),
-      ),
-    ];
+
+    // Use ShellRoute for native, flat routes for web
+    final List<RouteBase> routes = kIsWeb
+        ? [
+            GoRoute(
+              path: '/magic-link',
+              builder: (context, state) {
+                final extra = state.extra;
+                print('Navigated to /magic-link with extra: $extra, kIsWeb: $kIsWeb, clientId: ${widget.clientId}, extra is String: ${extra is String}');
+                return const MagicLinkWebPage();
+              },
+            ),
+            GoRoute(
+              path: '/login',
+              pageBuilder: (context, state) {
+                return MaterialPage(
+                  child: const AuthLayout(),
+                );
+              },
+            ),
+            GoRoute(
+              path: '/app',
+              builder: (context, state) => const AppLayout(),
+            ),
+          ]
+        : [
+            ShellRoute(
+              builder: (context, state, child) => AppLayout(child: child),
+              routes: [
+                GoRoute(
+                  path: '/magic-link',
+                  builder: (context, state) {
+                    final extra = state.extra;
+                    print('Navigated to /magic-link with extra: $extra, kIsWeb: $kIsWeb, clientId: ${widget.clientId}, extra is String: ${extra is String}');
+                    if (extra is String && extra.isNotEmpty) {
+                      print("Rendering MagicLinkWebPageWithServer, clientId: ${widget.clientId}");
+                      return MagicLinkWebPageWithServer(serverUrl: extra, clientId: widget.clientId);
+                    }
+                    return const MagicLinkWebPage();
+                  },
+                ),
+                GoRoute(
+                  path: '/login',
+                  pageBuilder: (context, state) {
+                    return MaterialPage(
+                      fullscreenDialog: true,
+                      child: const AuthLayout(),
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: '/dashboard',
+                  pageBuilder: (context, state) {
+                    return MaterialPage(
+                      child: const DashboardPage(),
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: '/app',
+                  builder: (context, state) => const SizedBox.shrink(), // AppLayout already wraps child
+                ),
+                // Add more child routes here as needed
+              ],
+            ),
+          ];
 
     final GoRouter router = GoRouter(
       initialLocation: '/app',
@@ -137,7 +170,7 @@ class _MyAppState extends State<MyApp> {
         if (kIsWeb && !loggedIn && location == '/magic-link') {
           return '/login?from=magic-link';
         }
-        if(kIsWeb && !loggedIn) {
+        if (kIsWeb && !loggedIn) {
           return '/login';
         }
         if (kIsWeb && loggedIn && location == '/login') {

@@ -48,7 +48,7 @@ io.use(sharedSession(sessionMiddleware, { autoSave: true }));
 io.sockets.on("error", e => console.log(e));
 io.sockets.on("connection", socket => {
 
-  socket.on("authenticate", async() => {
+  socket.on("authenticate", () => {
     // Here you would normally check the clientid and mail against your database
     try {
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.authenticated === true) {
@@ -59,6 +59,39 @@ io.sockets.on("connection", socket => {
     } catch (error) {
       console.error('Error during authentication:', error);
       socket.emit("authenticated", { authenticated: false });
+    }
+  });
+  
+  /*socket.on("channels", async(callback) => {
+    try {
+      const channels = await Channel.findAll({
+        include: [
+          {
+            model: User,
+            as: 'Members',
+            where: { uuid: socket.handshake.session.uuid },
+            through: { attributes: [] }
+          },
+          {
+            model: Thread,
+            required: false,
+            attributes: [],
+          }
+        ],
+        attributes: {
+          include: [
+            [Channel.sequelize.fn('MAX', Channel.sequelize.col('Threads.createdAt')), 'latestThread']
+          ]
+        },
+        group: ['Channel.name'],
+        order: [[Channel.sequelize.literal('latestThread'), 'DESC']],
+        limit: 5
+      });
+      
+      callbackHandler(callback, channels);
+    } catch (error) {
+      console.error('Error fetching channels:', error);
+      callbackHandler(callback, { error: 'Failed to fetch channels' });
     }
   });
 

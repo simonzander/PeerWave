@@ -31,6 +31,72 @@ clientRoutes.get("/client/meta", (req, res) => {
     });
 });
 
+clientRoutes.get("/client/channels", async(req, res) => {
+    const limit = parseInt(req.query.limit) || 100;
+    if(req.session.authenticated !== true || !req.session.uuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    // Fetch channels logic here
+    try {
+      const channels = await Channel.findAll({
+        include: [
+          {
+            model: User,
+            as: 'Members',
+            where: { uuid: req.session.uuid },
+            through: { attributes: [] }
+          },
+          {
+            model: Thread,
+            required: false,
+            attributes: [],
+          }
+        ],
+        attributes: {
+          include: [
+            [Channel.sequelize.fn('MAX', Channel.sequelize.col('Threads.createdAt')), 'latestThread']
+          ]
+        },
+        group: ['Channel.name'],
+        order: [[Channel.sequelize.literal('latestThread'), 'DESC']],
+        limit: limit
+      });
+      res.status(200).json(channels);
+    } catch (error) {
+        console.error('Error fetching channels:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+clientRoutes.post("/client/channels", async(req, res) => {
+    const { name, description, private, defaultPermissions } = req.body;
+    if(req.session.authenticated !== true || !req.session.uuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    try {
+        // Add the creator as a member with 'admin' permission
+        const user = await User.findOne({ where: { uuid: req.session.uuid } });
+        if (user) {
+            const channel = await Channel.create({ name: name, description: description, private: private, defaultPermissions: defaultPermissions, type: "text", owner: req.session.uuid });
+            await channel.addMember(user, { through: { permission: 'admin' } });
+        }
+        res.status(201).json(channel);
+    } catch (error) {
+        console.error('Error creating channel:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+clientRoutes.get("/login", (req, res) => {
+    // Redirect the login, preserving query parameters if present
+    let redirectUrl = config.app.url + "/login";
+    const query = req.url.split('?')[1];
+    if (query) {
+        redirectUrl += '?' + query;
+    }
+    res.redirect(redirectUrl);
+});
+
 clientRoutes.post("/magic/verify", async (req, res) => {
     const { key, clientid } = req.body;
     console.log("Verifying magic link with key:", key, "and client ID:", clientid);

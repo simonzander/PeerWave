@@ -6,6 +6,11 @@ config.db = {
     type: 'sqlite',
     path: 'db/peerwave.db'
 };
+config.app = {
+    name: 'PeerWave',
+    url: 'http://localhost:55831',
+    description: 'PeerWave'
+};
 config.buymeacoffee = true;
 config.documentation = true;
 config.quickhost = true;

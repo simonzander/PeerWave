@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/auth_service_native.dart';
 import '../services/clientid_native.dart';
-import 'package:http/http.dart' as http;
+import '../services/api_service.dart';
+import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 class ServerPanel extends StatefulWidget {
   final void Function()? onAddServer;
+  final BuildContext Function()? scaffoldContextProvider;
 
   const ServerPanel({
     super.key,
     required this.onAddServer,
+    this.scaffoldContextProvider,
   });
 
   @override
@@ -19,6 +22,13 @@ class ServerPanel extends StatefulWidget {
 }
 
 class _ServerPanelState extends State<ServerPanel> {
+  void _showSnackBar(String message) {
+    final scaffoldContext = widget.scaffoldContextProvider?.call() ?? context;
+    final messenger = ScaffoldMessenger.maybeOf(scaffoldContext);
+    if (messenger != null) {
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
   Future<void> _removeServer(String host) async {
     // Remove from persistent storage
     await AuthService().removeHost(host);
@@ -34,32 +44,49 @@ class _ServerPanelState extends State<ServerPanel> {
     _loadServers();
   }
 
+  void _maybeNavigateToFirstServer() {
+    if (servers.isNotEmpty) {
+      final router = GoRouter.of(context);
+      // Use ModalRoute to get current location
+      final currentUri = GoRouterState.of(context).uri.toString();
+      if (currentUri != '/dashboard') {
+        router.go('/dashboard', extra: {'socket': servers[0].socket, 'host': servers[0].host});
+      }
+    }
+  }
+
   Future<void> _loadServers() async {
     final hostMailList = await AuthService().getHostMailList(); // [{host: ..., mail: ...}, ...]
     final List<_ServerMeta> loaded = [];
     for (final entry in hostMailList) {
       final host = entry['host'] ?? '';
       final mail = entry['mail'] ?? '';
-      await _tryLoadServer(host, mail, loaded, true);
+      await tryLoadServer(host, mail, loaded, true);
     }
     setState(() {
       servers = loaded;
     });
+    // After loading, navigate to first server if not already on dashboard
+    _maybeNavigateToFirstServer();
   }
 
-  Future<void> _tryLoadServer(String host, String mail, List<_ServerMeta> loaded, bool add) async {
+  Future<void> tryLoadServer(String host, String mail, List<_ServerMeta> loaded, bool add) async {
     try {
-      final uri = Uri.parse('$host/client/meta');
-      final resp = await http.get(uri).timeout(const Duration(seconds: 10));
-      if (resp.statusCode == 200) {
-        final meta = jsonDecode(resp.body);
-        final loginResp = await http.post(
-          Uri.parse('$host/client/login'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
+      ApiService.init();
+      final dio = ApiService.dio;
+
+      // Get server meta
+      final metaResp = await dio.get('$host/client/meta');
+      if (metaResp.statusCode == 200) {
+        final meta = metaResp.data is String ? jsonDecode(metaResp.data) : metaResp.data;
+        // Login and persist session cookie
+        final loginResp = await dio.post(
+          '$host/client/login',
+          data: {
             'clientid': await ClientIdService.getClientId(),
             'email': mail,
-          }),
+          },
+          options: Options(contentType: 'application/json'),
         );
         if(loginResp.statusCode == 200) {
           // Successfully logged in
@@ -94,6 +121,7 @@ class _ServerPanelState extends State<ServerPanel> {
 
             socket.on('authenticated', (data) {
               if(data.authenticated == true) {
+                print('Socket authenticated for $host');
                 setState(() {
                   final idx = loaded.indexWhere((s) => s.host == host);
                   if (idx != -1) {
@@ -107,6 +135,23 @@ class _ServerPanelState extends State<ServerPanel> {
                     );
                   }
                 });
+              socket.on('notification', (notif) {
+                setState(() {
+                  final idx = loaded.indexWhere((s) => s.host == host);
+                  if (idx != -1) {
+                    final current = loaded[idx];
+                    loaded[idx] = _ServerMeta(
+                      host: current.host,
+                      mail: current.mail,
+                      name: current.name,
+                      hasServerError: current.hasServerError,
+                      hasAuthError: current.hasAuthError,
+                      missedNotifications: current.missedNotifications + 1,
+                      socket: current.socket,
+                    );
+                  }
+                });
+              });
               } else {
                 setState(() {
                   final idx = loaded.indexWhere((s) => s.host == host);
@@ -190,7 +235,10 @@ class _ServerPanelState extends State<ServerPanel> {
       child: Column(
         children: [
           const SizedBox(height: 16),
-          ...servers.map((server) => _ServerIcon(server: server)).toList(),
+          ...servers.map((server) => _ServerIcon(
+                server: server,
+                onShowSnackBar: _showSnackBar,
+              )).toList(),
           const Spacer(),
           IconButton(
             icon: const Icon(Icons.add_circle, color: Colors.white, size: 36),
@@ -213,6 +261,7 @@ class _ServerMeta {
   final bool hasServerError;
   final bool hasAuthError;
   final int missedNotifications;
+  final IO.Socket? socket;
 
   _ServerMeta({
     required this.host,
@@ -221,13 +270,15 @@ class _ServerMeta {
     required this.hasServerError,
     required this.hasAuthError,
     required this.missedNotifications,
+    this.socket,
   });
 }
 
 class _ServerIcon extends StatelessWidget {
   final _ServerMeta server;
+  final void Function(String message)? onShowSnackBar;
 
-  const _ServerIcon({required this.server});
+  const _ServerIcon({required this.server, this.onShowSnackBar});
 
   @override
   Widget build(BuildContext context) {
@@ -240,17 +291,23 @@ class _ServerIcon extends StatelessWidget {
             child: GestureDetector(
               onTap: () {
                 if (server.hasAuthError) {
-                  GoRouter.of(context).go('/login');
+                  if (onShowSnackBar != null) {
+                    onShowSnackBar!('Authentication error: ${server.host}. Please re-authenticate.');
+                  }
+                  GoRouter.of(context).go('/login', extra: {'host': server.host});
                 }
                 if(server.hasServerError) {
                   // Try to reload server meta and status
                   final parentState = context.findAncestorStateOfType<_ServerPanelState>();
                   if (parentState != null) {
-                    parentState._tryLoadServer(server.host, server.mail, parentState.servers, false);
+                    parentState.tryLoadServer(server.host, server.mail, parentState.servers, false);
                   }
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Cannot connect to server: ${server.host}. Try to reconnect.')),
-                  );
+                  if (onShowSnackBar != null) {
+                    onShowSnackBar!('Cannot connect to server: ${server.host}. Try to reconnect.');
+                  }
+                }
+                if (!server.hasAuthError && !server.hasServerError) {
+                  GoRouter.of(context).go('/dashboard', extra: {'socket': server.socket, 'host': server.host});
                 }
               },
               onSecondaryTapDown: (details) async {

@@ -402,10 +402,10 @@ authRoutes.post("/otp", (req, res) => {
 });
 
 // Implement login route
-authRoutes.get("/login", (req, res) => {
+/*authRoutes.get("/login", (req, res) => {
     // Render the login form
     res.render("login");
-});
+});/*
 
 // Implement logout route
 authRoutes.get("/logout", (req, res) => {

@@ -157,6 +157,13 @@ class _AuthLayoutState extends State<AuthLayout> {
                 },
                 child: const Text("Login"),
               ),
+                const SizedBox(height: 12),
+                ElevatedButton(
+                  onPressed: () {
+                    GoRouter.of(context).go('/register');
+                  },
+                  child: const Text('Register'),
+                ),
               if (_loginStatus != null) ...[
                 const SizedBox(height: 20),
                 Container(

@@ -130,4 +130,4 @@ dist
 .pnp.*
 
 # db
-db
+db/*.sqlite
