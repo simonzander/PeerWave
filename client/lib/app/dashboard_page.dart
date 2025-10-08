@@ -3,16 +3,22 @@ import 'sidebar_panel.dart';
 import 'profile_card.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:go_router/go_router.dart';
+import '../services/socket_service.dart';
 
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final host = (GoRouterState.of(context).extra as Map?)?['host'] as String;
-    final socket = (GoRouterState.of(context).extra as Map?)?['socket'] as IO.Socket?;
-    final bool isWeb = MediaQuery.of(context).size.width > 600 || Theme.of(context).platform == TargetPlatform.macOS || Theme.of(context).platform == TargetPlatform.windows;
-    final double sidebarWidth = isWeb ? 350 : 300;
+    final extra = GoRouterState.of(context).extra;
+    String? host;
+    IO.Socket? socket;
+    if (extra is Map) {
+      host = extra['host'] as String?;
+      socket = extra['socket'] as IO.Socket?;
+    }
+  final bool isWeb = MediaQuery.of(context).size.width > 600 || Theme.of(context).platform == TargetPlatform.macOS || Theme.of(context).platform == TargetPlatform.windows;
+  final double sidebarWidth = isWeb ? 350 : 300;
 
     return Material(
       color: Colors.transparent,
@@ -25,7 +31,7 @@ class DashboardPage extends StatelessWidget {
                 if (constraints.maxWidth < 600) width = 80;
                 return SizedBox(
                   width: width,
-                  child: SidebarPanel(panelWidth: width, buildProfileCard: () => const ProfileCard(), socket: socket, host: host),
+                  child: SidebarPanel(panelWidth: width, buildProfileCard: () => const ProfileCard(), socket: socket, host: host ?? ''),
                 );
               },
             ),

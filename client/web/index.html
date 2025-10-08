@@ -44,96 +44,159 @@
     }
 
     function base64UrlDecode(base64) {
-        if (typeof base64 !== 'string') {
-            console.error('base64UrlDecode expected a string, got:', base64, 'Type:', typeof base64);
-            throw new TypeError('Expected input to be a string');
+        if (typeof base64 === 'string') {       
+            base64 = base64
+                .replace(/-/g, '+')
+                .replace(/_/g, '/');
+            // Pad with '=' to make the length a multiple of 4
+            while (base64.length % 4) {
+                base64 += '=';
+            }
+            return Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer;
+        } else {
+            return null;
         }
-        base64 = base64
-            .replace(/-/g, '+')
-            .replace(/_/g, '/');
-        // Pad with '=' to make the length a multiple of 4
-        while (base64.length % 4) {
-            base64 += '=';
-        }
-        return Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer;
     }
+
 
     window.webauthnLogin = async function(serverUrl, email) {
         try {
-        // Check if WebAuthn is supported by the browser
-        if (!window.PublicKeyCredential) {
-            throw new Error('WebAuthn is not supported');
+            // Check if WebAuthn is supported by the browser
+            if (!window.PublicKeyCredential) {
+                throw new Error('WebAuthn is not supported');
+            }
+
+            // Request a new WebAuthn credential from the server
+            const credential = await fetch(serverUrl + '/webauthn/authenticate-challenge', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({ email: email })
+            }).then(response => {
+                console.log('Response status:', response.status);
+                if (response.status !== 200) {
+                    window.onWebAuthnSuccess(response.status)
+                }
+                return response.json();
+            });
+
+            console.log("credential:", credential);
+
+            // Create a new PublicKeyCredential object
+            credential.challenge = base64UrlDecode(credential.challenge);
+            if (credential.allowCredentials !== undefined) {
+                credential.allowCredentials.forEach(cred => {
+                    cred.id = base64UrlDecode(cred.id);
+                });
+            }
+
+            // Use the PublicKeyCredential object to perform the WebAuthn authentication
+            let assertion;
+            try {
+                assertion = await navigator.credentials.get({ publicKey: credential });
+            } catch (err) {
+                console.warn('WebAuthn authentication aborted or failed:', err);
+                if (window.onWebAuthnAbort) {
+                    window.onWebAuthnAbort(err && err.toString ? err.toString() : String(err));
+                }
+                return;
+            }
+
+            // test
+            console.log('base64UrlDecode input:', assertion.rawId, typeof assertion.rawId);
+            const rawId = base64UrlEncode(assertion.rawId)
+            console.log('base64UrlDecode input:', rawId, typeof rawId);
+            // test end
+            // Send the authentication assertion to the server for verification
+            const response = await fetch(serverUrl + '/webauthn/authenticate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    email: email,
+                    assertion: {
+                        id: assertion.id,
+                        rawId: base64UrlEncode(assertion.rawId),
+                        type: assertion.type,
+                        response: {
+                            authenticatorData: base64UrlEncode(assertion.response.authenticatorData),
+                            clientDataJSON: base64UrlEncode(assertion.response.clientDataJSON),
+                            signature: base64UrlEncode(assertion.response.signature),
+                            userHandle: assertion.response.userHandle ? base64UrlEncode(assertion.response.userHandle) : null
+                        }
+                    } 
+                })
+            }).then(response => {
+                if (response.status === 200 || response.status === 202) {
+                    if (window.onWebAuthnSuccess) {
+                        window.onWebAuthnSuccess(response.status); // or whatever data you want to pass
+                    }
+                    else
+                    {
+                        window.onWebAuthnSuccess(response.status)
+                    }
+
+                }
+                if (response.redirected) {
+                    window.location.href = response.url;
+                }
+            }).catch(error => {
+                console.error('Error during authentication:', error);
+            });
+
+        } catch (error) {
+            console.error('WebAuthn authentication failed:', error);
+        }
+    }
+
+window.webauthnRegister = async function(serverUrl, email) {
+    try {
+        // Step 1: Fetch registration challenge from the server
+        const challengeResponse = await fetch(serverUrl + '/webauthn/register-challenge', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email })
+        });
+        const challenge = await challengeResponse.json();
+        // Step 2: Convert challenge to ArrayBuffer
+        challenge.challenge = base64UrlDecode(challenge.challenge);
+        // Only decode if id is a string (for compatibility with backend)
+        if (typeof challenge.user.id === 'string') {
+            challenge.user.id = base64UrlDecode(challenge.user.id);
         }
 
-        // Request a new WebAuthn credential from the server
-        const credential = await fetch(serverUrl + '/webauthn/authenticate-challenge', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
+        // LOG
+        console.log("Challenge sent to navigator.credentials.create:", challenge);
+        // Step 3: Create a new credential
+        const credential = await navigator.credentials.create({ publicKey: challenge });
+        // Step 4: Convert credential response to JSON
+        const attestation = {
+            id: credential.id,
+            rawId: base64UrlEncode(credential.rawId),
+            response: {
+                attestationObject: base64UrlEncode(credential.response.attestationObject),
+                clientDataJSON: base64UrlEncode(credential.response.clientDataJSON)
             },
-            credentials: 'include',
-            body: JSON.stringify({ email: email })
-            // Add any necessary headers and body for the request
-        }).then(response => response.json());
-
-        console.log(credential);
-
-        // Create a new PublicKeyCredential object
-        credential.challenge = base64UrlDecode(credential.challenge);
-        credential.allowCredentials.forEach(cred => {
-            cred.id = base64UrlDecode(cred.id);
-        });
-
-        // Use the PublicKeyCredential object to perform the WebAuthn authentication
-        const assertion = await navigator.credentials.get({ publicKey: credential });
-        
-        // test
-        console.log('base64UrlDecode input:', assertion.rawId, typeof assertion.rawId);
-        const rawId = base64UrlEncode(assertion.rawId)
-        console.log('base64UrlDecode input:', rawId, typeof rawId);
-        // test end
-        // Send the authentication assertion to the server for verification
-        const response = await fetch(serverUrl + '/webauthn/authenticate', {
+            type: credential.type
+        };
+        // Step 5: Send registration response to the server
+        const registerResponse = await fetch(serverUrl + '/webauthn/register', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({
-                email: email,
-                assertion: {
-                    id: assertion.id,
-                    rawId: base64UrlEncode(assertion.rawId),
-                    type: assertion.type,
-                    response: {
-                        authenticatorData: base64UrlEncode(assertion.response.authenticatorData),
-                        clientDataJSON: base64UrlEncode(assertion.response.clientDataJSON),
-                        signature: base64UrlEncode(assertion.response.signature),
-                        userHandle: assertion.response.userHandle ? base64UrlEncode(assertion.response.userHandle) : null
-                    }
-                } 
-            })
-        }).then(response => {
-            if (response.status === 200) {
-                if (window.onWebAuthnSuccess) {
-                    window.onWebAuthnSuccess(200); // or whatever data you want to pass
-                }
-
-            }
-            if (response.redirected) {
-                window.location.href = response.url;
-            }
-            //response.json());
+            body: JSON.stringify({ username: challenge.user.name, attestation })
         });
-            
-
-        // Handle the server response and perform any necessary actions
-        // based on the authentication result
-
+        return registerResponse.ok;
     } catch (error) {
-        console.error('WebAuthn authentication failed:', error);
+        console.error('WebAuthn registration failed:', error);
+        return false;
     }
-}
+};
 </script>
     <script>
         window.fetchMagicKey = async function(url) {

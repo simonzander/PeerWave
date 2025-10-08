@@ -4,13 +4,15 @@ import 'package:flutter/services.dart';
 // Remove http import, use JS interop for fetch
 import 'dart:convert';
 import 'package:js/js.dart';
-import 'package:js/js_util.dart';
+//import 'package:js/js_util.dart';
+import '../services/api_service.dart';
+import '../web_config.dart';
 
 @JS('window.open')
 external dynamic openWindow(String url, String target);
 
-@JS('fetchMagicKey')
-external dynamic fetchMagicKeyJS(String url);
+/*@JS('fetchMagicKey')
+external dynamic fetchMagicKeyJS(String url);*/
 
 class MagicLinkWebPage extends StatefulWidget {
   const MagicLinkWebPage({super.key});
@@ -29,19 +31,24 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
 
 
   Future<void> _fetchMagicKey() async {
-      // Use JS interop to fetch magic key
-      final jsPromise = fetchMagicKeyJS('http://localhost:3000/magic/generate');
-      final jsResult = jsPromise != null ? await promiseToFuture(jsPromise) : null;
-      // Expect JS to return a JSON string with magicKey
-      print('JS Result: $jsResult');
-      if (jsResult != null) {
-        final data = json.decode(jsResult as String);
+    try {
+      final apiServer = await loadWebApiServer();
+      String urlString = apiServer ?? '';
+      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+        urlString = 'https://$urlString';
+      }
+      final resp = await ApiService.get('$urlString/magic/generate');
+      if (resp.statusCode == 200 && resp.data != null) {
+        final data = resp.data is String ? json.decode(resp.data) : resp.data;
         if (data is Map && data['magicKey'] is String) {
           magicKeyController.text = data['magicKey'];
           final url = 'peerwave://?magicKey=${Uri.encodeComponent(data['magicKey'])}';
           openWindow(url, '_self');
         }
       }
+    } catch (e) {
+      print('Error fetching magic key: $e');
+    }
   }
   final TextEditingController serverController = TextEditingController();
   String? _status;

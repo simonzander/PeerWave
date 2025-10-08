@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 class ProfileCard extends StatelessWidget {
   const ProfileCard({Key? key}) : super(key: key);
@@ -37,7 +38,10 @@ class ProfileCard extends StatelessWidget {
             const SizedBox(width: 8),
             Icon(Icons.headphones, color: Colors.white),
             const SizedBox(width: 8),
-            Icon(Icons.settings, color: Colors.white),
+            InkWell(
+              onTap: () => GoRouter.of(context).go('/app/settings'),
+              child: Icon(Icons.settings, color: Colors.white),
+            ),
           ],
         ),
       ),

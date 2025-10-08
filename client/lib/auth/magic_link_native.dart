@@ -103,18 +103,36 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
       _loading = true;
       _status = null;
     });
+    await _evaluateMagicKeyCore(magicKey, clientId);
+    setState(() {
+      _loading = false;
+    });
+  }
+
+  Future<void> _evaluateMagicKeyCore(String magicKey, String? clientId, [String? serverUrl, int redirectCount = 0]) async {
+    if (redirectCount > 2) {
+      setState(() {
+        _status = 'Too many redirects. Please check your server URL.';
+      });
+      return;
+    }
     try {
       print('[try block] clientId: $clientId');
       final keyHex = magicKey.substring(0, 64); // First 64 chars = 32 bytes key
       final serverHexInfo = magicKey.substring(64); // Rest = hostname in hex
       print('Server Hex Info: $serverHexInfo'); // Debug output
       final decodedServerInfo = hexToString(serverHexInfo);
-      print( 'Decoded Server Info: $decodedServerInfo'); // Debug output
+      print('Decoded Server Info: $decodedServerInfo'); // Debug output
       final Map<String, dynamic> jsonData = jsonDecode(decodedServerInfo);
       print(jsonData); // Debug output
-      final String hostname = jsonData['serverUrl'] ?? '';
+      final String hostname = serverUrl ?? (jsonData['serverUrl'] ?? '');
       final String mail = jsonData['mail'] ?? '';
-      //final url = Uri.parse('http://localhost:3000/magic/verify');
+      if (hostname.isEmpty) {
+        setState(() {
+          _status = 'Server URL is missing.';
+        });
+        return;
+      }
       final url = Uri.parse('$hostname/magic/verify');
       final resp = await http.post(
         url,
@@ -133,18 +151,21 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
         if (mounted) {
           GoRouter.of(context).go('/app');
         }
+      } else if (resp.statusCode == 307) {
+        // Replace http:// with https:// in serverUrl if present
+        String? secureServerUrl = hostname;
+        if (secureServerUrl != null && secureServerUrl.startsWith('http://')) {
+          secureServerUrl = secureServerUrl.replaceFirst('http://', 'https://');
+        }
+        await _evaluateMagicKeyCore(magicKey, clientId, secureServerUrl, redirectCount + 1);
       } else {
         setState(() {
-          _status = 'Error: ${resp.body}';
+          _status = 'Error: ${resp.statusCode}';
         });
       }
     } catch (e) {
       setState(() {
         _status = 'Evaluation failed: $e';
-      });
-    } finally {
-      setState(() {
-        _loading = false;
       });
     }
   }

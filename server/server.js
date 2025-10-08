@@ -10,7 +10,8 @@ const sanitizeHtml = require('sanitize-html');
 const cors = require('cors');
 const session = require('express-session');
 const sharedSession = require('socket.io-express-session');
-const { User, Channel, Thread, Client } = require('./db/model');
+const { User, Channel, Thread, Client, SignalSignedPreKey, SignalPreKey, Item } = require('./db/model');
+const path = require('path');
 
 // Function to validate UUID
 function isValidUUID(uuid) {
@@ -45,13 +46,16 @@ const io = require("socket.io")(server);
 
 io.use(sharedSession(sessionMiddleware, { autoSave: true }));
 
+const deviceSockets = new Map(); // Key: userId:deviceId, Value: socket.id
+
 io.sockets.on("error", e => console.log(e));
 io.sockets.on("connection", socket => {
 
   socket.on("authenticate", () => {
     // Here you would normally check the clientid and mail against your database
     try {
-      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.authenticated === true) {
+      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+        deviceSockets.set(`${socket.handshake.session.uuid}:${socket.handshake.session.deviceId}`, socket.id);
         socket.emit("authenticated", { authenticated: true });
       } else {
         socket.emit("authenticated", { authenticated: false });
@@ -61,6 +65,120 @@ io.sockets.on("connection", socket => {
       socket.emit("authenticated", { authenticated: false });
     }
   });
+
+  // SIGNAL HANDLE START
+
+  socket.on("getSignedPreKeys", async () => {
+    try {
+      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+        // Fetch signed pre-keys from the database
+        const signedPreKeys = await SignalSignedPreKey.findAll({
+          where: { owner: socket.handshake.session.uuid, client: socket.handshake.sessionclientId },
+          order: [['createdAt', 'DESC']]
+        });
+        socket.emit("getSignedPreKeysResponse", signedPreKeys);
+      }
+    } catch (error) {
+      console.error('Error fetching signed pre-keys:', error);
+      socket.emit("getSignedPreKeysResponse", { error: 'Failed to fetch signed pre-keys' });
+    }
+  });
+
+  socket.on("removeSignedPreKey", async (data) => {
+    try {
+      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+        await SignalSignedPreKey.destroy({
+          where: { signed_prekey_id: data.id, owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId }
+        });
+      }
+    } catch (error) {
+      console.error('Error removing signed pre-key:', error);
+    }
+  });
+
+  socket.on("storeSignedPreKey", async (data) => {
+    try {
+      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+        await SignalSignedPreKey.create({
+          signed_prekey_id: data.id,
+          signed_prekey_data: data.data,
+          owner: socket.handshake.session.uuid,
+          client: socket.handshake.session.clientId,
+        });
+      }
+    } catch (error) {
+      console.error('Error storing signed pre-key:', error);
+    }
+  });
+
+  socket.on("storePreKey", async (data) => {
+    try {
+      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+        await SignalPreKey.create({
+          prekey_id: data.id,
+          prekey_data: data.data,
+          owner: socket.handshake.session.uuid,
+          client: socket.handshake.sessionclientId,
+        });
+      }
+    } catch (error) {
+      console.error('Error storing pre-key:', error);
+    }
+  });
+
+  socket.on("getPreKeys", async () => {
+    try {
+      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+        // Fetch pre-keys from the database
+        const preKeys = await SignalPreKey.findAll({
+          where: { owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId }
+        });
+        socket.emit("getPreKeysResponse", preKeys);
+      }
+    } catch (error) {
+      console.error('Error fetching pre-keys:', error);
+      socket.emit("getPreKeysResponse", { error: 'Failed to fetch pre-keys' });
+    }
+  });
+
+  socket.on("sendItem", async (data) => {
+    try {
+      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+        const recipientUserId = data.recipient;
+        const recipientDeviceId = data.recipientDeviceId;
+        const type = data.type;
+        const payload = data.payload;
+        const cipherType = data.cipherType;
+        const itemId = data.itemId;
+
+        // Store the item in the database
+        await Item.create({
+          sender: socket.handshake.session.uuid,
+          receiver: recipientUserId,
+          deviceReceiver: recipientDeviceId,
+          type: type,
+          payload: payload,
+          itemId: itemId
+        });
+
+        const targetSocketId = deviceSockets.get(`${recipientUserId}:${recipientDeviceId}`);
+        if (targetSocketId) {
+          io.to(targetSocketId).emit("receiveItem", {
+            sender: socket.handshake.session.uuid,
+            senderDeviceId: socket.handshake.session.deviceId,
+            type: type,
+            payload: payload,
+            cipherType: cipherType,
+            itemId: itemId
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error sending item:', error);
+    }
+  });
+
+  // SIGNAL HANDLE END
   
   /*socket.on("channels", async(callback) => {
     try {
@@ -215,6 +333,9 @@ io.sockets.on("connection", socket => {
    * Event handler for disconnecting from a room
    */
   socket.on("disconnect", () => {
+    if(socket.handshake.session.uuid && socket.handshake.session.deviceId) {
+      deviceSockets.delete(`${socket.handshake.session.uuid}:${socket.handshake.session.deviceId}`);
+    }
     if (!rooms) return;
 
 
@@ -466,11 +587,14 @@ io.sockets.on("connection", socket => {
   app.use(cors({
   origin: function(origin, callback) {
       // Allow any localhost port and specifically http://localhost:57044/
+      console.log("CORS Origin:", origin);
       if (
-        /^http:\/\/localhost:\d+$/.test(origin) ||
-        origin === 'http://localhost:55831'
+        origin === undefined ||
+        origin === "http://localhost:3000" ||
+        origin === 'http://localhost:55831' ||
+        origin === "https://kaylie-physiopathological-kirstie.ngrok-free.dev"
       ) {
-        callback(null, true);
+        callback(null, origin);
       } else {
         callback(new Error('Not allowed by CORS'));
       }
@@ -480,8 +604,6 @@ io.sockets.on("connection", socket => {
 
   // Register and signin webpages
   app.use(authRoutes);
-
-
 
 /**
  * Room data object to store information about each room
@@ -521,53 +643,18 @@ function callbackHandler(callback, data) {
   }
 }
 
-app.use(express.static(__dirname + "/public"));
+//app.use(express.static(__dirname + "/public"));
 
-app.set("view engine", "pug");
+//app.set("view engine", "pug");
 
-/**
- * Route for a meeting
- */
-app.get("/meet", (req, res) => {
-  res.render("meet");
-});
 
-/**
- * Route for hosting a room
- */
-app.get("/host", (req, res) => {
-  res.render("host");
-});
 
-/**
- * Default route
- */
-app.get("/", (req, res) => {
-  res.render("about");
-});
+// Serve static files from Flutter web build output
+app.use(express.static(path.resolve(__dirname, '../server/web')));
 
-/**
- * Route for viewing a room
- * @param {string} room - The ID of the room to view
- */
-app.get("/view/:room", ({ params: { room } }, res) => {
-  res.render("view", { room });
-});
-
-/**
- * Route for join a meeting room
- * @param {string} room - The ID of the room to meet
- */
-app.get("/meet/:room", ({ params: { room } }, res) => {
-  res.render("meet", { room });
-});
-
-/**
- * Route for sharing a room
- * @param {string} room - The ID of the room to share
- */
-app.get("/share/:room", ({ params: { room } }, res) => {
-  res.render("share", { room });
+// For SPA fallback
+app.get('*', (req, res) => {
+  res.sendFile(path.resolve(__dirname, '../server/web', 'index.html'));
 });
 
 server.listen(port, () => console.log(`Server is running on port ${port}`));

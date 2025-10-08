@@ -12,7 +12,7 @@ const temporaryStorage = new Sequelize({
     storage: ':memory:'
 });
 
-sequelize.sync({ alter: true });
+//sequelize.sync({ alter: true });
 
 sequelize.authenticate()
     .then(() => {
@@ -47,6 +47,10 @@ const User = sequelize.define('User', {
         allowNull: true,
         unique: true
     },
+    backupCodes: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
     credentials: {
         type: DataTypes.TEXT,
         allowNull: true
@@ -64,6 +68,124 @@ const User = sequelize.define('User', {
     },
 });
 
+const SignalPreKey = sequelize.define('SignalPreKey', {
+    client: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Client',
+            key: 'clientid'
+        }
+    },
+    owner: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    prekey_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        primaryKey: true,
+    },
+    prekey_data: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+    }
+});
+
+const SignalSignedPreKey = sequelize.define('SignalSignedPreKey', {
+    client: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Client',
+            key: 'clientid'
+        }
+    },
+    owner: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    signed_prekey_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        primaryKey: true,
+    },
+    signed_prekey_data: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+    }
+});
+
+const SignalSenderKey = sequelize.define('SignalSenderKey', {
+    channel: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Channel',
+            key: 'uuid'
+        }
+    },
+    client: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Client',
+            key: 'clientid'
+        }
+    },
+    owner: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    sender_key: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+    }
+}, { timestamps: false });
+
+const Channel = sequelize.define('Channel', {
+    uuid: {
+        type: DataTypes.UUID,
+        defaultValue: Sequelize.UUIDV4,
+        primaryKey: true,
+        allowNull: false,
+        unique: true
+    },
+    name: {
+        type: DataTypes.STRING,
+        allowNull: false,
+    },
+    description: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    private: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
+    defaultPermissions: {
+        type: DataTypes.TEXT,
+        allowNull: true // Store JSON string of default permissions
+    },
+    type: {
+        type: DataTypes.STRING,
+        allowNull: false
+    }
+});
+
 // Define client model
 const Client = sequelize.define('Client', {
     owner: {
@@ -75,14 +197,100 @@ const Client = sequelize.define('Client', {
         }
     },
     clientid: {
-        type: DataTypes.STRING,
+        type: DataTypes.UUID,
+        defaultValue: Sequelize.UUIDV4,
+        primaryKey: true,
         allowNull: false,
         unique: true
+    },
+    device_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+    },
+    public_key: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    registration_id: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    ip: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    browser: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    location: {
+        type: DataTypes.STRING,
+        allowNull: true
     }
+},
+{
+    indexes: [
+        {
+            unique: true,
+            fields: ['owner', 'device_id']
+        }
+    ]
 });
 
+const Item = sequelize.define('Item', {
+    uuid: {
+        type: DataTypes.UUID,
+        defaultValue: Sequelize.UUIDV4,
+        primaryKey: true,
+        allowNull: false,
+        unique: true
+    },
+    deviceReceiver: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: {
+            model: 'Client',
+            key: 'device_id'
+        }
+    },
+    receiver: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    sender: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    readed: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
+    itemId: {
+        type: DataTypes.UUID,
+        allowNull: false
+    },
+    type: {
+        type: DataTypes.STRING,
+        allowNull: false
+    },
+    payload: {
+        type: DataTypes.TEXT,
+        allowNull: false
+    }
+}, { timestamps: false });
+
+
 // Define public key model
-const PublicKey = sequelize.define('PublicKey', {
+/*const PublicKey = sequelize.define('PublicKey', {
     owner: {
         type: DataTypes.UUID,
         allowNull: false,
@@ -112,6 +320,7 @@ const PublicKey = sequelize.define('PublicKey', {
         }
     }
 });
+*/
 // Define OTP model
 const OTP = temporaryStorage.define('OTP', {
     email: {
@@ -128,6 +337,7 @@ const OTP = temporaryStorage.define('OTP', {
     }
 });
 // define Channel model
+/*
 const Channel = sequelize.define('Channel', {
     name: {
         type: DataTypes.STRING,
@@ -210,9 +420,9 @@ const Emote = sequelize.define('Emotes', {
         allowNull: false
     }
 });
-
+*/
 // Many-to-many association for channel members
-const ChannelMembers = sequelize.define('ChannelMembers', {
+/*const ChannelMembers = sequelize.define('ChannelMembers', {
     permission: {
         type: DataTypes.TEXT,
         allowNull: true // Store JSON string of permissions
@@ -228,42 +438,54 @@ Thread.belongsTo(User, { as: 'user', foreignKey: 'sender' });
 User.hasMany(PublicKey, { foreignKey: 'owner' });
 User.hasMany(PublicKey, { foreignKey: 'reciever' });
 Channel.hasMany(PublicKey, { foreignKey: 'channel' });
+*/
 User.hasMany(Client, { foreignKey: 'owner' });
+Client.hasMany(SignalSignedPreKey, { foreignKey: 'client', as: 'signedPreKeys' });
+Client.hasMany(SignalPreKey, { foreignKey: 'client', as: 'preKeys' });
 
 // Create the User table in the database
 // Sync referenced tables first
-User.sync({ alter: true })
-    .then(() => {
-        console.log('User table created successfully.');
-        return Channel.sync({ alter: true });
-    })
-    .then(() => {
-        console.log('Channel table created successfully.');
-        // Now sync dependent tables
-        return Promise.all([
-            OTP.sync({ alter: true })
-                .then(() => console.log('OTP table created successfully.')),
-            Thread.sync({ alter: true })
-                .then(() => console.log('Thread table created successfully.')),
-            Emote.sync({ alter: true })
-                .then(() => console.log('Emote table created successfully.')),
-            Client.sync({ alter: true })
-                .then(() => console.log('Client table created successfully.')),
-            PublicKey.sync({ alter: true })
-                .then(() => console.log('PublicKey table created successfully.'))
-        ]);
-    })
-    .catch(error => {
-        console.error('Error syncing tables:', error);
-    });
+
+OTP.sync({ alter: true })
+            .then(() => console.log('OTP table created successfully.')),
+
+Promise.all([
+    User.sync({ alter: true }),
+    Channel.sync({ alter: true })
+])
+.then(() => {
+    console.log('User and Channel tables created successfully.');
+    // Now sync join table and dependents
+    //return ChannelMembers.sync({ alter: true });
+})
+.then(() => {
+    console.log('ChannelMembers table created successfully.');
+    return Promise.all([      
+        Client.sync({ alter: true })
+            .then(() => console.log('Client table created successfully.')),
+        SignalPreKey.sync({ alter: true })
+            .then(() => console.log('SignalPreKey table created successfully.')),
+        SignalSignedPreKey.sync({ alter: true })
+            .then(() => console.log('SignalSignedPreKey table created successfully.')),
+        SignalSession.sync({ alter: true })
+            .then(() => console.log('SignalSession table created successfully.')),
+        SignalSenderKey.sync({ alter: true })
+            .then(() => console.log('SignalSenderKey table created successfully.')),
+    ]);
+})
+.then(() => {
+    console.log('Dependent tables created successfully.');
+})
+.catch(error => {
+    console.error('Error syncing tables:', error);
+});
 
 module.exports = {
     User,
     OTP,
-    Channel,
-    Thread,
-    Emote,
-    PublicKey,
     Client,
-    ChannelMembers
+    Item,
+    SignalSignedPreKey,
+    SignalPreKey,
+    SignalSenderKey,
 };

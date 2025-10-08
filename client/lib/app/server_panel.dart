@@ -72,21 +72,17 @@ class _ServerPanelState extends State<ServerPanel> {
 
   Future<void> tryLoadServer(String host, String mail, List<_ServerMeta> loaded, bool add) async {
     try {
-      ApiService.init();
-      final dio = ApiService.dio;
-
       // Get server meta
-      final metaResp = await dio.get('$host/client/meta');
+      final metaResp = await ApiService.get('$host/client/meta');
       if (metaResp.statusCode == 200) {
         final meta = metaResp.data is String ? jsonDecode(metaResp.data) : metaResp.data;
         // Login and persist session cookie
-        final loginResp = await dio.post(
+        final loginResp = await ApiService.post(
           '$host/client/login',
           data: {
             'clientid': await ClientIdService.getClientId(),
             'email': mail,
-          },
-          options: Options(contentType: 'application/json'),
+          }
         );
         if(loginResp.statusCode == 200) {
           // Successfully logged in

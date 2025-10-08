@@ -47,6 +47,9 @@ dependencies:
   dio: ^5.9.0
   cookie_jar: ^4.0.8
   dio_cookie_manager: ^3.3.0
+  web: ^1.1.1
+  libsignal_protocol_dart: ^0.7.4
+  idb_shim: ^2.6.6+2
 
 dev_dependencies:
   flutter_test:

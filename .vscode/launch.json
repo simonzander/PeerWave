@@ -2,11 +2,10 @@
   "version": "0.2.0",
   "compounds": [
     {
-      "name": "Debug Server, Flutter Client, and Flutter Chrome",
+      "name": "Debug Server, Flutter Client",
       "configurations": [
         "Debug Node.js Server",
-        "Debug Flutter Client",
-        "Debug Flutter Chrome"
+        "Debug Flutter Client"
       ]
     },
     {
@@ -22,7 +21,8 @@
       "request": "launch",
       "program": "${workspaceFolder}/server/server.js",
       "cwd": "${workspaceFolder}/server",
-      "console": "integratedTerminal"
+      "console": "integratedTerminal",
+      "preLaunchTask": "flutter-build-and-copy-web"
     },
     {
       "name": "Debug Flutter Client",

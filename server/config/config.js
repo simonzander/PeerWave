@@ -8,7 +8,7 @@ config.db = {
 };
 config.app = {
     name: 'PeerWave',
-    url: 'http://localhost:55831',
+    url: 'https://kaylie-physiopathological-kirstie.ngrok-free.dev',
     description: 'PeerWave'
 };
 config.buymeacoffee = true;

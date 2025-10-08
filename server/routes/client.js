@@ -8,7 +8,21 @@ const crypto = require('crypto');
 const session = require('express-session');
 const cors = require('cors');
 const magicLinks = require('../store/magicLinksStore');
-const { User, Channel, Thread, Client } = require('../db/model');
+const { User, Channel, Thread, SignalSignedPreKey, SignalPreKey, Client } = require('../db/model');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
+async function getLocationFromIp(ip) {
+    const response = await fetch(`https://ipapi.co/${ip}/json/`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return {
+        city: data.city,
+        region: data.region,
+        country: data.country_name,
+        org: data.org,
+        ip: data.ip
+    };
+}
 
 const clientRoutes = express.Router();
 
@@ -29,6 +43,53 @@ clientRoutes.get("/client/meta", (req, res) => {
         name: "PeerWave",
         version: "1.0.0",
     });
+});
+
+clientRoutes.get("/signal/prekey_bundle/:userId", async (req, res) => {
+    const { userId } = req.params;
+    try {
+
+        const clients = await Client.findAll({
+            where: { owner: userId },
+            attributes: ['clientid', 'device_id', 'public_key', 'registration_id'],
+            include: [
+                {
+                model: SignalSignedPreKey,
+                as: 'signedPreKeys',
+                where: { owner: userId, client: col('Client.clientid') },
+                required: false,
+                separate: true,
+                order: [['createdAt', 'DESC']],
+                limit: 1
+                },
+                {
+                model: SignalPreKey,
+                as: 'preKeys',
+                where: { owner: userId, client: col('Client.clientid') },
+                required: false,
+                order: [Sequelize.literal('RAND()')],
+                limit: 1
+                }
+            ]
+        });
+        const result = clients.map(client => ({
+            clientid: client.clientid,
+            userId: client.owner,
+            device_id: client.device_id,
+            public_key: client.public_key,
+            registration_id: client.registration_id,
+            signedPreKey: client.signedPreKeys?.[0] || null,
+            preKey: client.preKeys?.[0] || null
+        }));
+
+        for (const client of clients) {
+            await SignalPreKey.destroy({ where: { owner: userId, client: client.clientid, prekey_id: client.preKey?.prekey_id } });
+        }
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Error fetching signed pre-key:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
 });
 
 clientRoutes.get("/client/channels", async(req, res) => {
@@ -87,7 +148,7 @@ clientRoutes.post("/client/channels", async(req, res) => {
     }
 });
 
-clientRoutes.get("/login", (req, res) => {
+/*clientRoutes.get("/login", (req, res) => {
     // Redirect the login, preserving query parameters if present
     let redirectUrl = config.app.url + "/login";
     const query = req.url.split('?')[1];
@@ -95,7 +156,7 @@ clientRoutes.get("/login", (req, res) => {
         redirectUrl += '?' + query;
     }
     res.redirect(redirectUrl);
-});
+});*/
 
 clientRoutes.post("/magic/verify", async (req, res) => {
     const { key, clientid } = req.body;
@@ -109,10 +170,19 @@ clientRoutes.post("/magic/verify", async (req, res) => {
         req.session.authenticated = true;
         req.session.email = entry.email;
         req.session.uuid = entry.uuid;
+        const userAgent = req.headers['user-agent'] || '';
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        const location = await getLocationFromIp(ip);
+        const locationString = location
+                ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
+                : "Location not found";
+        const maxDevice = await Client.max('device_id', { where: { owner: entry.uuid } });
         const [client] = await Client.findOrCreate({
-        where: { owner: entry.uuid, clientid: clientid },
-        defaults: { owner: entry.uuid, clientid: clientid }
+            where: { owner: entry.uuid, clientid: clientid },
+            defaults: { owner: entry.uuid, clientid: clientid, ip: ip, browser: userAgent, location: locationString, device_id: maxDevice ? maxDevice + 1 : 1 }
         });
+        req.session.clientid = client.clientid;
+        req.session.deviceId = client.device_id;
         res.status(200).json({ status: "ok", message: "Magic link verified" });
     } else {
         // Invalid or expired magic link
@@ -132,6 +202,8 @@ clientRoutes.post("/client/login", async (req, res) => {
             req.session.authenticated = true;
             req.session.email = owner.email;
             req.session.uuid = client.owner;
+            req.session.clientid = client.clientid;
+            req.session.deviceId = client.device_id;
             res.status(200).json({ status: "ok", message: "Client login successful" });
         } else {
             res.status(401).json({ status: "failed", message: "Invalid client ID or not authorized" });
@@ -194,11 +266,11 @@ clientRoutes.get("/channels", async (req, res) => {
             console.log('User Data:', user.dataValues);
             res.render("channels", { channels: channels, threads: threads, user: user });
         } else {
-            res.redirect("/login");
+            //res.redirect("/login");
         }
     } catch (error) {
         console.error('Error retrieving channels:', error);
-        res.redirect("/error");
+        //res.redirect("/error");
     }
 });
 
@@ -259,11 +331,11 @@ clientRoutes.get("/thread/:id", async (req, res) => {
                 res.json(thread);
             }
         } else {
-            res.redirect("/login");
+            //res.redirect("/login");
         }
     } catch (error) {
         console.error('Error retrieving thread:', error);
-        res.redirect("/error");
+        //res.redirect("/error");
     }
 });
 
@@ -319,11 +391,11 @@ clientRoutes.get("/channel/:name", async (req, res) => {
                 res.render("channel", { channel: channel, threads: threads, channels: channels, user: user });
             }
         } else {
-            res.redirect("/login");
+            //res.redirect("/login");
         }
     } catch (error) {
         console.error('Error retrieving channel:', error);
-        res.redirect("/error");
+        //res.redirect("/error");
     }
 });
 

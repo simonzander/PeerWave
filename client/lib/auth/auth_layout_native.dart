@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 //import '../web_config.dart';
 import 'webauthn_js_stub.dart';
 import 'magic_link_native.dart';
+import '../services/api_service.dart';
 
 
 class AuthLayout extends StatefulWidget {
@@ -46,19 +47,24 @@ class _AuthLayoutState extends State<AuthLayout> {
         final serverUrl = serverController.text.trim();
         final deviceId = await _getDeviceId();
         if (token != null && serverUrl.isNotEmpty) {
-          final resp = await http.post(
-            Uri.parse('$serverUrl/magic/verify'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'token': token, 'deviceId': deviceId}),
-          );
-          if (resp.statusCode == 200) {
+          try {
+            final resp = await ApiService.post(
+              '$serverUrl/magic/verify',
+              data: {'token': token, 'deviceId': deviceId},
+            );
+            if (resp.statusCode == 200) {
+              setState(() {
+                _loginStatus = 'Login successful!';
+              });
+              // TODO: Store session/token for future logins
+            } else {
+              setState(() {
+                _loginStatus = 'Login failed: ${resp.data}';
+              });
+            }
+          } catch (e) {
             setState(() {
-              _loginStatus = 'Login successful!';
-            });
-            // TODO: Store session/token for future logins
-          } else {
-            setState(() {
-              _loginStatus = 'Login failed: ${resp.body}';
+              _loginStatus = 'Login failed: $e';
             });
           }
         }
@@ -137,7 +143,7 @@ class _AuthLayoutState extends State<AuthLayout> {
                   if (urlString.endsWith('/')) {
                     urlString = urlString.substring(0, urlString.length - 1);
                   }
-                  final url = Uri.parse('$urlString/login?from=magic-link');
+                  final url = Uri.parse('$urlString/#/login?from=magic-link');
                   if (await canLaunchUrl(url)) {
                     await launchUrl(url, mode: LaunchMode.externalApplication);
                     if (mounted) {
