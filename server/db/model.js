@@ -73,7 +73,7 @@ const SignalPreKey = sequelize.define('SignalPreKey', {
         type: DataTypes.UUID,
         allowNull: false,
         references: {
-            model: 'Client',
+            model: 'Clients',
             key: 'clientid'
         }
     },
@@ -88,12 +88,20 @@ const SignalPreKey = sequelize.define('SignalPreKey', {
     prekey_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        primaryKey: true,
     },
     prekey_data: {
         type: DataTypes.TEXT,
         allowNull: false,
     }
+}, {
+    indexes: [
+        {
+            unique: true,
+            fields: ['client', 'prekey_id']
+        }
+    ],
+    // Optional: Wenn du möchtest, dass dies der Primärschlüssel ist:
+    primaryKey: false // (wird ignoriert, aber keine einzelne Spalte ist PK)
 });
 
 const SignalSignedPreKey = sequelize.define('SignalSignedPreKey', {
@@ -101,7 +109,7 @@ const SignalSignedPreKey = sequelize.define('SignalSignedPreKey', {
         type: DataTypes.UUID,
         allowNull: false,
         references: {
-            model: 'Client',
+            model: 'Clients',
             key: 'clientid'
         }
     },
@@ -116,15 +124,23 @@ const SignalSignedPreKey = sequelize.define('SignalSignedPreKey', {
     signed_prekey_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        primaryKey: true,
     },
     signed_prekey_data: {
         type: DataTypes.TEXT,
         allowNull: false,
     }
+}, {
+    indexes: [
+        {
+            unique: true,
+            fields: ['client', 'signed_prekey_id']
+        }
+    ],
+    // Optional: Wenn du möchtest, dass dies der Primärschlüssel ist:
+    primaryKey: false // (wird ignoriert, aber keine einzelne Spalte ist PK)
 });
 
-const SignalSenderKey = sequelize.define('SignalSenderKey', {
+/*const SignalSenderKey = sequelize.define('SignalSenderKey', {
     channel: {
         type: DataTypes.UUID,
         allowNull: false,
@@ -153,9 +169,9 @@ const SignalSenderKey = sequelize.define('SignalSenderKey', {
         type: DataTypes.TEXT,
         allowNull: false,
     }
-}, { timestamps: false });
+}, { timestamps: false });*/
 
-const Channel = sequelize.define('Channel', {
+/*const Channel = sequelize.define('Channel', {
     uuid: {
         type: DataTypes.UUID,
         defaultValue: Sequelize.UUIDV4,
@@ -184,7 +200,7 @@ const Channel = sequelize.define('Channel', {
         type: DataTypes.STRING,
         allowNull: false
     }
-});
+});*/
 
 // Define client model
 const Client = sequelize.define('Client', {
@@ -249,7 +265,7 @@ const Item = sequelize.define('Item', {
         type: DataTypes.INTEGER,
         allowNull: false,
         references: {
-            model: 'Client',
+            model: 'Clients',
             key: 'device_id'
         }
     },
@@ -440,45 +456,20 @@ User.hasMany(PublicKey, { foreignKey: 'reciever' });
 Channel.hasMany(PublicKey, { foreignKey: 'channel' });
 */
 User.hasMany(Client, { foreignKey: 'owner' });
-Client.hasMany(SignalSignedPreKey, { foreignKey: 'client', as: 'signedPreKeys' });
-Client.hasMany(SignalPreKey, { foreignKey: 'client', as: 'preKeys' });
+User.hasMany(SignalPreKey, { foreignKey: 'owner' });
+User.hasMany(SignalSignedPreKey, { foreignKey: 'owner' });
+Client.hasMany(SignalSignedPreKey, { foreignKey: 'client' });
+Client.hasMany(SignalPreKey, { foreignKey: 'client' });
 
+temporaryStorage.sync({ alter: false })
+    .then(() => console.log('Temporary tables created successfully.'))
+    .catch(error => console.error('Error creating temporary tables:', error));
 // Create the User table in the database
 // Sync referenced tables first
+sequelize.sync({ alter: false })
+    .then(() => console.log('All main tables created successfully.'))
+    .catch(error => console.error('Error creating main tables:', error));
 
-OTP.sync({ alter: true })
-            .then(() => console.log('OTP table created successfully.')),
-
-Promise.all([
-    User.sync({ alter: true }),
-    Channel.sync({ alter: true })
-])
-.then(() => {
-    console.log('User and Channel tables created successfully.');
-    // Now sync join table and dependents
-    //return ChannelMembers.sync({ alter: true });
-})
-.then(() => {
-    console.log('ChannelMembers table created successfully.');
-    return Promise.all([      
-        Client.sync({ alter: true })
-            .then(() => console.log('Client table created successfully.')),
-        SignalPreKey.sync({ alter: true })
-            .then(() => console.log('SignalPreKey table created successfully.')),
-        SignalSignedPreKey.sync({ alter: true })
-            .then(() => console.log('SignalSignedPreKey table created successfully.')),
-        SignalSession.sync({ alter: true })
-            .then(() => console.log('SignalSession table created successfully.')),
-        SignalSenderKey.sync({ alter: true })
-            .then(() => console.log('SignalSenderKey table created successfully.')),
-    ]);
-})
-.then(() => {
-    console.log('Dependent tables created successfully.');
-})
-.catch(error => {
-    console.error('Error syncing tables:', error);
-});
 
 module.exports = {
     User,
@@ -487,5 +478,5 @@ module.exports = {
     Item,
     SignalSignedPreKey,
     SignalPreKey,
-    SignalSenderKey,
+    //SignalSenderKey,
 };

@@ -68,12 +68,28 @@ io.sockets.on("connection", socket => {
 
   // SIGNAL HANDLE START
 
+  socket.on("signalIdentity", async (data) => {
+    console.log("[SIGNAL SERVER] signalIdentity event received");
+    console.log(socket.handshake.session);
+    try {
+      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+        // Handle the signal identity
+        Client.update(
+          { public_key: data.publicKey, registration_id: data.registrationId },
+          { where: { owner: socket.handshake.session.uuid, clientid: socket.handshake.session.clientId } }
+        );
+      }
+    } catch (error) {
+      console.error('Error handling signal identity:', error);
+    }
+  });
+
   socket.on("getSignedPreKeys", async () => {
     try {
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
         // Fetch signed pre-keys from the database
         const signedPreKeys = await SignalSignedPreKey.findAll({
-          where: { owner: socket.handshake.session.uuid, client: socket.handshake.sessionclientId },
+          where: { owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId },
           order: [['createdAt', 'DESC']]
         });
         socket.emit("getSignedPreKeysResponse", signedPreKeys);
@@ -99,11 +115,16 @@ io.sockets.on("connection", socket => {
   socket.on("storeSignedPreKey", async (data) => {
     try {
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
-        await SignalSignedPreKey.create({
-          signed_prekey_id: data.id,
-          signed_prekey_data: data.data,
-          owner: socket.handshake.session.uuid,
-          client: socket.handshake.session.clientId,
+        // Create if not exists, otherwise do nothing
+        await SignalSignedPreKey.findOrCreate({
+          where: {
+            signed_prekey_id: data.id,
+            owner: socket.handshake.session.uuid,
+            client: socket.handshake.session.clientId,
+          },
+          defaults: {
+            signed_prekey_data: data.data,
+          }
         });
       }
     } catch (error) {
@@ -114,15 +135,21 @@ io.sockets.on("connection", socket => {
   socket.on("storePreKey", async (data) => {
     try {
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
-        await SignalPreKey.create({
-          prekey_id: data.id,
-          prekey_data: data.data,
-          owner: socket.handshake.session.uuid,
-          client: socket.handshake.sessionclientId,
+        await SignalPreKey.findOrCreate({
+          where: {
+            prekey_id: data.id,
+            owner: socket.handshake.session.uuid,
+            client: socket.handshake.session.clientId,
+          },
+          defaults: {
+            prekey_data: data.data,
+          }
         });
       }
     } catch (error) {
       console.error('Error storing pre-key:', error);
+      console.log("[SIGNAL SERVER] storePreKey event received", data);
+      console.log(socket.handshake.session);
     }
   });
 

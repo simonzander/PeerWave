@@ -7,11 +7,16 @@ import 'api_service.dart';
 import '../web_config.dart';
 import 'socket_service.dart';
 import 'package:uuid/uuid.dart';
+import 'permanent_session_store.dart';
+import 'permanent_pre_key_store.dart';
+import 'permanent_signed_pre_key_store.dart';
+import 'permanent_identity_key_store.dart';
 
-class SocketPreKeyStore extends InMemoryPreKeyStore {
+/*class SocketPreKeyStore extends InMemoryPreKeyStore {
 
   Future<void> checkPreKeys() async {
     if(store.length < 20) {
+      print("Not enough pre keys, generating more");
       var lastId = store.isNotEmpty ? store.keys.reduce((a, b) => a > b ? a : b) : 0;
       if(lastId == 9007199254740991) {
           lastId = 0;
@@ -25,17 +30,22 @@ class SocketPreKeyStore extends InMemoryPreKeyStore {
 
   Future<void> loadRemotePreKeys() async {
     SocketService().registerListener("getPreKeysResponse", (data) {
+      print(data);
       for (var item in data) {
-           store[item.prekey_id] = item.prekey_data;
+          if(item['prekey_id'] != null && item['prekey_data'] != null) {
+           store[item['prekey_id']] = base64Decode(item['prekey_data']);
+          }
       }
       if(data.isEmpty) {
+        print("No pre keys found, generating more");
         var newPreKeys = generatePreKeys(0, 110);
         for (var newPreKey in newPreKeys) {
           storePreKey(newPreKey.id, newPreKey);
         }
       }
       if(data.length <= 20) {
-        var lastId = data.isNotEmpty ? data.map((e) => e.prekey_id).reduce((a, b) => a > b ? a : b) : 0;
+        print("Not enough pre keys found, generating more");
+        var lastId = data.isNotEmpty ? data.map((e) => e['prekey_id']).reduce((a, b) => a > b ? a : b) : 0;
         if(lastId == 9007199254740991) {
           lastId = 0;
         }
@@ -50,15 +60,16 @@ class SocketPreKeyStore extends InMemoryPreKeyStore {
 
   @override
   Future<void> storePreKey(int preKeyId, PreKeyRecord record) async {
+    print("Storing pre key: $preKeyId");
     SocketService().emit("storePreKey", {
       'id': preKeyId,
-      'data': record.serialize(),
+      'data': base64Encode(record.serialize()),
     });
     store[preKeyId] = record.serialize();
   }
-}
+}*/
 
-class SocketSignedPreKeyStore extends InMemorySignedPreKeyStore {
+/*class SocketSignedPreKeyStore extends InMemorySignedPreKeyStore {
 
   final IdentityKeyPair identityKeyPair;
 
@@ -66,16 +77,20 @@ class SocketSignedPreKeyStore extends InMemorySignedPreKeyStore {
 
   Future<void> loadRemoteSignedPreKeys() async {
     SocketService().registerListener("getSignedPreKeysResponse", (data) {
+      print(data);
       for (var item in data) {
-           store[item.signed_prekey_id] = item.signed_prekey_data;
-           if(item.createdAt < DateTime.now().millisecondsSinceEpoch - 1 * 24 * 60 * 60 * 1000) {
+        if(item['signed_prekey_id'] != null && item['signed_prekey_data'] != null && item['createdAt'] != null) {
+           store[item['signed_prekey_id']] = base64Decode(item['signed_prekey_data']);
+           if(DateTime.parse(item['createdAt']).millisecondsSinceEpoch < DateTime.now().millisecondsSinceEpoch - 1 * 24 * 60 * 60 * 1000) {
              // If preSignedKey is older than 1 day, create new one
              var newPreSignedKey = generateSignedPreKey(identityKeyPair, data.length);
              storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
-             removeSignedPreKey(item.id);
+             removeSignedPreKey(item['signed_prekey_id']);
            }
+        }
       }
       if(data.isEmpty) {
+        print("No signed pre keys found, creating new one");
         var newPreSignedKey = generateSignedPreKey(identityKeyPair, 0);
         storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
       }
@@ -85,6 +100,7 @@ class SocketSignedPreKeyStore extends InMemorySignedPreKeyStore {
 
   @override
   Future<void> removeSignedPreKey(int signedPreKeyId) async {
+    print("Removing signed pre key: $signedPreKeyId");
     SocketService().emit("removeSignedPreKey", {
       'id': signedPreKeyId,
     });
@@ -94,13 +110,14 @@ class SocketSignedPreKeyStore extends InMemorySignedPreKeyStore {
   @override
   Future<void> storeSignedPreKey(
       int signedPreKeyId, SignedPreKeyRecord record) async {
+    print("Storing signed pre key: $signedPreKeyId");
     SocketService().emit("storeSignedPreKey", {
       'id': signedPreKeyId,
-      'data': record.serialize(),
+      'data': base64Encode(record.serialize()),
     });
     store[signedPreKeyId] = record.serialize();
   }
-}
+}*/
 
 class SignalService {
 
@@ -112,17 +129,22 @@ class SignalService {
 
   Future<void> init() async {
 
-    final identityData = await getIdentityKeyPair();
-    identityStore = InMemoryIdentityKeyStore(identityData['identityKeyPair'], identityData['registrationId']);
-    SocketService().emit("signalIdentity", {
-      'publicKey': identityStore.getLocalIdentityKey()?.publicKey,
-      'registrationId': identityStore.getLocalRegistrationId(),
-    });
-
-    sessionStore = InMemorySessionStore();
-    preKeyStore = SocketPreKeyStore();
+    //final identityData = await getIdentityKeyPair();
+    //final publicKeyBytes = base64Decode(identityData['publicKey']!);
+    //final publicKey = Curve.decodePoint(publicKeyBytes, 0); // ergibt ECPublicKey
+    //final publicIdentityKey = IdentityKey(publicKey);
+    //final privateKey = Curve.decodePrivatePoint(base64Decode(identityData['privateKey']!));
+    //final identityKeyPair = IdentityKeyPair(publicIdentityKey, privateKey);
+    identityStore = PermanentIdentityKeyStore();
+    /*SocketService().emit("signalIdentity", {
+      'publicKey': identityData['publicKey'],
+      'registrationId': identityData['registrationId'],
+    });*/
+    sessionStore = PermanentSessionStore();
+    preKeyStore = PermanentPreKeyStore();
     preKeyStore.loadRemotePreKeys();
-    signedPreKeyStore = SocketSignedPreKeyStore(identityStore.getIdentityKeyPair());
+    final identityKeyPair = await identityStore.getIdentityKeyPair();
+    signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
     signedPreKeyStore.loadRemoteSignedPreKeys();
 
     SocketService().registerListener("receiveItem", (data) {
@@ -322,60 +344,80 @@ Future<String> decryptItem({
   }
 }
 
-  Future<Map<String, dynamic>> _generateIdentityKeyPair() {
+  Future<Map<String, String>> _generateIdentityKeyPair() {
     final identityKeyPair =  generateIdentityKeyPair();
+    final publicKeyBase64 = base64Encode(identityKeyPair.getPublicKey().serialize());
+    final privateKeyBase64 = base64Encode(identityKeyPair.getPrivateKey().serialize());
     final registrationId = generateRegistrationId(false);
     return Future.value({
-      'identityKeyPair': identityKeyPair,
-      'registrationId': registrationId,
+      'publicKey': publicKeyBase64,
+      'privateKey': privateKeyBase64,
+      'registrationId': registrationId.toString(),
     });
   }
 
-  Future<Map<String, dynamic>> getIdentityKeyPair() async {
+  Future<Map<String, String?>> getIdentityKeyPair() async {
+  String? publicKeyBase64;
+  String? privateKeyBase64;
+  String? registrationId;
+
     if(isSkiaWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
       final storeName = 'peerwaveSignal';
-      final db = await idbFactory.open('peerwave', version: 1, onUpgradeNeeded: (VersionChangeEvent event) {
+      // Bump version to force onUpgradeNeeded and always create store if missing
+      final db = await idbFactory.open('peerwaveSignal', version: 1, onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
-        // create the store
-        db.createObjectStore(storeName, autoIncrement: true);
+        if (!db.objectStoreNames.contains(storeName)) {
+          db.createObjectStore(storeName, autoIncrement: true);
+        }
       });
 
       var txn = db.transaction(storeName, "readonly");
       var store = txn.objectStore(storeName);
-      var identityKeyPair = await store.getObject("identityKeyPair");
-      var registrationId = await store.getObject("registrationId");
+  publicKeyBase64 = await store.getObject("publicKey") as String?;
+  privateKeyBase64 = await store.getObject("privateKey") as String?;
+  var regIdObj = await store.getObject("registrationId");
+  registrationId = regIdObj?.toString();
       await txn.completed;
 
-      if (identityKeyPair == null || registrationId == null) { 
+      if (publicKeyBase64 == null || privateKeyBase64 == null || registrationId == null) {
         final generated = await _generateIdentityKeyPair();
-        identityKeyPair = generated['identityKeyPair'];
+        publicKeyBase64 = generated['publicKey'];
+        privateKeyBase64 = generated['privateKey'];
         registrationId = generated['registrationId'];
         txn = db.transaction(storeName, "readwrite");
-            store = txn.objectStore(storeName);
-            store.put(identityKeyPair ?? '', "identityKeyPair");
-            store.put(registrationId ?? '', "registrationId");
-            await txn.completed;
+        store = txn.objectStore(storeName);
+
+        store.put(publicKeyBase64 ?? '', "publicKey");
+        store.put(privateKeyBase64 ?? '', "privateKey");
+        store.put(registrationId ?? '', "registrationId");
+        await txn.completed;
       }
       return Future.value({
-        'identityKeyPair': identityKeyPair,
-        'registrationId': registrationId,
-      });
+      'publicKey': publicKeyBase64,
+      'privateKey': privateKeyBase64,
+      'registrationId': registrationId,
+    });
     } else {
       final storage = FlutterSecureStorage();
-      var identityKeyPair = await storage.read(key: "identityKeyPair");
-      var registrationId = await storage.read(key: "registrationId");
+  var publicKeyBase64 = await storage.read(key: "publicKey");
+  var privateKeyBase64 = await storage.read(key: "privateKey");
+  var regIdObj = await storage.read(key: "registrationId");
+  var registrationId = regIdObj?.toString();
 
-      if (identityKeyPair == null || registrationId == null) { 
-            final generated = await _generateIdentityKeyPair();
-            identityKeyPair = generated['identityKeyPair'];
+      if (publicKeyBase64 == null || privateKeyBase64 == null || registrationId == null) {
+        final generated = await _generateIdentityKeyPair();
+        publicKeyBase64 = generated['publicKey'];
+            privateKeyBase64 = generated['privateKey'];
             registrationId = generated['registrationId'];
-            await storage.write(key: "identityKeyPair", value: identityKeyPair ?? '');
-            await storage.write(key: "registrationId", value: registrationId ?? '');
+            await storage.write(key: "publicKey", value: publicKeyBase64);
+            await storage.write(key: "privateKey", value: privateKeyBase64);
+            await storage.write(key: "registrationId", value: registrationId);
       }
 
       return Future.value({
-        'identityKeyPair': identityKeyPair,
+        'publicKey': publicKeyBase64,
+        'privateKey': privateKeyBase64,
         'registrationId': registrationId,
       });
     }

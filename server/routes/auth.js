@@ -1017,16 +1017,39 @@ authRoutes.post("/client/addweb", async (req, res) => {
                     ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
                     : "Location not found";
             const maxDevice = await Client.max('device_id', { where: { owner: req.session.uuid } });
-            const [client, created] = await Client.findOrCreate({ where: { clientid: clientId, owner: req.session.uuid },
-            defaults: { owner: req.session.uuid, clientid: clientId, ip: ip, browser: userAgent, location: locationString, device_id: maxDevice ? maxDevice + 1 : 1 } });
+            const [client, created] = await Client.findOrCreate({
+                where: { clientid: clientId, owner: req.session.uuid },
+                defaults: {
+                    owner: req.session.uuid,
+                    clientid: clientId,
+                    ip: ip,
+                    browser: userAgent,
+                    location: locationString,
+                    device_id: maxDevice ? maxDevice + 1 : 1
+                }
+            });
             console.log(client, created);
-            req.session.deviceId = client.device_id;
-            if(!created) {
-                await Client.update({ ip: ip, browser: userAgent, location: locationString }, { where: { id: client.id } });
-                res.status(200).json({ status: "ok", message: "Client updated successfully" });
-            } else {
-                res.status(200).json({ status: "ok", message: "Client added successfully" });
-            }
+            // device_id kann je nach Sequelize-Return als getter oder plain property vorliegen
+            req.session.deviceId = client.device_id || (client.get ? client.get('device_id') : undefined);
+            req.session.clientId = client.clientid || (client.get ? client.get('clientid') : undefined);
+            req.session.save(err => {
+                if (err) {
+                    console.error('Session save error:', err);
+                    return res.status(500).json({ status: "error", message: "Session save error" });
+                }
+                if (!created) {
+                    Client.update({ ip: ip, browser: userAgent, location: locationString }, { where: { clientid: client.clientid } })
+                        .then(() => {
+                            res.status(200).json({ status: "ok", message: "Client updated successfully" });
+                        })
+                        .catch(error => {
+                            console.error('Error updating client:', error);
+                            res.status(500).json({ status: "error", message: "Internal server error" });
+                        });
+                } else {
+                    res.status(200).json({ status: "ok", message: "Client added successfully" });
+                }
+            });
 
         } catch (error) {
             console.error('Error adding client:', error);
