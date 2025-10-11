@@ -12,30 +12,64 @@ class PermanentSessionStore extends SessionStore {
 
   PermanentSessionStore();
 
+  static Future<PermanentSessionStore> create() async {
+    final store = PermanentSessionStore();
+    if (kIsWeb) {
+      final IdbFactory idbFactory = idbFactoryBrowser;
+      await idbFactory.open(store._storeName, version: 1, onUpgradeNeeded: (VersionChangeEvent event) {
+        Database db = event.database;
+        if (!db.objectStoreNames.contains(store._storeName)) {
+          db.createObjectStore(store._storeName, autoIncrement: false);
+        }
+      });
+    } else {
+      final storage = FlutterSecureStorage();
+      String? keysJson = await storage.read(key: 'session_keys');
+      if (keysJson == null) {
+        await storage.write(key: 'session_keys', value: jsonEncode([]));
+      }
+    }
+    return store;
+  }
+
   // Helper: Compose a unique key for a session
   String _sessionKey(SignalProtocolAddress address) =>
       '$_keyPrefix${address.getName()}_${address.getDeviceId()}';
 
   @override
   Future<bool> containsSession(SignalProtocolAddress address) async {
-    if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readonly');
-      var store = txn.objectStore(_storeName);
-      var value = await store.getObject(_sessionKey(address));
-      await txn.completed;
-      return value != null;
-    } else {
-      final storage = FlutterSecureStorage();
-      var value = await storage.read(key: _sessionKey(address));
-      return value != null;
+    print('[PermanentSessionStore] containsSession: address = $address');
+    try {
+      // Debug: print address info and types
+      print('[PermanentSessionStore] containsSession: address.getName() = \'${address.getName()}\', address.getDeviceId() = ${address.getDeviceId()} (type: \'${address.getDeviceId().runtimeType}\')');
+      if (kIsWeb) {
+        final IdbFactory idbFactory = idbFactoryBrowser;
+        final db = await idbFactory.open(_storeName, version: 1,
+            onUpgradeNeeded: (VersionChangeEvent event) {
+          Database db = event.database;
+          if (!db.objectStoreNames.contains(_storeName)) {
+            db.createObjectStore(_storeName, autoIncrement: false);
+          }
+        });
+        var txn = db.transaction(_storeName, 'readonly');
+        var store = txn.objectStore(_storeName);
+        var key = _sessionKey(address);
+        print('[PermanentSessionStore] containsSession: session key = $key');
+        var value = await store.getObject(key);
+        await txn.completed;
+        print('[PermanentSessionStore] containsSession: value = $value');
+        return value != null;
+      } else {
+        final storage = FlutterSecureStorage();
+        var key = _sessionKey(address);
+        print('[PermanentSessionStore] containsSession: session key = $key');
+        var value = await storage.read(key: key);
+        print('[PermanentSessionStore] containsSession: value = $value');
+        return value != null;
+      }
+    } catch (e, st) {
+      print('[PermanentSessionStore][ERROR] containsSession exception: $e\n$st');
+      rethrow;
     }
   }
 

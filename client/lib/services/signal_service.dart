@@ -1,6 +1,4 @@
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
-import 'package:idb_shim/idb_browser.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'api_service.dart';
@@ -119,37 +117,77 @@ import 'permanent_identity_key_store.dart';
   }
 }*/
 
+
 class SignalService {
+  static final SignalService instance = SignalService._internal();
+  factory SignalService() => instance;
+  SignalService._internal();
 
   final Map<String, List<Function(dynamic)>> _itemTypeCallbacks = {};
-  late var identityStore;
-  late var sessionStore;
-  late var preKeyStore;
-  late var signedPreKeyStore;
+  PermanentIdentityKeyStore identityStore = PermanentIdentityKeyStore();
+  late PermanentSessionStore sessionStore;
+  PermanentPreKeyStore preKeyStore = PermanentPreKeyStore();
+  late PermanentSignedPreKeyStore signedPreKeyStore;
 
   Future<void> init() async {
-
-    //final identityData = await getIdentityKeyPair();
-    //final publicKeyBytes = base64Decode(identityData['publicKey']!);
-    //final publicKey = Curve.decodePoint(publicKeyBytes, 0); // ergibt ECPublicKey
-    //final publicIdentityKey = IdentityKey(publicKey);
-    //final privateKey = Curve.decodePrivatePoint(base64Decode(identityData['privateKey']!));
-    //final identityKeyPair = IdentityKeyPair(publicIdentityKey, privateKey);
-    identityStore = PermanentIdentityKeyStore();
-    /*SocketService().emit("signalIdentity", {
-      'publicKey': identityData['publicKey'],
-      'registrationId': identityData['registrationId'],
-    });*/
-    sessionStore = PermanentSessionStore();
-    preKeyStore = PermanentPreKeyStore();
-    preKeyStore.loadRemotePreKeys();
-    final identityKeyPair = await identityStore.getIdentityKeyPair();
-    signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
-    signedPreKeyStore.loadRemoteSignedPreKeys();
+  identityStore = PermanentIdentityKeyStore();
+  sessionStore = await PermanentSessionStore.create();
+  preKeyStore = PermanentPreKeyStore();
+  final identityKeyPair = await identityStore.getIdentityKeyPair();
+  signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
 
     SocketService().registerListener("receiveItem", (data) {
       receiveItem(data);
     });
+
+    SocketService().registerListener("signalStatusResponse", (status) async {
+      await _ensureSignalKeysPresent(status);
+    });
+
+    // --- Signal status check and conditional upload ---
+    SocketService().emit("signalStatus", null);
+  }
+
+  Future<void> _ensureSignalKeysPresent(status) async {
+    // Use a socket callback to get status
+    print('[SIGNAL SERVICE] signalStatus: $status');
+    // 1. Identity
+    if (status is Map && status['identity'] != true) {
+      print('[SIGNAL SERVICE] Uploading missing identity');
+    final identityData = await identityStore.getIdentityKeyPairData();
+    final registrationId = await identityStore.getLocalRegistrationId();
+      SocketService().emit("signalIdentity", {
+        'publicKey': identityData['publicKey'],
+        'registrationId': registrationId.toString(),
+      });
+    }
+    // 2. PreKeys
+    final int preKeysCount = (status is Map && status['preKeys'] is int) ? status['preKeys'] : 0;
+    if (preKeysCount < 20) {
+      print('[SIGNAL SERVICE] Not enough pre-keys on server, uploading more');
+      final localPreKeys = await preKeyStore.getAllPreKeys();
+      if (localPreKeys.isNotEmpty) {
+        final preKeysPayload = localPreKeys.map((pk) => {
+          'id': pk.id,
+          'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
+        }).toList();
+        SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
+      }
+    }
+    // 3. SignedPreKey
+    final signedPreKey = status is Map ? status['signedPreKey'] : null;
+    if (signedPreKey == null) {
+      print('[SIGNAL SERVICE] No signed pre-key on server, uploading');
+  final allSigned = await signedPreKeyStore.loadSignedPreKeys();
+      if (allSigned.isNotEmpty) {
+        final latest = allSigned.last;
+        SocketService().emit("storeSignedPreKey", {
+          'id': latest.id,
+          'data': base64Encode(latest.getKeyPair().publicKey.serialize()),
+          'signature': base64Encode(latest.signature),
+        });
+      }
+    }
   }
 
   /// Register a callback for a specific item type
@@ -166,6 +204,7 @@ class SignalService {
   }
 
   void receiveItem(data) async {
+  print("[SIGNAL SERVICE] receiveItem: $data");
   final type = data['type'];
   final sender = data['sender']; // z.B. Absender-UUID
   final senderDeviceId = data['senderDeviceId'];
@@ -210,30 +249,61 @@ class SignalService {
       urlString = 'https://$urlString';
     }
     final response = await ApiService.get('$urlString/signal/prekey_bundle/$userId');
+    print('[DEBUG] response.statusCode: \\${response.statusCode}');
+    print('[DEBUG] response.data: \\${response.data}');
+    print('[DEBUG] response.data.runtimeType: \\${response.data.runtimeType}');
     if (response.statusCode == 200) {
-      final List<dynamic> devices = jsonDecode(response.data);
-
-      return devices.map<Map<String, dynamic>>((data) => {
-        'clientid': data['clientid'],
-        'userId': data['userId'],
-        'deviceId': data['device_id'],
-        'publicKey': data['public_key'],
-        'registrationId': data['registration_id'],
-        'preKeyId': data['preKey']?['prekey_id'],
-        'preKeyPublic': data['preKey'] != null
-            ? Curve.decodePoint(base64Decode(data['preKey']['prekey_data']), 0)
-            : null,
-        'signedPreKeyId': data['signedPreKey']?['signed_prekey_id'],
-        'signedPreKeyPublic': data['signedPreKey'] != null
-            ? Curve.decodePoint(base64Decode(data['signedPreKey']['signed_prekey_data']), 0)
-            : null,
-        'signedPreKeySignature': data['signedPreKey']?['signed_prekey_signature'] != null
-            ? base64Decode(data['signedPreKey']['signed_prekey_signature'])
-            : null,
-        'identityKey': data['public_key'] != null
-            ? IdentityKey.fromBytes(base64Decode(data['public_key']), 0)
-            : null,
-      }).toList();
+      try {
+        final devices = response.data is String ? jsonDecode(response.data) : response.data;
+        print('[DEBUG] devices: \\${devices}');
+        print('[DEBUG] devices.runtimeType: \\${devices.runtimeType}');
+        if (devices is List) {
+          print('[DEBUG] devices.length: \\${devices.length}');
+        }
+        final List<Map<String, dynamic>> result = [];
+        for (final data in devices) {
+          print('[DEBUG] signedPreKey: ' + jsonEncode(data['signedPreKey']));
+          final hasAllFields =
+            data['public_key'] != null &&
+            data['registration_id'] != null &&
+            data['preKey'] != null &&
+            data['signedPreKey'] != null &&
+            data['preKey']['prekey_data'] != null &&
+            data['signedPreKey']['signed_prekey_data'] != null &&
+            data['signedPreKey']['signed_prekey_signature'] != null &&
+            data['signedPreKey']['signed_prekey_signature'].toString().isNotEmpty;
+          if (!hasAllFields) {
+            print('[SIGNAL SERVICE][WARN] Device ${data['clientid']} skipped: missing required Signal fields.');
+            continue;
+          }
+          print('[DEBUG] Decoding preKey ${data['preKey']['prekey_data']}');
+          print(base64Decode(data['preKey']['prekey_data']).length);
+          print("[DEBUG] Decoding signedPreKey ${data['signedPreKey']['signed_prekey_data']}");
+          print(base64Decode(data['signedPreKey']['signed_prekey_data']).length);
+          print("[DEBUG] Decoding signedPreKeySignature ${data['signedPreKey']['signed_prekey_signature']}");
+          print(base64Decode(data['signedPreKey']['signed_prekey_signature']).length);
+          result.add({
+            'clientid': data['clientid'],
+            'userId': userId,
+            'deviceId': data['device_id'],
+            'publicKey': data['public_key'],
+            'registrationId': data['registration_id'],
+            'preKeyId': data['preKey']['prekey_id'],
+            'preKeyPublic': Curve.decodePoint(base64Decode(data['preKey']['prekey_data']), 0),
+            'signedPreKeyId': data['signedPreKey']['signed_prekey_id'],
+            'signedPreKeyPublic': Curve.decodePoint(base64Decode(data['signedPreKey']['signed_prekey_data']), 0),
+            'signedPreKeySignature': base64Decode(data['signedPreKey']['signed_prekey_signature']),
+            'identityKey': IdentityKey.fromBytes(base64Decode(data['public_key']), 0),
+          });
+        }
+        if (result.isEmpty) {
+          print('[SIGNAL SERVICE][ERROR] No valid Signal devices found for user $userId.');
+        }
+        return result;
+      } catch (e, st) {
+        print('[ERROR] Exception while decoding response: \\${e}\\n\\${st}');
+        rethrow;
+      }
     } else {
       throw Exception('Failed to load PreKeyBundle');
     }
@@ -242,32 +312,32 @@ class SignalService {
   Future<void> sendItem({
     required String recipientUserId,
     required String type,
-    required String payload,
+    required dynamic payload,
   }) async {
     final itemId = Uuid().v4();
-    // 1. Lade alle PreKeyBundles für alle Devices des Empfängers
+    print('[SIGNAL SERVICE] Step 1: fetchPreKeyBundleForUser($recipientUserId)');
     final preKeyBundles = await fetchPreKeyBundleForUser(recipientUserId);
+    print('[SIGNAL SERVICE] Step 1 result: $preKeyBundles');
 
-    // 2. Für jedes Device:
     for (final bundle in preKeyBundles) {
+      print('[SIGNAL SERVICE] Step 2: Prepare recipientAddress for deviceId ${bundle['deviceId']}');
       final recipientAddress = SignalProtocolAddress(bundle['userId'], bundle['deviceId']);
+      print('[SIGNAL SERVICE] Step 3: Check session for $recipientAddress');
+      final hasSession = await sessionStore.containsSession(recipientAddress);
+      print('[SIGNAL SERVICE] Step 3 result: hasSession=$hasSession');
 
-      // 3. Prüfen, ob eine Session existiert
-      final hasSession = sessionStore.containsSession(recipientAddress);
-
-      // 4. Falls keine Session existiert, Session aufbauen
       if (!hasSession) {
+        print('[SIGNAL SERVICE] Step 4: Build session for $recipientAddress');
         final preKeyBundle = PreKeyBundle(
           bundle['registrationId'],
           bundle['deviceId'],
           bundle['preKeyId'],
-          bundle['preKeyPublic'], // ECPublicKey
+          bundle['preKeyPublic'],
           bundle['signedPreKeyId'],
-          bundle['signedPreKeyPublic'], // ECPublicKey
-          bundle['signedPreKeySignature'], // Uint8List
-          bundle['identityKey'], // IdentityKey
+          bundle['signedPreKeyPublic'],
+          bundle['signedPreKeySignature'],
+          bundle['identityKey'],
         );
-
         final sessionBuilder = SessionBuilder(
           sessionStore,
           preKeyStore,
@@ -276,9 +346,10 @@ class SignalService {
           recipientAddress,
         );
         await sessionBuilder.processPreKeyBundle(preKeyBundle);
+        print('[SIGNAL SERVICE] Step 4 done');
       }
 
-      // 5. SessionCipher für das Device holen/erstellen
+      print('[SIGNAL SERVICE] Step 5: Create SessionCipher for $recipientAddress');
       final sessionCipher = SessionCipher(
         sessionStore,
         preKeyStore,
@@ -287,13 +358,23 @@ class SignalService {
         recipientAddress,
       );
 
-      // 6. Nachricht verschlüsseln
-      final ciphertextMessage = await sessionCipher.encrypt(Uint8List.fromList(utf8.encode(payload)));
+      print('[SIGNAL SERVICE] Step 6: Prepare payload');
+      String payloadString;
+      if (payload is String) {
+        payloadString = payload;
+        print('[SIGNAL SERVICE] Step 6a: payload is String: $payloadString');
+      } else {
+        payloadString = jsonEncode(payload);
+        print('[SIGNAL SERVICE] Step 6b: payload is encoded to JSON: $payloadString');
+      }
 
-      // 7. Serialisieren
+      print('[SIGNAL SERVICE] Step 7: Encrypt payload');
+      final ciphertextMessage = await sessionCipher.encrypt(Uint8List.fromList(utf8.encode(payloadString)));
+
+      print('[SIGNAL SERVICE] Step 8: Serialize ciphertext');
       final serialized = base64Encode(ciphertextMessage.serialize());
 
-      // 8. Datenpaket bauen
+      print('[SIGNAL SERVICE] Step 9: Build data packet');
       final data = {
         'recipient': recipientAddress.getName(),
         'recipientDeviceId': recipientAddress.getDeviceId(),
@@ -303,7 +384,7 @@ class SignalService {
         'itemId': itemId,
       };
 
-      // 9. Senden
+      print('[SIGNAL SERVICE] Step 10: Sending item: $data');
       SocketService().emit("sendItem", data);
     }
   }
@@ -327,13 +408,19 @@ Future<String> decryptItem({
 
   // 3. Entschlüsseln je nach Typ
   if (cipherType == CiphertextMessage.prekeyType) {
-  final preKeyMsg = PreKeySignalMessage(serialized);
-  final plaintext = await sessionCipher.decryptWithCallback(preKeyMsg, (pt) {});
-  // PreKey nach erfolgreichem Session-Aufbau löschen
-  final preKeyId = preKeyMsg.getPreKeyId();
-  await preKeyStore.removePreKey(preKeyId);
-  preKeyStore.checkPreKeys();
-  return utf8.decode(plaintext);
+    final preKeyMsg = PreKeySignalMessage(serialized);
+    final plaintext = await sessionCipher.decryptWithCallback(preKeyMsg, (pt) {});
+    // PreKey nach erfolgreichem Session-Aufbau löschen
+    final preKeyIdOptional = preKeyMsg.getPreKeyId();
+    int? preKeyId;
+    if (preKeyIdOptional.isPresent == true) {
+      preKeyId = preKeyIdOptional.value;
+    }
+    if (preKeyId != null) {
+      await preKeyStore.removePreKey(preKeyId);
+      preKeyStore.checkPreKeys();
+    }
+    return utf8.decode(plaintext);
 } else if (cipherType == CiphertextMessage.whisperType) {
     // Normale Nachricht
     final signalMsg = SignalMessage.fromSerialized(serialized);
@@ -344,7 +431,7 @@ Future<String> decryptItem({
   }
 }
 
-  Future<Map<String, String>> _generateIdentityKeyPair() {
+  /*Future<Map<String, String>> _generateIdentityKeyPair() {
     final identityKeyPair =  generateIdentityKeyPair();
     final publicKeyBase64 = base64Encode(identityKeyPair.getPublicKey().serialize());
     final privateKeyBase64 = base64Encode(identityKeyPair.getPrivateKey().serialize());
@@ -354,9 +441,9 @@ Future<String> decryptItem({
       'privateKey': privateKeyBase64,
       'registrationId': registrationId.toString(),
     });
-  }
+  }*/
 
-  Future<Map<String, String?>> getIdentityKeyPair() async {
+  /*Future<Map<String, String?>> getIdentityKeyPair() async {
   String? publicKeyBase64;
   String? privateKeyBase64;
   String? registrationId;
@@ -421,6 +508,6 @@ Future<String> decryptItem({
         'registrationId': registrationId,
       });
     }
-  }
+  }*/
 }
 

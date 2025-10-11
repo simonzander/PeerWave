@@ -53,7 +53,6 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
     }
   }
 
-
   @override
   Future<IdentityKeyPair> getIdentityKeyPair() async {
     if (identityKeyPair == null) {

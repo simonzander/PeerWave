@@ -1,6 +1,6 @@
 const config = require('../config/config');
 const express = require("express");
-const { Sequelize, DataTypes, Op, UUID } = require('sequelize');
+const { Sequelize, DataTypes, Op, UUID, col } = require('sequelize');
 const { Fido2Lib } = require('fido2-lib');
 const bodyParser = require('body-parser'); // Import body-parser
 const nodemailer = require("nodemailer");
@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const session = require('express-session');
 const cors = require('cors');
 const magicLinks = require('../store/magicLinksStore');
-const { User, Channel, Thread, SignalSignedPreKey, SignalPreKey, Client } = require('../db/model');
+const { User, Channel, Thread, SignalSignedPreKey, SignalPreKey, Client, Item } = require('../db/model');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 async function getLocationFromIp(ip) {
@@ -45,49 +45,106 @@ clientRoutes.get("/client/meta", (req, res) => {
     });
 });
 
+clientRoutes.get("/direct/messages/:userId", async (req, res) => {
+    const { userId } = req.params;
+    // session.deviceId and session.uuid must be set
+    const sessionDeviceId = req.session.deviceId;
+    const sessionUuid = req.session.uuid;
+    if (!sessionDeviceId || !sessionUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    try {
+        // Custom SQL: get only the latest message per itemId
+        const result = await Item.sequelize.query(`
+            SELECT i.* FROM Items i
+            INNER JOIN (
+                SELECT itemId, MAX(rowid) as max_rowid
+                FROM Items
+                WHERE (
+                    (deviceReceiver = :sessionDeviceId AND receiver = :sessionUuid AND sender = :userId)
+                    OR (sender = :sessionUuid AND receiver = :userId)
+                )
+                GROUP BY itemId
+            ) latest ON i.itemId = latest.itemId AND i.rowid = latest.max_rowid
+            ORDER BY i.itemId DESC
+        `, {
+            replacements: { sessionDeviceId, sessionUuid, userId },
+            model: Item,
+            mapToModel: true
+        });
+        const messages = result[0];
+        console.log('Direct messages:', messages);
+        res.status(200).json(messages);
+    } catch (error) {
+        console.error('Error fetching direct messages:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
 clientRoutes.get("/signal/prekey_bundle/:userId", async (req, res) => {
     const { userId } = req.params;
     try {
 
+        // Use the correct association aliases as defined in your model (likely 'SignalSignedPreKeys' and 'SignalPreKeys')
         const clients = await Client.findAll({
             where: { owner: userId },
             attributes: ['clientid', 'device_id', 'public_key', 'registration_id'],
             include: [
                 {
-                model: SignalSignedPreKey,
-                as: 'signedPreKeys',
-                where: { owner: userId, client: col('Client.clientid') },
-                required: false,
-                separate: true,
-                order: [['createdAt', 'DESC']],
-                limit: 1
+                    model: SignalSignedPreKey,
+                    as: 'SignalSignedPreKeys',
+                    where: { owner: userId },
+                    required: false,
+                    separate: true,
+                    order: [['createdAt', 'DESC']]
                 },
                 {
-                model: SignalPreKey,
-                as: 'preKeys',
-                where: { owner: userId, client: col('Client.clientid') },
-                required: false,
-                order: [Sequelize.literal('RAND()')],
-                limit: 1
+                    model: SignalPreKey,
+                    as: 'SignalPreKeys',
+                    where: { owner: userId },
+                    required: false
                 }
             ]
         });
+        function getRandom(arr) {
+            if (!arr || arr.length === 0) return null;
+            return arr[Math.floor(Math.random() * arr.length)];
+        }
         const result = clients.map(client => ({
             clientid: client.clientid,
             userId: client.owner,
             device_id: client.device_id,
             public_key: client.public_key,
             registration_id: client.registration_id,
-            signedPreKey: client.signedPreKeys?.[0] || null,
-            preKey: client.preKeys?.[0] || null
+            signedPreKey: (client.SignalSignedPreKeys || []).find(k => k.client === client.clientid) || null,
+            preKey: getRandom((client.SignalPreKeys || []).filter(k => k.client === client.clientid))
         }));
 
         for (const client of clients) {
-            await SignalPreKey.destroy({ where: { owner: userId, client: client.clientid, prekey_id: client.preKey?.prekey_id } });
+            const preKeyObj = (client.SignalPreKeys || []).find(k => k.client === client.clientid);
+            if (preKeyObj) {
+                await SignalPreKey.destroy({ where: { owner: userId, client: client.clientid, prekey_id: preKeyObj.prekey_id } });
+            }
         }
         res.status(200).json(result);
     } catch (error) {
         console.error('Error fetching signed pre-key:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+clientRoutes.get("/people/list", async (req, res) => {
+    if(req.session.authenticated !== true || !req.session.uuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    try {
+        const users = await User.findAll({
+            attributes: ['uuid', 'displayName', 'picture'],
+            where: { uuid: { [Op.ne]: req.session.uuid } } // Exclude the current user
+        });
+        res.status(200).json(users);
+    } catch (error) {
+        console.error('Error fetching users:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });

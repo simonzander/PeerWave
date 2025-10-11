@@ -5,47 +5,19 @@ import 'package:idb_shim/idb_browser.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 
+/// Wrapper for a signed pre-key and its metadata.
+class StoredSignedPreKey {
+  final SignedPreKeyRecord record;
+  final DateTime? createdAt;
+  StoredSignedPreKey({required this.record, this.createdAt});
+}
+
 /// A persistent signed pre-key store for Signal signed pre-keys.
 /// Uses IndexedDB on web and FlutterSecureStorage on native.
 class PermanentSignedPreKeyStore extends SignedPreKeyStore {
 
-final IdentityKeyPair identityKeyPair;
-
-  final String _storeName = 'peerwaveSignalSignedPreKeys';
-  final String _keyPrefix = 'signedprekey_';
-
-  PermanentSignedPreKeyStore(this.identityKeyPair);
-
-  String _signedPreKey(int signedPreKeyId) => '$_keyPrefix$signedPreKeyId';
-
-  Future<void> loadRemoteSignedPreKeys() async {
-    SocketService().registerListener("getSignedPreKeysResponse", (data) async {
-      print(data);
-      for (var item in data) {
-        if (item['signed_prekey_id'] != null && item['signed_prekey_data'] != null && item['createdAt'] != null) {
-          await storeSignedPreKey(
-            item['signed_prekey_id'],
-            SignedPreKeyRecord.fromSerialized(base64Decode(item['signed_prekey_data'])),
-          );
-          if (DateTime.parse(item['createdAt']).millisecondsSinceEpoch < DateTime.now().millisecondsSinceEpoch - 1 * 24 * 60 * 60 * 1000) {
-            // If preSignedKey is older than 1 day, create new one
-            var newPreSignedKey = generateSignedPreKey(identityKeyPair, data.length);
-            await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
-            await removeSignedPreKey(item['signed_prekey_id']);
-          }
-        }
-      }
-      if (data.isEmpty) {
-        print("No signed pre keys found, creating new one");
-        var newPreSignedKey = generateSignedPreKey(identityKeyPair, 0);
-        await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
-      }
-    });
-    SocketService().emit("getSignedPreKeys", null);
-  }
-
-  @override
-  Future<SignedPreKeyRecord> loadSignedPreKey(int signedPreKeyId) async {
+  /// Loads a signed prekey and its metadata (createdAt).
+  Future<StoredSignedPreKey?> loadStoredSignedPreKey(int signedPreKeyId) async {
     if (await containsSignedPreKey(signedPreKeyId)) {
       if (kIsWeb) {
         final IdbFactory idbFactory = idbFactoryBrowser;
@@ -59,31 +31,50 @@ final IdentityKeyPair identityKeyPair;
         var txn = db.transaction(_storeName, 'readonly');
         var store = txn.objectStore(_storeName);
         var value = await store.getObject(_signedPreKey(signedPreKeyId));
+        var metaValue = await store.getObject(_signedPreKeyMeta(signedPreKeyId));
         await txn.completed;
+        SignedPreKeyRecord? record;
         if (value is String) {
-          return SignedPreKeyRecord.fromSerialized(base64Decode(value));
+          record = SignedPreKeyRecord.fromSerialized(base64Decode(value));
         } else if (value is Uint8List) {
-          return SignedPreKeyRecord.fromSerialized(value);
+          record = SignedPreKeyRecord.fromSerialized(value);
         } else {
           throw Exception('Invalid signed prekey data');
         }
+        DateTime? createdAt;
+        if (metaValue is String) {
+          var meta = jsonDecode(metaValue);
+          if (meta is Map && meta['createdAt'] != null) {
+            createdAt = DateTime.parse(meta['createdAt']);
+          }
+        }
+        return StoredSignedPreKey(record: record, createdAt: createdAt);
       } else {
         final storage = FlutterSecureStorage();
         var value = await storage.read(key: _signedPreKey(signedPreKeyId));
+        var metaValue = await storage.read(key: _signedPreKeyMeta(signedPreKeyId));
         if (value != null) {
-          return SignedPreKeyRecord.fromSerialized(base64Decode(value));
+          var record = SignedPreKeyRecord.fromSerialized(base64Decode(value));
+          DateTime? createdAt;
+          if (metaValue != null) {
+            var meta = jsonDecode(metaValue);
+            if (meta is Map && meta['createdAt'] != null) {
+              createdAt = DateTime.parse(meta['createdAt']);
+            }
+          }
+          return StoredSignedPreKey(record: record, createdAt: createdAt);
         } else {
           throw Exception('No such signedprekeyrecord! $signedPreKeyId');
         }
       }
     } else {
-      throw Exception('No such signedprekeyrecord! $signedPreKeyId');
+      return null;
     }
   }
 
-  @override
-  Future<List<SignedPreKeyRecord>> loadSignedPreKeys() async {
-    final results = <SignedPreKeyRecord>[];
+  /// Loads all signed prekeys and their metadata.
+  Future<List<StoredSignedPreKey>> loadAllStoredSignedPreKeys() async {
+    final results = <StoredSignedPreKey>[];
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
       final db = await idbFactory.open(_storeName, version: 1,
@@ -97,13 +88,23 @@ final IdentityKeyPair identityKeyPair;
       var store = txn.objectStore(_storeName);
       var keys = await store.getAllKeys();
       for (var key in keys) {
-        if (key is String && key.startsWith(_keyPrefix)) {
+        if (key is String && key.startsWith(_keyPrefix) && !key.endsWith('_meta')) {
           var value = await store.getObject(key);
+          var metaValue = await store.getObject(key + '_meta');
+          SignedPreKeyRecord? record;
           if (value is String) {
-            results.add(SignedPreKeyRecord.fromSerialized(base64Decode(value)));
+            record = SignedPreKeyRecord.fromSerialized(base64Decode(value));
           } else if (value is Uint8List) {
-            results.add(SignedPreKeyRecord.fromSerialized(value));
+            record = SignedPreKeyRecord.fromSerialized(value);
           }
+          DateTime? createdAt;
+          if (metaValue is String) {
+            var meta = jsonDecode(metaValue);
+            if (meta is Map && meta['createdAt'] != null) {
+              createdAt = DateTime.parse(meta['createdAt']);
+            }
+          }
+          if (record != null) results.add(StoredSignedPreKey(record: record, createdAt: createdAt));
         }
       }
       await txn.completed;
@@ -114,8 +115,18 @@ final IdentityKeyPair identityKeyPair;
         List<String> keys = List<String>.from(jsonDecode(keysJson));
         for (var key in keys) {
           var value = await storage.read(key: key);
+          var metaValue = await storage.read(key: key + '_meta');
+          SignedPreKeyRecord? record;
           if (value != null) {
-            results.add(SignedPreKeyRecord.fromSerialized(base64Decode(value)));
+            record = SignedPreKeyRecord.fromSerialized(base64Decode(value));
+            DateTime? createdAt;
+            if (metaValue != null) {
+              var meta = jsonDecode(metaValue);
+              if (meta is Map && meta['createdAt'] != null) {
+                createdAt = DateTime.parse(meta['createdAt']);
+              }
+            }
+            results.add(StoredSignedPreKey(record: record, createdAt: createdAt));
           }
         }
       }
@@ -123,14 +134,82 @@ final IdentityKeyPair identityKeyPair;
     return results;
   }
 
+final IdentityKeyPair identityKeyPair;
+
+  final String _storeName = 'peerwaveSignalSignedPreKeys';
+  final String _keyPrefix = 'signedprekey_';
+
+
+  PermanentSignedPreKeyStore(this.identityKeyPair) {
+    // Listen for incoming signed prekeys from server
+    SocketService().registerListener("getSignedPreKeysResponse", (data) async {
+      // Server does not store private keys; nothing to reconstruct here.
+      if (data.isEmpty) {
+        print("No signed pre keys found, creating new one");
+        var newPreSignedKey = generateSignedPreKey(identityKeyPair, 0);
+        await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
+      }
+    });
+    // check if we have any signed prekeys, if not create one
+    loadAllStoredSignedPreKeys().then((keys) async {
+      if (keys.isEmpty) {
+        print("No signed pre keys found locally, creating new one");
+        var newPreSignedKey = generateSignedPreKey(identityKeyPair, 0);
+        await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
+      }
+      // check if any signed prekeys are older than 1 day, if so create new one
+      for (var stored in keys) {
+        final createdAt = stored.createdAt;
+        if (createdAt != null && DateTime.now().difference(createdAt).inDays > 1) {
+          print("Found expired signed pre key, creating new one");
+          var newPreSignedKey = generateSignedPreKey(identityKeyPair, keys.length);
+          await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
+        }
+      }
+    });
+  }
+
+  String _signedPreKey(int signedPreKeyId) => '$_keyPrefix$signedPreKeyId';
+  String _signedPreKeyMeta(int signedPreKeyId) => '$_keyPrefix${signedPreKeyId}_meta';
+
+
+  Future<void> loadRemoteSignedPreKeys() async {
+    SocketService().emit("getSignedPreKeys", null);
+  }
+
+  @override
+  Future<SignedPreKeyRecord> loadSignedPreKey(int signedPreKeyId) async {
+    final stored = await loadStoredSignedPreKey(signedPreKeyId);
+    if (stored != null) {
+      return stored.record;
+    } else {
+      throw Exception('No such signedprekeyrecord! $signedPreKeyId');
+    }
+  }
+
+  @override
+  Future<List<SignedPreKeyRecord>> loadSignedPreKeys() async {
+    // For compatibility, return only the records (without metadata)
+    final stored = await loadAllStoredSignedPreKeys();
+    return stored.map((e) => e.record).toList();
+  }
+
   @override
   Future<void> storeSignedPreKey(int signedPreKeyId, SignedPreKeyRecord record) async {
     print("Storing signed pre key: $signedPreKeyId");
+    // Split SignedPreKeyRecord into publicKey and signature for storage
+    final publicKey = base64Encode(record.getKeyPair().publicKey.serialize());
+    final signature = base64Encode(record.signature);
+
+    // Optionally, you can still store the full serialized record for compatibility
     SocketService().emit("storeSignedPreKey", {
       'id': signedPreKeyId,
-      'data': base64Encode(record.serialize()),
+      'data': publicKey,
+      "signature": signature,
     });
     final serialized = record.serialize();
+  final createdAt = DateTime.now().toIso8601String();
+  final meta = jsonEncode({'createdAt': createdAt});
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
       final db = await idbFactory.open(_storeName, version: 1,
@@ -143,10 +222,12 @@ final IdentityKeyPair identityKeyPair;
       var txn = db.transaction(_storeName, 'readwrite');
       var store = txn.objectStore(_storeName);
       await store.put(base64Encode(serialized), _signedPreKey(signedPreKeyId));
+      await store.put(meta, _signedPreKeyMeta(signedPreKeyId));
       await txn.completed;
     } else {
       final storage = FlutterSecureStorage();
       await storage.write(key: _signedPreKey(signedPreKeyId), value: base64Encode(serialized));
+      await storage.write(key: _signedPreKeyMeta(signedPreKeyId), value: meta);
       // Track signed prekey key
       String? keysJson = await storage.read(key: 'signedprekey_keys');
       List<String> keys = [];
@@ -202,10 +283,12 @@ final IdentityKeyPair identityKeyPair;
       var txn = db.transaction(_storeName, 'readwrite');
       var store = txn.objectStore(_storeName);
       await store.delete(_signedPreKey(signedPreKeyId));
+      await store.delete(_signedPreKeyMeta(signedPreKeyId));
       await txn.completed;
     } else {
       final storage = FlutterSecureStorage();
       await storage.delete(key: _signedPreKey(signedPreKeyId));
+      await storage.delete(key: _signedPreKeyMeta(signedPreKeyId));
       // Remove from tracked signed prekey keys
       String? keysJson = await storage.read(key: 'signedprekey_keys');
       List<String> keys = [];

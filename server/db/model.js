@@ -128,6 +128,10 @@ const SignalSignedPreKey = sequelize.define('SignalSignedPreKey', {
     signed_prekey_data: {
         type: DataTypes.TEXT,
         allowNull: false,
+    },
+    signed_prekey_signature: {
+        type: DataTypes.TEXT,
+        allowNull: false,
     }
 }, {
     indexes: [
@@ -263,11 +267,8 @@ const Item = sequelize.define('Item', {
     },
     deviceReceiver: {
         type: DataTypes.INTEGER,
-        allowNull: false,
-        references: {
-            model: 'Clients',
-            key: 'device_id'
-        }
+        allowNull: false
+        // keine Foreign-Key-Referenzierung mehr
     },
     receiver: {
         type: DataTypes.UUID,

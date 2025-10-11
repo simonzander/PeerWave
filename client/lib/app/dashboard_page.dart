@@ -3,10 +3,49 @@ import 'sidebar_panel.dart';
 import 'profile_card.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:go_router/go_router.dart';
+import '../services/api_service.dart';
+import '../services/signal_service.dart';
 import '../services/socket_service.dart';
 
-class DashboardPage extends StatelessWidget {
+class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
+
+  @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+enum DashboardSubPage { chat, people, directMessage }
+
+class _DashboardPageState extends State<DashboardPage> {
+  // Track direct messages: list of {displayName, uuid}
+  List<Map<String, String>> _directMessages = [];
+  String? _activeDirectMessageUuid;
+  String? _activeDirectMessageDisplayName;
+  DashboardSubPage _currentSubPage = DashboardSubPage.chat;
+
+  void _onSidebarPeopleTap() {
+    setState(() {
+      _currentSubPage = DashboardSubPage.people;
+    });
+  }
+
+  void _onDirectMessageTap(String uuid, String displayName) {
+    setState(() {
+      _activeDirectMessageUuid = uuid;
+      _activeDirectMessageDisplayName = displayName;
+      _currentSubPage = DashboardSubPage.directMessage;
+    });
+  }
+
+  void _addDirectMessage(String uuid, String displayName) {
+    // Only add if not already present
+    if (!_directMessages.any((dm) => dm['uuid'] == uuid)) {
+      setState(() {
+        _directMessages.insert(0, {'uuid': uuid, 'displayName': displayName});
+      });
+    }
+    _onDirectMessageTap(uuid, displayName);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,8 +56,36 @@ class DashboardPage extends StatelessWidget {
       host = extra['host'] as String?;
       socket = extra['socket'] as IO.Socket?;
     }
-  final bool isWeb = MediaQuery.of(context).size.width > 600 || Theme.of(context).platform == TargetPlatform.macOS || Theme.of(context).platform == TargetPlatform.windows;
-  final double sidebarWidth = isWeb ? 350 : 300;
+    final bool isWeb = MediaQuery.of(context).size.width > 600 || Theme.of(context).platform == TargetPlatform.macOS || Theme.of(context).platform == TargetPlatform.windows;
+    final double sidebarWidth = isWeb ? 350 : 300;
+
+
+    Widget subPageWidget;
+    switch (_currentSubPage) {
+      case DashboardSubPage.people:
+        subPageWidget = PeopleSubPage(
+          host: host ?? '',
+          onMessageTap: (uuid, displayName) {
+            _addDirectMessage(uuid, displayName);
+          },
+        );
+        break;
+      case DashboardSubPage.directMessage:
+        subPageWidget = DirectMessageSubPage(
+          host: host ?? '',
+          uuid: _activeDirectMessageUuid ?? '',
+          displayName: _activeDirectMessageDisplayName ?? '',
+        );
+        break;
+      case DashboardSubPage.chat:
+      default:
+        subPageWidget = Column(
+          children: [
+            // ...existing code...
+          ],
+        );
+        break;
+    }
 
     return Material(
       color: Colors.transparent,
@@ -31,159 +98,278 @@ class DashboardPage extends StatelessWidget {
                 if (constraints.maxWidth < 600) width = 80;
                 return SizedBox(
                   width: width,
-                  child: SidebarPanel(panelWidth: width, buildProfileCard: () => const ProfileCard(), socket: socket, host: host ?? ''),
+                  child: SidebarPanel(
+                    panelWidth: width,
+                    buildProfileCard: () => const ProfileCard(),
+                    socket: socket,
+                    host: host ?? '',
+                    onPeopleTap: _onSidebarPeopleTap,
+                    directMessages: _directMessages,
+                    onDirectMessageTap: _onDirectMessageTap,
+                  ),
                 );
               },
             ),
             Expanded(
               child: Container(
                 color: const Color(0xFF36393F),
-                child: Column(
-                  children: [
-                    // Titlebar
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-                      color: Colors.grey[850],
-                      child: Row(
-                        children: [
-                          // Channel title (left)
-                          const Text(
-                            '# general',
-                            style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                          ),
-                          const Spacer(),
-                          // Icon bar (right)
-                          IconButton(
-                            icon: const Icon(Icons.push_pin, color: Colors.white),
-                            tooltip: 'Pin Channel',
-                            onPressed: () {},
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.video_call, color: Colors.white),
-                            tooltip: 'Instant Meeting',
-                            onPressed: () {},
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.settings, color: Colors.white),
-                            tooltip: 'Channel Settings',
-                            onPressed: () {},
-                          ),
-                          Container(
-                            width: 180,
-                            margin: const EdgeInsets.symmetric(horizontal: 8),
-                            child: TextField(
-                              decoration: InputDecoration(
-                                hintText: 'Search...',
-                                hintStyle: TextStyle(color: Colors.white54),
-                                filled: true,
-                                fillColor: Colors.grey[800],
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                  borderSide: BorderSide.none,
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                              ),
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.group, color: Colors.white),
-                            tooltip: 'Members',
-                            onPressed: () {},
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Chat content
-                    Expanded(
-                      child: ListView(
-                        padding: const EdgeInsets.all(24),
-                        children: [
-                          _ChatMessage(
-                            avatar: 'https://randomuser.me/api/portraits/women/1.jpg',
-                            name: 'Tina Chen',
-                            time: '12:47 AM',
-                            text: 'I must decline for secret reasons.',
-                            reactions: [],
-                          ),
-                          _ChatMessage(
-                            avatar: 'https://randomuser.me/api/portraits/women/2.jpg',
-                            name: 'Lane Collins',
-                            time: '11:50 AM',
-                            text: 'Really need to give some kudos to @julie for helping out with the new influx of tweets yesterday. People are really, really excited about yesterday’s announcements.',
-                            reactions: [
-                              _Reaction(icon: Icons.favorite, count: 1, color: Colors.red),
-                              _Reaction(icon: Icons.emoji_emotions, count: 2, color: Colors.yellow),
-                              _Reaction(icon: Icons.back_hand, count: 1, color: Colors.amber),
-                            ],
-                          ),
-                          _ChatMessage(
-                            avatar: 'https://randomuser.me/api/portraits/men/3.jpg',
-                            name: 'Kiné Camara',
-                            time: '12:55 PM',
-                            text: 'No! It was my pleasure! People are very excited.',
-                            reactions: [],
-                          ),
-                          _ChatMessage(
-                            avatar: 'https://randomuser.me/api/portraits/men/4.jpg',
-                            name: 'Jason Stewart',
-                            time: '2:14 PM',
-                            text: 'What are our policies in regards to pets in the office? I’m assuming it’s a no-go, but thought I would ask here just to make sure what was the case.',
-                            reactions: [],
-                          ),
-                          _ChatMessage(
-                            avatar: 'https://randomuser.me/api/portraits/men/5.jpg',
-                            name: 'Johnny Rodgers',
-                            time: '2:18 PM',
-                            text: 'Johnny Rodgers | GSuite presentation',
-                            reactions: [],
-                            filePreview: _FilePreview(
-                              title: 'Building Policies & Procedures',
-                              subtitle: 'Presentation from Google Drive',
-                              icon: Icons.insert_drive_file,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Chat input
-                    Container(
-                      color: Colors.grey[850],
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              decoration: InputDecoration(
-                                hintText: 'Type a message...',
-                                hintStyle: TextStyle(color: Colors.white54),
-                                filled: true,
-                                fillColor: Colors.grey[800],
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide.none,
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-                              ),
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          IconButton(
-                            icon: const Icon(Icons.send, color: Colors.white),
-                            onPressed: () {},
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                child: subPageWidget,
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class PeopleSubPage extends StatefulWidget {
+  final String host;
+  final void Function(String uuid, String displayName)? onMessageTap;
+  const PeopleSubPage({super.key, required this.host, this.onMessageTap});
+
+  @override
+  State<PeopleSubPage> createState() => _PeopleSubPageState();
+}
+
+class _PeopleSubPageState extends State<PeopleSubPage> {
+  List<dynamic> _people = [];
+  String? _error;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPeople();
+  }
+
+  Future<void> _fetchPeople() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      // TODO: Replace with your actual token and deviceId logic
+      ApiService.init();
+      final resp = await ApiService.get('${widget.host}/people/list');
+      if (resp.statusCode == 200) {
+        setState(() {
+          _people = resp.data is String ? [resp.data] : (resp.data as List<dynamic>);
+          _loading = false;
+        });
+      } else {
+        setState(() {
+          _error = 'Failed to load people: ${resp.statusCode}';
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Error: $e';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 18)));
+    }
+    return ListView.builder(
+      itemCount: _people.length,
+      itemBuilder: (context, index) {
+        final person = _people[index];
+        final avatarUrl = person['picture'] ?? '';
+        final displayName = person['displayName'] ?? 'Unknown';
+        final uuid = person['uuid'] ?? '';
+        return ListTile(
+          leading: avatarUrl.isNotEmpty
+              ? CircleAvatar(backgroundImage: NetworkImage(avatarUrl))
+              : const CircleAvatar(child: Icon(Icons.person)),
+          title: Text(displayName, style: const TextStyle(color: Colors.white)),
+          trailing: IconButton(
+            icon: const Icon(Icons.message, color: Colors.amber),
+            tooltip: 'Message',
+            onPressed: () {
+              if (widget.onMessageTap != null) {
+                widget.onMessageTap!(uuid, displayName);
+              }
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+
+// DirectMessageSubPage: shows messages between current user and selected person
+class DirectMessageSubPage extends StatefulWidget {
+  final String host;
+  final String uuid;
+  final String displayName;
+  const DirectMessageSubPage({super.key, required this.host, required this.uuid, required this.displayName});
+
+  @override
+  State<DirectMessageSubPage> createState() => _DirectMessageSubPageState();
+}
+
+class _DirectMessageSubPageState extends State<DirectMessageSubPage> {
+  List<dynamic> _messages = [];
+  String? _error;
+  bool _loading = true;
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMessages();
+  }
+
+  Future<void> _fetchMessages() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      ApiService.init();
+      // Replace with your actual endpoint and params
+      final resp = await ApiService.get('${widget.host}/direct/messages/${widget.uuid}');
+      if (resp.statusCode == 200) {
+        setState(() {
+          _messages = resp.data is String ? [resp.data] : (resp.data as List<dynamic>);
+          _loading = false;
+        });
+      } else {
+        setState(() {
+          _error = 'Failed to load messages: ${resp.statusCode}';
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Error: $e';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _sendMessage() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    try {
+      //await SignalService().init();
+      SignalService.instance.sendItem(
+        recipientUserId: widget.uuid,
+        type: "message",
+        payload: text.toString(),
+      );
+      /*ApiService.init();
+      // Replace with your actual endpoint and params
+      final resp = await ApiService.post('${widget.host}/messages/${widget.uuid}', data: {'message': text});
+      if (resp.statusCode == 200 || resp.statusCode == 201) {
+        _controller.clear();
+        _fetchMessages();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to send message')));
+      }*/
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+          color: Colors.grey[850],
+          child: Row(
+            children: [
+              Text(widget.displayName, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 18)))
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(24),
+                      itemCount: _messages.length,
+                      itemBuilder: (context, index) {
+                        final msg = _messages[index];
+                        final sender = msg['senderDisplayName'] ?? 'Unknown';
+                        final text = msg['text'] ?? msg['message'] ?? '';
+                        final time = msg['time'] ?? '';
+                        return Container(
+                          margin: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              CircleAvatar(child: Text(sender.isNotEmpty ? sender[0] : '?')),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(sender, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                                        const SizedBox(width: 8),
+                                        Text(time, style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    SelectableText(text, style: const TextStyle(color: Colors.white, fontSize: 16)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+        ),
+        Container(
+          color: Colors.grey[850],
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  decoration: InputDecoration(
+                    hintText: 'Type a message...',
+                    hintStyle: TextStyle(color: Colors.white54),
+                    filled: true,
+                    fillColor: Colors.grey[800],
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                  ),
+                  style: const TextStyle(color: Colors.white),
+                  onSubmitted: (_) => _sendMessage(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              IconButton(
+                icon: const Icon(Icons.send, color: Colors.white),
+                onPressed: _sendMessage,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

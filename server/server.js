@@ -124,6 +124,7 @@ io.sockets.on("connection", socket => {
           },
           defaults: {
             signed_prekey_data: data.data,
+            signed_prekey_signature: data.signature,
           }
         });
       }
@@ -135,6 +136,18 @@ io.sockets.on("connection", socket => {
   socket.on("storePreKey", async (data) => {
     try {
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+        // Only store if prekey_data is a 33-byte base64-encoded public key
+        let decoded;
+        try {
+          decoded = Buffer.from(data.data, 'base64');
+        } catch (e) {
+          console.error('[SIGNAL SERVER] Invalid base64 in prekey_data:', data.data);
+          return;
+        }
+        if (decoded.length !== 33) {
+          console.error(`[SIGNAL SERVER] Refusing to store pre-key: prekey_data is ${decoded.length} bytes (expected 33). Possible private key leak or wrong format.`);
+          return;
+        }
         await SignalPreKey.findOrCreate({
           where: {
             prekey_id: data.id,
@@ -150,6 +163,90 @@ io.sockets.on("connection", socket => {
       console.error('Error storing pre-key:', error);
       console.log("[SIGNAL SERVER] storePreKey event received", data);
       console.log(socket.handshake.session);
+    }
+  });
+
+  // Batch store pre-keys
+  socket.on("storePreKeys", async (data) => {
+    // data should be: { preKeys: [ { id, data }, ... ] }
+    try {
+      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+        if (Array.isArray(data.preKeys)) {
+          for (const preKey of data.preKeys) {
+            if (preKey && preKey.id && preKey.data) {
+              let decoded;
+              try {
+                decoded = Buffer.from(preKey.data, 'base64');
+              } catch (e) {
+                console.error('[SIGNAL SERVER] Invalid base64 in batch prekey_data:', preKey.data);
+                continue;
+              }
+              if (decoded.length !== 33) {
+                console.error(`[SIGNAL SERVER] Refusing to store batch pre-key: prekey_data is ${decoded.length} bytes (expected 33). Possible private key leak or wrong format. id=${preKey.id}`);
+                continue;
+              }
+              await SignalPreKey.findOrCreate({
+                where: {
+                  prekey_id: preKey.id,
+                  owner: socket.handshake.session.uuid,
+                  client: socket.handshake.session.clientId,
+                },
+                defaults: {
+                  prekey_data: preKey.data,
+                }
+              });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error storing pre-keys (batch):', error);
+      console.log("[SIGNAL SERVER] storePreKeys event received", data);
+      console.log(socket.handshake.session);
+    }
+  });
+
+  // Signal status summary for current device
+  socket.on("signalStatus", async (_) => {
+    try {
+      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+        // Identity: check if public_key and registration_id are present
+        const client = await Client.findOne({
+          where: { owner: socket.handshake.session.uuid, clientid: socket.handshake.session.clientId }
+        });
+        const identityPresent = !!(client && client.public_key && client.registration_id);
+
+        // PreKeys: count
+        const preKeysCount = await SignalPreKey.count({
+          where: { owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId }
+        });
+
+        // SignedPreKey: latest
+        const signedPreKey = await SignalSignedPreKey.findOne({
+          where: { owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId },
+          order: [['createdAt', 'DESC']]
+        });
+        let signedPreKeyStatus = null;
+        if (signedPreKey) {
+          signedPreKeyStatus = {
+            id: signedPreKey.signed_prekey_id,
+            createdAt: signedPreKey.createdAt
+          };
+        }
+
+        const status = {
+          identity: identityPresent,
+          preKeys: preKeysCount,
+          signedPreKey: signedPreKeyStatus
+        };
+        socket.emit("signalStatusResponse", status);
+      }
+      else {
+        socket.emit("signalStatusResponse", { error: 'Not authenticated' });
+      }
+    } catch (error) {
+      console.error('Error in signalStatus:', error);
+      socket.emit("signalStatusResponse", { error: 'Failed to get signal status' });
     }
   });
 
@@ -169,6 +266,8 @@ io.sockets.on("connection", socket => {
   });
 
   socket.on("sendItem", async (data) => {
+    console.log("[SIGNAL SERVER] sendItem event received", data);
+    console.log(socket.handshake.session);
     try {
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
         const recipientUserId = data.recipient;

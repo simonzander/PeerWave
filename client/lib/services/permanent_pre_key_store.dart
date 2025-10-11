@@ -10,6 +10,36 @@ import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 /// A persistent pre-key store for Signal pre-keys.
 /// Uses IndexedDB on web and FlutterSecureStorage on native.
 class PermanentPreKeyStore extends PreKeyStore {
+  /// Store multiple prekeys at once and emit them in a single call.
+  Future<void> storePreKeys(List<PreKeyRecord> preKeys) async {
+    if (preKeys.isEmpty) return;
+    print("Storing ${preKeys.length} pre keys in batch");
+    // Prepare for emit
+    final preKeyPayload = preKeys.map((k) => {
+      'id': k.id,
+      'data': base64Encode(k.getKeyPair().publicKey.serialize()),
+    }).toList();
+    SocketService().emit("storePreKeys", preKeyPayload);
+    // Store locally
+    for (final record in preKeys) {
+      await storePreKey(record.id, record, sendToServer: false);
+    }
+  }
+
+  /// Returns all locally stored PreKeyRecords.
+  Future<List<PreKeyRecord>> getAllPreKeys() async {
+    final ids = await _getAllPreKeyIds();
+    List<PreKeyRecord> preKeys = [];
+    for (final id in ids) {
+      try {
+        final preKey = await loadPreKey(id);
+        preKeys.add(preKey);
+      } catch (_) {
+        // Ignore missing or corrupted prekeys
+      }
+    }
+    return preKeys;
+  }
 
   /// Checks if enough prekeys are available, generates and stores more if needed.
   Future<void> checkPreKeys() async {
@@ -21,43 +51,12 @@ class PermanentPreKeyStore extends PreKeyStore {
         lastId = 0;
       }
       var newPreKeys = generatePreKeys(lastId + 1, lastId + 110);
-      for (var newPreKey in newPreKeys) {
-        await storePreKey(newPreKey.id, newPreKey);
-      }
+      await storePreKeys(newPreKeys);
     }
   }
 
   /// Loads prekeys from remote server and stores them locally.
   Future<void> loadRemotePreKeys() async {
-    SocketService().registerListener("getPreKeysResponse", (data) async {
-      print(data);
-      for (var item in data) {
-        if (item['prekey_id'] != null && item['prekey_data'] != null) {
-          await storePreKey(item['prekey_id'],
-              PreKeyRecord.fromBuffer(base64Decode(item['prekey_data'])));
-        }
-      }
-      if (data.isEmpty) {
-        print("No pre keys found, generating more");
-        var newPreKeys = generatePreKeys(0, 110);
-        for (var newPreKey in newPreKeys) {
-          await storePreKey(newPreKey.id, newPreKey);
-        }
-      }
-      if (data.length <= 20) {
-        print("Not enough pre keys found, generating more");
-        var lastId = data.isNotEmpty
-            ? data.map((e) => e['prekey_id']).reduce((a, b) => a > b ? a : b)
-            : 0;
-        if (lastId == 9007199254740991) {
-          lastId = 0;
-        }
-        var newPreKeys = generatePreKeys(lastId + 1, lastId + 110);
-        for (var newPreKey in newPreKeys) {
-          await storePreKey(newPreKey.id, newPreKey);
-        }
-      }
-    });
     final localPreKeys = await _getAllPreKeyIds();
     if (localPreKeys.length >= 20) {
       return;
@@ -101,7 +100,29 @@ class PermanentPreKeyStore extends PreKeyStore {
   final String _storeName = 'peerwaveSignalPreKeys';
   final String _keyPrefix = 'prekey_';
 
-  PermanentPreKeyStore();
+  PermanentPreKeyStore() {
+    SocketService().registerListener("getPreKeysResponse", (data) async {
+      print(data);
+      // Server prekeys contain only public keys, so we do not reconstruct PreKeyRecords here.
+      if (data.isEmpty) {
+        print("No pre keys found, generating more");
+        var newPreKeys = generatePreKeys(0, 110);
+        storePreKeys(newPreKeys);
+      }
+      if (data.length <= 20) {
+        print("Not enough pre keys found, generating more");
+        var lastId = data.isNotEmpty
+            ? data.map((e) => e['prekey_id']).reduce((a, b) => a > b ? a : b)
+            : 0;
+        if (lastId == 9007199254740991) {
+          lastId = 0;
+        }
+        var newPreKeys = generatePreKeys(lastId + 1, lastId + 110);
+        await storePreKeys(newPreKeys);
+      }
+    });
+    loadRemotePreKeys();
+  }
 
   String _preKey(int preKeyId) => '$_keyPrefix$preKeyId';
 
@@ -187,12 +208,14 @@ class PermanentPreKeyStore extends PreKeyStore {
   }
 
   @override
-  Future<void> storePreKey(int preKeyId, PreKeyRecord record) async {
+  Future<void> storePreKey(int preKeyId, PreKeyRecord record, {bool sendToServer = true}) async {
     print("Storing pre key: $preKeyId");
-    SocketService().emit("storePreKey", {
-      'id': preKeyId,
-      'data': base64Encode(record.serialize()),
-    });
+    if (sendToServer) {
+      SocketService().emit("storePreKey", {
+        'id': preKeyId,
+        'data': base64Encode(record.getKeyPair().publicKey.serialize()),
+      });
+    }
     final serialized = record.serialize();
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;

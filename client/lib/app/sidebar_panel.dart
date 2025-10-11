@@ -6,12 +6,16 @@ import 'package:dio/dio.dart';
 import '../services/api_service.dart';
 import 'dart:convert';
 
+
 class SidebarPanel extends StatefulWidget {
   final double panelWidth;
   final Widget Function() buildProfileCard;
   final IO.Socket? socket;
   final String host;
-  const SidebarPanel({Key? key, required this.panelWidth, required this.buildProfileCard, this.socket, required this.host}) : super(key: key);
+  final VoidCallback? onPeopleTap;
+  final List<Map<String, String>>? directMessages;
+  final void Function(String uuid, String displayName)? onDirectMessageTap;
+  const SidebarPanel({Key? key, required this.panelWidth, required this.buildProfileCard, this.socket, required this.host, this.onPeopleTap, this.directMessages, this.onDirectMessageTap}) : super(key: key);
 
   @override
   State<SidebarPanel> createState() => _SidebarPanelState();
@@ -68,12 +72,15 @@ class _SidebarPanelState extends State<SidebarPanel> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // People entry
-              Row(
-                children: [
-                  const Icon(Icons.people, color: Colors.white),
-                  const SizedBox(width: 8),
-                  const Text('People', style: TextStyle(color: Colors.white)),
-                ],
+              InkWell(
+                onTap: widget.onPeopleTap,
+                child: Row(
+                  children: [
+                    const Icon(Icons.people, color: Colors.white),
+                    const SizedBox(width: 8),
+                    const Text('People', style: TextStyle(color: Colors.white)),
+                  ],
+                ),
               ),
               const SizedBox(height: 8),
               // Files entry
@@ -106,7 +113,10 @@ class _SidebarPanelState extends State<SidebarPanel> {
               const Divider(color: Colors.white24),
               _ChannelsDropdown(channelNames: channelNames, host: widget.host),
               const Divider(color: Colors.white24),
-              const _DirectMessagesDropdown(),
+              _DirectMessagesDropdown(
+                directMessages: widget.directMessages ?? [],
+                onDirectMessageTap: widget.onDirectMessageTap,
+              ),
               const Spacer(),
               widget.buildProfileCard(),
             ],
@@ -328,8 +338,11 @@ class _ChannelsDropdownState extends State<_ChannelsDropdown> {
   }
 }
 
+
 class _DirectMessagesDropdown extends StatefulWidget {
-  const _DirectMessagesDropdown({Key? key}) : super(key: key);
+  final List<Map<String, String>> directMessages;
+  final void Function(String uuid, String displayName)? onDirectMessageTap;
+  const _DirectMessagesDropdown({Key? key, required this.directMessages, this.onDirectMessageTap}) : super(key: key);
 
   @override
   State<_DirectMessagesDropdown> createState() => _DirectMessagesDropdownState();
@@ -361,7 +374,32 @@ class _DirectMessagesDropdownState extends State<_DirectMessagesDropdown> {
           firstChild: Container(),
           secondChild: Padding(
             padding: const EdgeInsets.only(left: 32.0, top: 4.0, bottom: 4.0),
-            child: Text('No messages', style: TextStyle(color: Colors.white70)),
+            child: widget.directMessages.isEmpty
+                ? Text('No messages', style: TextStyle(color: Colors.white70))
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: widget.directMessages.map((dm) {
+                      final displayName = dm['displayName'] ?? 'Unknown';
+                      final uuid = dm['uuid'] ?? '';
+                      return InkWell(
+                        onTap: () {
+                          if (widget.onDirectMessageTap != null) {
+                            widget.onDirectMessageTap!(uuid, displayName);
+                          }
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4.0),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.person, color: Colors.white70, size: 18),
+                              const SizedBox(width: 6),
+                              Text(displayName, style: const TextStyle(color: Colors.white)),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
           ),
           crossFadeState: expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
           duration: const Duration(milliseconds: 200),

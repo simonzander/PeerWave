@@ -238,7 +238,7 @@ class _MyAppState extends State<MyApp> {
         final fromParam = uri.queryParameters['from'];
         if(loggedIn) {
           await SocketService().connect();
-          await SignalService().init();
+          await SignalService.instance.init();
         } else {
           if(SocketService().isConnected) SocketService().disconnect();
         }
