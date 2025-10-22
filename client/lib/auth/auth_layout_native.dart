@@ -14,7 +14,8 @@ import '../services/api_service.dart';
 
 
 class AuthLayout extends StatefulWidget {
-  const AuthLayout({super.key});
+  final String? clientId; // optional to align with web API
+  const AuthLayout({super.key, this.clientId});
 
   @override
   State<AuthLayout> createState() => _AuthLayoutState();

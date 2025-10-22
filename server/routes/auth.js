@@ -502,11 +502,29 @@ authRoutes.post("/otp", (req, res) => {
             const updatedUser = await User.findOne({ where: { email } });
             req.session.otp = true;
             req.session.authenticated = true;
-            if(!updatedUser.backupCodes) {
-                res.status(202).json({ status: "ok", message: "Authentication successful" });
-            } else {
-                res.status(200).json({ status: "ok", message: "Authentication successful" });
+            req.session.uuid = updatedUser.uuid; // ensure uuid present
+            // Optional: attach client info immediately if provided
+            const clientId = req.body && req.body.clientId;
+            if (clientId) {
+                const maxDevice = await Client.max('device_id', { where: { owner: updatedUser.uuid } });
+                const [client] = await Client.findOrCreate({
+                    where: { owner: updatedUser.uuid, clientid: clientId },
+                    defaults: { owner: updatedUser.uuid, clientid: clientId, device_id: maxDevice ? maxDevice + 1 : 1 }
+                });
+                req.session.deviceId = client.device_id || (client.get ? client.get('device_id') : undefined);
+                req.session.clientId = client.clientid || (client.get ? client.get('clientid') : undefined);
             }
+            return req.session.save(err => {
+                if (err) {
+                    console.error('Session save error (/otp):', err);
+                    return res.status(500).json({ status: "error", message: "Session save error" });
+                }
+                if(!updatedUser.backupCodes) {
+                    res.status(202).json({ status: "ok", message: "Authentication successful" });
+                } else {
+                    res.status(200).json({ status: "ok", message: "Authentication successful" });
+                }
+            });
             //res.render("register-webauthn");
         }
     }).catch(error => {
@@ -578,7 +596,7 @@ authRoutes.post("/backupcode/verify", async(req, res) => {
             const waitSeconds = Math.ceil((req.session.backupCodeBrute.waitUntil - now) / 1000);
             return res.status(429).json({ status: "wait", message: waitSeconds });
         }
-        const valid = await verifyBackupCode(email, code);
+    const valid = await verifyBackupCode(email, code);
         if (!valid) {
             // Increase brute-force counter and wait time
             req.session.backupCodeBrute.count = (req.session.backupCodeBrute.count || 0) + 1;
@@ -593,7 +611,24 @@ authRoutes.post("/backupcode/verify", async(req, res) => {
             const user = await User.findOne({ where: { email } });
             req.session.authenticated = true;
             req.session.uuid = user.uuid;
-            res.status(200).json({ status: "ok", message: "Backup code verified successfully" });
+            // Optional: set client if provided
+            const clientId = req.body && req.body.clientId;
+            if (clientId) {
+                const maxDevice = await Client.max('device_id', { where: { owner: user.uuid } });
+                const [client] = await Client.findOrCreate({
+                    where: { owner: user.uuid, clientid: clientId },
+                    defaults: { owner: user.uuid, clientid: clientId, device_id: maxDevice ? maxDevice + 1 : 1 }
+                });
+                req.session.deviceId = client.device_id || (client.get ? client.get('device_id') : undefined);
+                req.session.clientId = client.clientid || (client.get ? client.get('clientid') : undefined);
+            }
+            return req.session.save(err => {
+                if (err) {
+                    console.error('Session save error (/backupcode/verify):', err);
+                    return res.status(500).json({ status: "error", message: "Session save error" });
+                }
+                res.status(200).json({ status: "ok", message: "Backup code verified successfully" });
+            });
         }
     } catch (error) {
         console.error('Error verifying backup code:', error);
@@ -945,12 +980,29 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             req.session.authenticated = true;
             req.session.email = email;
             req.session.uuid = user.uuid;
-            //res.redirect('/channels');
-            if(!user.backupCodes) {
-                res.status(202).json({ status: "ok", message: "Authentication successful" });
-            } else {
-                res.status(200).json({ status: "ok", message: "Authentication successful" });
+            // Optional: attach client info immediately if provided
+            const clientId = req.body && req.body.clientId;
+            if (clientId) {
+                const maxDevice = await Client.max('device_id', { where: { owner: user.uuid } });
+                const [client] = await Client.findOrCreate({
+                    where: { owner: user.uuid, clientid: clientId },
+                    defaults: { owner: user.uuid, clientid: clientId, device_id: maxDevice ? maxDevice + 1 : 1 }
+                });
+                req.session.deviceId = client.device_id || (client.get ? client.get('device_id') : undefined);
+                req.session.clientId = client.clientid || (client.get ? client.get('clientid') : undefined);
             }
+            // Persist session now
+            return req.session.save(err => {
+                if (err) {
+                    console.error('Session save error (/webauthn/authenticate):', err);
+                    return res.status(500).json({ status: "error", message: "Session save error" });
+                }
+                if(!user.backupCodes) {
+                    res.status(202).json({ status: "ok", message: "Authentication successful" });
+                } else {
+                    res.status(200).json({ status: "ok", message: "Authentication successful" });
+                }
+            });
         } else {
             // Authentication failed
             res.status(400).json({ status: "failed", message: "Authentication failed" });

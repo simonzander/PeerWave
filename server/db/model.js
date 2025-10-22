@@ -286,6 +286,11 @@ const Item = sequelize.define('Item', {
             key: 'uuid'
         }
     },
+    deviceSender: {
+        type: DataTypes.INTEGER,
+        allowNull: false
+        // keine Foreign-Key-Referenzierung mehr
+    },
     readed: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
@@ -301,6 +306,10 @@ const Item = sequelize.define('Item', {
     },
     payload: {
         type: DataTypes.TEXT,
+        allowNull: false
+    },
+    cipherType: {
+        type: DataTypes.INTEGER,
         allowNull: false
     }
 }, { timestamps: false });

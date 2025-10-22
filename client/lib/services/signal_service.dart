@@ -9,6 +9,8 @@ import 'permanent_session_store.dart';
 import 'permanent_pre_key_store.dart';
 import 'permanent_signed_pre_key_store.dart';
 import 'permanent_identity_key_store.dart';
+import 'permanent_sent_messages_store.dart';
+import 'permanent_decrypted_messages_store.dart';
 
 /*class SocketPreKeyStore extends InMemoryPreKeyStore {
 
@@ -128,6 +130,122 @@ class SignalService {
   late PermanentSessionStore sessionStore;
   PermanentPreKeyStore preKeyStore = PermanentPreKeyStore();
   late PermanentSignedPreKeyStore signedPreKeyStore;
+  late PermanentSentMessagesStore sentMessagesStore;
+  late PermanentDecryptedMessagesStore decryptedMessagesStore;
+  String? _currentUserId; // Store current user's UUID
+  int? _currentDeviceId; // Store current device ID
+  
+  // Set current user and device info (call this after authentication)
+  void setCurrentUserInfo(String userId, int deviceId) {
+    _currentUserId = userId;
+    _currentDeviceId = deviceId;
+    print('[SIGNAL SERVICE] Current user set: userId=$userId, deviceId=$deviceId');
+  }
+
+  Future<void> test() async {
+    print("SignalService test method called");
+    final AliceIdentityKeyPair = generateIdentityKeyPair();
+    final AliceRegistrationId = generateRegistrationId(false);
+    final AliceIdentityStore = InMemoryIdentityKeyStore(AliceIdentityKeyPair, AliceRegistrationId);
+    final AliceSessionStore = InMemorySessionStore();
+    final AlicePreKeyStore = InMemoryPreKeyStore();
+    final AliceSignedPreKeyStore = InMemorySignedPreKeyStore();
+    
+    final BobIdentityKeyPair = await identityStore.getIdentityKeyPair();
+    final BobRegistrationId = await identityStore.getLocalRegistrationId();
+    final BobIdentityStore = identityStore;
+    final BobSessionStore = sessionStore;
+    final BobPreKeyStore = preKeyStore;
+    final BobSignedPreKeyStore = signedPreKeyStore;
+
+    // Generate keys for Alice
+    final alicePreKeys = generatePreKeys(0, 110);
+    final aliceSignedPreKey = generateSignedPreKey(AliceIdentityKeyPair, 0);
+
+    for (final p in alicePreKeys) {
+      await AlicePreKeyStore.storePreKey(p.id, p);
+    }
+    await AliceSignedPreKeyStore.storeSignedPreKey(aliceSignedPreKey.id, aliceSignedPreKey);
+    
+    // Generate keys for Bob (if not already present)
+    final bobPreKeysAll = await BobPreKeyStore.getAllPreKeys();
+    if (bobPreKeysAll.isEmpty) {
+      final bobPreKeys = generatePreKeys(0, 110);
+      for (final p in bobPreKeys) {
+        await BobPreKeyStore.storePreKey(p.id, p);
+      }
+    }
+    
+    final bobSignedPreKeysAll = await BobSignedPreKeyStore.loadSignedPreKeys();
+    if (bobSignedPreKeysAll.isEmpty) {
+      final bobSignedPreKey = generateSignedPreKey(BobIdentityKeyPair, 0);
+      await BobSignedPreKeyStore.storeSignedPreKey(bobSignedPreKey.id, bobSignedPreKey);
+    }
+    final AliceAddress = SignalProtocolAddress(Uuid().v4(), 1);
+    final BobAddress = SignalProtocolAddress(Uuid().v4(), 1);
+
+    final AliceSessionBuilder = SessionBuilder(
+      AliceSessionStore,
+      AlicePreKeyStore,
+      AliceSignedPreKeyStore,
+      AliceIdentityStore,
+      BobAddress,
+    );
+
+    // Retrieve Bob's keys for the PreKeyBundle
+    final bobPreKeys = await BobPreKeyStore.getAllPreKeys();
+    final bobSignedPreKeys = await BobSignedPreKeyStore.loadSignedPreKeys();
+    
+    if (bobPreKeys.isEmpty || bobSignedPreKeys.isEmpty) {
+      print("ERROR: Bob has no preKeys or signedPreKeys!");
+      return;
+    }
+
+    final BobRetrievedPreKey = PreKeyBundle(
+      BobRegistrationId,
+      1,
+      bobPreKeys[0].id,
+      bobPreKeys[0].getKeyPair().publicKey,
+      bobSignedPreKeys[0].id,
+      bobSignedPreKeys[0].getKeyPair().publicKey,
+      bobSignedPreKeys[0].signature,
+      BobIdentityKeyPair.getPublicKey());
+
+    await AliceSessionBuilder.processPreKeyBundle(BobRetrievedPreKey);
+
+    final aliceSessionCipher = SessionCipher(
+      AliceSessionStore, AlicePreKeyStore, AliceSignedPreKeyStore, AliceIdentityStore, BobAddress);
+    final ciphertext = await aliceSessionCipher
+        .encrypt(Uint8List.fromList(utf8.encode('Hello Mixin🤣')));
+    // ignore: avoid_print
+    print(ciphertext);
+    // ignore: avoid_print
+    print(ciphertext.serialize());
+    //deliver(ciphertext);
+
+    // Bob decrypts using his real stores (not a new empty store!)
+    final bobSessionCipher = SessionCipher(
+      BobSessionStore,
+      BobPreKeyStore,
+      BobSignedPreKeyStore,
+      BobIdentityStore,
+      AliceAddress,
+    );
+
+    if (ciphertext.getType() == CiphertextMessage.prekeyType) {
+      await bobSessionCipher
+          .decryptWithCallback(ciphertext as PreKeySignalMessage, (plaintext) {
+        // ignore: avoid_print
+        print('Bob decrypted: ${utf8.decode(plaintext)}');
+      });
+    } else if (ciphertext.getType() == CiphertextMessage.whisperType) {
+      final plaintext = await bobSessionCipher.decryptFromSignal(ciphertext as SignalMessage);
+      // ignore: avoid_print
+      print('Bob decrypted: ${utf8.decode(plaintext)}');
+    }
+
+}
+
 
   Future<void> init() async {
   identityStore = PermanentIdentityKeyStore();
@@ -135,6 +253,8 @@ class SignalService {
   preKeyStore = PermanentPreKeyStore();
   final identityKeyPair = await identityStore.getIdentityKeyPair();
   signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
+  sentMessagesStore = await PermanentSentMessagesStore.create();
+  decryptedMessagesStore = await PermanentDecryptedMessagesStore.create();
 
     SocketService().registerListener("receiveItem", (data) {
       receiveItem(data);
@@ -146,11 +266,20 @@ class SignalService {
 
     // --- Signal status check and conditional upload ---
     SocketService().emit("signalStatus", null);
+
+    //await test();
   }
 
   Future<void> _ensureSignalKeysPresent(status) async {
     // Use a socket callback to get status
     print('[SIGNAL SERVICE] signalStatus: $status');
+    
+    // Check if user is authenticated
+    if (status is Map && status['error'] != null) {
+      print('[SIGNAL SERVICE] ERROR: ${status['error']} - Cannot upload Signal keys without authentication');
+      return;
+    }
+    
     // 1. Identity
     if (status is Map && status['identity'] != true) {
       print('[SIGNAL SERVICE] Uploading missing identity');
@@ -202,8 +331,66 @@ class SignalService {
       _itemTypeCallbacks.remove(type);
     }
   }
+  
+  /// Load sent messages for a specific recipient from local storage
+  /// This is used after page refresh to restore sent messages
+  Future<List<Map<String, dynamic>>> loadSentMessages(String recipientUserId) async {
+    return await sentMessagesStore.loadSentMessages(recipientUserId);
+  }
+  
+  /// Load all sent messages from local storage
+  Future<List<Map<String, dynamic>>> loadAllSentMessages() async {
+    return await sentMessagesStore.loadAllSentMessages();
+  }
 
+  /// Entschlüsselt ein Item-Objekt (wie receiveItem), gibt aber nur die entschlüsselte Nachricht zurück
+  /// Prüft zuerst den lokalen Cache, um DuplicateMessageException zu vermeiden
+  Future<String> decryptItemFromData(Map<String, dynamic> data) async {
+    final sender = data['sender'];
+    final senderDeviceId = data['senderDeviceId'];
+    final payload = data['payload'];
+    final cipherType = data['cipherType'];
+    final itemId = data['itemId'];
+    
+    // Check if we already decrypted this message
+    if (itemId != null) {
+      final cached = await decryptedMessagesStore.getDecryptedMessage(itemId);
+      if (cached != null) {
+        print("[SIGNAL SERVICE] Found cached decrypted message for itemId: $itemId");
+        return cached;
+      }
+    }
+    
+    print("[SIGNAL SERVICE] generate SignalProtocolAddress for sender $sender with deviceId $senderDeviceId");
+    final senderAddress = SignalProtocolAddress(sender, senderDeviceId);
+    print("[SIGNAL SERVICE] decryptItem for senderAddress $senderAddress with cipherType $cipherType and payload $payload");
+    final message = await decryptItem(
+      senderAddress: senderAddress,
+      payload: payload,
+      cipherType: cipherType,
+    );
+    
+    // Cache the decrypted message
+    if (itemId != null && message.isNotEmpty) {
+      await decryptedMessagesStore.storeDecryptedMessage(
+        itemId: itemId,
+        message: message,
+      );
+      print("[SIGNAL SERVICE] Cached decrypted message for itemId: $itemId");
+    }
+    
+    return message;
+  }
+
+  /// Empfängt eine verschlüsselte Nachricht vom Socket.IO Server
+  /// 
+  /// Das Backend filtert bereits und sendet nur Nachrichten, die für DIESES Gerät
+  /// (deviceId) verschlüsselt wurden. Die Nachricht wird dann mit dem Session-Schlüssel
+  /// dieses Geräts entschlüsselt.
   void receiveItem(data) async {
+  print("[SIGNAL SERVICE] ===============================================");
+  print("[SIGNAL SERVICE] receiveItem called for this device");
+  print("[SIGNAL SERVICE] ===============================================");
   print("[SIGNAL SERVICE] receiveItem: $data");
   final type = data['type'];
   final sender = data['sender']; // z.B. Absender-UUID
@@ -214,16 +401,29 @@ class SignalService {
 
   final senderAddress = SignalProtocolAddress(sender, senderDeviceId);
 
+  // Decrypt the message - dies funktioniert nur, wenn die Nachricht
+  // für DIESES Gerät verschlüsselt wurde
   final message = await decryptItem(
     senderAddress: senderAddress,
     payload: payload,
     cipherType: cipherType,
   );
 
+  // Skip messages only if decryption failed (empty result from error handling)
+  if (message.isEmpty) {
+    print("[SIGNAL SERVICE] Skipping message - decryption failed or returned empty result");
+    return;
+  }
+
+  print("[SIGNAL SERVICE] Message decrypted successfully: '$message' (cipherType: $cipherType)");
+
+  final recipient = data['recipient']; // Empfänger-UUID vom Server
+
   final item = {
     'itemId': itemId,
     'sender': sender,
     'senderDeviceId': senderDeviceId,
+    'recipient': recipient,
     'type': type,
     'message': message,
   };
@@ -284,7 +484,7 @@ class SignalService {
           print(base64Decode(data['signedPreKey']['signed_prekey_signature']).length);
           result.add({
             'clientid': data['clientid'],
-            'userId': userId,
+            'userId': data['userId'],
             'deviceId': data['device_id'],
             'publicKey': data['public_key'],
             'registrationId': data['registration_id'],
@@ -309,25 +509,109 @@ class SignalService {
     }
   }
 
+  /// Sendet eine verschlüsselte Nachricht an einen User
+  /// 
+  /// Diese Methode verschlüsselt die Nachricht für ALLE Geräte:
+  /// 1. Alle Geräte des Empfängers (recipientUserId)
+  /// 2. Alle eigenen Geräte (damit der Sender die Nachricht auf allen seinen Geräten lesen kann)
+  /// 
+  /// Das Backend (/signal/prekey_bundle/:userId) gibt PreKey-Bundles für beide User zurück.
+  /// 
+  /// WICHTIG: Das sendende Gerät wird übersprungen (kann nicht zu sich selbst verschlüsseln).
+  /// Stattdessen wird ein lokaler Callback ausgelöst, damit die UI die Nachricht sofort anzeigen kann.
   Future<void> sendItem({
     required String recipientUserId,
     required String type,
     required dynamic payload,
   }) async {
+    dynamic ciphertextMessage;
+    
+    // Generate itemId BEFORE encryption (so we can use it for local callback)
     final itemId = Uuid().v4();
+    
+    // Prepare payload string for both encryption and local storage
+    String payloadString;
+    if (payload is String) {
+      payloadString = payload;
+    } else {
+      payloadString = jsonEncode(payload);
+    }
+    
+    print('[SIGNAL SERVICE] Step 0: Trigger local callback for sent message');
+    // Immediately notify UI with the PLAINTEXT message for the sending device
+    // This allows Bob Device 1 to see his own sent message without decryption
+    
+    // Store sent message in local storage for persistence after refresh
+    final timestamp = DateTime.now().toIso8601String();
+    await sentMessagesStore.storeSentMessage(
+      recipientUserId: recipientUserId,
+      itemId: itemId,
+      message: payloadString,
+      timestamp: timestamp,
+    );
+    print('[SIGNAL SERVICE] Step 0a: Stored sent message in local storage');
+    
+    if (_itemTypeCallbacks.containsKey(type)) {
+      final localItem = {
+        'itemId': itemId,
+        'sender': _currentUserId,
+        'recipient': recipientUserId, // Add recipient for proper filtering
+        'senderDeviceId': _currentDeviceId,
+        'type': type,
+        'message': payloadString,
+        'timestamp': timestamp,
+        'isLocalSent': true, // Mark as locally sent (not received from server)
+      };
+      for (final callback in _itemTypeCallbacks[type]!) {
+        callback(localItem);
+      }
+    }
+    
     print('[SIGNAL SERVICE] Step 1: fetchPreKeyBundleForUser($recipientUserId)');
+    print('[SIGNAL SERVICE] This fetches devices for BOTH users: recipient AND sender (own devices)');
     final preKeyBundles = await fetchPreKeyBundleForUser(recipientUserId);
     print('[SIGNAL SERVICE] Step 1 result: $preKeyBundles');
-
+    print('[SIGNAL SERVICE] Number of devices (Alice + Bob): ${preKeyBundles.length}');
     for (final bundle in preKeyBundles) {
+      print('[SIGNAL SERVICE] Device: userId=${bundle['userId']}, deviceId=${bundle['deviceId']}');
+    }
+
+    // Verschlüssele für jedes Gerät separat
+    for (final bundle in preKeyBundles) {
+      print('[SIGNAL SERVICE] ===============================================');
+      print('[SIGNAL SERVICE] Encrypting for device: ${bundle['userId']}:${bundle['deviceId']}');
+      print('[SIGNAL SERVICE] ===============================================');
+      
+      // CRITICAL: Skip encryption for our own current device
+      // We cannot decrypt messages we encrypt to ourselves (same session direction)
+      final isCurrentDevice = (bundle['userId'] == _currentUserId && bundle['deviceId'] == _currentDeviceId);
+      if (isCurrentDevice) {
+        print('[SIGNAL SERVICE] Skipping current device (cannot encrypt to self): ${bundle['userId']}:${bundle['deviceId']}');
+        continue;
+      }
+      
       print('[SIGNAL SERVICE] Step 2: Prepare recipientAddress for deviceId ${bundle['deviceId']}');
       final recipientAddress = SignalProtocolAddress(bundle['userId'], bundle['deviceId']);
+      
+      // Check if this is our own device (not the intended recipient)
+      // This happens when the backend returns our own devices for multi-device support
+      final isOwnDevice = (bundle['userId'] != recipientUserId);
+      
       print('[SIGNAL SERVICE] Step 3: Check session for $recipientAddress');
-      final hasSession = await sessionStore.containsSession(recipientAddress);
-      print('[SIGNAL SERVICE] Step 3 result: hasSession=$hasSession');
+      var hasSession = await sessionStore.containsSession(recipientAddress);
+      print('[SIGNAL SERVICE] Step 3 result: hasSession=$hasSession, isOwnDevice=$isOwnDevice');
+
+      print('[SIGNAL SERVICE] Step 4: Create SessionCipher for $recipientAddress');
+      final sessionCipher = SessionCipher(
+        sessionStore,
+        preKeyStore,
+        signedPreKeyStore,
+        identityStore,
+        recipientAddress,
+      );
 
       if (!hasSession) {
-        print('[SIGNAL SERVICE] Step 4: Build session for $recipientAddress');
+        print('[SIGNAL SERVICE] Step 5: Build session for $recipientAddress');
         final preKeyBundle = PreKeyBundle(
           bundle['registrationId'],
           bundle['deviceId'],
@@ -346,35 +630,77 @@ class SignalService {
           recipientAddress,
         );
         await sessionBuilder.processPreKeyBundle(preKeyBundle);
-        print('[SIGNAL SERVICE] Step 4 done');
+        print('[SIGNAL SERVICE] Step 5 done');
       }
 
-      print('[SIGNAL SERVICE] Step 5: Create SessionCipher for $recipientAddress');
-      final sessionCipher = SessionCipher(
-        sessionStore,
-        preKeyStore,
-        signedPreKeyStore,
-        identityStore,
-        recipientAddress,
-      );
+      
 
-      print('[SIGNAL SERVICE] Step 6: Prepare payload');
-      String payloadString;
-      if (payload is String) {
-        payloadString = payload;
-        print('[SIGNAL SERVICE] Step 6a: payload is String: $payloadString');
-      } else {
-        payloadString = jsonEncode(payload);
-        print('[SIGNAL SERVICE] Step 6b: payload is encoded to JSON: $payloadString');
-      }
+      print('[SIGNAL SERVICE] Step 6: Using pre-prepared payload');
+      // payloadString is already prepared before the loop
+      print('[SIGNAL SERVICE] Step 6: payload is: $payloadString');
+      
+      print('[SIGNAL SERVICE] Step 7: Encrypt payload with message: $payloadString');
+      ciphertextMessage = await sessionCipher.encrypt(Uint8List.fromList(utf8.encode(payloadString)));
 
-      print('[SIGNAL SERVICE] Step 7: Encrypt payload');
-      final ciphertextMessage = await sessionCipher.encrypt(Uint8List.fromList(utf8.encode(payloadString)));
+      
 
       print('[SIGNAL SERVICE] Step 8: Serialize ciphertext');
       final serialized = base64Encode(ciphertextMessage.serialize());
+      print('[SIGNAL SERVICE] Step 8 result: cipherType=${ciphertextMessage.getType()}, hasSession=$hasSession');
+      
+      // CRITICAL: If we get PreKey message despite having a session, the session is corrupted
+      // Delete it and rebuild from scratch
+      if (ciphertextMessage.getType() == 3 && hasSession) {
+        print('[SIGNAL SERVICE] WARNING: PreKey message despite existing session! Session is corrupted.');
+        print('[SIGNAL SERVICE] Deleting corrupted session with ${recipientAddress}');
+        await sessionStore.deleteSession(recipientAddress);
+        hasSession = false;
+        print('[SIGNAL SERVICE] Session deleted. Rebuilding...');
+        
+        // Rebuild session
+        final preKeyBundle = PreKeyBundle(
+          bundle['registrationId'],
+          bundle['deviceId'],
+          bundle['preKeyId'],
+          bundle['preKeyPublic'],
+          bundle['signedPreKeyId'],
+          bundle['signedPreKeyPublic'],
+          bundle['signedPreKeySignature'],
+          bundle['identityKey'],
+        );
+        final sessionBuilder = SessionBuilder(
+          sessionStore,
+          preKeyStore,
+          signedPreKeyStore,
+          identityStore,
+          recipientAddress,
+        );
+        await sessionBuilder.processPreKeyBundle(preKeyBundle);
+        print('[SIGNAL SERVICE] Session rebuilt');
+        
+        // Re-encrypt with new session
+        print('[SIGNAL SERVICE] Re-encrypting message with rebuilt session');
+        ciphertextMessage = await sessionCipher.encrypt(Uint8List.fromList(utf8.encode(payloadString)));
+        final newSerialized = base64Encode(ciphertextMessage.serialize());
+        print('[SIGNAL SERVICE] Re-encrypted cipherType=${ciphertextMessage.getType()}');
+        
+        // Update data with new encryption (use same itemId)
+        final data = {
+          'recipient': recipientAddress.getName(),
+          'recipientDeviceId': recipientAddress.getDeviceId(),
+          'type': type,
+          'payload': newSerialized,
+          'cipherType': ciphertextMessage.getType(),
+          'itemId': itemId,
+        };
+        
+        print('[SIGNAL SERVICE] Sending rebuilt message: cipherType=${ciphertextMessage.getType()}');
+        SocketService().emit("sendItem", data);
+        continue; // Skip normal sending path
+      }
 
       print('[SIGNAL SERVICE] Step 9: Build data packet');
+      // Use the pre-generated itemId from before the loop
       final data = {
         'recipient': recipientAddress.getName(),
         'recipientDeviceId': recipientAddress.getDeviceId(),
@@ -386,6 +712,15 @@ class SignalService {
 
       print('[SIGNAL SERVICE] Step 10: Sending item: $data');
       SocketService().emit("sendItem", data);
+      
+      // Log message type for debugging
+      final isPreKeyMessage = ciphertextMessage.getType() == 3;
+      if(isPreKeyMessage) {
+        print('[SIGNAL SERVICE] Step 11: PreKey message sent (first message to establish session)');
+        print('[SIGNAL SERVICE] Step 11a: This message contains the actual content and will establish the session');
+      } else {
+        print('[SIGNAL SERVICE] Step 11: Whisper message sent (session already exists)');
+      }
     }
   }
 
@@ -395,6 +730,7 @@ Future<String> decryptItem({
   required int cipherType, // 3 = PreKey, 1 = SignalMessage
 }) async {
   // 1. SessionCipher für den Absender holen/erstellen
+  try {
   final sessionCipher = SessionCipher(
     sessionStore,
     preKeyStore,
@@ -425,9 +761,14 @@ Future<String> decryptItem({
     // Normale Nachricht
     final signalMsg = SignalMessage.fromSerialized(serialized);
     final plaintext = await sessionCipher.decryptFromSignal(signalMsg);
+    print('[SIGNAL SERVICE] Step 8: Decrypted plaintext: $plaintext');
     return utf8.decode(plaintext);
   } else {
     throw Exception('Unknown cipherType: $cipherType');
+  }
+  } catch (e, st) {
+    print('[ERROR] Exception while decrypting message: \\${e}\\n\\${st}');
+    return '';
   }
 }
 

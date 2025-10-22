@@ -8,8 +8,9 @@ class OtpWebPage extends StatefulWidget {
   final String email;
   final String serverUrl;
   final int? wait;
+  final String clientId;
 
-  const OtpWebPage({Key? key, required this.email, required this.serverUrl, this.wait}) : super(key: key);
+  const OtpWebPage({Key? key, required this.email, required this.serverUrl, required this.clientId, this.wait}) : super(key: key);
 
   @override
   State<OtpWebPage> createState() => _OtpWebPageState();
@@ -82,6 +83,7 @@ class _OtpWebPageState extends State<OtpWebPage> {
         data: {
           'email': widget.email,
           'otp': _otpController.text,
+          'clientId': widget.clientId,
         },
       );
       // Handle response as needed

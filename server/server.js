@@ -54,10 +54,20 @@ io.sockets.on("connection", socket => {
   socket.on("authenticate", () => {
     // Here you would normally check the clientid and mail against your database
     try {
+      console.log("[SIGNAL SERVER] authenticate event received");
+      console.log("[SIGNAL SERVER] Session:", socket.handshake.session);
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
-        deviceSockets.set(`${socket.handshake.session.uuid}:${socket.handshake.session.deviceId}`, socket.id);
-        socket.emit("authenticated", { authenticated: true });
+        const deviceKey = `${socket.handshake.session.uuid}:${socket.handshake.session.deviceId}`;
+        deviceSockets.set(deviceKey, socket.id);
+        console.log(`[SIGNAL SERVER] Device registered: ${deviceKey} -> ${socket.id}`);
+        console.log(`[SIGNAL SERVER] Total devices online: ${deviceSockets.size}`);
+        socket.emit("authenticated", { 
+          authenticated: true,
+          uuid: socket.handshake.session.uuid,
+          deviceId: socket.handshake.session.deviceId
+        });
       } else {
+        console.log("[SIGNAL SERVER] Authentication failed - missing session data");
         socket.emit("authenticated", { authenticated: false });
       }
     } catch (error) {
@@ -97,6 +107,18 @@ io.sockets.on("connection", socket => {
     } catch (error) {
       console.error('Error fetching signed pre-keys:', error);
       socket.emit("getSignedPreKeysResponse", { error: 'Failed to fetch signed pre-keys' });
+    }
+  });
+
+  socket.on("removePreKey", async (data) => {
+    try {
+      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+        await SignalPreKey.destroy({
+          where: { prekey_id: data.id, owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId }
+        });
+      }
+    } catch (error) {
+      console.error('Error removing pre-key:', error);
     }
   });
 
@@ -272,32 +294,59 @@ io.sockets.on("connection", socket => {
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
         const recipientUserId = data.recipient;
         const recipientDeviceId = data.recipientDeviceId;
+        const senderUserId = socket.handshake.session.uuid;
+        const senderDeviceId = socket.handshake.session.deviceId;
         const type = data.type;
         const payload = data.payload;
-        const cipherType = data.cipherType;
+        const cipherType = parseInt(data.cipherType, 10);
         const itemId = data.itemId;
 
-        // Store the item in the database
+        // Store ALL messages in the database (including PreKey for offline recipients)
+        console.log(`[SIGNAL SERVER] Storing message in DB: cipherType=${cipherType}, itemId=${itemId}`);
         await Item.create({
-          sender: socket.handshake.session.uuid,
+          sender: senderUserId,
+          deviceSender: senderDeviceId,
           receiver: recipientUserId,
           deviceReceiver: recipientDeviceId,
           type: type,
           payload: payload,
+          cipherType: cipherType,
           itemId: itemId
         });
+         console.log(`[SIGNAL SERVER] Message stored successfully in DB`);
 
+        // Sende die Nachricht an das spezifische Gerät (recipientDeviceId),
+        // für das sie verschlüsselt wurde
         const targetSocketId = deviceSockets.get(`${recipientUserId}:${recipientDeviceId}`);
+        const isSelfMessage = (recipientUserId === senderUserId && recipientDeviceId === senderDeviceId);
+        
+        console.log(`[SIGNAL SERVER] Target device: ${recipientUserId}:${recipientDeviceId}, socketId: ${targetSocketId}`);
+        console.log(`[SIGNAL SERVER] Is self-message: ${isSelfMessage}`);
+        console.log(`[SIGNAL SERVER] cipherType`, cipherType);
         if (targetSocketId) {
+          // Sende die Nachricht an das Zielgerät
+          // Auch wenn es das sendende Gerät selbst ist (für Multi-Device Support)
           io.to(targetSocketId).emit("receiveItem", {
-            sender: socket.handshake.session.uuid,
-            senderDeviceId: socket.handshake.session.deviceId,
+            sender: senderUserId,
+            senderDeviceId: senderDeviceId,
+            recipient: recipientUserId,
             type: type,
             payload: payload,
             cipherType: cipherType,
             itemId: itemId
           });
+          console.log(`[SIGNAL SERVER] Message sent to device ${recipientUserId}:${recipientDeviceId}`);
+        } else {
+          console.log(`[SIGNAL SERVER] Target device ${recipientUserId}:${recipientDeviceId} is offline, message stored in DB`);
         }
+       } else {
+         console.error('[SIGNAL SERVER] ERROR: sendItem blocked - missing session data:');
+         console.error(`  uuid: ${!!socket.handshake.session.uuid}`);
+         console.error(`  email: ${!!socket.handshake.session.email}`);
+         console.error(`  deviceId: ${!!socket.handshake.session.deviceId}`);
+         console.error(`  clientId: ${!!socket.handshake.session.clientId}`);
+         console.error(`  authenticated: ${socket.handshake.session.authenticated}`);
+         console.error('  Please re-authenticate (logout/login or refresh page)');
       }
     } catch (error) {
       console.error('Error sending item:', error);

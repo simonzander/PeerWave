@@ -17,7 +17,7 @@ import '../services/api_service.dart';
 import '../services/clientid_web.dart';
 
 @JS('webauthnLogin')
-external JSPromise webauthnLoginJs(String serverUrl, String email);
+external JSPromise webauthnLoginJs(String serverUrl, String email, String clientId);
 @JS('onWebAuthnSuccess')
 external set _onWebAuthnSuccess(AuthCallback callback);
 @JS('onWebAuthnAbort')
@@ -46,7 +46,8 @@ void setupWebAuthnAbortCallback(void Function(String) callback) {
 }
 
 class AuthLayout extends StatefulWidget {
-  const AuthLayout({super.key});
+  final String clientId;
+  const AuthLayout({super.key, required this.clientId});
 
   @override
   State<AuthLayout> createState() => _AuthLayoutState();
@@ -63,6 +64,12 @@ class _AuthLayoutState extends State<AuthLayout> {
   @override
   void initState() {
     super.initState();
+    // Persist clientId for JS (webauthnLogin in index.html will read it)
+    if (widget.clientId.isNotEmpty) {
+      try {
+        localStorageSetItem('clientId', widget.clientId);
+      } catch (_) {}
+    }
     final storedEmail = localStorageGetItem('email');
   if (storedEmail != null &&storedEmail.isNotEmpty) {
     _lastEmail = storedEmail;
@@ -173,9 +180,9 @@ class _AuthLayoutState extends State<AuthLayout> {
     return 'native-demo-' + DateTime.now().millisecondsSinceEpoch.toString();
   }
 
-  Future<void> webauthnLogin(String serverUrl, String email) async {
+  Future<void> webauthnLogin(String serverUrl, String email, String clientId) async {
     if (kIsWeb) {
-      await webauthnLoginJs(serverUrl, email).toDart;
+      await webauthnLoginJs(serverUrl, email, clientId).toDart;
     } else {
       debugPrint('WebAuthn is only available on Flutter web.');
     }
@@ -261,7 +268,6 @@ class _AuthLayoutState extends State<AuthLayout> {
                   backgroundColor: Colors.blueAccent,
                 ),
                 onPressed: () async {
-                  final serverUrl = serverController.text.trim();
                   final email = emailController.text.trim();
                   _lastEmail = email;
                   localStorageSetItem('email', email);
@@ -272,7 +278,11 @@ class _AuthLayoutState extends State<AuthLayout> {
                       if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
                         urlString = 'https://$urlString';
                       }
-                      await webauthnLogin(urlString, email);
+                      // Ensure clientId is available to JS prior to auth
+                      if (widget.clientId.isNotEmpty) {
+                        try { localStorageSetItem('clientId', widget.clientId); } catch (_) {}
+                      }
+                      await webauthnLogin(urlString, email, widget.clientId);
                     } catch (e) {
                       debugPrint('WebAuthn JS call failed: $e');
                     }

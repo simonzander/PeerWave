@@ -59,7 +59,7 @@
     }
 
 
-    window.webauthnLogin = async function(serverUrl, email) {
+    window.webauthnLogin = async function(serverUrl, email, clientId) {
         try {
             // Check if WebAuthn is supported by the browser
             if (!window.PublicKeyCredential) {
@@ -118,6 +118,7 @@
                 credentials: 'include',
                 body: JSON.stringify({
                     email: email,
+                    clientId: clientId,
                     assertion: {
                         id: assertion.id,
                         rawId: base64UrlEncode(assertion.rawId),

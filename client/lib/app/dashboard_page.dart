@@ -228,6 +228,67 @@ class _DirectMessageSubPageState extends State<DirectMessageSubPage> {
   void initState() {
     super.initState();
     _fetchMessages();
+    _setupMessageListener();
+  }
+  
+  @override
+  void dispose() {
+    SignalService.instance.unregisterItemCallback('message', _handleNewMessage);
+    super.dispose();
+  }
+  
+  void _setupMessageListener() {
+    // Listen for incoming messages via SignalService
+    SignalService.instance.registerItemCallback('message', _handleNewMessage);
+  }
+  
+  void _handleNewMessage(dynamic item) {
+    // Only add messages that are relevant to this conversation
+    final sender = item['sender'];
+    final recipient = item['recipient']; // Falls vom Server gesetzt
+    final isFromTarget = sender == widget.uuid;
+    final isLocalSent = item['isLocalSent'] == true;
+    
+    // Check if message is relevant to this conversation:
+    // 1. Message FROM the target user (Alice sent to us)
+    // 2. Message TO the target user that we sent (local sent)
+    // 3. Message we received from server that we sent to target
+    final isRelevant = isFromTarget || 
+                       (isLocalSent && recipient == widget.uuid) ||
+                       (recipient == widget.uuid);
+    
+    if (isRelevant) {
+      setState(() {
+        // Check if message already exists (avoid duplicates when loading from storage)
+        final itemId = item['itemId'];
+        final exists = _messages.any((msg) => msg['itemId'] == itemId);
+        if (exists) {
+          print('[DASHBOARD] Message $itemId already exists, skipping duplicate');
+          return;
+        }
+        
+        // Create a message object compatible with existing UI
+        final msg = {
+          'itemId': item['itemId'],
+          'sender': sender,
+          'senderDeviceId': item['senderDeviceId'],
+          'senderDisplayName': isLocalSent ? 'You' : widget.displayName,
+          'text': item['message'],
+          'message': item['message'],
+          'payload': item['message'],
+          'time': item['timestamp'] ?? DateTime.now().toIso8601String(),
+          'isLocalSent': isLocalSent,
+        };
+        _messages.add(msg);
+        
+        // Sort messages by time
+        _messages.sort((a, b) {
+          final timeA = DateTime.tryParse(a['time'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final timeB = DateTime.tryParse(b['time'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return timeA.compareTo(timeB);
+        });
+      });
+    }
   }
 
   Future<void> _fetchMessages() async {
@@ -237,11 +298,81 @@ class _DirectMessageSubPageState extends State<DirectMessageSubPage> {
     });
     try {
       ApiService.init();
-      // Replace with your actual endpoint and params
+      
+      // Load sent messages from local storage first
+      final sentMessages = await SignalService.instance.loadSentMessages(widget.uuid);
+      print('[DASHBOARD] Loaded ${sentMessages.length} sent messages from local storage');
+      
+      // Then load received messages from server
       final resp = await ApiService.get('${widget.host}/direct/messages/${widget.uuid}');
       if (resp.statusCode == 200) {
+        print('Response data: ${resp.data}');
+        
+        // Decrypt all messages in the array
+        for (var msg in resp.data) {
+          print('[DASHBOARD] Processing message: itemId=${msg['itemId']}, cipherType=${msg['cipherType']}');
+          
+          final item = {
+            'itemId': msg['itemId'], // Add itemId for caching
+            'sender': msg['sender'],
+            'senderDeviceId': msg['deviceSender'],
+            'payload': msg['payload'],
+            'cipherType': msg['cipherType'],
+          };
+          
+          try {
+            final decrypted = await SignalService.instance.decryptItemFromData(item);
+            msg['payload'] = decrypted;
+            msg['text'] = decrypted;
+            msg['message'] = decrypted;
+            print('[DASHBOARD] Successfully decrypted message: ${msg['itemId']} - content: "$decrypted"');
+          } catch (e) {
+            print('[DASHBOARD] Failed to decrypt message ${msg['itemId']}: $e');
+            msg['payload'] = '[Decryption failed]';
+            msg['text'] = '[Decryption failed]';
+            msg['message'] = '[Decryption failed]';
+          }
+          
+          // Add timestamp if missing (use current time or extract from DB if available)
+          if (msg['time'] == null && msg['timestamp'] == null) {
+            msg['time'] = msg['createdAt'] ?? DateTime.now().toIso8601String();
+          }
+          
+          // Add senderDisplayName for UI
+          if (msg['senderDisplayName'] == null) {
+            msg['senderDisplayName'] = widget.displayName;
+          }
+        }
+        
+        // Merge sent messages with received messages
+        final allMessages = <Map<String, dynamic>>[];
+        
+        // Add sent messages (formatted for UI)
+        for (var sentMsg in sentMessages) {
+          allMessages.add({
+            'itemId': sentMsg['itemId'],
+            'sender': sentMsg['recipientUserId'],
+            'senderDisplayName': 'You',
+            'text': sentMsg['message'],
+            'message': sentMsg['message'],
+            'payload': sentMsg['message'],
+            'time': sentMsg['timestamp'],
+            'isLocalSent': true,
+          });
+        }
+        
+        // Add received messages
+        allMessages.addAll(resp.data);
+        
+        // Sort all messages by timestamp
+        allMessages.sort((a, b) {
+          final timeA = DateTime.tryParse(a['time'] ?? a['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final timeB = DateTime.tryParse(b['time'] ?? b['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return timeA.compareTo(timeB);
+        });
+        
         setState(() {
-          _messages = resp.data is String ? [resp.data] : (resp.data as List<dynamic>);
+          _messages = allMessages;
           _loading = false;
         });
       } else {
@@ -262,21 +393,14 @@ class _DirectMessageSubPageState extends State<DirectMessageSubPage> {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
     try {
-      //await SignalService().init();
-      SignalService.instance.sendItem(
+      // Send encrypted message to all devices
+      await SignalService.instance.sendItem(
         recipientUserId: widget.uuid,
         type: "message",
-        payload: text.toString(),
+        payload: text,
       );
-      /*ApiService.init();
-      // Replace with your actual endpoint and params
-      final resp = await ApiService.post('${widget.host}/messages/${widget.uuid}', data: {'message': text});
-      if (resp.statusCode == 200 || resp.statusCode == 201) {
-        _controller.clear();
-        _fetchMessages();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to send message')));
-      }*/
+      // Clear input after sending (local callback will add message to UI)
+      _controller.clear();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
@@ -306,15 +430,19 @@ class _DirectMessageSubPageState extends State<DirectMessageSubPage> {
                       itemCount: _messages.length,
                       itemBuilder: (context, index) {
                         final msg = _messages[index];
-                        final sender = msg['senderDisplayName'] ?? 'Unknown';
-                        final text = msg['text'] ?? msg['message'] ?? '';
+                        final sender = msg['senderDisplayName'] ?? msg['sender'] ?? 'Unknown';
+                        final text = msg['payload'] ?? msg['text'] ?? msg['message'] ?? '';
                         final time = msg['time'] ?? '';
+                        final isLocalSent = msg['isLocalSent'] == true;
                         return Container(
                           margin: const EdgeInsets.symmetric(vertical: 8),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              CircleAvatar(child: Text(sender.isNotEmpty ? sender[0] : '?')),
+                              CircleAvatar(
+                                backgroundColor: isLocalSent ? Colors.blue : Colors.grey,
+                                child: Text(sender.isNotEmpty ? sender[0] : '?')
+                              ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
@@ -322,9 +450,19 @@ class _DirectMessageSubPageState extends State<DirectMessageSubPage> {
                                   children: [
                                     Row(
                                       children: [
-                                        Text(sender, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                                        Text(
+                                          sender, 
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold, 
+                                            color: isLocalSent ? Colors.blue[300] : Colors.white
+                                          )
+                                        ),
                                         const SizedBox(width: 8),
                                         Text(time, style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                                        if (isLocalSent) ...[
+                                          const SizedBox(width: 8),
+                                          const Icon(Icons.check, color: Colors.green, size: 16),
+                                        ],
                                       ],
                                     ),
                                     const SizedBox(height: 2),

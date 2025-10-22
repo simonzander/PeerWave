@@ -47,6 +47,22 @@
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			"label": "flutter-build-and-copy-web",
+			"type": "shell",
+			"command": "cd client; flutter build web; Copy-Item -Recurse -Force build/web/* ../server/web/",
+			"args": [],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "flutter-build-and-copy-web",
+			"type": "shell",
+			"command": "cd client; flutter build web; Copy-Item -Recurse -Force build/web/* ../server/web/",
+			"args": [],
+			"isBackground": false,
+			"group": "build"
 		}
 	]
 }

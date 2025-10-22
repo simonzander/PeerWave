@@ -54,27 +54,39 @@ clientRoutes.get("/direct/messages/:userId", async (req, res) => {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
     try {
-        // Custom SQL: get only the latest message per itemId
+        // Hole alle Nachrichten für DIESES Gerät (sessionDeviceId):
+        // 1. Von Alice an mich (receiver = meine uuid, sender = Alice, deviceReceiver = mein deviceId)
+        // 2. Von mir an Alice (receiver = Alice, sender = ich, deviceReceiver = mein deviceId)
+        //    -> Diese Nachrichten wurden für meine eigenen Geräte verschlüsselt (Multi-Device)
+        // 
+        // WICHTIG: deviceReceiver = sessionDeviceId stellt sicher, dass nur Nachrichten
+        // abgerufen werden, die FÜR DIESES GERÄT verschlüsselt wurden
         const result = await Item.sequelize.query(`
-            SELECT i.* FROM Items i
-            INNER JOIN (
-                SELECT itemId, MAX(rowid) as max_rowid
-                FROM Items
-                WHERE (
-                    (deviceReceiver = :sessionDeviceId AND receiver = :sessionUuid AND sender = :userId)
-                    OR (sender = :sessionUuid AND receiver = :userId)
-                )
-                GROUP BY itemId
-            ) latest ON i.itemId = latest.itemId AND i.rowid = latest.max_rowid
-            ORDER BY i.itemId DESC
+            SELECT *
+            FROM Items
+            WHERE
+            deviceReceiver = :sessionDeviceId
+            AND receiver = :sessionUuid
+            AND (sender = :userId OR sender = :sessionUuid)
+            ORDER BY rowid ASC
         `, {
             replacements: { sessionDeviceId, sessionUuid, userId },
             model: Item,
             mapToModel: true
         });
-        const messages = result[0];
-        console.log('Direct messages:', messages);
-        res.status(200).json(messages);
+        console.log(`[CLIENT.JS] Direct messages for device ${sessionDeviceId}:`, result.length);
+        console.log(`[CLIENT.JS] Query params: deviceReceiver=${sessionDeviceId}, receiver=${sessionUuid}, sender=${userId} OR sender=${sessionUuid}`);
+        if (result.length > 0) {
+            console.log(`[CLIENT.JS] Sample messages:`, result.slice(0, 3).map(r => ({
+                sender: r.sender,
+                receiver: r.receiver,
+                deviceSender: r.deviceSender,
+                deviceReceiver: r.deviceReceiver,
+                cipherType: r.cipherType,
+                itemId: r.itemId
+            })));
+        }
+        res.status(200).json(result);
     } catch (error) {
         console.error('Error fetching direct messages:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
@@ -83,17 +95,27 @@ clientRoutes.get("/direct/messages/:userId", async (req, res) => {
 
 clientRoutes.get("/signal/prekey_bundle/:userId", async (req, res) => {
     const { userId } = req.params;
+    const sessionUuid = req.session.uuid;
     try {
+        // Helper to get random element
+        function getRandom(arr) {
+            if (!arr || arr.length === 0) return null;
+            return arr[Math.floor(Math.random() * arr.length)];
+        }
 
-        // Use the correct association aliases as defined in your model (likely 'SignalSignedPreKeys' and 'SignalPreKeys')
+        // Hole alle Geräte des Ziel-Users (userId) und des eingeloggten Users (sessionUuid)
+        const owners = [userId];
+        if (sessionUuid && sessionUuid !== userId) {
+            owners.push(sessionUuid);
+        }
+
         const clients = await Client.findAll({
-            where: { owner: userId },
-            attributes: ['clientid', 'device_id', 'public_key', 'registration_id'],
+            where: { owner: owners },
+            attributes: ['clientid', 'owner', 'device_id', 'public_key', 'registration_id'],
             include: [
                 {
                     model: SignalSignedPreKey,
                     as: 'SignalSignedPreKeys',
-                    where: { owner: userId },
                     required: false,
                     separate: true,
                     order: [['createdAt', 'DESC']]
@@ -101,29 +123,29 @@ clientRoutes.get("/signal/prekey_bundle/:userId", async (req, res) => {
                 {
                     model: SignalPreKey,
                     as: 'SignalPreKeys',
-                    where: { owner: userId },
                     required: false
                 }
             ]
         });
-        function getRandom(arr) {
-            if (!arr || arr.length === 0) return null;
-            return arr[Math.floor(Math.random() * arr.length)];
-        }
+
+        // Für jedes Gerät: gib ein random PreKey und NUR den letzten (neuesten) SignedPreKey aus
         const result = clients.map(client => ({
             clientid: client.clientid,
             userId: client.owner,
             device_id: client.device_id,
             public_key: client.public_key,
             registration_id: client.registration_id,
-            signedPreKey: (client.SignalSignedPreKeys || []).find(k => k.client === client.clientid) || null,
-            preKey: getRandom((client.SignalPreKeys || []).filter(k => k.client === client.clientid))
+            signedPreKey: (client.SignalSignedPreKeys && client.SignalSignedPreKeys.length > 0)
+                ? client.SignalSignedPreKeys[0] // nur der neueste (wegen order DESC)
+                : null,
+            preKey: getRandom(client.SignalPreKeys)
         }));
 
+        // PreKey nach Ausgabe löschen (wie bisher)
         for (const client of clients) {
-            const preKeyObj = (client.SignalPreKeys || []).find(k => k.client === client.clientid);
+            const preKeyObj = getRandom(client.SignalPreKeys);
             if (preKeyObj) {
-                await SignalPreKey.destroy({ where: { owner: userId, client: client.clientid, prekey_id: preKeyObj.prekey_id } });
+                await SignalPreKey.destroy({ where: { owner: client.owner, client: client.clientid, prekey_id: preKeyObj.prekey_id } });
             }
         }
         res.status(200).json(result);
@@ -238,9 +260,16 @@ clientRoutes.post("/magic/verify", async (req, res) => {
             where: { owner: entry.uuid, clientid: clientid },
             defaults: { owner: entry.uuid, clientid: clientid, ip: ip, browser: userAgent, location: locationString, device_id: maxDevice ? maxDevice + 1 : 1 }
         });
-        req.session.clientid = client.clientid;
+        req.session.clientId = client.clientid;
         req.session.deviceId = client.device_id;
-        res.status(200).json({ status: "ok", message: "Magic link verified" });
+        // Persist session immediately so Socket.IO can read it
+        return req.session.save(err => {
+            if (err) {
+                console.error('Session save error (magic/verify):', err);
+                return res.status(500).json({ status: "error", message: "Session save error" });
+            }
+            res.status(200).json({ status: "ok", message: "Magic link verified" });
+        });
     } else {
         // Invalid or expired magic link
         res.status(400).json({ status: "failed", message: "Invalid or expired magic link" });
@@ -259,9 +288,15 @@ clientRoutes.post("/client/login", async (req, res) => {
             req.session.authenticated = true;
             req.session.email = owner.email;
             req.session.uuid = client.owner;
-            req.session.clientid = client.clientid;
+            req.session.clientId = client.clientid;
             req.session.deviceId = client.device_id;
-            res.status(200).json({ status: "ok", message: "Client login successful" });
+            return req.session.save(err => {
+                if (err) {
+                    console.error('Session save error (client/login):', err);
+                    return res.status(500).json({ status: "error", message: "Session save error" });
+                }
+                res.status(200).json({ status: "ok", message: "Client login successful" });
+            });
         } else {
             res.status(401).json({ status: "failed", message: "Invalid client ID or not authorized" });
         }

@@ -1,5 +1,6 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../web_config.dart';
+import 'signal_service.dart';
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
@@ -22,18 +23,33 @@ class SocketService {
       }
       _socket = IO.io(urlString, <String, dynamic>{
         'transports': ['websocket'],
-        'autoConnect': true,
+        'autoConnect': false, // Manually connect after setup to ensure cookies are ready
         'reconnection': true,
         'reconnectionDelay': 2000,
+        'withCredentials': true, // Send cookies for session management
       });
       _socket!.on('connect', (_) {
-        print('Socket connected');
+        print('[SOCKET SERVICE] Socket connected');
+        // Authenticate with the server after connection
+        _socket!.emit('authenticate', null);
+      });
+      _socket!.on('authenticated', (data) {
+        print('[SOCKET SERVICE] Authentication response: $data');
+        // Store user info in SignalService for device filtering
+        if (data is Map && data['authenticated'] == true && data['uuid'] != null && data['deviceId'] != null) {
+          SignalService.instance.setCurrentUserInfo(data['uuid'], data['deviceId']);
+        }
       });
       _socket!.on('disconnect', (_) {
-        print('Socket disconnected');
+        print('[SOCKET SERVICE] Socket disconnected');
+      });
+      _socket!.on('reconnect', (_) {
+        print('[SOCKET SERVICE] Socket reconnected');
+        // Re-authenticate after reconnection
+        _socket!.emit('authenticate', null);
       });
       _socket!.on('reconnect_attempt', (_) {
-        print('Socket reconnecting...');
+        print('[SOCKET SERVICE] Socket reconnecting...');
       });
       // Register all listeners
       _listeners.forEach((event, callbacks) {
@@ -41,6 +57,10 @@ class SocketService {
           _socket!.on(event, cb);
         }
       });
+      
+      // Manually connect after everything is set up
+      print('[SOCKET SERVICE] Manually connecting socket with credentials...');
+      _socket!.connect();
     } finally {
       _connecting = false;
     }
@@ -70,6 +90,12 @@ class SocketService {
 
   void emit(String event, dynamic data) {
       _socket?.emit(event, data);
+  }
+
+  /// Manually trigger authentication (useful for re-authenticating)
+  void authenticate() {
+    print('[SOCKET SERVICE] Manually triggering authentication');
+    _socket?.emit('authenticate', null);
   }
 
   bool get isConnected => _socket?.connected ?? false;

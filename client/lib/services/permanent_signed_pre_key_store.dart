@@ -156,15 +156,29 @@ final IdentityKeyPair identityKeyPair;
         print("No signed pre keys found locally, creating new one");
         var newPreSignedKey = generateSignedPreKey(identityKeyPair, 0);
         await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
+        return;
       }
-      // check if any signed prekeys are older than 1 day, if so create new one
-      for (var stored in keys) {
-        final createdAt = stored.createdAt;
-        if (createdAt != null && DateTime.now().difference(createdAt).inDays > 1) {
-          print("Found expired signed pre key, creating new one");
-          var newPreSignedKey = generateSignedPreKey(identityKeyPair, keys.length);
-          await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
-        }
+      
+      // Sort by createdAt (newest first)
+      keys.sort((a, b) {
+        if (a.createdAt == null) return 1;
+        if (b.createdAt == null) return -1;
+        return b.createdAt!.compareTo(a.createdAt!);
+      });
+      
+      // Check if the NEWEST signed prekey is older than 7 days
+      final newest = keys.first;
+      final createdAt = newest.createdAt;
+      if (createdAt != null && DateTime.now().difference(createdAt).inDays > 7) {
+        print("Found expired signed pre key (older than 7 days), creating new one");
+        var newPreSignedKey = generateSignedPreKey(identityKeyPair, keys.length);
+        await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
+      }
+      
+      // Delete all old signed prekeys except the newest one
+      for (int i = 1; i < keys.length; i++) {
+        print("Removing old signed pre key: ${keys[i].record.id}");
+        await removeSignedPreKey(keys[i].record.id);
       }
     });
   }

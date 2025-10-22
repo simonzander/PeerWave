@@ -36,8 +36,16 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
       if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
+      // Try to include clientId if available (helps server attach device info immediately)
+      String? clientId;
+      try {
+        // Reuse the same web client id service via JS localStorage (set earlier in AuthLayout)
+        final jsClientId = web.window.localStorage.getItem('clientId');
+        clientId = jsClientId;
+      } catch (_) {}
       final resp = await ApiService.post('$urlString/backupcode/verify', data: {
         'code': backupCodeController.text,
+        if (clientId != null) 'clientId': clientId,
       });
       if (resp.statusCode == 200) {
         setState(() {
@@ -76,15 +84,16 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
     } catch (e) {
       print('Error fetching backup codes: $e');
     }
+  }
+  final TextEditingController serverController = TextEditingController();
+  String? _status;
+  bool _loading = false;
+
   @override
   void dispose() {
     _waitTimer?.cancel();
     super.dispose();
   }
-  }
-  final TextEditingController serverController = TextEditingController();
-  String? _status;
-  bool _loading = false;
 
   @override
   Widget build(BuildContext context) {

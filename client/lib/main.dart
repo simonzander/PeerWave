@@ -17,7 +17,7 @@ import 'app/backupcode_web.dart' if (dart.library.io) 'app/backupcode_stub.dart'
 // Use conditional import for 'services/auth_service.dart'
 import 'services/auth_service_web.dart' if (dart.library.io) 'services/auth_service_native.dart';
 // Import clientid logic only for native
-import 'services/clientid_native.dart' if (dart.library.html) 'services/clientid_stub.dart';
+import 'services/clientid_native.dart' if (dart.library.html) 'services/clientid_web.dart';
 import 'services/api_service.dart';
 import 'auth/backup_recover_web.dart' if (dart.library.io) 'auth/backup_recover_stub.dart';
 import 'services/socket_service.dart';
@@ -29,11 +29,12 @@ Future<void> main() async {
   ApiService.init();
   String? initialMagicKey;
   String? clientId;
-  if (!kIsWeb) {
-    // Initialize and load client ID for native only
+
+  // Initialize and load client ID for native only
     clientId = await ClientIdService.getClientId();
     print('Client ID: $clientId');
 
+  if (!kIsWeb) {
     // Listen for initial link (when app is started via deep link)
     try {
       final initialUri = await getInitialUri();
@@ -49,8 +50,8 @@ Future<void> main() async {
 
 class MyApp extends StatefulWidget {
   final String? initialMagicKey;
-  final String? clientId;
-  const MyApp({Key? key, this.initialMagicKey, this.clientId}) : super(key: key);
+  final String clientId;
+  const MyApp({Key? key, this.initialMagicKey, required this.clientId}) : super(key: key);
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -122,7 +123,7 @@ class _MyAppState extends State<MyApp> {
               path: '/login',
               pageBuilder: (context, state) {
                 return MaterialPage(
-                  child: const AuthLayout(),
+                  child: AuthLayout(clientId: widget.clientId),
                 );
               },
             ),
@@ -144,7 +145,7 @@ class _MyAppState extends State<MyApp> {
                   // Optionally show an error page or message
                   return Scaffold(body: Center(child: Text('Missing email or serverUrl')));
                 }
-                return OtpWebPage(email: email, serverUrl: serverUrl, wait: wait);
+                return OtpWebPage(email: email, serverUrl: serverUrl, clientId: widget.clientId, wait: wait);
               },
             ),
             ShellRoute(
@@ -207,7 +208,7 @@ class _MyAppState extends State<MyApp> {
                   pageBuilder: (context, state) {
                     return MaterialPage(
                       fullscreenDialog: true,
-                      child: const AuthLayout(),
+                      child: AuthLayout(clientId: widget.clientId),
                     );
                   },
                 ),
@@ -237,6 +238,8 @@ class _MyAppState extends State<MyApp> {
         final uri = Uri.parse(state.uri.toString());
         final fromParam = uri.queryParameters['from'];
         if(loggedIn) {
+          // Small delay to ensure session cookies are properly set before Socket.IO connects
+          await Future.delayed(const Duration(milliseconds: 100));
           await SocketService().connect();
           await SignalService.instance.init();
         } else {

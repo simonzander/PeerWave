@@ -205,6 +205,7 @@ class PermanentPreKeyStore extends PreKeyStore {
       final storage = FlutterSecureStorage();
       await storage.delete(key: _preKey(preKeyId));
     }
+    SocketService().emit("removePreKey", {'id': preKeyId});
   }
 
   @override
