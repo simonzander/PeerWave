@@ -5,6 +5,21 @@ const { Sequelize, DataTypes, Op, UUID } = require('sequelize');
 const sequelize = new Sequelize({
     dialect: 'sqlite',
     storage: './db/peerwave.sqlite',
+    pool: {
+        max: 1,        // SQLite: Only one writer at a time
+        min: 0,
+        acquire: 30000, // 30 seconds timeout for acquiring connection
+        idle: 10000
+    },
+    retry: {
+        max: 5,        // Retry up to 5 times on errors
+        match: [
+            /SQLITE_BUSY/,
+            /database is locked/,
+            /SequelizeTimeoutError/
+        ]
+    },
+    logging: false // Disable query logging for performance
 });
 
 const temporaryStorage = new Sequelize({
@@ -15,8 +30,28 @@ const temporaryStorage = new Sequelize({
 //sequelize.sync({ alter: true });
 
 sequelize.authenticate()
-    .then(() => {
+    .then(async () => {
         console.log('Connection to SQLite database has been established successfully.');
+        
+        // Enable WAL mode and optimizations
+        try {
+            await sequelize.query("PRAGMA journal_mode=WAL");
+            console.log('✓ SQLite WAL mode enabled');
+            
+            await sequelize.query("PRAGMA busy_timeout=5000");
+            console.log('✓ SQLite busy_timeout set to 5000ms');
+            
+            await sequelize.query("PRAGMA synchronous=NORMAL");
+            console.log('✓ SQLite synchronous mode set to NORMAL');
+            
+            await sequelize.query("PRAGMA cache_size=-64000");
+            console.log('✓ SQLite cache_size set to 64MB');
+            
+            await sequelize.query("PRAGMA temp_store=MEMORY");
+            console.log('✓ SQLite temp_store set to MEMORY');
+        } catch (error) {
+            console.error('Error setting SQLite PRAGMAs:', error);
+        }
     })
     .catch(error => {
         console.error('Unable to connect to the database:', error);
@@ -311,8 +346,12 @@ const Item = sequelize.define('Item', {
     cipherType: {
         type: DataTypes.INTEGER,
         allowNull: false
+    },
+    deliveredAt: {
+        type: DataTypes.DATE,
+        allowNull: true
     }
-}, { timestamps: false });
+}, { timestamps: true }); // Enable timestamps for createdAt tracking
 
 
 // Define public key model

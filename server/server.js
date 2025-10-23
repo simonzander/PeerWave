@@ -12,6 +12,7 @@ const session = require('express-session');
 const sharedSession = require('socket.io-express-session');
 const { User, Channel, Thread, Client, SignalSignedPreKey, SignalPreKey, Item } = require('./db/model');
 const path = require('path');
+const writeQueue = require('./db/writeQueue');
 
 // Function to validate UUID
 function isValidUUID(uuid) {
@@ -83,11 +84,13 @@ io.sockets.on("connection", socket => {
     console.log(socket.handshake.session);
     try {
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
-        // Handle the signal identity
-        Client.update(
-          { public_key: data.publicKey, registration_id: data.registrationId },
-          { where: { owner: socket.handshake.session.uuid, clientid: socket.handshake.session.clientId } }
-        );
+        // Handle the signal identity - enqueue write operation
+        await writeQueue.enqueue(async () => {
+          return await Client.update(
+            { public_key: data.publicKey, registration_id: data.registrationId },
+            { where: { owner: socket.handshake.session.uuid, clientid: socket.handshake.session.clientId } }
+          );
+        }, 'signalIdentity');
       }
     } catch (error) {
       console.error('Error handling signal identity:', error);
@@ -113,9 +116,11 @@ io.sockets.on("connection", socket => {
   socket.on("removePreKey", async (data) => {
     try {
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
-        await SignalPreKey.destroy({
-          where: { prekey_id: data.id, owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId }
-        });
+        await writeQueue.enqueue(async () => {
+          return await SignalPreKey.destroy({
+            where: { prekey_id: data.id, owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId }
+          });
+        }, `removePreKey-${data.id}`);
       }
     } catch (error) {
       console.error('Error removing pre-key:', error);
@@ -125,9 +130,11 @@ io.sockets.on("connection", socket => {
   socket.on("removeSignedPreKey", async (data) => {
     try {
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
-        await SignalSignedPreKey.destroy({
-          where: { signed_prekey_id: data.id, owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId }
-        });
+        await writeQueue.enqueue(async () => {
+          return await SignalSignedPreKey.destroy({
+            where: { signed_prekey_id: data.id, owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId }
+          });
+        }, `removeSignedPreKey-${data.id}`);
       }
     } catch (error) {
       console.error('Error removing signed pre-key:', error);
@@ -137,18 +144,20 @@ io.sockets.on("connection", socket => {
   socket.on("storeSignedPreKey", async (data) => {
     try {
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
-        // Create if not exists, otherwise do nothing
-        await SignalSignedPreKey.findOrCreate({
-          where: {
-            signed_prekey_id: data.id,
-            owner: socket.handshake.session.uuid,
-            client: socket.handshake.session.clientId,
-          },
-          defaults: {
-            signed_prekey_data: data.data,
-            signed_prekey_signature: data.signature,
-          }
-        });
+        // Create if not exists, otherwise do nothing - enqueue write operation
+        await writeQueue.enqueue(async () => {
+          return await SignalSignedPreKey.findOrCreate({
+            where: {
+              signed_prekey_id: data.id,
+              owner: socket.handshake.session.uuid,
+              client: socket.handshake.session.clientId,
+            },
+            defaults: {
+              signed_prekey_data: data.data,
+              signed_prekey_signature: data.signature,
+            }
+          });
+        }, `storeSignedPreKey-${data.id}`);
       }
     } catch (error) {
       console.error('Error storing signed pre-key:', error);
@@ -170,16 +179,18 @@ io.sockets.on("connection", socket => {
           console.error(`[SIGNAL SERVER] Refusing to store pre-key: prekey_data is ${decoded.length} bytes (expected 33). Possible private key leak or wrong format.`);
           return;
         }
-        await SignalPreKey.findOrCreate({
-          where: {
-            prekey_id: data.id,
-            owner: socket.handshake.session.uuid,
-            client: socket.handshake.session.clientId,
-          },
-          defaults: {
-            prekey_data: data.data,
-          }
-        });
+        await writeQueue.enqueue(async () => {
+          return await SignalPreKey.findOrCreate({
+            where: {
+              prekey_id: data.id,
+              owner: socket.handshake.session.uuid,
+              client: socket.handshake.session.clientId,
+            },
+            defaults: {
+              prekey_data: data.data,
+            }
+          });
+        }, `storePreKey-${data.id}`);
       }
     } catch (error) {
       console.error('Error storing pre-key:', error);
@@ -194,31 +205,37 @@ io.sockets.on("connection", socket => {
     try {
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
         if (Array.isArray(data.preKeys)) {
-          for (const preKey of data.preKeys) {
-            if (preKey && preKey.id && preKey.data) {
-              let decoded;
-              try {
-                decoded = Buffer.from(preKey.data, 'base64');
-              } catch (e) {
-                console.error('[SIGNAL SERVER] Invalid base64 in batch prekey_data:', preKey.data);
-                continue;
-              }
-              if (decoded.length !== 33) {
-                console.error(`[SIGNAL SERVER] Refusing to store batch pre-key: prekey_data is ${decoded.length} bytes (expected 33). Possible private key leak or wrong format. id=${preKey.id}`);
-                continue;
-              }
-              await SignalPreKey.findOrCreate({
-                where: {
-                  prekey_id: preKey.id,
-                  owner: socket.handshake.session.uuid,
-                  client: socket.handshake.session.clientId,
-                },
-                defaults: {
-                  prekey_data: preKey.data,
+          // Enqueue entire batch as a single operation to maintain atomicity
+          await writeQueue.enqueue(async () => {
+            const results = [];
+            for (const preKey of data.preKeys) {
+              if (preKey && preKey.id && preKey.data) {
+                let decoded;
+                try {
+                  decoded = Buffer.from(preKey.data, 'base64');
+                } catch (e) {
+                  console.error('[SIGNAL SERVER] Invalid base64 in batch prekey_data:', preKey.data);
+                  continue;
                 }
-              });
+                if (decoded.length !== 33) {
+                  console.error(`[SIGNAL SERVER] Refusing to store batch pre-key: prekey_data is ${decoded.length} bytes (expected 33). Possible private key leak or wrong format. id=${preKey.id}`);
+                  continue;
+                }
+                const result = await SignalPreKey.findOrCreate({
+                  where: {
+                    prekey_id: preKey.id,
+                    owner: socket.handshake.session.uuid,
+                    client: socket.handshake.session.clientId,
+                  },
+                  defaults: {
+                    prekey_data: preKey.data,
+                  }
+                });
+                results.push(result);
+              }
             }
-          }
+            return results;
+          }, `storePreKeys-batch-${data.preKeys.length}`);
         }
       }
     } catch (error) {
@@ -303,17 +320,32 @@ io.sockets.on("connection", socket => {
 
         // Store ALL messages in the database (including PreKey for offline recipients)
         console.log(`[SIGNAL SERVER] Storing message in DB: cipherType=${cipherType}, itemId=${itemId}`);
-        await Item.create({
-          sender: senderUserId,
-          deviceSender: senderDeviceId,
-          receiver: recipientUserId,
-          deviceReceiver: recipientDeviceId,
-          type: type,
-          payload: payload,
-          cipherType: cipherType,
-          itemId: itemId
-        });
+        const storedItem = await writeQueue.enqueue(async () => {
+          return await Item.create({
+            sender: senderUserId,
+            deviceSender: senderDeviceId,
+            receiver: recipientUserId,
+            deviceReceiver: recipientDeviceId,
+            type: type,
+            payload: payload,
+            cipherType: cipherType,
+            itemId: itemId
+          });
+        }, `sendItem-${itemId}`);
          console.log(`[SIGNAL SERVER] Message stored successfully in DB`);
+
+        // Send delivery receipt to sender IMMEDIATELY after DB storage
+        // (regardless of whether recipient is online)
+        const senderSocketId = deviceSockets.get(`${senderUserId}:${senderDeviceId}`);
+        if (senderSocketId) {
+          io.to(senderSocketId).emit("deliveryReceipt", {
+            itemId: itemId,
+            recipientUserId: recipientUserId,
+            recipientDeviceId: recipientDeviceId,
+            deliveredAt: new Date().toISOString()
+          });
+          console.log(`[SIGNAL SERVER] ✓ Delivery receipt sent to sender ${senderUserId}:${senderDeviceId} (message stored in DB)`);
+        }
 
         // Sende die Nachricht an das spezifische Gerät (recipientDeviceId),
         // für das sie verschlüsselt wurde
@@ -336,6 +368,14 @@ io.sockets.on("connection", socket => {
             itemId: itemId
           });
           console.log(`[SIGNAL SERVER] Message sent to device ${recipientUserId}:${recipientDeviceId}`);
+          
+          // Update delivery timestamp in database (recipient received the message)
+          await writeQueue.enqueue(async () => {
+            return await Item.update(
+              { deliveredAt: new Date() },
+              { where: { uuid: storedItem.uuid } }
+            );
+          }, `deliveryUpdate-${itemId}`);
         } else {
           console.log(`[SIGNAL SERVER] Target device ${recipientUserId}:${recipientDeviceId} is offline, message stored in DB`);
         }
@@ -779,6 +819,10 @@ io.sockets.on("connection", socket => {
 
   // Register and signin webpages
   app.use(authRoutes);
+
+// Database error handler middleware (must be after routes)
+const dbErrorHandler = require('./middleware/dbErrorHandler');
+app.use(dbErrorHandler);
 
 /**
  * Room data object to store information about each room

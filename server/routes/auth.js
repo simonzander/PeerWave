@@ -11,6 +11,7 @@ const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch
 const magicLinks = require('../store/magicLinksStore');
 const { User, OTP, Client } = require('../db/model');
 const bcrypt = require("bcrypt");
+const writeQueue = require('../db/writeQueue');
 
 class AppError extends Error {
     constructor(message, code, email = "") {
@@ -42,9 +43,12 @@ async function saveBackupCodes(email, codes) {
     }));
 
     // Beispiel: in DB speichern
-    await User.update(
-        { backupCodes: JSON.stringify(hashedCodes) },
-        { where: { email: email } }
+    await writeQueue.enqueue(
+        () => User.update(
+            { backupCodes: JSON.stringify(hashedCodes) },
+            { where: { email: email } }
+        ),
+        'saveBackupCodes'
     );
 
     return codes; // Nur einmalig dem User zeigen!
@@ -62,9 +66,12 @@ async function verifyBackupCode(email, enteredCode) {
             // Code gültig → markieren als verbraucht
             codeObj.used = true;
 
-            await User.update(
-                { backupCodes: JSON.stringify(codes) },
-                { where: { email: email } }
+            await writeQueue.enqueue(
+                () => User.update(
+                    { backupCodes: JSON.stringify(codes) },
+                    { where: { email: email } }
+                ),
+                'verifyBackupCode'
             );
 
             return true; // Erfolg
@@ -464,7 +471,10 @@ authRoutes.post("/register", (req, res) => {
 
                     // Save the OTP and email in a temporary storage for 10 minutes
                     const expiration = new Date().getTime() + 10 * 60 * 1000; // 10 minutes from now
-                    OTP.create({ email, otp, expiration })
+                    writeQueue.enqueue(
+                        () => OTP.create({ email, otp, expiration }),
+                        'createOTP'
+                    )
                     .then(otp => {
                         console.log('OTP created successfully:', otp);
                         req.session.email = otp.email;
@@ -497,8 +507,14 @@ authRoutes.post("/otp", (req, res) => {
         } else if (otp.expiration < Date.now()) {
             return res.status(400).json({ error: "OTP expired. Please request a new one." });
         } else {
-            OTP.destroy({ where: { email: email } });
-            await User.update({ verified: true }, { where: { email: email } });
+            await writeQueue.enqueue(
+                () => OTP.destroy({ where: { email: email } }),
+                'destroyOTP'
+            );
+            await writeQueue.enqueue(
+                () => User.update({ verified: true }, { where: { email: email } }),
+                'verifyUser'
+            );
             const updatedUser = await User.findOne({ where: { email } });
             req.session.otp = true;
             req.session.authenticated = true;
@@ -650,7 +666,10 @@ authRoutes.post("/backupcode/regenerate", async(req, res) => {
             const usedCount = backupCodes.filter(code => code.used).length;
             if(usedCount > backupCodes.length - 2) {
                 user.backupCodes = null;
-                await user.save();
+                await writeQueue.enqueue(
+                    () => user.save(),
+                    'regenerateBackupCodes'
+                );
                 return res.status(200).json({ status: "ok", message: "You can now generate new backup codes." });
             } else {
                 return res.status(400).json({ error: "You can only regenerate backup codes if you have used at least 8 of your existing codes." });
@@ -819,7 +838,10 @@ authRoutes.post('/webauthn/register', async (req, res) => {
 
             user.changed('credentials', true);
 
-            await user.save();
+            await writeQueue.enqueue(
+                () => user.save(),
+                'saveWebAuthnCredential'
+            );
 
             res.json({ status: "ok" });
         } catch (error) {
@@ -891,7 +913,10 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
             });
 
             const expiration = new Date().getTime() + 10 * 60 * 1000; // 10 minutes from now
-            OTP.create({ email, otp, expiration })
+            writeQueue.enqueue(
+                () => OTP.create({ email, otp, expiration }),
+                'createOTPForLogin'
+            )
             .then(otp => {
                 console.log('OTP created successfully:', otp);
                 req.session.email = otp.email;
@@ -946,7 +971,10 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             // Save updated credentials array
             user.credentials = JSON.stringify(user.credentials);
             user.changed('credentials', true);
-            await user.save();
+            await writeQueue.enqueue(
+                () => user.save(),
+                'updateCredentialLastLogin'
+            );
         } else {
             // Credential not found, handle authentication failure
         }
@@ -1040,8 +1068,9 @@ authRoutes.get("/webauthn/list", async (req, res) => {
     if(req.session.authenticated && req.session.email && req.session.uuid) {
         const user = await User.findOne({ where: { email: req.session.email } });
         if (user) {
-            user.credentials = JSON.parse(user.credentials);
-            const credentials = user.credentials.map(cred => ({
+            // Handle null or empty credentials
+            const credentialsData = user.credentials ? JSON.parse(user.credentials) : [];
+            const credentials = (Array.isArray(credentialsData) ? credentialsData : []).map(cred => ({
                 id: cred.id,
                 browser: cred.browser || null,
                 ip: cred.ip || null,
@@ -1090,7 +1119,10 @@ authRoutes.post("/client/addweb", async (req, res) => {
                     return res.status(500).json({ status: "error", message: "Session save error" });
                 }
                 if (!created) {
-                    Client.update({ ip: ip, browser: userAgent, location: locationString }, { where: { clientid: client.clientid } })
+                    writeQueue.enqueue(
+                        () => Client.update({ ip: ip, browser: userAgent, location: locationString }, { where: { clientid: client.clientid } }),
+                        'updateClientInfo'
+                    )
                         .then(() => {
                             res.status(200).json({ status: "ok", message: "Client updated successfully" });
                         })
@@ -1130,7 +1162,10 @@ authRoutes.post("/client/delete", async (req, res) => {
     if(req.session.authenticated && req.session.email && req.session.uuid) {
         try {
             const { clientId } = req.body
-            await Client.destroy({ where: { id: clientId, owner: req.session.uuid } });
+            await writeQueue.enqueue(
+                () => Client.destroy({ where: { id: clientId, owner: req.session.uuid } }),
+                'deleteClient'
+            );
             res.status(200).json({ status: "ok", message: "Client deleted successfully" });
         } catch (error) {
             console.error('Error deleting client:', error);
@@ -1230,7 +1265,10 @@ authRoutes.post("/channels/create", async (req, res) => {
             const { name, description, isPrivate, type } = req.body;
             if (isPrivate === "on") booleanIsPrivate = true;
             const owner = req.session.uuid;
-            const channel = await Channel.create({ name, description, private: booleanIsPrivate, owner, type });
+            const channel = await writeQueue.enqueue(
+                () => Channel.create({ name, description, private: booleanIsPrivate, owner, type }),
+                'createChannel'
+            );
             res.json(channel);
         } else {
             res.status(401).json({ message: "Unauthorized" });
@@ -1354,7 +1392,10 @@ authRoutes.post("/channel/:name/post", async (req, res) => {
             const { message } = req.body;
             const sender = req.session.uuid;
             const channel = req.params.name;
-            const thread = await Thread.create({ message, sender, channel });
+            const thread = await writeQueue.enqueue(
+                () => Thread.create({ message, sender, channel }),
+                'createThread'
+            );
             res.json(thread);
         } else {
             res.status(401).json({ message: "Unauthorized" });
@@ -1375,7 +1416,10 @@ authRoutes.post("/usersettings", async (req, res) => {
                 const buffer = Buffer.from(picture.split(',')[1], 'base64');
                 user.picture = JSON.stringify({ type: "Buffer", data: Array.from(buffer) });
             }
-            await user.save();
+            await writeQueue.enqueue(
+                () => user.save(),
+                'updateUserSettings'
+            );
             res.json({message: "User settings updated"});
         }
     } catch (error) {
@@ -1421,7 +1465,10 @@ authRoutes.post("/webauthn/delete", (req, res) => {
                 user.credentials = user.credentials.filter(cred => cred.id !== credentialId);
                 user.credentials = JSON.stringify(user.credentials);
                 user.changed('credentials', true);
-                await user.save();
+                await writeQueue.enqueue(
+                    () => user.save(),
+                    'deleteWebAuthnCredential'
+                );
                 res.status(200).send("WebAuthn credential deleted");
             } else {
                 res.status(404).send("User not found");

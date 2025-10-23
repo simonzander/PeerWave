@@ -10,6 +10,7 @@ const cors = require('cors');
 const magicLinks = require('../store/magicLinksStore');
 const { User, Channel, Thread, SignalSignedPreKey, SignalPreKey, Client, Item } = require('../db/model');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const writeQueue = require('../db/writeQueue');
 
 async function getLocationFromIp(ip) {
     const response = await fetch(`https://ipapi.co/${ip}/json/`);
@@ -145,7 +146,10 @@ clientRoutes.get("/signal/prekey_bundle/:userId", async (req, res) => {
         for (const client of clients) {
             const preKeyObj = getRandom(client.SignalPreKeys);
             if (preKeyObj) {
-                await SignalPreKey.destroy({ where: { owner: client.owner, client: client.clientid, prekey_id: preKeyObj.prekey_id } });
+                await writeQueue.enqueue(
+                    () => SignalPreKey.destroy({ where: { owner: client.owner, client: client.clientid, prekey_id: preKeyObj.prekey_id } }),
+                    'destroyUsedPreKey'
+                );
             }
         }
         res.status(200).json(result);
@@ -217,7 +221,10 @@ clientRoutes.post("/client/channels", async(req, res) => {
         // Add the creator as a member with 'admin' permission
         const user = await User.findOne({ where: { uuid: req.session.uuid } });
         if (user) {
-            const channel = await Channel.create({ name: name, description: description, private: private, defaultPermissions: defaultPermissions, type: "text", owner: req.session.uuid });
+            const channel = await writeQueue.enqueue(
+                () => Channel.create({ name: name, description: description, private: private, defaultPermissions: defaultPermissions, type: "text", owner: req.session.uuid }),
+                'createChannelByClient'
+            );
             await channel.addMember(user, { through: { permission: 'admin' } });
         }
         res.status(201).json(channel);
@@ -373,7 +380,10 @@ clientRoutes.post("/channels/create", async (req, res) => {
             const { name, description, isPrivate, type } = req.body;
             if (isPrivate === "on") booleanIsPrivate = true;
             const owner = req.session.uuid;
-            const channel = await Channel.create({ name, description, private: booleanIsPrivate, owner, type });
+            const channel = await writeQueue.enqueue(
+                () => Channel.create({ name, description, private: booleanIsPrivate, owner, type }),
+                'createChannelFromClient'
+            );
             res.json(channel);
         } else {
             res.status(401).json({ message: "Unauthorized" });
@@ -497,7 +507,10 @@ clientRoutes.post("/channel/:name/post", async (req, res) => {
             const { message } = req.body;
             const sender = req.session.uuid;
             const channel = req.params.name;
-            const thread = await Thread.create({ message, sender, channel });
+            const thread = await writeQueue.enqueue(
+                () => Thread.create({ message, sender, channel }),
+                'createThreadByClient'
+            );
             res.json(thread);
         } else {
             res.status(401).json({ message: "Unauthorized" });
@@ -518,12 +531,83 @@ clientRoutes.post("/usersettings", async (req, res) => {
                 const buffer = Buffer.from(picture.split(',')[1], 'base64');
                 user.picture = JSON.stringify({ type: "Buffer", data: Array.from(buffer) });
             }
-            await user.save();
+            await writeQueue.enqueue(
+                () => user.save(),
+                'updateUserSettingsByClient'
+            );
             res.json({message: "User settings updated"});
         }
     } catch (error) {
         console.error('Error updating user settings:', error);
         res.json({ message: "Error updating user settings" });
+    }
+});
+
+// Delete item (cleanup after read receipt)
+clientRoutes.delete("/items/:itemId", async (req, res) => {
+    try {
+        if (!req.session.authenticated || !req.session.uuid) {
+            return res.status(401).json({ status: "failed", message: "Not authenticated" });
+        }
+        
+        const { itemId } = req.params;
+        const receiverDeviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
+        const receiverUserId = req.query.receiverId || null; // The user who read the message
+        
+        // Only allow deletion if user is sender or receiver
+        const items = await Item.findAll({ 
+            where: { 
+                itemId: itemId,
+                [Op.or]: [
+                    { sender: req.session.uuid },
+                    { receiver: req.session.uuid }
+                ]
+            } 
+        });
+        
+        if (!items || items.length === 0) {
+            return res.status(404).json({ status: "failed", message: "Item not found or not authorized" });
+        }
+        
+        // If deviceId AND receiverId are provided, delete only that specific encrypted version
+        // This ensures we don't accidentally delete the wrong device's message
+        if (receiverDeviceId !== null && receiverUserId !== null) {
+            await writeQueue.enqueue(
+                () => Item.destroy({ 
+                    where: { 
+                        itemId: itemId,
+                        receiver: receiverUserId,
+                        deviceReceiver: receiverDeviceId
+                    } 
+                }),
+                'deleteItemForSpecificDevice'
+            );
+            console.log(`[CLEANUP] Item ${itemId} for user ${receiverUserId} device ${receiverDeviceId} deleted by ${req.session.uuid}`);
+        } else if (receiverDeviceId !== null) {
+            // Legacy: only deviceId provided (might delete wrong user's message!)
+            await writeQueue.enqueue(
+                () => Item.destroy({ 
+                    where: { 
+                        itemId: itemId,
+                        deviceReceiver: receiverDeviceId
+                    } 
+                }),
+                'deleteItemForDevice'
+            );
+            console.log(`[CLEANUP] Item ${itemId} for device ${receiverDeviceId} deleted by user ${req.session.uuid}`);
+        } else {
+            // Delete all items with this itemId (all device versions)
+            await writeQueue.enqueue(
+                () => Item.destroy({ where: { itemId: itemId } }),
+                'deleteItemAllDevices'
+            );
+            console.log(`[CLEANUP] Item ${itemId} (all devices) deleted by user ${req.session.uuid}`);
+        }
+        
+        res.status(200).json({ status: "ok", message: "Item deleted successfully" });
+    } catch (error) {
+        console.error('Error deleting item:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
 

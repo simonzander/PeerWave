@@ -23,6 +23,7 @@
     "fido2-lib": "^3.5.3",
     "node-fetch": "^3.3.2",
     "nodemailer": "^6.9.14",
+    "p-queue": "^8.1.1",
     "passport": "^0.7.0",
     "passport-fido2-webauthn": "^0.1.0",
     "pug": "^3.0.3",

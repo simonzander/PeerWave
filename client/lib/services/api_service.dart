@@ -3,6 +3,102 @@ import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 
+/// Custom retry interceptor for handling 503 (database busy) and network errors
+class RetryInterceptor extends Interceptor {
+  final Dio dio;
+  final int maxRetries;
+  final List<Duration> retryDelays;
+
+  RetryInterceptor({
+    required this.dio,
+    this.maxRetries = 3,
+    List<Duration>? retryDelays,
+  }) : retryDelays = retryDelays ??
+            const [
+              Duration(seconds: 2),
+              Duration(seconds: 4),
+              Duration(seconds: 8),
+            ];
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) async {
+    final extra = err.requestOptions.extra;
+    final retryCount = extra['retryCount'] as int? ?? 0;
+
+    // Check if we should retry
+    if (_shouldRetry(err) && retryCount < maxRetries) {
+      print('[API RETRY] Attempt ${retryCount + 1}/$maxRetries for ${err.requestOptions.path}');
+      
+      // Get delay from Retry-After header or use default
+      final delay = _getRetryDelay(err, retryCount);
+      print('[API RETRY] Waiting ${delay.inSeconds}s before retry...');
+      
+      await Future.delayed(delay);
+
+      // Clone the request and increment retry count
+      final options = err.requestOptions;
+      options.extra['retryCount'] = retryCount + 1;
+
+      try {
+        print('[API RETRY] Retrying request to ${options.path}');
+        final response = await dio.fetch(options);
+        return handler.resolve(response);
+      } catch (e) {
+        if (e is DioException) {
+          return super.onError(e, handler);
+        }
+        return handler.reject(err);
+      }
+    }
+
+    return super.onError(err, handler);
+  }
+
+  bool _shouldRetry(DioException err) {
+    // Retry on 503 Service Unavailable (database busy)
+    if (err.response?.statusCode == 503) {
+      print('[API RETRY] Database busy (503), will retry');
+      return true;
+    }
+
+    // Retry on connection timeout
+    if (err.type == DioExceptionType.connectionTimeout ||
+        err.type == DioExceptionType.sendTimeout ||
+        err.type == DioExceptionType.receiveTimeout) {
+      print('[API RETRY] Network timeout, will retry');
+      return true;
+    }
+
+    // Retry on connection error
+    if (err.type == DioExceptionType.connectionError) {
+      print('[API RETRY] Connection error, will retry');
+      return true;
+    }
+
+    return false;
+  }
+
+  Duration _getRetryDelay(DioException err, int retryCount) {
+    // Check for Retry-After header (from our server's 503 response)
+    final retryAfter = err.response?.headers.value('retry-after');
+    if (retryAfter != null) {
+      final seconds = int.tryParse(retryAfter);
+      if (seconds != null) {
+        print('[API RETRY] Using Retry-After header: ${seconds}s');
+        return Duration(seconds: seconds);
+      }
+    }
+
+    // Use default delay based on retry count
+    if (retryCount < retryDelays.length) {
+      return retryDelays[retryCount];
+    }
+
+    // Fallback to last delay if exceeded array length
+    return retryDelays.last;
+  }
+}
+
 class ApiService {
   static final Dio dio = Dio();
   static final CookieJar cookieJar = CookieJar();
@@ -13,6 +109,20 @@ class ApiService {
       if (!kIsWeb) {
         dio.interceptors.add(CookieManager(cookieJar));
       }
+      
+      // Add custom retry interceptor for handling 503 (database busy) and network errors
+      dio.interceptors.add(
+        RetryInterceptor(
+          dio: dio,
+          maxRetries: 3,
+          retryDelays: const [
+            Duration(seconds: 2),  // First retry after 2s
+            Duration(seconds: 4),  // Second retry after 4s
+            Duration(seconds: 8),  // Third retry after 8s
+          ],
+        ),
+      );
+      
       _initialized = true;
     }
   }
@@ -27,5 +137,11 @@ class ApiService {
     options ??= Options();
     options = options.copyWith(contentType: 'application/json',extra: {...?options.extra, 'withCredentials': true});
     return dio.post(url, data: data, options: options);
+  }
+
+  static Future<Response> delete(String url, {dynamic data, Options? options}) {
+    options ??= Options();
+    options = options.copyWith(contentType: 'application/json',extra: {...?options.extra, 'withCredentials': true});
+    return dio.delete(url, data: data, options: options);
   }
 }

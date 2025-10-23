@@ -126,6 +126,8 @@ class SignalService {
   SignalService._internal();
 
   final Map<String, List<Function(dynamic)>> _itemTypeCallbacks = {};
+  final Map<String, List<Function(String)>> _deliveryCallbacks = {};
+  final Map<String, List<Function(Map<String, dynamic>)>> _readCallbacks = {};
   PermanentIdentityKeyStore identityStore = PermanentIdentityKeyStore();
   late PermanentSessionStore sessionStore;
   PermanentPreKeyStore preKeyStore = PermanentPreKeyStore();
@@ -134,6 +136,10 @@ class SignalService {
   late PermanentDecryptedMessagesStore decryptedMessagesStore;
   String? _currentUserId; // Store current user's UUID
   int? _currentDeviceId; // Store current device ID
+  
+  // Getters for current user and device info
+  String? get currentUserId => _currentUserId;
+  int? get currentDeviceId => _currentDeviceId;
   
   // Set current user and device info (call this after authentication)
   void setCurrentUserInfo(String userId, int deviceId) {
@@ -260,6 +266,10 @@ class SignalService {
       receiveItem(data);
     });
 
+    SocketService().registerListener("deliveryReceipt", (data) async {
+      await _handleDeliveryReceipt(data);
+    });
+
     SocketService().registerListener("signalStatusResponse", (status) async {
       await _ensureSignalKeysPresent(status);
     });
@@ -324,6 +334,27 @@ class SignalService {
     _itemTypeCallbacks.putIfAbsent(type, () => []).add(callback);
   }
 
+  /// Register callback for delivery receipts
+  void onDeliveryReceipt(Function(String itemId) callback) {
+    _deliveryCallbacks.putIfAbsent('default', () => []).add(callback);
+  }
+
+  /// Register callback for read receipts
+  /// Callback receives a Map with: itemId, readByDeviceId, readByUserId
+  void onReadReceipt(Function(Map<String, dynamic> receiptInfo) callback) {
+    _readCallbacks.putIfAbsent('default', () => []).add(callback);
+  }
+
+  /// Unregister delivery receipt callbacks
+  void clearDeliveryCallbacks() {
+    _deliveryCallbacks.remove('default');
+  }
+
+  /// Unregister read receipt callbacks
+  void clearReadCallbacks() {
+    _readCallbacks.remove('default');
+  }
+
   /// Unregister a callback for a specific item type
   void unregisterItemCallback(String type, Function(dynamic) callback) {
     _itemTypeCallbacks[type]?.remove(callback);
@@ -352,34 +383,48 @@ class SignalService {
     final cipherType = data['cipherType'];
     final itemId = data['itemId'];
     
-    // Check if we already decrypted this message
+    // Check if we already decrypted this message (prevents DuplicateMessageException)
     if (itemId != null) {
       final cached = await decryptedMessagesStore.getDecryptedMessage(itemId);
       if (cached != null) {
-        print("[SIGNAL SERVICE] Found cached decrypted message for itemId: $itemId");
+        print("[SIGNAL SERVICE] ✓ Using cached decrypted message for itemId: $itemId (message: ${cached.substring(0, cached.length > 50 ? 50 : cached.length)}...)");
         return cached;
+      } else {
+        print("[SIGNAL SERVICE] Cache miss for itemId: $itemId - will decrypt");
       }
+    } else {
+      print("[SIGNAL SERVICE] No itemId provided - cannot use cache");
     }
     
-    print("[SIGNAL SERVICE] generate SignalProtocolAddress for sender $sender with deviceId $senderDeviceId");
+    print("[SIGNAL SERVICE] Decrypting new message: itemId=$itemId, sender=$sender, deviceId=$senderDeviceId");
     final senderAddress = SignalProtocolAddress(sender, senderDeviceId);
-    print("[SIGNAL SERVICE] decryptItem for senderAddress $senderAddress with cipherType $cipherType and payload $payload");
-    final message = await decryptItem(
-      senderAddress: senderAddress,
-      payload: payload,
-      cipherType: cipherType,
-    );
     
-    // Cache the decrypted message
-    if (itemId != null && message.isNotEmpty) {
-      await decryptedMessagesStore.storeDecryptedMessage(
-        itemId: itemId,
-        message: message,
+    try {
+      final message = await decryptItem(
+        senderAddress: senderAddress,
+        payload: payload,
+        cipherType: cipherType,
       );
-      print("[SIGNAL SERVICE] Cached decrypted message for itemId: $itemId");
+      
+      // Cache the decrypted message to prevent re-decryption
+      if (itemId != null && message.isNotEmpty) {
+        await decryptedMessagesStore.storeDecryptedMessage(
+          itemId: itemId,
+          message: message,
+          sender: sender,
+          senderDeviceId: senderDeviceId,
+          timestamp: data['timestamp'] ?? data['createdAt'] ?? DateTime.now().toIso8601String(),
+          type: data['type'],
+        );
+        print("[SIGNAL SERVICE] ✓ Cached decrypted message for itemId: $itemId");
+      }
+      
+      return message;
+    } catch (e) {
+      print('[SIGNAL SERVICE] ✗ Decryption failed for itemId: $itemId - $e');
+      // Return empty string on error (will be filtered out later)
+      return '';
     }
-    
-    return message;
   }
 
   /// Empfängt eine verschlüsselte Nachricht vom Socket.IO Server
@@ -395,19 +440,12 @@ class SignalService {
   final type = data['type'];
   final sender = data['sender']; // z.B. Absender-UUID
   final senderDeviceId = data['senderDeviceId'];
-  final payload = data['payload'];
   final cipherType = data['cipherType'];
   final itemId = data['itemId'];
 
-  final senderAddress = SignalProtocolAddress(sender, senderDeviceId);
-
-  // Decrypt the message - dies funktioniert nur, wenn die Nachricht
-  // für DIESES Gerät verschlüsselt wurde
-  final message = await decryptItem(
-    senderAddress: senderAddress,
-    payload: payload,
-    cipherType: cipherType,
-  );
+  // Use decryptItemFromData to get caching + IndexedDB storage
+  // This ensures real-time messages are also persisted locally
+  final message = await decryptItemFromData(data);
 
   // Skip messages only if decryption failed (empty result from error handling)
   if (message.isEmpty) {
@@ -441,7 +479,62 @@ class SignalService {
       callback(item);
     }
   }
+  
+  // Handle read_receipt type
+  if (type == 'read_receipt') {
+    print('[SIGNAL_SERVICE] receiveItem detected read_receipt type, calling _handleReadReceipt');
+    await _handleReadReceipt(item);
+  } else {
+    print('[SIGNAL_SERVICE] receiveItem type is: $type (not a read_receipt)');
+  }
 }
+
+  /// Handle delivery receipt from server
+  Future<void> _handleDeliveryReceipt(Map<String, dynamic> data) async {
+    final itemId = data['itemId'];
+    print('[SIGNAL SERVICE] Delivery receipt received for itemId: $itemId');
+    
+    // Update local store
+    await sentMessagesStore.markAsDelivered(itemId);
+    
+    // Trigger callbacks
+    if (_deliveryCallbacks.containsKey('default')) {
+      for (final callback in _deliveryCallbacks['default']!) {
+        callback(itemId);
+      }
+    }
+  }
+
+  /// Handle read receipt (encrypted Signal message)
+  Future<void> _handleReadReceipt(Map<String, dynamic> item) async {
+    print('[SIGNAL_SERVICE] _handleReadReceipt called with item: $item');
+    try {
+      final receiptData = jsonDecode(item['message']);
+      final itemId = receiptData['itemId'];
+      final readByDeviceId = receiptData['readByDeviceId'] as int?;
+      final readByUserId = item['sender']; // The user who sent the read receipt
+      print('[SIGNAL_SERVICE] Processing read receipt for itemId: $itemId, readByDeviceId: $readByDeviceId, readByUserId: $readByUserId');
+      
+      // Update local store
+      await sentMessagesStore.markAsRead(itemId);
+      
+      // Trigger callbacks with itemId, deviceId, and userId
+      if (_readCallbacks.containsKey('default')) {
+        print('[SIGNAL_SERVICE] Triggering ${_readCallbacks['default']!.length} read receipt callbacks');
+        for (final callback in _readCallbacks['default']!) {
+          // Pass all three parameters: itemId, readByDeviceId, readByUserId
+          callback({'itemId': itemId, 'readByDeviceId': readByDeviceId, 'readByUserId': readByUserId});
+        }
+        print('[SIGNAL_SERVICE] ✓ All read receipt callbacks executed');
+      } else {
+        print('[SIGNAL_SERVICE] ⚠ No read receipt callbacks registered');
+      }
+    } catch (e, stack) {
+      print('[SIGNAL_SERVICE] ❌ Error handling read receipt: $e');
+      print('[SIGNAL_SERVICE] Stack trace: $stack');
+    }
+  }
+
   Future<List<Map<String, dynamic>>> fetchPreKeyBundleForUser(String userId) async {
     final apiServer = await loadWebApiServer();
     String urlString = apiServer ?? '';
@@ -523,11 +616,12 @@ class SignalService {
     required String recipientUserId,
     required String type,
     required dynamic payload,
+    String? itemId, // Optional: allow pre-generated itemId from UI
   }) async {
     dynamic ciphertextMessage;
     
-    // Generate itemId BEFORE encryption (so we can use it for local callback)
-    final itemId = Uuid().v4();
+    // Use provided itemId or generate new one
+    final messageItemId = itemId ?? Uuid().v4();
     
     // Prepare payload string for both encryption and local storage
     String payloadString;
@@ -542,18 +636,24 @@ class SignalService {
     // This allows Bob Device 1 to see his own sent message without decryption
     
     // Store sent message in local storage for persistence after refresh
+    // IMPORTANT: Don't store read_receipt messages (they are not chat messages)
     final timestamp = DateTime.now().toIso8601String();
-    await sentMessagesStore.storeSentMessage(
-      recipientUserId: recipientUserId,
-      itemId: itemId,
-      message: payloadString,
-      timestamp: timestamp,
-    );
-    print('[SIGNAL SERVICE] Step 0a: Stored sent message in local storage');
+    if (type != 'read_receipt') {
+      await sentMessagesStore.storeSentMessage(
+        recipientUserId: recipientUserId,
+        itemId: messageItemId,
+        message: payloadString,
+        timestamp: timestamp,
+      );
+      print('[SIGNAL SERVICE] Step 0a: Stored sent message in local storage');
+    } else {
+      print('[SIGNAL SERVICE] Step 0a: Skipping storage for read_receipt (not a chat message)');
+    }
     
-    if (_itemTypeCallbacks.containsKey(type)) {
+    // Trigger local callback for UI updates (but not for read_receipt - they are system messages)
+    if (type != 'read_receipt' && _itemTypeCallbacks.containsKey(type)) {
       final localItem = {
-        'itemId': itemId,
+        'itemId': messageItemId,
         'sender': _currentUserId,
         'recipient': recipientUserId, // Add recipient for proper filtering
         'senderDeviceId': _currentDeviceId,
@@ -565,6 +665,7 @@ class SignalService {
       for (final callback in _itemTypeCallbacks[type]!) {
         callback(localItem);
       }
+      print('[SIGNAL SERVICE] Step 0b: Triggered ${_itemTypeCallbacks[type]!.length} local callbacks for type: $type');
     }
     
     print('[SIGNAL SERVICE] Step 1: fetchPreKeyBundleForUser($recipientUserId)');
@@ -691,7 +792,7 @@ class SignalService {
           'type': type,
           'payload': newSerialized,
           'cipherType': ciphertextMessage.getType(),
-          'itemId': itemId,
+          'itemId': messageItemId,
         };
         
         print('[SIGNAL SERVICE] Sending rebuilt message: cipherType=${ciphertextMessage.getType()}');
@@ -707,7 +808,7 @@ class SignalService {
         'type': type,
         'payload': serialized,
         'cipherType': ciphertextMessage.getType(),
-        'itemId': itemId,
+        'itemId': messageItemId,
       };
 
       print('[SIGNAL SERVICE] Step 10: Sending item: $data');

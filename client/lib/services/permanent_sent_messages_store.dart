@@ -38,11 +38,13 @@ class PermanentSentMessagesStore {
   /// @param itemId - Unique message ID
   /// @param message - The plaintext message
   /// @param timestamp - ISO 8601 timestamp
+  /// @param status - Message status: 'sending', 'delivered', 'read'
   Future<void> storeSentMessage({
     required String recipientUserId,
     required String itemId,
     required String message,
     required String timestamp,
+    String status = 'sending',
   }) async {
     final key = '$_keyPrefix${recipientUserId}_$itemId';
     final data = jsonEncode({
@@ -51,6 +53,9 @@ class PermanentSentMessagesStore {
       'message': message,
       'timestamp': timestamp,
       'isLocalSent': true,
+      'status': status,
+      'deliveredAt': null,
+      'readAt': null,
     });
 
     if (kIsWeb) {
@@ -272,6 +277,75 @@ class PermanentSentMessagesStore {
           keys.remove(key);
         }
         await storage.write(key: 'sent_message_keys', value: jsonEncode(keys));
+      }
+    }
+  }
+
+  /// Mark a message as delivered
+  Future<void> markAsDelivered(String itemId) async {
+    await _updateMessageStatus(itemId, 'delivered', deliveredAt: DateTime.now().toIso8601String());
+  }
+
+  /// Mark a message as read
+  Future<void> markAsRead(String itemId) async {
+    await _updateMessageStatus(itemId, 'read', readAt: DateTime.now().toIso8601String());
+  }
+
+  /// Internal method to update message status
+  Future<void> _updateMessageStatus(String itemId, String status, {String? deliveredAt, String? readAt}) async {
+    if (kIsWeb) {
+      final IdbFactory idbFactory = idbFactoryBrowser;
+      final db = await idbFactory.open(_storeName, version: 1,
+          onUpgradeNeeded: (VersionChangeEvent event) {
+        Database db = event.database;
+        if (!db.objectStoreNames.contains(_storeName)) {
+          db.createObjectStore(_storeName, autoIncrement: false);
+        }
+      });
+      var txn = db.transaction(_storeName, 'readwrite');
+      var store = txn.objectStore(_storeName);
+      var keys = await store.getAllKeys();
+      
+      for (var key in keys) {
+        if (key is String && key.contains('_$itemId')) {
+          var value = await store.getObject(key);
+          if (value is String) {
+            try {
+              final msg = jsonDecode(value);
+              msg['status'] = status;
+              if (deliveredAt != null) msg['deliveredAt'] = deliveredAt;
+              if (readAt != null) msg['readAt'] = readAt;
+              await store.put(jsonEncode(msg), key);
+              break;
+            } catch (e) {
+              print('[SentMessagesStore] Error updating status: $e');
+            }
+          }
+        }
+      }
+      await txn.completed;
+    } else {
+      final storage = FlutterSecureStorage();
+      String? keysJson = await storage.read(key: 'sent_message_keys');
+      if (keysJson != null) {
+        List<String> keys = List<String>.from(jsonDecode(keysJson));
+        for (var key in keys) {
+          if (key.contains('_$itemId')) {
+            var value = await storage.read(key: key);
+            if (value != null) {
+              try {
+                final msg = jsonDecode(value);
+                msg['status'] = status;
+                if (deliveredAt != null) msg['deliveredAt'] = deliveredAt;
+                if (readAt != null) msg['readAt'] = readAt;
+                await storage.write(key: key, value: jsonEncode(msg));
+                break;
+              } catch (e) {
+                print('[SentMessagesStore] Error updating status: $e');
+              }
+            }
+          }
+        }
       }
     }
   }
