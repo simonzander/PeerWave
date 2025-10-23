@@ -8,9 +8,11 @@ const crypto = require('crypto');
 const session = require('express-session');
 const cors = require('cors');
 const magicLinks = require('../store/magicLinksStore');
-const { User, Channel, Thread, SignalSignedPreKey, SignalPreKey, Client, Item } = require('../db/model');
+const { User, Channel, Thread, SignalSignedPreKey, SignalPreKey, Client, Item, Role } = require('../db/model');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const writeQueue = require('../db/writeQueue');
+const { autoAssignRoles } = require('../db/autoAssignRoles');
+const { hasServerPermission } = require('../db/roleHelpers');
 
 async function getLocationFromIp(ip) {
     const response = await fetch(`https://ipapi.co/${ip}/json/`);
@@ -176,36 +178,47 @@ clientRoutes.get("/people/list", async (req, res) => {
 });
 
 clientRoutes.get("/client/channels", async(req, res) => {
-    const limit = parseInt(req.query.limit) || 100;
+    const limit = parseInt(req.query.limit) || 20;
     if(req.session.authenticated !== true || !req.session.uuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
-    // Fetch channels logic here
+    
     try {
-      const channels = await Channel.findAll({
-        include: [
-          {
-            model: User,
-            as: 'Members',
-            where: { uuid: req.session.uuid },
-            through: { attributes: [] }
-          },
-          {
-            model: Thread,
-            required: false,
-            attributes: [],
-          }
-        ],
-        attributes: {
-          include: [
-            [Channel.sequelize.fn('MAX', Channel.sequelize.col('Threads.createdAt')), 'latestThread']
-          ]
-        },
-        group: ['Channel.name'],
-        order: [[Channel.sequelize.literal('latestThread'), 'DESC']],
-        limit: limit
-      });
-      res.status(200).json(channels);
+        const userUuid = req.session.uuid;
+        const { ChannelMembers } = require('../db/model');
+        
+        // Find channels where user is owner
+        const ownedChannels = await Channel.findAll({
+            where: { owner: userUuid },
+            order: [['updatedAt', 'DESC']]
+        });
+        
+        // Find channels where user is member
+        const memberChannelIds = await ChannelMembers.findAll({
+            where: { userId: userUuid },
+            attributes: ['channelId']
+        });
+        
+        const memberChannelUuids = memberChannelIds.map(cm => cm.channelId);
+        
+        let memberChannels = [];
+        if (memberChannelUuids.length > 0) {
+            memberChannels = await Channel.findAll({
+                where: {
+                    uuid: { [Op.in]: memberChannelUuids },
+                    owner: { [Op.ne]: userUuid } // Exclude owned channels to avoid duplicates
+                },
+                order: [['updatedAt', 'DESC']]
+            });
+        }
+        
+        // Combine and sort all channels
+        // TODO: Sort by latest message timestamp when Signal group messages are fully implemented
+        const allChannels = [...ownedChannels, ...memberChannels]
+            .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+            .slice(0, limit);
+        
+        res.status(200).json(allChannels);
     } catch (error) {
         console.error('Error fetching channels:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
@@ -213,21 +226,63 @@ clientRoutes.get("/client/channels", async(req, res) => {
 });
 
 clientRoutes.post("/client/channels", async(req, res) => {
-    const { name, description, private, defaultPermissions } = req.body;
+    const { name, description, private, type, defaultRoleId } = req.body;
     if(req.session.authenticated !== true || !req.session.uuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
+    
+    // Check if user has channel.create permission
+    const hasPermission = await hasServerPermission(req.session.uuid, 'channel.create');
+    if (!hasPermission) {
+        return res.status(403).json({ status: "error", message: "Insufficient permissions to create channels" });
+    }
+    
     try {
-        // Add the creator as a member with 'admin' permission
+        // Validate channel type
+        const channelType = type || 'webrtc';
+        if (!['webrtc', 'signal'].includes(channelType)) {
+            return res.status(400).json({ status: "error", message: "Invalid channel type. Must be 'webrtc' or 'signal'" });
+        }
+        
+        // Validate default role if provided
+        if (defaultRoleId) {
+            const role = await Role.findOne({ where: { uuid: defaultRoleId } });
+            if (!role) {
+                return res.status(400).json({ status: "error", message: "Invalid default role ID" });
+            }
+            
+            // Verify role scope matches channel type
+            const expectedScope = channelType === 'webrtc' ? 'channelWebRtc' : 'channelSignal';
+            if (role.scope !== expectedScope) {
+                return res.status(400).json({ 
+                    status: "error", 
+                    message: `Role scope '${role.scope}' does not match channel type '${channelType}'` 
+                });
+            }
+        }
+        
         const user = await User.findOne({ where: { uuid: req.session.uuid } });
         if (user) {
             const channel = await writeQueue.enqueue(
-                () => Channel.create({ name: name, description: description, private: private, defaultPermissions: defaultPermissions, type: "text", owner: req.session.uuid }),
+                () => Channel.create({ 
+                    name: name, 
+                    description: description, 
+                    private: private || false, 
+                    type: channelType,
+                    owner: req.session.uuid,
+                    defaultRoleId: defaultRoleId || null
+                }),
                 'createChannelByClient'
             );
-            await channel.addMember(user, { through: { permission: 'admin' } });
+            
+            // Add the creator as owner with appropriate role
+            // The creator gets owner-level permissions, not just the default role
+            await channel.addMember(user, { through: { permission: 'owner' } });
+            
+            res.status(201).json(channel);
+        } else {
+            res.status(404).json({ status: "error", message: "User not found" });
         }
-        res.status(201).json(channel);
     } catch (error) {
         console.error('Error creating channel:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
@@ -282,6 +337,12 @@ clientRoutes.post("/magic/verify", async (req, res) => {
             'setUserActiveOnMagicLink'
         );
         
+        // Auto-assign admin role if user is verified and email is in config.admin
+        const user = await User.findOne({ where: { uuid: entry.uuid } });
+        if (user && user.verified && config.admin && config.admin.includes(entry.email)) {
+            await autoAssignRoles(entry.email, entry.uuid);
+        }
+        
         // Persist session immediately so Socket.IO can read it
         return req.session.save(err => {
             if (err) {
@@ -319,6 +380,11 @@ clientRoutes.post("/client/login", async (req, res) => {
                 ),
                 'setUserActiveOnClientLogin'
             );
+            
+            // Auto-assign admin role if user is verified and email is in config.admin
+            if (owner.verified && config.admin && config.admin.includes(owner.email)) {
+                await autoAssignRoles(owner.email, owner.uuid);
+            }
             
             return req.session.save(err => {
                 if (err) {

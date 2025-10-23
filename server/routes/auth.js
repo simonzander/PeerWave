@@ -12,6 +12,7 @@ const magicLinks = require('../store/magicLinksStore');
 const { User, OTP, Client } = require('../db/model');
 const bcrypt = require("bcrypt");
 const writeQueue = require('../db/writeQueue');
+const { autoAssignRoles } = require('../db/autoAssignRoles');
 
 class AppError extends Error {
     constructor(message, code, email = "") {
@@ -516,6 +517,10 @@ authRoutes.post("/otp", (req, res) => {
                 'verifyUser'
             );
             const updatedUser = await User.findOne({ where: { email } });
+            
+            // Auto-assign roles based on email and configuration
+            await autoAssignRoles(email, updatedUser.uuid);
+            
             req.session.otp = true;
             req.session.authenticated = true;
             req.session.uuid = updatedUser.uuid; // ensure uuid present
@@ -1017,6 +1022,11 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                 ),
                 'setUserActiveOnAuth'
             );
+            
+            // Auto-assign admin role if user is verified and email is in config.admin
+            if (user.verified && config.admin && config.admin.includes(email)) {
+                await autoAssignRoles(email, user.uuid);
+            }
             
             // Optional: attach client info immediately if provided
             const clientId = req.body && req.body.clientId;

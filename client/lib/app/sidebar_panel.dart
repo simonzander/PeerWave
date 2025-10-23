@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:http/http.dart' as http;
 import 'package:dio/dio.dart';
+import 'package:provider/provider.dart';
 import '../services/api_service.dart';
+import '../providers/role_provider.dart';
+import '../models/role.dart';
 import 'dart:convert';
 
 
@@ -36,7 +39,7 @@ class _SidebarPanelState extends State<SidebarPanel> {
     ApiService.init();
     final dio = ApiService.dio;
     final resp = await dio.get('${widget.host}/client/channels');
-    if (resp.statusCode == 201) {
+    if (resp.statusCode == 200) {
       final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
       if (data is List) {
         setState(() {
@@ -184,6 +187,9 @@ class _ChannelsDropdownState extends State<_ChannelsDropdown> {
 
   @override
   Widget build(BuildContext context) {
+    final roleProvider = Provider.of<RoleProvider>(context);
+    final hasCreatePermission = roleProvider.hasServerPermission('channel.create');
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -195,123 +201,11 @@ class _ChannelsDropdownState extends State<_ChannelsDropdown> {
             ),
             const Text('Channels', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             const Spacer(),
-            IconButton(
-              icon: const Icon(Icons.add, color: Colors.white),
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (context) {
-                    String channelName = '';
-                    String channelDescription = '';
-                    // Use a StatefulBuilder to manage dialog state
-                    bool isPrivate = false;
-                    String selectedPermission = 'Contributor';
-                    return StatefulBuilder(
-                      builder: (dialogContext, setDialogState) {
-                        return AlertDialog(
-                          title: const Text('Add Channel'),
-                          content: SingleChildScrollView(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                TextField(
-                                  decoration: const InputDecoration(labelText: 'Channel Name'),
-                                  onChanged: (value) => channelName = value,
-                                ),
-                                TextField(
-                                  decoration: const InputDecoration(labelText: 'Description'),
-                                  maxLines: 3,
-                                  onChanged: (value) => channelDescription = value,
-                                ),
-                                Row(
-                                  children: [
-                                    Checkbox(
-                                      value: isPrivate,
-                                      onChanged: (value) {
-                                        setDialogState(() {
-                                          isPrivate = value ?? false;
-                                        });
-                                      },
-                                    ),
-                                    const Text('Private'),
-                                  ],
-                                ),
-                                Row(
-                                  children: [
-                                    const Text('Default Member Permissions:'),
-                                    const SizedBox(width: 8),
-                                    DropdownButton<String>(
-                                      value: selectedPermission,
-                                      items: const [
-                                        DropdownMenuItem(
-                                          value: 'Read',
-                                          child: Text('Read'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'Read&Write',
-                                          child: Text('Read&Write'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'Contributor',
-                                          child: Text('Contributor'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'Admin',
-                                          child: Text('Admin'),
-                                        ),
-                                      ],
-                                      onChanged: (value) {
-                                        setDialogState(() {
-                                          selectedPermission = value ?? 'Contributor';
-                                        });
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(dialogContext).pop(),
-                              child: const Text('Cancel'),
-                            ),
-                            ElevatedButton(
-                              onPressed: () async {
-                                try {
-                                  ApiService.init();
-                                  final dio = ApiService.dio;
-                                  final resp = await dio.post(
-                                    '${widget.host}/client/channels',
-                                    data: {
-                                      'name': channelName,
-                                      'description': channelDescription,
-                                      'private': isPrivate,
-                                      'defaultPermissions': selectedPermission,
-                                    },
-                                    options: Options(contentType: 'application/json'),
-                                  );
-                                  if (resp.statusCode == 201) {
-                                    setState(() {
-                                      widget.channelNames.add(channelName);
-                                    });
-                                  }
-                                } catch (e) {
-                                  // Handle error
-                                  print('Error creating channel: $e');
-                                }
-                                Navigator.of(dialogContext).pop();
-                              },
-                              child: const Text('Add'),
-                            ),
-                          ],
-                        );
-                      },
-                    );
-                  },
-                );
-              },
-            ),
+            if (hasCreatePermission)
+              IconButton(
+                icon: const Icon(Icons.add, color: Colors.white),
+                onPressed: () => _showCreateChannelDialog(context),
+              ),
           ],
         ),
         AnimatedCrossFade(
@@ -335,6 +229,222 @@ class _ChannelsDropdownState extends State<_ChannelsDropdown> {
         ),
       ],
     );
+  }
+
+  void _showCreateChannelDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => _CreateChannelDialog(
+        host: widget.host,
+        onChannelCreated: (channelName) {
+          setState(() {
+            widget.channelNames.add(channelName);
+          });
+        },
+      ),
+    );
+  }
+}
+
+class _CreateChannelDialog extends StatefulWidget {
+  final String host;
+  final Function(String) onChannelCreated;
+
+  const _CreateChannelDialog({
+    Key? key,
+    required this.host,
+    required this.onChannelCreated,
+  }) : super(key: key);
+
+  @override
+  State<_CreateChannelDialog> createState() => _CreateChannelDialogState();
+}
+
+class _CreateChannelDialogState extends State<_CreateChannelDialog> {
+  String channelName = '';
+  String channelDescription = '';
+  bool isPrivate = false;
+  String channelType = 'webrtc'; // 'webrtc' or 'signal'
+  List<Role> availableRoles = [];
+  Role? selectedRole;
+  bool isLoadingRoles = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRoles();
+  }
+
+  Future<void> _loadRoles() async {
+    setState(() => isLoadingRoles = true);
+    try {
+      ApiService.init();
+      final dio = ApiService.dio;
+      final scope = channelType == 'webrtc' ? 'channelWebRtc' : 'channelSignal';
+      final resp = await dio.get('${widget.host}/api/roles?scope=$scope');
+      
+      if (resp.statusCode == 200) {
+        final data = resp.data;
+        final rolesList = (data['roles'] as List?)
+            ?.map((r) => Role.fromJson(r))
+            .where((r) => r.standard == true)
+            .toList() ?? [];
+        
+        setState(() {
+          availableRoles = rolesList;
+          selectedRole = rolesList.isNotEmpty ? rolesList.first : null;
+          isLoadingRoles = false;
+        });
+      }
+    } catch (e) {
+      setState(() => isLoadingRoles = false);
+      print('Error loading roles: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Create Channel'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              decoration: const InputDecoration(labelText: 'Channel Name'),
+              onChanged: (value) => setState(() => channelName = value),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              decoration: const InputDecoration(labelText: 'Description'),
+              maxLines: 3,
+              onChanged: (value) => setState(() => channelDescription = value),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Checkbox(
+                  value: isPrivate,
+                  onChanged: (value) {
+                    setState(() {
+                      isPrivate = value ?? false;
+                    });
+                  },
+                ),
+                const Text('Private'),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text('Channel Type:', style: TextStyle(fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                Expanded(
+                  child: RadioListTile<String>(
+                    title: const Text('WebRTC'),
+                    value: 'webrtc',
+                    groupValue: channelType,
+                    onChanged: (value) {
+                      setState(() {
+                        channelType = value!;
+                        _loadRoles();
+                      });
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: RadioListTile<String>(
+                    title: const Text('Signal'),
+                    value: 'signal',
+                    groupValue: channelType,
+                    onChanged: (value) {
+                      setState(() {
+                        channelType = value!;
+                        _loadRoles();
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text('Default Join Role:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            if (isLoadingRoles)
+              const Center(child: CircularProgressIndicator())
+            else if (availableRoles.isEmpty)
+              const Text('No standard roles available', style: TextStyle(color: Colors.grey))
+            else
+              DropdownButton<Role>(
+                isExpanded: true,
+                value: selectedRole,
+                items: availableRoles.map((role) {
+                  return DropdownMenuItem<Role>(
+                    value: role,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(role.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        if (role.description != null && role.description!.isNotEmpty)
+                          Text(
+                            role.description!,
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    selectedRole = value;
+                  });
+                },
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: selectedRole == null ? null : () => _createChannel(),
+          child: const Text('Create'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _createChannel() async {
+    if (channelName.isEmpty || selectedRole == null) return;
+
+    try {
+      ApiService.init();
+      final dio = ApiService.dio;
+      final resp = await dio.post(
+        '${widget.host}/client/channels',
+        data: {
+          'name': channelName,
+          'description': channelDescription,
+          'private': isPrivate,
+          'type': channelType,
+          'defaultRoleId': selectedRole!.uuid,
+        },
+        options: Options(contentType: 'application/json'),
+      );
+      
+      if (resp.statusCode == 201) {
+        widget.onChannelCreated(channelName);
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      print('Error creating channel: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error creating channel: $e')),
+      );
+    }
   }
 }
 

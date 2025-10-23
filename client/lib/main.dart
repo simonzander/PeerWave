@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'auth/auth_layout_web.dart' if (dart.library.io) 'auth/auth_layout_native.dart';
 import 'auth/magic_link_web.dart' if (dart.library.io) 'auth/magic_link_native.dart';
 import 'auth/otp_web.dart';
@@ -22,6 +23,11 @@ import 'services/api_service.dart';
 import 'auth/backup_recover_web.dart' if (dart.library.io) 'auth/backup_recover_stub.dart';
 import 'services/socket_service.dart';
 import 'services/signal_service.dart';
+// Role management imports
+import 'providers/role_provider.dart';
+import 'services/role_api_service.dart';
+import 'screens/admin/role_management_screen.dart';
+import 'web_config.dart';
 
 
 Future<void> main() async {
@@ -45,13 +51,19 @@ Future<void> main() async {
       // Handle error
     }
   }
-  runApp(MyApp(initialMagicKey: initialMagicKey, clientId: clientId));
+  
+  // Load server URL for role management
+  String? serverUrl = await loadWebApiServer();
+  serverUrl ??= 'http://localhost:3000'; // Fallback for non-web platforms
+  
+  runApp(MyApp(initialMagicKey: initialMagicKey, clientId: clientId, serverUrl: serverUrl));
 }
 
 class MyApp extends StatefulWidget {
   final String? initialMagicKey;
   final String clientId;
-  const MyApp({Key? key, this.initialMagicKey, required this.clientId}) : super(key: key);
+  final String serverUrl;
+  const MyApp({Key? key, this.initialMagicKey, required this.clientId, required this.serverUrl}) : super(key: key);
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -95,6 +107,21 @@ class _MyAppState extends State<MyApp> {
     if (!kIsWeb && _magicKey != null) {
       return MagicLinkWebPageWithServer(serverUrl: _magicKey!, clientId: widget.clientId);
     }
+    
+    // Wrap the entire app with RoleProvider
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (context) => RoleProvider(
+            apiService: RoleApiService(baseUrl: widget.serverUrl),
+          ),
+        ),
+      ],
+      child: _buildMaterialApp(),
+    );
+  }
+
+  Widget _buildMaterialApp() {
 
     // Use ShellRoute for native, flat routes for web
     final List<RouteBase> routes = kIsWeb
@@ -178,6 +205,18 @@ class _MyAppState extends State<MyApp> {
                       path: '/app/settings/notifications',
                       builder: (context, state) => Center(child: Text('Notification Settings')), // Placeholder
                     ),
+                    GoRoute(
+                      path: '/app/settings/roles',
+                      builder: (context, state) => const RoleManagementScreen(),
+                      redirect: (context, state) {
+                        final roleProvider = context.read<RoleProvider>();
+                        // Only allow access if user is admin
+                        if (!roleProvider.isAdmin) {
+                          return '/app/settings';
+                        }
+                        return null; // Allow navigation
+                      },
+                    ),
                   ],
                 ),
               ],
@@ -242,8 +281,25 @@ class _MyAppState extends State<MyApp> {
           await Future.delayed(const Duration(milliseconds: 100));
           await SocketService().connect();
           await SignalService.instance.init();
+          
+          // Load user roles after successful login
+          try {
+            final roleProvider = context.read<RoleProvider>();
+            if (!roleProvider.isLoaded) {
+              await roleProvider.loadUserRoles();
+            }
+          } catch (e) {
+            print('Error loading user roles: $e');
+          }
         } else {
           if(SocketService().isConnected) SocketService().disconnect();
+          // Clear roles on logout
+          try {
+            final roleProvider = context.read<RoleProvider>();
+            roleProvider.clearRoles();
+          } catch (e) {
+            print('Error clearing roles: $e');
+          }
         }
         // ...existing redirect logic...
         print("kIsWeb: $kIsWeb");

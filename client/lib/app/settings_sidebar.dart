@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../providers/role_provider.dart';
 
 class SettingsSidebar extends StatelessWidget {
   final Widget child;
@@ -43,6 +45,19 @@ class SettingsSidebar extends StatelessWidget {
                 leading: const Icon(Icons.notifications),
                 title: const Text('Notifications'),
                 onTap: () => GoRouter.of(context).go('/app/settings/notifications'),
+              ),
+              // Role Management - Only visible for Admins
+              Consumer<RoleProvider>(
+                builder: (context, roleProvider, child) {
+                  if (roleProvider.isAdmin) {
+                    return ListTile(
+                      leading: const Icon(Icons.admin_panel_settings),
+                      title: const Text('Role Management'),
+                      onTap: () => GoRouter.of(context).go('/app/settings/roles'),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
               ),
             ],
           ),

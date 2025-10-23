@@ -1,0 +1,3 @@
+server/config/config.js
+server/db/peerwave.sqlite-shm
+server/db/peerwave.sqlite-wal

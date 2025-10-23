@@ -1,6 +1,7 @@
 const config = require('../config/config');
 const express = require("express");
 const { Sequelize, DataTypes, Op, UUID } = require('sequelize');
+const { DESCRIBE } = require('sequelize/lib/query-types');
 
 const sequelize = new Sequelize({
     dialect: 'sqlite',
@@ -108,6 +109,52 @@ const User = sequelize.define('User', {
     }
 });
 
+const Role = sequelize.define('Role', {
+    name: {
+        type: DataTypes.STRING,
+        allowNull: false
+    },
+    description: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    uuid: {
+        type: DataTypes.UUID,
+        defaultValue: Sequelize.UUIDV4,
+        primaryKey: true,
+        allowNull: false,
+        unique: true
+    },
+    permissions: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        get() {
+            const rawValue = this.getDataValue('permissions');
+            return rawValue ? JSON.parse(rawValue) : [];
+        },
+        set(value) {
+            this.setDataValue('permissions', JSON.stringify(value));
+        }
+    },
+    scope: {
+        type: DataTypes.ENUM('server', 'channelWebRtc', 'channelSignal'),
+        allowNull: false,
+        defaultValue: 'server'
+    },
+    standard: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    }
+}, {
+    indexes: [
+        {
+            unique: true,
+            fields: ['name', 'scope']
+        }
+    ]
+});
+
 const SignalPreKey = sequelize.define('SignalPreKey', {
     client: {
         type: DataTypes.UUID,
@@ -184,12 +231,12 @@ const SignalSignedPreKey = sequelize.define('SignalSignedPreKey', {
     primaryKey: false // (wird ignoriert, aber keine einzelne Spalte ist PK)
 });
 
-/*const SignalSenderKey = sequelize.define('SignalSenderKey', {
+const SignalSenderKey = sequelize.define('SignalSenderKey', {
     channel: {
         type: DataTypes.UUID,
         allowNull: false,
         references: {
-            model: 'Channel',
+            model: 'Channels',
             key: 'uuid'
         }
     },
@@ -197,7 +244,7 @@ const SignalSignedPreKey = sequelize.define('SignalSignedPreKey', {
         type: DataTypes.UUID,
         allowNull: false,
         references: {
-            model: 'Client',
+            model: 'Clients',
             key: 'clientid'
         }
     },
@@ -213,9 +260,111 @@ const SignalSignedPreKey = sequelize.define('SignalSignedPreKey', {
         type: DataTypes.TEXT,
         allowNull: false,
     }
-}, { timestamps: false });*/
+}, {
+    timestamps: true,
+    indexes: [
+        {
+            unique: true,
+            fields: ['channel', 'client']
+        }
+    ]
+});
 
-/*const Channel = sequelize.define('Channel', {
+// Junction table for User-Role relationship (scope: server)
+const UserRole = sequelize.define('UserRole', {
+    userId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    roleId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Roles',
+            key: 'uuid'
+        }
+    }
+}, {
+    indexes: [
+        {
+            unique: true,
+            fields: ['userId', 'roleId']
+        }
+    ]
+});
+
+// Junction table for User-Role-Channel relationship (scope: channelWebRtc, channelSignal)
+const UserRoleChannel = sequelize.define('UserRoleChannel', {
+    userId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    roleId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Roles',
+            key: 'uuid'
+        }
+    },
+    channelId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Channels',
+            key: 'uuid'
+        }
+    }
+}, {
+    indexes: [
+        {
+            unique: true,
+            fields: ['userId', 'roleId', 'channelId']
+        }
+    ]
+});
+
+// Junction table for Channel Members
+const ChannelMembers = sequelize.define('ChannelMembers', {
+    userId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    channelId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Channels',
+            key: 'uuid'
+        }
+    },
+    permission: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        defaultValue: 'member'
+    }
+}, {
+    indexes: [
+        {
+            unique: true,
+            fields: ['userId', 'channelId']
+        }
+    ]
+});
+
+const Channel = sequelize.define('Channel', {
     uuid: {
         type: DataTypes.UUID,
         defaultValue: Sequelize.UUIDV4,
@@ -231,20 +380,32 @@ const SignalSignedPreKey = sequelize.define('SignalSignedPreKey', {
         type: DataTypes.STRING,
         allowNull: true
     },
+    owner: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
     private: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false
     },
-    defaultPermissions: {
-        type: DataTypes.TEXT,
-        allowNull: true // Store JSON string of default permissions
-    },
     type: {
         type: DataTypes.STRING,
         allowNull: false
+    },
+    defaultRoleId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+            model: 'Roles',
+            key: 'uuid'
+        }
     }
-});*/
+});
 
 // Define client model
 const Client = sequelize.define('Client', {
@@ -359,38 +520,6 @@ const Item = sequelize.define('Item', {
 }, { timestamps: true }); // Enable timestamps for createdAt tracking
 
 
-// Define public key model
-/*const PublicKey = sequelize.define('PublicKey', {
-    owner: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        references: {
-            model: 'Users', // Name of the referenced table
-            key: 'uuid' // Primary key in the referenced table
-        }
-    },
-    credential: {
-        type: DataTypes.TEXT,
-        allowNull: false
-    },
-    reciever: {
-        type: DataTypes.UUID,
-        allowNull: true,
-        references: {
-            model: 'Users', // Name of the referenced table
-            key: 'uuid' // Primary key in the referenced table
-        }
-    },
-    channel: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        references: {
-            model: 'Channel', // Name of the referenced table
-            key: 'name' // Primary key in the referenced table
-        }
-    }
-});
-*/
 // Define OTP model
 const OTP = temporaryStorage.define('OTP', {
     email: {
@@ -406,114 +535,78 @@ const OTP = temporaryStorage.define('OTP', {
         allowNull: false
     }
 });
-// define Channel model
-/*
-const Channel = sequelize.define('Channel', {
-    name: {
-        type: DataTypes.STRING,
-        primaryKey: true,
-        allowNull: false,
-        unique: true
-    },
-    description: {
-        type: DataTypes.STRING,
-        allowNull: true
-    },
-    private: {
-        type: DataTypes.BOOLEAN,
-        allowNull: false,
-        defaultValue: false
-    },
-    defaultPermissions: {
-        type: DataTypes.TEXT,
-        allowNull: true // Store JSON string of default permissions
-    },
-    // members field removed; handled by many-to-many association below
-    type: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        defaultValue: "text"
-    },
-    keys: {
-        type: DataTypes.TEXT,
-        allowNull: true
-    }
-});
-const Thread = sequelize.define('Thread', {
-    id: {
-        type: DataTypes.INTEGER,
-        autoIncrement: true,
-        primaryKey: true,
-        allowNull: false
-    },
-    parent: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        defaultValue: null
-    },
-    message: {
-        type: DataTypes.TEXT,
-        allowNull: false
-    },
-    sender: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        references: {
-            model: 'Users', // Name of the referenced table
-            key: 'uuid' // Primary key in the referenced table
-        }
-    },
-    channel: {
-        type: DataTypes.STRING,
-        allowNull: false
-    }
-});
 
-const Emote = sequelize.define('Emotes', {
-    id: {
-        type: DataTypes.INTEGER,
-        autoIncrement: true,
-        primaryKey: true,
-        allowNull: false
-    },
-    sender: {
-        type: DataTypes.STRING,
-        allowNull: false
-    },
-    thread: {
-        type: DataTypes.INTEGER,
-        allowNull: false
-    },
-
-    emote: {
-        type: DataTypes.STRING,
-        allowNull: false
-    }
-});
-*/
-// Many-to-many association for channel members
-/*const ChannelMembers = sequelize.define('ChannelMembers', {
-    permission: {
-        type: DataTypes.TEXT,
-        allowNull: true // Store JSON string of permissions
-    }
-}, { timestamps: false });
-User.belongsToMany(Channel, { through: ChannelMembers, as: 'Channels', foreignKey: 'userId' });
-Channel.belongsToMany(User, { through: ChannelMembers, as: 'Members', foreignKey: 'channelId' });
-
-User.hasMany(Thread, { foreignKey: 'sender' });
-Channel.hasMany(Thread, { foreignKey: 'channel' });
-Thread.hasMany(Emote, { foreignKey: 'thread' });
-Thread.belongsTo(User, { as: 'user', foreignKey: 'sender' });
-User.hasMany(PublicKey, { foreignKey: 'owner' });
-User.hasMany(PublicKey, { foreignKey: 'reciever' });
-Channel.hasMany(PublicKey, { foreignKey: 'channel' });
-*/
+// Basic associations
 User.hasMany(Client, { foreignKey: 'owner' });
 User.hasMany(SignalPreKey, { foreignKey: 'owner' });
 User.hasMany(SignalSignedPreKey, { foreignKey: 'owner' });
+User.hasMany(Channel, { foreignKey: 'owner', as: 'OwnedChannels' });
+Channel.belongsTo(User, { foreignKey: 'owner', as: 'Owner' });
 Client.hasMany(SignalSignedPreKey, { foreignKey: 'client' });
 Client.hasMany(SignalPreKey, { foreignKey: 'client' });
+
+// Signal Sender Key associations for Group Chats
+Channel.hasMany(SignalSenderKey, { foreignKey: 'channel' });
+SignalSenderKey.belongsTo(Channel, { foreignKey: 'channel' });
+Client.hasMany(SignalSenderKey, { foreignKey: 'client' });
+SignalSenderKey.belongsTo(Client, { foreignKey: 'client' });
+User.hasMany(SignalSenderKey, { foreignKey: 'owner' });
+SignalSenderKey.belongsTo(User, { foreignKey: 'owner' });
+
+// Role associations
+// Many-to-Many: User <-> Role (for scope: server)
+User.belongsToMany(Role, { 
+    through: UserRole, 
+    as: 'ServerRoles',
+    foreignKey: 'userId',
+    otherKey: 'roleId'
+});
+Role.belongsToMany(User, { 
+    through: UserRole, 
+    as: 'Users',
+    foreignKey: 'roleId',
+    otherKey: 'userId'
+});
+
+// Many-to-Many: User <-> Role <-> Channel (for scope: channelWebRtc, channelSignal)
+User.belongsToMany(Role, { 
+    through: UserRoleChannel, 
+    as: 'ChannelRoles',
+    foreignKey: 'userId',
+    otherKey: 'roleId'
+});
+Role.belongsToMany(User, { 
+    through: UserRoleChannel, 
+    as: 'ChannelUsers',
+    foreignKey: 'roleId',
+    otherKey: 'userId'
+});
+Channel.belongsToMany(Role, { 
+    through: UserRoleChannel, 
+    as: 'Roles',
+    foreignKey: 'channelId',
+    otherKey: 'roleId'
+});
+Role.belongsToMany(Channel, { 
+    through: UserRoleChannel, 
+    as: 'Channels',
+    foreignKey: 'roleId',
+    otherKey: 'channelId'
+});
+
+// Many-to-Many: User <-> Channel (for channel membership)
+User.belongsToMany(Channel, {
+    through: ChannelMembers,
+    as: 'Channels',
+    foreignKey: 'userId',
+    otherKey: 'channelId'
+});
+Channel.belongsToMany(User, {
+    through: ChannelMembers,
+    as: 'Members',
+    foreignKey: 'channelId',
+    otherKey: 'userId'
+});
 
 temporaryStorage.sync({ alter: false })
     .then(() => console.log('Temporary tables created successfully.'))
@@ -521,8 +614,101 @@ temporaryStorage.sync({ alter: false })
 // Create the User table in the database
 // Sync referenced tables first
 sequelize.sync({ alter: false })
-    .then(() => console.log('All main tables created successfully.'))
+    .then(async () => {
+        console.log('All main tables created successfully.');
+        
+        // Initialize standard roles
+        await initializeStandardRoles();
+    })
     .catch(error => console.error('Error creating main tables:', error));
+
+// Initialize standard roles
+async function initializeStandardRoles() {
+    try {
+        const standardRoles = [
+            // Server scope roles
+            {
+                name: 'Administrator',
+                description: 'Full server access with all permissions',
+                scope: 'server',
+                permissions: ['*'],
+                standard: true
+            },
+            {
+                name: 'Moderator',
+                description: 'Server moderator with limited admin permissions',
+                scope: 'server',
+                permissions: ['user.manage', 'channel.manage', 'message.moderate', 'role.create', 'role.edit', 'role.delete'],
+                standard: true
+            },
+            {
+                name: 'User',
+                description: 'Standard user role',
+                scope: 'server',
+                permissions: ['channel.join', 'channel.create', 'message.send', 'message.read'],
+                standard: true
+            },
+            // Channel WebRTC scope roles
+            {
+                name: 'Channel Owner',
+                description: 'Owner of a WebRTC channel with full control',
+                scope: 'channelWebRtc',
+                permissions: ['*'],
+                standard: true
+            },
+            {
+                name: 'Channel Moderator',
+                description: 'WebRTC channel moderator',
+                scope: 'channelWebRtc',
+                permissions: ['user.kick', 'user.mute', 'stream.manage', 'role.assign', 'member.view'],
+                standard: true
+            },
+            {
+                name: 'Channel Member',
+                description: 'Regular member of a WebRTC channel',
+                scope: 'channelWebRtc',
+                permissions: ['stream.view', 'stream.send', 'chat.send', 'member.view'],
+                standard: true
+            },
+            // Channel Signal scope roles
+            {
+                name: 'Channel Owner',
+                description: 'Owner of a Signal channel with full control',
+                scope: 'channelSignal',
+                permissions: ['*'],
+                standard: true
+            },
+            {
+                name: 'Channel Moderator',
+                description: 'Signal channel moderator',
+                scope: 'channelSignal',
+                permissions: ['message.delete', 'user.kick', 'user.mute', 'role.assign', 'member.view'],
+                standard: true
+            },
+            {
+                name: 'Channel Member',
+                description: 'Regular member of a Signal channel',
+                scope: 'channelSignal',
+                permissions: ['message.send', 'message.read', 'message.react', 'member.view'],
+                standard: true
+            }
+        ];
+
+        for (const roleData of standardRoles) {
+            await Role.findOrCreate({
+                where: { 
+                    name: roleData.name,
+                    scope: roleData.scope
+                },
+                defaults: roleData
+            });
+        }
+        
+        console.log('✓ Standard roles initialized');
+    } catch (error) {
+        console.error('Error initializing standard roles:', error);
+    }
+}
 
 
 module.exports = {
@@ -532,5 +718,10 @@ module.exports = {
     Item,
     SignalSignedPreKey,
     SignalPreKey,
-    //SignalSenderKey,
+    SignalSenderKey,
+    Channel,
+    ChannelMembers,
+    Role,
+    UserRole,
+    UserRoleChannel
 };

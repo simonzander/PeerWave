@@ -36,8 +36,10 @@ app.use(sessionMiddleware);
 
   const authRoutes = require('./routes/auth');
   const clientRoutes = require('./routes/client');
+  const roleRoutes = require('./routes/roles');
 
   app.use(clientRoutes);
+  app.use('/api', roleRoutes);
 
   //SOCKET.IO
 const rooms = {};
