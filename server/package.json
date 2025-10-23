@@ -21,6 +21,7 @@
     "express": "^4.18.2",
     "express-session": "^1.18.0",
     "fido2-lib": "^3.5.3",
+    "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
     "nodemailer": "^6.9.14",
     "p-queue": "^8.1.1",

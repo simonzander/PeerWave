@@ -263,12 +263,25 @@ clientRoutes.post("/magic/verify", async (req, res) => {
                 ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
                 : "Location not found";
         const maxDevice = await Client.max('device_id', { where: { owner: entry.uuid } });
-        const [client] = await Client.findOrCreate({
-            where: { owner: entry.uuid, clientid: clientid },
-            defaults: { owner: entry.uuid, clientid: clientid, ip: ip, browser: userAgent, location: locationString, device_id: maxDevice ? maxDevice + 1 : 1 }
-        });
+        const [client] = await writeQueue.enqueue(
+            () => Client.findOrCreate({
+                where: { owner: entry.uuid, clientid: clientid },
+                defaults: { owner: entry.uuid, clientid: clientid, ip: ip, browser: userAgent, location: locationString, device_id: maxDevice ? maxDevice + 1 : 1 }
+            }),
+            'clientFindOrCreateMagicLink'
+        );
         req.session.clientId = client.clientid;
         req.session.deviceId = client.device_id;
+        
+        // Set user as active on magic link verification
+        await writeQueue.enqueue(
+            () => User.update(
+                { active: true },
+                { where: { uuid: entry.uuid } }
+            ),
+            'setUserActiveOnMagicLink'
+        );
+        
         // Persist session immediately so Socket.IO can read it
         return req.session.save(err => {
             if (err) {
@@ -297,6 +310,16 @@ clientRoutes.post("/client/login", async (req, res) => {
             req.session.uuid = client.owner;
             req.session.clientId = client.clientid;
             req.session.deviceId = client.device_id;
+            
+            // Set user as active on client login
+            await writeQueue.enqueue(
+                () => User.update(
+                    { active: true },
+                    { where: { uuid: owner.uuid } }
+                ),
+                'setUserActiveOnClientLogin'
+            );
+            
             return req.session.save(err => {
                 if (err) {
                     console.error('Session save error (client/login):', err);
@@ -607,6 +630,37 @@ clientRoutes.delete("/items/:itemId", async (req, res) => {
         res.status(200).json({ status: "ok", message: "Item deleted successfully" });
     } catch (error) {
         console.error('Error deleting item:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// Manual cleanup endpoint (for testing/admin purposes)
+clientRoutes.get("/admin/cleanup", async (req, res) => {
+    try {
+        // Optional: Add authentication/authorization check here
+        // if (!req.session.isAdmin) return res.status(403).json({ error: "Forbidden" });
+        
+        const { runCleanup } = require('../jobs/cleanup');
+        
+        console.log('[ADMIN] Manual cleanup triggered by user:', req.session.uuid || 'unauthenticated');
+        
+        // Run cleanup in background
+        runCleanup().then(() => {
+            console.log('[ADMIN] Manual cleanup completed');
+        }).catch(error => {
+            console.error('[ADMIN] Manual cleanup failed:', error);
+        });
+        
+        res.status(200).json({ 
+            status: "ok", 
+            message: "Cleanup job started",
+            config: {
+                inactiveUserDays: config.cleanup.inactiveUserDays,
+                deleteOldItemsDays: config.cleanup.deleteOldItemsDays
+            }
+        });
+    } catch (error) {
+        console.error('Error triggering manual cleanup:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });

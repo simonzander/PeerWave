@@ -1008,6 +1008,16 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             req.session.authenticated = true;
             req.session.email = email;
             req.session.uuid = user.uuid;
+            
+            // Set user as active on authentication
+            await writeQueue.enqueue(
+                () => User.update(
+                    { active: true },
+                    { where: { uuid: user.uuid } }
+                ),
+                'setUserActiveOnAuth'
+            );
+            
             // Optional: attach client info immediately if provided
             const clientId = req.body && req.body.clientId;
             if (clientId) {
@@ -1188,6 +1198,16 @@ authRoutes.post("/client/login", async (req, res) => {
             req.session.authenticated = true;
             req.session.email = owner.email;
             req.session.uuid = client.owner;
+            
+            // Set user as active on login
+            await writeQueue.enqueue(
+                () => User.update(
+                    { active: true },
+                    { where: { uuid: owner.uuid } }
+                ),
+                'setUserActiveOnLogin'
+            );
+            
             res.status(200).json({ status: "ok", message: "Client login successful" });
         } else {
             res.status(401).json({ status: "failed", message: "Invalid client ID or not authorized" });

@@ -101,6 +101,11 @@ const User = sequelize.define('User', {
         type: DataTypes.BLOB,
         allowNull: true
     },
+    active: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true
+    }
 });
 
 const SignalPreKey = sequelize.define('SignalPreKey', {

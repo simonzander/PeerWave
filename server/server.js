@@ -13,6 +13,7 @@ const sharedSession = require('socket.io-express-session');
 const { User, Channel, Thread, Client, SignalSignedPreKey, SignalPreKey, Item } = require('./db/model');
 const path = require('path');
 const writeQueue = require('./db/writeQueue');
+const { initCleanupJob } = require('./jobs/cleanup');
 
 // Function to validate UUID
 function isValidUUID(uuid) {
@@ -875,5 +876,8 @@ app.use(express.static(path.resolve(__dirname, '../server/web')));
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(__dirname, '../server/web', 'index.html'));
 });
+
+// Initialize cleanup cronjob
+initCleanupJob();
 
 server.listen(port, () => console.log(`Server is running on port ${port}`));

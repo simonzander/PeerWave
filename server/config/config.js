@@ -34,4 +34,16 @@ config.session = {
     cookie: { secure: false } // Set to true if using HTTPS
 };
 
+// Cleanup configuration
+config.cleanup = {
+    // Inactive users: Mark users as inactive after X days without client update
+    inactiveUserDays: 30,
+    
+    // Old messages: Delete items (messages, receipts) after X days
+    deleteOldItemsDays: 90,
+    
+    // Cronjob schedule (runs every day at 2:00 AM)
+    cronSchedule: '0 2 * * *'
+};
+
 module.exports = config;
