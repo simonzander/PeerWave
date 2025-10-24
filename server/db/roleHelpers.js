@@ -133,6 +133,12 @@ async function hasServerPermission(userId, permission) {
  * @param {string} permission - Permission string (e.g., 'message.send')
  */
 async function hasChannelPermission(userId, channelId, permission) {
+    // Check if user is channel owner (owners have all permissions)
+    const channel = await Channel.findByPk(channelId);
+    if (channel && channel.owner === userId) {
+        return true;
+    }
+    
     const roles = await getUserChannelRoles(userId, channelId);
     
     for (const role of roles) {

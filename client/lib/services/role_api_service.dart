@@ -188,6 +188,69 @@ class RoleApiService {
     }
   }
 
+  /// Gets users not in the channel (requires 'user.add' permission)
+  Future<List<Map<String, String>>> getAvailableUsersForChannel(
+    String channelId, {
+    String? search,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/channels/$channelId/available-users')
+        .replace(queryParameters: search != null ? {'search': search} : null);
+    
+    final response = await _client.get(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      final users = data['users'] as List<dynamic>;
+      return users
+          .map((e) => {
+                'uuid': e['uuid'] as String,
+                'displayName': e['displayName'] as String,
+                'email': e['email'] as String,
+              })
+          .toList();
+    } else if (response.statusCode == 401) {
+      throw Exception('Unauthorized: Please log in');
+    } else if (response.statusCode == 403) {
+      throw Exception('Forbidden: You do not have permission to add members');
+    } else {
+      throw Exception('Failed to fetch available users: ${response.body}');
+    }
+  }
+
+  /// Adds a user to a channel (requires 'user.add' permission)
+  Future<void> addUserToChannel({
+    required String channelId,
+    required String userId,
+    String? roleId,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/channels/$channelId/members'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'userId': userId,
+        if (roleId != null) 'roleId': roleId,
+      }),
+    );
+
+    if (response.statusCode == 201) {
+      return;
+    } else if (response.statusCode == 401) {
+      throw Exception('Unauthorized: Please log in');
+    } else if (response.statusCode == 403) {
+      throw Exception('Forbidden: You do not have permission to add members to this channel');
+    } else if (response.statusCode == 404) {
+      throw Exception('Channel or user not found');
+    } else if (response.statusCode == 400) {
+      final error = json.decode(response.body);
+      throw Exception(error['error'] ?? 'Bad request');
+    } else {
+      throw Exception('Failed to add user to channel: ${response.body}');
+    }
+  }
+
   /// Gets all members of a channel with their roles (requires 'member.view' permission)
   Future<List<ChannelMember>> getChannelMembers(String channelId) async {
     final response = await _client.get(
@@ -198,8 +261,20 @@ class RoleApiService {
     if (response.statusCode == 200) {
       final data = json.decode(response.body) as Map<String, dynamic>;
       final members = data['members'] as List<dynamic>;
+      
+      // Debug output
+      print('[DEBUG] Channel members response: ${response.body}');
+      
       return members
-          .map((e) => ChannelMember.fromJson(e as Map<String, dynamic>))
+          .map((e) {
+            try {
+              return ChannelMember.fromJson(e as Map<String, dynamic>);
+            } catch (error) {
+              print('[ERROR] Failed to parse member: $e');
+              print('[ERROR] Error: $error');
+              rethrow;
+            }
+          })
           .toList();
     } else if (response.statusCode == 401) {
       throw Exception('Unauthorized: Please log in');

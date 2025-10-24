@@ -3,10 +3,12 @@ import 'package:flutter/foundation.dart';
 import 'package:idb_shim/idb_browser.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// A persistent store for decrypted received messages.
+/// A persistent store for decrypted received 1:1 messages ONLY.
 /// Uses IndexedDB on web and FlutterSecureStorage on native.
 /// This prevents DuplicateMessageException by caching decrypted messages
 /// so they don't need to be decrypted multiple times.
+/// 
+/// NOTE: Group messages use DecryptedGroupItemsStore instead.
 class PermanentDecryptedMessagesStore {
   final String _storeName = 'peerwaveDecryptedMessages';
   final String _keyPrefix = 'decrypted_msg_';
@@ -124,7 +126,7 @@ class PermanentDecryptedMessagesStore {
     }
   }
 
-  /// Get all decrypted messages from a specific sender
+  /// Get all decrypted messages from a specific sender (1:1 direct messages only)
   Future<List<Map<String, dynamic>>> getMessagesFromSender(String senderId) async {
     final List<Map<String, dynamic>> messages = [];
 
@@ -172,7 +174,7 @@ class PermanentDecryptedMessagesStore {
     return messages;
   }
 
-  /// Store a decrypted message
+  /// Store a decrypted 1:1 message (direct message only, no channelId)
   Future<void> storeDecryptedMessage({
     required String itemId,
     required String message,

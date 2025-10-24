@@ -1,7 +1,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
-import 'package:http/http.dart' as http;
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
@@ -18,7 +17,21 @@ class SidebarPanel extends StatefulWidget {
   final VoidCallback? onPeopleTap;
   final List<Map<String, String>>? directMessages;
   final void Function(String uuid, String displayName)? onDirectMessageTap;
-  const SidebarPanel({Key? key, required this.panelWidth, required this.buildProfileCard, this.socket, required this.host, this.onPeopleTap, this.directMessages, this.onDirectMessageTap}) : super(key: key);
+  final List<Map<String, dynamic>>? channels;
+  final void Function(String uuid, String name, String type)? onChannelTap;
+  
+  const SidebarPanel({
+    Key? key,
+    required this.panelWidth,
+    required this.buildProfileCard,
+    this.socket,
+    required this.host,
+    this.onPeopleTap,
+    this.directMessages,
+    this.onDirectMessageTap,
+    this.channels,
+    this.onChannelTap,
+  }) : super(key: key);
 
   @override
   State<SidebarPanel> createState() => _SidebarPanelState();
@@ -114,11 +127,19 @@ class _SidebarPanelState extends State<SidebarPanel> {
               // Upcoming Meetings dropdown
               const _UpcomingMeetingsDropdown(),
               const Divider(color: Colors.white24),
-              _ChannelsDropdown(channelNames: channelNames, host: widget.host),
-              const Divider(color: Colors.white24),
               _DirectMessagesDropdown(
                 directMessages: widget.directMessages ?? [],
                 onDirectMessageTap: widget.onDirectMessageTap,
+              ),
+              const Divider(color: Colors.white24),
+              _ChannelsListWidget(
+                channels: widget.channels ?? [],
+                onChannelTap: widget.onChannelTap,
+                host: widget.host,
+                onChannelCreated: (channelName) {
+                  // Refresh channels when a new one is created
+                  setState(() {});
+                },
               ),
               const Spacer(),
               widget.buildProfileCard(),
@@ -515,6 +536,136 @@ class _DirectMessagesDropdownState extends State<_DirectMessagesDropdown> {
           duration: const Duration(milliseconds: 200),
         ),
       ],
+    );
+  }
+}
+
+// Channels List Widget (both Signal and WebRTC)
+class _ChannelsListWidget extends StatefulWidget {
+  final List<Map<String, dynamic>> channels;
+  final void Function(String uuid, String name, String type)? onChannelTap;
+  final String host;
+  final Function(String)? onChannelCreated;
+  
+  const _ChannelsListWidget({
+    Key? key,
+    required this.channels,
+    this.onChannelTap,
+    required this.host,
+    this.onChannelCreated,
+  }) : super(key: key);
+
+  @override
+  State<_ChannelsListWidget> createState() => _ChannelsListWidgetState();
+}
+
+class _ChannelsListWidgetState extends State<_ChannelsListWidget> {
+  bool expanded = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            IconButton(
+              icon: Icon(
+                expanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right,
+                color: Colors.white,
+              ),
+              onPressed: () => setState(() => expanded = !expanded),
+            ),
+            const Text(
+              'Channels',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.add, color: Colors.white),
+              onPressed: () => _showCreateChannelDialog(context),
+              tooltip: 'Create Channel',
+            ),
+          ],
+        ),
+        AnimatedCrossFade(
+          firstChild: Container(),
+          secondChild: Padding(
+            padding: const EdgeInsets.only(left: 32.0, top: 4.0, bottom: 4.0),
+            child: widget.channels.isEmpty
+                ? const Text(
+                    'No channels yet',
+                    style: TextStyle(color: Colors.white70),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: widget.channels.map((channel) {
+                      final name = channel['name'] ?? 'Unknown';
+                      final uuid = channel['uuid'] ?? '';
+                      final type = channel['type'] ?? 'webrtc';
+                      final isPrivate = channel['isPrivate'] ?? false;
+                      
+                      // Icon based on channel type
+                      Widget leadingIcon;
+                      if (type == 'signal') {
+                        // Signal channels get # prefix
+                        leadingIcon = const Text(
+                          '# ',
+                          style: TextStyle(color: Colors.white70, fontSize: 18, fontWeight: FontWeight.bold),
+                        );
+                      } else {
+                        // WebRTC channels get speaker icon
+                        leadingIcon = const Icon(Icons.campaign, color: Colors.white70, size: 18);
+                      }
+                      
+                      return InkWell(
+                        onTap: () {
+                          if (widget.onChannelTap != null) {
+                            widget.onChannelTap!(uuid, name, type);
+                          }
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4.0),
+                          child: Row(
+                            children: [
+                              leadingIcon,
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  name,
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              ),
+                              if (isPrivate)
+                                const Padding(
+                                  padding: EdgeInsets.only(left: 6),
+                                  child: Icon(Icons.lock, color: Colors.white54, size: 16),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+          ),
+          crossFadeState: expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 200),
+        ),
+      ],
+    );
+  }
+
+  void _showCreateChannelDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => _CreateChannelDialog(
+        host: widget.host,
+        onChannelCreated: (channelName) {
+          if (widget.onChannelCreated != null) {
+            widget.onChannelCreated!(channelName);
+          }
+        },
+      ),
     );
   }
 }

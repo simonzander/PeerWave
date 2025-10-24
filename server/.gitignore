@@ -130,4 +130,5 @@ dist
 .pnp.*
 
 # db
-db/*.sqlite
+db/*.sqlite*
+config/config.js

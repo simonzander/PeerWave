@@ -59,6 +59,19 @@ class SettingsSidebar extends StatelessWidget {
                   return const SizedBox.shrink();
                 },
               ),
+              // User Management - Only visible for users with user.manage permission
+              Consumer<RoleProvider>(
+                builder: (context, roleProvider, child) {
+                  if (roleProvider.hasServerPermission('user.manage')) {
+                    return ListTile(
+                      leading: const Icon(Icons.people),
+                      title: const Text('User Management'),
+                      onTap: () => GoRouter.of(context).go('/app/settings/users'),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
             ],
           ),
         ),

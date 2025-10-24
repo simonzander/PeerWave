@@ -149,6 +149,40 @@ class RoleProvider with ChangeNotifier {
     }
   }
 
+  /// Gets users available to add to a channel
+  Future<List<Map<String, String>>> getAvailableUsersForChannel(
+    String channelId, {
+    String? search,
+  }) async {
+    try {
+      return await _apiService.getAvailableUsersForChannel(
+        channelId,
+        search: search,
+      );
+    } catch (e) {
+      debugPrint('Error fetching available users: $e');
+      rethrow;
+    }
+  }
+
+  /// Adds a user to a channel with optional role
+  Future<void> addUserToChannel({
+    required String channelId,
+    required String userId,
+    String? roleId,
+  }) async {
+    try {
+      await _apiService.addUserToChannel(
+        channelId: channelId,
+        userId: userId,
+        roleId: roleId,
+      );
+    } catch (e) {
+      debugPrint('Error adding user to channel: $e');
+      rethrow;
+    }
+  }
+
   /// Assigns a role to a user in a specific channel
   Future<void> assignChannelRole({
     required String userId,

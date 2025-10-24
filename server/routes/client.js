@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const session = require('express-session');
 const cors = require('cors');
 const magicLinks = require('../store/magicLinksStore');
-const { User, Channel, Thread, SignalSignedPreKey, SignalPreKey, Client, Item, Role } = require('../db/model');
+const { User, Channel, Thread, SignalSignedPreKey, SignalPreKey, Client, Item, Role, ChannelMembers } = require('../db/model');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
@@ -64,6 +64,8 @@ clientRoutes.get("/direct/messages/:userId", async (req, res) => {
         // 
         // WICHTIG: deviceReceiver = sessionDeviceId stellt sicher, dass nur Nachrichten
         // abgerufen werden, die FÜR DIESES GERÄT verschlüsselt wurden
+        // NOTE: Item table contains ONLY 1:1 messages (no channel field)
+        // Group messages are stored in GroupItem table
         const result = await Item.sequelize.query(`
             SELECT *
             FROM Items
@@ -77,7 +79,7 @@ clientRoutes.get("/direct/messages/:userId", async (req, res) => {
             model: Item,
             mapToModel: true
         });
-        console.log(`[CLIENT.JS] Direct messages for device ${sessionDeviceId}:`, result.length);
+        console.log(`[CLIENT.JS] Direct messages (1:1 only) for device ${sessionDeviceId}:`, result.length);
         console.log(`[CLIENT.JS] Query params: deviceReceiver=${sessionDeviceId}, receiver=${sessionUuid}, sender=${userId} OR sender=${sessionUuid}`);
         if (result.length > 0) {
             console.log(`[CLIENT.JS] Sample messages:`, result.slice(0, 3).map(r => ({
@@ -92,6 +94,254 @@ clientRoutes.get("/direct/messages/:userId", async (req, res) => {
         res.status(200).json(result);
     } catch (error) {
         console.error('Error fetching direct messages:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// GET all devices of channel members (for group message encryption)
+clientRoutes.get("/channels/:channelId/member-devices", async (req, res) => {
+    const { channelId } = req.params;
+    const sessionUuid = req.session.uuid;
+    
+    if (!sessionUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        // Verify channel exists and user is member
+        const channel = await Channel.findByPk(channelId);
+        if (!channel) {
+            return res.status(404).json({ status: "error", message: "Channel not found" });
+        }
+        
+        // Check if user is owner or member
+        const isOwner = channel.owner === sessionUuid;
+        const isMember = await ChannelMembers.findOne({
+            where: { channelId, userId: sessionUuid }
+        });
+        
+        if (!isOwner && !isMember) {
+            return res.status(403).json({ status: "error", message: "Not a member of this channel" });
+        }
+        
+        // Get all member user IDs
+        const members = await ChannelMembers.findAll({
+            where: { channelId },
+            attributes: ['userId']
+        });
+        
+        const memberUserIds = [channel.owner, ...members.map(m => m.userId)];
+        const uniqueUserIds = [...new Set(memberUserIds)];
+        
+        // Get all devices for all members
+        const devices = await Client.findAll({
+            where: {
+                owner: uniqueUserIds
+            },
+            attributes: ['owner', 'device_id']
+        });
+        
+        const result = devices.map(d => ({
+            userId: d.owner,
+            deviceId: d.device_id
+        }));
+        
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Error fetching channel member devices:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// GET Signal Group Messages for a channel
+clientRoutes.get("/channels/:channelId/messages", async (req, res) => {
+    const { channelId } = req.params;
+    const sessionDeviceId = req.session.deviceId;
+    const sessionUuid = req.session.uuid;
+    
+    if (!sessionDeviceId || !sessionUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        // Verify channel exists and user is member
+        const channel = await Channel.findByPk(channelId);
+        if (!channel) {
+            return res.status(404).json({ status: "error", message: "Channel not found" });
+        }
+        
+        // Check if user is owner or member
+        const isOwner = channel.owner === sessionUuid;
+        const isMember = await ChannelMembers.findOne({
+            where: { channelId, userId: sessionUuid }
+        });
+        
+        if (!isOwner && !isMember) {
+            return res.status(403).json({ status: "error", message: "Not a member of this channel" });
+        }
+        
+        // Get all messages for this channel and this device
+        // Similar to direct messages, but filtered by channel
+        const result = await Item.sequelize.query(`
+            SELECT *
+            FROM Items
+            WHERE
+            deviceReceiver = :sessionDeviceId
+            AND receiver = :sessionUuid
+            AND channel = :channelId
+            ORDER BY rowid ASC
+        `, {
+            replacements: { sessionDeviceId, sessionUuid, channelId },
+            model: Item,
+            mapToModel: true
+        });
+        
+        console.log(`[CLIENT.JS] Channel messages for device ${sessionDeviceId}, channel ${channelId}:`, result.length);
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Error fetching channel messages:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// GET all channel messages for all channels the user is a member of
+clientRoutes.get("/channels/messages/all", async (req, res) => {
+    const sessionDeviceId = req.session.deviceId;
+    const sessionUuid = req.session.uuid;
+    
+    if (!sessionDeviceId || !sessionUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        // Get all channels where user is owner or member
+        const ownedChannels = await Channel.findAll({
+            where: { owner: sessionUuid, type: 'signal' },
+            attributes: ['uuid']
+        });
+        
+        const memberChannels = await ChannelMembers.findAll({
+            where: { userId: sessionUuid },
+            include: [{
+                model: Channel,
+                as: 'Channel',
+                where: { type: 'signal' },
+                attributes: ['uuid']
+            }],
+            attributes: ['channelId']
+        });
+        
+        const channelIds = [
+            ...ownedChannels.map(c => c.uuid),
+            ...memberChannels.map(m => m.channelId)
+        ];
+        
+        if (channelIds.length === 0) {
+            return res.status(200).json([]);
+        }
+        
+        // Get all messages for these channels for this device
+        const result = await Item.sequelize.query(`
+            SELECT *
+            FROM Items
+            WHERE
+            deviceReceiver = :sessionDeviceId
+            AND receiver = :sessionUuid
+            AND channel IN (:channelIds)
+            ORDER BY rowid ASC
+        `, {
+            replacements: { sessionDeviceId, sessionUuid, channelIds },
+            model: Item,
+            mapToModel: true
+        });
+        
+        console.log(`[CLIENT.JS] All channel messages for device ${sessionDeviceId} across ${channelIds.length} channels:`, result.length);
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Error fetching all channel messages:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// POST Signal Group Message (Sender Key encryption)
+clientRoutes.post("/channels/:channelId/group-messages", async (req, res) => {
+    const { channelId } = req.params;
+    const { itemId, ciphertext, senderId, senderDeviceId, timestamp } = req.body;
+    const sessionUuid = req.session.uuid;
+    const sessionDeviceId = req.session.deviceId;
+    
+    if (!sessionUuid || !sessionDeviceId) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        // Verify channel exists
+        const channel = await Channel.findByPk(channelId);
+        if (!channel) {
+            return res.status(404).json({ status: "error", message: "Channel not found" });
+        }
+        
+        // Check if sender is owner or member
+        const isOwner = channel.owner === sessionUuid;
+        const isMember = await ChannelMembers.findOne({
+            where: { channelId, userId: sessionUuid }
+        });
+        
+        if (!isOwner && !isMember) {
+            return res.status(403).json({ status: "error", message: "Not a member of this channel" });
+        }
+        
+        // Get all channel members (owner + members)
+        const members = await ChannelMembers.findAll({
+            where: { channelId },
+            attributes: ['userId']
+        });
+        
+        const memberUserIds = new Set(members.map(m => m.userId));
+        if (channel.owner) {
+            memberUserIds.add(channel.owner);
+        }
+        
+        // Get all devices for all members
+        const Client = require('../db/model').Client;
+        const memberDevices = await Client.findAll({
+            where: { owner: Array.from(memberUserIds) }
+        });
+        
+        // Create an Item for each device (they all share the same encrypted message)
+        const items = [];
+        for (const device of memberDevices) {
+            // Skip sender's own device
+            if (device.owner === senderId && device.device_id === senderDeviceId) {
+                continue;
+            }
+            
+            items.push({
+                itemId,
+                sender: senderId,
+                receiver: device.owner,
+                deviceSender: senderDeviceId,
+                deviceReceiver: device.device_id,
+                type: 'groupMessage',
+                payload: ciphertext,
+                cipherType: 4, // Sender Key Message type
+                channel: channelId,
+                timestamp: timestamp || new Date().toISOString()
+            });
+        }
+        
+        // Bulk create all items
+        if (items.length > 0) {
+            await Item.bulkCreate(items);
+            console.log(`[CLIENT.JS] Created ${items.length} group message items for channel ${channelId}`);
+        }
+        
+        // TODO: Emit WebSocket event to online members
+        // req.app.get('io').to(channelId).emit('newGroupMessage', { itemId, channelId });
+        
+        res.status(200).json({ status: "success", itemsSent: items.length });
+    } catch (error) {
+        console.error('Error sending group message:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -218,7 +468,7 @@ clientRoutes.get("/client/channels", async(req, res) => {
             .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
             .slice(0, limit);
         
-        res.status(200).json(allChannels);
+        res.status(200).json({ status: "success", channels: allChannels });
     } catch (error) {
         console.error('Error fetching channels:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });

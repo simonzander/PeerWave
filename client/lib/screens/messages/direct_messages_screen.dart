@@ -1,0 +1,469 @@
+import 'package:flutter/material.dart';
+import '../../widgets/message_list.dart';
+import '../../widgets/message_input.dart';
+import '../../services/signal_service.dart';
+import '../../services/api_service.dart';
+import 'dart:convert';
+import 'package:uuid/uuid.dart';
+
+/// Screen for Direct Messages (1:1 Signal chats)
+class DirectMessagesScreen extends StatefulWidget {
+  final String host;
+  final String recipientUuid;
+  final String recipientDisplayName;
+
+  const DirectMessagesScreen({
+    super.key,
+    required this.host,
+    required this.recipientUuid,
+    required this.recipientDisplayName,
+  });
+
+  @override
+  State<DirectMessagesScreen> createState() => _DirectMessagesScreenState();
+}
+
+class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
+  List<Map<String, dynamic>> _messages = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMessages();
+    _setupMessageListener();
+    _setupReceiptListeners();
+  }
+
+  @override
+  void dispose() {
+    SignalService.instance.unregisterItemCallback('message', _handleNewMessage);
+    SignalService.instance.clearDeliveryCallbacks();
+    SignalService.instance.clearReadCallbacks();
+    super.dispose();
+  }
+
+  void _setupReceiptListeners() {
+    // Listen for delivery receipts
+    SignalService.instance.onDeliveryReceipt((itemId) {
+      if (!mounted) return;
+      
+      SignalService.instance.sentMessagesStore.markAsDelivered(itemId);
+      
+      setState(() {
+        final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
+        if (msgIndex != -1) {
+          _messages[msgIndex]['status'] = 'delivered';
+        }
+      });
+    });
+
+    // Listen for read receipts
+    SignalService.instance.onReadReceipt((receiptInfo) {
+      final itemId = receiptInfo['itemId'] as String;
+      final readByDeviceId = receiptInfo['readByDeviceId'] as int?;
+      final readByUserId = receiptInfo['readByUserId'] as String?;
+
+      if (!mounted) return;
+
+      setState(() {
+        final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
+        if (msgIndex != -1) {
+          _messages[msgIndex]['status'] = 'read';
+
+          if (readByDeviceId != null && readByUserId != null) {
+            _deleteMessageFromServer(itemId, receiverDeviceId: readByDeviceId, receiverUserId: readByUserId);
+          } else {
+            _deleteMessageFromServer(itemId);
+          }
+        }
+      });
+    });
+  }
+
+  void _setupMessageListener() {
+    SignalService.instance.registerItemCallback('message', _handleNewMessage);
+  }
+
+  void _handleNewMessage(dynamic item) {
+    final itemType = item['type'];
+
+    // Filter out system messages that should not be displayed in chat
+    if (itemType == 'read_receipt' || 
+        itemType == 'senderKeyDistribution' || 
+        itemType == 'senderKeyRequest') {
+      // Handle read_receipt
+      if (itemType == 'read_receipt') {
+        try {
+          final receiptData = jsonDecode(item['message']);
+          final referencedItemId = receiptData['itemId'];
+          final readByDeviceId = receiptData['readByDeviceId'] as int?;
+          final readByUserId = item['sender'];
+
+          setState(() {
+            final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == referencedItemId);
+            if (msgIndex != -1) {
+              _messages[msgIndex]['status'] = 'read';
+
+              if (readByDeviceId != null && readByUserId != null) {
+                _deleteMessageFromServer(
+                  referencedItemId,
+                  receiverDeviceId: readByDeviceId,
+                  receiverUserId: readByUserId
+                );
+              } else {
+                _deleteMessageFromServer(referencedItemId);
+              }
+            }
+          });
+
+          if (item['itemId'] != null) {
+            _deleteMessageFromServer(item['itemId']);
+          }
+        } catch (e) {
+          print('[DM_SCREEN] Error processing read_receipt: $e');
+        }
+      }
+      // Don't display system messages in UI
+      return;
+    }
+
+    // Only handle actual chat messages (type: 'message')
+    if (itemType != 'message') {
+      return;
+    }
+
+    // Check if message is relevant to this conversation
+    final sender = item['sender'];
+    final recipient = item['recipient'];
+    final isFromTarget = sender == widget.recipientUuid;
+    final isLocalSent = item['isLocalSent'] == true;
+
+    final isRelevant = isFromTarget ||
+                       (isLocalSent && recipient == widget.recipientUuid) ||
+                       (recipient == widget.recipientUuid);
+
+    if (isRelevant) {
+      setState(() {
+        final itemId = item['itemId'];
+        final exists = _messages.any((msg) => msg['itemId'] == itemId);
+        if (exists) return;
+
+        final msg = {
+          'itemId': item['itemId'],
+          'sender': sender,
+          'senderDeviceId': item['senderDeviceId'],
+          'senderDisplayName': isLocalSent ? 'You' : widget.recipientDisplayName,
+          'text': item['message'],
+          'message': item['message'],
+          'time': item['timestamp'] ?? DateTime.now().toIso8601String(),
+          'isLocalSent': isLocalSent,
+          'status': item['status'] ?? 'sending',
+        };
+        _messages.add(msg);
+
+        _messages.sort((a, b) {
+          final timeA = DateTime.tryParse(a['time'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final timeB = DateTime.tryParse(b['time'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return timeA.compareTo(timeB);
+        });
+      });
+
+      if (!isLocalSent && isFromTarget) {
+        _sendReadReceipt(item['itemId'], sender, item['senderDeviceId']);
+      }
+    }
+  }
+
+  Future<void> _sendReadReceipt(String itemId, String sender, int senderDeviceId) async {
+    try {
+      final myDeviceId = SignalService.instance.currentDeviceId;
+
+      await SignalService.instance.sendItem(
+        recipientUserId: sender,
+        type: "read_receipt",
+        payload: jsonEncode({
+          'itemId': itemId,
+          'readByDeviceId': myDeviceId,
+        }),
+      );
+    } catch (e) {
+      print('[DM_SCREEN] Error sending read receipt: $e');
+    }
+  }
+
+  Future<void> _deleteMessageFromServer(String itemId, {int? receiverDeviceId, String? receiverUserId}) async {
+    try {
+      String url = '${widget.host}/items/$itemId';
+      final params = <String>[];
+
+      if (receiverDeviceId != null) {
+        params.add('deviceId=$receiverDeviceId');
+      }
+      if (receiverUserId != null) {
+        params.add('receiverId=$receiverUserId');
+      }
+
+      if (params.isNotEmpty) {
+        url += '?${params.join('&')}';
+      }
+
+      await ApiService.delete(url);
+    } catch (e) {
+      print('[DM_SCREEN] Error deleting message from server: $e');
+    }
+  }
+
+  Future<void> _loadMessages() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      ApiService.init();
+
+      // Load sent messages from local storage
+      final sentMessages = await SignalService.instance.loadSentMessages(widget.recipientUuid);
+
+      // Load received messages from local storage (1:1 direct messages only)
+      final receivedMessages = await SignalService.instance.decryptedMessagesStore.getMessagesFromSender(widget.recipientUuid);
+
+      // Load new messages from server
+      final resp = await ApiService.get('${widget.host}/direct/messages/${widget.recipientUuid}');
+      
+      if (resp.statusCode == 200) {
+        resp.data.sort((a, b) {
+          final timeA = DateTime.tryParse(a['timestamp'] ?? a['createdAt'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final timeB = DateTime.tryParse(b['timestamp'] ?? b['createdAt'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return timeA.compareTo(timeB);
+        });
+
+        final decryptedMessages = <Map<String, dynamic>>[];
+
+        for (int i = 0; i < resp.data.length; i++) {
+          final msg = resp.data[i];
+          final msgType = msg['type'];
+
+          // Skip system messages (senderKeyDistribution, senderKeyRequest)
+          if (msgType == 'senderKeyDistribution' || msgType == 'senderKeyRequest') {
+            print('[DM_SCREEN] Skipping system message type: $msgType');
+            continue;
+          }
+
+          if (msgType == 'read_receipt') {
+            try {
+              final item = {
+                'itemId': msg['itemId'],
+                'sender': msg['sender'],
+                'senderDeviceId': msg['deviceSender'],
+                'payload': msg['payload'],
+                'cipherType': msg['cipherType'],
+              };
+
+              final decrypted = await SignalService.instance.decryptItemFromData(item);
+              if (decrypted.isNotEmpty) {
+                final receiptData = jsonDecode(decrypted);
+                final referencedItemId = receiptData['itemId'];
+                final readByDeviceId = receiptData['readByDeviceId'] as int?;
+                final readByUserId = msg['sender'];
+
+                final msgIndex = _messages.indexWhere((m) => m['itemId'] == referencedItemId);
+                if (msgIndex != -1) {
+                  _messages[msgIndex]['status'] = 'read';
+                  await SignalService.instance.sentMessagesStore.markAsRead(referencedItemId);
+
+                  if (readByDeviceId != null && readByUserId != null) {
+                    await _deleteMessageFromServer(
+                      referencedItemId,
+                      receiverDeviceId: readByDeviceId,
+                      receiverUserId: readByUserId
+                    );
+                  }
+                }
+
+                await _deleteMessageFromServer(msg['itemId']);
+              }
+            } catch (e) {
+              print('[DM_SCREEN] Error processing read_receipt: $e');
+            }
+            continue;
+          }
+
+          final item = {
+            'itemId': msg['itemId'],
+            'sender': msg['sender'],
+            'senderDeviceId': msg['deviceSender'],
+            'payload': msg['payload'],
+            'cipherType': msg['cipherType'],
+          };
+
+          final decrypted = await SignalService.instance.decryptItemFromData(item);
+
+          if (decrypted.isEmpty) continue;
+
+          final decryptedMsg = {
+            'itemId': msg['itemId'],
+            'sender': msg['sender'],
+            'senderDeviceId': msg['deviceSender'],
+            'text': decrypted,
+            'message': decrypted,
+            'time': msg['time'] ?? msg['timestamp'] ?? msg['createdAt'] ?? DateTime.now().toIso8601String(),
+            'senderDisplayName': widget.recipientDisplayName,
+          };
+
+          decryptedMessages.add(decryptedMsg);
+
+          if (msg['sender'] == widget.recipientUuid) {
+            await _sendReadReceipt(msg['itemId'], msg['sender'], msg['deviceSender']);
+          }
+        }
+
+        // Merge all messages
+        final allMessages = <Map<String, dynamic>>[];
+
+        for (var sentMsg in sentMessages) {
+          final message = sentMsg['message'] ?? '';
+          if (message.toString().startsWith('{"itemId":')) continue;
+
+          // Filter out system messages (only 'message' type allowed)
+          final msgType = sentMsg['type'];
+          if (msgType != null && msgType != 'message') {
+            print('[DM_SCREEN] Skipping sent system message type: $msgType');
+            continue;
+          }
+
+          allMessages.add({
+            'itemId': sentMsg['itemId'],
+            'sender': sentMsg['recipientUserId'],
+            'senderDisplayName': 'You',
+            'text': message,
+            'message': message,
+            'time': sentMsg['timestamp'],
+            'isLocalSent': true,
+            'status': sentMsg['status'] ?? 'sending',
+          });
+        }
+
+        for (var receivedMsg in receivedMessages) {
+          allMessages.add({
+            'itemId': receivedMsg['itemId'],
+            'sender': receivedMsg['sender'],
+            'senderDisplayName': widget.recipientDisplayName,
+            'text': receivedMsg['message'],
+            'message': receivedMsg['message'],
+            'time': receivedMsg['timestamp'] ?? receivedMsg['decryptedAt'],
+            'isLocalSent': false,
+          });
+        }
+
+        for (var msg in decryptedMessages) {
+          final itemId = msg['itemId'];
+          final exists = allMessages.any((m) => m['itemId'] == itemId);
+          if (!exists) {
+            allMessages.add(msg);
+          }
+        }
+
+        allMessages.sort((a, b) {
+          final timeA = DateTime.tryParse(a['time'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final timeB = DateTime.tryParse(b['time'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return timeA.compareTo(timeB);
+        });
+
+        setState(() {
+          _messages = allMessages;
+          _loading = false;
+        });
+      } else {
+        setState(() {
+          _error = 'Failed to load messages: ${resp.statusCode}';
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Error: $e';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _sendMessage(String text) async {
+    if (text.trim().isEmpty) return;
+
+    final itemId = Uuid().v4();
+    final timestamp = DateTime.now().toIso8601String();
+
+    setState(() {
+      _messages.add({
+        'itemId': itemId,
+        'sender': SignalService.instance.currentUserId,
+        'senderDeviceId': SignalService.instance.currentDeviceId,
+        'senderDisplayName': 'You',
+        'text': text,
+        'message': text,
+        'time': timestamp,
+        'isLocalSent': true,
+        'status': 'sending',
+      });
+    });
+
+    try {
+      await SignalService.instance.sendItem(
+        recipientUserId: widget.recipientUuid,
+        type: "message",
+        payload: text,
+        itemId: itemId,
+      );
+    } catch (e) {
+      setState(() {
+        final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
+        if (msgIndex != -1) {
+          _messages[msgIndex]['status'] = 'failed';
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send message: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.recipientDisplayName),
+        backgroundColor: Colors.grey[850],
+      ),
+      backgroundColor: const Color(0xFF36393F),
+      body: Column(
+        children: [
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(_error!, style: const TextStyle(color: Colors.red)),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: _loadMessages,
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : MessageList(messages: _messages),
+          ),
+          MessageInput(onSendMessage: _sendMessage),
+        ],
+      ),
+    );
+  }
+}

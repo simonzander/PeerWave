@@ -10,7 +10,7 @@ const sanitizeHtml = require('sanitize-html');
 const cors = require('cors');
 const session = require('express-session');
 const sharedSession = require('socket.io-express-session');
-const { User, Channel, Thread, Client, SignalSignedPreKey, SignalPreKey, Item } = require('./db/model');
+const { User, Channel, Thread, Client, SignalSignedPreKey, SignalPreKey, Item, ChannelMembers, SignalSenderKey, GroupItem, GroupItemRead } = require('./db/model');
 const path = require('path');
 const writeQueue = require('./db/writeQueue');
 const { initCleanupJob } = require('./jobs/cleanup');
@@ -37,9 +37,13 @@ app.use(sessionMiddleware);
   const authRoutes = require('./routes/auth');
   const clientRoutes = require('./routes/client');
   const roleRoutes = require('./routes/roles');
+  const groupItemRoutes = require('./routes/groupItems');
+  const senderKeyRoutes = require('./routes/senderKeys');
 
   app.use(clientRoutes);
   app.use('/api', roleRoutes);
+  app.use('/api/group-items', groupItemRoutes);
+  app.use('/api/sender-keys', senderKeyRoutes);
 
   //SOCKET.IO
 const rooms = {};
@@ -321,8 +325,10 @@ io.sockets.on("connection", socket => {
         const cipherType = parseInt(data.cipherType, 10);
         const itemId = data.itemId;
 
-        // Store ALL messages in the database (including PreKey for offline recipients)
-        console.log(`[SIGNAL SERVER] Storing message in DB: cipherType=${cipherType}, itemId=${itemId}`);
+        // Store ALL 1:1 messages in the database (including PreKey for offline recipients)
+        // NOTE: Item table is for 1:1 messages ONLY (no channel field)
+        // Group messages use sendGroupItem event and GroupItem table instead
+        console.log(`[SIGNAL SERVER] Storing 1:1 message in DB: cipherType=${cipherType}, itemId=${itemId}`);
         const storedItem = await writeQueue.enqueue(async () => {
           return await Item.create({
             sender: senderUserId,
@@ -359,8 +365,7 @@ io.sockets.on("connection", socket => {
         console.log(`[SIGNAL SERVER] Is self-message: ${isSelfMessage}`);
         console.log(`[SIGNAL SERVER] cipherType`, cipherType);
         if (targetSocketId) {
-          // Sende die Nachricht an das Zielgerät
-          // Auch wenn es das sendende Gerät selbst ist (für Multi-Device Support)
+          // Send 1:1 message to target device (NO channel field - direct messages only)
           io.to(targetSocketId).emit("receiveItem", {
             sender: senderUserId,
             senderDeviceId: senderDeviceId,
@@ -368,9 +373,11 @@ io.sockets.on("connection", socket => {
             type: type,
             payload: payload,
             cipherType: cipherType,
-            itemId: itemId
+            itemId: itemId,
+            // NOTE: channel is NOT included - receiveItem is for 1:1 messages ONLY
+            // Group messages use groupItem event instead
           });
-          console.log(`[SIGNAL SERVER] Message sent to device ${recipientUserId}:${recipientDeviceId}`);
+          console.log(`[SIGNAL SERVER] 1:1 message sent to device ${recipientUserId}:${recipientDeviceId}`);
           
           // Update delivery timestamp in database (recipient received the message)
           await writeQueue.enqueue(async () => {
@@ -393,6 +400,234 @@ io.sockets.on("connection", socket => {
       }
     } catch (error) {
       console.error('Error sending item:', error);
+    }
+  });
+
+  // ===== DEPRECATED: OLD GROUP MESSAGE HANDLER =====
+  // This handler is kept for backward compatibility but uses the old Item table
+  // instead of the new GroupItem table. It should not be used in new code.
+  // Use sendGroupItem event instead.
+  socket.on("sendGroupMessage", async (data) => {
+    console.log("[SIGNAL SERVER] ⚠ WARNING: sendGroupMessage is deprecated, use sendGroupItem instead");
+    console.log("[SIGNAL SERVER] Received deprecated sendGroupMessage event", data);
+    
+    try {
+      if(!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+        console.error('[SIGNAL SERVER] ERROR: sendGroupMessage blocked - not authenticated');
+        return;
+      }
+
+      // Redirect to new sendGroupItem handler
+      // Map old data format to new format
+      const newData = {
+        channelId: data.groupId,
+        itemId: data.itemId,
+        type: 'message',
+        payload: data.ciphertext,
+        cipherType: 4,  // Sender Key
+        timestamp: data.timestamp
+      };
+
+      console.log('[SIGNAL SERVER] Redirecting to sendGroupItem handler with new format');
+      // Trigger the new handler
+      socket.emit('_internalSendGroupItem', newData);
+      
+    } catch (error) {
+      console.error('[SIGNAL SERVER] Error in deprecated sendGroupMessage:', error);
+    }
+  });
+
+  // GROUP MESSAGE READ RECEIPT HANDLER
+  socket.on("groupMessageRead", async (data) => {
+    try {
+      if(!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+        console.error('[SIGNAL SERVER] ERROR: groupMessageRead blocked - not authenticated');
+        return;
+      }
+
+      const { itemId, groupId } = data;
+      const readerUserId = socket.handshake.session.uuid;
+      const readerDeviceId = socket.handshake.session.deviceId;
+
+      // Update readed flag for this specific device's Item
+      const updatedCount = await writeQueue.enqueue(async () => {
+        return await Item.update(
+          { readed: true },
+          { 
+            where: { 
+              itemId: itemId,
+              channel: groupId,
+              receiver: readerUserId,
+              deviceReceiver: readerDeviceId,
+              type: 'groupMessage'
+            }
+          }
+        );
+      }, `groupMessageRead-${itemId}-${readerDeviceId}`);
+
+      if (updatedCount[0] > 0) {
+        console.log(`[SIGNAL SERVER] Message ${itemId} marked as read by ${readerUserId}:${readerDeviceId}`);
+
+        // Get all Items for this message to calculate read statistics
+        const allItems = await Item.findAll({
+          where: { 
+            itemId: itemId,
+            channel: groupId,
+            type: 'groupMessage'
+          }
+        });
+
+        const totalDevices = allItems.length;
+        const readDevices = allItems.filter(item => item.readed === true).length;
+        const deliveredDevices = allItems.filter(item => item.deliveredAt !== null).length;
+        const allRead = readDevices === totalDevices;
+
+        // Send read receipt update to the message sender
+        const senderItem = allItems[0]; // All items have the same sender
+        if (senderItem) {
+          const senderSocketId = deviceSockets.get(`${senderItem.sender}:${senderItem.deviceSender}`);
+          if (senderSocketId) {
+            io.to(senderSocketId).emit("groupMessageReadReceipt", {
+              itemId: itemId,
+              groupId: groupId,
+              readBy: readerUserId,
+              readByDeviceId: readerDeviceId,
+              readCount: readDevices,
+              deliveredCount: deliveredDevices,
+              totalCount: totalDevices,
+              allRead: allRead,
+              readAt: new Date().toISOString()
+            });
+            console.log(`[SIGNAL SERVER] Read receipt sent to sender: ${readDevices}/${totalDevices} devices have read`);
+          }
+
+          // If all devices have read the message, delete it from server
+          if (allRead) {
+            const deletedCount = await writeQueue.enqueue(async () => {
+              return await Item.destroy({
+                where: { 
+                  itemId: itemId,
+                  channel: groupId,
+                  type: 'groupMessage'
+                }
+              });
+            }, `deleteReadGroupMessage-${itemId}`);
+            
+            console.log(`[SIGNAL SERVER] ✓ Group message ${itemId} read by all ${totalDevices} devices and deleted from server`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[SIGNAL SERVER] Error in groupMessageRead:', error);
+    }
+  });
+
+  // Store sender key on server (when device creates/distributes sender key)
+  socket.on("storeSenderKey", async (data) => {
+    try {
+      if(!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+        console.error('[SIGNAL SERVER] ERROR: storeSenderKey blocked - not authenticated');
+        return;
+      }
+
+      const { groupId, senderKey } = data;
+      const userId = socket.handshake.session.uuid;
+      const deviceId = socket.handshake.session.deviceId;
+
+      // Find the client record
+      const client = await Client.findOne({
+        where: {
+          owner: userId,
+          device_id: deviceId
+        }
+      });
+
+      if (!client) {
+        console.error('[SIGNAL SERVER] ERROR: Client not found for storeSenderKey');
+        return;
+      }
+
+      // Store or update sender key
+      const [stored, created] = await SignalSenderKey.findOrCreate({
+        where: {
+          channel: groupId,
+          client: client.clientid
+        },
+        defaults: {
+          channel: groupId,
+          client: client.clientid,
+          owner: userId,
+          sender_key: senderKey
+        }
+      });
+
+      if (!created) {
+        // Update existing sender key
+        await stored.update({ sender_key: senderKey });
+      }
+
+      console.log(`[SIGNAL SERVER] Stored sender key for ${userId}:${deviceId} in group ${groupId}`);
+      
+      // Send confirmation
+      socket.emit("senderKeyStored", { groupId, success: true });
+    } catch (error) {
+      console.error('[SIGNAL SERVER] Error in storeSenderKey:', error);
+    }
+  });
+
+  // Retrieve sender key from server (when device needs a missing sender key)
+  socket.on("getSenderKey", async (data) => {
+    try {
+      if(!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+        console.error('[SIGNAL SERVER] ERROR: getSenderKey blocked - not authenticated');
+        return;
+      }
+
+      const { groupId, requestedUserId, requestedDeviceId } = data;
+
+      // Find the client record for the requested sender
+      const client = await Client.findOne({
+        where: {
+          owner: requestedUserId,
+          device_id: requestedDeviceId
+        }
+      });
+
+      if (!client) {
+        console.error(`[SIGNAL SERVER] ERROR: Client not found for getSenderKey: ${requestedUserId}:${requestedDeviceId}`);
+        socket.emit("senderKeyResponse", { groupId, requestedUserId, requestedDeviceId, senderKey: null });
+        return;
+      }
+
+      // Retrieve sender key
+      const senderKeyRecord = await SignalSenderKey.findOne({
+        where: {
+          channel: groupId,
+          client: client.clientid
+        }
+      });
+
+      if (senderKeyRecord) {
+        console.log(`[SIGNAL SERVER] Retrieved sender key for ${requestedUserId}:${requestedDeviceId} in group ${groupId}`);
+        socket.emit("senderKeyResponse", {
+          groupId,
+          requestedUserId,
+          requestedDeviceId,
+          senderKey: senderKeyRecord.sender_key,
+          success: true
+        });
+      } else {
+        console.log(`[SIGNAL SERVER] Sender key not found for ${requestedUserId}:${requestedDeviceId} in group ${groupId}`);
+        socket.emit("senderKeyResponse", {
+          groupId,
+          requestedUserId,
+          requestedDeviceId,
+          senderKey: null,
+          success: false
+        });
+      }
+    } catch (error) {
+      console.error('[SIGNAL SERVER] Error in getSenderKey:', error);
     }
   });
 
@@ -550,6 +785,218 @@ io.sockets.on("connection", socket => {
   /**
    * Event handler for disconnecting from a room
    */
+  // ===== NEW GROUP ITEM API (Simplified Architecture) =====
+  
+  /**
+   * Send a group item (message, reaction, file, etc.)
+   * Uses GroupItem model - stores encrypted data ONCE for all members
+   */
+  socket.on("sendGroupItem", async (data) => {
+    try {
+      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+        console.error('[GROUP ITEM] ERROR: Not authenticated');
+        socket.emit("groupItemError", { error: "Not authenticated" });
+        return;
+      }
+
+      const { channelId, itemId, type, payload, cipherType, timestamp } = data;
+      const userId = socket.handshake.session.uuid;
+      const deviceId = socket.handshake.session.deviceId;
+
+      // Validate required fields
+      if (!channelId || !itemId || !payload) {
+        console.error('[GROUP ITEM] ERROR: Missing required fields');
+        socket.emit("groupItemError", { error: "Missing required fields" });
+        return;
+      }
+
+      // Check if user is member of channel
+      const membership = await ChannelMembers.findOne({
+        where: {
+          userId: userId,
+          channelId: channelId
+        }
+      });
+
+      if (!membership) {
+        console.error('[GROUP ITEM] ERROR: User not member of channel');
+        socket.emit("groupItemError", { error: "Not a member of this channel" });
+        return;
+      }
+
+      // Check for duplicate itemId
+      const existing = await GroupItem.findOne({
+        where: { itemId: itemId }
+      });
+
+      if (existing) {
+        console.log(`[GROUP ITEM] Item ${itemId} already exists, skipping`);
+        socket.emit("groupItemDelivered", { itemId: itemId, existing: true });
+        return;
+      }
+
+      // Create group item (stored ONCE for all members)
+      const groupItem = await writeQueue.enqueue(async () => {
+        return await GroupItem.create({
+          itemId: itemId,
+          channel: channelId,
+          sender: userId,
+          senderDevice: deviceId,
+          type: type || 'message',
+          payload: payload,
+          cipherType: cipherType || 4,
+          timestamp: timestamp || new Date()
+        });
+      }, `createGroupItem-${itemId}`);
+
+      console.log(`[GROUP ITEM] ✓ Created group item ${itemId} in channel ${channelId}`);
+
+      // Get all channel members
+      const members = await ChannelMembers.findAll({
+        where: { channelId: channelId },
+        include: [{
+          model: User,
+          attributes: ['uuid']
+        }]
+      });
+
+      // Get all client devices for these members
+      const memberUserIds = members.map(m => m.userId);
+      const memberClients = await Client.findAll({
+        where: {
+          owner: { [require('sequelize').Op.in]: memberUserIds }
+        }
+      });
+
+      // Broadcast to all member devices
+      let deliveredCount = 0;
+      for (const client of memberClients) {
+        const targetSocketId = deviceSockets.get(`${client.owner}:${client.device_id}`);
+        if (targetSocketId) {
+          io.to(targetSocketId).emit("groupItem", {
+            itemId: itemId,
+            channel: channelId,
+            sender: userId,
+            senderDevice: deviceId,
+            type: type || 'message',
+            payload: payload,
+            cipherType: cipherType || 4,
+            timestamp: timestamp || new Date().toISOString()
+          });
+          deliveredCount++;
+        }
+      }
+
+      console.log(`[GROUP ITEM] ✓ Broadcast to ${deliveredCount} devices`);
+
+      // Confirm delivery to sender
+      socket.emit("groupItemDelivered", {
+        itemId: itemId,
+        deliveredCount: deliveredCount,
+        totalDevices: memberClients.length
+      });
+
+    } catch (error) {
+      console.error('[GROUP ITEM] Error in sendGroupItem:', error);
+      socket.emit("groupItemError", { error: "Internal server error" });
+    }
+  });
+
+  /**
+   * Mark a group item as read
+   */
+  socket.on("markGroupItemRead", async (data) => {
+    try {
+      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+        console.error('[GROUP ITEM READ] ERROR: Not authenticated');
+        return;
+      }
+
+      const { itemId } = data;
+      const userId = socket.handshake.session.uuid;
+      const deviceId = socket.handshake.session.deviceId;
+
+      if (!itemId) {
+        console.error('[GROUP ITEM READ] ERROR: Missing itemId');
+        return;
+      }
+
+      // Find the group item
+      const groupItem = await GroupItem.findOne({
+        where: { itemId: itemId }
+      });
+
+      if (!groupItem) {
+        console.error('[GROUP ITEM READ] ERROR: Item not found');
+        return;
+      }
+
+      // Check if user is member of channel
+      const membership = await ChannelMembers.findOne({
+        where: {
+          userId: userId,
+          channelId: groupItem.channel
+        }
+      });
+
+      if (!membership) {
+        console.error('[GROUP ITEM READ] ERROR: User not member of channel');
+        return;
+      }
+
+      // Create or update read receipt
+      await writeQueue.enqueue(async () => {
+        const [receipt, created] = await GroupItemRead.findOrCreate({
+          where: {
+            itemId: groupItem.uuid,
+            userId: userId,
+            deviceId: deviceId
+          },
+          defaults: {
+            readAt: new Date()
+          }
+        });
+        return { receipt, created };
+      }, `markGroupItemRead-${itemId}-${userId}-${deviceId}`);
+
+      // Count total reads
+      const readCount = await GroupItemRead.count({
+        where: { itemId: groupItem.uuid }
+      });
+
+      // Count total members
+      const memberCount = await ChannelMembers.count({
+        where: { channelId: groupItem.channel }
+      });
+
+      const allRead = readCount >= memberCount;
+
+      console.log(`[GROUP ITEM READ] ✓ Item ${itemId}: ${readCount}/${memberCount} members read`);
+
+      // Notify the sender about read status
+      const senderSocketId = deviceSockets.get(`${groupItem.sender}:${groupItem.senderDevice}`);
+      if (senderSocketId) {
+        io.to(senderSocketId).emit("groupItemReadUpdate", {
+          itemId: itemId,
+          readBy: userId,
+          readByDevice: deviceId,
+          readCount: readCount,
+          totalMembers: memberCount,
+          allRead: allRead
+        });
+      }
+
+      // If all members have read, optionally delete from server (privacy feature)
+      if (allRead) {
+        console.log(`[GROUP ITEM READ] ✓ Item ${itemId} read by all members`);
+        // Optionally: await groupItem.destroy();
+      }
+
+    } catch (error) {
+      console.error('[GROUP ITEM READ] Error in markGroupItemRead:', error);
+    }
+  });
+
   socket.on("disconnect", () => {
     if(socket.handshake.session.uuid && socket.handshake.session.deviceId) {
       deviceSockets.delete(`${socket.handshake.session.uuid}:${socket.handshake.session.deviceId}`);

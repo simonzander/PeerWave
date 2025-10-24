@@ -1,6 +1,6 @@
 const config = require('../config/config');
 const express = require("express");
-const { Role, User, Channel, UserRole, UserRoleChannel } = require('../db/model');
+const { Role, User, Channel, UserRole, UserRoleChannel, ChannelMembers } = require('../db/model');
 const writeQueue = require('../db/writeQueue');
 const {
     assignServerRole,
@@ -228,6 +228,193 @@ roleRoutes.delete('/roles/:roleId', requireAuth, requirePermission('role.delete'
     }
 });
 
+// POST /api/users/:userId/roles - Assign server role to user
+roleRoutes.post('/users/:userId/roles', requireAuth, requirePermission('role.assign'), async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { roleId } = req.body;
+        
+        if (!roleId) {
+            return res.status(400).json({ error: 'roleId is required' });
+        }
+        
+        // Verify user exists
+        const user = await User.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        // Verify role exists and is a server role
+        const role = await Role.findByPk(roleId);
+        if (!role) {
+            return res.status(404).json({ error: 'Role not found' });
+        }
+        if (role.scope !== 'server') {
+            return res.status(400).json({ error: 'Can only assign server roles through this endpoint' });
+        }
+        
+        await assignServerRole(userId, roleId);
+        
+        res.json({ message: 'Server role assigned successfully' });
+    } catch (error) {
+        console.error('Error assigning server role:', error);
+        res.status(500).json({ error: error.message || 'Failed to assign server role' });
+    }
+});
+
+// DELETE /api/users/:userId/roles/:roleId - Remove server role from user
+roleRoutes.delete('/users/:userId/roles/:roleId', requireAuth, requirePermission('role.assign'), async (req, res) => {
+    try {
+        const { userId, roleId } = req.params;
+        
+        // Verify role is a server role
+        const role = await Role.findByPk(roleId);
+        if (!role) {
+            return res.status(404).json({ error: 'Role not found' });
+        }
+        if (role.scope !== 'server') {
+            return res.status(400).json({ error: 'Can only remove server roles through this endpoint' });
+        }
+        
+        await removeServerRole(userId, roleId);
+        
+        res.json({ message: 'Server role removed successfully' });
+    } catch (error) {
+        console.error('Error removing server role:', error);
+        res.status(500).json({ error: error.message || 'Failed to remove server role' });
+    }
+});
+
+// GET /api/users - Get all users (for user management)
+roleRoutes.get('/users', requireAuth, requirePermission('user.manage'), async (req, res) => {
+    try {
+        const users = await User.findAll({
+            attributes: ['uuid', 'email', 'displayName', 'verified', 'active', 'createdAt'],
+            order: [['displayName', 'ASC']]
+        });
+        
+        res.json({ users });
+    } catch (error) {
+        console.error('Error fetching users:', error);
+        res.status(500).json({ error: 'Failed to fetch users' });
+    }
+});
+
+// PATCH /api/users/:userId/deactivate - Deactivate a user
+roleRoutes.patch('/users/:userId/deactivate', requireAuth, requirePermission('user.manage'), async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        // Prevent deactivating yourself
+        if (userId === req.session.uuid) {
+            return res.status(400).json({ error: 'Cannot deactivate yourself' });
+        }
+        
+        const user = await User.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        await writeQueue.enqueue(
+            () => user.update({ active: false }),
+            'deactivateUser'
+        );
+        
+        res.json({ message: 'User deactivated successfully' });
+    } catch (error) {
+        console.error('Error deactivating user:', error);
+        res.status(500).json({ error: 'Failed to deactivate user' });
+    }
+});
+
+// PATCH /api/users/:userId/activate - Activate a user
+roleRoutes.patch('/users/:userId/activate', requireAuth, requirePermission('user.manage'), async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        const user = await User.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        await writeQueue.enqueue(
+            () => user.update({ active: true }),
+            'activateUser'
+        );
+        
+        res.json({ message: 'User activated successfully' });
+    } catch (error) {
+        console.error('Error activating user:', error);
+        res.status(500).json({ error: 'Failed to activate user' });
+    }
+});
+
+// DELETE /api/users/:userId - Delete a user
+roleRoutes.delete('/users/:userId', requireAuth, requirePermission('user.manage'), async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        // Prevent deleting yourself
+        if (userId === req.session.uuid) {
+            return res.status(400).json({ error: 'Cannot delete yourself' });
+        }
+        
+        const user = await User.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        await writeQueue.enqueue(
+            async () => {
+                // Remove all user roles
+                await UserRole.destroy({ where: { userId } });
+                await UserRoleChannel.destroy({ where: { userId } });
+                
+                // Delete the user
+                await user.destroy();
+            },
+            'deleteUser'
+        );
+        
+        res.json({ message: 'User deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        res.status(500).json({ error: 'Failed to delete user' });
+    }
+});
+
+// GET /api/users/:userId/roles - Get all roles for a specific user
+roleRoutes.get('/users/:userId/roles', requireAuth, requirePermission('user.manage'), async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        // Verify user exists
+        const user = await User.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        // Get server roles
+        const serverRoles = await getUserServerRoles(userId);
+        
+        res.json({
+            serverRoles: serverRoles.map(r => ({
+                uuid: r.uuid,
+                name: r.name,
+                description: r.description,
+                scope: r.scope,
+                permissions: r.permissions,
+                standard: r.standard,
+                createdAt: r.createdAt,
+                updatedAt: r.updatedAt
+            }))
+        });
+    } catch (error) {
+        console.error('Error fetching user roles:', error);
+        res.status(500).json({ error: 'Failed to fetch user roles' });
+    }
+});
+
 // POST /api/users/:userId/channels/:channelId/roles - Assign channel role
 roleRoutes.post('/users/:userId/channels/:channelId/roles', requireAuth, async (req, res) => {
     try {
@@ -310,15 +497,32 @@ roleRoutes.get('/channels/:channelId/members', requireAuth, async (req, res) => 
         // Get all users with roles in this channel
         const usersMap = new Map();
         
+        // Add channel owner first
+        const owner = await User.findByPk(channel.owner, {
+            attributes: ['uuid', 'displayName', 'email']
+        });
+        
+        if (owner) {
+            usersMap.set(owner.uuid, {
+                userId: owner.uuid,
+                displayName: owner.displayName || owner.email,
+                email: owner.email,
+                isOwner: true,
+                roles: []
+            });
+        }
+        
         const userRoles = await UserRoleChannel.findAll({
             where: { channelId },
             include: [
                 {
                     model: User,
+                    as: 'User',
                     attributes: ['uuid', 'displayName', 'email']
                 },
                 {
                     model: Role,
+                    as: 'Role',
                     attributes: ['uuid', 'name', 'description', 'scope', 'permissions', 'standard']
                 }
             ]
@@ -333,6 +537,7 @@ roleRoutes.get('/channels/:channelId/members', requireAuth, async (req, res) => 
                     userId: userId,
                     displayName: ur.User.displayName || ur.User.email,
                     email: ur.User.email,
+                    isOwner: userId === channel.owner,
                     roles: []
                 });
             }
@@ -340,6 +545,7 @@ roleRoutes.get('/channels/:channelId/members', requireAuth, async (req, res) => 
             if (ur.Role) {
                 usersMap.get(userId).roles.push({
                     id: ur.Role.id,
+                    uuid: ur.Role.uuid,
                     name: ur.Role.name,
                     description: ur.Role.description,
                     scope: ur.Role.scope,
@@ -357,6 +563,143 @@ roleRoutes.get('/channels/:channelId/members', requireAuth, async (req, res) => 
     } catch (error) {
         console.error('Error fetching channel members:', error);
         res.status(500).json({ error: 'Failed to fetch channel members' });
+    }
+});
+
+// POST /api/channels/:channelId/members - Add user to channel
+roleRoutes.post('/channels/:channelId/members', requireAuth, async (req, res) => {
+    try {
+        const { channelId } = req.params;
+        const { userId, roleId } = req.body;
+        
+        if (!userId) {
+            return res.status(400).json({ error: 'userId is required' });
+        }
+        
+        // Check if user has permission to add members
+        const canAdd = await hasChannelPermission(req.session.uuid, channelId, 'user.add');
+        if (!canAdd) {
+            return res.status(403).json({ error: 'Forbidden: Cannot add members to this channel' });
+        }
+        
+        // Verify channel exists
+        const channel = await Channel.findByPk(channelId);
+        if (!channel) {
+            return res.status(404).json({ error: 'Channel not found' });
+        }
+        
+        // Verify user exists
+        const user = await User.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        // Check if user is already a member
+        const existingMember = await ChannelMembers.findOne({
+            where: { userId, channelId }
+        });
+        
+        if (existingMember) {
+            return res.status(400).json({ error: 'User is already a member of this channel' });
+        }
+        
+        // Add user to channel
+        await ChannelMembers.create({
+            userId,
+            channelId,
+            permission: 'member'
+        });
+        
+        // If roleId is provided, assign that role to the user
+        if (roleId) {
+            const role = await Role.findByPk(roleId);
+            if (!role) {
+                return res.status(400).json({ error: 'Invalid role ID' });
+            }
+            
+            // Verify role scope matches channel type
+            const expectedScope = channel.type === 'webrtc' ? 'channelWebRtc' : 'channelSignal';
+            if (role.scope !== expectedScope) {
+                return res.status(400).json({ 
+                    error: `Role scope '${role.scope}' does not match channel type '${channel.type}'` 
+                });
+            }
+            
+            await UserRoleChannel.create({
+                userId,
+                roleId,
+                channelId
+            });
+        } else if (channel.defaultRoleId) {
+            // Use default role if no specific role provided
+            await UserRoleChannel.create({
+                userId,
+                roleId: channel.defaultRoleId,
+                channelId
+            });
+        }
+        
+        res.status(201).json({ 
+            success: true,
+            message: 'User added to channel successfully' 
+        });
+    } catch (error) {
+        console.error('Error adding user to channel:', error);
+        res.status(500).json({ error: 'Failed to add user to channel' });
+    }
+});
+
+// GET /api/channels/:channelId/available-users - Get users not in channel
+roleRoutes.get('/channels/:channelId/available-users', requireAuth, async (req, res) => {
+    try {
+        const { channelId } = req.params;
+        const { search } = req.query;
+        
+        // Check if user has permission to add members
+        const canAdd = await hasChannelPermission(req.session.uuid, channelId, 'user.add');
+        if (!canAdd) {
+            return res.status(403).json({ error: 'Forbidden: Cannot add members to this channel' });
+        }
+        
+        // Get all users already in the channel
+        const existingMembers = await ChannelMembers.findAll({
+            where: { channelId },
+            attributes: ['userId']
+        });
+        
+        const existingUserIds = existingMembers.map(m => m.userId);
+        
+        // Build query for available users
+        const whereClause = {
+            uuid: { [require('sequelize').Op.notIn]: existingUserIds }
+        };
+        
+        // Add search filter if provided
+        if (search) {
+            const { Op } = require('sequelize');
+            whereClause[Op.or] = [
+                { displayName: { [Op.like]: `%${search}%` } },
+                { email: { [Op.like]: `%${search}%` } }
+            ];
+        }
+        
+        const availableUsers = await User.findAll({
+            where: whereClause,
+            attributes: ['uuid', 'displayName', 'email'],
+            limit: 50,
+            order: [['displayName', 'ASC']]
+        });
+        
+        res.json({
+            users: availableUsers.map(u => ({
+                uuid: u.uuid,
+                displayName: u.displayName || u.email,
+                email: u.email
+            }))
+        });
+    } catch (error) {
+        console.error('Error fetching available users:', error);
+        res.status(500).json({ error: 'Failed to fetch available users' });
     }
 });
 

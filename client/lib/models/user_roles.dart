@@ -149,20 +149,26 @@ class ChannelMember {
   final String username;
   final String? displayName;
   final List<Role> roles;
+  final bool isOwner;
 
   ChannelMember({
     required this.userId,
     required this.username,
     this.displayName,
     required this.roles,
+    this.isOwner = false,
   });
 
   /// Creates a ChannelMember from JSON data
   factory ChannelMember.fromJson(Map<String, dynamic> json) {
     return ChannelMember(
       userId: json['userId'] as String,
-      username: json['username'] as String,
+      username: (json['username'] as String?) ?? 
+                (json['email'] as String?) ?? 
+                (json['displayName'] as String?) ?? 
+                'Unknown',
       displayName: json['displayName'] as String?,
+      isOwner: json['isOwner'] as bool? ?? false,
       roles: (json['roles'] as List<dynamic>?)
               ?.map((e) => Role.fromJson(e as Map<String, dynamic>))
               .toList() ??
@@ -176,6 +182,7 @@ class ChannelMember {
       'userId': userId,
       'username': username,
       'displayName': displayName,
+      'isOwner': isOwner,
       'roles': roles.map((r) => r.toJson()).toList(),
     };
   }
@@ -186,11 +193,6 @@ class ChannelMember {
   /// Checks if the member has a specific permission
   bool hasPermission(String permission) {
     return roles.any((role) => role.hasPermission(permission));
-  }
-
-  /// Checks if the member is the channel owner
-  bool get isOwner {
-    return roles.any((role) => role.name == 'Channel Owner' && role.hasPermission('*'));
   }
 
   /// Checks if the member is a channel moderator

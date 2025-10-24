@@ -11,6 +11,9 @@ import 'permanent_signed_pre_key_store.dart';
 import 'permanent_identity_key_store.dart';
 import 'permanent_sent_messages_store.dart';
 import 'permanent_decrypted_messages_store.dart';
+import 'sender_key_store.dart';
+import 'decrypted_group_items_store.dart';
+import 'sent_group_items_store.dart';
 
 /*class SocketPreKeyStore extends InMemoryPreKeyStore {
 
@@ -134,6 +137,9 @@ class SignalService {
   late PermanentSignedPreKeyStore signedPreKeyStore;
   late PermanentSentMessagesStore sentMessagesStore;
   late PermanentDecryptedMessagesStore decryptedMessagesStore;
+  late PermanentSenderKeyStore senderKeyStore;
+  late DecryptedGroupItemsStore decryptedGroupItemsStore;
+  late SentGroupItemsStore sentGroupItemsStore;
   String? _currentUserId; // Store current user's UUID
   int? _currentDeviceId; // Store current device ID
   
@@ -261,13 +267,56 @@ class SignalService {
   signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
   sentMessagesStore = await PermanentSentMessagesStore.create();
   decryptedMessagesStore = await PermanentDecryptedMessagesStore.create();
+  senderKeyStore = await PermanentSenderKeyStore.create();
+    decryptedGroupItemsStore = await DecryptedGroupItemsStore.getInstance();
+    sentGroupItemsStore = await SentGroupItemsStore.getInstance();
 
     SocketService().registerListener("receiveItem", (data) {
       receiveItem(data);
     });
 
+    SocketService().registerListener("groupMessage", (data) {
+      // Handle group message via callback system
+      if (_itemTypeCallbacks.containsKey('groupMessage')) {
+        for (final callback in _itemTypeCallbacks['groupMessage']!) {
+          callback(data);
+        }
+      }
+    });
+
+    // NEW: Group Item Socket.IO listener
+    SocketService().registerListener("groupItem", (data) {
+      if (_itemTypeCallbacks.containsKey('groupItem')) {
+        for (final callback in _itemTypeCallbacks['groupItem']!) {
+          callback(data);
+        }
+      }
+    });
+
+    // NEW: Group Item delivery confirmation
+    SocketService().registerListener("groupItemDelivered", (data) {
+      if (_deliveryCallbacks.containsKey('groupItem')) {
+        for (final callback in _deliveryCallbacks['groupItem']!) {
+          callback(data['itemId']);
+        }
+      }
+    });
+
+    // NEW: Group Item read update
+    SocketService().registerListener("groupItemReadUpdate", (data) {
+      if (_readCallbacks.containsKey('groupItem')) {
+        for (final callback in _readCallbacks['groupItem']!) {
+          callback(data);
+        }
+      }
+    });
+
     SocketService().registerListener("deliveryReceipt", (data) async {
       await _handleDeliveryReceipt(data);
+    });
+
+    SocketService().registerListener("groupMessageReadReceipt", (data) {
+      _handleGroupMessageReadReceipt(data);
     });
 
     SocketService().registerListener("signalStatusResponse", (status) async {
@@ -407,7 +456,9 @@ class SignalService {
       );
       
       // Cache the decrypted message to prevent re-decryption
-      if (itemId != null && message.isNotEmpty) {
+      // IMPORTANT: Only cache 1:1 messages (no channelId)
+      // Group messages use DecryptedGroupItemsStore instead
+      if (itemId != null && message.isNotEmpty && data['channel'] == null) {
         await decryptedMessagesStore.storeDecryptedMessage(
           itemId: itemId,
           message: message,
@@ -416,7 +467,9 @@ class SignalService {
           timestamp: data['timestamp'] ?? data['createdAt'] ?? DateTime.now().toIso8601String(),
           type: data['type'],
         );
-        print("[SIGNAL SERVICE] ✓ Cached decrypted message for itemId: $itemId");
+        print("[SIGNAL SERVICE] ✓ Cached decrypted 1:1 message for itemId: $itemId");
+      } else if (data['channel'] != null) {
+        print("[SIGNAL SERVICE] ⚠ Skipping cache for group message (use DecryptedGroupItemsStore)");
       }
       
       return message;
@@ -501,6 +554,18 @@ class SignalService {
     if (_deliveryCallbacks.containsKey('default')) {
       for (final callback in _deliveryCallbacks['default']!) {
         callback(itemId);
+      }
+    }
+  }
+
+  /// Handle group message read receipt (from Socket.IO)
+  void _handleGroupMessageReadReceipt(Map<String, dynamic> data) {
+    print('[SIGNAL SERVICE] Group message read receipt received: $data');
+    
+    // Trigger callbacks with the full receipt data
+    if (_itemTypeCallbacks.containsKey('groupMessageReadReceipt')) {
+      for (final callback in _itemTypeCallbacks['groupMessageReadReceipt']!) {
+        callback(data);
       }
     }
   }
@@ -636,18 +701,19 @@ class SignalService {
     // This allows Bob Device 1 to see his own sent message without decryption
     
     // Store sent message in local storage for persistence after refresh
-    // IMPORTANT: Don't store read_receipt messages (they are not chat messages)
+    // IMPORTANT: Only store actual chat messages, not system messages
     final timestamp = DateTime.now().toIso8601String();
-    if (type != 'read_receipt') {
+    if (type == 'message') {
       await sentMessagesStore.storeSentMessage(
         recipientUserId: recipientUserId,
         itemId: messageItemId,
         message: payloadString,
         timestamp: timestamp,
+        type: type,  // Include message type
       );
       print('[SIGNAL SERVICE] Step 0a: Stored sent message in local storage');
     } else {
-      print('[SIGNAL SERVICE] Step 0a: Skipping storage for read_receipt (not a chat message)');
+      print('[SIGNAL SERVICE] Step 0a: Skipping storage for system message type: $type');
     }
     
     // Trigger local callback for UI updates (but not for read_receipt - they are system messages)
@@ -864,6 +930,10 @@ Future<String> decryptItem({
     final plaintext = await sessionCipher.decryptFromSignal(signalMsg);
     print('[SIGNAL SERVICE] Step 8: Decrypted plaintext: $plaintext');
     return utf8.decode(plaintext);
+  } else if (cipherType == CiphertextMessage.senderKeyType) {
+    // Group message - should NOT be processed here!
+    // Group messages should come via 'groupMessage' Socket.IO event and use GroupCipher
+    throw Exception('CipherType 4 (senderKeyType) detected - group messages must use GroupCipher, not SessionCipher. This message should come via groupMessage event, not receiveItem.');
   } else {
     throw Exception('Unknown cipherType: $cipherType');
   }
@@ -951,5 +1021,552 @@ Future<String> decryptItem({
       });
     }
   }*/
+
+  // ============================================================================
+  // GROUP ENCRYPTION WITH SENDER KEYS
+  // ============================================================================
+
+  /// Create and distribute sender key for a group
+  /// This should be called when starting to send messages in a group
+  /// Returns the serialized distribution message to send to all group members
+  Future<Uint8List> createGroupSenderKey(String groupId) async {
+    if (_currentUserId == null || _currentDeviceId == null) {
+      throw Exception('User info not set. Call setCurrentUserInfo first.');
+    }
+
+    print('[SIGNAL_SERVICE] Creating sender key for group $groupId, user $_currentUserId:$_currentDeviceId');
+
+    // Verify identity key pair exists
+    try {
+      final identityKeyPair = await identityStore.getIdentityKeyPair();
+      print('[SIGNAL_SERVICE] Identity key pair verified - PublicKey: ${identityKeyPair.getPublicKey().toString().substring(0, 20)}...');
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Error verifying identity key pair: $e');
+      throw Exception('Cannot create sender key: Identity key pair not available. Please register Signal keys first. Error: $e');
+    }
+
+    // Verify sender key store is initialized
+    try {
+      final testSenderKeyName = SenderKeyName(groupId, SignalProtocolAddress(_currentUserId!, _currentDeviceId!));
+      await senderKeyStore.loadSenderKey(testSenderKeyName);
+      print('[SIGNAL_SERVICE] Sender key store is accessible');
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Error accessing sender key store: $e');
+      throw Exception('Cannot create sender key: Sender key store error: $e');
+    }
+
+    try {
+      final senderAddress = SignalProtocolAddress(_currentUserId!, _currentDeviceId!);
+      final senderKeyName = SenderKeyName(groupId, senderAddress);
+      print('[SIGNAL_SERVICE] Created SenderKeyName for group $groupId, address ${senderAddress.getName()}:${senderAddress.getDeviceId()}');
+      
+      final groupSessionBuilder = GroupSessionBuilder(senderKeyStore);
+      print('[SIGNAL_SERVICE] Created GroupSessionBuilder');
+      
+      // Create sender key distribution message
+      print('[SIGNAL_SERVICE] Calling groupSessionBuilder.create()...');
+      final distributionMessage = await groupSessionBuilder.create(senderKeyName);
+      print('[SIGNAL_SERVICE] Successfully created distribution message');
+      
+      final serialized = distributionMessage.serialize();
+      print('[SIGNAL_SERVICE] Serialized distribution message, length: ${serialized.length}');
+      
+      print('[SIGNAL_SERVICE] Created sender key for group $groupId');
+      
+      // Store sender key on server for backup/retrieval
+      try {
+        final senderKeyBase64 = base64Encode(serialized);
+        SocketService().emit('storeSenderKey', {
+          'groupId': groupId,
+          'senderKey': senderKeyBase64,
+        });
+        print('[SIGNAL_SERVICE] Stored sender key on server for group $groupId');
+      } catch (e) {
+        print('[SIGNAL_SERVICE] Warning: Failed to store sender key on server: $e');
+        // Don't fail - sender key is already stored locally
+      }
+      
+      return serialized;
+    } catch (e, stackTrace) {
+      print('[SIGNAL_SERVICE] Error in createGroupSenderKey: $e');
+      print('[SIGNAL_SERVICE] Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Process incoming sender key distribution message from another group member
+  Future<void> processSenderKeyDistribution(
+    String groupId,
+    String senderId,
+    int senderDeviceId,
+    Uint8List distributionMessageBytes,
+  ) async {
+    final senderAddress = SignalProtocolAddress(senderId, senderDeviceId);
+    final senderKeyName = SenderKeyName(groupId, senderAddress);
+    final groupSessionBuilder = GroupSessionBuilder(senderKeyStore);
+    
+    final distributionMessage = SenderKeyDistributionMessageWrapper.fromSerialized(distributionMessageBytes);
+    
+    await groupSessionBuilder.process(senderKeyName, distributionMessage);
+    
+    print('[SIGNAL_SERVICE] Processed sender key from $senderId:$senderDeviceId for group $groupId');
+  }
+
+  /// Encrypt message for group using sender key
+  Future<Map<String, dynamic>> encryptGroupMessage(
+    String groupId,
+    String message,
+  ) async {
+    if (_currentUserId == null || _currentDeviceId == null) {
+      throw Exception('User info not set. Call setCurrentUserInfo first.');
+    }
+
+    print('[SIGNAL_SERVICE] encryptGroupMessage: groupId=$groupId, userId=$_currentUserId:$_currentDeviceId, messageLength=${message.length}');
+
+    try {
+      final senderAddress = SignalProtocolAddress(_currentUserId!, _currentDeviceId!);
+      print('[SIGNAL_SERVICE] Created sender address: ${senderAddress.getName()}:${senderAddress.getDeviceId()}');
+      
+      final senderKeyName = SenderKeyName(groupId, senderAddress);
+      print('[SIGNAL_SERVICE] Created sender key name for group $groupId');
+      
+      // Check if sender key exists
+      final hasSenderKey = await senderKeyStore.containsSenderKey(senderKeyName);
+      print('[SIGNAL_SERVICE] Sender key exists: $hasSenderKey');
+      
+      if (!hasSenderKey) {
+        throw Exception('No sender key found for this group. Please initialize sender key first.');
+      }
+      
+      // Load the sender key record to verify it's valid
+      await senderKeyStore.loadSenderKey(senderKeyName);
+      print('[SIGNAL_SERVICE] Loaded sender key record from store');
+      
+      final groupCipher = GroupCipher(senderKeyStore, senderKeyName);
+      print('[SIGNAL_SERVICE] Created GroupCipher');
+      
+      final messageBytes = Uint8List.fromList(utf8.encode(message));
+      print('[SIGNAL_SERVICE] Encoded message to bytes, length: ${messageBytes.length}');
+      
+      print('[SIGNAL_SERVICE] Calling groupCipher.encrypt()...');
+      final ciphertext = await groupCipher.encrypt(messageBytes);
+      print('[SIGNAL_SERVICE] Successfully encrypted message, ciphertext length: ${ciphertext.length}');
+      
+      return {
+        'ciphertext': base64Encode(ciphertext),
+        'senderId': _currentUserId,
+        'senderDeviceId': _currentDeviceId,
+      };
+    } catch (e, stackTrace) {
+      print('[SIGNAL_SERVICE] Error in encryptGroupMessage: $e');
+      print('[SIGNAL_SERVICE] Stack trace: $stackTrace');
+      
+      // Check if this is a RangeError (corrupt/empty sender key)
+      if (e.toString().contains('RangeError') || e.toString().contains('Invalid value')) {
+        print('[SIGNAL_SERVICE] Detected RangeError - sender key is likely empty/corrupt');
+        print('[SIGNAL_SERVICE] Attempting to recreate sender key...');
+        
+        // Delete the corrupt sender key
+        try {
+          final senderAddress = SignalProtocolAddress(_currentUserId!, _currentDeviceId!);
+          final senderKeyName = SenderKeyName(groupId, senderAddress);
+          await senderKeyStore.removeSenderKey(senderKeyName);
+          print('[SIGNAL_SERVICE] Removed corrupt sender key');
+        } catch (removeError) {
+          print('[SIGNAL_SERVICE] Error removing corrupt key: $removeError');
+        }
+        
+        // Recreate the sender key
+        try {
+          print('[SIGNAL_SERVICE] Creating new sender key...');
+          final distributionMessage = await createGroupSenderKey(groupId);
+          print('[SIGNAL_SERVICE] New sender key created');
+          
+          // Trigger callback to notify that sender key was recreated
+          // This should trigger distribution to all group members
+          if (_itemTypeCallbacks.containsKey('senderKeyRecreated')) {
+            for (final callback in _itemTypeCallbacks['senderKeyRecreated']!) {
+              callback({
+                'groupId': groupId,
+                'distributionMessage': distributionMessage,
+              });
+            }
+          }
+          
+          print('[SIGNAL_SERVICE] Retrying encryption with new sender key...');
+          
+          // Retry encryption with new key
+          final messageBytes = Uint8List.fromList(utf8.encode(message));
+          final newSenderAddress = SignalProtocolAddress(_currentUserId!, _currentDeviceId!);
+          final newSenderKeyName = SenderKeyName(groupId, newSenderAddress);
+          final newGroupCipher = GroupCipher(senderKeyStore, newSenderKeyName);
+          final newCiphertext = await newGroupCipher.encrypt(messageBytes);
+          print('[SIGNAL_SERVICE] Successfully encrypted with new sender key');
+          
+          return {
+            'ciphertext': base64Encode(newCiphertext),
+            'senderId': _currentUserId,
+            'senderDeviceId': _currentDeviceId,
+          };
+        } catch (retryError) {
+          print('[SIGNAL_SERVICE] Failed to recreate and encrypt: $retryError');
+          rethrow;
+        }
+      }
+      
+      // Not a RangeError, rethrow the original error
+      rethrow;
+    }
+  }
+
+  /// Decrypt group message using sender key
+  Future<String> decryptGroupMessage(
+    String groupId,
+    String senderId,
+    int senderDeviceId,
+    String ciphertextBase64,
+  ) async {
+    final senderAddress = SignalProtocolAddress(senderId, senderDeviceId);
+    final senderKeyName = SenderKeyName(groupId, senderAddress);
+    final groupCipher = GroupCipher(senderKeyStore, senderKeyName);
+    
+    final ciphertext = base64Decode(ciphertextBase64);
+    final plaintext = await groupCipher.decrypt(ciphertext);
+    
+    return utf8.decode(plaintext);
+  }
+
+  /// DEPRECATED: Use sendGroupItem instead
+  /// This method is kept for backward compatibility but should not be used
+  /// Old implementation that used PermanentSentMessagesStore (wrong store for groups)
+  @Deprecated('Use sendGroupItem instead - this uses the wrong store')
+  Future<void> sendGroupMessage({
+    required String groupId,
+    required String message,
+    String? itemId,
+  }) async {
+    print('[SIGNAL_SERVICE] WARNING: sendGroupMessage is deprecated, use sendGroupItem instead');
+    // Redirect to new implementation
+    await sendGroupItem(
+      channelId: groupId,
+      message: message,
+      itemId: itemId ?? Uuid().v4(),
+    );
+  }
+
+  /// Request sender key from a group member
+  Future<void> requestSenderKey(String groupId, String userId, int deviceId) async {
+    try {
+      await ApiService.post(
+        '/channels/$groupId/request-sender-key',
+        data: {
+          'requesterId': _currentUserId,
+          'requesterDeviceId': _currentDeviceId,
+          'targetUserId': userId,
+          'targetDeviceId': deviceId,
+        },
+      );
+      
+      print('[SIGNAL_SERVICE] Requested sender key from $userId:$deviceId for group $groupId');
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Error requesting sender key: $e');
+      rethrow;
+    }
+  }
+
+  /// Check if we have sender key for a specific sender in a group
+  Future<bool> hasSenderKey(String groupId, String senderId, int senderDeviceId) async {
+    final address = SignalProtocolAddress(senderId, senderDeviceId);
+    final senderKeyName = SenderKeyName(groupId, address);
+    
+    // Check if key exists in store
+    final exists = await senderKeyStore.containsSenderKey(senderKeyName);
+    if (!exists) {
+      return false;
+    }
+    
+    // Additionally check if the record has actual key material
+    try {
+      await senderKeyStore.loadSenderKey(senderKeyName);
+      // Try to check if the record has been initialized by the library
+      // An empty record would have been created by loadSenderKey, but not populated
+      // Unfortunately, SenderKeyRecord doesn't have a public method to check if it's empty
+      // So we'll rely on the containsSenderKey check
+      return true;
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Error checking sender key: $e');
+      return false;
+    }
+  }
+
+  /// Clear all sender keys for a group (e.g., when leaving)
+  Future<void> clearGroupSenderKeys(String groupId) async {
+    await senderKeyStore.clearGroupSenderKeys(groupId);
+    print('[SIGNAL_SERVICE] Cleared all sender keys for group $groupId');
+  }
+
+  // ===== NEW: GROUP ITEM API METHODS =====
+
+  /// Send a group item (message, reaction, file, etc.) using new GroupItem architecture
+  Future<void> sendGroupItem({
+    required String channelId,
+    required String message,
+    required String itemId,
+    String type = 'message',
+  }) async {
+    try {
+      if (_currentUserId == null || _currentDeviceId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Encrypt with sender key
+      final encrypted = await encryptGroupMessage(channelId, message);
+      final timestamp = DateTime.now().toIso8601String();
+
+      // Store locally first
+      await sentGroupItemsStore.storeSentGroupItem(
+        channelId: channelId,
+        itemId: itemId,
+        message: message,
+        timestamp: timestamp,
+        type: type,
+        status: 'sending',
+      );
+
+      // Send via Socket.IO
+      SocketService().emit("sendGroupItem", {
+        'channelId': channelId,
+        'itemId': itemId,
+        'type': type,
+        'payload': encrypted['ciphertext'],
+        'cipherType': 4, // Sender Key
+        'timestamp': timestamp,
+      });
+
+      print('[SIGNAL_SERVICE] Sent group item $itemId to channel $channelId');
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Error sending group item: $e');
+      rethrow;
+    }
+  }
+
+  /// Decrypt a received group item with automatic sender key reload on error
+  Future<String> decryptGroupItem({
+    required String channelId,
+    required String senderId,
+    required int senderDeviceId,
+    required String ciphertext,
+    bool retryOnError = true,
+  }) async {
+    try {
+      // Try to decrypt
+      final decrypted = await decryptGroupMessage(
+        channelId,
+        senderId,
+        senderDeviceId,
+        ciphertext,
+      );
+      
+      return decrypted;
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Decrypt error: $e');
+      
+      // Check if this is a decryption error that might be fixed by reloading sender key
+      if (retryOnError && (
+          e.toString().contains('InvalidMessageException') ||
+          e.toString().contains('No key for') ||
+          e.toString().contains('DuplicateMessageException') ||
+          e.toString().contains('Invalid'))) {
+        
+        print('[SIGNAL_SERVICE] Attempting to reload sender key from server...');
+        
+        // Try to reload sender key from server
+        final keyLoaded = await loadSenderKeyFromServer(
+          channelId: channelId,
+          userId: senderId,
+          deviceId: senderDeviceId,
+          forceReload: true,
+        );
+        
+        if (keyLoaded) {
+          print('[SIGNAL_SERVICE] Sender key reloaded, retrying decrypt...');
+          
+          // Retry decrypt (without retry to avoid infinite loop)
+          return await decryptGroupItem(
+            channelId: channelId,
+            senderId: senderId,
+            senderDeviceId: senderDeviceId,
+            ciphertext: ciphertext,
+            retryOnError: false, // Don't retry again
+          );
+        }
+      }
+      
+      // Rethrow if we couldn't fix it
+      rethrow;
+    }
+  }
+
+  /// Load sender key from server database
+  Future<bool> loadSenderKeyFromServer({
+    required String channelId,
+    required String userId,
+    required int deviceId,
+    bool forceReload = false,
+  }) async {
+    try {
+      print('[SIGNAL_SERVICE] Loading sender key from server: $userId:$deviceId (forceReload: $forceReload)');
+      
+      // If forceReload, delete old key first
+      if (forceReload) {
+        try {
+          final address = SignalProtocolAddress(userId, deviceId);
+          final senderKeyName = SenderKeyName(channelId, address);
+          await senderKeyStore.removeSenderKey(senderKeyName);
+          print('[SIGNAL_SERVICE] Removed old sender key before reload');
+        } catch (removeError) {
+          print('[SIGNAL_SERVICE] Error removing old key: $removeError');
+        }
+      }
+      
+      // Load from server via REST API
+      final response = await ApiService.get(
+        '/api/sender-keys/$channelId/$userId/$deviceId'
+      );
+      
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final senderKeyBase64 = response.data['senderKey'] as String;
+        final senderKeyBytes = base64Decode(senderKeyBase64);
+        
+        // Process the distribution message
+        await processSenderKeyDistribution(
+          channelId,
+          userId,
+          deviceId,
+          senderKeyBytes,
+        );
+        
+        print('[SIGNAL_SERVICE] ✓ Sender key loaded from server');
+        return true;
+      } else {
+        print('[SIGNAL_SERVICE] Sender key not found on server');
+        return false;
+      }
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Error loading sender key from server: $e');
+      return false;
+    }
+  }
+
+  /// Load all sender keys for a channel (when joining)
+  Future<void> loadAllSenderKeysForChannel(String channelId) async {
+    try {
+      print('[SIGNAL_SERVICE] Loading all sender keys for channel $channelId');
+      
+      final response = await ApiService.get('/api/sender-keys/$channelId');
+      
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final senderKeysData = response.data['senderKeys'];
+        
+        // Handle null or empty senderKeys
+        if (senderKeysData == null) {
+          print('[SIGNAL_SERVICE] No sender keys found for channel');
+          return;
+        }
+        
+        final senderKeys = senderKeysData as List<dynamic>;
+        
+        print('[SIGNAL_SERVICE] Found ${senderKeys.length} sender keys');
+        
+        for (final key in senderKeys) {
+          try {
+            final userId = key['userId'] as String;
+            final deviceId = key['deviceId'] as int;
+            final senderKeyBase64 = key['senderKey'] as String;
+            final senderKeyBytes = base64Decode(senderKeyBase64);
+            
+            // Skip our own key
+            if (userId == _currentUserId && deviceId == _currentDeviceId) {
+              continue;
+            }
+            
+            await processSenderKeyDistribution(
+              channelId,
+              userId,
+              deviceId,
+              senderKeyBytes,
+            );
+            
+            print('[SIGNAL_SERVICE] ✓ Loaded sender key for $userId:$deviceId');
+          } catch (keyError) {
+            print('[SIGNAL_SERVICE] Error loading key: $keyError');
+          }
+        }
+        
+        print('[SIGNAL_SERVICE] ✓ Loaded ${senderKeys.length} sender keys for channel');
+      }
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Error loading all sender keys: $e');
+    }
+  }
+
+  /// Upload our sender key to server
+  Future<void> uploadSenderKeyToServer(String channelId) async {
+    try {
+      if (_currentUserId == null || _currentDeviceId == null) {
+        throw Exception('User not authenticated');
+      }
+      
+      // Create sender key distribution message
+      final distributionMessage = await createGroupSenderKey(channelId);
+      final senderKeyBase64 = base64Encode(distributionMessage);
+      
+      // Upload to server
+      final response = await ApiService.post(
+        '/api/sender-keys/$channelId',
+        data: {
+          'senderKey': senderKeyBase64,
+          'deviceId': _currentDeviceId,
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        print('[SIGNAL_SERVICE] ✓ Sender key uploaded to server');
+      } else {
+        print('[SIGNAL_SERVICE] Failed to upload sender key: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Error uploading sender key: $e');
+      rethrow;
+    }
+  }
+
+  /// Mark a group item as read
+  Future<void> markGroupItemAsRead(String itemId) async {
+    try {
+      if (_currentDeviceId == null) {
+        print('[SIGNAL_SERVICE] Cannot mark as read: device ID not set');
+        return;
+      }
+      
+      SocketService().emit("markGroupItemRead", {
+        'itemId': itemId,
+      });
+      
+      print('[SIGNAL_SERVICE] Marked group item $itemId as read');
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Error marking item as read: $e');
+    }
+  }
+
+  /// Load sent group items for a channel
+  Future<List<Map<String, dynamic>>> loadSentGroupItems(String channelId) async {
+    return await sentGroupItemsStore.loadSentItems(channelId);
+  }
+
+  /// Load received/decrypted group items for a channel
+  Future<List<Map<String, dynamic>>> loadReceivedGroupItems(String channelId) async {
+    return await decryptedGroupItemsStore.getChannelItems(channelId);
+  }
 }
 

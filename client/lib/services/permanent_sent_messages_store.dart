@@ -3,10 +3,12 @@ import 'package:flutter/foundation.dart';
 import 'package:idb_shim/idb_browser.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// A persistent store for locally sent messages.
+/// A persistent store for locally sent 1:1 messages ONLY.
 /// Uses IndexedDB on web and FlutterSecureStorage on native.
 /// This allows the sending device to see its own messages after refresh,
 /// without storing unencrypted messages on the server.
+/// 
+/// NOTE: Group messages use SentGroupItemsStore instead.
 class PermanentSentMessagesStore {
   final String _storeName = 'peerwaveSentMessages';
   final String _keyPrefix = 'sent_msg_';
@@ -33,18 +35,20 @@ class PermanentSentMessagesStore {
     return store;
   }
 
-  /// Store a sent message locally
+  /// Store a sent 1:1 message locally (direct message only, no channelId)
   /// @param recipientUserId - The UUID of the conversation partner
   /// @param itemId - Unique message ID
   /// @param message - The plaintext message
   /// @param timestamp - ISO 8601 timestamp
   /// @param status - Message status: 'sending', 'delivered', 'read'
+  /// @param type - Message type: 'message', etc. (defaults to 'message')
   Future<void> storeSentMessage({
     required String recipientUserId,
     required String itemId,
     required String message,
     required String timestamp,
     String status = 'sending',
+    String type = 'message',
   }) async {
     final key = '$_keyPrefix${recipientUserId}_$itemId';
     final data = jsonEncode({
@@ -52,6 +56,7 @@ class PermanentSentMessagesStore {
       'recipientUserId': recipientUserId,
       'message': message,
       'timestamp': timestamp,
+      'type': type,
       'isLocalSent': true,
       'status': status,
       'deliveredAt': null,

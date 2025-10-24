@@ -192,17 +192,166 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
     );
   }
 
+  Future<void> _showAddUserDialog() async {
+    String searchQuery = '';
+    List<Map<String, String>> availableUsers = [];
+    bool isLoading = false;
+    Map<String, String>? selectedUser;
+    Role? selectedRole;
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Add User to Channel'),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Search Users',
+                    hintText: 'Enter name or email',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                  onChanged: (value) async {
+                    searchQuery = value;
+                    if (value.length >= 2) {
+                      setState(() => isLoading = true);
+                      try {
+                        final roleProvider = Provider.of<RoleProvider>(context, listen: false);
+                        final users = await roleProvider.getAvailableUsersForChannel(
+                          widget.channelId,
+                          search: value,
+                        );
+                        setState(() {
+                          availableUsers = users;
+                          isLoading = false;
+                        });
+                      } catch (e) {
+                        setState(() => isLoading = false);
+                        if (context.mounted) {
+                          _showError(e.toString());
+                        }
+                      }
+                    } else {
+                      setState(() => availableUsers = []);
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+                if (isLoading)
+                  const Center(child: CircularProgressIndicator())
+                else if (availableUsers.isNotEmpty)
+                  SizedBox(
+                    height: 200,
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: availableUsers.length,
+                      itemBuilder: (context, index) {
+                        final user = availableUsers[index];
+                        final isSelected = selectedUser?['uuid'] == user['uuid'];
+                        return ListTile(
+                          selected: isSelected,
+                          leading: CircleAvatar(
+                            child: Text(
+                              user['displayName']!.isNotEmpty
+                                  ? user['displayName']![0].toUpperCase()
+                                  : '?',
+                            ),
+                          ),
+                          title: Text(user['displayName']!),
+                          subtitle: Text(user['email']!),
+                          onTap: () {
+                            setState(() => selectedUser = user);
+                          },
+                        );
+                      },
+                    ),
+                  )
+                else if (searchQuery.length >= 2)
+                  const Center(child: Text('No users found')),
+                if (selectedUser != null) ...[
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  const Text('Assign Role (optional):'),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<Role>(
+                    value: selectedRole,
+                    hint: const Text('Select Role'),
+                    items: _availableRoles.map((role) {
+                      return DropdownMenuItem(
+                        value: role,
+                        child: Text(role.name),
+                      );
+                    }).toList(),
+                    onChanged: (role) {
+                      setState(() => selectedRole = role);
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: selectedUser == null
+                  ? null
+                  : () async {
+                      try {
+                        final roleProvider = Provider.of<RoleProvider>(context, listen: false);
+                        await roleProvider.addUserToChannel(
+                          channelId: widget.channelId,
+                          userId: selectedUser!['uuid']!,
+                          roleId: selectedRole?.uuid,
+                        );
+                        if (context.mounted) {
+                          Navigator.of(context).pop();
+                          _showSuccess('User added to channel successfully');
+                          _loadData();
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          Navigator.of(context).pop();
+                          _showError(e.toString());
+                        }
+                      }
+                    },
+              child: const Text('Add User'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final roleProvider = Provider.of<RoleProvider>(context);
     final canManageRoles = roleProvider.isAdmin ||
         roleProvider.isChannelOwner(widget.channelId) ||
         roleProvider.hasChannelPermission(widget.channelId, 'role.assign');
+    
+    final canAddUsers = roleProvider.isAdmin ||
+        roleProvider.isChannelOwner(widget.channelId) ||
+        roleProvider.hasChannelPermission(widget.channelId, 'user.add');
 
     return Scaffold(
       appBar: AppBar(
         title: Text('${widget.channelName} - Members'),
         actions: [
+          if (canAddUsers)
+            IconButton(
+              icon: const Icon(Icons.person_add),
+              onPressed: _showAddUserDialog,
+              tooltip: 'Add User',
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadData,

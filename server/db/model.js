@@ -270,6 +270,120 @@ const SignalSenderKey = sequelize.define('SignalSenderKey', {
     ]
 });
 
+// Group Item Model - stores encrypted items (messages, reactions, etc.) for group chats
+// One encrypted payload for all members - much more efficient than Item table
+const GroupItem = sequelize.define('GroupItem', {
+    uuid: {
+        type: DataTypes.UUID,
+        defaultValue: Sequelize.UUIDV4,
+        primaryKey: true,
+        allowNull: false,
+        unique: true
+    },
+    itemId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        unique: true  // Client-generated ID for deduplication
+    },
+    channel: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Channels',
+            key: 'uuid'
+        }
+    },
+    sender: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    senderDevice: {
+        type: DataTypes.INTEGER,
+        allowNull: false
+    },
+    type: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: 'message'  // 'message', 'reaction', 'file', etc.
+    },
+    payload: {
+        type: DataTypes.TEXT,
+        allowNull: false  // Encrypted with sender's SenderKey
+    },
+    cipherType: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 4  // 4 = SenderKey encryption
+    },
+    timestamp: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.NOW
+    }
+}, {
+    timestamps: true,  // createdAt, updatedAt
+    indexes: [
+        {
+            fields: ['channel', 'timestamp']  // Fast queries for channel messages
+        },
+        {
+            fields: ['itemId']  // Fast lookups by client ID
+        },
+        {
+            fields: ['sender', 'channel']  // Fast queries for user's messages in channel
+        }
+    ]
+});
+
+// Group Item Read Receipts - tracks who has read which items
+const GroupItemRead = sequelize.define('GroupItemRead', {
+    id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true
+    },
+    itemId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'GroupItems',
+            key: 'uuid'
+        }
+    },
+    userId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    deviceId: {
+        type: DataTypes.INTEGER,
+        allowNull: false
+    },
+    readAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.NOW
+    }
+}, {
+    timestamps: false,
+    indexes: [
+        {
+            unique: true,
+            fields: ['itemId', 'userId', 'deviceId']  // One read receipt per device
+        },
+        {
+            fields: ['itemId']  // Fast count of reads per item
+        }
+    ]
+});
+
 // Junction table for User-Role relationship (scope: server)
 const UserRole = sequelize.define('UserRole', {
     userId: {
@@ -458,6 +572,8 @@ const Client = sequelize.define('Client', {
     ]
 });
 
+// Item Model - for 1:1 direct messages only (not for group messages)
+// Group messages use GroupItem model instead
 const Item = sequelize.define('Item', {
     uuid: {
         type: DataTypes.UUID,
@@ -517,6 +633,8 @@ const Item = sequelize.define('Item', {
         type: DataTypes.DATE,
         allowNull: true
     }
+    // NOTE: Item table is ONLY for 1:1 messages (no channel field needed)
+    // Group messages use the separate GroupItem table which has a channel field
 }, { timestamps: true }); // Enable timestamps for createdAt tracking
 
 
@@ -552,6 +670,24 @@ Client.hasMany(SignalSenderKey, { foreignKey: 'client' });
 SignalSenderKey.belongsTo(Client, { foreignKey: 'client' });
 User.hasMany(SignalSenderKey, { foreignKey: 'owner' });
 SignalSenderKey.belongsTo(User, { foreignKey: 'owner' });
+
+// Group Item associations (encrypted group messages/items)
+Channel.hasMany(GroupItem, { foreignKey: 'channel', as: 'GroupItems' });
+GroupItem.belongsTo(Channel, { foreignKey: 'channel' });
+User.hasMany(GroupItem, { foreignKey: 'sender', as: 'SentGroupItems' });
+GroupItem.belongsTo(User, { foreignKey: 'sender', as: 'Sender' });
+
+// Group Item Read Receipt associations
+GroupItem.hasMany(GroupItemRead, { foreignKey: 'itemId', as: 'ReadReceipts' });
+GroupItemRead.belongsTo(GroupItem, { foreignKey: 'itemId', as: 'Item' });
+User.hasMany(GroupItemRead, { foreignKey: 'userId', as: 'ReadItems' });
+GroupItemRead.belongsTo(User, { foreignKey: 'userId', as: 'User' });
+
+// Channel Members associations
+User.hasMany(ChannelMembers, { foreignKey: 'userId', as: 'ChannelMemberships' });
+ChannelMembers.belongsTo(User, { foreignKey: 'userId' });
+Channel.hasMany(ChannelMembers, { foreignKey: 'channelId', as: 'Memberships' });
+ChannelMembers.belongsTo(Channel, { foreignKey: 'channelId' });
 
 // Role associations
 // Many-to-Many: User <-> Role (for scope: server)
@@ -593,6 +729,11 @@ Role.belongsToMany(Channel, {
     foreignKey: 'roleId',
     otherKey: 'channelId'
 });
+
+// Direct associations for UserRoleChannel to allow includes
+UserRoleChannel.belongsTo(User, { foreignKey: 'userId', as: 'User' });
+UserRoleChannel.belongsTo(Role, { foreignKey: 'roleId', as: 'Role' });
+UserRoleChannel.belongsTo(Channel, { foreignKey: 'channelId', as: 'Channel' });
 
 // Many-to-Many: User <-> Channel (for channel membership)
 User.belongsToMany(Channel, {
@@ -639,14 +780,14 @@ async function initializeStandardRoles() {
                 description: 'Server moderator with limited admin permissions',
                 scope: 'server',
                 permissions: ['user.manage', 'channel.manage', 'message.moderate', 'role.create', 'role.edit', 'role.delete'],
-                standard: true
+                standard: false
             },
             {
                 name: 'User',
                 description: 'Standard user role',
                 scope: 'server',
                 permissions: ['channel.join', 'channel.create', 'message.send', 'message.read'],
-                standard: true
+                standard: false
             },
             // Channel WebRTC scope roles
             {
@@ -660,15 +801,15 @@ async function initializeStandardRoles() {
                 name: 'Channel Moderator',
                 description: 'WebRTC channel moderator',
                 scope: 'channelWebRtc',
-                permissions: ['user.kick', 'user.mute', 'stream.manage', 'role.assign', 'member.view'],
-                standard: true
+                permissions: ['user.add', 'user.kick', 'user.mute', 'stream.manage', 'role.assign', 'member.view'],
+                standard: false
             },
             {
                 name: 'Channel Member',
                 description: 'Regular member of a WebRTC channel',
                 scope: 'channelWebRtc',
                 permissions: ['stream.view', 'stream.send', 'chat.send', 'member.view'],
-                standard: true
+                standard: false
             },
             // Channel Signal scope roles
             {
@@ -682,15 +823,15 @@ async function initializeStandardRoles() {
                 name: 'Channel Moderator',
                 description: 'Signal channel moderator',
                 scope: 'channelSignal',
-                permissions: ['message.delete', 'user.kick', 'user.mute', 'role.assign', 'member.view'],
-                standard: true
+                permissions: ['user.add', 'message.delete', 'user.kick', 'user.mute', 'role.assign', 'member.view'],
+                standard: false
             },
             {
                 name: 'Channel Member',
                 description: 'Regular member of a Signal channel',
                 scope: 'channelSignal',
                 permissions: ['message.send', 'message.read', 'message.react', 'member.view'],
-                standard: true
+                standard: false
             }
         ];
 
@@ -719,6 +860,8 @@ module.exports = {
     SignalSignedPreKey,
     SignalPreKey,
     SignalSenderKey,
+    GroupItem,
+    GroupItemRead,
     Channel,
     ChannelMembers,
     Role,
