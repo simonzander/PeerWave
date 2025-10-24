@@ -23,8 +23,10 @@ import 'services/api_service.dart';
 import 'auth/backup_recover_web.dart' if (dart.library.io) 'auth/backup_recover_stub.dart';
 import 'services/socket_service.dart';
 import 'services/signal_service.dart';
+import 'services/message_listener_service.dart';
 // Role management imports
 import 'providers/role_provider.dart';
+import 'providers/notification_provider.dart';
 import 'services/role_api_service.dart';
 import 'screens/admin/role_management_screen.dart';
 import 'screens/admin/user_management_screen.dart';
@@ -116,6 +118,9 @@ class _MyAppState extends State<MyApp> {
           create: (context) => RoleProvider(
             apiService: RoleApiService(baseUrl: widget.serverUrl),
           ),
+        ),
+        ChangeNotifierProvider(
+          create: (context) => NotificationProvider(),
         ),
       ],
       child: _buildMaterialApp(),
@@ -295,6 +300,9 @@ class _MyAppState extends State<MyApp> {
           await SocketService().connect();
           await SignalService.instance.init();
           
+          // Initialize global message listeners
+          await MessageListenerService.instance.initialize();
+          
           // Load user roles after successful login
           try {
             final roleProvider = context.read<RoleProvider>();
@@ -306,6 +314,10 @@ class _MyAppState extends State<MyApp> {
           }
         } else {
           if(SocketService().isConnected) SocketService().disconnect();
+          
+          // Dispose global message listeners
+          MessageListenerService.instance.dispose();
+          
           // Clear roles on logout
           try {
             final roleProvider = context.read<RoleProvider>();
