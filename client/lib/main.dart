@@ -8,13 +8,19 @@ import 'package:provider/provider.dart';
 import 'auth/auth_layout_web.dart' if (dart.library.io) 'auth/auth_layout_native.dart';
 import 'auth/magic_link_web.dart' if (dart.library.io) 'auth/magic_link_native.dart';
 import 'auth/otp_web.dart';
+import 'auth/register_webauthn_page.dart';
+import 'auth/register_profile_page.dart';
 import 'auth/magic_link_native.dart' show MagicLinkWebPageWithServer;
+import 'screens/signal_setup_screen.dart';
+import 'services/signal_setup_service.dart';
+import 'services/signal_service.dart';
 import 'app/app_layout.dart';
 import 'app/dashboard_page.dart';
 import 'app/settings_sidebar.dart';
 import 'app/credentials_page.dart';
 import 'app/webauthn_web.dart' if (dart.library.io) 'app/webauthn_stub.dart';
 import 'app/backupcode_web.dart' if (dart.library.io) 'app/backupcode_stub.dart';
+import 'app/backupcode_settings_page.dart';
 // Use conditional import for 'services/auth_service.dart'
 import 'services/auth_service_web.dart' if (dart.library.io) 'services/auth_service_native.dart';
 // Import clientid logic only for native
@@ -22,7 +28,6 @@ import 'services/clientid_native.dart' if (dart.library.html) 'services/clientid
 import 'services/api_service.dart';
 import 'auth/backup_recover_web.dart' if (dart.library.io) 'auth/backup_recover_stub.dart';
 import 'services/socket_service.dart';
-import 'services/signal_service.dart';
 import 'services/message_listener_service.dart';
 // Role management imports
 import 'providers/role_provider.dart';
@@ -181,6 +186,22 @@ class _MyAppState extends State<MyApp> {
                 return OtpWebPage(email: email, serverUrl: serverUrl, clientId: widget.clientId, wait: wait);
               },
             ),
+            GoRoute(
+              path: '/register/backupcode',
+              builder: (context, state) => const BackupCodeListPage(),
+            ),
+            GoRoute(
+              path: '/register/webauthn',
+              builder: (context, state) => const RegisterWebauthnPage(),
+            ),
+            GoRoute(
+              path: '/register/profile',
+              builder: (context, state) => const RegisterProfilePage(),
+            ),
+            GoRoute(
+              path: '/signal-setup',
+              builder: (context, state) => const SignalSetupScreen(),
+            ),
             ShellRoute(
               builder: (context, state, child) => AppLayout(child: child),
               routes: [
@@ -201,7 +222,7 @@ class _MyAppState extends State<MyApp> {
                     ),
                     GoRoute(
                       path: '/app/settings/backupcode/list',
-                      builder: (context, state) => const BackupCodeListPage(),
+                      builder: (context, state) => const BackupCodeSettingsPage(),
                     ),
                     GoRoute(
                       path: '/app/settings/profile',
@@ -298,10 +319,6 @@ class _MyAppState extends State<MyApp> {
           // Small delay to ensure session cookies are properly set before Socket.IO connects
           await Future.delayed(const Duration(milliseconds: 100));
           await SocketService().connect();
-          await SignalService.instance.init();
-          
-          // Initialize global message listeners
-          await MessageListenerService.instance.initialize();
           
           // Load user roles after successful login
           try {
@@ -312,6 +329,49 @@ class _MyAppState extends State<MyApp> {
           } catch (e) {
             print('Error loading user roles: $e');
           }
+          
+          // Skip Signal key checks for authentication and registration flows
+          final isAuthFlow = location == '/otp' 
+              || location == '/login'
+              || location == '/backupcode/recover'
+              || location.startsWith('/register/')
+              || location == '/signal-setup';
+          
+          if (!isAuthFlow) {
+            // Check if Signal keys need setup when navigating to main app routes
+            if (location == '/app' || location == '/') {
+              try {
+                final needsSetup = await SignalSetupService.instance.needsSetup();
+                if (needsSetup) {
+                  print('Signal keys need setup, redirecting to /signal-setup');
+                  return '/signal-setup';
+                }
+                
+                // If we get here, keys are already present
+                // Initialize SignalService stores and listeners (without generating keys)
+                if (!SignalService.instance.isInitialized) {
+                  print('[MAIN] Signal keys exist, initializing stores and listeners...');
+                  await SignalService.instance.initStoresAndListeners();
+                }
+                
+              } catch (e) {
+                print('Error checking Signal key status: $e');
+              }
+            } else {
+              // For other app routes (e.g. /app/channels), just initialize stores if not already done
+              try {
+                if (!SignalService.instance.isInitialized) {
+                  print('[MAIN] Initializing Signal stores for app route: $location');
+                  await SignalService.instance.initStoresAndListeners();
+                }
+              } catch (e) {
+                print('Error initializing Signal stores: $e');
+              }
+            }
+          }
+          
+          // Initialize global message listeners (after SignalService is ready)
+          await MessageListenerService.instance.initialize();
         } else {
           if(SocketService().isConnected) SocketService().disconnect();
           
@@ -338,6 +398,12 @@ class _MyAppState extends State<MyApp> {
           return null;
         }
         if (kIsWeb && location == '/backupcode/recover') {
+          return null;
+        }
+        if (kIsWeb && location.startsWith('/register/')) {
+          return null;
+        }
+        if (kIsWeb && location == '/signal-setup') {
           return null;
         }
         if(kIsWeb && loggedIn && location == '/magic-link') {

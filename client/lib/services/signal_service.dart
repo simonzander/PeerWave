@@ -128,6 +128,9 @@ class SignalService {
   factory SignalService() => instance;
   SignalService._internal();
 
+  bool _isInitialized = false;
+  bool get isInitialized => _isInitialized;
+
   final Map<String, List<Function(dynamic)>> _itemTypeCallbacks = {};
   final Map<String, List<Function(String)>> _deliveryCallbacks = {};
   final Map<String, List<Function(Map<String, dynamic>)>> _readCallbacks = {};
@@ -271,6 +274,155 @@ class SignalService {
     decryptedGroupItemsStore = await DecryptedGroupItemsStore.getInstance();
     sentGroupItemsStore = await SentGroupItemsStore.getInstance();
 
+    await _registerSocketListeners();
+
+    // --- Signal status check and conditional upload ---
+    SocketService().emit("signalStatus", null);
+
+    _isInitialized = true;
+    //await test();
+  }
+
+  /// Initialize stores and listeners without generating keys
+  /// Used when keys already exist (after successful setup or on returning user)
+  Future<void> initStoresAndListeners() async {
+    print('[SIGNAL SERVICE] Initializing stores and listeners (keys already exist)...');
+    
+    // Initialize all stores
+    identityStore = PermanentIdentityKeyStore();
+    sessionStore = await PermanentSessionStore.create();
+    preKeyStore = PermanentPreKeyStore();
+    final identityKeyPair = await identityStore.getIdentityKeyPair();
+    signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
+    sentMessagesStore = await PermanentSentMessagesStore.create();
+    decryptedMessagesStore = await PermanentDecryptedMessagesStore.create();
+    senderKeyStore = await PermanentSenderKeyStore.create();
+    decryptedGroupItemsStore = await DecryptedGroupItemsStore.getInstance();
+    sentGroupItemsStore = await SentGroupItemsStore.getInstance();
+
+    // Register socket listeners
+    await _registerSocketListeners();
+
+    // Check status with server (may trigger key uploads if server is missing keys)
+    SocketService().emit("signalStatus", null);
+
+    _isInitialized = true;
+    print('[SIGNAL SERVICE] Stores and listeners initialized successfully');
+  }
+
+  /// Progressive initialization with progress callbacks
+  /// Generates keys in batches to prevent UI freeze
+  /// 
+  /// onProgress callback receives:
+  /// - statusText: Current operation description
+  /// - current: Current progress (0-112)
+  /// - total: Total steps (112: 1 KeyPair + 1 SignedPreKey + 110 PreKeys)
+  /// - percentage: Progress percentage (0-100)
+  Future<void> initWithProgress(Function(String statusText, int current, int total, double percentage) onProgress) async {
+    const int totalSteps = 112; // 1 KeyPair + 1 SignedPreKey + 110 PreKeys
+    int currentStep = 0;
+
+    // Helper to update progress
+    void updateProgress(String status, int step) {
+      final percentage = (step / totalSteps * 100).clamp(0.0, 100.0);
+      onProgress(status, step, totalSteps, percentage);
+    }
+
+    // Initialize stores first
+    identityStore = PermanentIdentityKeyStore();
+    sessionStore = await PermanentSessionStore.create();
+    preKeyStore = PermanentPreKeyStore();
+    sentMessagesStore = await PermanentSentMessagesStore.create();
+    decryptedMessagesStore = await PermanentDecryptedMessagesStore.create();
+    senderKeyStore = await PermanentSenderKeyStore.create();
+    decryptedGroupItemsStore = await DecryptedGroupItemsStore.getInstance();
+    sentGroupItemsStore = await SentGroupItemsStore.getInstance();
+
+    // Step 1: Generate Identity Key Pair (if needed)
+    updateProgress('Generating identity key pair...', currentStep);
+    try {
+      await identityStore.getIdentityKeyPair();
+      print('[SIGNAL INIT] Identity key pair exists');
+    } catch (e) {
+      print('[SIGNAL INIT] Identity key pair will be generated: $e');
+    }
+    final identityKeyPair = await identityStore.getIdentityKeyPair();
+    signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
+    currentStep++;
+    updateProgress('Identity key pair ready', currentStep);
+    await Future.delayed(const Duration(milliseconds: 50));
+
+    // Step 2: Generate Signed PreKey (if needed)
+    updateProgress('Generating signed pre key...', currentStep);
+    final existingSignedKeys = await signedPreKeyStore.loadSignedPreKeys();
+    if (existingSignedKeys.isEmpty) {
+      final signedPreKey = generateSignedPreKey(identityKeyPair, 0);
+      await signedPreKeyStore.storeSignedPreKey(signedPreKey.id, signedPreKey);
+      print('[SIGNAL INIT] Signed pre key generated');
+    } else {
+      print('[SIGNAL INIT] Signed pre key already exists');
+    }
+    currentStep++;
+    updateProgress('Signed pre key ready', currentStep);
+    await Future.delayed(const Duration(milliseconds: 50));
+
+    // Step 3: Generate PreKeys in batches (110 keys, 10 per batch)
+    final existingPreKeys = await preKeyStore.getAllPreKeys();
+    final neededPreKeys = 110 - existingPreKeys.length;
+    
+    if (neededPreKeys > 0) {
+      print('[SIGNAL INIT] Generating $neededPreKeys pre keys');
+      final startId = existingPreKeys.isNotEmpty 
+          ? existingPreKeys.map((k) => k.id).reduce((a, b) => a > b ? a : b) + 1 
+          : 0;
+      
+      const int batchSize = 10;
+      final int totalBatches = (neededPreKeys / batchSize).ceil();
+      
+      for (int batch = 0; batch < totalBatches; batch++) {
+        final int batchStart = startId + (batch * batchSize);
+        final int batchEnd = (batchStart + batchSize).clamp(0, startId + neededPreKeys);
+        final int keysInBatch = batchEnd - batchStart;
+        
+        updateProgress('Generating pre keys ${existingPreKeys.length + (batch * batchSize) + 1}-${existingPreKeys.length + (batch * batchSize) + keysInBatch} of 110...', currentStep);
+        
+        final preKeys = generatePreKeys(batchStart, batchEnd - 1);
+        for (final preKey in preKeys) {
+          await preKeyStore.storePreKey(preKey.id, preKey);
+          currentStep++;
+          
+          // Update progress every 5 keys or on last key
+          if (currentStep % 5 == 0 || currentStep == totalSteps) {
+            final keysGenerated = currentStep - 2; // Subtract KeyPair and SignedPreKey
+            updateProgress('Generating pre keys $keysGenerated of 110...', currentStep);
+          }
+        }
+        
+        // Small delay between batches to prevent UI freeze
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+    } else {
+      print('[SIGNAL INIT] Pre keys already sufficient (${existingPreKeys.length}/110)');
+      // Skip to end
+      currentStep = totalSteps;
+      updateProgress('Pre keys already ready', currentStep);
+    }
+
+    // Register socket listeners
+    await _registerSocketListeners();
+
+    // Final progress update
+    updateProgress('Signal Protocol ready', totalSteps);
+
+    // Check status with server
+    SocketService().emit("signalStatus", null);
+
+    _isInitialized = true;
+    print('[SIGNAL INIT] Progressive initialization complete');
+  }
+
+  /// Register all Socket.IO listeners (extracted for reuse)
+  Future<void> _registerSocketListeners() async {
     SocketService().registerListener("receiveItem", (data) {
       receiveItem(data);
     });
@@ -322,11 +474,6 @@ class SignalService {
     SocketService().registerListener("signalStatusResponse", (status) async {
       await _ensureSignalKeysPresent(status);
     });
-
-    // --- Signal status check and conditional upload ---
-    SocketService().emit("signalStatus", null);
-
-    //await test();
   }
 
   Future<void> _ensureSignalKeysPresent(status) async {

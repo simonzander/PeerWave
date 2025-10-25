@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
 import '../web_config.dart';
+import '../widgets/registration_progress_bar.dart';
 import 'dart:async';
 
 class OtpWebPage extends StatefulWidget {
@@ -88,16 +89,17 @@ class _OtpWebPageState extends State<OtpWebPage> {
       );
       // Handle response as needed
       if (response.statusCode == 200) {
-        // Success logic here
+        // Success logic here - existing user login
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('OTP Verified!')),
         );
-        GoRouter.of(context).go('/app/settings/webauthn');
+        GoRouter.of(context).go('/app');
       } else if (response.statusCode == 202) {
+        // New user registration - go to backup codes
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('OTP Verified!')),
         );
-        GoRouter.of(context).go('/app/settings/backupcode/list');
+        GoRouter.of(context).go('/register/backupcode');
       } else {
         setState(() {
           _error = 'Invalid OTP or server error.';
@@ -143,42 +145,138 @@ class _OtpWebPageState extends State<OtpWebPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Enter OTP')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            TextField(
-              controller: _otpController,
-              decoration: const InputDecoration(
-                labelText: 'OTP',
-                border: OutlineInputBorder(),
+      backgroundColor: const Color(0xFF2C2F33),
+      body: Column(
+        children: [
+          // Progress Bar
+          const RegistrationProgressBar(currentStep: 1),
+          // Content
+          Expanded(
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.all(32),
+                width: 450,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF23272A),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Verify Your Email',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'We sent a verification code to ${widget.email}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 32),
+                    TextField(
+                      controller: _otpController,
+                      decoration: const InputDecoration(
+                        labelText: 'Enter OTP Code',
+                        labelStyle: TextStyle(color: Colors.white70),
+                        hintText: '000000',
+                        hintStyle: TextStyle(color: Colors.white38),
+                        filled: true,
+                        fillColor: Color(0xFF40444B),
+                        border: OutlineInputBorder(),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: Color(0xFF40444B)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: Colors.blueAccent),
+                        ),
+                      ),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        letterSpacing: 4,
+                      ),
+                      textAlign: TextAlign.center,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                    ),
+                    const SizedBox(height: 20),
+                    if (_error != null)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red),
+                        ),
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(color: Colors.red),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    if (_error != null) const SizedBox(height: 20),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 50),
+                        backgroundColor: Colors.blueAccent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: _loading ? null : _submitOtp,
+                      child: _loading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text(
+                              'Verify Code',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 50),
+                      ),
+                      onPressed: (_loading || (_wait != null && _wait! > 0))
+                          ? null
+                          : _resendOtp,
+                      child: Text(
+                        _wait != null && _wait! > 0
+                            ? 'Resend Code (${_wait}s)'
+                            : 'Resend Code',
+                        style: TextStyle(
+                          color: (_loading || (_wait != null && _wait! > 0))
+                              ? Colors.white38
+                              : Colors.blueAccent,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              keyboardType: TextInputType.number,
             ),
-            const SizedBox(height: 16),
-            if (_error != null)
-              Text(_error!, style: const TextStyle(color: Colors.red)),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _loading ? null : _submitOtp,
-                child: _loading
-                    ? const CircularProgressIndicator()
-                    : const Text('Submit'),
-              ),
-            ),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: (_loading || (_wait != null && _wait! > 0)) ? null : _resendOtp,
-                child: _loading
-                    ? const CircularProgressIndicator()
-                    : Text('Request new OTP${_wait != null && _wait! > 0 ? ' (${_wait}s)' : ''}'),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

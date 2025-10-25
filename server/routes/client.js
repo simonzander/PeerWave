@@ -29,9 +29,16 @@ async function getLocationFromIp(ip) {
 
 const clientRoutes = express.Router();
 
-// Add body-parser middleware
-clientRoutes.use(bodyParser.urlencoded({ extended: true }));
-clientRoutes.use(bodyParser.json());
+// Add body-parser middleware with default limits for all other routes
+clientRoutes.use((req, res, next) => {
+    // Skip body parsing for profile setup route - will be handled separately
+    if (req.path === '/client/profile/setup' && req.method === 'POST') {
+        return next();
+    }
+    bodyParser.urlencoded({ extended: true })(req, res, () => {
+        bodyParser.json()(req, res, next);
+    });
+});
 
 // Configure session middleware
 clientRoutes.use(session({
@@ -946,6 +953,91 @@ clientRoutes.delete("/items/:itemId", async (req, res) => {
         res.status(200).json({ status: "ok", message: "Item deleted successfully" });
     } catch (error) {
         console.error('Error deleting item:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// Profile setup endpoint for initial registration - with increased body limit for images
+clientRoutes.post("/client/profile/setup", 
+    bodyParser.json({ limit: '2mb' }), // Allow up to 2MB for base64 encoded images
+    async (req, res) => {
+    try {
+        const { displayName, picture } = req.body;
+        const userUuid = req.session.uuid;
+
+        if (!userUuid) {
+            return res.status(401).json({ status: "error", message: "Not authenticated" });
+        }
+
+        if (!displayName || displayName.trim() === '') {
+            return res.status(400).json({ status: "error", message: "Display name is required" });
+        }
+
+        const user = await User.findOne({ where: { uuid: userUuid } });
+        if (!user) {
+            return res.status(404).json({ status: "error", message: "User not found" });
+        }
+
+        // Check if displayName is already taken by another user
+        if (displayName !== user.displayName) {
+            const existingUser = await User.findOne({ 
+                where: { 
+                    displayName: displayName.trim(),
+                    uuid: { [Op.ne]: userUuid }
+                } 
+            });
+            if (existingUser) {
+                return res.status(409).json({ 
+                    status: "error", 
+                    message: "Display name already taken" 
+                });
+            }
+        }
+
+        // Update user profile
+        const updateData = {
+            displayName: displayName.trim()
+        };
+
+        // Handle picture if provided (base64 data URL)
+        if (picture && picture.startsWith('data:image')) {
+            try {
+                const base64Data = picture.split(',')[1];
+                const buffer = Buffer.from(base64Data, 'base64');
+                
+                // Limit picture size to 1MB
+                if (buffer.length > 1 * 1024 * 1024) {
+                    return res.status(413).json({ 
+                        status: "error", 
+                        message: "Picture size too large (max 1MB)" 
+                    });
+                }
+                
+                updateData.picture = buffer;
+            } catch (error) {
+                console.error('Error processing picture:', error);
+                return res.status(400).json({ 
+                    status: "error", 
+                    message: "Invalid picture format" 
+                });
+            }
+        }
+
+        await user.update(updateData);
+
+        console.log(`[PROFILE SETUP] User ${userUuid} completed profile setup with displayName: ${displayName}`);
+
+        res.status(200).json({ 
+            status: "ok", 
+            message: "Profile setup complete",
+            user: {
+                uuid: user.uuid,
+                email: user.email,
+                displayName: user.displayName
+            }
+        });
+    } catch (error) {
+        console.error('Error setting up profile:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });

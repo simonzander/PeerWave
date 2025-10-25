@@ -470,8 +470,8 @@ authRoutes.post("/register", (req, res) => {
                     });
 
 
-                    // Save the OTP and email in a temporary storage for 10 minutes
-                    const expiration = new Date().getTime() + 10 * 60 * 1000; // 10 minutes from now
+                    // Save the OTP and email in a temporary storage for 5 minutes
+                    const expiration = new Date().getTime() + 5 * 60 * 1000; // 5 minutes from now
                     writeQueue.enqueue(
                         () => OTP.create({ email, otp, expiration }),
                         'createOTP'
@@ -903,7 +903,7 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
     } catch (error) {
         console.error('Error:', error);
         if(error.code === 401 && error.email) {
-            const otp = Math.floor(10000 + Math.random() * 90000); // Generate a 5-digit OTP
+            const otp = Math.floor(100000 + Math.random() * 900000); // Generate a 6-digit OTP
             const email = error.email; // Get the registered email
 
             transporter.sendMail({
