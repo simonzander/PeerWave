@@ -18,6 +18,7 @@ import 'app/app_layout.dart';
 import 'app/dashboard_page.dart';
 import 'app/settings_sidebar.dart';
 import 'app/credentials_page.dart';
+import 'app/profile_page.dart';
 import 'app/webauthn_web.dart' if (dart.library.io) 'app/webauthn_stub.dart';
 import 'app/backupcode_web.dart' if (dart.library.io) 'app/backupcode_stub.dart';
 import 'app/backupcode_settings_page.dart';
@@ -226,7 +227,7 @@ class _MyAppState extends State<MyApp> {
                     ),
                     GoRoute(
                       path: '/app/settings/profile',
-                      builder: (context, state) => Center(child: Text('Profile Settings')), // Placeholder
+                      builder: (context, state) => const ProfilePage(),
                     ),
                     GoRoute(
                       path: '/app/settings/notifications',

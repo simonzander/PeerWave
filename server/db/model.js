@@ -83,6 +83,11 @@ const User = sequelize.define('User', {
         allowNull: true,
         unique: true
     },
+    atName: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        unique: true
+    },
     backupCodes: {
         type: DataTypes.TEXT,
         allowNull: true

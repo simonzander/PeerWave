@@ -1042,6 +1042,222 @@ clientRoutes.post("/client/profile/setup",
     }
 });
 
+// Get current user profile
+clientRoutes.get("/client/profile", async (req, res) => {
+    try {
+        const userUuid = req.session.uuid;
+
+        if (!userUuid) {
+            return res.status(401).json({ status: "error", message: "Not authenticated" });
+        }
+
+        const user = await User.findOne({ where: { uuid: userUuid } });
+        if (!user) {
+            return res.status(404).json({ status: "error", message: "User not found" });
+        }
+
+        // Convert picture buffer to base64 if exists
+        let pictureBase64 = null;
+        if (user.picture) {
+            pictureBase64 = `data:image/png;base64,${user.picture.toString('base64')}`;
+        }
+
+        res.status(200).json({
+            uuid: user.uuid,
+            email: user.email,
+            displayName: user.displayName,
+            atName: user.atName,
+            picture: pictureBase64
+        });
+    } catch (error) {
+        console.error('Error getting profile:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// Update user profile
+clientRoutes.post("/client/profile/update",
+    bodyParser.json({ limit: '2mb' }),
+    async (req, res) => {
+    try {
+        const { displayName, atName, picture } = req.body;
+        const userUuid = req.session.uuid;
+
+        if (!userUuid) {
+            return res.status(401).json({ status: "error", message: "Not authenticated" });
+        }
+
+        const user = await User.findOne({ where: { uuid: userUuid } });
+        if (!user) {
+            return res.status(404).json({ status: "error", message: "User not found" });
+        }
+
+        const updateData = {};
+
+        // Validate and update displayName
+        if (displayName !== undefined) {
+            if (!displayName || displayName.trim() === '') {
+                return res.status(400).json({ status: "error", message: "Display name cannot be empty" });
+            }
+
+            // Check if displayName is already taken by another user
+            if (displayName.trim() !== user.displayName) {
+                const existingUser = await User.findOne({
+                    where: {
+                        displayName: displayName.trim(),
+                        uuid: { [Op.ne]: userUuid }
+                    }
+                });
+                if (existingUser) {
+                    return res.status(409).json({
+                        status: "error",
+                        message: "Display name already taken"
+                    });
+                }
+            }
+
+            updateData.displayName = displayName.trim();
+        }
+
+        // Validate and update atName
+        if (atName !== undefined && atName !== null && atName.trim() !== '') {
+            const trimmedAtName = atName.trim();
+
+            // Check if atName is already taken by another user
+            if (trimmedAtName !== user.atName) {
+                const existingUser = await User.findOne({
+                    where: {
+                        atName: trimmedAtName,
+                        uuid: { [Op.ne]: userUuid }
+                    }
+                });
+                if (existingUser) {
+                    return res.status(409).json({
+                        status: "error",
+                        message: "@name already taken"
+                    });
+                }
+            }
+
+            updateData.atName = trimmedAtName;
+        }
+
+        // Handle picture update
+        if (picture && picture.startsWith('data:image')) {
+            try {
+                const base64Data = picture.split(',')[1];
+                const buffer = Buffer.from(base64Data, 'base64');
+
+                // Limit picture size to 1MB
+                if (buffer.length > 1 * 1024 * 1024) {
+                    return res.status(413).json({
+                        status: "error",
+                        message: "Picture size too large (max 1MB)"
+                    });
+                }
+
+                updateData.picture = buffer;
+            } catch (error) {
+                console.error('Error processing picture:', error);
+                return res.status(400).json({
+                    status: "error",
+                    message: "Invalid picture format"
+                });
+            }
+        }
+
+        // Apply updates if any
+        if (Object.keys(updateData).length > 0) {
+            await user.update(updateData);
+            console.log(`[PROFILE UPDATE] User ${userUuid} updated profile:`, Object.keys(updateData));
+        }
+
+        res.status(200).json({
+            status: "ok",
+            message: "Profile updated successfully"
+        });
+    } catch (error) {
+        console.error('Error updating profile:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// Check if @name is available
+clientRoutes.get("/client/profile/check-atname", async (req, res) => {
+    try {
+        const { atName } = req.query;
+        const userUuid = req.session.uuid;
+
+        if (!userUuid) {
+            return res.status(401).json({ status: "error", message: "Not authenticated" });
+        }
+
+        if (!atName || atName.trim() === '') {
+            return res.status(400).json({ status: "error", message: "@name is required" });
+        }
+
+        const trimmedAtName = atName.trim();
+
+        // Check if atName is taken by another user (excluding current user)
+        const existingUser = await User.findOne({
+            where: {
+                atName: trimmedAtName,
+                uuid: { [Op.ne]: userUuid }
+            }
+        });
+
+        res.status(200).json({
+            available: !existingUser,
+            atName: trimmedAtName
+        });
+    } catch (error) {
+        console.error('Error checking @name availability:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// Delete user account
+clientRoutes.delete("/client/profile/delete", async (req, res) => {
+    try {
+        const userUuid = req.session.uuid;
+
+        if (!userUuid) {
+            return res.status(401).json({ status: "error", message: "Not authenticated" });
+        }
+
+        const user = await User.findOne({ where: { uuid: userUuid } });
+        if (!user) {
+            return res.status(404).json({ status: "error", message: "User not found" });
+        }
+
+        console.log(`[ACCOUNT DELETE] User ${userUuid} (${user.email}) is deleting their account`);
+
+        // Delete associated data
+        await Client.destroy({ where: { userUuid } });
+        await SignalPreKey.destroy({ where: { userUuid } });
+        await SignalSignedPreKey.destroy({ where: { userUuid } });
+        
+        // Remove from channel memberships
+        await ChannelMembers.destroy({ where: { userUuid } });
+
+        // Hard delete user
+        await user.destroy();
+
+        // Destroy session
+        req.session.destroy();
+
+        console.log(`[ACCOUNT DELETE] User ${userUuid} account deleted successfully`);
+
+        res.status(200).json({
+            status: "ok",
+            message: "Account deleted successfully"
+        });
+    } catch (error) {
+        console.error('Error deleting account:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
 // Manual cleanup endpoint (for testing/admin purposes)
 clientRoutes.get("/admin/cleanup", async (req, res) => {
     try {
