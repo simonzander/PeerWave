@@ -6,6 +6,7 @@ import '../../widgets/message_input.dart';
 import '../../services/api_service.dart';
 import '../../services/signal_service.dart';
 import '../../services/socket_service.dart';
+import '../../services/offline_message_queue.dart';
 import '../../models/role.dart';
 import '../channel/channel_members_screen.dart';
 
@@ -35,9 +36,76 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeGroupChannel();
-    _loadMessages();
+    _initialize();
+    _setupSocketReconnectListener();
+  }
+
+  /// Setup listener for socket reconnection to process offline queue
+  void _setupSocketReconnectListener() {
+    // Listen for socket reconnection events
+    SocketService().registerListener('connect', (_) {
+      print('[SIGNAL_GROUP] Socket reconnected, processing offline queue...');
+      _processOfflineQueue();
+    });
+  }
+
+  /// Process any queued messages from when we were offline
+  Future<void> _processOfflineQueue() async {
+    final queue = OfflineMessageQueue.instance;
+    
+    if (!queue.hasMessages) {
+      return;
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sending ${queue.queueSize} queued message(s)...'),
+          backgroundColor: Colors.blue,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+
+    await queue.processQueue(
+      sendFunction: (queuedMessage) async {
+        // Only process messages for this channel
+        if (queuedMessage.metadata['channelId'] != widget.channelUuid) {
+          return false; // Not for this channel
+        }
+
+        try {
+          await SignalService.instance.sendGroupItem(
+            channelId: widget.channelUuid,
+            message: queuedMessage.text,
+            itemId: queuedMessage.itemId,
+            type: 'message',
+          );
+          return true;
+        } catch (e) {
+          print('[SIGNAL_GROUP] Failed to send queued message: $e');
+          return false;
+        }
+      },
+      onProgress: (processed, total) {
+        print('[SIGNAL_GROUP] Queue progress: $processed/$total');
+      },
+    );
+  }
+
+  /// Initialize the group chat screen: wait for sender key setup, then load messages
+  Future<void> _initialize() async {
+    // Load offline queue on initialization
+    await OfflineMessageQueue.instance.loadQueue();
+    
+    await _initializeGroupChannel();
+    await _loadMessages();
     _setupMessageListener();
+    
+    // Process offline queue if connected
+    if (SocketService().isConnected) {
+      _processOfflineQueue();
+    }
     
     // Send read receipts for any pending messages when screen becomes visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -46,25 +114,48 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
   }
 
   /// Initialize group channel: load all sender keys and upload our own
+  /// Initialize group channel: load all sender keys and upload our own
   Future<void> _initializeGroupChannel() async {
     try {
       final signalService = SignalService.instance;
       
-      // Force identity key pair generation if not exists
+      // STEP 3: Robust identity key pair check with auto-regenerate attempt
+      bool hasIdentityKey = false;
       try {
         await signalService.identityStore.getIdentityKeyPair();
+        hasIdentityKey = true;
         print('[SIGNAL_GROUP] Identity key pair verified');
       } catch (e) {
-        print('[SIGNAL_GROUP] Error: Identity key pair not available: $e');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Signal Protocol initialization failed. Please try reloading the page.'),
-              duration: Duration(seconds: 5),
-            ),
-          );
+        print('[SIGNAL_GROUP] Identity key pair check failed: $e');
+        hasIdentityKey = false;
+      }
+      
+      // Attempt to regenerate if missing (instead of giving up)
+      if (!hasIdentityKey) {
+        print('[SIGNAL_GROUP] Attempting to regenerate Signal Protocol...');
+        try {
+          // Try to re-initialize Signal Protocol (this should generate keys)
+          await signalService.init();
+          print('[SIGNAL_GROUP] Signal Protocol regenerated successfully');
+          hasIdentityKey = true;
+        } catch (regenerateError) {
+          print('[SIGNAL_GROUP] Failed to regenerate Signal Protocol: $regenerateError');
+          // Show warning but don't block completely
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Signal Protocol initialization incomplete. Some features may not work.'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 5),
+              ),
+            );
+          }
+          // Continue anyway - let sendMessage handle the blocking if needed
+          setState(() {
+            _error = 'Signal Protocol not initialized';
+          });
+          return; // Exit initialization but don't crash
         }
-        return;
       }
       
       // Create and upload our sender key if not already done
@@ -90,12 +181,78 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       
       // Load ALL sender keys for this channel from server (batch load)
       print('[SIGNAL_GROUP] Loading all sender keys for channel from server...');
-      await signalService.loadAllSenderKeysForChannel(widget.channelUuid);
-      print('[SIGNAL_GROUP] All sender keys loaded successfully');
+      try {
+        final result = await signalService.loadAllSenderKeysForChannel(widget.channelUuid);
+        print('[SIGNAL_GROUP] All sender keys loaded successfully');
+        
+        // Store failed keys for later reference
+        if (result['failedKeys'] != null && (result['failedKeys'] as List).isNotEmpty) {
+          final failedKeys = result['failedKeys'] as List<Map<String, String>>;
+          setState(() {
+            _error = 'Some member keys failed to load';
+          });
+          
+          // Show detailed warning about which members
+          if (mounted) {
+            final memberList = failedKeys.map((k) => '${k['userId']}').take(3).join(', ');
+            final remaining = failedKeys.length > 3 ? ' and ${failedKeys.length - 3} more' : '';
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Cannot decrypt messages from: $memberList$remaining'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 8),
+                action: SnackBarAction(
+                  label: 'Retry',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    _initializeGroupChannel(); // Retry loading
+                  },
+                ),
+              ),
+            );
+          }
+        }
+      } catch (loadError) {
+        print('[SIGNAL_GROUP] Error loading sender keys: $loadError');
+        // Show warning but don't block completely
+        if (mounted) {
+          final errorMsg = loadError.toString();
+          if (errorMsg.contains('Failed to load') && errorMsg.contains('sender key')) {
+            // Partial failure - some member keys missing
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(loadError.toString().replaceAll('Exception: ', '')),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 7),
+              ),
+            );
+          } else if (errorMsg.contains('HTTP') || errorMsg.contains('server')) {
+            // Server error
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to load member encryption keys. You may not be able to read all messages.'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 7),
+              ),
+            );
+          }
+        }
+        // Don't return - allow user to try sending/reading what they can
+      }
       
     } catch (e) {
       print('[SIGNAL_GROUP] Error initializing group channel: $e');
-      // Don't block the UI if initialization fails
+      // Show error but don't block the UI completely
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to initialize group chat: $e'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     }
   }
 
@@ -120,16 +277,16 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       final itemId = data['itemId'] as String;
       final recipientCount = data['recipientCount'] as int;
 
-      print('[SIGNAL_GROUP] Delivery receipt: message sent to $recipientCount devices');
+      print('[SIGNAL_GROUP] Delivery receipt: message delivered to server, $recipientCount recipients');
 
       // Update message status in UI
       setState(() {
         final msgIndex = _messages.indexWhere((m) => m['itemId'] == itemId);
         if (msgIndex != -1) {
-          _messages[msgIndex]['status'] = 'delivered';
-          _messages[msgIndex]['deliveredCount'] = 0; // Will be updated as devices receive
-          _messages[msgIndex]['readCount'] = 0;
-          _messages[msgIndex]['totalCount'] = recipientCount;
+          _messages[msgIndex]['status'] = 'delivered';        // Graues Häkchen
+          _messages[msgIndex]['deliveredCount'] = 0;          // Noch niemand empfangen
+          _messages[msgIndex]['readCount'] = 0;               // Noch niemand gelesen
+          _messages[msgIndex]['totalCount'] = recipientCount; // Gesamtzahl Empfänger
         }
       });
     } catch (e) {
@@ -155,7 +312,15 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           _messages[msgIndex]['readCount'] = readCount;
           _messages[msgIndex]['deliveredCount'] = deliveredCount;
           _messages[msgIndex]['totalCount'] = totalCount;
-          _messages[msgIndex]['status'] = allRead ? 'read' : 'delivered';
+          
+          // Status-Logik:
+          // - 'delivered' (graues Häkchen): Noch nicht alle haben gelesen
+          // - 'read' (2 grüne Häkchen): Alle haben gelesen
+          if (allRead) {
+            _messages[msgIndex]['status'] = 'read';  // Alle haben gelesen
+          } else {
+            _messages[msgIndex]['status'] = 'delivered';  // Noch nicht alle
+          }
         }
       });
     } catch (e) {
@@ -219,17 +384,21 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         _messages.add({
           'itemId': itemId,
           'sender': senderId,
+          'senderDisplayName': senderId, // TODO: Load actual display name
+          'text': decrypted,
           'message': decrypted,
+          'time': timestamp,
           'timestamp': timestamp,
           'status': 'received',
           'isOwn': false,
+          'isLocalSent': false,
           'type': itemType,
         });
         
         // Sort by timestamp
         _messages.sort((a, b) {
-          final timeA = DateTime.tryParse(a['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final timeB = DateTime.tryParse(b['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final timeA = DateTime.tryParse(a['time'] ?? a['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final timeB = DateTime.tryParse(b['time'] ?? b['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
           return timeA.compareTo(timeB);
         });
       });
@@ -353,10 +522,14 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
             decryptedItems.add({
               'itemId': itemId,
               'sender': senderId,
+              'senderDisplayName': senderId, // TODO: Load actual display name
+              'text': decrypted,
               'message': decrypted,
+              'time': timestamp,
               'timestamp': timestamp,
               'status': 'received',
               'isOwn': false,
+              'isLocalSent': false,
               'type': itemType,
             });
           } catch (e) {
@@ -366,8 +539,22 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
 
         // Combine sent and received items
         final allMessages = [
-          ...sentGroupItems.map((m) => {...m, 'isOwn': true}),
-          ...receivedGroupItems.map((m) => {...m, 'isOwn': false}),
+          ...sentGroupItems.map((m) => {
+            ...m, 
+            'isOwn': true,
+            'isLocalSent': true,
+            'senderDisplayName': 'You',
+            'time': m['timestamp'],
+            'text': m['message'],
+          }),
+          ...receivedGroupItems.map((m) => {
+            ...m, 
+            'isOwn': false,
+            'isLocalSent': false,
+            'senderDisplayName': m['sender'], // TODO: Load actual display name
+            'time': m['timestamp'],
+            'text': m['message'],
+          }),
           ...decryptedItems,
         ];
 
@@ -382,8 +569,8 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
 
         final sortedMessages = uniqueMessages.values.toList()
           ..sort((a, b) {
-            final timeA = DateTime.tryParse(a['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final timeB = DateTime.tryParse(b['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final timeA = DateTime.tryParse(a['time'] ?? a['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final timeB = DateTime.tryParse(b['time'] ?? b['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
             return timeA.compareTo(timeB);
           });
 
@@ -415,16 +602,103 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     try {
       final signalService = SignalService.instance;
       
+      // STEP 4: Check if Signal Protocol is initialized before sending
+      if (_error != null && _error!.contains('Signal Protocol not initialized')) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cannot send message: Signal Protocol not initialized. Please refresh the page.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+        return; // ❌ BLOCK - Critical initialization error
+      }
+      
+      // Check if sender key is available (should be from initialization)
+      final hasSenderKey = await signalService.hasSenderKey(
+        widget.channelUuid,
+        signalService.currentUserId ?? '',
+        signalService.currentDeviceId ?? 0,
+      );
+      
+      if (!hasSenderKey) {
+        // Attempt to create sender key on-the-fly (failsafe)
+        print('[SIGNAL_GROUP] Sender key missing, attempting to create...');
+        try {
+          await signalService.createGroupSenderKey(widget.channelUuid);
+          await signalService.uploadSenderKeyToServer(widget.channelUuid);
+          print('[SIGNAL_GROUP] Sender key created successfully');
+        } catch (keyError) {
+          // Show warning but allow retry
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Sender key creation failed. Retrying may work: $keyError'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+          }
+          return; // Exit but allow user to retry
+        }
+      }
+      
       // Add optimistic message to UI
       setState(() {
         _messages.add({
           'itemId': itemId,
+          'sender': signalService.currentUserId,
+          'senderDisplayName': 'You',
+          'text': text,
           'message': text,
+          'time': timestamp,
           'timestamp': timestamp,
           'status': 'sending',
           'isOwn': true,
+          'isLocalSent': true,
+          'readCount': 0,
+          'deliveredCount': 0,
+          'totalCount': 0,
         });
       });
+
+      // CRITICAL: Check socket connection before sending
+      if (!SocketService().isConnected) {
+        // Add to offline queue
+        await OfflineMessageQueue.instance.enqueue(
+          QueuedMessage(
+            itemId: itemId,
+            type: 'group',
+            text: text,
+            timestamp: timestamp,
+            metadata: {
+              'channelId': widget.channelUuid,
+              'channelName': widget.channelName,
+            },
+          ),
+        );
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Not connected. Message queued and will be sent when reconnected.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+        
+        // Update message status to pending
+        setState(() {
+          final msgIndex = _messages.indexWhere((m) => m['itemId'] == itemId);
+          if (msgIndex != -1) {
+            _messages[msgIndex]['status'] = 'pending';
+          }
+        });
+        return; // Exit but message stays in queue
+      }
 
       // NEW: Send using sendGroupItem (simpler, no manual key checks)
       await signalService.sendGroupItem(
@@ -455,10 +729,34 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         }
       });
 
+      // STEP 4: Better error messages based on error type
+      String errorMessage = 'Failed to send message';
+      Color errorColor = Colors.red;
+      
+      if (e.toString().contains('No sender key found')) {
+        errorMessage = 'Sender key not available. Please try again.';
+        errorColor = Colors.orange;
+      } else if (e.toString().contains('User not authenticated')) {
+        errorMessage = 'Session expired. Please refresh the page.';
+        errorColor = Colors.red;
+      } else if (e.toString().contains('Identity key')) {
+        errorMessage = 'Encryption keys missing. Please refresh the page.';
+        errorColor = Colors.red;
+      } else if (e.toString().contains('Cannot create sender key')) {
+        errorMessage = 'Signal keys missing. Please refresh the page.';
+        errorColor = Colors.red;
+      } else if (e.toString().contains('network') || e.toString().contains('connection')) {
+        errorMessage = 'Network error. Please check your connection and retry.';
+        errorColor = Colors.orange;
+      } else {
+        errorMessage = 'Failed to send message: ${e.toString()}';
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to send message: ${e.toString()}'),
+            content: Text(errorMessage),
+            backgroundColor: errorColor,
             duration: const Duration(seconds: 5),
           ),
         );

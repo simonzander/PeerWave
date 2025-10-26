@@ -110,6 +110,9 @@ class MessageList extends StatelessWidget {
             ),
           ],
         );
+      } else if (status == 'delivered') {
+        // Delivered to server, waiting for reads
+        return const Icon(Icons.check, size: 16, color: Colors.grey);
       }
     }
 

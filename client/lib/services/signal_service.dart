@@ -157,6 +157,65 @@ class SignalService {
     print('[SIGNAL SERVICE] Current user set: userId=$userId, deviceId=$deviceId');
   }
 
+  /// Retry a function with exponential backoff
+  /// 
+  /// Retries a failing operation with increasing delays between attempts.
+  /// Useful for network errors or temporary failures.
+  /// 
+  /// Parameters:
+  /// - [operation]: The async function to retry
+  /// - [maxAttempts]: Maximum number of retry attempts (default: 3)
+  /// - [initialDelay]: Initial delay in milliseconds (default: 1000ms)
+  /// - [maxDelay]: Maximum delay in milliseconds (default: 10000ms)
+  /// - [shouldRetry]: Optional function to determine if error is retryable
+  Future<T> retryWithBackoff<T>({
+    required Future<T> Function() operation,
+    int maxAttempts = 3,
+    int initialDelay = 1000,
+    int maxDelay = 10000,
+    bool Function(dynamic error)? shouldRetry,
+  }) async {
+    int attempt = 0;
+    int delay = initialDelay;
+    
+    while (true) {
+      try {
+        attempt++;
+        print('[SIGNAL SERVICE] Retry attempt $attempt/$maxAttempts');
+        return await operation();
+      } catch (e) {
+        print('[SIGNAL SERVICE] Attempt $attempt failed: $e');
+        
+        // Check if we should retry this error
+        if (shouldRetry != null && !shouldRetry(e)) {
+          print('[SIGNAL SERVICE] Error is not retryable, throwing immediately');
+          rethrow;
+        }
+        
+        // Check if we've exhausted attempts
+        if (attempt >= maxAttempts) {
+          print('[SIGNAL SERVICE] Max attempts reached, giving up');
+          rethrow;
+        }
+        
+        // Calculate delay with exponential backoff
+        final currentDelay = (delay * (1 << (attempt - 1))).clamp(initialDelay, maxDelay);
+        print('[SIGNAL SERVICE] Waiting ${currentDelay}ms before retry...');
+        await Future.delayed(Duration(milliseconds: currentDelay));
+      }
+    }
+  }
+
+  /// Helper: Determine if an error is network-related and retryable
+  bool isRetryableError(dynamic error) {
+    final errorStr = error.toString().toLowerCase();
+    return errorStr.contains('network') ||
+           errorStr.contains('connection') ||
+           errorStr.contains('timeout') ||
+           errorStr.contains('socket') ||
+           errorStr.contains('http');
+  }
+
   Future<void> test() async {
     print("SignalService test method called");
     final AliceIdentityKeyPair = generateIdentityKeyPair();
@@ -748,6 +807,16 @@ class SignalService {
   }
 
   Future<List<Map<String, dynamic>>> fetchPreKeyBundleForUser(String userId) async {
+    // Use retry mechanism for network-related failures
+    return await retryWithBackoff(
+      operation: () => _fetchPreKeyBundleForUserInternal(userId),
+      maxAttempts: 3,
+      initialDelay: 1000,
+      shouldRetry: isRetryableError,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchPreKeyBundleForUserInternal(String userId) async {
     final apiServer = await loadWebApiServer();
     String urlString = apiServer ?? '';
     if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
@@ -811,6 +880,24 @@ class SignalService {
       }
     } else {
       throw Exception('Failed to load PreKeyBundle');
+    }
+  }
+
+  /// Check if recipient has available PreKeys
+  /// Returns true if at least one valid device with PreKeys exists
+  /// On API error: returns null to allow caller to decide (don't assume success)
+  Future<bool?> hasPreKeysForRecipient(String recipientUserId) async {
+    try {
+      final bundles = await fetchPreKeyBundleForUser(recipientUserId);
+      // Filter for recipient's devices only (not our own devices)
+      final recipientDevices = bundles.where((bundle) => 
+        bundle['userId'] == recipientUserId
+      ).toList();
+      return recipientDevices.isNotEmpty;
+    } catch (e) {
+      print('[SIGNAL SERVICE][ERROR] Failed to check PreKeys for $recipientUserId: $e');
+      // Return null to indicate check failed (not true/false)
+      return null;
     }
   }
 
@@ -1606,7 +1693,24 @@ Future<String> decryptItem({
   }
 
   /// Load all sender keys for a channel (when joining)
-  Future<void> loadAllSenderKeysForChannel(String channelId) async {
+  Future<Map<String, dynamic>> loadAllSenderKeysForChannel(String channelId) async {
+    // Use retry mechanism for network-related failures
+    return await retryWithBackoff(
+      operation: () => _loadAllSenderKeysForChannelInternal(channelId),
+      maxAttempts: 3,
+      initialDelay: 1000,
+      shouldRetry: isRetryableError,
+    );
+  }
+
+  Future<Map<String, dynamic>> _loadAllSenderKeysForChannelInternal(String channelId) async {
+    final result = {
+      'success': true,
+      'totalKeys': 0,
+      'loadedKeys': 0,
+      'failedKeys': <Map<String, String>>[],
+    };
+    
     try {
       print('[SIGNAL_SERVICE] Loading all sender keys for channel $channelId');
       
@@ -1618,10 +1722,11 @@ Future<String> decryptItem({
         // Handle null or empty senderKeys
         if (senderKeysData == null) {
           print('[SIGNAL_SERVICE] No sender keys found for channel');
-          return;
+          return result;
         }
         
         final senderKeys = senderKeysData as List<dynamic>;
+        result['totalKeys'] = senderKeys.length;
         
         print('[SIGNAL_SERVICE] Found ${senderKeys.length} sender keys');
         
@@ -1644,16 +1749,38 @@ Future<String> decryptItem({
               senderKeyBytes,
             );
             
+            result['loadedKeys'] = (result['loadedKeys'] as int) + 1;
             print('[SIGNAL_SERVICE] ✓ Loaded sender key for $userId:$deviceId');
           } catch (keyError) {
-            print('[SIGNAL_SERVICE] Error loading key: $keyError');
+            final userId = key['userId'] as String?;
+            final deviceId = key['deviceId'] as int?;
+            (result['failedKeys'] as List).add({
+              'userId': userId ?? 'unknown',
+              'deviceId': deviceId?.toString() ?? 'unknown',
+              'error': keyError.toString(),
+            });
+            print('[SIGNAL_SERVICE] Error loading key for $userId:$deviceId - $keyError');
           }
         }
         
-        print('[SIGNAL_SERVICE] ✓ Loaded ${senderKeys.length} sender keys for channel');
+        if ((result['failedKeys'] as List).isNotEmpty) {
+          // Partial failure - some keys couldn't be loaded
+          result['success'] = false;
+          final failedCount = (result['failedKeys'] as List).length;
+          throw Exception('Failed to load $failedCount sender key(s). Some messages may not decrypt.');
+        }
+        
+        print('[SIGNAL_SERVICE] ✓ Loaded ${result['loadedKeys']} sender keys for channel');
+        return result;
+      } else {
+        // HTTP error or unsuccessful response
+        result['success'] = false;
+        throw Exception('Failed to load sender keys from server: HTTP ${response.statusCode}');
       }
     } catch (e) {
       print('[SIGNAL_SERVICE] Error loading all sender keys: $e');
+      result['success'] = false;
+      rethrow; // CRITICAL: Re-throw to notify caller
     }
   }
 

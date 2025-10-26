@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../widgets/message_list.dart';
 import '../../widgets/message_input.dart';
 import '../../services/signal_service.dart';
+import '../../services/socket_service.dart';
+import '../../services/offline_message_queue.dart';
 import '../../services/api_service.dart';
 import 'dart:convert';
 import 'package:uuid/uuid.dart';
@@ -31,9 +33,109 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   @override
   void initState() {
     super.initState();
-    _loadMessages();
+    _initialize();
+    _setupSocketReconnectListener();
+  }
+
+  /// Setup listener for socket reconnection to process offline queue
+  void _setupSocketReconnectListener() {
+    SocketService().registerListener('connect', (_) {
+      print('[DIRECT_MESSAGES] Socket reconnected, processing offline queue...');
+      _processOfflineQueue();
+    });
+  }
+
+  /// Process any queued messages from when we were offline
+  Future<void> _processOfflineQueue() async {
+    final queue = OfflineMessageQueue.instance;
+    
+    if (!queue.hasMessages) {
+      return;
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sending ${queue.queueSize} queued message(s)...'),
+          backgroundColor: Colors.blue,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+
+    await queue.processQueue(
+      sendFunction: (queuedMessage) async {
+        // Only process 1:1 messages for this recipient
+        if (queuedMessage.type != 'direct' || 
+            queuedMessage.metadata['recipientId'] != widget.recipientUuid) {
+          return false;
+        }
+
+        try {
+          await SignalService.instance.sendItem(
+            recipientUserId: widget.recipientUuid,
+            type: 'message',
+            payload: queuedMessage.text,
+            itemId: queuedMessage.itemId,
+          );
+          return true;
+        } catch (e) {
+          print('[DIRECT_MESSAGES] Failed to send queued message: $e');
+          return false;
+        }
+      },
+      onProgress: (processed, total) {
+        print('[DIRECT_MESSAGES] Queue progress: $processed/$total');
+      },
+    );
+  }
+
+  /// Initialize the direct messages screen: verify Signal Protocol, then load messages
+  Future<void> _initialize() async {
+    // Load offline queue
+    await OfflineMessageQueue.instance.loadQueue();
+    
+    // Verify own identity keys are available
+    try {
+      await SignalService.instance.identityStore.getIdentityKeyPair();
+      print('[DIRECT_MESSAGES] Identity key pair verified');
+    } catch (e) {
+      print('[DIRECT_MESSAGES] Identity key pair check failed: $e');
+      
+      // Attempt to regenerate if missing
+      print('[DIRECT_MESSAGES] Attempting to regenerate Signal Protocol...');
+      try {
+        await SignalService.instance.init();
+        print('[DIRECT_MESSAGES] Signal Protocol regenerated successfully');
+      } catch (regenerateError) {
+        print('[DIRECT_MESSAGES] Failed to regenerate Signal Protocol: $regenerateError');
+        
+        // Show warning and set error state
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Signal Protocol initialization incomplete. Cannot send messages.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+        
+        setState(() {
+          _error = 'Signal Protocol not initialized';
+        });
+        // Continue loading messages (can still receive)
+      }
+    }
+    
+    await _loadMessages();
     _setupMessageListener();
     _setupReceiptListeners();
+    
+    // Process offline queue if connected
+    if (SocketService().isConnected) {
+      _processOfflineQueue();
+    }
   }
 
   @override
@@ -393,6 +495,59 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   Future<void> _sendMessage(String text) async {
     if (text.trim().isEmpty) return;
 
+    // CRITICAL: Check if Signal Protocol is initialized before sending
+    if (_error != null && _error!.contains('Signal Protocol not initialized')) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot send message: Signal Protocol not initialized. Please refresh the page.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+      return; // ❌ BLOCK - Critical initialization error
+    }
+
+    // STEP 2: Check if recipient has available PreKeys BEFORE sending
+    try {
+      final hasPreKeys = await SignalService.instance.hasPreKeysForRecipient(
+        widget.recipientUuid
+      );
+      
+      if (hasPreKeys == null) {
+        // API error - show warning but allow sending (failsafe)
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not verify recipient keys. Attempting to send anyway...'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+        // Continue with sending
+      } else if (!hasPreKeys) {
+        // BLOCK: Recipient has no available PreKeys
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Cannot send message: ${widget.recipientDisplayName} has no PreKeys available. '
+                'Please ask them to register or refresh their device.'
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+        return; // ❌ BLOCK - Do not send message
+      }
+    } catch (e) {
+      // On check error: still try to send (failsafe approach)
+      print('[DIRECT MESSAGES] PreKey check failed, attempting to send anyway: $e');
+    }
+
     final itemId = Uuid().v4();
     final timestamp = DateTime.now().toIso8601String();
 
@@ -410,6 +565,42 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       });
     });
 
+    // CRITICAL: Check socket connection before sending
+    if (!SocketService().isConnected) {
+      // Add to offline queue
+      await OfflineMessageQueue.instance.enqueue(
+        QueuedMessage(
+          itemId: itemId,
+          type: 'direct',
+          text: text,
+          timestamp: timestamp,
+          metadata: {
+            'recipientId': widget.recipientUuid,
+            'recipientName': widget.recipientDisplayName,
+          },
+        ),
+      );
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Not connected. Message queued and will be sent when reconnected.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+      
+      // Update message status to pending
+      setState(() {
+        final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
+        if (msgIndex != -1) {
+          _messages[msgIndex]['status'] = 'pending';
+        }
+      });
+      return; // Exit but message stays in queue
+    }
+
     try {
       await SignalService.instance.sendItem(
         recipientUserId: widget.recipientUuid,
@@ -424,9 +615,43 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           _messages[msgIndex]['status'] = 'failed';
         }
       });
+      
+      // STEP 4: Better error messages based on error type
+      String errorMessage = 'Failed to send message';
+      Color errorColor = Colors.red;
+      
+      if (e.toString().contains('PreKeyBundle') || e.toString().contains('PreKey')) {
+        errorMessage = 'Recipient has no PreKeys. Please ask them to register or refresh.';
+        errorColor = Colors.red;
+      } else if (e.toString().contains('Failed to load PreKeyBundle')) {
+        errorMessage = 'Server error loading recipient keys. Please try again later.';
+        errorColor = Colors.orange;
+      } else if (e.toString().contains('Identity key') || e.toString().contains('identity')) {
+        errorMessage = 'Encryption keys missing. Please refresh the page.';
+        errorColor = Colors.red;
+      } else if (e.toString().contains('User not authenticated')) {
+        errorMessage = 'Session expired. Please refresh the page.';
+        errorColor = Colors.red;
+      } else if (e.toString().contains('Session') || e.toString().contains('session')) {
+        errorMessage = 'Encryption session error. Message may arrive after retry.';
+        errorColor = Colors.orange;
+      } else if (e.toString().contains('decode') || e.toString().contains('Decode') || e.toString().contains('Invalid')) {
+        errorMessage = 'Recipient has corrupted encryption keys. Ask them to re-register.';
+        errorColor = Colors.red;
+      } else if (e.toString().contains('network') || e.toString().contains('connection')) {
+        errorMessage = 'Network error. Please check your connection and retry.';
+        errorColor = Colors.orange;
+      } else {
+        errorMessage = 'Failed to send message: ${e.toString()}';
+      }
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send message: $e')),
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: errorColor,
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     }
