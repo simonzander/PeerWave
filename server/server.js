@@ -2,6 +2,7 @@
  * Required modules
  */
 const config = require('./config/config');
+const LicenseValidator = require('./lib/license-validator');
 const express = require("express");
 const { randomUUID } = require('crypto');
 const http = require("http");
@@ -14,6 +15,43 @@ const { User, Channel, Thread, Client, SignalSignedPreKey, SignalPreKey, Item, C
 const path = require('path');
 const writeQueue = require('./db/writeQueue');
 const { initCleanupJob } = require('./jobs/cleanup');
+
+// Initialize license validator
+const licenseValidator = new LicenseValidator();
+
+// Validate license on startup
+(async () => {
+  console.log('\n🔐 Validating PeerWave License...');
+  const license = await licenseValidator.validate();
+  
+  if (license.valid) {
+    console.log('✅ License Valid');
+    console.log(`   Customer: ${license.customer}`);
+    console.log(`   Type: ${license.type}`);
+    console.log(`   Expires: ${license.expires.toISOString().split('T')[0]} (${license.daysRemaining} days)`);
+    
+    if (license.gracePeriod) {
+      console.log(`   ⚠️  Grace Period: ${license.daysRemaining} days remaining`);
+    }
+    
+    if (license.features.maxUsers) {
+      console.log(`   Max Users: ${license.features.maxUsers}`);
+    }
+    
+    console.log(`   Grace Period: ${license.gracePeriodDays} days after expiration`);
+  } else if (license.error === 'EXPIRED') {
+    // License expired and grace period is over - STOP SERVER
+    console.error('\n❌ FATAL: License has expired!');
+    console.error(`   ${license.message}`);
+    console.error(`   Server cannot start with expired license.`);
+    console.error(`   Please renew your license or contact support.\n`);
+    process.exit(1);
+  } else {
+    console.log(`⚠️  No valid license found: ${license.message}`);
+    console.log(`   Running in non-commercial mode`);
+  }
+  console.log('');
+})();
 
 // Function to validate UUID
 function isValidUUID(uuid) {
@@ -44,6 +82,32 @@ app.use(sessionMiddleware);
   app.use('/api', roleRoutes);
   app.use('/api/group-items', groupItemRoutes);
   app.use('/api/sender-keys', senderKeyRoutes);
+
+  // License info endpoint
+  app.get('/api/license-info', async (req, res) => {
+    const license = await licenseValidator.validate();
+    
+    if (license.valid) {
+      res.json({
+        type: license.type,
+        showNotice: license.type === 'commercial' ? false : true,
+        message: 'Private/Non-Commercial Use',
+        customer: license.customer,
+        expires: license.expires,
+        daysRemaining: license.daysRemaining,
+        gracePeriod: license.gracePeriod || false,
+        features: license.features
+      });
+    } else {
+      // Fallback to non-commercial
+      res.json({
+        type: 'non-commercial',
+        showNotice: true,
+        message: 'Private/Non-Commercial Use',
+        features: {}
+      });
+    }
+  });
 
   //SOCKET.IO
 const rooms = {};

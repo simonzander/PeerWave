@@ -132,3 +132,12 @@ dist
 # db
 db/*.sqlite*
 config/config.js
+scripts
+
+# License System - SECURITY CRITICAL
+# NEVER commit the private CA key!
+cert/ca-key.pem
+cert/ca-cert.pem
+cert/license.crt
+cert/README.md
+QUICKSTART-LICENSE.md

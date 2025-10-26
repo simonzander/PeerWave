@@ -146,8 +146,73 @@ class _SidebarPanelState extends State<SidebarPanel> {
               ),
               const Spacer(),
               widget.buildProfileCard(),
+              // License footer - takes same space in both commercial/non-commercial
+              const SizedBox(height: 8),
+              _LicenseFooter(),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// License Footer Widget
+class _LicenseFooter extends StatefulWidget {
+  const _LicenseFooter({Key? key}) : super(key: key);
+
+  @override
+  State<_LicenseFooter> createState() => _LicenseFooterState();
+}
+
+class _LicenseFooterState extends State<_LicenseFooter> {
+  bool _isCommercial = false;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLicenseInfo();
+  }
+
+  Future<void> _loadLicenseInfo() async {
+    try {
+      ApiService.init();
+      final dio = ApiService.dio;
+      final resp = await dio.get('/api/license-info');
+      
+      if (resp.statusCode == 200) {
+        final data = resp.data;
+        setState(() {
+          _isCommercial = data['type'] == 'commercial' || data['showNotice'] == false;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      // Default to non-commercial if request fails
+      setState(() {
+        _isCommercial = false;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      // Show empty space while loading
+      return const SizedBox(height: 24);
+    }
+
+    return Container(
+      height: 24,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      child: Text(
+        _isCommercial ? '' : 'Private/Non-Commercial Use',
+        style: TextStyle(
+          color: _isCommercial ? Colors.transparent : Colors.grey[600],
+          fontSize: 9,
         ),
       ),
     );
