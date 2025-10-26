@@ -56,11 +56,13 @@ class PermanentPreKeyStore extends PreKeyStore {
   }
 
   /// Loads prekeys from remote server and stores them locally.
+  /// IMPORTANT: Always queries server to detect sync issues (e.g. server has 0, local has 43)
   Future<void> loadRemotePreKeys() async {
-    final localPreKeys = await _getAllPreKeyIds();
-    if (localPreKeys.length >= 20) {
-      return;
-    }
+    // REMOVED: Early exit based on local count
+    // Old buggy code: if (localPreKeys.length >= 20) return;
+    // This prevented detection of server/client desync!
+    
+    print('[PREKEY STORE] Querying server for PreKey sync check...');
     SocketService().emit("getPreKeys", null);
   }
 
@@ -102,15 +104,42 @@ class PermanentPreKeyStore extends PreKeyStore {
 
   PermanentPreKeyStore() {
     SocketService().registerListener("getPreKeysResponse", (data) async {
-      print(data);
-      // Server prekeys contain only public keys, so we do not reconstruct PreKeyRecords here.
-      if (data.isEmpty) {
-        print("No pre keys found, generating more");
-        var newPreKeys = generatePreKeys(0, 110);
-        storePreKeys(newPreKeys);
+      print('[PREKEY STORE] Server has ${data.length} PreKeys');
+      final localPreKeys = await _getAllPreKeyIds();
+      print('[PREKEY STORE] Local has ${localPreKeys.length} PreKeys');
+      
+      // CRITICAL FIX: Detect server/client desync
+      // Case 1: Server has 0 PreKeys, but we have local PreKeys → Upload all
+      if (data.isEmpty && localPreKeys.isNotEmpty) {
+        print('[PREKEY STORE] ⚠️  SYNC ISSUE: Server has 0 PreKeys, but local has ${localPreKeys.length}!');
+        print('[PREKEY STORE] Uploading all local PreKeys to server...');
+        final allLocalKeys = await getAllPreKeys();
+        await storePreKeys(allLocalKeys);
+        return;
       }
-      if (data.length <= 20) {
-        print("Not enough pre keys found, generating more");
+      
+      // Case 2: Server has 0 PreKeys and local also empty → Generate new
+      if (data.isEmpty) {
+        print('[PREKEY STORE] No PreKeys found anywhere, generating 110 new ones');
+        var newPreKeys = generatePreKeys(0, 110);
+        await storePreKeys(newPreKeys);
+        return;
+      }
+      
+      // Case 3: Server has < 20 PreKeys (low threshold)
+      if (data.length < 20) {
+        print('[PREKEY STORE] Server only has ${data.length} PreKeys (threshold: 20)');
+        
+        // Sub-case: Local has enough → Upload to server
+        if (localPreKeys.length >= 20) {
+          print('[PREKEY STORE] Local has enough (${localPreKeys.length}), uploading to server');
+          final allLocalKeys = await getAllPreKeys();
+          await storePreKeys(allLocalKeys);
+          return;
+        }
+        
+        // Sub-case: Both low → Generate more
+        print('[PREKEY STORE] Both server and local are low, generating more');
         var lastId = data.isNotEmpty
             ? data.map((e) => e['prekey_id']).reduce((a, b) => a > b ? a : b)
             : 0;
@@ -119,7 +148,11 @@ class PermanentPreKeyStore extends PreKeyStore {
         }
         var newPreKeys = generatePreKeys(lastId + 1, lastId + 110);
         await storePreKeys(newPreKeys);
+        return;
       }
+      
+      // Case 4: Server has >= 20 PreKeys → All good
+      print('[PREKEY STORE] ✅ Server has sufficient PreKeys (${data.length})');
     });
     loadRemotePreKeys();
   }

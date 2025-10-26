@@ -34,67 +34,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   void initState() {
     super.initState();
     _initialize();
-    _setupSocketReconnectListener();
-  }
-
-  /// Setup listener for socket reconnection to process offline queue
-  void _setupSocketReconnectListener() {
-    SocketService().registerListener('connect', (_) {
-      print('[DIRECT_MESSAGES] Socket reconnected, processing offline queue...');
-      _processOfflineQueue();
-    });
-  }
-
-  /// Process any queued messages from when we were offline
-  Future<void> _processOfflineQueue() async {
-    final queue = OfflineMessageQueue.instance;
-    
-    if (!queue.hasMessages) {
-      return;
-    }
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Sending ${queue.queueSize} queued message(s)...'),
-          backgroundColor: Colors.blue,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
-
-    await queue.processQueue(
-      sendFunction: (queuedMessage) async {
-        // Only process 1:1 messages for this recipient
-        if (queuedMessage.type != 'direct' || 
-            queuedMessage.metadata['recipientId'] != widget.recipientUuid) {
-          return false;
-        }
-
-        try {
-          await SignalService.instance.sendItem(
-            recipientUserId: widget.recipientUuid,
-            type: 'message',
-            payload: queuedMessage.text,
-            itemId: queuedMessage.itemId,
-          );
-          return true;
-        } catch (e) {
-          print('[DIRECT_MESSAGES] Failed to send queued message: $e');
-          return false;
-        }
-      },
-      onProgress: (processed, total) {
-        print('[DIRECT_MESSAGES] Queue progress: $processed/$total');
-      },
-    );
   }
 
   /// Initialize the direct messages screen: verify Signal Protocol, then load messages
   Future<void> _initialize() async {
-    // Load offline queue
-    await OfflineMessageQueue.instance.loadQueue();
-    
     // Verify own identity keys are available
     try {
       await SignalService.instance.identityStore.getIdentityKeyPair();
@@ -131,11 +74,6 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     await _loadMessages();
     _setupMessageListener();
     _setupReceiptListeners();
-    
-    // Process offline queue if connected
-    if (SocketService().isConnected) {
-      _processOfflineQueue();
-    }
   }
 
   @override

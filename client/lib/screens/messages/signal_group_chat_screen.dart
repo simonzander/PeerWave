@@ -37,75 +37,13 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
   void initState() {
     super.initState();
     _initialize();
-    _setupSocketReconnectListener();
-  }
-
-  /// Setup listener for socket reconnection to process offline queue
-  void _setupSocketReconnectListener() {
-    // Listen for socket reconnection events
-    SocketService().registerListener('connect', (_) {
-      print('[SIGNAL_GROUP] Socket reconnected, processing offline queue...');
-      _processOfflineQueue();
-    });
-  }
-
-  /// Process any queued messages from when we were offline
-  Future<void> _processOfflineQueue() async {
-    final queue = OfflineMessageQueue.instance;
-    
-    if (!queue.hasMessages) {
-      return;
-    }
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Sending ${queue.queueSize} queued message(s)...'),
-          backgroundColor: Colors.blue,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
-
-    await queue.processQueue(
-      sendFunction: (queuedMessage) async {
-        // Only process messages for this channel
-        if (queuedMessage.metadata['channelId'] != widget.channelUuid) {
-          return false; // Not for this channel
-        }
-
-        try {
-          await SignalService.instance.sendGroupItem(
-            channelId: widget.channelUuid,
-            message: queuedMessage.text,
-            itemId: queuedMessage.itemId,
-            type: 'message',
-          );
-          return true;
-        } catch (e) {
-          print('[SIGNAL_GROUP] Failed to send queued message: $e');
-          return false;
-        }
-      },
-      onProgress: (processed, total) {
-        print('[SIGNAL_GROUP] Queue progress: $processed/$total');
-      },
-    );
   }
 
   /// Initialize the group chat screen: wait for sender key setup, then load messages
   Future<void> _initialize() async {
-    // Load offline queue on initialization
-    await OfflineMessageQueue.instance.loadQueue();
-    
     await _initializeGroupChannel();
     await _loadMessages();
     _setupMessageListener();
-    
-    // Process offline queue if connected
-    if (SocketService().isConnected) {
-      _processOfflineQueue();
-    }
     
     // Send read receipts for any pending messages when screen becomes visible
     WidgetsBinding.instance.addPostFrameCallback((_) {

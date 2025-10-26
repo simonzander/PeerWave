@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'api_service.dart';
 import '../web_config.dart';
 import 'socket_service.dart';
+import 'offline_message_queue.dart';
 import 'package:uuid/uuid.dart';
 import 'permanent_session_store.dart';
 import 'permanent_pre_key_store.dart';
@@ -216,6 +217,64 @@ class SignalService {
            errorStr.contains('http');
   }
 
+  /// Process offline message queue - called automatically on socket reconnect
+  /// 
+  /// This method processes ALL queued messages globally, not per-screen.
+  /// It sends messages to their respective channels/recipients.
+  Future<void> _processOfflineQueue() async {
+    final queue = OfflineMessageQueue.instance;
+    
+    if (!queue.hasMessages) {
+      print('[SIGNAL SERVICE] No messages in offline queue');
+      return;
+    }
+
+    print('[SIGNAL SERVICE] Processing ${queue.queueSize} queued messages...');
+
+    await queue.processQueue(
+      sendFunction: (queuedMessage) async {
+        try {
+          if (queuedMessage.type == 'group') {
+            // Send group message
+            final channelId = queuedMessage.metadata['channelId'] as String;
+            print('[SIGNAL SERVICE] Sending queued group message to channel $channelId');
+            
+            await sendGroupItem(
+              channelId: channelId,
+              message: queuedMessage.text,
+              itemId: queuedMessage.itemId,
+              type: 'message',
+            );
+            return true;
+          } else if (queuedMessage.type == 'direct') {
+            // Send direct message
+            final recipientId = queuedMessage.metadata['recipientId'] as String;
+            print('[SIGNAL SERVICE] Sending queued direct message to $recipientId');
+            
+            await sendItem(
+              recipientUserId: recipientId,
+              type: 'message',
+              payload: queuedMessage.text,
+              itemId: queuedMessage.itemId,
+            );
+            return true;
+          } else {
+            print('[SIGNAL SERVICE] Unknown message type: ${queuedMessage.type}');
+            return false;
+          }
+        } catch (e) {
+          print('[SIGNAL SERVICE] Failed to send queued message ${queuedMessage.itemId}: $e');
+          return false;
+        }
+      },
+      onProgress: (processed, total) {
+        print('[SIGNAL SERVICE] Queue progress: $processed/$total');
+      },
+    );
+
+    print('[SIGNAL SERVICE] Offline queue processing complete');
+  }
+
   Future<void> test() async {
     print("SignalService test method called");
     final AliceIdentityKeyPair = generateIdentityKeyPair();
@@ -334,6 +393,10 @@ class SignalService {
     sentGroupItemsStore = await SentGroupItemsStore.getInstance();
 
     await _registerSocketListeners();
+
+    // Load offline message queue
+    await OfflineMessageQueue.instance.loadQueue();
+    print('[SIGNAL SERVICE] Offline queue loaded: ${OfflineMessageQueue.instance.queueSize} messages');
 
     // --- Signal status check and conditional upload ---
     SocketService().emit("signalStatus", null);
@@ -482,6 +545,12 @@ class SignalService {
 
   /// Register all Socket.IO listeners (extracted for reuse)
   Future<void> _registerSocketListeners() async {
+    // Setup offline queue processing on reconnect
+    SocketService().registerListener("connect", (_) {
+      print('[SIGNAL SERVICE] Socket reconnected, processing offline queue...');
+      _processOfflineQueue();
+    });
+    
     SocketService().registerListener("receiveItem", (data) {
       receiveItem(data);
     });
@@ -555,18 +624,48 @@ class SignalService {
         'registrationId': registrationId.toString(),
       });
     }
-    // 2. PreKeys
+    // 2. PreKeys - Enhanced sync check
     final int preKeysCount = (status is Map && status['preKeys'] is int) ? status['preKeys'] : 0;
+    print('[SIGNAL SERVICE] Server has $preKeysCount PreKeys');
+    
     if (preKeysCount < 20) {
-      print('[SIGNAL SERVICE] Not enough pre-keys on server, uploading more');
       final localPreKeys = await preKeyStore.getAllPreKeys();
-      if (localPreKeys.isNotEmpty) {
+      print('[SIGNAL SERVICE] Local has ${localPreKeys.length} PreKeys');
+      
+      if (localPreKeys.isEmpty) {
+        // No local PreKeys → Generate new ones
+        print('[SIGNAL SERVICE] ⚠️  No local PreKeys found, generating 110 new ones');
+        final newPreKeys = generatePreKeys(0, 110);
+        await preKeyStore.storePreKeys(newPreKeys);
+      } else if (preKeysCount == 0) {
+        // Server has 0 but we have local → CRITICAL sync issue!
+        print('[SIGNAL SERVICE] ⚠️  CRITICAL: Server has 0 PreKeys but local has ${localPreKeys.length}!');
+        print('[SIGNAL SERVICE] Re-uploading ALL local PreKeys to server...');
+        final preKeysPayload = localPreKeys.map((pk) => {
+          'id': pk.id,
+          'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
+        }).toList();
+        SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
+      } else if (localPreKeys.length > preKeysCount + 10) {
+        // Server significantly behind local (>10 difference) → Re-sync
+        print('[SIGNAL SERVICE] ⚠️  Sync gap detected: Server has $preKeysCount, local has ${localPreKeys.length}');
+        print('[SIGNAL SERVICE] Uploading ${localPreKeys.length} local PreKeys to server...');
+        final preKeysPayload = localPreKeys.map((pk) => {
+          'id': pk.id,
+          'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
+        }).toList();
+        SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
+      } else {
+        // Server has some but < 20 → Upload what we have
+        print('[SIGNAL SERVICE] Server needs more PreKeys, uploading ${localPreKeys.length} local keys');
         final preKeysPayload = localPreKeys.map((pk) => {
           'id': pk.id,
           'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
         }).toList();
         SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
       }
+    } else {
+      print('[SIGNAL SERVICE] ✅ Server has sufficient PreKeys ($preKeysCount >= 20)');
     }
     // 3. SignedPreKey
     final signedPreKey = status is Map ? status['signedPreKey'] : null;
@@ -1147,16 +1246,29 @@ Future<String> decryptItem({
   if (cipherType == CiphertextMessage.prekeyType) {
     final preKeyMsg = PreKeySignalMessage(serialized);
     final plaintext = await sessionCipher.decryptWithCallback(preKeyMsg, (pt) {});
+    
     // PreKey nach erfolgreichem Session-Aufbau löschen
     final preKeyIdOptional = preKeyMsg.getPreKeyId();
     int? preKeyId;
     if (preKeyIdOptional.isPresent == true) {
       preKeyId = preKeyIdOptional.value;
     }
+    
     if (preKeyId != null) {
+      print('[SIGNAL SERVICE] Removing used PreKey $preKeyId after session establishment');
       await preKeyStore.removePreKey(preKeyId);
-      preKeyStore.checkPreKeys();
+      
+      // Check if we need to generate more PreKeys locally
+      await preKeyStore.checkPreKeys();
+      
+      // CRITICAL: Trigger server sync check after PreKey deletion
+      // This ensures server stays in sync with local PreKey count
+      Future.delayed(Duration(seconds: 2), () {
+        print('[SIGNAL SERVICE] Triggering PreKey sync check after deletion...');
+        SocketService().emit("signalStatus", null);
+      });
     }
+    
     return utf8.decode(plaintext);
 } else if (cipherType == CiphertextMessage.whisperType) {
     // Normale Nachricht
