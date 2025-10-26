@@ -208,14 +208,21 @@ io.sockets.on("connection", socket => {
 
   // Batch store pre-keys
   socket.on("storePreKeys", async (data) => {
-    // data should be: { preKeys: [ { id, data }, ... ] }
+    // ACCEPT BOTH FORMATS:
+    // NEW: { preKeys: [ { id, data }, ... ] }
+    // OLD: [ { id, data }, ... ] (direct array for backwards compatibility)
     try {
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
-        if (Array.isArray(data.preKeys)) {
+        // Handle both formats: direct array or wrapped in { preKeys: ... }
+        const preKeysArray = Array.isArray(data) ? data : (Array.isArray(data.preKeys) ? data.preKeys : null);
+        
+        if (preKeysArray) {
+          console.log(`[SIGNAL SERVER] Receiving ${preKeysArray.length} PreKeys for batch storage`);
+          
           // Enqueue entire batch as a single operation to maintain atomicity
           await writeQueue.enqueue(async () => {
             const results = [];
-            for (const preKey of data.preKeys) {
+            for (const preKey of preKeysArray) {
               if (preKey && preKey.id && preKey.data) {
                 let decoded;
                 try {
@@ -241,14 +248,45 @@ io.sockets.on("connection", socket => {
                 results.push(result);
               }
             }
+            console.log(`[SIGNAL SERVER] Successfully stored ${results.length} PreKeys`);
             return results;
-          }, `storePreKeys-batch-${data.preKeys.length}`);
+          }, `storePreKeys-batch-${preKeysArray.length}`);
+          
+          // CRITICAL: After storage, return ALL PreKey IDs from server for sync verification
+          const allServerPreKeys = await SignalPreKey.findAll({
+            where: { 
+              owner: socket.handshake.session.uuid, 
+              client: socket.handshake.session.clientId 
+            },
+            attributes: ['prekey_id']
+          });
+          
+          const serverPreKeyIds = allServerPreKeys.map(pk => pk.prekey_id);
+          console.log(`[SIGNAL SERVER] Sending sync response with ${serverPreKeyIds.length} PreKey IDs`);
+          
+          // Send back server's PreKey IDs for client to verify sync
+          socket.emit("storePreKeysResponse", {
+            success: true,
+            serverPreKeyIds: serverPreKeyIds,
+            count: serverPreKeyIds.length
+          });
+          
+        } else {
+          console.error('[SIGNAL SERVER] storePreKeys: Invalid data format - expected array or { preKeys: array }');
+          socket.emit("storePreKeysResponse", {
+            success: false,
+            error: 'Invalid data format'
+          });
         }
       }
     } catch (error) {
       console.error('Error storing pre-keys (batch):', error);
       console.log("[SIGNAL SERVER] storePreKeys event received", data);
       console.log(socket.handshake.session);
+      socket.emit("storePreKeysResponse", {
+        success: false,
+        error: error.message
+      });
     }
   });
 

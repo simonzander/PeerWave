@@ -19,7 +19,10 @@ class PermanentPreKeyStore extends PreKeyStore {
       'id': k.id,
       'data': base64Encode(k.getKeyPair().publicKey.serialize()),
     }).toList();
-    SocketService().emit("storePreKeys", preKeyPayload);
+    
+    // CRITICAL FIX: Server expects { preKeys: [...] } not just [...]
+    SocketService().emit("storePreKeys", { 'preKeys': preKeyPayload });
+    
     // Store locally
     for (final record in preKeys) {
       await storePreKey(record.id, record, sendToServer: false);
@@ -103,6 +106,7 @@ class PermanentPreKeyStore extends PreKeyStore {
   final String _keyPrefix = 'prekey_';
 
   PermanentPreKeyStore() {
+    // Listener for server PreKey query response
     SocketService().registerListener("getPreKeysResponse", (data) async {
       print('[PREKEY STORE] Server has ${data.length} PreKeys');
       final localPreKeys = await _getAllPreKeyIds();
@@ -154,7 +158,54 @@ class PermanentPreKeyStore extends PreKeyStore {
       // Case 4: Server has >= 20 PreKeys → All good
       print('[PREKEY STORE] ✅ Server has sufficient PreKeys (${data.length})');
     });
+    
+    // NEW: Listener for PreKey sync response after storePreKeys
+    SocketService().registerListener("storePreKeysResponse", (response) async {
+      if (response['success'] == true) {
+        final List<dynamic> serverPreKeyIds = response['serverPreKeyIds'] ?? [];
+        print('[PREKEY STORE] 🔄 Sync verification: Server has ${serverPreKeyIds.length} PreKey IDs');
+        
+        // Perform sync cleanup
+        await _syncWithServerIds(serverPreKeyIds.cast<int>());
+      } else {
+        print('[PREKEY STORE] ❌ PreKey upload failed: ${response['error']}');
+      }
+    });
+    
     loadRemotePreKeys();
+  }
+  
+  /// Synchronize local PreKeys with server IDs
+  /// Deletes local PreKeys that don't exist on server
+  Future<void> _syncWithServerIds(List<int> serverIds) async {
+    final localIds = await _getAllPreKeyIds();
+    print('[PREKEY STORE] 🔍 Comparing local (${localIds.length}) with server (${serverIds.length})');
+    
+    // Find local PreKeys that are NOT on server
+    final orphanedIds = localIds.where((id) => !serverIds.contains(id)).toList();
+    
+    if (orphanedIds.isNotEmpty) {
+      print('[PREKEY STORE] ⚠️  Found ${orphanedIds.length} orphaned local PreKeys: $orphanedIds');
+      print('[PREKEY STORE] 🗑️  Deleting orphaned PreKeys from local storage...');
+      
+      for (final id in orphanedIds) {
+        try {
+          // CRITICAL: sendToServer=false prevents double-deletion on server
+          await removePreKey(id, sendToServer: false);
+          print('[PREKEY STORE] ✅ Deleted orphaned PreKey $id (local only)');
+        } catch (e) {
+          print('[PREKEY STORE] ❌ Failed to delete PreKey $id: $e');
+        }
+      }
+      
+      print('[PREKEY STORE] ✅ Sync cleanup complete - removed ${orphanedIds.length} orphaned PreKeys');
+    } else {
+      print('[PREKEY STORE] ✅ Perfect sync - all local PreKeys exist on server');
+    }
+    
+    // Verify final state
+    final finalLocalIds = await _getAllPreKeyIds();
+    print('[PREKEY STORE] 📊 Final state: Local=${finalLocalIds.length}, Server=${serverIds.length}');
   }
 
   String _preKey(int preKeyId) => '$_keyPrefix$preKeyId';
@@ -220,7 +271,7 @@ class PermanentPreKeyStore extends PreKeyStore {
   }
 
   @override
-  Future<void> removePreKey(int preKeyId) async {
+  Future<void> removePreKey(int preKeyId, {bool sendToServer = true}) async {
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
       final db = await idbFactory.open(_storeName, version: 1,
@@ -238,7 +289,11 @@ class PermanentPreKeyStore extends PreKeyStore {
       final storage = FlutterSecureStorage();
       await storage.delete(key: _preKey(preKeyId));
     }
-    SocketService().emit("removePreKey", {'id': preKeyId});
+    
+    // Only send to server if requested (skip during sync cleanup)
+    if (sendToServer) {
+      SocketService().emit("removePreKey", {'id': preKeyId});
+    }
   }
 
   @override
