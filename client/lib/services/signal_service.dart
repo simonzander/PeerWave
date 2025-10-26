@@ -628,10 +628,12 @@ class SignalService {
     final int preKeysCount = (status is Map && status['preKeys'] is int) ? status['preKeys'] : 0;
     print('[SIGNAL SERVICE] Server has $preKeysCount PreKeys');
     
+    // ALWAYS load local PreKeys to check for sync issues
+    final localPreKeys = await preKeyStore.getAllPreKeys();
+    print('[SIGNAL SERVICE] Local has ${localPreKeys.length} PreKeys');
+    
     if (preKeysCount < 20) {
-      final localPreKeys = await preKeyStore.getAllPreKeys();
-      print('[SIGNAL SERVICE] Local has ${localPreKeys.length} PreKeys');
-      
+      // Server critically low
       if (localPreKeys.isEmpty) {
         // No local PreKeys → Generate new ones
         print('[SIGNAL SERVICE] ⚠️  No local PreKeys found, generating 110 new ones');
@@ -664,8 +666,19 @@ class SignalService {
         }).toList();
         SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
       }
+    } else if (localPreKeys.length > preKeysCount) {
+      // NEW: Server has enough (>= 20), but local has MORE
+      // This happens when PreKeys are generated locally but not uploaded yet
+      // Find the PreKeys that exist locally but not on server
+      print('[SIGNAL SERVICE] 🔄 Local has ${localPreKeys.length - preKeysCount} more PreKeys than server');
+      print('[SIGNAL SERVICE] Uploading ALL local PreKeys to ensure server sync...');
+      final preKeysPayload = localPreKeys.map((pk) => {
+        'id': pk.id,
+        'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
+      }).toList();
+      SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
     } else {
-      print('[SIGNAL SERVICE] ✅ Server has sufficient PreKeys ($preKeysCount >= 20)');
+      print('[SIGNAL SERVICE] ✅ Server has sufficient PreKeys ($preKeysCount >= 20) and is in sync');
     }
     // 3. SignedPreKey
     final signedPreKey = status is Map ? status['signedPreKey'] : null;
