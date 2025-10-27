@@ -1,0 +1,54 @@
+services:
+  # PeerWave Node.js Server (Production)
+  peerwave-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: peerwave-server-prod
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./server/db:/usr/src/app/db
+      - ./server/cert:/usr/src/app/cert:ro
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - TURN_SERVER_HOST=peerwave-coturn
+      - TURN_SERVER_PORT=3478
+      - TURN_SECRET=${TURN_SECRET}
+    networks:
+      - peerwave-network
+    depends_on:
+      - peerwave-coturn
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # coturn STUN/TURN Server (Production)
+  peerwave-coturn:
+    image: coturn/coturn:latest
+    container_name: peerwave-coturn-prod
+    restart: always
+    network_mode: host  # Production: Bessere Performance
+    volumes:
+      - ./server/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - coturn-data:/var/lib/coturn
+    environment:
+      - DETECT_EXTERNAL_IP=yes
+      - DETECT_RELAY_IP=yes
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  peerwave-network:
+    driver: bridge
+
+volumes:
+  coturn-data:
+    driver: local

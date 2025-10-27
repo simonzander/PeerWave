@@ -1,44 +1,16 @@
 {
   "version": "0.2.0",
-  "compounds": [
-    {
-      "name": "Debug Server, Flutter Client",
-      "configurations": [
-        "Debug Node.js Server",
-        "Debug Flutter Client"
-      ]
-    },
-    {
-      "name": "Debug Server and Client",
-      "configurations": ["Debug Node.js Server", "Debug Flutter Client"]
-    }
-  ],
   "configurations": [
-
     {
-      "name": "Debug Node.js Server",
+      "name": "Docker: Attach to Server",
       "type": "node",
-      "request": "launch",
-      "program": "${workspaceFolder}/server/server.js",
-      "cwd": "${workspaceFolder}/server",
-      "console": "integratedTerminal",
-      "preLaunchTask": "flutter-build-and-copy-web"
-    },
-    {
-      "name": "Debug Flutter Client",
-      "type": "dart",
-      "request": "launch",
-      "program": "${workspaceFolder}/client/lib/main.dart",
-      "cwd": "${workspaceFolder}/client"
-    },
-    {
-      "name": "Debug Flutter Chrome",
-      "type": "dart",
-      "request": "launch",
-      "program": "${workspaceFolder}/client/lib/main.dart",
-      "cwd": "${workspaceFolder}/client",
-      "deviceId": "chrome",
-      "args": ["--web-port=55831"]
+      "request": "attach",
+      "port": 9229,
+      "address": "localhost",
+      "localRoot": "${workspaceFolder}/server",
+      "remoteRoot": "/usr/src/app",
+      "skipFiles": ["<node_internals>/**"],
+      "restart": true
     }
   ]
 }

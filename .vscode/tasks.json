@@ -1,68 +1,107 @@
 {
 	"version": "2.0.0",
 	"tasks": [
+		// ========================================
+		// 🐳 DOCKER TASKS
+		// ========================================
 		{
-			"label": "Start Node.js Server",
+			"label": "Build & Start (Flutter + Docker)",
 			"type": "shell",
-			"command": "node server/server.js",
-			"group": "build",
-			"presentation": {
-				"reveal": "always",
-				"panel": "dedicated"
-			},
-			"options": {
-				"cwd": "${workspaceFolder}/server"
-			}
-		},
-		{
-			"label": "Start Flutter Client",
-			"type": "shell",
-			"command": "flutter run",
-			"group": "build",
-			"presentation": {
-				"reveal": "always",
-				"panel": "dedicated"
-			},
-			"options": {
-				"cwd": "${workspaceFolder}/client"
-			}
-		},
-		{
-			"label": "Start Server and Client",
-			"dependsOn": [
-				"Start Node.js Server",
-				"Start Flutter Client"
-			],
-			"dependsOrder": "parallel",
+			"command": ".\\build-and-start.ps1",
 			"group": {
 				"kind": "build",
 				"isDefault": true
-			}
+			},
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			},
+			"problemMatcher": []
 		},
 		{
-			"label": "flutter-build-and-copy-web",
+			"label": "Docker: Build All",
 			"type": "shell",
-			"command": "cd client; flutter build web; Copy-Item -Recurse -Force build/web/* ../server/web/",
-			"args": [],
-			"isBackground": false,
+			"command": "docker-compose build",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "Docker: Start",
+			"type": "shell",
+			"command": "docker-compose up -d",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "Docker: Stop",
+			"type": "shell",
+			"command": "docker-compose down",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "Docker: Logs",
+			"type": "shell",
+			"command": "docker-compose logs -f",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			},
 			"problemMatcher": [],
-			"group": "build"
+			"isBackground": true
 		},
 		{
-			"label": "flutter-build-and-copy-web",
+			"label": "Docker: Restart",
 			"type": "shell",
-			"command": "cd client; flutter build web; Copy-Item -Recurse -Force build/web/* ../server/web/",
-			"args": [],
-			"isBackground": false,
-			"group": "build"
+			"command": "docker-compose restart",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			},
+			"problemMatcher": []
+		},
+
+		// ========================================
+		// 🏗️ BUILD TASKS
+		// ========================================
+		{
+			"label": "Flutter: Build Web",
+			"type": "shell",
+			"command": "flutter build web --release",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			},
+			"options": {
+				"cwd": "${workspaceFolder}/client"
+			},
+			"problemMatcher": []
 		},
 		{
-			"label": "flutter-build-and-copy-web",
+			"label": "Flutter: Rebuild",
 			"type": "shell",
-			"command": "cd client; flutter build web; Copy-Item -Recurse -Force build/web/* ../server/web/",
-			"args": [],
-			"isBackground": false,
-			"group": "build"
+			"command": ".\\rebuild-flutter.ps1",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			},
+			"problemMatcher": []
 		}
 	]
 }

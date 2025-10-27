@@ -1421,11 +1421,11 @@ function callbackHandler(callback, data) {
 
 
 // Serve static files from Flutter web build output
-app.use(express.static(path.resolve(__dirname, '../server/web')));
+app.use(express.static(path.resolve(__dirname, 'web')));
 
 // For SPA fallback
 app.get('*', (req, res) => {
-  res.sendFile(path.resolve(__dirname, '../server/web', 'index.html'));
+  res.sendFile(path.resolve(__dirname, 'web', 'index.html'));
 });
 
 // Initialize cleanup cronjob

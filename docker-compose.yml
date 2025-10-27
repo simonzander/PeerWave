@@ -1,0 +1,67 @@
+services:
+  # PeerWave Node.js Server
+  peerwave-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: peerwave-server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./server/db:/usr/src/app/db
+      - ./server/cert:/usr/src/app/cert:ro
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - TURN_SERVER_HOST=peerwave-coturn
+      - TURN_SERVER_PORT=3478
+      - TURN_SECRET=${TURN_SECRET:-your-secret-key-here}
+    networks:
+      - peerwave-network
+    depends_on:
+      - peerwave-coturn
+
+  # coturn STUN/TURN Server
+  peerwave-coturn:
+    image: coturn/coturn:latest
+    container_name: peerwave-coturn
+    restart: unless-stopped
+    # network_mode: host  # Für Production (direkter Port-Zugriff)
+    ports:
+      - "3478:3478/udp"    # STUN/TURN UDP
+      - "3478:3478/tcp"    # STUN/TURN TCP
+      - "5349:5349/tcp"    # TURNS (TLS)
+      - "5349:5349/udp"    # TURNS (TLS)
+      - "49152-49252:49152-49252/udp"  # TURN Relay Ports (100 Ports für Dev)
+    volumes:
+      - ./server/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./server/coturn/data:/var/lib/coturn
+    environment:
+      - DETECT_EXTERNAL_IP=yes
+      - DETECT_RELAY_IP=yes
+    networks:
+      - peerwave-network
+
+  # Optional: coturn Monitoring (Prometheus Exporter)
+  coturn-exporter:
+    image: ghcr.io/mhameed/coturn-exporter:latest
+    container_name: peerwave-coturn-exporter
+    restart: unless-stopped
+    ports:
+      - "9641:9641"
+    command:
+      - "--coturn.server=http://peerwave-coturn:5766"
+    networks:
+      - peerwave-network
+    depends_on:
+      - peerwave-coturn
+    profiles:
+      - monitoring  # Nur mit --profile monitoring starten
+
+networks:
+  peerwave-network:
+    driver: bridge
+
+volumes:
+  coturn-data:

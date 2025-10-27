@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  coturn:
+    image: coturn/coturn:latest
+    container_name: peerwave-coturn
+    restart: unless-stopped
+    network_mode: host  # Wichtig für STUN/TURN!
+    
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./coturn/data:/var/lib/coturn
+    
+    environment:
+      - DETECT_EXTERNAL_IP=yes
+      - DETECT_RELAY_IP=yes
+    
+    # Ports (bei network_mode: host automatisch verfügbar)
+    # - 3478:3478/udp    # STUN/TURN UDP
+    # - 3478:3478/tcp    # STUN/TURN TCP
+    # - 5349:5349/tcp    # TURNS (TLS)
+    # - 5349:5349/udp    # TURNS (TLS)
+    # - 49152-65535/udp  # TURN Relay Ports
+
+  # Optional: Monitoring
+  coturn-exporter:
+    image: ghcr.io/mhameed/coturn-exporter:latest
+    container_name: peerwave-coturn-exporter
+    restart: unless-stopped
+    ports:
+      - "9641:9641"
+    command:
+      - "--coturn.server=http://localhost:5766"
+    depends_on:
+      - coturn
