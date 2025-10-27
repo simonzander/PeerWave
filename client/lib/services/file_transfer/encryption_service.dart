@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:math';
 import 'package:pointycastle/export.dart';
+import 'package:crypto/crypto.dart';
 
 /// Service for encrypting and decrypting file chunks
 /// 
@@ -194,6 +195,12 @@ class EncryptionService {
   /// Validate IV format
   bool isValidIV(Uint8List iv) {
     return iv.length == IV_SIZE;
+  }
+  
+  /// Calculate SHA-256 hash of data
+  String calculateHash(Uint8List data) {
+    final digest = sha256.convert(data);
+    return digest.toString();
   }
 }
 

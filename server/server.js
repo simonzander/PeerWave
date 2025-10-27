@@ -1093,6 +1093,98 @@ io.sockets.on("connection", socket => {
     }
   });
 
+  // ===== P2P FILE SHARING - WebRTC SIGNALING RELAY =====
+  
+  /**
+   * Relay WebRTC offer from initiator to target peer
+   */
+  socket.on("file:webrtc-offer", (data) => {
+    try {
+      const { targetUserId, fileId, offer } = data;
+      
+      console.log(`[P2P WEBRTC] Relaying offer for file ${fileId} to user ${targetUserId}`);
+      
+      // Find target user's socket and relay the offer
+      const targetSockets = Array.from(io.sockets.sockets.values())
+        .filter(s => s.handshake.session.uuid === targetUserId);
+      
+      if (targetSockets.length > 0) {
+        const fromUserId = socket.handshake.session.uuid;
+        targetSockets.forEach(targetSocket => {
+          targetSocket.emit("file:webrtc-offer", {
+            fromUserId,
+            fileId,
+            offer
+          });
+        });
+      } else {
+        console.warn(`[P2P WEBRTC] Target user ${targetUserId} not found online`);
+      }
+    } catch (error) {
+      console.error('[P2P WEBRTC] Error relaying offer:', error);
+    }
+  });
+
+  /**
+   * Relay WebRTC answer from responder to initiator
+   */
+  socket.on("file:webrtc-answer", (data) => {
+    try {
+      const { targetUserId, fileId, answer } = data;
+      
+      console.log(`[P2P WEBRTC] Relaying answer for file ${fileId} to user ${targetUserId}`);
+      
+      // Find target user's socket and relay the answer
+      const targetSockets = Array.from(io.sockets.sockets.values())
+        .filter(s => s.handshake.session.uuid === targetUserId);
+      
+      if (targetSockets.length > 0) {
+        const fromUserId = socket.handshake.session.uuid;
+        targetSockets.forEach(targetSocket => {
+          targetSocket.emit("file:webrtc-answer", {
+            fromUserId,
+            fileId,
+            answer
+          });
+        });
+      } else {
+        console.warn(`[P2P WEBRTC] Target user ${targetUserId} not found online`);
+      }
+    } catch (error) {
+      console.error('[P2P WEBRTC] Error relaying answer:', error);
+    }
+  });
+
+  /**
+   * Relay ICE candidate between peers
+   */
+  socket.on("file:webrtc-ice", (data) => {
+    try {
+      const { targetUserId, fileId, candidate } = data;
+      
+      console.log(`[P2P WEBRTC] Relaying ICE candidate for file ${fileId} to user ${targetUserId}`);
+      
+      // Find target user's socket and relay the ICE candidate
+      const targetSockets = Array.from(io.sockets.sockets.values())
+        .filter(s => s.handshake.session.uuid === targetUserId);
+      
+      if (targetSockets.length > 0) {
+        const fromUserId = socket.handshake.session.uuid;
+        targetSockets.forEach(targetSocket => {
+          targetSocket.emit("file:webrtc-ice", {
+            fromUserId,
+            fileId,
+            candidate
+          });
+        });
+      } else {
+        console.warn(`[P2P WEBRTC] Target user ${targetUserId} not found online`);
+      }
+    } catch (error) {
+      console.error('[P2P WEBRTC] Error relaying ICE candidate:', error);
+    }
+  });
+
   /**
    * Event handler for disconnecting from a room
    */

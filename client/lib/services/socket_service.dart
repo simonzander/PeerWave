@@ -11,6 +11,9 @@ class SocketService {
   final Map<String, List<void Function(dynamic)>> _listeners = {};
   bool _connecting = false;
 
+  // Public getter for socket (needed by SocketFileClient)
+  IO.Socket? get socket => _socket;
+  
   Future<void> connect() async {
     if (_socket != null && _socket!.connected) return;
     if (_connecting) return;

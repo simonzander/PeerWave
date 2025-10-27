@@ -37,6 +37,18 @@ import 'services/role_api_service.dart';
 import 'screens/admin/role_management_screen.dart';
 import 'screens/admin/user_management_screen.dart';
 import 'web_config.dart';
+// P2P File Transfer imports
+import 'services/file_transfer/webrtc_service.dart';
+import 'services/file_transfer/p2p_coordinator.dart';
+import 'services/file_transfer/download_manager.dart';
+import 'services/file_transfer/storage_interface.dart';
+import 'services/file_transfer/encryption_service.dart';
+import 'services/file_transfer/chunking_service.dart';
+import 'screens/file_transfer/file_upload_screen.dart';
+import 'screens/file_transfer/file_browser_screen.dart';
+import 'screens/file_transfer/downloads_screen.dart';
+// Conditional storage imports
+import 'services/file_transfer/indexeddb_storage.dart' if (dart.library.io) 'services/file_transfer/native_storage.dart' show IndexedDBStorage;
 
 
 Future<void> main() async {
@@ -117,7 +129,27 @@ class _MyAppState extends State<MyApp> {
       return MagicLinkWebPageWithServer(serverUrl: _magicKey!, clientId: widget.clientId);
     }
     
-    // Wrap the entire app with RoleProvider
+    // Initialize P2P File Transfer services
+    final fileStorage = IndexedDBStorage(); // Will be NativeStorage on mobile via conditional import
+    final encryptionService = EncryptionService();
+    final chunkingService = ChunkingService();
+    final downloadManager = DownloadManager(
+      storage: fileStorage,
+      chunkingService: chunkingService,
+      encryptionService: encryptionService,
+    );
+    final webrtcService = WebRTCFileService();
+    final p2pCoordinator = P2PCoordinator(
+      webrtcService: webrtcService,
+      downloadManager: downloadManager,
+      storage: fileStorage,
+      encryptionService: encryptionService,
+    );
+    
+    // Initialize storage
+    fileStorage.initialize();
+    
+    // Wrap the entire app with providers
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(
@@ -128,6 +160,13 @@ class _MyAppState extends State<MyApp> {
         ChangeNotifierProvider(
           create: (context) => NotificationProvider(),
         ),
+        // P2P File Transfer providers
+        Provider<FileStorageInterface>.value(value: fileStorage),
+        Provider<EncryptionService>.value(value: encryptionService),
+        Provider<ChunkingService>.value(value: chunkingService),
+        ChangeNotifierProvider<DownloadManager>.value(value: downloadManager),
+        ChangeNotifierProvider<WebRTCFileService>.value(value: webrtcService),
+        ChangeNotifierProvider<P2PCoordinator>.value(value: p2pCoordinator),
       ],
       child: _buildMaterialApp(),
     );
@@ -209,6 +248,19 @@ class _MyAppState extends State<MyApp> {
                 GoRoute(
                   path: '/app',
                   builder: (context, state) => const DashboardPage(),
+                ),
+                // P2P File Transfer routes
+                GoRoute(
+                  path: '/file-upload',
+                  builder: (context, state) => const FileUploadScreen(),
+                ),
+                GoRoute(
+                  path: '/file-browser',
+                  builder: (context, state) => const FileBrowserScreen(),
+                ),
+                GoRoute(
+                  path: '/downloads',
+                  builder: (context, state) => const DownloadsScreen(),
                 ),
                 ShellRoute(
                   builder: (context, state, child) => SettingsSidebar(child: child),
