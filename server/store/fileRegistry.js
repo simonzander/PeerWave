@@ -30,11 +30,11 @@ class FileRegistry {
    * Announce a file (user has chunks available)
    * 
    * @param {string} userId - User announcing the file
-   * @param {object} fileMetadata - File metadata
+   * @param {object} fileMetadata - File metadata (NO fileName for privacy)
    * @returns {object} Updated file info
    */
   announceFile(userId, fileMetadata) {
-    const { fileId, fileName, mimeType, fileSize, checksum, chunkCount, availableChunks } = fileMetadata;
+    const { fileId, mimeType, fileSize, checksum, chunkCount, availableChunks } = fileMetadata;
     
     // Get or create file entry
     let file = this.files.get(fileId);
@@ -43,7 +43,6 @@ class FileRegistry {
       // New file announcement
       file = {
         fileId,
-        fileName,
         mimeType,
         fileSize,
         checksum,

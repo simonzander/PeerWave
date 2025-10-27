@@ -893,19 +893,18 @@ io.sockets.on("connection", socket => {
    */
   socket.on("announceFile", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid || !socket.handshake.session.authenticated !== true) {
+      if (!socket.handshake.session.uuid || socket.handshake.session.authenticated !== true) {
         console.error('[P2P FILE] ERROR: Not authenticated');
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
       const userId = socket.handshake.session.uuid;
-      const { fileId, fileName, mimeType, fileSize, checksum, chunkCount, availableChunks } = data;
+      const { fileId, mimeType, fileSize, checksum, chunkCount, availableChunks } = data;
 
-      console.log(`[P2P FILE] User ${userId} announcing file: ${fileName} (${fileId})`);
+      console.log(`[P2P FILE] User ${userId} announcing file: ${fileId.substring(0, 16)}... (${mimeType}, ${fileSize} bytes)`);
 
       const fileInfo = fileRegistry.announceFile(userId, {
         fileId,
-        fileName,
         mimeType,
         fileSize,
         checksum,
@@ -918,7 +917,6 @@ io.sockets.on("connection", socket => {
       // Notify other users about new file availability
       socket.broadcast.emit("fileAnnounced", {
         fileId,
-        fileName,
         mimeType,
         fileSize,
         seederCount: fileInfo.seederCount
@@ -1182,6 +1180,84 @@ io.sockets.on("connection", socket => {
       }
     } catch (error) {
       console.error('[P2P WEBRTC] Error relaying ICE candidate:', error);
+    }
+  });
+
+  /**
+   * Relay encryption key request from downloader to seeder
+   */
+  socket.on("file:key-request", (data) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        console.error('[P2P KEY] Key request blocked - not authenticated');
+        return;
+      }
+
+      const { targetUserId, fileId } = data;
+      const requesterId = socket.handshake.session.uuid;
+      
+      console.log(`[P2P KEY] User ${requesterId} requesting key for file ${fileId} from ${targetUserId}`);
+      
+      // Find seeder's socket and relay the key request
+      const targetSockets = Array.from(io.sockets.sockets.values())
+        .filter(s => s.handshake.session.uuid === targetUserId);
+      
+      if (targetSockets.length > 0) {
+        targetSockets.forEach(targetSocket => {
+          targetSocket.emit("file:key-request", {
+            fromUserId: requesterId,
+            fileId: fileId
+          });
+        });
+        console.log(`[P2P KEY] Key request relayed to ${targetUserId}`);
+      } else {
+        console.warn(`[P2P KEY] Seeder ${targetUserId} not found online`);
+        // Send error back to requester
+        socket.emit("file:key-response", {
+          fromUserId: targetUserId,
+          fileId: fileId,
+          error: "Seeder not online"
+        });
+      }
+    } catch (error) {
+      console.error('[P2P KEY] Error relaying key request:', error);
+    }
+  });
+
+  /**
+   * Relay encryption key response from seeder to downloader
+   */
+  socket.on("file:key-response", (data) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        console.error('[P2P KEY] Key response blocked - not authenticated');
+        return;
+      }
+
+      const { targetUserId, fileId, key, error } = data;
+      const seederId = socket.handshake.session.uuid;
+      
+      console.log(`[P2P KEY] User ${seederId} sending key for file ${fileId} to ${targetUserId}`);
+      
+      // Find requester's socket and relay the key response
+      const targetSockets = Array.from(io.sockets.sockets.values())
+        .filter(s => s.handshake.session.uuid === targetUserId);
+      
+      if (targetSockets.length > 0) {
+        targetSockets.forEach(targetSocket => {
+          targetSocket.emit("file:key-response", {
+            fromUserId: seederId,
+            fileId: fileId,
+            key: key,
+            error: error
+          });
+        });
+        console.log(`[P2P KEY] Key response relayed to ${targetUserId}`);
+      } else {
+        console.warn(`[P2P KEY] Requester ${targetUserId} not found online`);
+      }
+    } catch (error) {
+      console.error('[P2P KEY] Error relaying key response:', error);
     }
   });
 

@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import '../../services/file_transfer/socket_file_client.dart';
+import '../../services/file_transfer/p2p_coordinator.dart';
+import '../../services/socket_service.dart';
 
 /// File Browser Screen - Browse and download available P2P files
 class FileBrowserScreen extends StatefulWidget {
@@ -10,18 +14,29 @@ class FileBrowserScreen extends StatefulWidget {
 }
 
 class _FileBrowserScreenState extends State<FileBrowserScreen> {
-  late SocketFileClient _socketClient;
+  SocketFileClient? _socketClient;
   
   List<Map<String, dynamic>> _files = [];
   bool _isLoading = false;
+  bool _hasLoadedOnce = false;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   
   @override
   void initState() {
     super.initState();
-    // TODO: Get services from providers
-    _loadFiles();
+    // Don't load files here - will be triggered in build()
+  }
+  
+  SocketFileClient _getSocketClient() {
+    if (_socketClient == null) {
+      final socketService = SocketService();
+      if (socketService.socket == null) {
+        throw Exception('Socket not connected');
+      }
+      _socketClient = SocketFileClient(socket: socketService.socket!);
+    }
+    return _socketClient!;
   }
   
   @override
@@ -32,6 +47,14 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   
   @override
   Widget build(BuildContext context) {
+    // Load files on first build
+    if (!_hasLoadedOnce && !_isLoading) {
+      _hasLoadedOnce = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadFiles();
+      });
+    }
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('Available Files'),
@@ -132,11 +155,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
   
   Widget _buildFileItem(Map<String, dynamic> file) {
-    final fileName = file['fileName'] as String;
-    final fileSize = file['fileSize'] as int;
+    // Privacy: fileName and mimeType are NOT sent from server
+    // They come from the encrypted Signal message (future implementation)
+    final fileName = file['fileName'] as String? ?? 'Shared File';
+    final fileSize = file['fileSize'] as int? ?? 0;
     final mimeType = file['mimeType'] as String? ?? 'application/octet-stream';
     final seederCount = file['seederCount'] as int? ?? 0;
-    final fileId = file['fileId'] as String;
+    final fileId = file['fileId'] as String? ?? 'unknown';
     
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -263,7 +288,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     setState(() => _isLoading = true);
     
     try {
-      final files = await _socketClient.getActiveFiles();
+      final client = _getSocketClient();
+      final files = await client.getActiveFiles();
       setState(() {
         _files = files;
         _isLoading = false;
@@ -283,7 +309,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     setState(() => _isLoading = true);
     
     try {
-      final results = await _socketClient.searchFiles(query);
+      final client = _getSocketClient();
+      final results = await client.searchFiles(query);
       setState(() {
         _files = results;
         _isLoading = false;
@@ -295,11 +322,22 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
   
   Future<void> _showFileDetails(Map<String, dynamic> file) async {
-    final fileId = file['fileId'] as String;
+    if (_socketClient == null) {
+      _showError('Not connected to server');
+      return;
+    }
+    
+    final fileId = file['fileId'] as String? ?? '';
+    
+    if (fileId.isEmpty) {
+      _showError('Invalid file ID');
+      return;
+    }
     
     // Get detailed file info with seeders
     try {
-      final detailedInfo = await _socketClient.getFileInfo(fileId);
+      final client = _getSocketClient();
+      final detailedInfo = await client.getFileInfo(fileId);
       
       if (!mounted) return;
       
@@ -313,11 +351,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
   
   Widget _buildFileDetailsSheet(Map<String, dynamic> fileInfo) {
-    final fileName = fileInfo['fileName'] as String;
-    final fileSize = fileInfo['fileSize'] as int;
+    // Privacy: fileName and mimeType might not be in server response
+    final fileName = fileInfo['fileName'] as String? ?? 'Shared File';
+    final fileSize = fileInfo['fileSize'] as int? ?? 0;
     final mimeType = fileInfo['mimeType'] as String? ?? 'application/octet-stream';
-    final chunkCount = fileInfo['chunkCount'] as int;
-    final seeders = fileInfo['seeders'] as List? ?? [];
+    final chunkCount = fileInfo['chunkCount'] as int? ?? 0;
     final seederCount = fileInfo['seederCount'] as int? ?? 0;
     
     return Container(
@@ -395,13 +433,19 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
   
   Future<void> _startDownload(Map<String, dynamic> file) async {
-    final fileId = file['fileId'] as String;
-    final fileName = file['fileName'] as String;
+    final fileId = file['fileId'] as String? ?? '';
+    
+    if (fileId.isEmpty) {
+      _showError('Invalid file ID');
+      return;
+    }
     
     try {
+      final client = _getSocketClient();
+      
       // Get detailed file info with seeder chunks
-      final fileInfo = await _socketClient.getFileInfo(fileId);
-      final seederChunks = await _socketClient.getAvailableChunks(fileId);
+      final fileInfo = await client.getFileInfo(fileId);
+      final seederChunks = await client.getAvailableChunks(fileId);
       
       if (seederChunks.isEmpty) {
         _showError('No seeders available for this file');
@@ -409,16 +453,33 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       }
       
       // Register as leecher
-      await _socketClient.registerLeecher(fileId);
+      await client.registerLeecher(fileId);
       
-      // Start P2P download
-      // TODO: Get file key (needs to be shared somehow - group encryption?)
-      // For now, show error
-      _showError('Download feature requires file key distribution - coming in Phase 3');
+      // Get P2P Coordinator
+      final p2pCoordinator = Provider.of<P2PCoordinator>(context, listen: false);
+      
+      print('[FILE BROWSER] Starting download with automatic key request');
+      
+      // Start download with automatic key request
+      // This will:
+      // 1. Connect to first seeder
+      // 2. Request encryption key via WebRTC
+      // 3. Start download with received key
+      await p2pCoordinator.startDownloadWithKeyRequest(
+        fileId: fileId,
+        fileName: file['fileName'] as String? ?? 'download_${fileId.substring(0, 8)}',
+        mimeType: file['mimeType'] as String? ?? 'application/octet-stream',
+        fileSize: fileInfo['fileSize'] as int? ?? 0,
+        checksum: fileInfo['checksum'] as String? ?? '',
+        chunkCount: fileInfo['chunkCount'] as int? ?? 0,
+        seederChunks: seederChunks,
+      );
+      
+      print('[FILE BROWSER] Download started for file: $fileId');
       
       // Navigate to downloads screen
       if (mounted) {
-        Navigator.pushNamed(context, '/downloads');
+        context.go('/downloads');
       }
       
     } catch (e) {

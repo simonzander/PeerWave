@@ -132,7 +132,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     // Filter out system messages that should not be displayed in chat
     if (itemType == 'read_receipt' || 
         itemType == 'senderKeyDistribution' || 
-        itemType == 'senderKeyRequest') {
+        itemType == 'senderKeyRequest' ||
+        itemType == 'fileKeyRequest' ||
+        itemType == 'fileKeyResponse') {
       // Handle read_receipt
       if (itemType == 'read_receipt') {
         try {

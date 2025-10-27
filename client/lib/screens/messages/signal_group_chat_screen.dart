@@ -277,6 +277,11 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       final timestamp = data['timestamp'] ?? DateTime.now().toIso8601String();
       final itemType = data['type'] as String? ?? 'message';
       
+      // Filter out P2P file key exchange messages (they don't have channels)
+      if (itemType == 'fileKeyRequest' || itemType == 'fileKeyResponse') {
+        return;
+      }
+      
       // Verify this is for our channel
       if (channelId != widget.channelUuid) {
         return;

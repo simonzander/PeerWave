@@ -47,6 +47,8 @@ import 'services/file_transfer/chunking_service.dart';
 import 'screens/file_transfer/file_upload_screen.dart';
 import 'screens/file_transfer/file_browser_screen.dart';
 import 'screens/file_transfer/downloads_screen.dart';
+import 'screens/file_transfer/file_transfer_hub.dart';
+import 'widgets/socket_aware_widget.dart';
 // Conditional storage imports
 import 'services/file_transfer/indexeddb_storage.dart' if (dart.library.io) 'services/file_transfer/native_storage.dart' show IndexedDBStorage;
 
@@ -93,11 +95,22 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   StreamSubscription? _sub;
   String? _magicKey;
+  
+  // P2P File Transfer services - initialize once
+  FileStorageInterface? _fileStorage;
+  EncryptionService? _encryptionService;
+  ChunkingService? _chunkingService;
+  DownloadManager? _downloadManager;
+  WebRTCFileService? _webrtcService;
+  P2PCoordinator? _p2pCoordinator;
+  bool _servicesReady = false;
 
   @override
   void initState() {
     super.initState();
     _magicKey = widget.initialMagicKey;
+    _initServices();
+    
     if (!kIsWeb) {
       _sub = uriLinkStream.listen((Uri? uri) {
         if (uri != null && uri.scheme == 'peerwave') {
@@ -115,6 +128,64 @@ class _MyAppState extends State<MyApp> {
       });
     }
   }
+  
+  void _initServices() {
+    print('[P2P] Starting service initialization...');
+    try {
+      _fileStorage = IndexedDBStorage();
+      print('[P2P] FileStorage created');
+      _encryptionService = EncryptionService();
+      print('[P2P] EncryptionService created');
+      _chunkingService = ChunkingService();
+      print('[P2P] ChunkingService created');
+      _downloadManager = DownloadManager(
+        storage: _fileStorage!,
+        chunkingService: _chunkingService!,
+        encryptionService: _encryptionService!,
+      );
+      print('[P2P] DownloadManager created');
+      _webrtcService = WebRTCFileService();
+      print('[P2P] WebRTCFileService created');
+      
+      _p2pCoordinator = P2PCoordinator(
+        webrtcService: _webrtcService!,
+        downloadManager: _downloadManager!,
+        storage: _fileStorage!,
+        encryptionService: _encryptionService!,
+        signalService: SignalService.instance,  // Use singleton instance!
+      );
+      print('[P2P] P2PCoordinator created');
+      print('[P2P] All services created, starting storage initialization...');
+      
+      // Initialize storage asynchronously
+      _fileStorage!.initialize().then((_) {
+        print('[P2P] Storage initialized successfully');
+        if (mounted) {
+          setState(() {
+            _servicesReady = true;
+          });
+          print('[P2P] Services marked as ready');
+        }
+      }).catchError((e) {
+        print('[P2P] Storage initialization error: $e');
+        // Mark as ready anyway to avoid infinite loading
+        if (mounted) {
+          setState(() {
+            _servicesReady = true;
+          });
+        }
+      });
+    } catch (e) {
+      print('[P2P] Service initialization error: $e');
+      print('[P2P] Stack trace: ${StackTrace.current}');
+      // Mark as ready anyway
+      if (mounted) {
+        setState(() {
+          _servicesReady = true;
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -129,25 +200,23 @@ class _MyAppState extends State<MyApp> {
       return MagicLinkWebPageWithServer(serverUrl: _magicKey!, clientId: widget.clientId);
     }
     
-    // Initialize P2P File Transfer services
-    final fileStorage = IndexedDBStorage(); // Will be NativeStorage on mobile via conditional import
-    final encryptionService = EncryptionService();
-    final chunkingService = ChunkingService();
-    final downloadManager = DownloadManager(
-      storage: fileStorage,
-      chunkingService: chunkingService,
-      encryptionService: encryptionService,
-    );
-    final webrtcService = WebRTCFileService();
-    final p2pCoordinator = P2PCoordinator(
-      webrtcService: webrtcService,
-      downloadManager: downloadManager,
-      storage: fileStorage,
-      encryptionService: encryptionService,
-    );
-    
-    // Initialize storage
-    fileStorage.initialize();
+    // Show loading screen until services are ready
+    if (!_servicesReady) {
+      return MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Initializing services...'),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     
     // Wrap the entire app with providers
     return MultiProvider(
@@ -160,13 +229,13 @@ class _MyAppState extends State<MyApp> {
         ChangeNotifierProvider(
           create: (context) => NotificationProvider(),
         ),
-        // P2P File Transfer providers
-        Provider<FileStorageInterface>.value(value: fileStorage),
-        Provider<EncryptionService>.value(value: encryptionService),
-        Provider<ChunkingService>.value(value: chunkingService),
-        ChangeNotifierProvider<DownloadManager>.value(value: downloadManager),
-        ChangeNotifierProvider<WebRTCFileService>.value(value: webrtcService),
-        ChangeNotifierProvider<P2PCoordinator>.value(value: p2pCoordinator),
+        // P2P File Transfer providers - use the initialized services
+        Provider<FileStorageInterface>.value(value: _fileStorage!),
+        Provider<EncryptionService>.value(value: _encryptionService!),
+        Provider<ChunkingService>.value(value: _chunkingService!),
+        ChangeNotifierProvider<DownloadManager>.value(value: _downloadManager!),
+        ChangeNotifierProvider<WebRTCFileService>.value(value: _webrtcService!),
+        ChangeNotifierProvider<P2PCoordinator>.value(value: _p2pCoordinator!),
       ],
       child: _buildMaterialApp(),
     );
@@ -251,12 +320,25 @@ class _MyAppState extends State<MyApp> {
                 ),
                 // P2P File Transfer routes
                 GoRoute(
+                  path: '/file-transfer',
+                  builder: (context, state) => const SocketAwareWidget(
+                    featureName: 'File Transfer Hub',
+                    child: FileTransferHub(),
+                  ),
+                ),
+                GoRoute(
                   path: '/file-upload',
-                  builder: (context, state) => const FileUploadScreen(),
+                  builder: (context, state) => const SocketAwareWidget(
+                    featureName: 'File Upload',
+                    child: FileUploadScreen(),
+                  ),
                 ),
                 GoRoute(
                   path: '/file-browser',
-                  builder: (context, state) => const FileBrowserScreen(),
+                  builder: (context, state) => const SocketAwareWidget(
+                    featureName: 'File Browser',
+                    child: FileBrowserScreen(),
+                  ),
                 ),
                 GoRoute(
                   path: '/downloads',

@@ -20,10 +20,9 @@ class SocketFileClient {
   // FILE ANNOUNCEMENT & DISCOVERY
   // ============================================
   
-  /// Announce a file to the network
+  /// Announce a file to the network (fileName is NOT sent for privacy)
   Future<Map<String, dynamic>> announceFile({
     required String fileId,
-    required String fileName,
     required String mimeType,
     required int fileSize,
     required String checksum,
@@ -34,7 +33,6 @@ class SocketFileClient {
     
     socket.emitWithAck('announceFile', {
       'fileId': fileId,
-      'fileName': fileName,
       'mimeType': mimeType,
       'fileSize': fileSize,
       'checksum': checksum,
@@ -232,6 +230,38 @@ class SocketFileClient {
     });
   }
   
+  // ============================================
+  // KEY EXCHANGE (via Socket.IO relay)
+  // ============================================
+  
+  /// Request encryption key from seeder (via server relay)
+  void sendKeyRequest({
+    required String targetUserId,
+    required String fileId,
+  }) {
+    debugPrint('[SOCKET FILE] Sending key request for $fileId to $targetUserId');
+    socket.emit('file:key-request', {
+      'targetUserId': targetUserId,
+      'fileId': fileId,
+    });
+  }
+  
+  /// Send encryption key response to downloader (via server relay)
+  void sendKeyResponse({
+    required String targetUserId,
+    required String fileId,
+    String? key, // base64-encoded encryption key
+    String? error,
+  }) {
+    debugPrint('[SOCKET FILE] Sending key response for $fileId to $targetUserId');
+    socket.emit('file:key-response', {
+      'targetUserId': targetUserId,
+      'fileId': fileId,
+      'key': key,
+      'error': error,
+    });
+  }
+  
   /// Send chunk request to peer
   void sendChunkRequest({
     required String targetUserId,
@@ -297,6 +327,16 @@ class SocketFileClient {
     _addEventListener('file:webrtc-ice', callback);
   }
   
+  /// Listen for key requests from downloaders
+  void onKeyRequest(Function(Map<String, dynamic>) callback) {
+    _addEventListener('file:key-request', callback);
+  }
+  
+  /// Listen for key responses from seeders
+  void onKeyResponse(Function(Map<String, dynamic>) callback) {
+    _addEventListener('file:key-response', callback);
+  }
+  
   /// Listen for chunk requests
   void onChunkRequest(Function(Map<String, dynamic>) callback) {
     _addEventListener('file:chunk-request', callback);
@@ -332,6 +372,15 @@ class SocketFileClient {
     
     socket.on('file:webrtc-ice', (data) {
       _notifyListeners('file:webrtc-ice', data);
+    });
+    
+    // Key exchange
+    socket.on('file:key-request', (data) {
+      _notifyListeners('file:key-request', data);
+    });
+    
+    socket.on('file:key-response', (data) {
+      _notifyListeners('file:key-response', data);
     });
     
     // Chunk transfer

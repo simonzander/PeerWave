@@ -46,6 +46,14 @@ class SettingsSidebar extends StatelessWidget {
                 title: const Text('Notifications'),
                 onTap: () => GoRouter.of(context).go('/app/settings/notifications'),
               ),
+              const Divider(),
+              // P2P File Sharing
+              ListTile(
+                leading: const Icon(Icons.folder_shared),
+                title: const Text('File Sharing'),
+                onTap: () => GoRouter.of(context).go('/file-transfer'),
+              ),
+              const Divider(),
               // Role Management - Only visible for Admins
               Consumer<RoleProvider>(
                 builder: (context, roleProvider, child) {

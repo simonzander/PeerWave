@@ -303,6 +303,19 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
   ) async {
     if (_selectedFile == null || _fileBytes == null) return;
     
+    // Check if socket is connected
+    if (socketService.socket == null || !socketService.isConnected) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Not connected to server. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+    
     final socketClient = SocketFileClient(socket: socketService.socket!);
     
     setState(() {
@@ -383,13 +396,12 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       // Step 5: Save encryption key
       await storage.saveFileKey(fileId, fileKey);
       
-      // Step 6: Announce to network
+      // Step 6: Announce to network (fileName is NOT sent for privacy)
       setState(() => _statusText = 'Announcing to network...');
       final availableChunks = List.generate(chunks.length, (i) => i);
       
       await socketClient.announceFile(
         fileId: fileId,
-        fileName: file.name,
         mimeType: mimeType,
         fileSize: file.size,
         checksum: fileChecksum,
