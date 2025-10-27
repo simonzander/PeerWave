@@ -60,6 +60,7 @@ dependencies:
   battery_plus: ^7.0.0
   connectivity_plus: ^7.0.0
   crypto: ^3.0.6
+  pointycastle: ^4.0.0
 
 dev_dependencies:
   flutter_test:

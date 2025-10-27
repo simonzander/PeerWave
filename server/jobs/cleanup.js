@@ -93,6 +93,29 @@ async function deleteOldItems() {
 }
 
 /**
+ * Clean up expired P2P files from file registry
+ */
+async function cleanupFileRegistry() {
+    try {
+        console.log('[CLEANUP] Cleaning up file registry...');
+        
+        const fileRegistry = require('../store/fileRegistry');
+        const stats = fileRegistry.cleanup();
+        
+        console.log(`[CLEANUP] ✓ File registry cleanup complete:`);
+        console.log(`[CLEANUP]   - Files removed: ${stats.filesRemoved}`);
+        console.log(`[CLEANUP]   - Users removed: ${stats.usersRemoved}`);
+        console.log(`[CLEANUP]   - Total files: ${stats.totalFiles}`);
+        console.log(`[CLEANUP]   - Total users: ${stats.totalUsers}`);
+        
+        return stats;
+    } catch (error) {
+        console.error('[CLEANUP] ❌ Error cleaning file registry:', error);
+        throw error;
+    }
+}
+
+/**
  * Run all cleanup tasks
  */
 async function runCleanup() {
@@ -108,6 +131,9 @@ async function runCleanup() {
         
         // Delete old items
         await deleteOldItems();
+        
+        // Clean up file registry
+        await cleanupFileRegistry();
         
         console.log('[CLEANUP] ✓ Cleanup job completed successfully');
     } catch (error) {
@@ -133,5 +159,6 @@ module.exports = {
     initCleanupJob,
     runCleanup,
     markInactiveUsers,
-    deleteOldItems
+    deleteOldItems,
+    cleanupFileRegistry
 };

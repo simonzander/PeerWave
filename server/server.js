@@ -884,6 +884,215 @@ io.sockets.on("connection", socket => {
     socket.to(id).emit("candidateScreenshare", socket.id, message);
   });
 
+  // ===== P2P FILE SHARING =====
+  
+  const fileRegistry = require('./store/fileRegistry');
+  
+  /**
+   * Announce a file (user has chunks available for seeding)
+   */
+  socket.on("announceFile", async (data, callback) => {
+    try {
+      if (!socket.handshake.session.uuid || !socket.handshake.session.authenticated !== true) {
+        console.error('[P2P FILE] ERROR: Not authenticated');
+        return callback?.({ success: false, error: "Not authenticated" });
+      }
+
+      const userId = socket.handshake.session.uuid;
+      const { fileId, fileName, mimeType, fileSize, checksum, chunkCount, availableChunks } = data;
+
+      console.log(`[P2P FILE] User ${userId} announcing file: ${fileName} (${fileId})`);
+
+      const fileInfo = fileRegistry.announceFile(userId, {
+        fileId,
+        fileName,
+        mimeType,
+        fileSize,
+        checksum,
+        chunkCount,
+        availableChunks
+      });
+
+      callback?.({ success: true, fileInfo });
+
+      // Notify other users about new file availability
+      socket.broadcast.emit("fileAnnounced", {
+        fileId,
+        fileName,
+        mimeType,
+        fileSize,
+        seederCount: fileInfo.seederCount
+      });
+
+    } catch (error) {
+      console.error('[P2P FILE] Error announcing file:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Unannounce a file (user no longer seeding)
+   */
+  socket.on("unannounceFile", async (data, callback) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        return callback?.({ success: false, error: "Not authenticated" });
+      }
+
+      const userId = socket.handshake.session.uuid;
+      const { fileId } = data;
+
+      console.log(`[P2P FILE] User ${userId} unannouncing file: ${fileId}`);
+
+      const success = fileRegistry.unannounceFile(userId, fileId);
+      callback?.({ success });
+
+      // Notify others about seeder count change
+      const fileInfo = fileRegistry.getFileInfo(fileId);
+      if (fileInfo) {
+        socket.broadcast.emit("fileSeederUpdate", {
+          fileId,
+          seederCount: fileInfo.seederCount
+        });
+      }
+
+    } catch (error) {
+      console.error('[P2P FILE] Error unannouncing file:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Update available chunks for a file
+   */
+  socket.on("updateAvailableChunks", async (data, callback) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        return callback?.({ success: false, error: "Not authenticated" });
+      }
+
+      const userId = socket.handshake.session.uuid;
+      const { fileId, availableChunks } = data;
+
+      const success = fileRegistry.updateAvailableChunks(userId, fileId, availableChunks);
+      callback?.({ success });
+
+    } catch (error) {
+      console.error('[P2P FILE] Error updating chunks:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Request file information and seeders
+   */
+  socket.on("getFileInfo", async (data, callback) => {
+    try {
+      const { fileId } = data;
+      const fileInfo = fileRegistry.getFileInfo(fileId);
+
+      if (!fileInfo) {
+        return callback?.({ success: false, error: "File not found" });
+      }
+
+      callback?.({ success: true, fileInfo });
+
+    } catch (error) {
+      console.error('[P2P FILE] Error getting file info:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Register as downloading a file (leecher)
+   */
+  socket.on("registerLeecher", async (data, callback) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        return callback?.({ success: false, error: "Not authenticated" });
+      }
+
+      const userId = socket.handshake.session.uuid;
+      const { fileId } = data;
+
+      console.log(`[P2P FILE] User ${userId} downloading file: ${fileId}`);
+
+      const success = fileRegistry.registerLeecher(userId, fileId);
+      callback?.({ success });
+
+    } catch (error) {
+      console.error('[P2P FILE] Error registering leecher:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Unregister as downloading a file
+   */
+  socket.on("unregisterLeecher", async (data, callback) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        return callback?.({ success: false, error: "Not authenticated" });
+      }
+
+      const userId = socket.handshake.session.uuid;
+      const { fileId } = data;
+
+      const success = fileRegistry.unregisterLeecher(userId, fileId);
+      callback?.({ success });
+
+    } catch (error) {
+      console.error('[P2P FILE] Error unregistering leecher:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Search for files by name or checksum
+   */
+  socket.on("searchFiles", async (data, callback) => {
+    try {
+      const { query } = data;
+      const results = fileRegistry.searchFiles(query);
+
+      callback?.({ success: true, results });
+
+    } catch (error) {
+      console.error('[P2P FILE] Error searching files:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Get all active files (with seeders)
+   */
+  socket.on("getActiveFiles", async (callback) => {
+    try {
+      const files = fileRegistry.getActiveFiles();
+      callback?.({ success: true, files });
+
+    } catch (error) {
+      console.error('[P2P FILE] Error getting active files:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Get available chunks from seeders
+   */
+  socket.on("getAvailableChunks", async (data, callback) => {
+    try {
+      const { fileId } = data;
+      const chunks = fileRegistry.getAvailableChunks(fileId);
+
+      callback?.({ success: true, chunks });
+
+    } catch (error) {
+      console.error('[P2P FILE] Error getting available chunks:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
   /**
    * Event handler for disconnecting from a room
    */
@@ -1102,6 +1311,10 @@ io.sockets.on("connection", socket => {
   socket.on("disconnect", () => {
     if(socket.handshake.session.uuid && socket.handshake.session.deviceId) {
       deviceSockets.delete(`${socket.handshake.session.uuid}:${socket.handshake.session.deviceId}`);
+      
+      // Clean up P2P file sharing announcements
+      const fileRegistry = require('./store/fileRegistry');
+      fileRegistry.handleUserDisconnect(socket.handshake.session.uuid);
     }
     if (!rooms) return;
 
