@@ -6,7 +6,7 @@ Write-Host ""
 Write-Host " Building Flutter Web..." -ForegroundColor Yellow
 Set-Location client
 flutter clean | Out-Null
-flutter build web --release
+flutter build web --debug
 if ($LASTEXITCODE -ne 0) {
     Write-Host " Flutter build failed!" -ForegroundColor Red
     Set-Location ..
