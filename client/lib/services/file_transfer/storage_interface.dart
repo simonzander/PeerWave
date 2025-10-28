@@ -31,8 +31,8 @@ abstract class FileStorageInterface {
   
   /// Save encrypted chunk data
   Future<void> saveChunk(String fileId, int chunkIndex, Uint8List encryptedData, {
-    required Uint8List iv,
-    required String chunkHash,
+    Uint8List? iv,
+    String? chunkHash,
   });
   
   /// Get encrypted chunk data

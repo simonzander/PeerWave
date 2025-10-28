@@ -1098,25 +1098,46 @@ io.sockets.on("connection", socket => {
    */
   socket.on("file:webrtc-offer", (data) => {
     try {
-      const { targetUserId, fileId, offer } = data;
+      const { targetUserId, targetDeviceId, fileId, offer } = data;
       
-      console.log(`[P2P WEBRTC] Relaying offer for file ${fileId} to user ${targetUserId}`);
+      console.log(`[P2P WEBRTC] Relaying offer for file ${fileId} to ${targetUserId}:${targetDeviceId || 'broadcast'}`);
       
-      // Find target user's socket and relay the offer
-      const targetSockets = Array.from(io.sockets.sockets.values())
-        .filter(s => s.handshake.session.uuid === targetUserId);
-      
-      if (targetSockets.length > 0) {
-        const fromUserId = socket.handshake.session.uuid;
-        targetSockets.forEach(targetSocket => {
-          targetSocket.emit("file:webrtc-offer", {
+      // Route to specific device if deviceId provided (and not empty string)
+      if (targetDeviceId && targetDeviceId !== '') {
+        const targetSocketId = deviceSockets.get(`${targetUserId}:${targetDeviceId}`);
+        if (targetSocketId) {
+          const fromUserId = socket.handshake.session.uuid;
+          const fromDeviceId = socket.handshake.session.deviceId;
+          io.to(targetSocketId).emit("file:webrtc-offer", {
             fromUserId,
+            fromDeviceId,
             fileId,
             offer
           });
-        });
+          console.log(`[P2P WEBRTC] ✓ Offer relayed to specific device ${targetUserId}:${targetDeviceId}`);
+        } else {
+          console.warn(`[P2P WEBRTC] ✗ Target device ${targetUserId}:${targetDeviceId} not found online`);
+        }
       } else {
-        console.warn(`[P2P WEBRTC] Target user ${targetUserId} not found online`);
+        // Broadcast to all devices of the user
+        const targetSockets = Array.from(io.sockets.sockets.values())
+          .filter(s => s.handshake.session.uuid === targetUserId);
+        
+        if (targetSockets.length > 0) {
+          const fromUserId = socket.handshake.session.uuid;
+          const fromDeviceId = socket.handshake.session.deviceId;
+          targetSockets.forEach(targetSocket => {
+            targetSocket.emit("file:webrtc-offer", {
+              fromUserId,
+              fromDeviceId,
+              fileId,
+              offer
+            });
+          });
+          console.log(`[P2P WEBRTC] ✓ Offer broadcast to ${targetSockets.length} device(s) of user ${targetUserId}`);
+        } else {
+          console.warn(`[P2P WEBRTC] ✗ Target user ${targetUserId} has no devices online`);
+        }
       }
     } catch (error) {
       console.error('[P2P WEBRTC] Error relaying offer:', error);
@@ -1128,25 +1149,46 @@ io.sockets.on("connection", socket => {
    */
   socket.on("file:webrtc-answer", (data) => {
     try {
-      const { targetUserId, fileId, answer } = data;
+      const { targetUserId, targetDeviceId, fileId, answer } = data;
       
-      console.log(`[P2P WEBRTC] Relaying answer for file ${fileId} to user ${targetUserId}`);
+      console.log(`[P2P WEBRTC] Relaying answer for file ${fileId} to ${targetUserId}:${targetDeviceId}`);
       
-      // Find target user's socket and relay the answer
-      const targetSockets = Array.from(io.sockets.sockets.values())
-        .filter(s => s.handshake.session.uuid === targetUserId);
-      
-      if (targetSockets.length > 0) {
-        const fromUserId = socket.handshake.session.uuid;
-        targetSockets.forEach(targetSocket => {
-          targetSocket.emit("file:webrtc-answer", {
+      // Route to specific device if deviceId provided
+      if (targetDeviceId) {
+        const targetSocketId = deviceSockets.get(`${targetUserId}:${targetDeviceId}`);
+        if (targetSocketId) {
+          const fromUserId = socket.handshake.session.uuid;
+          const fromDeviceId = socket.handshake.session.deviceId;
+          io.to(targetSocketId).emit("file:webrtc-answer", {
             fromUserId,
+            fromDeviceId,
             fileId,
             answer
           });
-        });
+          console.log(`[P2P WEBRTC] Answer relayed to ${targetUserId}:${targetDeviceId}`);
+        } else {
+          console.warn(`[P2P WEBRTC] Target device ${targetUserId}:${targetDeviceId} not found online`);
+        }
       } else {
-        console.warn(`[P2P WEBRTC] Target user ${targetUserId} not found online`);
+        // Broadcast to all devices (fallback)
+        const targetSockets = Array.from(io.sockets.sockets.values())
+          .filter(s => s.handshake.session.uuid === targetUserId);
+        
+        if (targetSockets.length > 0) {
+          const fromUserId = socket.handshake.session.uuid;
+          const fromDeviceId = socket.handshake.session.deviceId;
+          targetSockets.forEach(targetSocket => {
+            targetSocket.emit("file:webrtc-answer", {
+              fromUserId,
+              fromDeviceId,
+              fileId,
+              answer
+            });
+          });
+          console.log(`[P2P WEBRTC] Answer broadcast to ${targetSockets.length} devices`);
+        } else {
+          console.warn(`[P2P WEBRTC] Target user ${targetUserId} not found online`);
+        }
       }
     } catch (error) {
       console.error('[P2P WEBRTC] Error relaying answer:', error);
@@ -1158,25 +1200,44 @@ io.sockets.on("connection", socket => {
    */
   socket.on("file:webrtc-ice", (data) => {
     try {
-      const { targetUserId, fileId, candidate } = data;
+      const { targetUserId, targetDeviceId, fileId, candidate } = data;
       
-      console.log(`[P2P WEBRTC] Relaying ICE candidate for file ${fileId} to user ${targetUserId}`);
+      console.log(`[P2P WEBRTC] Relaying ICE candidate for file ${fileId} to ${targetUserId}:${targetDeviceId}`);
       
-      // Find target user's socket and relay the ICE candidate
-      const targetSockets = Array.from(io.sockets.sockets.values())
-        .filter(s => s.handshake.session.uuid === targetUserId);
-      
-      if (targetSockets.length > 0) {
-        const fromUserId = socket.handshake.session.uuid;
-        targetSockets.forEach(targetSocket => {
-          targetSocket.emit("file:webrtc-ice", {
+      // Route to specific device if deviceId provided
+      if (targetDeviceId) {
+        const targetSocketId = deviceSockets.get(`${targetUserId}:${targetDeviceId}`);
+        if (targetSocketId) {
+          const fromUserId = socket.handshake.session.uuid;
+          const fromDeviceId = socket.handshake.session.deviceId;
+          io.to(targetSocketId).emit("file:webrtc-ice", {
             fromUserId,
+            fromDeviceId,
             fileId,
             candidate
           });
-        });
+        } else {
+          console.warn(`[P2P WEBRTC] Target device ${targetUserId}:${targetDeviceId} not found online`);
+        }
       } else {
-        console.warn(`[P2P WEBRTC] Target user ${targetUserId} not found online`);
+        // Broadcast to all devices (fallback)
+        const targetSockets = Array.from(io.sockets.sockets.values())
+          .filter(s => s.handshake.session.uuid === targetUserId);
+        
+        if (targetSockets.length > 0) {
+          const fromUserId = socket.handshake.session.uuid;
+          const fromDeviceId = socket.handshake.session.deviceId;
+          targetSockets.forEach(targetSocket => {
+            targetSocket.emit("file:webrtc-ice", {
+              fromUserId,
+              fromDeviceId,
+              fileId,
+              candidate
+            });
+          });
+        } else {
+          console.warn(`[P2P WEBRTC] Target user ${targetUserId} not found online`);
+        }
       }
     } catch (error) {
       console.error('[P2P WEBRTC] Error relaying ICE candidate:', error);

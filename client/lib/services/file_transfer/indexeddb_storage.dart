@@ -122,8 +122,8 @@ class IndexedDBStorage implements FileStorageInterface {
     String fileId,
     int chunkIndex,
     Uint8List encryptedData, {
-    required Uint8List iv,
-    required String chunkHash,
+    Uint8List? iv,
+    String? chunkHash,
   }) async {
     final tx = _db!.transaction(STORE_CHUNKS, idbModeReadWrite);
     final store = tx.objectStore(STORE_CHUNKS);
@@ -132,8 +132,8 @@ class IndexedDBStorage implements FileStorageInterface {
       'fileId': fileId,
       'chunkIndex': chunkIndex,
       'encryptedData': encryptedData,
-      'iv': iv,
-      'chunkHash': chunkHash,
+      'iv': iv ?? Uint8List(0),
+      'chunkHash': chunkHash ?? '',
       'chunkSize': encryptedData.length,
       'status': 'complete',
       'timestamp': DateTime.now().toIso8601String(),
@@ -224,16 +224,28 @@ class IndexedDBStorage implements FileStorageInterface {
   
   @override
   Future<void> saveFileKey(String fileId, Uint8List key) async {
+    print('[STORAGE DEBUG] saveFileKey($fileId):');
+    print('  Input key type: ${key.runtimeType}');
+    print('  Input key length: ${key.length} bytes');
+    
     final tx = _db!.transaction(STORE_FILE_KEYS, idbModeReadWrite);
     final store = tx.objectStore(STORE_FILE_KEYS);
     
+    // Convert Uint8List to List<int> for IndexedDB storage
+    // IndexedDB doesn't preserve Uint8List type correctly
+    final keyList = key.toList();
+    
+    print('  Storing as List<int> with ${keyList.length} elements');
+    
     await store.put({
       'fileId': fileId,
-      'key': key,
+      'key': keyList,  // Store as List<int>
+      'keyLength': key.length,  // Store original length for validation
       'timestamp': DateTime.now().toIso8601String(),
     });
     
     await tx.completed;
+    print('  ✓ Saved successfully');
   }
   
   @override
@@ -245,7 +257,27 @@ class IndexedDBStorage implements FileStorageInterface {
     if (result == null) return null;
     
     final data = result as Map<String, dynamic>;
-    return data['key'] as Uint8List;
+    
+    // Convert List<int> back to Uint8List
+    final keyData = data['key'];
+    
+    print('[STORAGE DEBUG] getFileKey($fileId):');
+    print('  Raw keyData type: ${keyData.runtimeType}');
+    print('  Raw keyData length: ${keyData is List ? keyData.length : "N/A"}');
+    
+    if (keyData is Uint8List) {
+      // Already Uint8List (shouldn't happen but handle it)
+      print('  Returning as Uint8List: ${keyData.length} bytes');
+      return keyData;
+    } else if (keyData is List) {
+      // Convert List<int> to Uint8List
+      final converted = Uint8List.fromList(keyData.cast<int>());
+      print('  Converted to Uint8List: ${converted.length} bytes');
+      return converted;
+    }
+    
+    print('  ERROR: Invalid key data type');
+    return null;
   }
   
   @override

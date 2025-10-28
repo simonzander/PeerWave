@@ -346,6 +346,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       // Step 2: Generate encryption key
       setState(() => _statusText = 'Generating encryption key...');
       final fileKey = encryptionService.generateKey();
+      debugPrint('[UPLOAD] Generated AES-256 file key: ${fileKey.length} bytes');
       
       // Step 3: Encrypt and store chunks
       setState(() => _statusText = 'Encrypting and storing chunks...');
@@ -395,6 +396,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       
       // Step 5: Save encryption key
       await storage.saveFileKey(fileId, fileKey);
+      debugPrint('[UPLOAD] Saved file key to storage: ${fileKey.length} bytes');
       
       // Step 6: Announce to network (fileName is NOT sent for privacy)
       setState(() => _statusText = 'Announcing to network...');
@@ -418,7 +420,6 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       // Show success and navigate back
       await Future.delayed(const Duration(seconds: 2));
       if (mounted) {
-        Navigator.pop(context);
         _showSuccess('File uploaded and shared successfully!');
       }
       

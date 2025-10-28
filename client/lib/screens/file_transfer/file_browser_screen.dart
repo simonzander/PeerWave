@@ -456,7 +456,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       await client.registerLeecher(fileId);
       
       // Get P2P Coordinator
-      final p2pCoordinator = Provider.of<P2PCoordinator>(context, listen: false);
+      final p2pCoordinator = Provider.of<P2PCoordinator?>(context, listen: false);
+      
+      if (p2pCoordinator == null) {
+        throw Exception('P2P Coordinator not initialized. Please ensure you are logged in and Socket.IO is connected.');
+      }
       
       print('[FILE BROWSER] Starting download with automatic key request');
       

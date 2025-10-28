@@ -44,6 +44,7 @@ import 'services/file_transfer/download_manager.dart';
 import 'services/file_transfer/storage_interface.dart';
 import 'services/file_transfer/encryption_service.dart';
 import 'services/file_transfer/chunking_service.dart';
+import 'services/file_transfer/socket_file_client.dart';
 import 'screens/file_transfer/file_upload_screen.dart';
 import 'screens/file_transfer/file_browser_screen.dart';
 import 'screens/file_transfer/downloads_screen.dart';
@@ -147,15 +148,9 @@ class _MyAppState extends State<MyApp> {
       _webrtcService = WebRTCFileService();
       print('[P2P] WebRTCFileService created');
       
-      _p2pCoordinator = P2PCoordinator(
-        webrtcService: _webrtcService!,
-        downloadManager: _downloadManager!,
-        storage: _fileStorage!,
-        encryptionService: _encryptionService!,
-        signalService: SignalService.instance,  // Use singleton instance!
-      );
-      print('[P2P] P2PCoordinator created');
-      print('[P2P] All services created, starting storage initialization...');
+      // NOTE: P2PCoordinator will be created after Socket.IO connects
+      // (in _initP2PCoordinator(), called after login)
+      print('[P2P] Basic services created, P2PCoordinator will be initialized after Socket connects');
       
       // Initialize storage asynchronously
       _fileStorage!.initialize().then((_) {
@@ -184,6 +179,47 @@ class _MyAppState extends State<MyApp> {
           _servicesReady = true;
         });
       }
+    }
+  }
+  
+  /// Initialize P2PCoordinator after Socket.IO is connected
+  void _initP2PCoordinator() {
+    if (_p2pCoordinator != null) {
+      print('[P2P] P2PCoordinator already initialized');
+      return;
+    }
+    
+    print('[P2P] Initializing P2PCoordinator with Socket.IO connection...');
+    try {
+      final socketService = SocketService();
+      if (socketService.socket == null || !socketService.isConnected) {
+        print('[P2P] WARNING: Socket not connected yet, deferring P2PCoordinator initialization');
+        return;
+      }
+      
+      final socketFileClient = SocketFileClient(socket: socketService.socket!);
+      print('[P2P] SocketFileClient created');
+      
+      _p2pCoordinator = P2PCoordinator(
+        webrtcService: _webrtcService!,
+        downloadManager: _downloadManager!,
+        storage: _fileStorage!,
+        encryptionService: _encryptionService!,
+        signalService: SignalService.instance,
+        socketClient: socketFileClient,
+        chunkingService: ChunkingService(),
+      );
+      print('[P2P] ✓ P2PCoordinator initialized successfully');
+      
+      // Trigger rebuild to add P2PCoordinator to provider tree
+      if (mounted) {
+        setState(() {});
+        print('[P2P] ✓ Provider tree updated with P2PCoordinator');
+      }
+      
+    } catch (e, stackTrace) {
+      print('[P2P] ERROR initializing P2PCoordinator: $e');
+      print('[P2P] Stack trace: $stackTrace');
     }
   }
 
@@ -235,7 +271,8 @@ class _MyAppState extends State<MyApp> {
         Provider<ChunkingService>.value(value: _chunkingService!),
         ChangeNotifierProvider<DownloadManager>.value(value: _downloadManager!),
         ChangeNotifierProvider<WebRTCFileService>.value(value: _webrtcService!),
-        ChangeNotifierProvider<P2PCoordinator>.value(value: _p2pCoordinator!),
+        // P2PCoordinator is initialized after Socket.IO connects (can be null initially)
+        ChangeNotifierProvider<P2PCoordinator?>.value(value: _p2pCoordinator),
       ],
       child: _buildMaterialApp(),
     );
@@ -454,6 +491,9 @@ class _MyAppState extends State<MyApp> {
           // Small delay to ensure session cookies are properly set before Socket.IO connects
           await Future.delayed(const Duration(milliseconds: 100));
           await SocketService().connect();
+          
+          // Initialize P2PCoordinator after Socket.IO is connected
+          _initP2PCoordinator();
           
           // Load user roles after successful login
           try {

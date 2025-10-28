@@ -121,8 +121,8 @@ class NativeStorage implements FileStorageInterface {
     String fileId,
     int chunkIndex,
     Uint8List encryptedData, {
-    required Uint8List iv,
-    required String chunkHash,
+    Uint8List? iv,
+    String? chunkHash,
   }) async {
     // Save chunk data to file
     final chunkFile = await _getChunkFile(fileId, chunkIndex);
@@ -131,8 +131,8 @@ class NativeStorage implements FileStorageInterface {
     // Save chunk metadata
     await _saveChunkMetadata(fileId, chunkIndex, {
       'chunkIndex': chunkIndex,
-      'chunkHash': chunkHash,
-      'iv': base64Encode(iv),
+      'chunkHash': chunkHash ?? '',
+      'iv': iv != null ? base64Encode(iv) : '',
       'chunkSize': encryptedData.length,
       'status': 'complete',
       'timestamp': DateTime.now().toIso8601String(),

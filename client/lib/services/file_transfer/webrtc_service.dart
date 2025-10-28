@@ -22,6 +22,7 @@ class WebRTCFileService extends ChangeNotifier {
   // Callbacks
   final Map<String, Function(String peerId, dynamic data)> _messageCallbacks = {};
   final Map<String, Function(String peerId)> _connectionCallbacks = {};
+  final Map<String, Function(String peerId)> _dataChannelOpenCallbacks = {};
   Function(String peerId, RTCIceCandidate candidate)? _iceCandidateCallback;
   
   // STUN/TURN servers
@@ -180,20 +181,27 @@ class WebRTCFileService extends ChangeNotifier {
   
   /// Send data via data channel
   Future<void> sendData(String peerId, dynamic data) async {
+    debugPrint('[WebRTC] sendData called for $peerId');
+    debugPrint('[WebRTC] Available data channels: ${_dataChannels.keys.toList()}');
+    
     final channel = _dataChannels[peerId];
     if (channel == null) {
+      debugPrint('[WebRTC] ERROR: No data channel for $peerId');
       throw Exception('No data channel for $peerId');
     }
     
     if (channel.state != RTCDataChannelState.RTCDataChannelOpen) {
+      debugPrint('[WebRTC] ERROR: Data channel not open for $peerId: ${channel.state}');
       throw Exception('Data channel not open for $peerId: ${channel.state}');
     }
     
     // Serialize data
+    debugPrint('[WebRTC] Serializing and sending message...');
     final message = jsonEncode(data);
     final buffer = RTCDataChannelMessage(message);
     
     await channel.send(buffer);
+    debugPrint('[WebRTC] Message sent successfully to $peerId');
   }
   
   /// Send binary data (for chunks)
@@ -213,12 +221,20 @@ class WebRTCFileService extends ChangeNotifier {
   
   /// Register message callback
   void onMessage(String peerId, Function(String peerId, dynamic data) callback) {
+    debugPrint('[WebRTC] Registering message callback for $peerId');
     _messageCallbacks[peerId] = callback;
+    debugPrint('[WebRTC] Message callback registered. Total callbacks: ${_messageCallbacks.length}');
   }
   
   /// Register connection callback
   void onConnected(String peerId, Function(String peerId) callback) {
     _connectionCallbacks[peerId] = callback;
+  }
+  
+  /// Register data channel open callback
+  void onDataChannelOpen(String peerId, Function(String peerId) callback) {
+    debugPrint('[WebRTC] Registering data channel open callback for $peerId');
+    _dataChannelOpenCallbacks[peerId] = callback;
   }
   
   /// Get connection state
@@ -286,19 +302,37 @@ class WebRTCFileService extends ChangeNotifier {
     
     channel.onDataChannelState = (state) {
       debugPrint('[WebRTC] Data channel $peerId state: $state');
+      
+      // Notify when data channel is open
+      if (state == RTCDataChannelState.RTCDataChannelOpen) {
+        debugPrint('[WebRTC] Data channel $peerId is now OPEN, calling callback');
+        _dataChannelOpenCallbacks[peerId]?.call(peerId);
+      }
+      
       notifyListeners();
     };
   }
   
   void _onDataChannelMessage(String peerId, RTCDataChannelMessage message) {
     try {
+      debugPrint('[WebRTC] _onDataChannelMessage called for $peerId, isBinary: ${message.isBinary}');
+      
       if (message.isBinary) {
         // Binary data (chunk)
+        debugPrint('[WebRTC] Calling binary callback for $peerId (${message.binary.length} bytes)');
         _messageCallbacks[peerId]?.call(peerId, message.binary);
+        if (_messageCallbacks[peerId] == null) {
+          debugPrint('[WebRTC] WARNING: No message callback registered for $peerId');
+        }
       } else {
         // Text data (JSON)
+        debugPrint('[WebRTC] Calling JSON callback for $peerId');
         final data = jsonDecode(message.text);
+        debugPrint('[WebRTC] JSON data: $data');
         _messageCallbacks[peerId]?.call(peerId, data);
+        if (_messageCallbacks[peerId] == null) {
+          debugPrint('[WebRTC] WARNING: No message callback registered for $peerId');
+        }
       }
     } catch (e) {
       debugPrint('[WebRTC] Error handling message from $peerId: $e');
