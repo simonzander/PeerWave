@@ -18,6 +18,7 @@ class SidebarPanel extends StatefulWidget {
   final IO.Socket? socket;
   final String host;
   final VoidCallback? onPeopleTap;
+  final VoidCallback? onFileManagerTap;
   final List<Map<String, String>>? directMessages;
   final void Function(String uuid, String displayName)? onDirectMessageTap;
   final List<Map<String, dynamic>>? channels;
@@ -30,6 +31,7 @@ class SidebarPanel extends StatefulWidget {
     this.socket,
     required this.host,
     this.onPeopleTap,
+    this.onFileManagerTap,
     this.directMessages,
     this.onDirectMessageTap,
     this.channels,
@@ -103,12 +105,15 @@ class _SidebarPanelState extends State<SidebarPanel> {
               ),
               const SizedBox(height: 8),
               // Files entry
-              Row(
-                children: [
-                  const Icon(Icons.insert_drive_file, color: Colors.white),
-                  const SizedBox(width: 8),
-                  const Text('Files', style: TextStyle(color: Colors.white)),
-                ],
+              InkWell(
+                onTap: widget.onFileManagerTap,
+                child: Row(
+                  children: [
+                    const Icon(Icons.insert_drive_file, color: Colors.white),
+                    const SizedBox(width: 8),
+                    const Text('Files', style: TextStyle(color: Colors.white)),
+                  ],
+                ),
               ),
               const SizedBox(height: 8),
               // Divider

@@ -45,7 +45,9 @@ import 'services/file_transfer/storage_interface.dart';
 import 'services/file_transfer/encryption_service.dart';
 import 'services/file_transfer/chunking_service.dart';
 import 'services/file_transfer/socket_file_client.dart';
+import 'services/file_transfer/file_reannounce_service.dart';
 import 'screens/file_transfer/file_upload_screen.dart';
+import 'screens/file_transfer/file_manager_screen.dart';
 import 'screens/file_transfer/file_browser_screen.dart';
 import 'screens/file_transfer/downloads_screen.dart';
 import 'screens/file_transfer/file_transfer_hub.dart';
@@ -222,6 +224,44 @@ class _MyAppState extends State<MyApp> {
       print('[P2P] Stack trace: $stackTrace');
     }
   }
+  
+  /// Re-announce files from local storage after login
+  void _reannounceLocalFiles() async {
+    try {
+      print('[REANNOUNCE] Starting file re-announcement after login...');
+      
+      final socketService = SocketService();
+      if (socketService.socket == null || !socketService.isConnected) {
+        print('[REANNOUNCE] Socket not connected, skipping re-announcement');
+        return;
+      }
+      
+      if (_fileStorage == null) {
+        print('[REANNOUNCE] Storage not initialized, skipping re-announcement');
+        return;
+      }
+      
+      final socketFileClient = SocketFileClient(socket: socketService.socket!);
+      final reannounceService = FileReannounceService(
+        storage: _fileStorage!,
+        socketClient: socketFileClient,
+      );
+      
+      final result = await reannounceService.reannounceAllFiles();
+      
+      if (result.reannounced > 0) {
+        print('[REANNOUNCE] ✓ Successfully re-announced ${result.reannounced} files');
+      }
+      
+      if (result.failed > 0) {
+        print('[REANNOUNCE] ⚠ Failed to re-announce ${result.failed} files');
+      }
+      
+    } catch (e, stackTrace) {
+      print('[REANNOUNCE] ERROR: $e');
+      print('[REANNOUNCE] Stack trace: $stackTrace');
+    }
+  }
 
   @override
   void dispose() {
@@ -371,6 +411,13 @@ class _MyAppState extends State<MyApp> {
                   ),
                 ),
                 GoRoute(
+                  path: '/file-manager',
+                  builder: (context, state) => const SocketAwareWidget(
+                    featureName: 'File Manager',
+                    child: FileManagerScreen(),
+                  ),
+                ),
+                GoRoute(
                   path: '/file-browser',
                   builder: (context, state) => const SocketAwareWidget(
                     featureName: 'File Browser',
@@ -494,6 +541,9 @@ class _MyAppState extends State<MyApp> {
           
           // Initialize P2PCoordinator after Socket.IO is connected
           _initP2PCoordinator();
+          
+          // Re-announce files from local storage after connection
+          _reannounceLocalFiles();
           
           // Load user roles after successful login
           try {

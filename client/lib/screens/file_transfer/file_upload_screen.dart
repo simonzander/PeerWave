@@ -321,13 +321,43 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
     setState(() {
       _isProcessing = true;
       _progress = 0.0;
-      _statusText = 'Starting upload...';
+      _statusText = 'Checking for duplicates...';
     });
     
     try {
       final file = _selectedFile!;
       final fileBytes = _fileBytes!;
       final mimeType = lookupMimeType(file.name) ?? 'application/octet-stream';
+      
+      // Calculate checksum first to check for duplicates
+      final fileChecksum = chunkingService.calculateFileChecksum(fileBytes);
+      
+      // Check if file already exists in local storage
+      final existingFiles = await storage.getAllFiles();
+      final duplicate = existingFiles.firstWhere(
+        (f) => f['fileName'] == file.name && f['checksum'] == fileChecksum,
+        orElse: () => {},
+      );
+      
+      if (duplicate.isNotEmpty) {
+        setState(() {
+          _isProcessing = false;
+          _progress = 0.0;
+          _statusText = '';
+        });
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('File "${file.name}" has already been shared.'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+      
       final fileId = _generateFileId();
       
       // Step 1: Chunking
@@ -379,8 +409,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
         _progress = 0.8;
       });
       
-      // Step 4: Save file metadata
-      final fileChecksum = chunkingService.calculateFileChecksum(fileBytes);
+      // Step 4: Save file metadata (use already calculated checksum)
       await storage.saveFileMetadata({
         'fileId': fileId,
         'fileName': file.name,

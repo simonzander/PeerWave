@@ -3,6 +3,7 @@ import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:go_router/go_router.dart';
 import '../screens/messages/direct_messages_screen.dart';
 import '../screens/messages/signal_group_chat_screen.dart';
+import '../screens/file_transfer/file_manager_screen.dart';
 import 'sidebar_panel.dart';
 import 'profile_card.dart';
 import '../services/api_service.dart';
@@ -113,6 +114,12 @@ class _DashboardPageState extends State<DashboardPage> {
     });
   }
 
+  void _onFileManagerTap() {
+    setState(() {
+      _currentView = DashboardView.fileManager;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final extra = GoRouterState.of(context).extra;
@@ -180,6 +187,10 @@ class _DashboardPageState extends State<DashboardPage> {
           onRefresh: _loadPeople,
         );
         break;
+
+      case DashboardView.fileManager:
+        contentWidget = const FileManagerScreen();
+        break;
     }
 
     return Material(
@@ -199,6 +210,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     socket: socket,
                     host: host ?? '',
                     onPeopleTap: _onPeopleViewTap,
+                    onFileManagerTap: _onFileManagerTap,
                     directMessages: _directMessages.map((dm) => {
                       'uuid': dm.uuid,
                       'displayName': dm.displayName,
@@ -232,6 +244,7 @@ enum DashboardView {
   directMessages,
   channel,
   people,
+  fileManager,
 }
 
 class DirectMessageInfo {

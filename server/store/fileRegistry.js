@@ -40,13 +40,14 @@ class FileRegistry {
     let file = this.files.get(fileId);
     
     if (!file) {
-      // New file announcement
+      // New file announcement - save creator
       file = {
         fileId,
         mimeType,
         fileSize,
         checksum,
         chunkCount,
+        creator: userId, // Store who created/uploaded this file
         createdAt: Date.now(),
         lastActivity: Date.now(),
         seeders: new Set(),
@@ -86,6 +87,9 @@ class FileRegistry {
   /**
    * Unannounce a file (user no longer seeding)
    * 
+   * If user is the creator, completely delete the file from registry
+   * Otherwise, just remove user as seeder
+   * 
    * @param {string} userId - User unannouncing the file
    * @param {string} fileId - File ID
    * @returns {boolean} Success
@@ -94,6 +98,27 @@ class FileRegistry {
     const file = this.files.get(fileId);
     if (!file) return false;
     
+    // Check if user is the creator
+    const isCreator = file.creator === userId;
+    
+    if (isCreator) {
+      // Creator wants to delete - remove file completely
+      console.log(`[FILE REGISTRY] Creator ${userId} deleting file ${fileId} completely`);
+      
+      // Remove file from registry
+      this.files.delete(fileId);
+      this.fileSeeders.delete(fileId);
+      this.fileLeechers.delete(fileId);
+      
+      // Remove from all users' seed lists
+      for (const [uid, fileSet] of this.userSeeds.entries()) {
+        fileSet.delete(fileId);
+      }
+      
+      return true;
+    }
+    
+    // Non-creator: just remove as seeder
     // Remove user as seeder
     file.seeders.delete(userId);
     this.fileSeeders.get(fileId)?.delete(userId);
