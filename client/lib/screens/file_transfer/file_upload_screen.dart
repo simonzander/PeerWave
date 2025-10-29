@@ -7,7 +7,9 @@ import '../../services/file_transfer/chunking_service.dart';
 import '../../services/file_transfer/encryption_service.dart';
 import '../../services/file_transfer/storage_interface.dart';
 import '../../services/file_transfer/socket_file_client.dart';
+import '../../services/file_transfer/file_transfer_config.dart';
 import '../../services/socket_service.dart';
+import '../../widgets/file_size_error_dialog.dart';
 
 /// File Upload Screen - Upload and announce files to P2P network
 class FileUploadScreen extends StatefulWidget {
@@ -271,9 +273,37 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       );
       
       if (result != null && result.files.isNotEmpty) {
+        final file = result.files.first;
+        
+        // ✅ CHECK FILE SIZE
+        final maxSize = FileTransferConfig.getMaxFileSize();
+        final recommendedSize = FileTransferConfig.getRecommendedSize();
+        
+        if (file.size > maxSize) {
+          // File too large - show error dialog
+          if (mounted) {
+            await showFileSizeErrorDialog(context, file.size, file.name);
+          }
+          return;
+        } else if (file.size > recommendedSize) {
+          // File larger than recommended - show warning
+          if (mounted) {
+            final shouldContinue = await showFileSizeErrorDialog(
+              context,
+              file.size,
+              file.name,
+            );
+            
+            if (shouldContinue != true) {
+              return; // User cancelled
+            }
+          }
+        }
+        
+        // File size OK - continue
         setState(() {
-          _selectedFile = result.files.first;
-          _fileBytes = result.files.first.bytes;
+          _selectedFile = file;
+          _fileBytes = file.bytes;
         });
       }
     } catch (e) {

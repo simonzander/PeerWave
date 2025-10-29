@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:flutter/foundation.dart';
 
@@ -7,6 +8,15 @@ import 'package:flutter/foundation.dart';
 /// 
 /// Manages WebRTC connections for chunk transfer between peers
 class WebRTCFileService extends ChangeNotifier {
+  // Buffer management constants
+  static const int MAX_BUFFERED_AMOUNT = 16 * 1024 * 1024; // 16 MB
+  static const int HIGH_WATER_MARK = 8 * 1024 * 1024;      // 8 MB (50%)
+  static const int LOW_WATER_MARK = 2 * 1024 * 1024;       // 2 MB (12.5%)
+  static const int BACKPRESSURE_WAIT_MS = 10;              // 10ms wait interval
+  static const int BACKPRESSURE_TIMEOUT_SEC = 30;          // 30s timeout
+  
+  // Buffer statistics for monitoring
+  final Map<String, BufferStats> _bufferStats = {};
   // Active peer connections: peerId -> RTCPeerConnection
   final Map<String, RTCPeerConnection> _peerConnections = {};
   
@@ -204,19 +214,94 @@ class WebRTCFileService extends ChangeNotifier {
     debugPrint('[WebRTC] Message sent successfully to $peerId');
   }
   
-  /// Send binary data (for chunks)
+  /// Send binary data (for chunks) with backpressure management
   Future<void> sendBinary(String peerId, Uint8List data) async {
     final channel = _dataChannels[peerId];
     if (channel == null) {
       throw Exception('No data channel for $peerId');
     }
-    
+
     if (channel.state != RTCDataChannelState.RTCDataChannelOpen) {
       throw Exception('Data channel not open for $peerId: ${channel.state}');
     }
+
+    // Initialize buffer stats for this peer if needed
+    _bufferStats[peerId] ??= BufferStats();
+    final stats = _bufferStats[peerId]!;
     
+    // ✅ BACKPRESSURE: Wait if buffer is filling up
+    int waitCount = 0;
+    final maxWaits = (BACKPRESSURE_TIMEOUT_SEC * 1000) ~/ BACKPRESSURE_WAIT_MS;
+    final startTime = DateTime.now();
+    
+    while (channel.bufferedAmount != null && 
+           channel.bufferedAmount! > HIGH_WATER_MARK) {
+      
+      // Timeout check
+      if (waitCount++ > maxWaits) {
+        stats.recordTimeout(channel.bufferedAmount ?? 0);
+        throw TimeoutException(
+          'Backpressure timeout: Buffer not draining (${channel.bufferedAmount} bytes) after ${BACKPRESSURE_TIMEOUT_SEC}s'
+        );
+      }
+      
+      // Log every 1 second (100 * 10ms = 1000ms)
+      if (waitCount % 100 == 0) {
+        debugPrint('[WebRTC Backpressure] $peerId: Waiting for buffer to drain: '
+                   '${(channel.bufferedAmount! / 1024 / 1024).toStringAsFixed(2)} MB buffered');
+      }
+      
+      await Future.delayed(Duration(milliseconds: BACKPRESSURE_WAIT_MS));
+    }
+    
+    // Record wait statistics
+    if (waitCount > 0) {
+      final waitTime = DateTime.now().difference(startTime);
+      stats.recordWait(channel.bufferedAmount ?? 0, waitTime);
+    }
+    
+    // Send when buffer is below high water mark
     final buffer = RTCDataChannelMessage.fromBinary(data);
     await channel.send(buffer);
+    
+    // Update max buffered amount
+    if (channel.bufferedAmount != null) {
+      stats.updateMaxBuffered(channel.bufferedAmount!);
+      
+      // Log if getting close to limit
+      if (channel.bufferedAmount! > LOW_WATER_MARK) {
+        debugPrint('[WebRTC Buffer] $peerId: ${(channel.bufferedAmount! / 1024 / 1024).toStringAsFixed(2)} MB buffered');
+      }
+    }
+    
+    stats.recordSend(data.length);
+  }
+  
+  /// Get buffer statistics for a peer
+  BufferStats? getBufferStats(String peerId) {
+    return _bufferStats[peerId];
+  }
+  
+  /// Print buffer statistics for all peers
+  void printAllBufferStats() {
+    debugPrint('═══════════════════════════════════════');
+    debugPrint('WebRTC Buffer Statistics Summary');
+    debugPrint('═══════════════════════════════════════');
+    
+    if (_bufferStats.isEmpty) {
+      debugPrint('No buffer statistics available');
+      return;
+    }
+    
+    for (final entry in _bufferStats.entries) {
+      final peerId = entry.key;
+      final stats = entry.value;
+      
+      debugPrint('\nPeer: $peerId');
+      stats.printStats();
+    }
+    
+    debugPrint('═══════════════════════════════════════');
   }
   
   /// Register message callback
@@ -342,5 +427,59 @@ class WebRTCFileService extends ChangeNotifier {
   /// Set ICE candidate callback (to send via Socket.IO)
   void setIceCandidateCallback(Function(String peerId, RTCIceCandidate candidate) callback) {
     _iceCandidateCallback = callback;
+  }
+}
+
+/// Buffer Statistics for monitoring WebRTC DataChannel performance
+class BufferStats {
+  int totalSends = 0;
+  int totalBytesSent = 0;
+  int totalWaits = 0;
+  int maxBufferedAmount = 0;
+  int timeouts = 0;
+  Duration totalWaitTime = Duration.zero;
+  
+  void recordSend(int bytes) {
+    totalSends++;
+    totalBytesSent += bytes;
+  }
+  
+  void recordWait(int bufferedAmount, Duration waitTime) {
+    totalWaits++;
+    maxBufferedAmount = maxBufferedAmount > bufferedAmount ? maxBufferedAmount : bufferedAmount;
+    totalWaitTime += waitTime;
+  }
+  
+  void updateMaxBuffered(int bufferedAmount) {
+    if (bufferedAmount > maxBufferedAmount) {
+      maxBufferedAmount = bufferedAmount;
+    }
+  }
+  
+  void recordTimeout(int bufferedAmount) {
+    timeouts++;
+    debugPrint('[BufferStats] ❌ TIMEOUT! Buffer stuck at ${(bufferedAmount / 1024 / 1024).toStringAsFixed(2)} MB');
+  }
+  
+  void printStats() {
+    final avgWaitMs = totalWaits > 0 ? totalWaitTime.inMilliseconds / totalWaits : 0;
+    final totalMB = totalBytesSent / 1024 / 1024;
+    final maxBufferedMB = maxBufferedAmount / 1024 / 1024;
+    
+    debugPrint('  Total sends: $totalSends');
+    debugPrint('  Total data: ${totalMB.toStringAsFixed(2)} MB');
+    debugPrint('  Backpressure waits: $totalWaits');
+    debugPrint('  Total wait time: ${totalWaitTime.inMilliseconds}ms');
+    debugPrint('  Average wait: ${avgWaitMs.toStringAsFixed(1)}ms');
+    debugPrint('  Max buffered: ${maxBufferedMB.toStringAsFixed(2)} MB');
+    debugPrint('  Timeouts: $timeouts');
+    
+    if (timeouts > 0) {
+      debugPrint('  ⚠️  WARNING: Connection had buffer timeouts!');
+    }
+    
+    if (totalWaits > totalSends * 0.1) {
+      debugPrint('  ⚠️  High backpressure detected (${((totalWaits / totalSends) * 100).toStringAsFixed(1)}% of sends)');
+    }
   }
 }

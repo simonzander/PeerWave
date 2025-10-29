@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:math' show min;
+import 'dart:math' show min, max;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'webrtc_service.dart';
@@ -59,6 +59,13 @@ class P2PCoordinator extends ChangeNotifier {
   // Connection limits
   int maxConnectionsPerFile = 4;
   int maxParallelChunksPerConnection = 2;
+  
+  // Rate limiting: Track chunks in flight per peer
+  final Map<String, Set<int>> _chunksInFlightPerPeer = {};
+  static const int MAX_CHUNKS_IN_FLIGHT_PER_PEER = 5;
+  
+  // Adaptive throttling state
+  final Map<String, AdaptiveThrottler> _throttlers = {};
   
   P2PCoordinator({
     required this.webrtcService,
@@ -1202,6 +1209,9 @@ class P2PCoordinator extends ChangeNotifier {
         chunkHash: chunkHash,
       );
       
+      // ✅ Mark chunk request as complete (for rate limiting)
+      _completeChunkRequest(peerId, chunkIndex);
+      
       // Update download progress
       final task = downloadManager.getDownload(fileId);
       if (task != null) {
@@ -1424,8 +1434,24 @@ class P2PCoordinator extends ChangeNotifier {
     final activeRequests = _activeChunkRequests[fileId] ?? {};
     final currentPeerRequests = activeRequests.values.where((p) => p == peerId).length;
     
+    // ✅ RATE LIMITING: Check chunks in flight for this peer
+    final inFlight = _chunksInFlightPerPeer[peerId]?.length ?? 0;
+    if (inFlight >= MAX_CHUNKS_IN_FLIGHT_PER_PEER) {
+      debugPrint('[P2P RateLimit] Peer $peerId has $inFlight chunks in flight, waiting...');
+      return;
+    }
+    
+    // ✅ ADAPTIVE THROTTLING: Get current limit from throttler
+    _throttlers[peerId] ??= AdaptiveThrottler();
+    final adaptiveLimit = _throttlers[peerId]!.getCurrentLimit();
+    
+    if (currentPeerRequests >= adaptiveLimit) {
+      // This peer is already busy (adaptive limit)
+      return;
+    }
+    
     if (currentPeerRequests >= maxParallelChunksPerConnection) {
-      // This peer is already busy
+      // This peer is already busy (hard limit)
       return;
     }
     
@@ -1439,15 +1465,47 @@ class P2PCoordinator extends ChangeNotifier {
       return;
     }
     
-    // Request up to the limit
-    final chunksToRequest = availableChunks.take(maxParallelChunksPerConnection - currentPeerRequests);
+    // Request up to the limit (use min of all limits)
+    final effectiveLimit = min(
+      min(adaptiveLimit, MAX_CHUNKS_IN_FLIGHT_PER_PEER - inFlight),
+      maxParallelChunksPerConnection - currentPeerRequests,
+    );
+    
+    final chunksToRequest = availableChunks.take(effectiveLimit);
     
     for (final chunkIndex in chunksToRequest) {
-      _requestChunk(fileId, peerId, chunkIndex);
+      _requestChunkWithRateLimit(fileId, peerId, chunkIndex);
     }
   }
   
-  void _requestChunk(String fileId, String peerId, int chunkIndex) {
+  /// Request chunk with rate limiting
+  Future<void> _requestChunkWithRateLimit(String fileId, String peerId, int chunkIndex) async {
+    // Initialize in-flight tracker
+    _chunksInFlightPerPeer[peerId] ??= {};
+    
+    // Mark as in flight
+    _chunksInFlightPerPeer[peerId]!.add(chunkIndex);
+    
+    try {
+      await _requestChunk(fileId, peerId, chunkIndex);
+    } catch (e) {
+      debugPrint('[P2P RateLimit] Error requesting chunk $chunkIndex: $e');
+      // Remove from in-flight on error
+      _chunksInFlightPerPeer[peerId]?.remove(chunkIndex);
+      rethrow;
+    }
+  }
+  
+  /// Complete a chunk request (called when chunk is received)
+  void _completeChunkRequest(String peerId, int chunkIndex) {
+    // Remove from in-flight
+    _chunksInFlightPerPeer[peerId]?.remove(chunkIndex);
+    
+    // Update throttler based on success
+    _throttlers[peerId]?.recordSuccess();
+  }
+  
+  Future<void> _requestChunk(String fileId, String peerId, int chunkIndex) async {
     debugPrint('[P2P] Requesting chunk $chunkIndex from $peerId');
     
     // Mark as active request
@@ -1455,7 +1513,7 @@ class P2PCoordinator extends ChangeNotifier {
     _activeChunkRequests[fileId]![chunkIndex] = peerId;
     
     // Send request via WebRTC
-    webrtcService.sendData(peerId, {
+    await webrtcService.sendData(peerId, {
       'type': 'chunkRequest',  // Match handler expectation
       'fileId': fileId,
       'chunkIndex': chunkIndex,
@@ -1649,5 +1707,81 @@ class P2PCoordinator extends ChangeNotifier {
     anchor.remove();
     html.Url.revokeObjectUrl(url);
     debugPrint('[P2P] Browser download triggered for: $fileName');
+  }
+  
+  /// Print buffer statistics for all peers
+  void printBufferStatistics() {
+    webrtcService.printAllBufferStats();
+  }
+}
+
+/// Adaptive Throttler - Adjusts chunk request rate based on backpressure
+class AdaptiveThrottler {
+  int _currentMaxInFlight = 5;
+  DateTime? _lastSlowdown;
+  DateTime? _lastSpeedup;
+  int _successCount = 0;
+  int _slowdownCount = 0;
+  
+  // Limits
+  static const int MIN_LIMIT = 2;
+  static const int MAX_LIMIT = 10;
+  static const int DEFAULT_LIMIT = 5;
+  
+  // Timing
+  static const Duration COOLDOWN_PERIOD = Duration(seconds: 5);
+  static const int SUCCESS_THRESHOLD = 10; // Speed up after N successes
+  
+  int getCurrentLimit() => _currentMaxInFlight;
+  
+  void recordSuccess() {
+    _successCount++;
+    
+    // Speed up after consistent success
+    if (_successCount >= SUCCESS_THRESHOLD) {
+      final now = DateTime.now();
+      final canSpeedup = _lastSpeedup == null || 
+                         now.difference(_lastSpeedup!) > COOLDOWN_PERIOD;
+      
+      if (canSpeedup && _currentMaxInFlight < MAX_LIMIT) {
+        _currentMaxInFlight = min(MAX_LIMIT, _currentMaxInFlight + 1);
+        _lastSpeedup = now;
+        _successCount = 0;
+        debugPrint('[AdaptiveThrottle] ↑ Increased limit to $_currentMaxInFlight');
+      }
+    }
+  }
+  
+  void recordBackpressure(int bufferedAmount) {
+    final now = DateTime.now();
+    
+    // Only slowdown if not in cooldown
+    final canSlowdown = _lastSlowdown == null || 
+                       now.difference(_lastSlowdown!) > COOLDOWN_PERIOD;
+    
+    if (canSlowdown && bufferedAmount > 10 * 1024 * 1024) { // > 10 MB
+      if (_currentMaxInFlight > MIN_LIMIT) {
+        _currentMaxInFlight = max(MIN_LIMIT, _currentMaxInFlight - 1);
+        _lastSlowdown = now;
+        _slowdownCount++;
+        _successCount = 0; // Reset success counter
+        debugPrint('[AdaptiveThrottle] ↓ Decreased limit to $_currentMaxInFlight (buffer: ${(bufferedAmount / 1024 / 1024).toStringAsFixed(1)} MB)');
+      }
+    }
+  }
+  
+  void reset() {
+    _currentMaxInFlight = DEFAULT_LIMIT;
+    _lastSlowdown = null;
+    _lastSpeedup = null;
+    _successCount = 0;
+    _slowdownCount = 0;
+  }
+  
+  void printStats() {
+    debugPrint('Adaptive Throttler Stats:');
+    debugPrint('  Current limit: $_currentMaxInFlight');
+    debugPrint('  Slowdowns: $_slowdownCount');
+    debugPrint('  Success streak: $_successCount');
   }
 }
