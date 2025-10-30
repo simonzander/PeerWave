@@ -2,15 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
+import 'file_message_widget.dart';
+import '../models/file_message.dart';
+import 'dart:convert';
 
 /// Reusable widget for displaying a list of messages
 /// Works for both Direct Messages and Group Chats
 class MessageList extends StatelessWidget {
   final List<Map<String, dynamic>> messages;
+  final void Function(FileMessage)? onFileDownload;
 
   const MessageList({
     super.key,
     required this.messages,
+    this.onFileDownload,
   });
 
   /// Format timestamp for display
@@ -244,45 +249,8 @@ class MessageList extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 4),
-                        // Markdown rendering for formatted text
-                        MarkdownBody(
-                          data: text,
-                          selectable: true,
-                          styleSheet: MarkdownStyleSheet(
-                            p: const TextStyle(color: Colors.white, fontSize: 15),
-                            strong: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                            em: const TextStyle(color: Colors.white, fontStyle: FontStyle.italic),
-                            del: const TextStyle(color: Colors.white, decoration: TextDecoration.lineThrough),
-                            code: TextStyle(
-                              backgroundColor: Colors.grey[800],
-                              color: Colors.amber[300],
-                              fontFamily: 'monospace',
-                            ),
-                            codeblockDecoration: BoxDecoration(
-                              color: Colors.grey[850],
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.grey[700]!),
-                            ),
-                            codeblockPadding: const EdgeInsets.all(12),
-                            blockquote: TextStyle(color: Colors.grey[400], fontStyle: FontStyle.italic),
-                            blockquoteDecoration: BoxDecoration(
-                              border: Border(left: BorderSide(color: Colors.grey[600]!, width: 4)),
-                            ),
-                            listBullet: const TextStyle(color: Colors.white),
-                            a: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline),
-                            h1: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-                            h2: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                            h3: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
-                          onTapLink: (text, href, title) async {
-                            if (href != null) {
-                              final uri = Uri.parse(href);
-                              if (await canLaunchUrl(uri)) {
-                                await launchUrl(uri, mode: LaunchMode.externalApplication);
-                              }
-                            }
-                          },
-                        ),
+                        // Check if this is a file message
+                        _buildMessageContent(msg, text),
                       ],
                     ),
                   ),
@@ -291,6 +259,76 @@ class MessageList extends StatelessWidget {
             ),
           ],
         );
+      },
+    );
+  }
+
+  /// Build message content based on type (text or file)
+  Widget _buildMessageContent(Map<String, dynamic> msg, String text) {
+    final type = msg['type'] as String?;
+    
+    // Check if this is a file message
+    if (type == 'file') {
+      try {
+        // Parse the file message payload
+        final payloadJson = msg['payload'] ?? msg['message'] ?? text;
+        final fileData = payloadJson is String ? jsonDecode(payloadJson) : payloadJson;
+        final fileMessage = FileMessage.fromJson(fileData);
+        
+        return FileMessageWidget(
+          fileMessage: fileMessage,
+          isOwnMessage: msg['isLocalSent'] == true,
+          onDownloadWithMessage: onFileDownload ?? (fileMsg) {
+            print('[MESSAGE_LIST] Download requested for: ${fileMsg.fileId} (no handler provided)');
+          },
+        );
+      } catch (e) {
+        print('[MESSAGE_LIST] Failed to parse file message: $e');
+        // Fallback to text rendering
+        return Text(
+          'File message (failed to load)',
+          style: TextStyle(color: Colors.red[300], fontStyle: FontStyle.italic),
+        );
+      }
+    }
+    
+    // Default: Render as markdown text
+    return MarkdownBody(
+      data: text,
+      selectable: true,
+      styleSheet: MarkdownStyleSheet(
+        p: const TextStyle(color: Colors.white, fontSize: 15),
+        strong: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        em: const TextStyle(color: Colors.white, fontStyle: FontStyle.italic),
+        del: const TextStyle(color: Colors.white, decoration: TextDecoration.lineThrough),
+        code: TextStyle(
+          backgroundColor: Colors.grey[800],
+          color: Colors.amber[300],
+          fontFamily: 'monospace',
+        ),
+        codeblockDecoration: BoxDecoration(
+          color: Colors.grey[850],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[700]!),
+        ),
+        codeblockPadding: const EdgeInsets.all(12),
+        blockquote: TextStyle(color: Colors.grey[400], fontStyle: FontStyle.italic),
+        blockquoteDecoration: BoxDecoration(
+          border: Border(left: BorderSide(color: Colors.grey[600]!, width: 4)),
+        ),
+        listBullet: const TextStyle(color: Colors.white),
+        a: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline),
+        h1: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+        h2: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+        h3: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+      ),
+      onTapLink: (text, href, title) async {
+        if (href != null) {
+          final uri = Uri.parse(href);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
+        }
       },
     );
   }

@@ -451,6 +451,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
         'isSeeder': true,
         'createdAt': DateTime.now().toIso8601String(),
         'lastActivity': DateTime.now().toIso8601String(),
+        'sharedWith': [], // ← WICHTIG: Leere Liste initial (nur Uploader hat Zugriff)
       });
       
       // Step 5: Save encryption key
@@ -468,6 +469,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
         checksum: fileChecksum,
         chunkCount: chunks.length,
         availableChunks: availableChunks,
+        sharedWith: [], // ← WICHTIG: Leere Liste (nur Uploader ist initial Seeder)
       );
       
       setState(() {

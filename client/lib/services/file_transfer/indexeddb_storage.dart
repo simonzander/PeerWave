@@ -141,6 +141,31 @@ class IndexedDBStorage implements FileStorageInterface {
     
     await tx.completed;
   }
+
+  @override
+  Future<bool> saveChunkSafe(
+    String fileId,
+    int chunkIndex,
+    Uint8List encryptedData, {
+    Uint8List? iv,
+    String? chunkHash,
+  }) async {
+    // Check if chunk already exists
+    final existingChunk = await getChunk(fileId, chunkIndex);
+    
+    if (existingChunk != null && existingChunk.length == encryptedData.length) {
+      print('[STORAGE] Chunk $chunkIndex already exists, skipping duplicate');
+      return false; // Not saved (duplicate)
+    }
+    
+    if (existingChunk != null) {
+      print('[STORAGE] ⚠️ Chunk $chunkIndex size mismatch, overwriting');
+    }
+    
+    // Save chunk
+    await saveChunk(fileId, chunkIndex, encryptedData, iv: iv, chunkHash: chunkHash);
+    return true; // Saved successfully
+  }
   
   @override
   Future<Uint8List?> getChunk(String fileId, int chunkIndex) async {

@@ -35,6 +35,31 @@ abstract class FileStorageInterface {
     String? chunkHash,
   });
   
+  /// Save chunk with duplicate protection (idempotent)
+  /// Returns true if chunk was saved, false if duplicate was ignored
+  Future<bool> saveChunkSafe(String fileId, int chunkIndex, Uint8List encryptedData, {
+    Uint8List? iv,
+    String? chunkHash,
+  }) async {
+    // Check if chunk already exists and is complete
+    final existingChunk = await getChunk(fileId, chunkIndex);
+    
+    if (existingChunk != null && existingChunk.length == encryptedData.length) {
+      print('[STORAGE] Chunk $chunkIndex already exists (${existingChunk.length} bytes), skipping duplicate');
+      return false;
+    }
+    
+    if (existingChunk != null) {
+      print('[STORAGE] ⚠️ Chunk $chunkIndex size mismatch: ${existingChunk.length} != ${encryptedData.length}, overwriting');
+    }
+    
+    // Atomic save
+    await saveChunk(fileId, chunkIndex, encryptedData, iv: iv, chunkHash: chunkHash);
+    
+    print('[STORAGE] ✓ Chunk $chunkIndex saved safely (${encryptedData.length} bytes)');
+    return true;
+  }
+  
   /// Get encrypted chunk data
   Future<Uint8List?> getChunk(String fileId, int chunkIndex);
   
@@ -100,6 +125,8 @@ class FileMetadata {
   final bool autoReannounce; // Auto-reannounce when coming online
   final DateTime? lastActivity;
   final String? deletionReason; // 'seeder-ttl' | 'uploader-deleted' | 'manual'
+  final List<String> sharedWith; // List of userIds who have access to this file
+  final int? lastSync; // Last sync timestamp with server (milliseconds since epoch)
   
   FileMetadata({
     required this.fileId,
@@ -117,6 +144,8 @@ class FileMetadata {
     this.autoReannounce = true,
     this.lastActivity,
     this.deletionReason,
+    this.sharedWith = const [],
+    this.lastSync,
   });
   
   Map<String, dynamic> toJson() => {
@@ -135,6 +164,8 @@ class FileMetadata {
     'autoReannounce': autoReannounce,
     'lastActivity': lastActivity?.toIso8601String(),
     'deletionReason': deletionReason,
+    'sharedWith': sharedWith,
+    'lastSync': lastSync,
   };
   
   factory FileMetadata.fromJson(Map<String, dynamic> json) => FileMetadata(
@@ -153,6 +184,8 @@ class FileMetadata {
     autoReannounce: json['autoReannounce'] ?? true,
     lastActivity: json['lastActivity'] != null ? DateTime.parse(json['lastActivity']) : null,
     deletionReason: json['deletionReason'],
+    sharedWith: (json['sharedWith'] as List?)?.cast<String>() ?? [],
+    lastSync: json['lastSync'] as int?,
   );
 }
 

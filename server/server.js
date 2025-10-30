@@ -893,33 +893,70 @@ io.sockets.on("connection", socket => {
    */
   socket.on("announceFile", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid || socket.handshake.session.authenticated !== true) {
+      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
         console.error('[P2P FILE] ERROR: Not authenticated');
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
       const userId = socket.handshake.session.uuid;
-      const { fileId, mimeType, fileSize, checksum, chunkCount, availableChunks } = data;
+      const deviceId = socket.handshake.session.deviceId;
+      const { fileId, mimeType, fileSize, checksum, chunkCount, availableChunks, sharedWith } = data;
 
-      console.log(`[P2P FILE] User ${userId} announcing file: ${fileId.substring(0, 16)}... (${mimeType}, ${fileSize} bytes)`);
+      console.log(`[P2P FILE] Device ${userId}:${deviceId} announcing file: ${fileId.substring(0, 16)}... (${mimeType}, ${fileSize} bytes)`);
+      if (sharedWith) {
+        console.log(`[P2P FILE] Shared with: ${sharedWith.join(', ')}`);
+      }
 
-      const fileInfo = fileRegistry.announceFile(userId, {
+      // Register file with userId:deviceId format + sharedWith
+      const fileInfo = fileRegistry.announceFile(userId, deviceId, {
         fileId,
         mimeType,
         fileSize,
         checksum,
         chunkCount,
-        availableChunks
+        availableChunks,
+        sharedWith
       });
 
-      callback?.({ success: true, fileInfo });
+      // ========================================
+      // SECURITY: Check if announce was denied
+      // ========================================
+      if (!fileInfo) {
+        console.error(`[SECURITY] ❌ Announce REJECTED for user ${userId} - file ${fileId.substring(0, 16)}`);
+        return callback?.({ 
+          success: false, 
+          error: "Permission denied: You don't have access to this file" 
+        });
+      }
 
-      // Notify other users about new file availability
-      socket.broadcast.emit("fileAnnounced", {
-        fileId,
-        mimeType,
-        fileSize,
-        seederCount: fileInfo.seederCount
+      // Calculate chunk quality
+      const chunkQuality = fileRegistry.getChunkQuality(fileId);
+
+      callback?.({ success: true, fileInfo, chunkQuality });
+
+      // LÖSUNG 12: Notify only authorized users (no broadcast!)
+      const sharedUsers = fileRegistry.getSharedUsers(fileId);
+      console.log(`[P2P FILE] Notifying ${sharedUsers.length} authorized users about file announcement (quality: ${chunkQuality}%)`);
+      
+      // Find sockets of authorized users
+      const targetSockets = Array.from(io.sockets.sockets.values())
+        .filter(s => 
+          s.handshake.session?.uuid && 
+          sharedUsers.includes(s.handshake.session.uuid) &&
+          s.id !== socket.id // Don't notify the announcer
+        );
+      
+      // Send targeted notification to each authorized user
+      targetSockets.forEach(targetSocket => {
+        targetSocket.emit("fileAnnounced", {
+          fileId,
+          userId,
+          deviceId,
+          mimeType,
+          fileSize,
+          seederCount: fileInfo.seederCount,
+          chunkQuality
+        });
       });
 
     } catch (error) {
@@ -933,24 +970,36 @@ io.sockets.on("connection", socket => {
    */
   socket.on("unannounceFile", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
       const userId = socket.handshake.session.uuid;
+      const deviceId = socket.handshake.session.deviceId;
       const { fileId } = data;
 
-      console.log(`[P2P FILE] User ${userId} unannouncing file: ${fileId}`);
+      console.log(`[P2P FILE] Device ${userId}:${deviceId} unannouncing file: ${fileId}`);
 
-      const success = fileRegistry.unannounceFile(userId, fileId);
+      const success = fileRegistry.unannounceFile(userId, deviceId, fileId);
       callback?.({ success });
 
-      // Notify others about seeder count change
+      // LÖSUNG 12: Notify only authorized users about seeder count change
       const fileInfo = fileRegistry.getFileInfo(fileId);
       if (fileInfo) {
-        socket.broadcast.emit("fileSeederUpdate", {
-          fileId,
-          seederCount: fileInfo.seederCount
+        const sharedUsers = fileRegistry.getSharedUsers(fileId);
+        
+        const targetSockets = Array.from(io.sockets.sockets.values())
+          .filter(s => 
+            s.handshake.session?.uuid && 
+            sharedUsers.includes(s.handshake.session.uuid) &&
+            s.id !== socket.id
+          );
+        
+        targetSockets.forEach(targetSocket => {
+          targetSocket.emit("fileSeederUpdate", {
+            fileId,
+            seederCount: fileInfo.seederCount
+          });
         });
       }
 
@@ -965,15 +1014,47 @@ io.sockets.on("connection", socket => {
    */
   socket.on("updateAvailableChunks", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
       const userId = socket.handshake.session.uuid;
+      const deviceId = socket.handshake.session.deviceId;
       const { fileId, availableChunks } = data;
 
-      const success = fileRegistry.updateAvailableChunks(userId, fileId, availableChunks);
-      callback?.({ success });
+      console.log(`[P2P FILE] Device ${userId}:${deviceId} updating chunks for ${fileId.substring(0, 8)}: ${availableChunks.length} chunks`);
+
+      const success = fileRegistry.updateAvailableChunks(userId, deviceId, fileId, availableChunks);
+      
+      if (!success) {
+        return callback?.({ success: false, error: "File not found" });
+      }
+
+      callback?.({ success: true });
+
+      // Notify authorized users about chunk update
+      const sharedUsers = fileRegistry.getSharedUsers(fileId);
+      const fileInfo = fileRegistry.getFileInfo(fileId);
+      const chunkQuality = fileRegistry.getChunkQuality(fileId);
+      
+      if (fileInfo) {
+        const targetSockets = Array.from(io.sockets.sockets.values())
+          .filter(s => 
+            s.handshake.session?.uuid && 
+            sharedUsers.includes(s.handshake.session.uuid) &&
+            s.id !== socket.id
+          );
+        
+        targetSockets.forEach(targetSocket => {
+          targetSocket.emit("fileSeederUpdate", {
+            fileId,
+            seederCount: fileInfo.seederCount,
+            chunkQuality
+          });
+        });
+        
+        console.log(`[P2P FILE] Notified ${targetSockets.length} users about chunk update (quality: ${chunkQuality}%)`);
+      }
 
     } catch (error) {
       console.error('[P2P FILE] Error updating chunks:', error);
@@ -982,16 +1063,32 @@ io.sockets.on("connection", socket => {
   });
 
   /**
-   * Request file information and seeders
+   * Request file information and seeders (LÖSUNG 14: Permission Check)
    */
   socket.on("getFileInfo", async (data, callback) => {
     try {
+      if (!socket.handshake.session.uuid) {
+        return callback?.({ success: false, error: "Not authenticated" });
+      }
+
+      const userId = socket.handshake.session.uuid;
       const { fileId } = data;
+      
+      // Check permission
+      if (!fileRegistry.canAccess(userId, fileId)) {
+        console.log(`[P2P FILE] User ${userId} denied access to file ${fileId}`);
+        return callback?.({ success: false, error: "Access denied" });
+      }
+
       const fileInfo = fileRegistry.getFileInfo(fileId);
 
       if (!fileInfo) {
         return callback?.({ success: false, error: "File not found" });
       }
+
+      // Add quality info
+      fileInfo.chunkQuality = fileRegistry.getChunkQuality(fileId);
+      fileInfo.missingChunks = fileRegistry.getMissingChunks(fileId);
 
       callback?.({ success: true, fileInfo });
 
@@ -1002,20 +1099,27 @@ io.sockets.on("connection", socket => {
   });
 
   /**
-   * Register as downloading a file (leecher)
+   * Register as downloading a file (leecher) (LÖSUNG 14: Permission Check)
    */
   socket.on("registerLeecher", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
       const userId = socket.handshake.session.uuid;
+      const deviceId = socket.handshake.session.deviceId;
       const { fileId } = data;
 
-      console.log(`[P2P FILE] User ${userId} downloading file: ${fileId}`);
+      // Check permission
+      if (!fileRegistry.canAccess(userId, fileId)) {
+        console.log(`[P2P FILE] User ${userId} denied download access to file ${fileId}`);
+        return callback?.({ success: false, error: "Access denied" });
+      }
 
-      const success = fileRegistry.registerLeecher(userId, fileId);
+      console.log(`[P2P FILE] Device ${userId}:${deviceId} downloading file: ${fileId}`);
+
+      const success = fileRegistry.registerLeecher(userId, deviceId, fileId);
       callback?.({ success });
 
     } catch (error) {
@@ -1029,14 +1133,15 @@ io.sockets.on("connection", socket => {
    */
   socket.on("unregisterLeecher", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
       const userId = socket.handshake.session.uuid;
+      const deviceId = socket.handshake.session.deviceId;
       const { fileId } = data;
 
-      const success = fileRegistry.unregisterLeecher(userId, fileId);
+      const success = fileRegistry.unregisterLeecher(userId, deviceId, fileId);
       callback?.({ success });
 
     } catch (error) {
@@ -1076,17 +1181,305 @@ io.sockets.on("connection", socket => {
   });
 
   /**
-   * Get available chunks from seeders
+   * Get available chunks from seeders (LÖSUNG 14: Permission Check)
    */
   socket.on("getAvailableChunks", async (data, callback) => {
     try {
+      if (!socket.handshake.session.uuid) {
+        return callback?.({ success: false, error: "Not authenticated" });
+      }
+
+      const userId = socket.handshake.session.uuid;
       const { fileId } = data;
+      
+      // Check permission
+      if (!fileRegistry.canAccess(userId, fileId)) {
+        console.log(`[P2P FILE] User ${userId} denied access to chunks for file ${fileId}`);
+        return callback?.({ success: false, error: "Access denied" });
+      }
+
       const chunks = fileRegistry.getAvailableChunks(fileId);
 
       callback?.({ success: true, chunks });
 
     } catch (error) {
       console.error('[P2P FILE] Error getting available chunks:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  // ===== P2P FILE SHARING - WebRTC SIGNALING RELAY =====
+  
+  /**
+   * Share a file with another user (LÖSUNG 13 API - DEPRECATED)
+   * @deprecated Use updateFileShare instead
+   */
+  socket.on("shareFile", async (data, callback) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        return callback?.({ success: false, error: "Not authenticated" });
+      }
+
+      const userId = socket.handshake.session.uuid;
+      const { fileId, targetUserId } = data;
+
+      if (!fileId || !targetUserId) {
+        return callback?.({ success: false, error: "Missing fileId or targetUserId" });
+      }
+
+      console.log(`[P2P FILE] User ${userId} sharing file ${fileId} with ${targetUserId}`);
+
+      const success = fileRegistry.shareFile(fileId, userId, targetUserId);
+      fileRegistry.shareFile(fileId, userId, userId); // Ensure sharer retains access
+      
+      if (!success) {
+        return callback?.({ success: false, error: "Failed to share file (not creator or file not found)" });
+      }
+
+      callback?.({ success: true });
+
+      // Notify target user about new file
+      const fileInfo = fileRegistry.getFileInfo(fileId);
+      if (fileInfo) {
+        const targetSockets = Array.from(io.sockets.sockets.values())
+          .filter(s => s.handshake.session?.uuid === targetUserId);
+        
+        targetSockets.forEach(targetSocket => {
+          targetSocket.emit("fileSharedWithYou", {
+            fileId,
+            fromUserId: userId,
+            fileInfo
+          });
+        });
+      }
+
+    } catch (error) {
+      console.error('[P2P FILE] Error sharing file:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Update file share (add or revoke users) - NEW SECURE VERSION
+   * 
+   * Permission Model:
+   * - Creator can add/revoke anyone
+   * - Any seeder can add users (but not revoke)
+   * - Must have valid access to the file
+   * 
+   * Rate Limited: Max 10 operations per minute per user
+   * Size Limited: Max 1000 users in sharedWith
+   */
+  socket.on("updateFileShare", async (data, callback) => {
+    try {
+      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId) {
+        return callback?.({ success: false, error: "Not authenticated" });
+      }
+
+      const userId = socket.handshake.session.uuid;
+      const { fileId, action, userIds } = data;
+
+      // Validation
+      if (!fileId || !action || !Array.isArray(userIds) || userIds.length === 0) {
+        return callback?.({ success: false, error: "Invalid parameters" });
+      }
+
+      if (!['add', 'revoke'].includes(action)) {
+        return callback?.({ success: false, error: "Invalid action (must be 'add' or 'revoke')" });
+      }
+
+      // Rate limiting (10 operations per minute)
+      if (!socket._shareRateLimit) {
+        socket._shareRateLimit = { count: 0, resetTime: Date.now() + 60000 };
+      }
+
+      const now = Date.now();
+      if (now > socket._shareRateLimit.resetTime) {
+        socket._shareRateLimit = { count: 0, resetTime: now + 60000 };
+      }
+
+      if (socket._shareRateLimit.count >= 10) {
+        console.log(`[P2P FILE] Rate limit exceeded for user ${userId}`);
+        return callback?.({ success: false, error: "Rate limit: max 10 share operations per minute" });
+      }
+
+      socket._shareRateLimit.count++;
+
+      // Get file info
+      const fileInfo = fileRegistry.getFileInfo(fileId);
+      if (!fileInfo) {
+        return callback?.({ success: false, error: "File not found" });
+      }
+
+      // Permission check
+      const isCreator = fileInfo.creator === userId;
+      const hasAccess = fileRegistry.canAccess(userId, fileId);
+      const isSeeder = fileInfo.seeders.some(s => s.startsWith(`${userId}:`));
+
+      if (!isCreator && !hasAccess && !isSeeder) {
+        console.log(`[P2P FILE] User ${userId} has no permission to modify shares for ${fileId}`);
+        return callback?.({ success: false, error: "Permission denied" });
+      }
+
+      // Action-specific permission checks
+      if (action === 'revoke') {
+        // Creator can revoke anyone
+        if (isCreator) {
+          // OK - Creator has full revoke rights
+        }
+        // Self-revoke: User can remove themselves
+        else if (userIds.length === 1 && userIds[0] === userId) {
+          console.log(`[P2P FILE] ✓ Self-revoke: User ${userId} removing self from ${fileId.substring(0, 8)}`);
+          // OK - Self-revoke allowed
+        }
+        // Non-creator cannot revoke others
+        else {
+          console.log(`[P2P FILE] ❌ User ${userId} cannot revoke others from ${fileId.substring(0, 8)} (not creator)`);
+          return callback?.({ 
+            success: false, 
+            error: "Only creator can revoke others. You can only remove yourself." 
+          });
+        }
+      }
+
+      // Size limit check (max 1000 users)
+      if (action === 'add') {
+        const currentSize = fileInfo.sharedWith.length;
+        const newSize = currentSize + userIds.length;
+        
+        if (newSize > 1000) {
+          console.log(`[P2P FILE] Share limit exceeded for ${fileId}: ${newSize} > 1000`);
+          return callback?.({ success: false, error: "Maximum 1000 users per file" });
+        }
+      }
+
+      console.log(`[P2P FILE] User ${userId} ${action}ing ${userIds.length} users for file ${fileId.substring(0, 8)}`);
+
+      // Execute action
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const targetUserId of userIds) {
+        let success = false;
+        
+        if (action === 'add') {
+          success = fileRegistry.shareFile(fileId, userId, targetUserId);
+        } else if (action === 'revoke') {
+          success = fileRegistry.unshareFile(fileId, userId, targetUserId);
+        }
+
+        if (success) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      }
+
+      console.log(`[P2P FILE] Share update complete: ${successCount} succeeded, ${failCount} failed`);
+
+      callback?.({ 
+        success: true, 
+        successCount, 
+        failCount,
+        totalUsers: fileRegistry.getSharedUsers(fileId).length
+      });
+
+      // Notify affected users
+      const updatedFileInfo = fileRegistry.getFileInfo(fileId);
+      const affectedUserIds = action === 'add' ? userIds : userIds.filter(id => id !== userId);
+
+      affectedUserIds.forEach(targetUserId => {
+        const targetSockets = Array.from(io.sockets.sockets.values())
+          .filter(s => s.handshake.session?.uuid === targetUserId);
+        
+        targetSockets.forEach(targetSocket => {
+          if (action === 'add') {
+            targetSocket.emit("fileSharedWithYou", {
+              fileId,
+              fromUserId: userId,
+              fileInfo: updatedFileInfo
+            });
+          } else {
+            targetSocket.emit("fileAccessRevoked", {
+              fileId,
+              byUserId: userId
+            });
+          }
+        });
+      });
+
+    } catch (error) {
+      console.error('[P2P FILE] Error updating file share:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Unshare a file from a user (LÖSUNG 13 API)
+   */
+  socket.on("unshareFile", async (data, callback) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        return callback?.({ success: false, error: "Not authenticated" });
+      }
+
+      const userId = socket.handshake.session.uuid;
+      const { fileId, targetUserId } = data;
+
+      if (!fileId || !targetUserId) {
+        return callback?.({ success: false, error: "Missing fileId or targetUserId" });
+      }
+
+      console.log(`[P2P FILE] User ${userId} unsharing file ${fileId} from ${targetUserId}`);
+
+      const success = fileRegistry.unshareFile(fileId, userId, targetUserId);
+      
+      if (!success) {
+        return callback?.({ success: false, error: "Failed to unshare file (not creator or cannot unshare from creator)" });
+      }
+
+      callback?.({ success: true });
+
+      // Notify target user about revoked access
+      const targetSockets = Array.from(io.sockets.sockets.values())
+        .filter(s => s.handshake.session?.uuid === targetUserId);
+      
+      targetSockets.forEach(targetSocket => {
+        targetSocket.emit("fileUnsharedFromYou", {
+          fileId,
+          fromUserId: userId
+        });
+      });
+
+    } catch (error) {
+      console.error('[P2P FILE] Error unsharing file:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Get list of users a file is shared with (LÖSUNG 13 API)
+   */
+  socket.on("getSharedUsers", async (data, callback) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        return callback?.({ success: false, error: "Not authenticated" });
+      }
+
+      const userId = socket.handshake.session.uuid;
+      const { fileId } = data;
+
+      // Only creator can see who file is shared with
+      const fileInfo = fileRegistry.getFileInfo(fileId);
+      if (!fileInfo || fileInfo.creator !== userId) {
+        return callback?.({ success: false, error: "Access denied (not creator)" });
+      }
+
+      const sharedUsers = fileRegistry.getSharedUsers(fileId);
+      callback?.({ success: true, sharedUsers });
+
+    } catch (error) {
+      console.error('[P2P FILE] Error getting shared users:', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -1323,6 +1716,46 @@ io.sockets.on("connection", socket => {
   });
 
   /**
+   * Event handler to delete a specific item (1:1 message) for the current user/device as receiver
+   * @param {Object} data - Contains itemId to delete
+   */
+  socket.on("deleteItem", async (data, callback) => {
+    try {
+      if (
+        !socket.handshake.session.uuid ||
+        !socket.handshake.session.deviceId ||
+        socket.handshake.session.authenticated !== true
+      ) {
+        return callback?.({ success: false, error: "Not authenticated" });
+      }
+
+      const userId = socket.handshake.session.uuid;
+      const deviceId = socket.handshake.session.deviceId;
+      const { itemId } = data;
+
+      if (!itemId) {
+        return callback?.({ success: false, error: "Missing itemId" });
+      }
+
+      // Delete item where receiver and deviceReceiver match current session
+      const deletedCount = await writeQueue.enqueue(async () => {
+        return await Item.destroy({
+          where: {
+            itemId: itemId,
+            receiver: userId,
+            deviceReceiver: deviceId
+          }
+        });
+      }, `deleteItem-${itemId}-${userId}-${deviceId}`);
+
+      callback?.({ success: true, deletedCount });
+    } catch (error) {
+      console.error('[SIGNAL SERVER] Error deleting item:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  /**
    * Event handler for disconnecting from a room
    */
   // ===== NEW GROUP ITEM API (Simplified Architecture) =====
@@ -1526,10 +1959,23 @@ io.sockets.on("connection", socket => {
         });
       }
 
-      // If all members have read, optionally delete from server (privacy feature)
+      // If all members have read, delete from server (privacy feature)
       if (allRead) {
-        console.log(`[GROUP ITEM READ] ✓ Item ${itemId} read by all members`);
-        // Optionally: await groupItem.destroy();
+        console.log(`[GROUP ITEM READ] ✓ Item ${itemId} read by all members - deleting from server`);
+        
+        // Delete all read receipts first
+        await writeQueue.enqueue(async () => {
+          await GroupItemRead.destroy({
+            where: { itemId: groupItem.uuid }
+          });
+        }, `deleteGroupItemReads-${itemId}`);
+        
+        // Then delete the group item itself
+        await writeQueue.enqueue(async () => {
+          await groupItem.destroy();
+        }, `deleteGroupItem-${itemId}`);
+        
+        console.log(`[GROUP ITEM READ] ✓ Item ${itemId} and all read receipts deleted`);
       }
 
     } catch (error) {
@@ -1539,11 +1985,13 @@ io.sockets.on("connection", socket => {
 
   socket.on("disconnect", () => {
     if(socket.handshake.session.uuid && socket.handshake.session.deviceId) {
-      deviceSockets.delete(`${socket.handshake.session.uuid}:${socket.handshake.session.deviceId}`);
+      const userId = socket.handshake.session.uuid;
+      const deviceId = socket.handshake.session.deviceId;
+      deviceSockets.delete(`${userId}:${deviceId}`);
       
-      // Clean up P2P file sharing announcements
+      // Clean up P2P file sharing announcements (with deviceId)
       const fileRegistry = require('./store/fileRegistry');
-      fileRegistry.handleUserDisconnect(socket.handshake.session.uuid);
+      fileRegistry.handleUserDisconnect(userId, deviceId);
     }
     if (!rooms) return;
 

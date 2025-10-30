@@ -19,10 +19,35 @@ class PermanentSentMessagesStore {
     final store = PermanentSentMessagesStore();
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      await idbFactory.open(store._storeName, version: 1, onUpgradeNeeded: (VersionChangeEvent event) {
+      await idbFactory.open(store._storeName, version: 2, onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
+        ObjectStore objectStore;
+        
+        // Create or get the object store
         if (!db.objectStoreNames.contains(store._storeName)) {
-          db.createObjectStore(store._storeName, autoIncrement: false);
+          objectStore = db.createObjectStore(store._storeName, autoIncrement: false);
+        } else {
+          objectStore = event.transaction.objectStore(store._storeName);
+        }
+        
+        // Add indexes for faster queries (v2)
+        if (event.oldVersion < 2) {
+          // Index by recipientUserId for filtering messages to specific users
+          if (!objectStore.indexNames.contains('recipientUserId')) {
+            objectStore.createIndex('recipientUserId', 'recipientUserId', unique: false);
+          }
+          // Index by timestamp for sorting
+          if (!objectStore.indexNames.contains('timestamp')) {
+            objectStore.createIndex('timestamp', 'timestamp', unique: false);
+          }
+          // Index by status for filtering by delivery status
+          if (!objectStore.indexNames.contains('status')) {
+            objectStore.createIndex('status', 'status', unique: false);
+          }
+          // Index by type for filtering message types
+          if (!objectStore.indexNames.contains('type')) {
+            objectStore.createIndex('type', 'type', unique: false);
+          }
         }
       });
     } else {
@@ -65,7 +90,7 @@ class PermanentSentMessagesStore {
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -99,7 +124,7 @@ class PermanentSentMessagesStore {
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -161,7 +186,7 @@ class PermanentSentMessagesStore {
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -217,13 +242,19 @@ class PermanentSentMessagesStore {
     return messages;
   }
 
-  /// Delete a specific sent message
-  Future<void> deleteSentMessage(String recipientUserId, String itemId) async {
-    final key = '$_keyPrefix${recipientUserId}_$itemId';
+  /// Delete a specific sent message by itemId, optionally filtering by recipientUserId.
+  /// If recipientUserId is null, deletes any message with the given itemId.
+  Future<void> deleteSentMessage(String itemId, {String? recipientUserId}) async {
+    String keyPattern;
+    if (recipientUserId != null) {
+      keyPattern = '$_keyPrefix${recipientUserId}_$itemId';
+    } else {
+      keyPattern = '$_keyPrefix*_$itemId';
+    }
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -232,18 +263,40 @@ class PermanentSentMessagesStore {
       });
       var txn = db.transaction(_storeName, 'readwrite');
       var store = txn.objectStore(_storeName);
-      await store.delete(key);
+      var keys = await store.getAllKeys();
+      for (var key in keys) {
+        if (key is String) {
+          if (recipientUserId != null) {
+            if (key == keyPattern) {
+              await store.delete(key);
+            }
+          } else {
+            // Wildcard match: $_keyPrefix*_$itemId
+            if (key.startsWith(_keyPrefix) && key.endsWith('_$itemId')) {
+              await store.delete(key);
+            }
+          }
+        }
+      }
       await txn.completed;
     } else {
       final storage = FlutterSecureStorage();
-      await storage.delete(key: key);
-      // Remove from tracked keys
       String? keysJson = await storage.read(key: 'sent_message_keys');
       List<String> keys = [];
       if (keysJson != null) {
         keys = List<String>.from(jsonDecode(keysJson));
       }
-      keys.remove(key);
+      List<String> toDelete = [];
+      if (recipientUserId != null) {
+        String key = '$_keyPrefix${recipientUserId}_$itemId';
+        toDelete = keys.where((k) => k == key).toList();
+      } else {
+        toDelete = keys.where((k) => k.startsWith(_keyPrefix) && k.endsWith('_$itemId')).toList();
+      }
+      for (var key in toDelete) {
+        await storage.delete(key: key);
+        keys.remove(key);
+      }
       await storage.write(key: 'sent_message_keys', value: jsonEncode(keys));
     }
   }
@@ -254,7 +307,7 @@ class PermanentSentMessagesStore {
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -300,7 +353,7 @@ class PermanentSentMessagesStore {
   Future<void> _updateMessageStatus(String itemId, String status, {String? deliveredAt, String? readAt}) async {
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -359,7 +412,7 @@ class PermanentSentMessagesStore {
   Future<void> clearAll() async {
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {

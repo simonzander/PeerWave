@@ -858,8 +858,30 @@ class SignalService {
   } else {
     print('[SIGNAL_SERVICE] receiveItem type is: $type (not a read_receipt)');
   }
+  deleteItemFromServer(itemId);
 }
 
+void deleteItemFromServer(String itemId) {
+  print("[SIGNAL SERVICE] Deleting item with itemId: $itemId");
+  SocketService().emit("deleteItem", {'itemId': itemId});
+}
+
+void deleteItem(String itemId) async {
+  print("[SIGNAL SERVICE] Deleting item locally with itemId: $itemId");
+  await decryptedMessagesStore.deleteDecryptedMessage(itemId);
+  await sentMessagesStore.deleteSentMessage(itemId);
+}
+
+void deleteGroupItemFromServer(String itemId) async {
+  print("[SIGNAL SERVICE] Deleting group item with itemId: $itemId");
+  SocketService().emit("deleteGroupItem", {'itemId': itemId});
+}
+
+void deleteGroupItem(String itemId, String channelId) async {
+  print("[SIGNAL SERVICE] Deleting group item locally with itemId: $itemId");
+  await decryptedGroupItemsStore.clearItem(itemId, channelId);
+  await sentGroupItemsStore.clearChannelItem(itemId, channelId);
+}
   /// Handle delivery receipt from server
   Future<void> _handleDeliveryReceipt(Map<String, dynamic> data) async {
     final itemId = data['itemId'];
@@ -1013,6 +1035,65 @@ class SignalService {
     }
   }
 
+  /// Send a file message to a 1:1 chat (LÖSUNG 17 - Direct Message)
+  /// 
+  /// Encrypts file metadata (fileId, fileName, encryptedFileKey) with Signal Protocol
+  /// and sends as Item with type='file' to all devices of both users.
+  /// 
+  /// The file itself is transferred P2P via WebRTC DataChannels.
+  /// This message only contains the metadata needed to initiate download.
+  Future<void> sendFileItem({
+    required String recipientUserId,
+    required String fileId,
+    required String fileName,
+    required String mimeType,
+    required int fileSize,
+    required String checksum,
+    required int chunkCount,
+    required String encryptedFileKey,
+    String? message,
+    String? itemId,
+  }) async {
+    try {
+      if (_currentUserId == null || _currentDeviceId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      final messageItemId = itemId ?? const Uuid().v4();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+      // Create file message payload
+      final fileMessagePayload = {
+        'fileId': fileId,
+        'fileName': fileName,
+        'mimeType': mimeType,
+        'fileSize': fileSize,
+        'checksum': checksum,
+        'chunkCount': chunkCount,
+        'encryptedFileKey': encryptedFileKey,
+        'uploaderId': _currentUserId,
+        'timestamp': timestamp,
+        if (message != null && message.isNotEmpty) 'message': message,
+      };
+
+      final payloadJson = jsonEncode(fileMessagePayload);
+
+      // Send as Signal Item with type='file'
+      // This will encrypt for all devices of both sender and recipient
+      await sendItem(
+        recipientUserId: recipientUserId,
+        type: 'file',
+        payload: payloadJson,
+        itemId: messageItemId,
+      );
+
+      print('[SIGNAL_SERVICE] Sent file item $messageItemId ($fileName) to $recipientUserId');
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Error sending file item: $e');
+      rethrow;
+    }
+  }
+
   /// Sendet eine verschlüsselte Nachricht an einen User
   /// 
   /// Diese Methode verschlüsselt die Nachricht für ALLE Geräte:
@@ -1047,9 +1128,9 @@ class SignalService {
     // This allows Bob Device 1 to see his own sent message without decryption
     
     // Store sent message in local storage for persistence after refresh
-    // IMPORTANT: Only store actual chat messages, not system messages
+    // IMPORTANT: Only store actual chat messages and file messages, not system messages
     final timestamp = DateTime.now().toIso8601String();
-    if (type == 'message') {
+    if (type == 'message' || type == 'file') {
       await sentMessagesStore.storeSentMessage(
         recipientUserId: recipientUserId,
         itemId: messageItemId,
@@ -1057,27 +1138,30 @@ class SignalService {
         timestamp: timestamp,
         type: type,  // Include message type
       );
-      print('[SIGNAL SERVICE] Step 0a: Stored sent message in local storage');
+      print('[SIGNAL SERVICE] Step 0a: Stored sent $type in local storage');
     } else {
       print('[SIGNAL SERVICE] Step 0a: Skipping storage for system message type: $type');
     }
     
     // Trigger local callback for UI updates (but not for read_receipt - they are system messages)
-    if (type != 'read_receipt' && _itemTypeCallbacks.containsKey(type)) {
+    // For file messages, use 'message' callback since they display in chat
+    final callbackType = (type == 'file') ? 'message' : type;
+    if (type != 'read_receipt' && _itemTypeCallbacks.containsKey(callbackType)) {
       final localItem = {
         'itemId': messageItemId,
         'sender': _currentUserId,
         'recipient': recipientUserId, // Add recipient for proper filtering
         'senderDeviceId': _currentDeviceId,
-        'type': type,
+        'type': type, // Keep original type (file or message)
         'message': payloadString,
+        'payload': payloadString, // Add payload field for consistency
         'timestamp': timestamp,
         'isLocalSent': true, // Mark as locally sent (not received from server)
       };
-      for (final callback in _itemTypeCallbacks[type]!) {
+      for (final callback in _itemTypeCallbacks[callbackType]!) {
         callback(localItem);
       }
-      print('[SIGNAL SERVICE] Step 0b: Triggered ${_itemTypeCallbacks[type]!.length} local callbacks for type: $type');
+      print('[SIGNAL SERVICE] Step 0b: Triggered ${_itemTypeCallbacks[callbackType]!.length} local callbacks for type: $type (using callback: $callbackType)');
     }
     
     print('[SIGNAL SERVICE] Step 1: fetchPreKeyBundleForUser($recipientUserId)');
@@ -1667,6 +1751,165 @@ Future<String> decryptItem({
   // ===== NEW: GROUP ITEM API METHODS =====
 
   /// Send a group item (message, reaction, file, etc.) using new GroupItem architecture
+  /// Send a file message to a group chat (LÖSUNG 17)
+  /// 
+  /// Encrypts file metadata (fileId, fileName, encryptedFileKey) with SenderKey
+  /// and sends as a GroupItem with type='file'.
+  /// 
+  /// The file itself is transferred P2P via WebRTC DataChannels.
+  /// This message only contains the metadata needed to initiate download.
+  Future<void> sendFileMessage({
+    required String channelId,
+    required String fileId,
+    required String fileName,
+    required String mimeType,
+    required int fileSize,
+    required String checksum,
+    required int chunkCount,
+    required String encryptedFileKey,
+    String? message,
+  }) async {
+    try {
+      if (_currentUserId == null || _currentDeviceId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      final itemId = const Uuid().v4();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+      // Create file message payload
+      final fileMessagePayload = {
+        'fileId': fileId,
+        'fileName': fileName,
+        'mimeType': mimeType,
+        'fileSize': fileSize,
+        'checksum': checksum,
+        'chunkCount': chunkCount,
+        'encryptedFileKey': encryptedFileKey,
+        'uploaderId': _currentUserId,
+        'timestamp': timestamp,
+        if (message != null && message.isNotEmpty) 'message': message,
+      };
+
+      final payloadJson = jsonEncode(fileMessagePayload);
+
+      // Encrypt with sender key
+      final encrypted = await encryptGroupMessage(channelId, payloadJson);
+      final timestampIso = DateTime.fromMillisecondsSinceEpoch(timestamp).toIso8601String();
+
+      // Store locally first
+      await sentGroupItemsStore.storeSentGroupItem(
+        channelId: channelId,
+        itemId: itemId,
+        message: payloadJson,
+        timestamp: timestampIso,
+        type: 'file',
+        status: 'sending',
+      );
+
+      // Send via Socket.IO
+      SocketService().emit("sendGroupItem", {
+        'channelId': channelId,
+        'itemId': itemId,
+        'type': 'file',
+        'payload': encrypted['ciphertext'],
+        'cipherType': 4, // Sender Key
+        'timestamp': timestampIso,
+      });
+
+      print('[SIGNAL_SERVICE] Sent file message $itemId ($fileName) to channel $channelId');
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Error sending file message: $e');
+      rethrow;
+    }
+  }
+
+  /// Send P2P file share update (add/revoke access) via Signal Protocol
+  /// 
+  /// For GROUP chats: Uses Sender Key encryption (Group Message)
+  /// For DIRECT chats: Uses Session encryption (1-to-1 Message)
+  /// 
+  /// This notifies users about share changes so they can update their P2P client
+  Future<void> sendFileShareUpdate({
+    required String chatId,
+    required String chatType, // 'group' | 'direct'
+    required String fileId,
+    required String action, // 'add' | 'revoke'
+    required List<String> affectedUserIds,
+    String? checksum, // ← NEW: Canonical checksum for verification
+    String? encryptedFileKey, // Only for 'add' action
+  }) async {
+    try {
+      if (_currentUserId == null || _currentDeviceId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      
+      // Create share update payload
+      final shareUpdatePayload = {
+        'fileId': fileId,
+        'action': action,
+        'affectedUserIds': affectedUserIds,
+        'senderId': _currentUserId,
+        'timestamp': timestamp,
+        if (checksum != null) 'checksum': checksum, // ← NEW: Include checksum
+        if (encryptedFileKey != null) 'encryptedFileKey': encryptedFileKey,
+      };
+
+      final payloadJson = jsonEncode(shareUpdatePayload);
+
+      if (chatType == 'group') {
+        // GROUP: Send via Sender Key
+        final itemId = const Uuid().v4();
+        final encrypted = await encryptGroupMessage(chatId, payloadJson);
+        final timestampIso = DateTime.fromMillisecondsSinceEpoch(timestamp).toIso8601String();
+
+        // Store locally
+        await sentGroupItemsStore.storeSentGroupItem(
+          channelId: chatId,
+          itemId: itemId,
+          message: payloadJson,
+          timestamp: timestampIso,
+          type: 'file_share_update',
+          status: 'sending',
+        );
+
+        // Send via Socket.IO
+        SocketService().emit("sendGroupItem", {
+          'channelId': chatId,
+          'itemId': itemId,
+          'type': 'file_share_update',
+          'payload': encrypted['ciphertext'],
+          'cipherType': 4, // Sender Key
+          'timestamp': timestampIso,
+        });
+
+        print('[SIGNAL_SERVICE] Sent file share update ($action) to group $chatId');
+      } else if (chatType == 'direct') {
+        // DIRECT: Send via Session encryption to each affected user
+        for (final userId in affectedUserIds) {
+          if (userId == _currentUserId) continue; // Skip self
+
+          // Use sendItem to encrypt for all devices
+          await sendItem(
+            recipientUserId: userId,
+            type: 'file_share_update',
+            payload: payloadJson,
+          );
+
+          print('[SIGNAL_SERVICE] Sent file share update ($action) to user $userId');
+        }
+      } else {
+        throw Exception('Invalid chatType: $chatType');
+      }
+
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Error sending file share update: $e');
+      rethrow;
+    }
+  }
+
   Future<void> sendGroupItem({
     required String channelId,
     required String message,

@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:uuid/uuid.dart';
 import '../../widgets/message_list.dart';
 import '../../widgets/message_input.dart';
 import '../../services/signal_service.dart';
 import '../../services/socket_service.dart';
 import '../../services/offline_message_queue.dart';
 import '../../services/api_service.dart';
-import 'dart:convert';
-import 'package:uuid/uuid.dart';
+import '../../services/file_transfer/p2p_coordinator.dart';
+import '../../services/file_transfer/socket_file_client.dart';
+import '../../models/file_message.dart';
 
 /// Screen for Direct Messages (1:1 Signal chats)
 class DirectMessagesScreen extends StatefulWidget {
@@ -171,8 +176,8 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       return;
     }
 
-    // Only handle actual chat messages (type: 'message')
-    if (itemType != 'message') {
+    // Only handle actual chat messages (type: 'message' or 'file')
+    if (itemType != 'message' && itemType != 'file') {
       return;
     }
 
@@ -199,9 +204,11 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           'senderDisplayName': isLocalSent ? 'You' : widget.recipientDisplayName,
           'text': item['message'],
           'message': item['message'],
+          'payload': item['payload'] ?? item['message'], // Add payload field for file messages
           'time': item['timestamp'] ?? DateTime.now().toIso8601String(),
           'isLocalSent': isLocalSent,
           'status': item['status'] ?? 'sending',
+          'type': itemType, // Preserve message type (message or file)
         };
         _messages.add(msg);
 
@@ -351,8 +358,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             'senderDeviceId': msg['deviceSender'],
             'text': decrypted,
             'message': decrypted,
+            'payload': decrypted, // Add payload field for file messages
             'time': msg['time'] ?? msg['timestamp'] ?? msg['createdAt'] ?? DateTime.now().toIso8601String(),
             'senderDisplayName': widget.recipientDisplayName,
+            'type': msgType, // Preserve message type (message or file)
           };
 
           decryptedMessages.add(decryptedMsg);
@@ -369,9 +378,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           final message = sentMsg['message'] ?? '';
           if (message.toString().startsWith('{"itemId":')) continue;
 
-          // Filter out system messages (only 'message' type allowed)
-          final msgType = sentMsg['type'];
-          if (msgType != null && msgType != 'message') {
+          // Filter out system messages (only 'message' and 'file' types allowed)
+          final msgType = sentMsg['type'] ?? 'message';
+          if (msgType != 'message' && msgType != 'file') {
             print('[DM_SCREEN] Skipping sent system message type: $msgType');
             continue;
           }
@@ -382,9 +391,11 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             'senderDisplayName': 'You',
             'text': message,
             'message': message,
+            'payload': message, // Add payload field for file messages
             'time': sentMsg['timestamp'],
             'isLocalSent': true,
             'status': sentMsg['status'] ?? 'sending',
+            'type': msgType, // Preserve message type (message or file)
           });
         }
 
@@ -395,8 +406,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             'senderDisplayName': widget.recipientDisplayName,
             'text': receivedMsg['message'],
             'message': receivedMsg['message'],
+            'payload': receivedMsg['message'], // Add payload field for file messages
             'time': receivedMsg['timestamp'] ?? receivedMsg['decryptedAt'],
             'isLocalSent': false,
+            'type': receivedMsg['type'] ?? 'message', // Preserve message type
           });
         }
 
@@ -624,11 +637,120 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                           ],
                         ),
                       )
-                    : MessageList(messages: _messages),
+                    : MessageList(
+                        messages: _messages,
+                        onFileDownload: _handleFileDownload,
+                      ),
           ),
           MessageInput(onSendMessage: _sendMessage),
         ],
       ),
     );
+  }
+
+  /// Handle file download request from FileMessageWidget
+  Future<void> _handleFileDownload(dynamic fileMessageDynamic) async {
+    try {
+      // Cast to FileMessage
+      final FileMessage fileMessage = fileMessageDynamic as FileMessage;
+      
+      print('[DIRECT_MSG] ================================================');
+      print('[DIRECT_MSG] File download requested');
+      print('[DIRECT_MSG] File ID: ${fileMessage.fileId}');
+      print('[DIRECT_MSG] File Name: ${fileMessage.fileName}');
+      print('[DIRECT_MSG] File Size: ${fileMessage.fileSizeFormatted}');
+      print('[DIRECT_MSG] ================================================');
+      
+      // Show loading feedback
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Starting download: ${fileMessage.fileName}...'),
+            backgroundColor: Colors.blue,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      
+      // Get P2P Coordinator
+      final p2pCoordinator = Provider.of<P2PCoordinator?>(context, listen: false);
+      if (p2pCoordinator == null) {
+        throw Exception('P2P Coordinator not initialized');
+      }
+      
+      // Get Socket File Client
+      final socketService = SocketService();
+      if (socketService.socket == null) {
+        throw Exception('Socket not connected');
+      }
+      final socketClient = SocketFileClient(socket: socketService.socket!);
+      
+      // 1. Fetch file info and seeder chunks from server
+      print('[DIRECT_MSG] Fetching file info and seeders...');
+      // Fetch file info for validation (could check checksum matches)
+      await socketClient.getFileInfo(fileMessage.fileId);
+      final seederChunks = await socketClient.getAvailableChunks(fileMessage.fileId);
+      
+      if (seederChunks.isEmpty) {
+        throw Exception('No seeders available for this file');
+      }
+      
+      print('[DIRECT_MSG] Found ${seederChunks.length} seeders');
+      
+      // Register as leecher
+      await socketClient.registerLeecher(fileMessage.fileId);
+      
+      // 2. Decode the encrypted file key (base64 → Uint8List)
+      print('[DIRECT_MSG] Decoding file encryption key...');
+      final Uint8List fileKey = base64Decode(fileMessage.encryptedFileKey);
+      print('[DIRECT_MSG] File key decoded: ${fileKey.length} bytes');
+      
+      // 3. Start P2P download with the file key
+      print('[DIRECT_MSG] Starting P2P download...');
+      await p2pCoordinator.startDownload(
+        fileId: fileMessage.fileId,
+        fileName: fileMessage.fileName,
+        mimeType: fileMessage.mimeType,
+        fileSize: fileMessage.fileSize,
+        checksum: fileMessage.checksum,
+        chunkCount: fileMessage.chunkCount,
+        fileKey: fileKey,
+        seederChunks: seederChunks,
+      );
+      
+      print('[DIRECT_MSG] Download started successfully!');
+      
+      // Show success feedback
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Download started: ${fileMessage.fileName}'),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: 'View',
+              textColor: Colors.white,
+              onPressed: () {
+                // TODO: Navigate to downloads screen
+                print('[DIRECT_MSG] Navigate to downloads screen');
+              },
+            ),
+          ),
+        );
+      }
+      
+    } catch (e, stackTrace) {
+      print('[DIRECT_MSG] ❌ Download failed: $e');
+      print('[DIRECT_MSG] Stack trace: $stackTrace');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Download failed: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
   }
 }

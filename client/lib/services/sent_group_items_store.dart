@@ -19,11 +19,36 @@ class SentGroupItemsStore {
     
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      await idbFactory.open(_storeName, version: 1,
+      await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
+        ObjectStore objectStore;
+        
+        // Create or get the object store
         if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
+          objectStore = db.createObjectStore(_storeName, autoIncrement: false);
+        } else {
+          objectStore = event.transaction.objectStore(_storeName);
+        }
+        
+        // Add indexes for faster queries (v2)
+        if (event.oldVersion < 2) {
+          // Index by channelId for filtering items from specific channels
+          if (!objectStore.indexNames.contains('channelId')) {
+            objectStore.createIndex('channelId', 'channelId', unique: false);
+          }
+          // Index by timestamp for sorting
+          if (!objectStore.indexNames.contains('timestamp')) {
+            objectStore.createIndex('timestamp', 'timestamp', unique: false);
+          }
+          // Index by status for filtering by delivery status
+          if (!objectStore.indexNames.contains('status')) {
+            objectStore.createIndex('status', 'status', unique: false);
+          }
+          // Index by type for filtering message types
+          if (!objectStore.indexNames.contains('type')) {
+            objectStore.createIndex('type', 'type', unique: false);
+          }
         }
       });
     } else {
@@ -62,7 +87,7 @@ class SentGroupItemsStore {
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -97,7 +122,7 @@ class SentGroupItemsStore {
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -152,7 +177,7 @@ class SentGroupItemsStore {
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -198,7 +223,7 @@ class SentGroupItemsStore {
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -238,13 +263,43 @@ class SentGroupItemsStore {
     }
   }
 
+  /// Clear a single item for a channel
+  Future<void> clearChannelItem(String channelId, String itemId) async {
+    final key = '$_keyPrefix${channelId}_$itemId';
+
+    if (kIsWeb) {
+      final IdbFactory idbFactory = idbFactoryBrowser;
+      final db = await idbFactory.open(_storeName, version: 2,
+          onUpgradeNeeded: (VersionChangeEvent event) {
+        Database db = event.database;
+        if (!db.objectStoreNames.contains(_storeName)) {
+          db.createObjectStore(_storeName, autoIncrement: false);
+        }
+      });
+      var txn = db.transaction(_storeName, 'readwrite');
+      var store = txn.objectStore(_storeName);
+      await store.delete(key);
+      await txn.completed;
+    } else {
+      final storage = FlutterSecureStorage();
+      await storage.delete(key: key);
+
+      String? keysJson = await storage.read(key: 'sent_group_item_keys');
+      if (keysJson != null) {
+        List<String> keys = List<String>.from(jsonDecode(keysJson));
+        keys.remove(key);
+        await storage.write(key: 'sent_group_item_keys', value: jsonEncode(keys));
+      }
+    }
+  }
+
   /// Clear all items for a channel
   Future<void> clearChannelItems(String channelId) async {
     final prefix = '$_keyPrefix$channelId';
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {

@@ -42,17 +42,27 @@ class FileReannounceService {
       
       for (final fileMetadata in allFiles) {
         try {
-          // Only re-announce files where we are the seeder
+          // Re-announce all files where we have chunks (seeder, partial, or downloading)
           final isSeeder = fileMetadata['isSeeder'] as bool? ?? false;
-          if (!isSeeder) {
-            debugPrint('[REANNOUNCE] Skipping ${fileMetadata['fileId']}: Not a seeder');
+          final status = fileMetadata['status'] as String? ?? '';
+          
+          // Include partial downloads and active downloads as seeders
+          final canSeed = isSeeder || 
+                         status == 'partial' || 
+                         status == 'downloading' ||
+                         status == 'seeding' ||
+                         status == 'uploaded';
+          
+          if (!canSeed) {
+            debugPrint('[REANNOUNCE] Skipping ${fileMetadata['fileId']}: Cannot seed (status: $status)');
             continue;
           }
           
           final fileId = fileMetadata['fileId'] as String;
           final fileName = fileMetadata['fileName'] as String?;
+          final chunkCount = fileMetadata['chunkCount'] as int? ?? 0;
           
-          debugPrint('[REANNOUNCE] Re-announcing file: $fileName ($fileId)');
+          debugPrint('[REANNOUNCE] Re-announcing file: $fileName ($fileId) - status: $status');
           
           // Get available chunks
           final availableChunks = await storage.getAvailableChunks(fileId);
@@ -64,6 +74,12 @@ class FileReannounceService {
             continue;
           }
           
+          final chunkQuality = chunkCount > 0 
+            ? ((availableChunks.length / chunkCount) * 100).round() 
+            : 0;
+          
+          debugPrint('[REANNOUNCE] $fileId has ${availableChunks.length}/$chunkCount chunks ($chunkQuality%)');
+          
           // Announce to network
           await socketClient.announceFile(
             fileId: fileId,
@@ -74,12 +90,13 @@ class FileReannounceService {
             availableChunks: availableChunks,
           );
           
-          // Update lastActivity timestamp
+          // Update lastActivity timestamp and mark as seeder
           await storage.updateFileMetadata(fileId, {
             'lastActivity': DateTime.now().toIso8601String(),
+            'isSeeder': true,
           });
           
-          debugPrint('[REANNOUNCE] ✓ Successfully re-announced: $fileName');
+          debugPrint('[REANNOUNCE] ✓ Successfully re-announced: $fileName ($chunkQuality% complete)');
           reannounced++;
           
         } catch (e) {

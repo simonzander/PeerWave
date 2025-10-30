@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 import '../../widgets/message_list.dart';
 import '../../widgets/message_input.dart';
 import '../../services/api_service.dart';
 import '../../services/signal_service.dart';
 import '../../services/socket_service.dart';
 import '../../services/offline_message_queue.dart';
+import '../../services/file_transfer/p2p_coordinator.dart';
+import '../../services/file_transfer/socket_file_client.dart';
 import '../../models/role.dart';
+import '../../models/file_message.dart';
 import '../channel/channel_members_screen.dart';
 
 /// Screen for Signal Group Chats (encrypted group conversations)
@@ -778,11 +784,120 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                               ],
                             ),
                           )
-                        : MessageList(messages: _messages),
+                        : MessageList(
+                            messages: _messages,
+                            onFileDownload: _handleFileDownload,
+                          ),
           ),
           MessageInput(onSendMessage: _sendMessage),
         ],
       ),
     );
+  }
+
+  /// Handle file download request from FileMessageWidget
+  Future<void> _handleFileDownload(dynamic fileMessageDynamic) async {
+    try {
+      // Cast to FileMessage
+      final FileMessage fileMessage = fileMessageDynamic as FileMessage;
+      
+      print('[GROUP_CHAT] ================================================');
+      print('[GROUP_CHAT] File download requested');
+      print('[GROUP_CHAT] File ID: ${fileMessage.fileId}');
+      print('[GROUP_CHAT] File Name: ${fileMessage.fileName}');
+      print('[GROUP_CHAT] File Size: ${fileMessage.fileSizeFormatted}');
+      print('[GROUP_CHAT] ================================================');
+      
+      // Show loading feedback
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Starting download: ${fileMessage.fileName}...'),
+            backgroundColor: Colors.blue,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      
+      // Get P2P Coordinator
+      final p2pCoordinator = Provider.of<P2PCoordinator?>(context, listen: false);
+      if (p2pCoordinator == null) {
+        throw Exception('P2P Coordinator not initialized');
+      }
+      
+      // Get Socket File Client
+      final socketService = SocketService();
+      if (socketService.socket == null) {
+        throw Exception('Socket not connected');
+      }
+      final socketClient = SocketFileClient(socket: socketService.socket!);
+      
+      // 1. Fetch file info and seeder chunks from server
+      print('[GROUP_CHAT] Fetching file info and seeders...');
+      // Fetch file info for validation (could check checksum matches)
+      await socketClient.getFileInfo(fileMessage.fileId);
+      final seederChunks = await socketClient.getAvailableChunks(fileMessage.fileId);
+      
+      if (seederChunks.isEmpty) {
+        throw Exception('No seeders available for this file');
+      }
+      
+      print('[GROUP_CHAT] Found ${seederChunks.length} seeders');
+      
+      // Register as leecher
+      await socketClient.registerLeecher(fileMessage.fileId);
+      
+      // 2. Decode the encrypted file key (base64 → Uint8List)
+      print('[GROUP_CHAT] Decoding file encryption key...');
+      final Uint8List fileKey = base64Decode(fileMessage.encryptedFileKey);
+      print('[GROUP_CHAT] File key decoded: ${fileKey.length} bytes');
+      
+      // 3. Start P2P download with the file key
+      print('[GROUP_CHAT] Starting P2P download...');
+      await p2pCoordinator.startDownload(
+        fileId: fileMessage.fileId,
+        fileName: fileMessage.fileName,
+        mimeType: fileMessage.mimeType,
+        fileSize: fileMessage.fileSize,
+        checksum: fileMessage.checksum,
+        chunkCount: fileMessage.chunkCount,
+        fileKey: fileKey,
+        seederChunks: seederChunks,
+      );
+      
+      print('[GROUP_CHAT] Download started successfully!');
+      
+      // Show success feedback
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Download started: ${fileMessage.fileName}'),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: 'View',
+              textColor: Colors.white,
+              onPressed: () {
+                // TODO: Navigate to downloads screen
+                print('[GROUP_CHAT] Navigate to downloads screen');
+              },
+            ),
+          ),
+        );
+      }
+      
+    } catch (e, stackTrace) {
+      print('[GROUP_CHAT] ❌ Download failed: $e');
+      print('[GROUP_CHAT] Stack trace: $stackTrace');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Download failed: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
   }
 }

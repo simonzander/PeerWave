@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -8,7 +9,11 @@ import '../../services/file_transfer/socket_file_client.dart';
 import '../../services/file_transfer/chunking_service.dart';
 import '../../services/file_transfer/encryption_service.dart';
 import '../../services/file_transfer/file_transfer_config.dart';
+import '../../services/file_transfer/file_transfer_service.dart';
 import '../../services/socket_service.dart';
+import '../../services/signal_service.dart';
+import '../../services/api_service.dart';
+import '../../web_config.dart';
 import '../../widgets/file_size_error_dialog.dart';
 
 /// File Manager Screen - Manage locally stored files
@@ -708,6 +713,9 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
         return;
       }
       
+      // Get sharedWith list from metadata
+      final sharedWith = (file['sharedWith'] as List?)?.cast<String>();
+      
       await client.announceFile(
         fileId: fileId,
         mimeType: file['mimeType'] as String? ?? 'application/octet-stream',
@@ -715,6 +723,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
         checksum: file['checksum'] as String? ?? '',
         chunkCount: file['chunkCount'] as int? ?? 0,
         availableChunks: availableChunks,
+        sharedWith: sharedWith, // ← WICHTIG: sharedWith mit announced!
       );
       
       // Update local storage
@@ -810,47 +819,8 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   void _showShareDialog(Map<String, dynamic> file) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Share File'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.person),
-              title: const Text('Share to Direct Message'),
-              onTap: () {
-                Navigator.pop(context);
-                _shareToDirectMessage(file);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.group),
-              title: const Text('Share to Channel'),
-              onTap: () {
-                Navigator.pop(context);
-                _shareToChannel(file);
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
+      builder: (context) => _ShareFileDialog(file: file),
     );
-  }
-  
-  void _shareToDirectMessage(Map<String, dynamic> file) {
-    // TODO: Implement Signal 1:1 message sharing
-    _showInfo('Share to Direct Message - Coming soon!');
-  }
-  
-  void _shareToChannel(Map<String, dynamic> file) {
-    // TODO: Implement Signal Channel message sharing
-    _showInfo('Share to Channel - Coming soon!');
   }
   
   void _showError(String message) {
@@ -867,15 +837,6 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
       SnackBar(
         content: Text(message),
         backgroundColor: Colors.green,
-      ),
-    );
-  }
-  
-  void _showInfo(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.blue,
       ),
     );
   }
@@ -989,7 +950,7 @@ class _AddFileProgressDialogState extends State<_AddFileProgressDialog> {
         _progress = 0.9;
       });
       
-      // Step 4: Save file metadata (NOT announced, isSeeder = false)
+      // Step 4: Save file metadata with sharedWith field
       await storage.saveFileMetadata({
         'fileId': fileId,
         'fileName': widget.fileName,
@@ -997,8 +958,9 @@ class _AddFileProgressDialogState extends State<_AddFileProgressDialog> {
         'fileSize': widget.fileSize,
         'checksum': fileChecksum,
         'chunkCount': chunks.length,
-        'status': 'complete',
-        'isSeeder': false, // Not announced yet
+        'sharedWith': <String>[], // ✅ WICHTIG: sharedWith field initialisieren
+        'status': 'seeding', // Directly mark as seeding (will announce next)
+        'isSeeder': true, // Will be announced automatically
         'createdAt': DateTime.now().toIso8601String(),
         'lastActivity': DateTime.now().toIso8601String(),
       });
@@ -1007,10 +969,39 @@ class _AddFileProgressDialogState extends State<_AddFileProgressDialog> {
       await storage.saveFileKey(fileId, fileKey);
       debugPrint('[ADD_FILE] Saved file key to storage: ${fileKey.length} bytes');
       
+      // Step 6: Auto-announce file to server
+      setState(() => _statusText = 'Announcing to network...');
+      try {
+        final socketService = SocketService();
+        if (socketService.socket != null) {
+          final client = SocketFileClient(socket: socketService.socket!);
+          
+          // Get all chunk indices
+          final allChunks = List<int>.generate(chunks.length, (i) => i);
+          
+          await client.announceFile(
+            fileId: fileId,
+            mimeType: mimeType,
+            fileSize: widget.fileSize,
+            checksum: fileChecksum,
+            chunkCount: chunks.length,
+            availableChunks: allChunks,
+            sharedWith: <String>[], // ✅ WICHTIG: leere sharedWith Liste
+          );
+          
+          debugPrint('[ADD_FILE] File announced: $fileId with ${chunks.length} chunks');
+        } else {
+          debugPrint('[ADD_FILE] WARNING: Socket not connected, file not announced');
+        }
+      } catch (e) {
+        debugPrint('[ADD_FILE] Failed to announce file: $e');
+        // Don't fail the whole operation, just log
+      }
+      
       setState(() {
         _storageComplete = true;
         _progress = 1.0;
-        _statusText = 'File added successfully!';
+        _statusText = 'File added and announced!';
       });
       
       // Wait a moment to show completion
@@ -1095,4 +1086,371 @@ enum FileFilter {
   myFiles,
   downloads,
   seeding,
+}
+
+/// Share File Dialog - Search and select users or channels
+class _ShareFileDialog extends StatefulWidget {
+  final Map<String, dynamic> file;
+
+  const _ShareFileDialog({Key? key, required this.file}) : super(key: key);
+
+  @override
+  State<_ShareFileDialog> createState() => _ShareFileDialogState();
+}
+
+class _ShareFileDialogState extends State<_ShareFileDialog> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  bool _isSearching = false;
+  
+  List<Map<String, dynamic>> _searchResults = [];
+  Map<String, dynamic>? _selectedItem;
+  String? _selectedType; // 'user' or 'channel'
+  
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+  
+  Future<void> _searchUsersAndChannels(String query) async {
+    if (query.length < 2) {
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+      });
+      return;
+    }
+    
+    setState(() => _isSearching = true);
+    
+    try {
+      final results = <Map<String, dynamic>>[];
+      
+      // Search users
+      final apiServer = await loadWebApiServer();
+      String urlString = apiServer ?? '';
+      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+        urlString = 'https://$urlString';
+      }
+      
+      // Get all users (excluding self)
+      final usersResp = await ApiService.get('$urlString/people/list');
+      if (usersResp.statusCode == 200) {
+        final users = usersResp.data is List ? usersResp.data as List : [];
+        for (final user in users) {
+          final displayName = user['displayName'] ?? '';
+          final email = user['email'] ?? '';
+          if (displayName.toLowerCase().contains(query.toLowerCase()) ||
+              email.toLowerCase().contains(query.toLowerCase())) {
+            results.add({
+              'type': 'user',
+              'id': user['uuid'],
+              'name': displayName,
+              'subtitle': email,
+              'icon': Icons.person,
+            });
+          }
+        }
+      }
+      
+      // Get channels
+      final channelsResp = await ApiService.get('$urlString/client/channels?limit=50');
+      if (channelsResp.statusCode == 200) {
+        final channels = channelsResp.data is List ? channelsResp.data as List : [];
+        for (final channel in channels) {
+          final name = channel['name'] ?? '';
+          final description = channel['description'] ?? '';
+          if (name.toLowerCase().contains(query.toLowerCase()) ||
+              description.toLowerCase().contains(query.toLowerCase())) {
+            results.add({
+              'type': 'channel',
+              'id': channel['uuid'],
+              'name': name,
+              'subtitle': description.isNotEmpty ? description : 'Channel',
+              'icon': Icons.tag,
+            });
+          }
+        }
+      }
+      
+      setState(() {
+        _searchResults = results;
+        _isSearching = false;
+      });
+    } catch (e) {
+      print('[SHARE_DIALOG] Search error: $e');
+      setState(() => _isSearching = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Search failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+  
+  Future<void> _shareFile() async {
+    if (_selectedItem == null || _selectedType == null) return;
+    
+    try {
+      final fileId = widget.file['fileId'] as String;
+      final fileName = widget.file['fileName'] as String;
+      final mimeType = widget.file['mimeType'] as String? ?? 'application/octet-stream';
+      final fileSize = widget.file['fileSize'] as int? ?? 0;
+      final checksum = widget.file['checksum'] as String? ?? '';
+      final chunkCount = widget.file['chunkCount'] as int? ?? 0;
+      
+      // Get file encryption key from storage
+      final storage = Provider.of<FileStorageInterface>(context, listen: false);
+      final fileKey = await storage.getFileKey(fileId);
+      
+      if (fileKey == null) {
+        throw Exception('File encryption key not found');
+      }
+      
+      // Encrypt file key with base64 (will be re-encrypted by Signal Protocol)
+      final encryptedFileKey = base64Encode(fileKey);
+      
+      final signalService = SignalService();
+      final socketService = SocketService();
+      final fileTransferService = FileTransferService(
+        storage: storage,
+        socketFileClient: SocketFileClient(socket: socketService.socket!),
+        signalService: signalService,
+      );
+      
+      if (_selectedType == 'user') {
+        // Share to 1:1 chat (use direct user ID)
+        final userId = _selectedItem!['id'];
+        
+        // IMPORTANT: Use FileTransferService.addUsersToShare() for proper workflow
+        await fileTransferService.addUsersToShare(
+          fileId: fileId,
+          chatId: userId, // Direct chat uses userId
+          chatType: 'direct',
+          userIds: [userId],
+          encryptedFileKey: encryptedFileKey,
+        );
+        
+        // Also send Signal message with file info
+        await signalService.sendFileItem(
+          recipientUserId: userId,
+          fileId: fileId,
+          fileName: fileName,
+          mimeType: mimeType,
+          fileSize: fileSize,
+          checksum: checksum,
+          chunkCount: chunkCount,
+          encryptedFileKey: encryptedFileKey,
+          message: 'Shared file: $fileName',
+        );
+        
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('File shared with ${_selectedItem!['name']}'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else if (_selectedType == 'channel') {
+        // Share to channel/group chat
+        final channelId = _selectedItem!['id'];
+        
+        // Get all channel members (excluding self)
+        // TODO: Get actual channel members from channel service
+        final channelMembers = <String>[]; // Placeholder
+        
+        if (channelMembers.isNotEmpty) {
+          // Use FileTransferService.addUsersToShare() for proper workflow
+          await fileTransferService.addUsersToShare(
+            fileId: fileId,
+            chatId: channelId,
+            chatType: 'group',
+            userIds: channelMembers,
+            encryptedFileKey: encryptedFileKey,
+          );
+        }
+        
+        // Also send Signal message to channel
+        await signalService.sendFileMessage(
+          channelId: channelId,
+          fileId: fileId,
+          fileName: fileName,
+          mimeType: mimeType,
+          fileSize: fileSize,
+          checksum: checksum,
+          chunkCount: chunkCount,
+          encryptedFileKey: encryptedFileKey,
+          message: 'Shared file: $fileName',
+        );
+        
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('File shared to #${_selectedItem!['name']}'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('[SHARE_DIALOG] Share error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to share file: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: [
+          const Icon(Icons.share),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text('Share: ${widget.file['fileName']}'),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 500,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Search field
+            TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                labelText: 'Search users or channels',
+                hintText: 'Type to search...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _searchQuery = '';
+                            _searchResults = [];
+                          });
+                        },
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onChanged: (value) {
+                setState(() => _searchQuery = value);
+                _searchUsersAndChannels(value);
+              },
+            ),
+            const SizedBox(height: 16),
+            
+            // Search results
+            if (_isSearching)
+              const Padding(
+                padding: EdgeInsets.all(24.0),
+                child: CircularProgressIndicator(),
+              )
+            else if (_searchQuery.length < 2)
+              Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Text(
+                  'Type at least 2 characters to search',
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+              )
+            else if (_searchResults.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  children: [
+                    Icon(Icons.search_off, size: 48, color: Colors.grey[400]),
+                    const SizedBox(height: 12),
+                    Text(
+                      'No users or channels found',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 300),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _searchResults.length,
+                  itemBuilder: (context, index) {
+                    final item = _searchResults[index];
+                    final isSelected = _selectedItem?['id'] == item['id'];
+                    
+                    return ListTile(
+                      selected: isSelected,
+                      leading: CircleAvatar(
+                        backgroundColor: item['type'] == 'user'
+                            ? Colors.blue
+                            : Colors.green,
+                        child: Icon(
+                          item['icon'] as IconData,
+                          color: Colors.white,
+                        ),
+                      ),
+                      title: Row(
+                        children: [
+                          if (item['type'] == 'channel')
+                            const Text(
+                              '# ',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          Expanded(
+                            child: Text(
+                              item['name'] as String,
+                              style: const TextStyle(fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ],
+                      ),
+                      subtitle: Text(item['subtitle'] as String),
+                      trailing: isSelected
+                          ? const Icon(Icons.check_circle, color: Colors.green)
+                          : null,
+                      onTap: () {
+                        setState(() {
+                          _selectedItem = item;
+                          _selectedType = item['type'] as String;
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton.icon(
+          onPressed: _selectedItem == null ? null : _shareFile,
+          icon: const Icon(Icons.send),
+          label: const Text('Share'),
+        ),
+      ],
+    );
+  }
 }

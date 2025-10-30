@@ -19,10 +19,31 @@ class PermanentDecryptedMessagesStore {
     final store = PermanentDecryptedMessagesStore();
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      await idbFactory.open(store._storeName, version: 1, onUpgradeNeeded: (VersionChangeEvent event) {
+      await idbFactory.open(store._storeName, version: 2, onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
+        ObjectStore objectStore;
+        
+        // Create or get the object store
         if (!db.objectStoreNames.contains(store._storeName)) {
-          db.createObjectStore(store._storeName, autoIncrement: false);
+          objectStore = db.createObjectStore(store._storeName, autoIncrement: false);
+        } else {
+          objectStore = event.transaction.objectStore(store._storeName);
+        }
+        
+        // Add indexes for faster queries (v2)
+        if (event.oldVersion < 2) {
+          // Index by sender for filtering messages from specific users
+          if (!objectStore.indexNames.contains('sender')) {
+            objectStore.createIndex('sender', 'sender', unique: false);
+          }
+          // Index by timestamp for sorting
+          if (!objectStore.indexNames.contains('timestamp')) {
+            objectStore.createIndex('timestamp', 'timestamp', unique: false);
+          }
+          // Index by type for filtering message types
+          if (!objectStore.indexNames.contains('type')) {
+            objectStore.createIndex('type', 'type', unique: false);
+          }
         }
       });
     } else {
@@ -41,7 +62,7 @@ class PermanentDecryptedMessagesStore {
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -66,7 +87,7 @@ class PermanentDecryptedMessagesStore {
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -100,7 +121,7 @@ class PermanentDecryptedMessagesStore {
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -132,7 +153,7 @@ class PermanentDecryptedMessagesStore {
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -196,7 +217,7 @@ class PermanentDecryptedMessagesStore {
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -229,7 +250,7 @@ class PermanentDecryptedMessagesStore {
 
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {
@@ -258,7 +279,7 @@ class PermanentDecryptedMessagesStore {
   Future<void> clearAll() async {
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
+      final db = await idbFactory.open(_storeName, version: 2,
           onUpgradeNeeded: (VersionChangeEvent event) {
         Database db = event.database;
         if (!db.objectStoreNames.contains(_storeName)) {

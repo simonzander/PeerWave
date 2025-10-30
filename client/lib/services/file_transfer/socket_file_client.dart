@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../../models/seeder_info.dart';
 
 /// Socket.IO Client for P2P File Sharing
 /// 
@@ -28,6 +29,7 @@ class SocketFileClient {
     required String checksum,
     required int chunkCount,
     required List<int> availableChunks,
+    List<String>? sharedWith, // ← NEU: Optional share list
   }) async {
     final completer = Completer<Map<String, dynamic>>();
     
@@ -38,8 +40,11 @@ class SocketFileClient {
       'checksum': checksum,
       'chunkCount': chunkCount,
       'availableChunks': availableChunks,
+      'sharedWith': sharedWith, // ← NEU
     }, ack: (data) {
       if (data['success'] == true) {
+        final chunkQuality = data['chunkQuality'] ?? 0;
+        debugPrint('[FILE CLIENT] ✓ File announced with quality: $chunkQuality%');
         completer.complete(data);
       } else {
         completer.completeError(data['error'] ?? 'Unknown error');
@@ -119,6 +124,44 @@ class SocketFileClient {
     return completer.future;
   }
   
+  /// Update file share - add or revoke users (NEW SECURE VERSION)
+  /// 
+  /// Permission Model:
+  /// - Creator can add/revoke anyone
+  /// - Any seeder can add users (but not revoke)
+  /// 
+  /// Rate Limited: Max 10 operations per minute
+  /// Size Limited: Max 1000 users in sharedWith
+  Future<Map<String, dynamic>> updateFileShare({
+    required String fileId,
+    required String action, // 'add' | 'revoke'
+    required List<String> userIds,
+  }) async {
+    final completer = Completer<Map<String, dynamic>>();
+    
+    debugPrint('[FILE CLIENT] Updating file share: $action ${userIds.length} users for $fileId');
+    
+    socket.emitWithAck('updateFileShare', {
+      'fileId': fileId,
+      'action': action,
+      'userIds': userIds,
+    }, ack: (data) {
+      if (data['success'] == true) {
+        final successCount = data['successCount'] ?? 0;
+        final failCount = data['failCount'] ?? 0;
+        final totalUsers = data['totalUsers'] ?? 0;
+        
+        debugPrint('[FILE CLIENT] ✓ Share updated: $successCount succeeded, $failCount failed, total: $totalUsers');
+        completer.complete(data);
+      } else {
+        debugPrint('[FILE CLIENT] ✗ Share update failed: ${data['error']}');
+        completer.completeError(data['error'] ?? 'Share update failed');
+      }
+    });
+    
+    return completer.future;
+  }
+  
   /// Search for files by name or checksum
   Future<List<Map<String, dynamic>>> searchFiles(String query) async {
     final completer = Completer<List<Map<String, dynamic>>>();
@@ -158,21 +201,34 @@ class SocketFileClient {
   }
   
   /// Get available chunks from seeders
-  Future<Map<String, List<int>>> getAvailableChunks(String fileId) async {
-    final completer = Completer<Map<String, List<int>>>();
+  /// Returns Map<String, SeederInfo> where key is deviceKey (userId:deviceId)
+  Future<Map<String, SeederInfo>> getAvailableChunks(String fileId) async {
+    final completer = Completer<Map<String, SeederInfo>>();
     
     socket.emitWithAck('getAvailableChunks', {
       'fileId': fileId,
     }, ack: (data) {
       if (data['success'] == true) {
-        final chunks = <String, List<int>>{};
+        final seeders = <String, SeederInfo>{};
         final rawChunks = data['chunks'] as Map;
         
         for (final entry in rawChunks.entries) {
-          chunks[entry.key] = List<int>.from(entry.value);
+          try {
+            // Parse userId:deviceId from key
+            final deviceKey = entry.key as String;
+            final chunks = List<int>.from(entry.value);
+            
+            // Create SeederInfo from deviceKey
+            final seederInfo = SeederInfo.fromDeviceKey(deviceKey, chunks);
+            seeders[deviceKey] = seederInfo;
+            
+            debugPrint('[SOCKET FILE] Seeder: ${seederInfo.userId}:${seederInfo.deviceId} has ${chunks.length} chunks');
+          } catch (e) {
+            debugPrint('[SOCKET FILE] Warning: Failed to parse seeder entry ${entry.key}: $e');
+          }
         }
         
-        completer.complete(chunks);
+        completer.complete(seeders);
       } else {
         completer.completeError(data['error'] ?? 'Failed to get chunks');
       }
@@ -347,6 +403,16 @@ class SocketFileClient {
     _addEventListener('file:chunk-response', callback);
   }
   
+  /// Listen for file shared with you notifications
+  void onFileSharedWithYou(Function(Map<String, dynamic>) callback) {
+    _addEventListener('fileSharedWithYou', callback);
+  }
+  
+  /// Listen for file access revoked notifications
+  void onFileAccessRevoked(Function(Map<String, dynamic>) callback) {
+    _addEventListener('fileAccessRevoked', callback);
+  }
+  
   // ============================================
   // PRIVATE METHODS
   // ============================================
@@ -354,11 +420,26 @@ class SocketFileClient {
   void _setupEventListeners() {
     // File announcements
     socket.on('fileAnnounced', (data) {
+      final chunkQuality = data['chunkQuality'] ?? 0;
+      debugPrint('[FILE CLIENT] File announced: ${data['fileId']} - Quality: $chunkQuality%');
       _notifyListeners('fileAnnounced', data);
     });
     
     socket.on('fileSeederUpdate', (data) {
+      final chunkQuality = data['chunkQuality'] ?? 0;
+      debugPrint('[FILE CLIENT] Seeder update: ${data['fileId']} - Quality: $chunkQuality%');
       _notifyListeners('fileSeederUpdate', data);
+    });
+    
+    // Share notifications
+    socket.on('fileSharedWithYou', (data) {
+      debugPrint('[FILE CLIENT] File shared with you: ${data['fileId']} from ${data['fromUserId']}');
+      _notifyListeners('fileSharedWithYou', data);
+    });
+    
+    socket.on('fileAccessRevoked', (data) {
+      debugPrint('[FILE CLIENT] File access revoked: ${data['fileId']} by ${data['byUserId']}');
+      _notifyListeners('fileAccessRevoked', data);
     });
     
     // WebRTC signaling

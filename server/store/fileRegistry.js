@@ -13,13 +13,13 @@ class FileRegistry {
     // Map: fileId -> FileMetadata
     this.files = new Map();
     
-    // Map: userId -> Set of fileIds (what user is seeding)
+    // Map: userId:deviceId -> Set of fileIds (what device is seeding)
     this.userSeeds = new Map();
     
-    // Map: fileId -> Set of userIds (who is seeding this file)
+    // Map: fileId -> Set of userId:deviceId (who is seeding this file)
     this.fileSeeders = new Map();
     
-    // Map: fileId -> Set of userIds (who is downloading this file)
+    // Map: fileId -> Set of userId:deviceId (who is downloading this file)
     this.fileLeechers = new Map();
     
     // TTL for file announcements (30 days)
@@ -27,27 +27,40 @@ class FileRegistry {
   }
 
   /**
-   * Announce a file (user has chunks available)
+   * Announce a file (device has chunks available)
    * 
-   * @param {string} userId - User announcing the file
+   * SECURITY: Only authorized users can announce!
+   * - First announcer (uploader) becomes creator and is auto-added to sharedWith
+   * - Subsequent announcers must be in sharedWith (have permission)
+   * 
+   * @param {string} userId - User ID
+   * @param {string} deviceId - Device ID
    * @param {object} fileMetadata - File metadata (NO fileName for privacy)
-   * @returns {object} Updated file info
+   * @returns {object} Updated file info or null if denied
    */
-  announceFile(userId, fileMetadata) {
-    const { fileId, mimeType, fileSize, checksum, chunkCount, availableChunks } = fileMetadata;
+  announceFile(userId, deviceId, fileMetadata) {
+    const { fileId, mimeType, fileSize, checksum, chunkCount, availableChunks, sharedWith } = fileMetadata;
+    const deviceKey = `${userId}:${deviceId}`;
     
     // Get or create file entry
     let file = this.files.get(fileId);
     
     if (!file) {
-      // New file announcement - save creator
+      // ========================================
+      // NEW FILE - First Announcement (Uploader)
+      // ========================================
+      console.log(`[FILE REGISTRY] NEW FILE: ${fileId.substring(0, 8)} uploaded by ${userId}`);
+      
       file = {
         fileId,
         mimeType,
         fileSize,
-        checksum,
+        checksum, // Canonical checksum set by first announcer
+        checksumSetBy: userId, // Track who set the canonical checksum
+        checksumSetAt: Date.now(), // Track when checksum was set
         chunkCount,
         creator: userId, // Store who created/uploaded this file
+        sharedWith: new Set(sharedWith || [userId]), // Creator can always access + any initial shares
         createdAt: Date.now(),
         lastActivity: Date.now(),
         seeders: new Set(),
@@ -55,29 +68,78 @@ class FileRegistry {
         totalSeeds: 0,
         totalDownloads: 0,
       };
+      
+      // Ensure creator is always in sharedWith
+      file.sharedWith.add(userId);
+      
       this.files.set(fileId, file);
       this.fileSeeders.set(fileId, new Set());
       this.fileLeechers.set(fileId, new Set());
+      
+      console.log(`[FILE REGISTRY] File ${fileId.substring(0, 8)} created with canonical checksum: ${checksum.substring(0, 16)}...`);
+      console.log(`[FILE REGISTRY] Checksum set by ${userId} and shared with: [${Array.from(file.sharedWith).join(', ')}]`);
+      
     } else {
-      // Update existing file
+      // ========================================
+      // EXISTING FILE - Permission Check Required!
+      // ========================================
+      
+      // SECURITY CHECK: User must have permission to announce this file
+      if (!this.canAccess(userId, fileId)) {
+        console.error(`[SECURITY] ❌ User ${userId} DENIED announce for ${fileId.substring(0, 8)} - NOT in sharedWith!`);
+        console.error(`[SECURITY] Authorized users: [${Array.from(file.sharedWith).join(', ')}]`);
+        return null; // ❌ REJECT unauthorized announce
+      }
+      
+      console.log(`[FILE REGISTRY] ✓ User ${userId} authorized to announce ${fileId.substring(0, 8)}`);
+      
+      // User has permission - continue with announce
+      
+      // Auto-add seeder to sharedWith (if not already there)
+      if (!file.sharedWith.has(userId)) {
+        file.sharedWith.add(userId);
+        console.log(`[FILE REGISTRY] Seeder ${userId} auto-added to sharedWith for ${fileId.substring(0, 8)}`);
+      }
+      
+      // If from creator: Merge with payload sharedWith (add new users)
+      if (file.creator === userId && sharedWith && sharedWith.length > 0) {
+        sharedWith.forEach(id => {
+          if (!file.sharedWith.has(id)) {
+            file.sharedWith.add(id);
+            console.log(`[FILE REGISTRY] Added ${id} to sharedWith for ${fileId.substring(0, 8)} (from creator)`);
+          }
+        });
+      }
+      
+      // Checksum verification (prevent malicious data)
+      if (file.checksum !== checksum) {
+        console.error(`[SECURITY] ❌ Checksum mismatch from ${userId} for ${fileId.substring(0, 8)}`);
+        console.error(`[SECURITY] Canonical checksum: ${file.checksum} (set by ${file.checksumSetBy} at ${new Date(file.checksumSetAt).toISOString()})`);
+        console.error(`[SECURITY] Received checksum: ${checksum} (from ${userId})`);
+        console.error(`[SECURITY] REJECT: File integrity compromised or wrong file announced!`);
+        return null; // ❌ REJECT mismatched checksum
+      }
+      
+      console.log(`[FILE REGISTRY] ✓ Checksum verified for ${fileId.substring(0, 8)}: ${checksum.substring(0, 16)}...`);
+      
       file.lastActivity = Date.now();
     }
     
-    // Add user as seeder
-    file.seeders.add(userId);
-    this.fileSeeders.get(fileId).add(userId);
+    // Add device as seeder
+    file.seeders.add(deviceKey);
+    this.fileSeeders.get(fileId).add(deviceKey);
     
-    // Update user's seed list
-    if (!this.userSeeds.has(userId)) {
-      this.userSeeds.set(userId, new Set());
+    // Update device's seed list
+    if (!this.userSeeds.has(deviceKey)) {
+      this.userSeeds.set(deviceKey, new Set());
     }
-    this.userSeeds.get(userId).add(fileId);
+    this.userSeeds.get(deviceKey).add(fileId);
     
     // Store available chunks for this seeder
     if (!file.seederChunks) {
       file.seederChunks = new Map();
     }
-    file.seederChunks.set(userId, availableChunks || []);
+    file.seederChunks.set(deviceKey, availableChunks || []);
     
     file.totalSeeds++;
     
@@ -85,16 +147,110 @@ class FileRegistry {
   }
 
   /**
-   * Unannounce a file (user no longer seeding)
+   * Share a file with another user (LÖSUNG 13)
+   * 
+   * @param {string} fileId - File ID
+   * @param {string} creatorId - User sharing the file (must be creator)
+   * @param {string} targetUserId - User to share with
+   * @returns {boolean} Success
+   */
+  shareFile(fileId, creatorId, targetUserId) {
+    const file = this.files.get(fileId);
+    if (!file) return false;
+    
+    // Add to sharedWith set
+    if (!file.sharedWith) {
+      file.sharedWith = new Set([file.creator]);
+    }
+    file.sharedWith.add(targetUserId);
+    
+    console.log(`[FILE REGISTRY] File ${fileId} shared with ${targetUserId} by ${creatorId}`);
+    file.lastActivity = Date.now();
+    
+    return true;
+  }
+
+  /**
+   * Unshare a file with a user (LÖSUNG 13)
+   * 
+   * @param {string} fileId - File ID
+   * @param {string} creatorId - User unsharing the file (must be creator)
+   * @param {string} targetUserId - User to remove access from
+   * @returns {boolean} Success
+   */
+  unshareFile(fileId, creatorId, targetUserId) {
+    const file = this.files.get(fileId);
+    if (!file) return false;
+    
+    // Only creator can unshare
+    if (file.creator !== creatorId) {
+      console.log(`[FILE REGISTRY] User ${creatorId} is not creator of ${fileId}, cannot unshare`);
+      return false;
+    }
+    
+    // Cannot unshare from creator
+    if (targetUserId === file.creator) {
+      console.log(`[FILE REGISTRY] Cannot unshare file from creator`);
+      return false;
+    }
+    
+    // Remove from sharedWith set
+    if (file.sharedWith) {
+      file.sharedWith.delete(targetUserId);
+    }
+    
+    console.log(`[FILE REGISTRY] File ${fileId} unshared from ${targetUserId} by ${creatorId}`);
+    file.lastActivity = Date.now();
+    
+    return true;
+  }
+
+  /**
+   * Check if a user can access a file (LÖSUNG 14)
+   * 
+   * @param {string} userId - User ID to check
+   * @param {string} fileId - File ID
+   * @returns {boolean} True if user has access
+   */
+  canAccess(userId, fileId) {
+    const file = this.files.get(fileId);
+    if (!file) return false;
+    
+    // Creator always has access
+    if (file.creator === userId) return true;
+    
+    // Check sharedWith set
+    if (file.sharedWith && file.sharedWith.has(userId)) return true;
+    
+    return false;
+  }
+
+  /**
+   * Get all users who have access to a file (LÖSUNG 13)
+   * 
+   * @param {string} fileId - File ID
+   * @returns {array} Array of user IDs with access
+   */
+  getSharedUsers(fileId) {
+    const file = this.files.get(fileId);
+    if (!file || !file.sharedWith) return [];
+    
+    return Array.from(file.sharedWith);
+  }
+
+  /**
+   * Unannounce a file (device no longer seeding)
    * 
    * If user is the creator, completely delete the file from registry
-   * Otherwise, just remove user as seeder
+   * Otherwise, just remove device as seeder
    * 
-   * @param {string} userId - User unannouncing the file
+   * @param {string} userId - User ID
+   * @param {string} deviceId - Device ID
    * @param {string} fileId - File ID
    * @returns {boolean} Success
    */
-  unannounceFile(userId, fileId) {
+  unannounceFile(userId, deviceId, fileId) {
+    const deviceKey = `${userId}:${deviceId}`;
     const file = this.files.get(fileId);
     if (!file) return false;
     
@@ -110,8 +266,8 @@ class FileRegistry {
       this.fileSeeders.delete(fileId);
       this.fileLeechers.delete(fileId);
       
-      // Remove from all users' seed lists
-      for (const [uid, fileSet] of this.userSeeds.entries()) {
+      // Remove from all devices' seed lists
+      for (const [devKey, fileSet] of this.userSeeds.entries()) {
         fileSet.delete(fileId);
       }
       
@@ -119,15 +275,15 @@ class FileRegistry {
     }
     
     // Non-creator: just remove as seeder
-    // Remove user as seeder
-    file.seeders.delete(userId);
-    this.fileSeeders.get(fileId)?.delete(userId);
+    // Remove device as seeder
+    file.seeders.delete(deviceKey);
+    this.fileSeeders.get(fileId)?.delete(deviceKey);
     
-    // Remove from user's seed list
-    this.userSeeds.get(userId)?.delete(fileId);
+    // Remove from device's seed list
+    this.userSeeds.get(deviceKey)?.delete(fileId);
     
     // Remove seeder chunks
-    file.seederChunks?.delete(userId);
+    file.seederChunks?.delete(deviceKey);
     
     // Update activity
     file.lastActivity = Date.now();
@@ -143,12 +299,14 @@ class FileRegistry {
   /**
    * Update available chunks for a seeder
    * 
-   * @param {string} userId - Seeder user ID
+   * @param {string} userId - User ID
+   * @param {string} deviceId - Device ID
    * @param {string} fileId - File ID
    * @param {array} availableChunks - Array of chunk indices
    * @returns {boolean} Success
    */
-  updateAvailableChunks(userId, fileId, availableChunks) {
+  updateAvailableChunks(userId, deviceId, fileId, availableChunks) {
+    const deviceKey = `${userId}:${deviceId}`;
     const file = this.files.get(fileId);
     if (!file) return false;
     
@@ -156,25 +314,27 @@ class FileRegistry {
       file.seederChunks = new Map();
     }
     
-    file.seederChunks.set(userId, availableChunks);
+    file.seederChunks.set(deviceKey, availableChunks);
     file.lastActivity = Date.now();
     
     return true;
   }
 
   /**
-   * Register a user as downloading a file
+   * Register a device as downloading a file
    * 
-   * @param {string} userId - Leecher user ID
+   * @param {string} userId - User ID
+   * @param {string} deviceId - Device ID
    * @param {string} fileId - File ID
    * @returns {boolean} Success
    */
-  registerLeecher(userId, fileId) {
+  registerLeecher(userId, deviceId, fileId) {
+    const deviceKey = `${userId}:${deviceId}`;
     const file = this.files.get(fileId);
     if (!file) return false;
     
-    file.leechers.add(userId);
-    this.fileLeechers.get(fileId).add(userId);
+    file.leechers.add(deviceKey);
+    this.fileLeechers.get(fileId).add(deviceKey);
     file.totalDownloads++;
     file.lastActivity = Date.now();
     
@@ -182,18 +342,20 @@ class FileRegistry {
   }
 
   /**
-   * Unregister a user as downloading a file
+   * Unregister a device as downloading a file
    * 
-   * @param {string} userId - Leecher user ID
+   * @param {string} userId - User ID
+   * @param {string} deviceId - Device ID
    * @param {string} fileId - File ID
    * @returns {boolean} Success
    */
-  unregisterLeecher(userId, fileId) {
+  unregisterLeecher(userId, deviceId, fileId) {
+    const deviceKey = `${userId}:${deviceId}`;
     const file = this.files.get(fileId);
     if (!file) return false;
     
-    file.leechers.delete(userId);
-    this.fileLeechers.get(fileId).delete(userId);
+    file.leechers.delete(deviceKey);
+    this.fileLeechers.get(fileId).delete(deviceKey);
     file.lastActivity = Date.now();
     
     return true;
@@ -209,11 +371,11 @@ class FileRegistry {
     const file = this.files.get(fileId);
     if (!file) return null;
     
-    // Convert seeder chunks Map to object
+    // Convert seeder chunks Map to object (userId:deviceId -> chunks)
     const seederChunks = {};
     if (file.seederChunks) {
-      for (const [userId, chunks] of file.seederChunks.entries()) {
-        seederChunks[userId] = chunks;
+      for (const [deviceKey, chunks] of file.seederChunks.entries()) {
+        seederChunks[deviceKey] = chunks;
       }
     }
     
@@ -222,28 +384,34 @@ class FileRegistry {
       fileName: file.fileName,
       mimeType: file.mimeType,
       fileSize: file.fileSize,
-      checksum: file.checksum,
+      checksum: file.checksum, // Canonical checksum
+      checksumSetBy: file.checksumSetBy, // Who set the canonical checksum
+      checksumSetAt: file.checksumSetAt, // When checksum was set
       chunkCount: file.chunkCount,
       createdAt: file.createdAt,
       lastActivity: file.lastActivity,
-      seeders: Array.from(file.seeders),
-      leechers: Array.from(file.leechers),
+      seeders: Array.from(file.seeders), // Array of userId:deviceId strings
+      leechers: Array.from(file.leechers), // Array of userId:deviceId strings
       seederCount: file.seeders.size,
       leecherCount: file.leechers.size,
       totalSeeds: file.totalSeeds,
       totalDownloads: file.totalDownloads,
       seederChunks,
+      creator: file.creator,
+      sharedWith: file.sharedWith ? Array.from(file.sharedWith) : [file.creator],
     };
   }
 
   /**
-   * Get all files a user is seeding
+   * Get all files a device is seeding
    * 
    * @param {string} userId - User ID
+   * @param {string} deviceId - Device ID
    * @returns {array} Array of file IDs
    */
-  getUserSeeds(userId) {
-    const seeds = this.userSeeds.get(userId);
+  getUserSeeds(userId, deviceId) {
+    const deviceKey = `${userId}:${deviceId}`;
+    const seeds = this.userSeeds.get(deviceKey);
     return seeds ? Array.from(seeds) : [];
   }
 
@@ -251,7 +419,7 @@ class FileRegistry {
    * Find seeders for a file
    * 
    * @param {string} fileId - File ID
-   * @returns {array} Array of user IDs
+   * @returns {array} Array of userId:deviceId strings
    */
   getSeeders(fileId) {
     const seeders = this.fileSeeders.get(fileId);
@@ -262,15 +430,15 @@ class FileRegistry {
    * Get available chunks from all seeders for a file
    * 
    * @param {string} fileId - File ID
-   * @returns {object} Map of userId -> chunks[]
+   * @returns {object} Map of userId:deviceId -> chunks[]
    */
   getAvailableChunks(fileId) {
     const file = this.files.get(fileId);
     if (!file || !file.seederChunks) return {};
     
     const result = {};
-    for (const [userId, chunks] of file.seederChunks.entries()) {
-      result[userId] = chunks;
+    for (const [deviceKey, chunks] of file.seederChunks.entries()) {
+      result[deviceKey] = chunks;
     }
     return result;
   }
@@ -319,7 +487,7 @@ class FileRegistry {
   }
 
   /**
-   * Clean up expired files and inactive users
+   * Clean up expired files and inactive devices
    * Called periodically by cleanup job
    * 
    * @returns {object} Cleanup stats
@@ -327,7 +495,7 @@ class FileRegistry {
   cleanup() {
     const now = Date.now();
     let filesRemoved = 0;
-    let usersRemoved = 0;
+    let devicesRemoved = 0;
     
     // Remove expired files (30 days old with no seeders)
     for (const [fileId, file] of this.files.entries()) {
@@ -349,42 +517,100 @@ class FileRegistry {
       }
     }
     
-    // Clean up empty user seed lists
-    for (const [userId, seeds] of this.userSeeds.entries()) {
+    // Clean up empty device seed lists
+    for (const [deviceKey, seeds] of this.userSeeds.entries()) {
       if (seeds.size === 0) {
-        this.userSeeds.delete(userId);
-        usersRemoved++;
+        this.userSeeds.delete(deviceKey);
+        devicesRemoved++;
       }
     }
     
     return {
       filesRemoved,
-      usersRemoved,
+      devicesRemoved,
       totalFiles: this.files.size,
-      totalUsers: this.userSeeds.size,
+      totalDevices: this.userSeeds.size,
     };
   }
 
   /**
-   * Handle user disconnect - clean up their announcements
+   * Handle device disconnect - clean up their announcements
    * 
    * @param {string} userId - Disconnected user ID
+   * @param {string} deviceId - Disconnected device ID
    */
-  handleUserDisconnect(userId) {
-    const userFiles = this.getUserSeeds(userId);
+  handleUserDisconnect(userId, deviceId) {
+    const deviceKey = `${userId}:${deviceId}`;
+    const userFiles = this.userSeeds.get(deviceKey);
     
-    for (const fileId of userFiles) {
-      this.unannounceFile(userId, fileId);
+    if (userFiles) {
+      for (const fileId of userFiles) {
+        this.unannounceFile(userId, deviceId, fileId);
+      }
     }
     
     // Remove from all leecher lists
     for (const [fileId, leechers] of this.fileLeechers.entries()) {
-      if (leechers.has(userId)) {
-        this.unregisterLeecher(userId, fileId);
+      if (leechers.has(deviceKey)) {
+        this.unregisterLeecher(userId, deviceId, fileId);
       }
     }
     
-    this.userSeeds.delete(userId);
+    this.userSeeds.delete(deviceKey);
+  }
+
+  /**
+   * Calculate chunk availability quality
+   * Returns percentage of available chunks (0-100)
+   * 
+   * @param {string} fileId - File ID
+   * @returns {number} Quality percentage (0-100)
+   */
+  getChunkQuality(fileId) {
+    const file = this.files.get(fileId);
+    if (!file) return 0;
+    
+    // Collect all unique chunks from all seeders
+    const availableChunks = new Set();
+    
+    if (file.seederChunks) {
+      for (const chunks of file.seederChunks.values()) {
+        chunks.forEach(idx => availableChunks.add(idx));
+      }
+    }
+    
+    if (file.chunkCount === 0) return 0;
+    
+    const quality = (availableChunks.size / file.chunkCount) * 100;
+    return Math.round(quality);
+  }
+
+  /**
+   * Get missing chunk indices
+   * 
+   * @param {string} fileId - File ID
+   * @returns {array} Array of missing chunk indices
+   */
+  getMissingChunks(fileId) {
+    const file = this.files.get(fileId);
+    if (!file) return [];
+    
+    const availableChunks = new Set();
+    
+    if (file.seederChunks) {
+      for (const chunks of file.seederChunks.values()) {
+        chunks.forEach(idx => availableChunks.add(idx));
+      }
+    }
+    
+    const missing = [];
+    for (let i = 0; i < file.chunkCount; i++) {
+      if (!availableChunks.has(i)) {
+        missing.push(i);
+      }
+    }
+    
+    return missing;
   }
 
   /**
@@ -406,7 +632,7 @@ class FileRegistry {
     return {
       totalFiles: this.files.size,
       activeFiles: Array.from(this.files.values()).filter(f => f.seeders.size > 0).length,
-      totalUsers: this.userSeeds.size,
+      totalDevices: this.userSeeds.size,
       totalSeeders,
       totalLeechers,
       totalChunks,

@@ -48,12 +48,34 @@ class _DashboardPageState extends State<DashboardPage> {
       ApiService.init();
       final resp = await ApiService.get('$hostUrl/people/list');
       if (resp.statusCode == 200) {
+        print('[NEW_DASHBOARD] Raw people data type: ${resp.data.runtimeType}');
+        print('[NEW_DASHBOARD] Raw people data: ${resp.data}');
+        
         setState(() {
-          _people = resp.data is String ? [resp.data] : (resp.data as List<dynamic>);
+          // Handle different response formats
+          if (resp.data is List) {
+            _people = resp.data as List<dynamic>;
+          } else if (resp.data is Map) {
+            // API might return {"users": [...]} or similar
+            final data = resp.data as Map<String, dynamic>;
+            if (data.containsKey('users')) {
+              _people = data['users'] as List<dynamic>;
+            } else if (data.containsKey('people')) {
+              _people = data['people'] as List<dynamic>;
+            } else {
+              // If map has no known keys, wrap it in a list
+              _people = [resp.data];
+            }
+          } else {
+            // Fallback: wrap single item in list
+            _people = [resp.data];
+          }
+          print('[NEW_DASHBOARD] Loaded ${_people.length} people');
         });
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('[NEW_DASHBOARD] Error loading people: $e');
+      print('[NEW_DASHBOARD] Stack trace: $stackTrace');
     }
   }
 
@@ -355,24 +377,49 @@ class _PeopleListWidget extends StatelessWidget {
           : ListView.builder(
               itemCount: people.length,
               itemBuilder: (context, index) {
-                final person = people[index];
-                final avatarUrl = person['picture'] ?? '';
-                final displayName = person['displayName'] ?? 'Unknown';
-                final uuid = person['uuid'] ?? '';
-                
-                return ListTile(
-                  leading: avatarUrl.isNotEmpty
-                      ? CircleAvatar(backgroundImage: NetworkImage(avatarUrl))
-                      : const CircleAvatar(child: Icon(Icons.person)),
-                  title: Text(displayName, style: const TextStyle(color: Colors.white)),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.message, color: Colors.amber),
-                    tooltip: 'Message',
-                    onPressed: () {
-                      onMessageTap(uuid, displayName);
-                    },
-                  ),
-                );
+                try {
+                  final person = people[index];
+                  
+                  // Safe extraction with type checking
+                  String avatarUrl = '';
+                  String displayName = 'Unknown';
+                  String uuid = '';
+                  
+                  if (person is Map) {
+                    // Extract picture/avatar URL
+                    final pictureField = person['picture'] ?? person['avatar'] ?? '';
+                    avatarUrl = pictureField is String ? pictureField : '';
+                    
+                    // Extract display name
+                    final nameField = person['displayName'] ?? person['name'] ?? person['username'] ?? 'Unknown';
+                    displayName = nameField is String ? nameField : nameField.toString();
+                    
+                    // Extract UUID
+                    final uuidField = person['uuid'] ?? person['id'] ?? '';
+                    uuid = uuidField is String ? uuidField : uuidField.toString();
+                  }
+                  
+                  print('[PEOPLE_LIST] Rendering person: uuid=$uuid, name=$displayName');
+                  
+                  return ListTile(
+                    leading: avatarUrl.isNotEmpty
+                        ? CircleAvatar(backgroundImage: NetworkImage(avatarUrl))
+                        : const CircleAvatar(child: Icon(Icons.person)),
+                    title: Text(displayName, style: const TextStyle(color: Colors.white)),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.message, color: Colors.amber),
+                      tooltip: 'Message',
+                      onPressed: () {
+                        onMessageTap(uuid, displayName);
+                      },
+                    ),
+                  );
+                } catch (e) {
+                  print('[PEOPLE_LIST] Error rendering person at index $index: $e');
+                  print('[PEOPLE_LIST] Person data: ${people[index]}');
+                  // Return empty container for invalid entries
+                  return const SizedBox.shrink();
+                }
               },
             ),
     );

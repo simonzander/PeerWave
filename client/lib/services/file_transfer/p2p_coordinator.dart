@@ -11,9 +11,20 @@ import 'encryption_service.dart';
 import 'socket_file_client.dart';
 import '../signal_service.dart';
 import 'chunking_service.dart';
+import '../../models/seeder_info.dart';
 // Web-only imports for browser download
 import 'dart:html' as html show AnchorElement, Blob, Url, document;
 import 'package:flutter/foundation.dart' show kIsWeb;
+
+/// Download phase tracking for graceful completion
+enum DownloadPhase {
+  downloading,   // Active download, requesting chunks
+  draining,      // All chunks received, waiting for in-flight chunks
+  assembling,    // Assembling file from chunks
+  verifying,     // Verifying checksum
+  complete,      // Download complete
+  failed,        // Download failed
+}
 
 /// P2P Coordinator - Manages multi-source downloads
 /// 
@@ -46,8 +57,9 @@ class P2PCoordinator extends ChangeNotifier {
   // Maps for pending ACKs (seeder waits for downloader to ACK metadata before sending binary)
   final Map<String, Completer<void>> _pendingBatchMetadataAcks = {};
   
-  // Seeder availability: fileId -> Map<peerId, List<chunkIndices>>
-  final Map<String, Map<String, List<int>>> _seederAvailability = {};
+  // Seeder availability: fileId -> Map<deviceKey, SeederInfo>
+  // deviceKey format: "userId:deviceId"
+  final Map<String, Map<String, SeederInfo>> _seederAvailability = {};
   
   // Request queue: fileId -> List<chunkIndex>
   final Map<String, List<int>> _chunkQueue = {};
@@ -55,6 +67,11 @@ class P2PCoordinator extends ChangeNotifier {
   // Key exchange: fileId -> Completer waiting for encryption key
   final Map<String, Completer<Uint8List>> _keyRequests = {};
   static const Duration _keyRequestTimeout = Duration(seconds: 10);
+  
+  // Download phase tracking for graceful completion
+  final Map<String, DownloadPhase> _downloadPhases = {};
+  final Map<String, DateTime> _drainStartTime = {};
+  static const Duration _drainTimeout = Duration(seconds: 5);
   
   // Connection limits
   int maxConnectionsPerFile = 4;
@@ -89,17 +106,33 @@ class P2PCoordinator extends ChangeNotifier {
     required String checksum,
     required int chunkCount,
     required Uint8List fileKey,
-    required Map<String, List<int>> seederChunks, // peerId -> chunks
+    required Map<String, SeederInfo> seederChunks, // deviceKey -> SeederInfo
   }) async {
     debugPrint('[P2P] Starting download: $fileName ($fileId)');
     debugPrint('[P2P] Available seeders: ${seederChunks.length}');
     
+    // Initialize download phase
+    _downloadPhases[fileId] = DownloadPhase.downloading;
+    
     // Store seeder availability
     _seederAvailability[fileId] = seederChunks;
+    
+    // Store deviceId mapping for each seeder
+    for (final entry in seederChunks.entries) {
+      final seederInfo = entry.value;
+      _peerDevices[seederInfo.userId] = seederInfo.deviceId;
+      debugPrint('[P2P] Registered seeder: ${seederInfo.userId} -> device ${seederInfo.deviceId}');
+    }
     
     // Initialize file connections
     _fileConnections[fileId] = {};
     _activeChunkRequests[fileId] = {};
+    
+    // Convert SeederInfo map to old format for DownloadManager
+    final legacySeederChunks = <String, List<int>>{};
+    for (final entry in seederChunks.entries) {
+      legacySeederChunks[entry.key] = entry.value.availableChunks;
+    }
     
     // Start download in DownloadManager
     await downloadManager.startDownload(
@@ -110,7 +143,7 @@ class P2PCoordinator extends ChangeNotifier {
       checksum: checksum,
       chunkCount: chunkCount,
       fileKey: fileKey,
-      seederChunks: seederChunks,
+      seederChunks: legacySeederChunks,
     );
     
     // Build chunk queue (missing chunks)
@@ -147,7 +180,7 @@ class P2PCoordinator extends ChangeNotifier {
     required int fileSize,
     required String checksum,
     required int chunkCount,
-    required Map<String, List<int>> seederChunks,
+    required Map<String, SeederInfo> seederChunks,
   }) async {
     debugPrint('[P2P DOWNLOADER] ================================================');
     debugPrint('[P2P DOWNLOADER] Starting P2P download: $fileName');
@@ -165,12 +198,16 @@ class P2PCoordinator extends ChangeNotifier {
     _seederAvailability[fileId] = seederChunks;
     _fileConnections[fileId] = {};
     
-    // Get first seeder for key request
-    final firstSeeder = seederChunks.keys.first;
+    // Get first seeder for key request (extract userId from SeederInfo)
+    final firstSeederInfo = seederChunks.values.first;
+    final firstSeeder = firstSeederInfo.userId;
+    
+    // Store deviceId mapping
+    _peerDevices[firstSeeder] = firstSeederInfo.deviceId;
     
     debugPrint('[P2P DOWNLOADER] ================================================');
     debugPrint('[P2P DOWNLOADER] PHASE 1: Key Exchange via Signal Protocol');
-    debugPrint('[P2P DOWNLOADER] Requesting encryption key from: $firstSeeder');
+    debugPrint('[P2P DOWNLOADER] Requesting encryption key from: $firstSeeder (device: ${firstSeederInfo.deviceId})');
     debugPrint('[P2P DOWNLOADER] ================================================');
     
     // PHASE 1: Request the file key via Signal Protocol (E2E encrypted)
@@ -329,11 +366,23 @@ class P2PCoordinator extends ChangeNotifier {
   }
   
   /// Update seeder availability (when new seeders join or chunks change)
-  void updateSeederAvailability(String fileId, Map<String, List<int>> seederChunks) {
+  void updateSeederAvailability(String fileId, Map<String, SeederInfo> seederChunks) {
     debugPrint('[P2P] Updating seeder availability for $fileId: ${seederChunks.length} seeders');
     
     _seederAvailability[fileId] = seederChunks;
-    downloadManager.updateSeeders(fileId, seederChunks);
+    
+    // Store deviceId mappings
+    for (final entry in seederChunks.entries) {
+      final seederInfo = entry.value;
+      _peerDevices[seederInfo.userId] = seederInfo.deviceId;
+    }
+    
+    // Convert to legacy format for DownloadManager
+    final legacySeederChunks = <String, List<int>>{};
+    for (final entry in seederChunks.entries) {
+      legacySeederChunks[entry.key] = entry.value.availableChunks;
+    }
+    downloadManager.updateSeeders(fileId, legacySeederChunks);
     
     // Try to connect to new seeders if we have capacity
     _connectToSeeders(fileId);
@@ -992,8 +1041,8 @@ class P2PCoordinator extends ChangeNotifier {
     final seeders = _seederAvailability[fileId] ?? {};
     int count = 0;
     
-    for (final chunks in seeders.values) {
-      if (chunks.contains(chunkIndex)) {
+    for (final seederInfo in seeders.values) {
+      if (seederInfo.hasChunk(chunkIndex)) {
         count++;
       }
     }
@@ -1010,8 +1059,9 @@ class P2PCoordinator extends ChangeNotifier {
     if (availableSlots <= 0) return;
     
     // Select seeders to connect to (prioritize those with rare chunks)
-    final unconnectedSeeders = seeders.keys
-        .where((peerId) => !currentConnections.contains(peerId))
+    // Note: We use deviceKey (userId:deviceId) for connections, but extract userId for WebRTC
+    final unconnectedSeeders = seeders.entries
+        .where((entry) => !currentConnections.contains(entry.value.userId))
         .toList();
     
     if (unconnectedSeeders.isEmpty) {
@@ -1021,21 +1071,23 @@ class P2PCoordinator extends ChangeNotifier {
     
     // Sort by chunk availability (prefer seeders with chunks we need)
     unconnectedSeeders.sort((a, b) {
-      final chunksA = seeders[a] ?? [];
-      final chunksB = seeders[b] ?? [];
-      final neededA = _countNeededChunks(fileId, chunksA);
-      final neededB = _countNeededChunks(fileId, chunksB);
+      final seederA = a.value;
+      final seederB = b.value;
+      final neededA = _countNeededChunks(fileId, seederA.availableChunks);
+      final neededB = _countNeededChunks(fileId, seederB.availableChunks);
       return neededB.compareTo(neededA); // Descending
     });
     
     // Connect to top seeders
     final seedersToConnect = unconnectedSeeders.take(availableSlots).toList();
     
-    for (final peerId in seedersToConnect) {
+    for (final entry in seedersToConnect) {
       try {
-        await _connectToSeeder(fileId, peerId);
+        final seederInfo = entry.value;
+        // Use userId for connection (WebRTC peer connection)
+        await _connectToSeeder(fileId, seederInfo.userId);
       } catch (e) {
-        debugPrint('[P2P] Failed to connect to seeder $peerId: $e');
+        debugPrint('[P2P] Failed to connect to seeder ${entry.value.userId}: $e');
       }
     }
   }
@@ -1128,6 +1180,18 @@ class P2PCoordinator extends ChangeNotifier {
   
   Future<void> _handleIncomingChunk(String fileId, String peerId, Uint8List encryptedChunk) async {
     try {
+      // Check download phase - accept chunks during downloading and draining
+      final phase = _downloadPhases[fileId] ?? DownloadPhase.downloading;
+      
+      if (phase == DownloadPhase.assembling || phase == DownloadPhase.complete) {
+        debugPrint('[P2P] ⚠️ Ignoring late chunk from $peerId (download in phase: $phase)');
+        return;
+      }
+      
+      if (phase == DownloadPhase.draining) {
+        debugPrint('[P2P] Accepting chunk during drain phase from $peerId');
+      }
+      
       debugPrint('[P2P] Received chunk data from $peerId (${encryptedChunk.length} bytes)');
       
       // Try to get metadata from batch cache first
@@ -1171,9 +1235,10 @@ class P2PCoordinator extends ChangeNotifier {
       // Check if chunk already received (duplicate)
       final downloadTask = downloadManager.getDownload(fileId);
       if (downloadTask != null && downloadTask.completedChunks.contains(chunkIndex)) {
-        debugPrint('[P2P] Ignoring duplicate chunk $chunkIndex from $peerId');
+        debugPrint('[P2P] Ignoring duplicate chunk $chunkIndex from $peerId (already in completed set)');
         // Remove from active requests
         _activeChunkRequests[fileId]?.remove(chunkIndex);
+        _completeChunkRequest(peerId, chunkIndex);
         return;
       }
       
@@ -1200,14 +1265,21 @@ class P2PCoordinator extends ChangeNotifier {
         }
       }
       
-      // Save encrypted chunk to storage with IV and hash
-      await storage.saveChunk(
+      // Save encrypted chunk to storage with duplicate protection
+      final wasSaved = await storage.saveChunkSafe(
         fileId, 
         chunkIndex, 
         encryptedChunk,
         iv: iv,
         chunkHash: chunkHash,
       );
+      
+      if (!wasSaved) {
+        debugPrint('[P2P] Chunk $chunkIndex was duplicate, skipping progress update');
+        _activeChunkRequests[fileId]?.remove(chunkIndex);
+        _completeChunkRequest(peerId, chunkIndex);
+        return;
+      }
       
       // ✅ Mark chunk request as complete (for rate limiting)
       _completeChunkRequest(peerId, chunkIndex);
@@ -1221,21 +1293,24 @@ class P2PCoordinator extends ChangeNotifier {
         
         debugPrint('[P2P] Download progress: ${task.downloadedChunks}/${task.chunkCount} chunks');
         
-        // Check if download complete
+        // Check if all chunks received
         if (task.downloadedChunks >= task.chunkCount) {
           debugPrint('[P2P] ================================================');
-          debugPrint('[P2P] ✓ DOWNLOAD COMPLETE: $fileId');
+          debugPrint('[P2P] ✓ ALL CHUNKS RECEIVED: $fileId');
           debugPrint('[P2P] Total chunks: ${task.chunkCount}');
           debugPrint('[P2P] Total bytes: ${task.downloadedBytes}');
+          debugPrint('[P2P] Entering DRAIN PHASE...');
           debugPrint('[P2P] ================================================');
           
-          // Mark download as complete
-          task.status = DownloadStatus.completed;
-          task.endTime = DateTime.now();
+          // Enter drain phase
+          _downloadPhases[fileId] = DownloadPhase.draining;
+          _drainStartTime[fileId] = DateTime.now();
           
-          debugPrint('[P2P] Assembling file and triggering download...');
-          // Trigger file assembly and browser download
-          await _completeDownload(fileId, task.fileName);
+          // Stop requesting new chunks
+          _stopChunkRequests(fileId);
+          
+          // Wait for in-flight chunks, then complete
+          _drainAndComplete(fileId, task);
         }
       }
       
@@ -1248,8 +1323,10 @@ class P2PCoordinator extends ChangeNotifier {
       // Remove from queue
       _chunkQueue[fileId]?.remove(chunkIndex);
       
-      // Request next chunk from this peer
-      _requestNextChunks(fileId, peerId);
+      // Request next chunk from this peer (only if not draining)
+      if (_downloadPhases[fileId] != DownloadPhase.draining) {
+        _requestNextChunks(fileId, peerId);
+      }
       
       notifyListeners();
       
@@ -1263,6 +1340,81 @@ class P2PCoordinator extends ChangeNotifier {
       // Request next chunk
       _requestNextChunks(fileId, peerId);
     }
+  }
+  
+  /// Stop requesting new chunks for this download
+  void _stopChunkRequests(String fileId) {
+    debugPrint('[P2P] Stopping chunk requests for $fileId');
+    
+    // Clear queue
+    _chunkQueue.remove(fileId);
+    
+    debugPrint('[P2P] ✓ Chunk queue cleared');
+  }
+  
+  /// Drain in-flight chunks and complete download
+  Future<void> _drainAndComplete(String fileId, dynamic task) async {
+    debugPrint('[P2P] ================================================');
+    debugPrint('[P2P] DRAIN PHASE: Waiting for in-flight chunks');
+    
+    final activeRequests = _activeChunkRequests[fileId] ?? {};
+    final inFlightCount = activeRequests.length;
+    
+    debugPrint('[P2P] In-flight chunks: $inFlightCount');
+    debugPrint('[P2P] Chunks: ${activeRequests.keys.toList()}');
+    
+    if (inFlightCount == 0) {
+      debugPrint('[P2P] No in-flight chunks, proceeding immediately');
+      debugPrint('[P2P] ================================================');
+      
+      // Mark download as complete
+      task.status = DownloadStatus.completed;
+      task.endTime = DateTime.now();
+      
+      // Proceed to assembly
+      await _completeDownload(fileId, task.fileName);
+      return;
+    }
+    
+    // Wait up to 5 seconds for chunks to arrive
+    final startTime = DateTime.now();
+    const checkInterval = Duration(milliseconds: 100);
+    
+    while (DateTime.now().difference(startTime) < _drainTimeout) {
+      final remaining = (_activeChunkRequests[fileId] ?? {}).length;
+      
+      if (remaining == 0) {
+        final elapsed = DateTime.now().difference(startTime);
+        debugPrint('[P2P] ✓ All in-flight chunks received (${elapsed.inMilliseconds}ms)');
+        debugPrint('[P2P] ================================================');
+        
+        // Mark download as complete
+        task.status = DownloadStatus.completed;
+        task.endTime = DateTime.now();
+        
+        // Proceed to assembly
+        await _completeDownload(fileId, task.fileName);
+        return;
+      }
+      
+      await Future.delayed(checkInterval);
+    }
+    
+    // Timeout - some chunks didn't arrive
+    final remaining = (_activeChunkRequests[fileId] ?? {}).length;
+    debugPrint('[P2P] ⚠️ Drain timeout: $remaining chunks still missing');
+    debugPrint('[P2P] Missing chunks: ${(_activeChunkRequests[fileId] ?? {}).keys.toList()}');
+    debugPrint('[P2P] ================================================');
+    
+    // Clear the requests anyway and try to complete
+    _activeChunkRequests[fileId]?.clear();
+    
+    // Mark download as complete (may fail if chunks missing)
+    task.status = DownloadStatus.completed;
+    task.endTime = DateTime.now();
+    
+    // Proceed to assembly (will fail if chunks actually missing)
+    await _completeDownload(fileId, task.fileName);
   }
   
   /// Handle batch metadata from seeder (we are downloader)
@@ -1455,7 +1607,23 @@ class P2PCoordinator extends ChangeNotifier {
       return;
     }
     
-    final seederChunks = _seederAvailability[fileId]?[peerId] ?? [];
+    // Find seeder info for this peer (search by userId)
+    final seeders = _seederAvailability[fileId] ?? {};
+    SeederInfo? seederInfo;
+    
+    for (final entry in seeders.entries) {
+      if (entry.value.userId == peerId) {
+        seederInfo = entry.value;
+        break;
+      }
+    }
+    
+    if (seederInfo == null) {
+      debugPrint('[P2P] No seeder info found for peer $peerId');
+      return;
+    }
+    
+    final seederChunks = seederInfo.availableChunks;
     
     // Find chunks this seeder has that we need
     final availableChunks = queue.where((chunk) => seederChunks.contains(chunk)).toList();
@@ -1567,7 +1735,11 @@ class P2PCoordinator extends ChangeNotifier {
   Future<void> _completeDownload(String fileId, String fileName) async {
     try {
       debugPrint('[P2P] ================================================');
-      debugPrint('[P2P] ASSEMBLING FILE: $fileName');
+      debugPrint('[P2P] PHASE: ASSEMBLING FILE: $fileName');
+      debugPrint('[P2P] ================================================');
+      
+      // Set phase to assembling
+      _downloadPhases[fileId] = DownloadPhase.assembling;
       
       final task = downloadManager.getDownload(fileId);
       if (task == null) {
@@ -1670,14 +1842,11 @@ class P2PCoordinator extends ChangeNotifier {
         // Could implement file system save here if needed
       }
       
-      // Clean up P2P connections
-      final connections = _fileConnections[fileId];
-      if (connections != null) {
-        for (final peerId in connections) {
-          await webrtcService.closePeerConnection(peerId);
-        }
-        _fileConnections.remove(fileId);
-      }
+      // Set phase to complete
+      _downloadPhases[fileId] = DownloadPhase.complete;
+      
+      // Clean up P2P connections (LÖSUNG 10)
+      await _cleanupDownloadConnections(fileId);
       
       debugPrint('[P2P] ================================================');
       debugPrint('[P2P] ✅ DOWNLOAD COMPLETE: $fileName');
@@ -1687,12 +1856,48 @@ class P2PCoordinator extends ChangeNotifier {
       debugPrint('[P2P] ERROR completing download: $e');
       debugPrint('[P2P] Stack trace: $stackTrace');
       
+      _downloadPhases[fileId] = DownloadPhase.failed;
+      
       final task = downloadManager.getDownload(fileId);
       if (task != null) {
         task.status = DownloadStatus.failed;
         task.error = 'Assembly failed: $e';
       }
     }
+  }
+  
+  /// Clean up download connections (LÖSUNG 10)
+  Future<void> _cleanupDownloadConnections(String fileId) async {
+    debugPrint('[P2P] ================================================');
+    debugPrint('[P2P] CLEANUP: Closing connections for $fileId');
+    
+    // PHASE 1: Close all peer connections
+    final peers = _fileConnections[fileId] ?? {};
+    debugPrint('[P2P] Disconnecting from ${peers.length} peers');
+    
+    for (final peerId in peers) {
+      try {
+        await webrtcService.closePeerConnection(peerId);
+        debugPrint('[P2P] ✓ Disconnected from $peerId');
+      } catch (e) {
+        debugPrint('[P2P] ⚠️ Error disconnecting from $peerId: $e');
+      }
+    }
+    
+    // PHASE 2: Clear all state
+    _fileConnections.remove(fileId);
+    _activeChunkRequests.remove(fileId);
+    _seederAvailability.remove(fileId);
+    _chunkQueue.remove(fileId);
+    _downloadPhases.remove(fileId);
+    _drainStartTime.remove(fileId);
+    _throttlers.remove(fileId);
+    
+    _chunksInFlightPerPeer.clear();
+    _batchMetadataCache.removeWhere((key, _) => key.startsWith('$fileId:'));
+    
+    debugPrint('[P2P] ✓ All state cleared for $fileId');
+    debugPrint('[P2P] ================================================');
   }
   
   /// Trigger file download in web browser

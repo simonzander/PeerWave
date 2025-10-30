@@ -35,6 +35,11 @@ class NotificationProvider with ChangeNotifier {
       case MessageType.group:
         _handleGroupMessageNotification(notification);
         break;
+      case MessageType.fileShareUpdate:
+        // File share updates are handled by FileTransferService
+        // No need to create in-app notification here
+        print('[NOTIFICATION_PROVIDER] File share update notification ignored (handled by FileTransferService)');
+        break;
       case MessageType.deliveryReceipt:
       case MessageType.groupDeliveryReceipt:
       case MessageType.groupReadReceipt:
