@@ -68,7 +68,13 @@ class WebRTCFileService extends ChangeNotifier {
     
     // ICE candidate handling (will be sent via Socket.IO)
     pc.onIceCandidate = (candidate) {
-      _iceCandidateCallback?.call(peerId, candidate);
+      debugPrint('[WebRTC ICE] Candidate discovered for $peerId: ${candidate.candidate?.substring(0, 50) ?? "null"}...');
+      if (_iceCandidateCallback == null) {
+        debugPrint('[WebRTC ICE] ❌ WARNING: No ICE candidate callback registered!');
+      } else {
+        debugPrint('[WebRTC ICE] ✓ Calling ICE candidate callback for $peerId');
+        _iceCandidateCallback?.call(peerId, candidate);
+      }
     };
     
     // Track creation (not used for data channels, but required)
@@ -426,6 +432,7 @@ class WebRTCFileService extends ChangeNotifier {
   
   /// Set ICE candidate callback (to send via Socket.IO)
   void setIceCandidateCallback(Function(String peerId, RTCIceCandidate candidate) callback) {
+    debugPrint('[WebRTC ICE] ✅ ICE candidate callback registered');
     _iceCandidateCallback = callback;
   }
 }

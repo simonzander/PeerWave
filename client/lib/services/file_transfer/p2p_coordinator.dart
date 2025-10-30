@@ -48,6 +48,15 @@ class P2PCoordinator extends ChangeNotifier {
   // Chunk requests in progress: fileId -> Map<chunkIndex, peerId>
   final Map<String, Map<int, String>> _activeChunkRequests = {};
   
+  // SEEDER: Track chunks sent per peer: peerId -> Map<fileId, Set<chunkIndex>>
+  final Map<String, Map<String, Set<int>>> _seederChunksSent = {};
+  
+  // SEEDER: Last activity timestamp per connection: peerId -> DateTime
+  final Map<String, DateTime> _seederLastActivity = {};
+  
+  // SEEDER: Cleanup timeout (close connection after inactivity)
+  static const Duration _seederInactivityTimeout = Duration(seconds: 30);
+  
   // Pending chunk metadata: peerId -> Map with chunkIndex and size
   final Map<String, Map<String, dynamic>> _pendingChunkMetadata = {};
   
@@ -80,6 +89,14 @@ class P2PCoordinator extends ChangeNotifier {
   // Rate limiting: Track chunks in flight per peer
   final Map<String, Set<int>> _chunksInFlightPerPeer = {};
   static const int MAX_CHUNKS_IN_FLIGHT_PER_PEER = 5;
+  
+  // Chunk retry tracking: fileId -> Map<chunkIndex, RetryInfo>
+  final Map<String, Map<int, ChunkRetryInfo>> _chunkRetryInfo = {};
+  static const int MAX_CHUNK_RETRIES = 3;
+  
+  // Chunk error tracking: Track which seeder failed for which chunk
+  // fileId -> Map<chunkIndex, Set<failedPeerIds>>
+  final Map<String, Map<int, Set<String>>> _chunkFailedSeeders = {};
   
   // Adaptive throttling state
   final Map<String, AdaptiveThrottler> _throttlers = {};
@@ -980,6 +997,9 @@ class P2PCoordinator extends ChangeNotifier {
       
       debugPrint('[P2P SEEDER] Chunk $chunkIndex request from $peerId');
       
+      // Track activity (for inactivity cleanup)
+      _seederLastActivity[peerId] = DateTime.now();
+      
       // Load encrypted chunk from storage
       final encryptedChunk = await storage.getChunk(fileId, chunkIndex);
       
@@ -996,10 +1016,26 @@ class P2PCoordinator extends ChangeNotifier {
       
       debugPrint('[P2P SEEDER] ✓ Sending chunk $chunkIndex (${encryptedChunk.length} bytes)');
       
-      // Send encrypted chunk as binary directly (no metadata needed - already sent in batch)
-      await webrtcService.sendBinary(peerId, encryptedChunk);
+      // ✅ FIX: Prepend chunkIndex as 4-byte header before binary data
+      // This allows downloader to identify which chunk this is
+      final chunkIndexBytes = ByteData(4)..setInt32(0, chunkIndex, Endian.big);
+      final dataWithHeader = Uint8List.fromList([
+        ...chunkIndexBytes.buffer.asUint8List(),
+        ...encryptedChunk,
+      ]);
+      
+      // Send chunk with header as binary
+      await webrtcService.sendBinary(peerId, dataWithHeader);
       
       debugPrint('[P2P SEEDER] ✓ Chunk $chunkIndex sent successfully');
+      
+      // Track sent chunks for cleanup detection
+      _seederChunksSent.putIfAbsent(peerId, () => {});
+      _seederChunksSent[peerId]!.putIfAbsent(fileId, () => {});
+      _seederChunksSent[peerId]![fileId]!.add(chunkIndex);
+      
+      // Check if all chunks have been sent
+      await _checkSeederTransferComplete(fileId, peerId);
       
     } catch (e, stackTrace) {
       debugPrint('[P2P SEEDER] ERROR handling chunk request: $e');
@@ -1013,6 +1049,86 @@ class P2PCoordinator extends ChangeNotifier {
           'message': 'Internal error: $e',
         });
       } catch (_) {}
+    }
+  }
+  
+  /// Check if all chunks have been sent to downloader (SEEDER cleanup)
+  /// 
+  /// This is called after each chunk is sent. If all chunks have been sent,
+  /// we start an inactivity timer. If no new requests come in for 30 seconds,
+  /// we close the connection to free resources.
+  Future<void> _checkSeederTransferComplete(String fileId, String peerId) async {
+    try {
+      // Get total chunk count for this file
+      final chunkCount = await storage.getChunkCount(fileId);
+      if (chunkCount == 0) {
+        debugPrint('[P2P SEEDER] Cannot determine chunk count for $fileId');
+        return;
+      }
+      
+      // Get chunks sent to this peer
+      final sentChunks = _seederChunksSent[peerId]?[fileId]?.length ?? 0;
+      
+      debugPrint('[P2P SEEDER] Transfer progress to $peerId: $sentChunks/$chunkCount chunks');
+      
+      // Check if all chunks have been sent
+      if (sentChunks >= chunkCount) {
+        debugPrint('[P2P SEEDER] ================================================');
+        debugPrint('[P2P SEEDER] ✓ ALL CHUNKS SENT to $peerId for $fileId');
+        debugPrint('[P2P SEEDER] Total chunks: $chunkCount');
+        debugPrint('[P2P SEEDER] Starting inactivity timer (${_seederInactivityTimeout.inSeconds}s)...');
+        debugPrint('[P2P SEEDER] ================================================');
+        
+        // Start inactivity timer
+        _startSeederCleanupTimer(fileId, peerId);
+      }
+      
+    } catch (e) {
+      debugPrint('[P2P SEEDER] Error checking transfer complete: $e');
+    }
+  }
+  
+  /// Start inactivity timer for seeder cleanup
+  /// 
+  /// If no new chunk requests arrive within the timeout, close the connection
+  void _startSeederCleanupTimer(String fileId, String peerId) async {
+    final startTime = DateTime.now();
+    
+    // Wait for inactivity timeout
+    await Future.delayed(_seederInactivityTimeout);
+    
+    // Check if there was activity during the wait
+    final lastActivity = _seederLastActivity[peerId];
+    if (lastActivity != null && lastActivity.isAfter(startTime)) {
+      debugPrint('[P2P SEEDER] Activity detected from $peerId, extending timer');
+      // Recursively start new timer
+      _startSeederCleanupTimer(fileId, peerId);
+      return;
+    }
+    
+    // No activity - close connection
+    debugPrint('[P2P SEEDER] ================================================');
+    debugPrint('[P2P SEEDER] CLEANUP: Closing connection to $peerId (inactivity)');
+    debugPrint('[P2P SEEDER] FileId: $fileId');
+    debugPrint('[P2P SEEDER] No requests for ${_seederInactivityTimeout.inSeconds}s');
+    debugPrint('[P2P SEEDER] ================================================');
+    
+    try {
+      // Close WebRTC connection
+      await webrtcService.closePeerConnection(peerId);
+      
+      // Clean up state
+      _fileConnections[fileId]?.remove(peerId);
+      _seederChunksSent.remove(peerId);
+      _seederLastActivity.remove(peerId);
+      _peerDevices.remove(peerId);
+      
+      debugPrint('[P2P SEEDER] ✓ Connection closed and state cleaned up');
+      
+      notifyListeners();
+      
+    } catch (e) {
+      debugPrint('[P2P SEEDER] ⚠️ Error during cleanup: $e');
     }
   }
   
@@ -1179,6 +1295,8 @@ class P2PCoordinator extends ChangeNotifier {
   }
   
   Future<void> _handleIncomingChunk(String fileId, String peerId, Uint8List encryptedChunk) async {
+    int? chunkIndex; // Declare at function scope for error handler
+    
     try {
       // Check download phase - accept chunks during downloading and draining
       final phase = _downloadPhases[fileId] ?? DownloadPhase.downloading;
@@ -1194,41 +1312,27 @@ class P2PCoordinator extends ChangeNotifier {
       
       debugPrint('[P2P] Received chunk data from $peerId (${encryptedChunk.length} bytes)');
       
-      // Try to get metadata from batch cache first
-      final cacheKey = '$fileId:$peerId';
-      Map<String, dynamic>? metadata;
-      int? chunkIndex;
-      
-      // We need to figure out which chunk this is
-      // The problem: we don't know the chunkIndex from binary data alone
-      // Solution: Track expected chunks per peer
-      final expectedChunks = _activeChunkRequests[fileId]?.entries
-          .where((e) => e.value == peerId)
-          .map((e) => e.key)
-          .toList() ?? [];
-      
-      if (expectedChunks.isEmpty) {
-        debugPrint('[P2P] ERROR: Received chunk but no active requests from $peerId');
+      // ✅ FIX: Extract chunkIndex from 4-byte header
+      if (encryptedChunk.length < 4) {
+        debugPrint('[P2P] ERROR: Chunk data too small (no header): ${encryptedChunk.length} bytes');
         return;
       }
       
-      // Assume it's the first expected chunk (chunks arrive in order on DataChannel)
-      chunkIndex = expectedChunks.first;
+      final headerBytes = ByteData.sublistView(encryptedChunk, 0, 4);
+      chunkIndex = headerBytes.getInt32(0, Endian.big);
+      
+      // Remove header to get actual encrypted chunk
+      final actualEncryptedChunk = Uint8List.sublistView(encryptedChunk, 4);
+      
+      debugPrint('[P2P] ✓ Chunk identified from header: $chunkIndex (${actualEncryptedChunk.length} bytes payload)');
       
       // Get metadata from batch cache
-      metadata = _batchMetadataCache[cacheKey]?[chunkIndex];
-      
-      if (metadata == null) {
-        // Fallback to old per-chunk metadata
-        metadata = _pendingChunkMetadata[peerId];
-        if (metadata != null) {
-          chunkIndex = metadata['chunkIndex'] as int;
-        }
-      }
+      final cacheKey = '$fileId:$peerId';
+      final metadata = _batchMetadataCache[cacheKey]?[chunkIndex];
       
       if (metadata == null) {
         debugPrint('[P2P] ERROR: Received chunk data without metadata from $peerId');
-        debugPrint('[P2P] Cache key: $cacheKey, Expected chunks: $expectedChunks');
+        debugPrint('[P2P] Cache key: $cacheKey, ChunkIndex: $chunkIndex');
         return;
       }
       
@@ -1269,7 +1373,7 @@ class P2PCoordinator extends ChangeNotifier {
       final wasSaved = await storage.saveChunkSafe(
         fileId, 
         chunkIndex, 
-        encryptedChunk,
+        actualEncryptedChunk,
         iv: iv,
         chunkHash: chunkHash,
       );
@@ -1289,7 +1393,7 @@ class P2PCoordinator extends ChangeNotifier {
       if (task != null) {
         task.completedChunks.add(chunkIndex);
         task.downloadedChunks++;
-        task.downloadedBytes += encryptedChunk.length;
+        task.downloadedBytes += actualEncryptedChunk.length;
         
         debugPrint('[P2P] Download progress: ${task.downloadedChunks}/${task.chunkCount} chunks');
         
@@ -1331,15 +1435,151 @@ class P2PCoordinator extends ChangeNotifier {
       notifyListeners();
       
     } catch (e, stackTrace) {
-      debugPrint('[P2P] ERROR processing chunk from $peerId: $e');
+      debugPrint('[P2P] ================================================');
+      debugPrint('[P2P] ❌ ERROR processing chunk $chunkIndex from $peerId');
+      debugPrint('[P2P] Error: $e');
       debugPrint('[P2P] Stack trace: $stackTrace');
+      debugPrint('[P2P] ================================================');
+      
+      // ✅ CHUNK RETRY LOGIC
+      await _handleChunkError(fileId, chunkIndex, peerId, e.toString());
       
       // Clear metadata
       _pendingChunkMetadata.remove(peerId);
-      
-      // Request next chunk
-      _requestNextChunks(fileId, peerId);
     }
+  }
+  
+  /// Handle chunk processing error with retry logic
+  /// 
+  /// Implements:
+  /// - Retry counter (max 3 attempts)
+  /// - Exponential backoff (1s, 2s, 4s)
+  /// - Alternate seeder selection
+  /// - Graceful degradation (continue with other chunks)
+  Future<void> _handleChunkError(String fileId, int? chunkIndex, String peerId, String error) async {
+    if (chunkIndex == null) {
+      debugPrint('[P2P ChunkRetry] Cannot retry - chunkIndex unknown');
+      // Request next chunk from this peer
+      _requestNextChunks(fileId, peerId);
+      return;
+    }
+    
+    // Initialize retry tracking
+    _chunkRetryInfo.putIfAbsent(fileId, () => {});
+    final retryInfo = _chunkRetryInfo[fileId]!.putIfAbsent(
+      chunkIndex,
+      () => ChunkRetryInfo(),
+    );
+    
+    // Track this seeder as failed for this chunk
+    _chunkFailedSeeders.putIfAbsent(fileId, () => {});
+    _chunkFailedSeeders[fileId]!.putIfAbsent(chunkIndex, () => {});
+    _chunkFailedSeeders[fileId]![chunkIndex]!.add(peerId);
+    
+    debugPrint('[P2P ChunkRetry] ================================================');
+    debugPrint('[P2P ChunkRetry] Chunk $chunkIndex failed from $peerId');
+    debugPrint('[P2P ChunkRetry] Error: $error');
+    debugPrint('[P2P ChunkRetry] Attempt: ${retryInfo.attemptCount + 1}/$MAX_CHUNK_RETRIES');
+    debugPrint('[P2P ChunkRetry] Failed seeders: ${_chunkFailedSeeders[fileId]![chunkIndex]!.toList()}');
+    
+    // Check if max retries exceeded
+    if (retryInfo.attemptCount >= MAX_CHUNK_RETRIES) {
+      debugPrint('[P2P ChunkRetry] ❌ Max retries exceeded for chunk $chunkIndex');
+      debugPrint('[P2P ChunkRetry] Marking chunk as permanently failed');
+      debugPrint('[P2P ChunkRetry] Download will continue with other chunks');
+      debugPrint('[P2P ChunkRetry] ================================================');
+      
+      // Remove from active requests
+      _activeChunkRequests[fileId]?.remove(chunkIndex);
+      _completeChunkRequest(peerId, chunkIndex);
+      
+      // Remove from queue (don't retry anymore)
+      _chunkQueue[fileId]?.remove(chunkIndex);
+      
+      // Continue with next chunk from this peer
+      _requestNextChunks(fileId, peerId);
+      return;
+    }
+    
+    // Record this attempt
+    retryInfo.recordAttempt(peerId);
+    
+    // Find alternate seeder (not in failed list)
+    final failedSeeders = _chunkFailedSeeders[fileId]![chunkIndex]!;
+    final alternateSeeder = _findAlternateSeeder(fileId, chunkIndex, failedSeeders);
+    
+    if (alternateSeeder != null) {
+      debugPrint('[P2P ChunkRetry] ✓ Found alternate seeder: $alternateSeeder');
+      debugPrint('[P2P ChunkRetry] Will retry after ${retryInfo.getBackoffDelay().inSeconds}s backoff');
+      debugPrint('[P2P ChunkRetry] ================================================');
+      
+      // Wait for backoff delay
+      await Future.delayed(retryInfo.getBackoffDelay());
+      
+      // Remove from active requests (current peer)
+      _activeChunkRequests[fileId]?.remove(chunkIndex);
+      _completeChunkRequest(peerId, chunkIndex);
+      
+      // Add back to queue (will be picked up by alternate seeder)
+      if (!(_chunkQueue[fileId]?.contains(chunkIndex) ?? false)) {
+        _chunkQueue[fileId]?.add(chunkIndex);
+      }
+      
+      // Request from alternate seeder
+      debugPrint('[P2P ChunkRetry] Requesting chunk $chunkIndex from alternate seeder $alternateSeeder');
+      await _requestChunk(fileId, alternateSeeder, chunkIndex);
+      
+    } else {
+      debugPrint('[P2P ChunkRetry] ⚠️ No alternate seeder available');
+      debugPrint('[P2P ChunkRetry] Will retry with same seeder after ${retryInfo.getBackoffDelay().inSeconds}s');
+      debugPrint('[P2P ChunkRetry] ================================================');
+      
+      // Wait for backoff delay
+      await Future.delayed(retryInfo.getBackoffDelay());
+      
+      // Remove from active requests
+      _activeChunkRequests[fileId]?.remove(chunkIndex);
+      _completeChunkRequest(peerId, chunkIndex);
+      
+      // Add back to queue
+      if (!(_chunkQueue[fileId]?.contains(chunkIndex) ?? false)) {
+        _chunkQueue[fileId]?.add(chunkIndex);
+      }
+      
+      // Retry with same seeder
+      debugPrint('[P2P ChunkRetry] Retrying chunk $chunkIndex with $peerId');
+      await _requestChunk(fileId, peerId, chunkIndex);
+    }
+    
+    // Continue requesting other chunks
+    _requestNextChunks(fileId, peerId);
+  }
+  
+  /// Find an alternate seeder for a chunk (not in failed list)
+  String? _findAlternateSeeder(String fileId, int chunkIndex, Set<String> failedSeeders) {
+    final seeders = _seederAvailability[fileId] ?? {};
+    
+    for (final entry in seeders.entries) {
+      final seederInfo = entry.value;
+      final userId = seederInfo.userId;
+      
+      // Skip if this seeder already failed for this chunk
+      if (failedSeeders.contains(userId)) {
+        continue;
+      }
+      
+      // Check if this seeder has the chunk
+      if (seederInfo.hasChunk(chunkIndex)) {
+        // Check if we're connected to this seeder
+        final isConnected = _fileConnections[fileId]?.contains(userId) ?? false;
+        
+        if (isConnected) {
+          return userId;
+        }
+      }
+    }
+    
+    return null;
   }
   
   /// Stop requesting new chunks for this download
@@ -1893,6 +2133,10 @@ class P2PCoordinator extends ChangeNotifier {
     _drainStartTime.remove(fileId);
     _throttlers.remove(fileId);
     
+    // Clear retry tracking
+    _chunkRetryInfo.remove(fileId);
+    _chunkFailedSeeders.remove(fileId);
+    
     _chunksInFlightPerPeer.clear();
     _batchMetadataCache.removeWhere((key, _) => key.startsWith('$fileId:'));
     
@@ -1988,5 +2232,41 @@ class AdaptiveThrottler {
     debugPrint('  Current limit: $_currentMaxInFlight');
     debugPrint('  Slowdowns: $_slowdownCount');
     debugPrint('  Success streak: $_successCount');
+  }
+}
+
+/// Chunk Retry Info - Tracks retry attempts for failed chunks
+class ChunkRetryInfo {
+  int attemptCount;
+  DateTime? lastAttempt;
+  String? lastSeeder; // Last seeder that failed
+  
+  ChunkRetryInfo({
+    this.attemptCount = 0,
+    this.lastAttempt,
+    this.lastSeeder,
+  });
+  
+  /// Get backoff delay based on attempt count
+  /// Exponential backoff: 1s, 2s, 4s
+  Duration getBackoffDelay() {
+    if (attemptCount == 0) return Duration.zero;
+    if (attemptCount == 1) return Duration(seconds: 1);
+    if (attemptCount == 2) return Duration(seconds: 2);
+    return Duration(seconds: 4);
+  }
+  
+  /// Check if ready to retry (backoff period elapsed)
+  bool canRetry() {
+    if (lastAttempt == null) return true;
+    final elapsed = DateTime.now().difference(lastAttempt!);
+    return elapsed >= getBackoffDelay();
+  }
+  
+  /// Record new attempt
+  void recordAttempt(String seeder) {
+    attemptCount++;
+    lastAttempt = DateTime.now();
+    lastSeeder = seeder;
   }
 }
