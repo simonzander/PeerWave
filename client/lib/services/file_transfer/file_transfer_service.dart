@@ -261,6 +261,7 @@ class FileTransferService {
       
       // Step 5: Download available chunks
       final downloadedChunks = <int>[];
+      final verifiedChunks = <int>[]; // Track chunks that passed verification
       final totalChunks = fileInfo['chunkCount'] as int;
       
       for (int i = 0; i < totalChunks; i++) {
@@ -282,8 +283,21 @@ class FileTransferService {
         // For now, just mark as downloaded
         downloadedChunks.add(i);
         
-        // Update available chunks and START SEEDING
-        await _socketFileClient.updateAvailableChunks(fileId, downloadedChunks);
+        // ========================================
+        // PARTIAL SEEDING: Verify chunk hash before announcing
+        // ========================================
+        final isChunkValid = await _verifyChunkHash(fileId, i);
+        
+        if (isChunkValid) {
+          verifiedChunks.add(i);
+          print('[FILE TRANSFER] ✓ Chunk $i verified');
+          
+          // Only announce verified chunks for partial seeding
+          await _socketFileClient.updateAvailableChunks(fileId, verifiedChunks);
+        } else {
+          print('[FILE TRANSFER] ⚠️ Chunk $i failed verification - not announcing');
+          // Don't add to verifiedChunks, so it won't be announced
+        }
         
         // Update progress
         onProgress(downloadedChunks.length / totalChunks);
@@ -291,29 +305,88 @@ class FileTransferService {
       
       // Step 6: Update status
       final isComplete = downloadedChunks.length == totalChunks;
+      final allChunksVerified = verifiedChunks.length == downloadedChunks.length;
       
-      // Step 7: Verify checksum if download is complete
-      if (isComplete) {
-        print('[FILE TRANSFER] Step 7: Verifying file checksum...');
+      // Step 7: Verify complete file checksum if download is complete
+      if (isComplete && allChunksVerified) {
+        print('[FILE TRANSFER] Step 7: Verifying complete file checksum...');
         final isValid = await _verifyFileChecksum(fileId);
         
         if (!isValid) {
-          print('[SECURITY] ❌ Checksum verification FAILED! File corrupted or tampered.');
+          print('[SECURITY] ❌ File checksum verification FAILED! File corrupted or tampered.');
           
-          // Delete corrupted file
-          await _deleteCorruptedFile(fileId);
+          // ========================================
+          // SMART ERROR RECOVERY
+          // ========================================
+          // Instead of deleting entire file, identify and re-download only corrupted chunks
           
-          throw Exception('File integrity check failed - checksum mismatch');
+          print('[FILE TRANSFER] Starting smart error recovery...');
+          final corruptedChunks = await _findCorruptedChunks(fileId);
+          
+          if (corruptedChunks.isEmpty) {
+            // No corrupted chunks found, but checksum still fails
+            // This means the file as a whole is corrupted (metadata issue?)
+            print('[FILE TRANSFER] ⚠️ No corrupted chunks found, but checksum fails');
+            print('[FILE TRANSFER] Deleting entire file for clean re-download');
+            await _deleteCorruptedFile(fileId);
+            throw Exception('File integrity check failed - checksum mismatch (metadata corrupted)');
+          }
+          
+          // Recover by re-downloading only corrupted chunks
+          await _recoverCorruptedFile(fileId, corruptedChunks);
+          
+          print('[FILE TRANSFER] ✓ Corrupted chunks marked for re-download');
+          print('[FILE TRANSFER] File will automatically re-download ${corruptedChunks.length} chunks');
+          
+          // Update metadata to downloading state (don't set seeding yet)
+          await _storage.updateFileMetadata(fileId, {
+            'status': 'downloading',
+            'downloadComplete': false,
+            'isSeeder': true, // Still seeding verified chunks
+            'downloadedChunks': verifiedChunks, // Only verified chunks
+          });
+          
+          // ========================================
+          // IMPORTANT: Still announce verified chunks!
+          // ========================================
+          // Even though file is corrupted, we can still seed verified chunks
+          print('[FILE TRANSFER] Announcing verified chunks during recovery...');
+          
+          try {
+            final metadata = await _storage.getFileMetadata(fileId);
+            if (metadata != null) {
+              await _socketFileClient.announceFile(
+                fileId: fileId,
+                mimeType: metadata['mimeType'] as String,
+                fileSize: metadata['fileSize'] as int,
+                checksum: metadata['checksum'] as String,
+                chunkCount: metadata['chunkCount'] as int,
+                availableChunks: verifiedChunks, // Only verified chunks
+                sharedWith: (metadata['sharedWith'] as List?)?.cast<String>(),
+              );
+              
+              print('[FILE TRANSFER] ✓ Announced ${verifiedChunks.length} verified chunks during recovery');
+            }
+          } catch (e) {
+            print('[FILE TRANSFER] Warning: Could not announce during recovery: $e');
+          }
+          
+          // Don't throw - file is in recovery state
+          // The auto-resume mechanism will pick it up
+          return;
         }
         
-        print('[FILE TRANSFER] ✓ Checksum verified - file is authentic');
+        print('[FILE TRANSFER] ✓ File checksum verified - file is authentic');
+      } else if (!allChunksVerified) {
+        print('[FILE TRANSFER] ⚠️ Some chunks failed verification (${downloadedChunks.length - verifiedChunks.length} failed)');
       }
       
+      // Step 8: Update metadata with verified chunks only
       await _storage.updateFileMetadata(fileId, {
-        'status': isComplete ? 'complete' : 'partial',
-        'downloadComplete': isComplete,
+        'status': (isComplete && allChunksVerified) ? 'seeding' : 'partial',
+        'downloadComplete': isComplete && allChunksVerified,
         'isSeeder': true,
-        'downloadedChunks': downloadedChunks,
+        'downloadedChunks': verifiedChunks, // Use verifiedChunks instead of downloadedChunks
       });
       
       // ========================================
@@ -322,7 +395,7 @@ class FileTransferService {
       // After download (complete OR partial), announce to server
       // so other peers can download from us
       
-      print('[FILE TRANSFER] Step 8: Announcing as seeder...');
+      print('[FILE TRANSFER] Step 9: Announcing as seeder...');
       
       try {
         final metadata = await _storage.getFileMetadata(fileId);
@@ -333,21 +406,21 @@ class FileTransferService {
             fileSize: metadata['fileSize'] as int,
             checksum: metadata['checksum'] as String,
             chunkCount: metadata['chunkCount'] as int,
-            availableChunks: downloadedChunks,
+            availableChunks: verifiedChunks, // ✅ Only announce verified chunks
             sharedWith: (metadata['sharedWith'] as List?)?.cast<String>(),
           );
           
-          print('[FILE TRANSFER] ✓ Announced as seeder with ${downloadedChunks.length}/$totalChunks chunks');
+          print('[FILE TRANSFER] ✓ Announced as seeder with ${verifiedChunks.length}/$totalChunks verified chunks');
         }
       } catch (e) {
         print('[FILE TRANSFER] Warning: Could not announce as seeder: $e');
         // Don't fail the download if announce fails
       }
       
-      if (isComplete) {
+      if (isComplete && allChunksVerified) {
         print('[FILE TRANSFER] ✓ Download complete: $fileId');
       } else {
-        print('[FILE TRANSFER] ⚠ Partial download: $fileId (${downloadedChunks.length}/$totalChunks chunks)');
+        print('[FILE TRANSFER] ⚠ Partial download: $fileId (${verifiedChunks.length}/$totalChunks verified chunks)');
       }
       
     } catch (e) {
@@ -966,7 +1039,135 @@ class FileTransferService {
     }
   }
   
+  /// Verify individual chunk hash
+  /// 
+  /// Returns true if chunk hash matches expected hash from metadata
+  Future<bool> _verifyChunkHash(String fileId, int chunkIndex) async {
+    try {
+      final chunk = await _storage.getChunk(fileId, chunkIndex);
+      final chunkMetadata = await _storage.getChunkMetadata(fileId, chunkIndex);
+      
+      if (chunk == null || chunkMetadata == null) {
+        print('[FILE TRANSFER] Chunk $chunkIndex missing');
+        return false;
+      }
+      
+      // Get expected chunk hash
+      final expectedHash = chunkMetadata['chunkHash'] as String?;
+      if (expectedHash == null) {
+        print('[FILE TRANSFER] Chunk $chunkIndex has no hash metadata');
+        // If no hash in metadata, we can't verify - assume valid
+        return true;
+      }
+      
+      // Calculate actual hash
+      final actualHash = sha256.convert(chunk).toString();
+      
+      if (actualHash != expectedHash) {
+        print('[FILE TRANSFER] ❌ Chunk $chunkIndex hash mismatch');
+        print('[FILE TRANSFER]    Expected: ${expectedHash.substring(0, 16)}...');
+        print('[FILE TRANSFER]    Actual:   ${actualHash.substring(0, 16)}...');
+        return false;
+      }
+      
+      return true;
+      
+    } catch (e) {
+      print('[FILE TRANSFER] Error verifying chunk hash: $e');
+      return false;
+    }
+  }
+  
+  /// Find corrupted chunks by hashing each chunk individually
+  /// 
+  /// Returns list of chunk indices that are corrupted
+  Future<List<int>> _findCorruptedChunks(String fileId) async {
+    try {
+      print('[FILE TRANSFER] Analyzing chunks for corruption...');
+      
+      final metadata = await _storage.getFileMetadata(fileId);
+      if (metadata == null) {
+        print('[FILE TRANSFER] No metadata found');
+        return [];
+      }
+      
+      final chunkCount = metadata['chunkCount'] as int? ?? 0;
+      final corruptedChunks = <int>[];
+      
+      for (int i = 0; i < chunkCount; i++) {
+        final chunk = await _storage.getChunk(fileId, i);
+        final chunkMetadata = await _storage.getChunkMetadata(fileId, i);
+        
+        if (chunk == null || chunkMetadata == null) {
+          print('[FILE TRANSFER] Chunk $i missing');
+          corruptedChunks.add(i);
+          continue;
+        }
+        
+        // Get expected chunk hash
+        final expectedHash = chunkMetadata['chunkHash'] as String?;
+        if (expectedHash == null) {
+          print('[FILE TRANSFER] Chunk $i has no hash metadata');
+          continue; // Can't verify without hash
+        }
+        
+        // Calculate actual hash
+        final actualHash = sha256.convert(chunk).toString();
+        
+        if (actualHash != expectedHash) {
+          print('[FILE TRANSFER] ❌ Chunk $i corrupted (hash mismatch)');
+          corruptedChunks.add(i);
+        }
+      }
+      
+      print('[FILE TRANSFER] Found ${corruptedChunks.length} corrupted chunks: $corruptedChunks');
+      return corruptedChunks;
+      
+    } catch (e) {
+      print('[FILE TRANSFER] Error finding corrupted chunks: $e');
+      return [];
+    }
+  }
+  
+  /// Smart error recovery - only delete and re-download corrupted chunks
+  Future<void> _recoverCorruptedFile(String fileId, List<int> corruptedChunks) async {
+    try {
+      print('[FILE TRANSFER] Starting smart recovery for $fileId');
+      print('[FILE TRANSFER] Re-downloading ${corruptedChunks.length} corrupted chunks...');
+      
+      // Delete only corrupted chunks
+      for (final chunkIndex in corruptedChunks) {
+        await _storage.deleteChunk(fileId, chunkIndex);
+        print('[FILE TRANSFER] Deleted corrupted chunk $chunkIndex');
+      }
+      
+      // Update metadata to trigger re-download
+      final metadata = await _storage.getFileMetadata(fileId);
+      if (metadata != null) {
+        final downloadedChunks = (metadata['downloadedChunks'] as List?)?.cast<int>() ?? [];
+        
+        // Remove corrupted chunks from downloaded list
+        final updatedChunks = downloadedChunks.where((c) => !corruptedChunks.contains(c)).toList();
+        
+        await _storage.updateFileMetadata(fileId, {
+          'status': 'downloading', // Back to downloading state
+          'downloadComplete': false,
+          'downloadedChunks': updatedChunks,
+          'corruptedChunksFound': corruptedChunks.length,
+          'lastRecoveryAttempt': DateTime.now().millisecondsSinceEpoch,
+        });
+        
+        print('[FILE TRANSFER] ✓ Metadata updated, ready for re-download');
+      }
+      
+    } catch (e) {
+      print('[FILE TRANSFER] Error during recovery: $e');
+      rethrow;
+    }
+  }
+  
   /// Delete corrupted file (all chunks and metadata)
+  /// Only used when recovery is not possible
   Future<void> _deleteCorruptedFile(String fileId) async {
     try {
       print('[FILE TRANSFER] Deleting corrupted file: $fileId');
