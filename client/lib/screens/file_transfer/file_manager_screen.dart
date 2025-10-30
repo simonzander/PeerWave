@@ -1277,11 +1277,6 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
     
     try {
       final fileId = widget.file['fileId'] as String;
-      final fileName = widget.file['fileName'] as String;
-      final mimeType = widget.file['mimeType'] as String? ?? 'application/octet-stream';
-      final fileSize = widget.file['fileSize'] as int? ?? 0;
-      final checksum = widget.file['checksum'] as String? ?? '';
-      final chunkCount = widget.file['chunkCount'] as int? ?? 0;
       
       // Get file encryption key from storage
       final storage = Provider.of<FileStorageInterface>(context, listen: false);
@@ -1306,26 +1301,18 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
         // Share to 1:1 chat (use direct user ID)
         final userId = _selectedItem!['id'];
         
-        // IMPORTANT: Use FileTransferService.addUsersToShare() for proper workflow
+        // Use FileTransferService.addUsersToShare() for proper workflow
+        // This handles:
+        // 1. Server update (updateFileShare)
+        // 2. Signal broadcast to ALL seeders (file_share_update)
+        // 3. Local metadata update
+        // 4. Re-announce with updated sharedWith
         await fileTransferService.addUsersToShare(
           fileId: fileId,
           chatId: userId, // Direct chat uses userId
           chatType: 'direct',
           userIds: [userId],
           encryptedFileKey: encryptedFileKey,
-        );
-        
-        // Also send Signal message with file info
-        await signalService.sendFileItem(
-          recipientUserId: userId,
-          fileId: fileId,
-          fileName: fileName,
-          mimeType: mimeType,
-          fileSize: fileSize,
-          checksum: checksum,
-          chunkCount: chunkCount,
-          encryptedFileKey: encryptedFileKey,
-          message: 'Shared file: $fileName',
         );
         
         if (mounted) {
@@ -1347,6 +1334,11 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
         
         if (channelMembers.isNotEmpty) {
           // Use FileTransferService.addUsersToShare() for proper workflow
+          // This handles:
+          // 1. Server update (updateFileShare)
+          // 2. Signal broadcast to ALL seeders (file_share_update)
+          // 3. Local metadata update
+          // 4. Re-announce with updated sharedWith
           await fileTransferService.addUsersToShare(
             fileId: fileId,
             chatId: channelId,
@@ -1355,19 +1347,6 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
             encryptedFileKey: encryptedFileKey,
           );
         }
-        
-        // Also send Signal message to channel
-        await signalService.sendFileMessage(
-          channelId: channelId,
-          fileId: fileId,
-          fileName: fileName,
-          mimeType: mimeType,
-          fileSize: fileSize,
-          checksum: checksum,
-          chunkCount: chunkCount,
-          encryptedFileKey: encryptedFileKey,
-          message: 'Shared file: $fileName',
-        );
         
         if (mounted) {
           Navigator.pop(context);

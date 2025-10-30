@@ -955,7 +955,8 @@ io.sockets.on("connection", socket => {
           mimeType,
           fileSize,
           seederCount: fileInfo.seederCount,
-          chunkQuality
+          chunkQuality,
+          sharedWith: sharedUsers
         });
       });
 

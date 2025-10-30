@@ -241,85 +241,21 @@ class MessageListenerService {
       }
 
       // ========================================
-      // CRITICAL #4: SERVER VERIFICATION
+      // P2P-NATIVE: Trust Signal Protocol (E2E encrypted)
       // ========================================
-      // Don't trust Signal messages blindly - verify with server!
+      // Signal Protocol provides E2E encryption and authentication.
+      // We use MERGE strategy instead of server verification to handle
+      // offline scenarios where server state may be stale.
+      // 
+      // Security is provided by:
+      // 1. Signal Protocol E2E encryption (message authenticity)
+      // 2. Checksum verification (file integrity, see below)
+      // 3. Merge strategy (eventual consistency across peers)
+      
+      print('[P2P] Processing Signal-authenticated share update (action: $action)');
       
       final fileTransferService = _getFileTransferService();
       final socketFileClient = _getSocketFileClient();
-      
-      if (socketFileClient != null) {
-        print('[SECURITY] Verifying share update with server...');
-        
-        try {
-          // Get current file state from server (source of truth)
-          final fileInfo = await socketFileClient.getFileInfo(fileId);
-          final serverSharedWith = (fileInfo['sharedWith'] as List?)?.cast<String>() ?? [];
-          final currentUserId = _getCurrentUserId();
-          
-          if (currentUserId == null) {
-            print('[SECURITY] ❌ Cannot verify - user ID unknown');
-            return;
-          }
-          
-          // Verify action matches server state
-          final isInServerList = serverSharedWith.contains(currentUserId);
-          
-          if (action == 'add') {
-            // Verify: User should NOW be in sharedWith
-            if (!isInServerList) {
-              print('[SECURITY] ❌ CRITICAL: Signal says ADD but server says NOT in sharedWith!');
-              print('[SECURITY] Server sharedWith: $serverSharedWith');
-              print('[SECURITY] Current user: $currentUserId');
-              
-              _triggerNotification(MessageNotification(
-                type: MessageType.fileShareUpdate,
-                itemId: itemId,
-                channelId: channelId,
-                senderId: senderId,
-                senderDeviceId: senderDeviceId,
-                timestamp: timestamp ?? DateTime.now().toIso8601String(),
-                encrypted: false,
-                message: 'File share rejected: Server verification failed (possible attack)',
-              ));
-              
-              return; // ❌ REJECT - Signal message doesn't match server
-            }
-            
-            print('[SECURITY] ✅ Server confirms: User IS in sharedWith');
-            
-          } else if (action == 'revoke') {
-            // Verify: User should NOT be in sharedWith anymore
-            if (isInServerList) {
-              print('[SECURITY] ❌ CRITICAL: Signal says REVOKE but server says STILL in sharedWith!');
-              print('[SECURITY] Server sharedWith: $serverSharedWith');
-              print('[SECURITY] Current user: $currentUserId');
-              
-              _triggerNotification(MessageNotification(
-                type: MessageType.fileShareUpdate,
-                itemId: itemId,
-                channelId: channelId,
-                senderId: senderId,
-                senderDeviceId: senderDeviceId,
-                timestamp: timestamp ?? DateTime.now().toIso8601String(),
-                encrypted: false,
-                message: 'Access revoke rejected: Server verification failed',
-              ));
-              
-              return; // ❌ REJECT - Signal message doesn't match server
-            }
-            
-            print('[SECURITY] ✅ Server confirms: User NOT in sharedWith');
-          }
-          
-          print('[SECURITY] ✅ Signal message verified with server');
-          
-        } catch (e) {
-          print('[SECURITY] ⚠️ Could not verify with server: $e');
-          // Continue anyway - server might be temporarily unavailable
-          // But log the warning
-        }
-      }
 
       // Verify checksum with server before processing (if action is 'add')
       if (checksum != null && action == 'add' && fileTransferService != null) {
@@ -360,55 +296,55 @@ class MessageListenerService {
         print('[FILE SHARE] You were given access to file: $fileId');
         
         // ========================================
-        // CRITICAL: ALWAYS sync sharedWith from server
+        // P2P MERGE: Add sender to local sharedWith
         // ========================================
-        // Even if file doesn't exist yet locally, we want to have
-        // the updated sharedWith ready for when download starts
+        // Trust Signal Protocol E2E encryption for authenticity
+        // Use MERGE strategy (Union) instead of server verification
         
         if (fileTransferService != null && socketFileClient != null) {
           try {
             // Get current metadata (might be null if file not downloaded yet)
             final metadata = await fileTransferService.getFileMetadata(fileId);
             
-            // Get fresh sharedWith from server (source of truth)
-            final serverSharedWith = await fileTransferService.getServerSharedWith(fileId);
-            
-            if (serverSharedWith != null) {
-              if (metadata != null) {
-                // File exists locally - update sharedWith
+            if (metadata != null) {
+              // File exists locally - MERGE sender into sharedWith
+              final existingSharedWith = List<String>.from(metadata['sharedWith'] ?? []);
+              final mergedSharedWith = <String>{...existingSharedWith, senderId}.toList();
+              
+              if (mergedSharedWith.length != existingSharedWith.length) {
                 await fileTransferService.updateFileMetadata(fileId, {
-                  'sharedWith': serverSharedWith,
+                  'sharedWith': mergedSharedWith,
                   'lastSync': DateTime.now().millisecondsSinceEpoch,
                 });
-                print('[FILE SHARE] ✓ Local sharedWith updated: ${serverSharedWith.length} users');
-                print('[FILE SHARE] sharedWith: $serverSharedWith');
+                print('[FILE SHARE] ✓ Merged sender into sharedWith: ${mergedSharedWith.length} users');
+                print('[FILE SHARE] sharedWith: $mergedSharedWith');
               } else {
-                // File doesn't exist yet - save minimal metadata with sharedWith
-                // so when download starts, it will have the correct sharedWith
-                print('[FILE SHARE] File not downloaded yet - saving sharedWith for future download');
-                print('[FILE SHARE] sharedWith: $serverSharedWith');
-                
-                // Get file info from server to have all metadata ready
-                try {
-                  final fileInfo = await socketFileClient.getFileInfo(fileId);
-                  await fileTransferService.saveFileMetadata({
-                    'fileId': fileId,
-                    'fileName': fileInfo['fileName'] ?? 'unknown',
-                    'mimeType': fileInfo['mimeType'] ?? 'application/octet-stream',
-                    'fileSize': fileInfo['fileSize'] ?? 0,
-                    'checksum': fileInfo['checksum'] ?? '',
-                    'chunkCount': fileInfo['chunkCount'] ?? 0,
-                    'status': 'available', // Not downloaded yet, but available
-                    'isSeeder': false,
-                    'downloadComplete': false,
-                    'createdAt': DateTime.now().millisecondsSinceEpoch,
-                    'sharedWith': serverSharedWith, // ✅ WICHTIG: sharedWith von Server
-                    'downloadedChunks': [],
-                  });
-                  print('[FILE SHARE] ✓ Saved file metadata with sharedWith for future download');
-                } catch (e) {
-                  print('[FILE SHARE] Warning: Could not save file metadata: $e');
-                }
+                print('[FILE SHARE] Sender already in sharedWith - no change needed');
+              }
+            } else {
+              // File doesn't exist yet - save minimal metadata with sender in sharedWith
+              print('[FILE SHARE] File not downloaded yet - saving metadata for future download');
+              
+              // Get file info from server to have all metadata ready
+              try {
+                final fileInfo = await socketFileClient.getFileInfo(fileId);
+                await fileTransferService.saveFileMetadata({
+                  'fileId': fileId,
+                  'fileName': fileInfo['fileName'] ?? 'unknown',
+                  'mimeType': fileInfo['mimeType'] ?? 'application/octet-stream',
+                  'fileSize': fileInfo['fileSize'] ?? 0,
+                  'checksum': fileInfo['checksum'] ?? '',
+                  'chunkCount': fileInfo['chunkCount'] ?? 0,
+                  'status': 'available', // Not downloaded yet, but available
+                  'isSeeder': false,
+                  'downloadComplete': false,
+                  'createdAt': DateTime.now().millisecondsSinceEpoch,
+                  'sharedWith': [senderId], // Start with sender only (will merge on announce)
+                  'downloadedChunks': [],
+                });
+                print('[FILE SHARE] ✓ Saved file metadata with sender in sharedWith');
+              } catch (e) {
+                print('[FILE SHARE] Warning: Could not save file metadata: $e');
               }
             }
           } catch (e) {
@@ -438,25 +374,8 @@ class MessageListenerService {
         // User's access was revoked
         print('[FILE SHARE] Your access to file was revoked: $fileId');
         
-        // Update local sharedWith list if file exists locally (for remaining seeders)
-        if (fileTransferService != null) {
-          try {
-            final metadata = await fileTransferService.getFileMetadata(fileId);
-            if (metadata != null) {
-              // File exists locally - update sharedWith from server
-              final serverSharedWith = await fileTransferService.getServerSharedWith(fileId);
-              if (serverSharedWith != null) {
-                await fileTransferService.updateFileMetadata(fileId, {
-                  'sharedWith': serverSharedWith,
-                  'lastSync': DateTime.now().millisecondsSinceEpoch,
-                });
-                print('[FILE SHARE] ✓ Local sharedWith updated: ${serverSharedWith.length} users');
-              }
-            }
-          } catch (e) {
-            print('[FILE SHARE] Warning: Could not update local sharedWith: $e');
-          }
-        }
+        // P2P NOTE: We trust Signal E2E encrypted revoke message
+        // No server verification needed - Signal Protocol guarantees authenticity
         
         // Cancel any active downloads for this file
         if (fileTransferService != null) {
@@ -538,15 +457,6 @@ class MessageListenerService {
   
   /// Helper to get current user ID
   /// TODO: Inject via constructor or get from SignalService
-  String? _getCurrentUserId() {
-    try {
-      // Get from SignalService
-      return SignalService.instance.currentUserId;
-    } catch (e) {
-      return null;
-    }
-  }
-
   /// Handle delivery receipt for 1:1 messages
   void _handleDeliveryReceipt(dynamic data) {
     try {

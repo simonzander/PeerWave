@@ -542,8 +542,32 @@ class FileTransferService {
     _socketFileClient.onFileAnnounced((data) async {
       final fileId = data['fileId'] as String;
       final chunkQuality = data['chunkQuality'] as int? ?? 0;
+      final newSharedWith = (data['sharedWith'] as List?)?.cast<String>() ?? [];
       
       print('[FILE TRANSFER] File announced: $fileId (quality: $chunkQuality%)');
+      
+      // Merge sharedWith from announcement with local metadata
+      if (newSharedWith.isNotEmpty) {
+        final existingMetadata = await _storage.getFileMetadata(fileId);
+        if (existingMetadata != null) {
+          final existingSharedWith = (existingMetadata['sharedWith'] as List?)?.cast<String>() ?? [];
+          
+          // Merge: combine both lists and remove duplicates
+          final mergedSharedWith = <String>{...existingSharedWith, ...newSharedWith}.toList();
+          
+          if (mergedSharedWith.length != existingSharedWith.length) {
+            print('[FILE TRANSFER] Merging sharedWith: ${existingSharedWith.length} -> ${mergedSharedWith.length} users');
+            
+            // Update metadata with merged sharedWith
+            await _storage.saveFileMetadata({
+              ...existingMetadata,
+              'sharedWith': mergedSharedWith,
+              'lastActivity': DateTime.now().toIso8601String(),
+            });
+          }
+        }
+      }
+      
       await checkAndResumeDownload(fileId, chunkQuality);
     });
     
