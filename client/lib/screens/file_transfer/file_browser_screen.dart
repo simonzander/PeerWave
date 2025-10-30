@@ -477,6 +477,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         checksum: fileInfo['checksum'] as String? ?? '',
         chunkCount: fileInfo['chunkCount'] as int? ?? 0,
         seederChunks: seederChunks,
+        sharedWith: (fileInfo['sharedWith'] as List?)?.cast<String>(), // ✅ NEW: Pass sharedWith from fileInfo
       );
       
       print('[FILE BROWSER] Download started for file: $fileId');

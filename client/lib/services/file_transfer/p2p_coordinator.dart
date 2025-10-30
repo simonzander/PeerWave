@@ -124,6 +124,7 @@ class P2PCoordinator extends ChangeNotifier {
     required int chunkCount,
     required Uint8List fileKey,
     required Map<String, SeederInfo> seederChunks, // deviceKey -> SeederInfo
+    List<String>? sharedWith, // ✅ NEW: Add sharedWith parameter
   }) async {
     debugPrint('[P2P] Starting download: $fileName ($fileId)');
     debugPrint('[P2P] Available seeders: ${seederChunks.length}');
@@ -161,6 +162,7 @@ class P2PCoordinator extends ChangeNotifier {
       chunkCount: chunkCount,
       fileKey: fileKey,
       seederChunks: legacySeederChunks,
+      sharedWith: sharedWith, // ✅ NEW: Pass sharedWith
     );
     
     // Build chunk queue (missing chunks)
@@ -198,6 +200,7 @@ class P2PCoordinator extends ChangeNotifier {
     required String checksum,
     required int chunkCount,
     required Map<String, SeederInfo> seederChunks,
+    List<String>? sharedWith, // ✅ NEW: Add sharedWith parameter
   }) async {
     debugPrint('[P2P DOWNLOADER] ================================================');
     debugPrint('[P2P DOWNLOADER] Starting P2P download: $fileName');
@@ -255,6 +258,7 @@ class P2PCoordinator extends ChangeNotifier {
       chunkCount: chunkCount,
       fileKey: fileKey,
       seederChunks: seederChunks,
+      sharedWith: sharedWith, // ✅ NEW: Pass sharedWith
     );
     
     debugPrint('[P2P DOWNLOADER] ================================================');

@@ -53,6 +53,7 @@ class DownloadManager extends ChangeNotifier {
     required int chunkCount,
     required Uint8List fileKey,
     required Map<String, List<int>> seederChunks, // userId -> available chunks
+    List<String>? sharedWith, // ✅ NEW: Add sharedWith parameter
   }) async {
     // Check if already downloading
     if (_downloads.containsKey(fileId)) {
@@ -71,6 +72,7 @@ class DownloadManager extends ChangeNotifier {
       'isSeeder': false,
       'createdAt': DateTime.now().toIso8601String(),
       'lastActivity': DateTime.now().toIso8601String(),
+      'sharedWith': sharedWith ?? [], // ✅ NEW: Save sharedWith
     });
     
     // Save encryption key
@@ -416,10 +418,19 @@ class DownloadManager extends ChangeNotifier {
     task.status = DownloadStatus.completed;
     task.endTime = DateTime.now();
     
+    // ========================================
+    // FIX: Set status to 'seeding' not 'completed'
+    // ========================================
+    // After successful download, user becomes a seeder
+    // Note: file_transfer_service.dart will handle the announce to network
     await storage.updateFileMetadata(fileId, {
-      'status': 'completed',
+      'status': 'seeding', // ✅ Changed from 'completed' to 'seeding'
+      'isSeeder': true, // ✅ Mark as seeder
+      'downloadComplete': true, // ✅ Mark download as complete
       'lastActivity': DateTime.now().toIso8601String(),
     });
+    
+    debugPrint('[DOWNLOAD] ✓ Download complete, status set to seeding');
     
     notifyListeners();
   }

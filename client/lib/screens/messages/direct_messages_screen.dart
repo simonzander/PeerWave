@@ -687,8 +687,8 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       
       // 1. Fetch file info and seeder chunks from server
       print('[DIRECT_MSG] Fetching file info and seeders...');
-      // Fetch file info for validation (could check checksum matches)
-      await socketClient.getFileInfo(fileMessage.fileId);
+      // Fetch file info for validation and to get sharedWith list
+      final fileInfo = await socketClient.getFileInfo(fileMessage.fileId);
       final seederChunks = await socketClient.getAvailableChunks(fileMessage.fileId);
       
       if (seederChunks.isEmpty) {
@@ -716,6 +716,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         chunkCount: fileMessage.chunkCount,
         fileKey: fileKey,
         seederChunks: seederChunks,
+        sharedWith: (fileInfo['sharedWith'] as List?)?.cast<String>(), // ✅ NEW: Pass sharedWith from fileInfo
       );
       
       print('[DIRECT_MSG] Download started successfully!');

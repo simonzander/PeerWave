@@ -834,8 +834,8 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       
       // 1. Fetch file info and seeder chunks from server
       print('[GROUP_CHAT] Fetching file info and seeders...');
-      // Fetch file info for validation (could check checksum matches)
-      await socketClient.getFileInfo(fileMessage.fileId);
+      // Fetch file info for validation and to get sharedWith list
+      final fileInfo = await socketClient.getFileInfo(fileMessage.fileId);
       final seederChunks = await socketClient.getAvailableChunks(fileMessage.fileId);
       
       if (seederChunks.isEmpty) {
@@ -863,6 +863,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         chunkCount: fileMessage.chunkCount,
         fileKey: fileKey,
         seederChunks: seederChunks,
+        sharedWith: (fileInfo['sharedWith'] as List?)?.cast<String>(), // ✅ NEW: Pass sharedWith from fileInfo
       );
       
       print('[GROUP_CHAT] Download started successfully!');
