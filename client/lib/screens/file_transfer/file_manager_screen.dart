@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -333,6 +334,18 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                 PopupMenuButton<String>(
                   onSelected: (value) => _handleMenuAction(value, file),
                   itemBuilder: (context) => [
+                    // Download file to disk (only if file is complete - all chunks downloaded)
+                    if (downloadedChunks == chunkCount && chunkCount > 0)
+                      const PopupMenuItem(
+                        value: 'download',
+                        child: Row(
+                          children: [
+                            Icon(Icons.file_download),
+                            SizedBox(width: 8),
+                            Text('Download to Disk'),
+                          ],
+                        ),
+                      ),
                     const PopupMenuItem(
                       value: 'share',
                       child: Row(
@@ -343,7 +356,8 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                         ],
                       ),
                     ),
-                    if (!isSeeder && status != 'downloading')
+                    // Start Seeding - for files that are NOT seeding (including downloads)
+                    if (!isSeeder)
                       const PopupMenuItem(
                         value: 'announce',
                         child: Row(
@@ -354,7 +368,8 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                           ],
                         ),
                       ),
-                    if (isSeeder && status != 'downloading')
+                    // Stop Seeding - for files that ARE seeding (including downloads)
+                    if (isSeeder)
                       const PopupMenuItem(
                         value: 'unannounce',
                         child: Row(
@@ -685,6 +700,9 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   
   void _handleMenuAction(String action, Map<String, dynamic> file) {
     switch (action) {
+      case 'download':
+        _downloadFileToDisk(file);
+        break;
       case 'share':
         _showShareDialog(file);
         break;
@@ -738,6 +756,55 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
       
     } catch (e) {
       _showError('Failed to announce file: $e');
+    }
+  }
+  
+  Future<void> _downloadFileToDisk(Map<String, dynamic> file) async {
+    try {
+      final storage = _getStorage();
+      final encryptionService = Provider.of<EncryptionService>(context, listen: false);
+      final chunkingService = Provider.of<ChunkingService>(context, listen: false);
+      
+      final fileId = file['fileId'] as String;
+      final fileName = file['fileName'] as String? ?? 'download';
+      final chunkCount = file['chunkCount'] as int? ?? 0;
+      
+      // Check if we have all chunks
+      final availableChunks = await storage.getAvailableChunks(fileId);
+      final downloadedChunks = (file['downloadedChunks'] as List?)?.cast<int>() ?? availableChunks;
+      
+      if (downloadedChunks.isEmpty) {
+        _showError('No chunks available to download');
+        return;
+      }
+      
+      // Show progress dialog
+      if (!mounted) return;
+      
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => _DownloadFileProgressDialog(
+          storage: storage,
+          encryptionService: encryptionService,
+          chunkingService: chunkingService,
+          fileId: fileId,
+          fileName: fileName,
+          chunkCount: chunkCount,
+          downloadedChunks: downloadedChunks,
+          onComplete: () {
+            Navigator.pop(context);
+            _showSuccess('File downloaded to disk successfully');
+          },
+          onError: (error) {
+            Navigator.pop(context);
+            _showError(error);
+          },
+        ),
+      );
+      
+    } catch (e) {
+      _showError('Failed to download file: $e');
     }
   }
   
@@ -1451,6 +1518,219 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
           label: const Text('Share'),
         ),
       ],
+    );
+  }
+}
+
+/// Download File Progress Dialog - Decrypt and download file from localStorage to disk
+class _DownloadFileProgressDialog extends StatefulWidget {
+  final FileStorageInterface storage;
+  final EncryptionService encryptionService;
+  final ChunkingService chunkingService;
+  final String fileId;
+  final String fileName;
+  final int chunkCount;
+  final List<int> downloadedChunks;
+  final VoidCallback onComplete;
+  final Function(String) onError;
+  
+  const _DownloadFileProgressDialog({
+    Key? key,
+    required this.storage,
+    required this.encryptionService,
+    required this.chunkingService,
+    required this.fileId,
+    required this.fileName,
+    required this.chunkCount,
+    required this.downloadedChunks,
+    required this.onComplete,
+    required this.onError,
+  }) : super(key: key);
+
+  @override
+  State<_DownloadFileProgressDialog> createState() => _DownloadFileProgressDialogState();
+}
+
+class _DownloadFileProgressDialogState extends State<_DownloadFileProgressDialog> {
+  double _progress = 0.0;
+  String _statusText = 'Preparing...';
+  bool _decryptionComplete = false;
+  bool _assemblyComplete = false;
+  
+  @override
+  void initState() {
+    super.initState();
+    _downloadFile();
+  }
+  
+  Future<void> _downloadFile() async {
+    try {
+      // Step 1: Get file encryption key
+      setState(() => _statusText = 'Loading encryption key...');
+      final fileKey = await widget.storage.getFileKey(widget.fileId);
+      
+      if (fileKey == null) {
+        widget.onError('File encryption key not found');
+        return;
+      }
+      
+      // Step 2: Decrypt chunks
+      setState(() => _statusText = 'Decrypting chunks...');
+      final decryptedChunks = <ChunkData>[];
+      
+      for (int i = 0; i < widget.downloadedChunks.length; i++) {
+        final chunkIndex = widget.downloadedChunks[i];
+        
+        // Load encrypted chunk data and metadata
+        final encryptedBytes = await widget.storage.getChunk(widget.fileId, chunkIndex);
+        final chunkMetadata = await widget.storage.getChunkMetadata(widget.fileId, chunkIndex);
+        
+        if (encryptedBytes == null || chunkMetadata == null) {
+          widget.onError('Chunk $chunkIndex not found in storage');
+          return;
+        }
+        
+        // Get IV from metadata
+        final iv = chunkMetadata['iv'] as Uint8List?;
+        if (iv == null) {
+          widget.onError('IV not found for chunk $chunkIndex');
+          return;
+        }
+        
+        // Decrypt chunk
+        final decryptedBytes = await widget.encryptionService.decryptChunk(
+          encryptedBytes,
+          fileKey,
+          iv,
+        );
+        
+        if (decryptedBytes == null) {
+          widget.onError('Failed to decrypt chunk $chunkIndex');
+          return;
+        }
+        
+        // Create ChunkData for assembly
+        final chunkHash = chunkMetadata['chunkHash'] as String? ?? '';
+        decryptedChunks.add(ChunkData(
+          chunkIndex: chunkIndex,
+          data: decryptedBytes,
+          hash: chunkHash,
+          size: decryptedBytes.length,
+        ));
+        
+        setState(() {
+          _progress = 0.7 * ((i + 1) / widget.downloadedChunks.length);
+        });
+      }
+      
+      setState(() {
+        _decryptionComplete = true;
+        _progress = 0.7;
+      });
+      
+      // Step 3: Assemble file
+      setState(() => _statusText = 'Assembling file...');
+      final fileBytes = await widget.chunkingService.assembleChunks(
+        decryptedChunks,
+        verifyHashes: false, // Already verified during download
+      );
+      
+      if (fileBytes == null) {
+        widget.onError('Failed to assemble file');
+        return;
+      }
+      
+      setState(() {
+        _assemblyComplete = true;
+        _progress = 0.9;
+      });
+      
+      // Step 4: Trigger browser download
+      setState(() => _statusText = 'Downloading to disk...');
+      
+      // Use web download mechanism
+      await _triggerBrowserDownload(fileBytes, widget.fileName);
+      
+      setState(() {
+        _progress = 1.0;
+        _statusText = 'Download complete!';
+      });
+      
+      // Wait a moment to show completion
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      widget.onComplete();
+      
+    } catch (e) {
+      widget.onError('Failed to download file: $e');
+    }
+  }
+  
+  Future<void> _triggerBrowserDownload(Uint8List bytes, String fileName) async {
+    // Create blob URL and trigger download (web-specific)
+    final blob = html.Blob([bytes]);
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    html.AnchorElement(href: url)
+      ..setAttribute('download', fileName)
+      ..click();
+    html.Url.revokeObjectUrl(url);
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Downloading File'),
+      content: SizedBox(
+        width: 300,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _statusText,
+              style: Theme.of(context).textTheme.bodyLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            LinearProgressIndicator(
+              value: _progress,
+              minHeight: 8,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${(_progress * 100).toStringAsFixed(1)}%',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 24),
+            
+            // Stage indicators
+            _buildStageIndicator('Decryption', _decryptionComplete),
+            _buildStageIndicator('Assembly', _assemblyComplete),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildStageIndicator(String label, bool complete) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
+      child: Row(
+        children: [
+          Icon(
+            complete ? Icons.check_circle : Icons.radio_button_unchecked,
+            color: complete ? Colors.green : Colors.grey,
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Text(
+            label,
+            style: TextStyle(
+              color: complete ? Colors.green : Colors.grey,
+              fontWeight: complete ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
