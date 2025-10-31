@@ -84,8 +84,13 @@ class _DashboardPageState extends State<DashboardPage> {
       final host = GoRouterState.of(context).extra as Map?;
       final hostUrl = host?['host'] as String? ?? '';
       
+      print('[DASHBOARD] Loading channels from: $hostUrl/client/channels?limit=20');
       ApiService.init();
       final resp = await ApiService.get('$hostUrl/client/channels?limit=20');
+      print('[DASHBOARD] Channel response status: ${resp.statusCode}');
+      print('[DASHBOARD] Channel response data type: ${resp.data.runtimeType}');
+      print('[DASHBOARD] Channel response data: ${resp.data}');
+      
       if (resp.statusCode == 200) {
         final channels = (resp.data['channels'] as List<dynamic>? ?? []);
         print('[DASHBOARD] Loaded ${channels.length} channels: ${channels.map((ch) => ch['name']).toList()}');
@@ -99,9 +104,11 @@ class _DashboardPageState extends State<DashboardPage> {
             description: ch['description'],
           )).toList();
         });
+        print('[DASHBOARD] State updated with ${_channels.length} channels');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('[DASHBOARD] Error loading channels: $e');
+      print('[DASHBOARD] Stack trace: $stackTrace');
     }
   }
 
