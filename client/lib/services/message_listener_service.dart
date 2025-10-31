@@ -167,6 +167,19 @@ class MessageListenerService {
           return; // Don't store as regular message
         }
 
+        if (itemType == 'video_e2ee_key') {
+          // Video E2EE key - handle separately
+          await _processVideoE2EEKey(
+            itemId: itemId,
+            channelId: channelId,
+            senderId: senderId,
+            senderDeviceId: senderDeviceId,
+            timestamp: timestamp,
+            decryptedPayload: decrypted,
+          );
+          return; // Don't store as regular message
+        }
+
         // Store in decryptedGroupItemsStore (regular message)
         await signalService.decryptedGroupItemsStore.storeDecryptedGroupItem(
           itemId: itemId,
@@ -419,6 +432,59 @@ class MessageListenerService {
     }
   }
 
+  /// Process video E2EE key (extracted from groupItem handler)
+  Future<void> _processVideoE2EEKey({
+    required String itemId,
+    required String channelId,
+    required String senderId,
+    required int senderDeviceId,
+    required String? timestamp,
+    required String decryptedPayload,
+  }) async {
+    try {
+      print('[MESSAGE_LISTENER] Processing video E2EE key from $senderId');
+      
+      // Parse the decrypted JSON payload
+      final Map<String, dynamic> keyData = jsonDecode(decryptedPayload);
+      final keyBase64 = keyData['key'] as String?;
+      final keyChannelId = keyData['channelId'] as String?;
+      final keySenderId = keyData['senderId'] as String?;
+      
+      if (keyBase64 == null || keyChannelId == null) {
+        print('[MESSAGE_LISTENER] Missing key or channelId in video E2EE key');
+        return;
+      }
+
+      // Decode key from base64
+      final keyBytes = base64Decode(keyBase64);
+      
+      print('[MESSAGE_LISTENER] Video E2EE key received:');
+      print('  Channel: $keyChannelId');
+      print('  Sender: $keySenderId');
+      print('  Key length: ${keyBytes.length} bytes');
+
+      // Get VideoConferenceService instance
+      final videoService = _getVideoConferenceService();
+      
+      if (videoService != null) {
+        // Add peer key to E2EE service
+        if (videoService.e2eeService != null) {
+          videoService.e2eeService!.addPeerKey(keySenderId ?? senderId, keyBytes);
+          print('[MESSAGE_LISTENER] ✓ Video E2EE key added for peer $keySenderId');
+          
+          // Note: No notification needed, this is internal crypto setup
+        } else {
+          print('[MESSAGE_LISTENER] VideoConferenceService has no E2EE service');
+        }
+      } else {
+        print('[MESSAGE_LISTENER] VideoConferenceService not available');
+      }
+
+    } catch (e) {
+      print('[MESSAGE_LISTENER] Error processing video E2EE key: $e');
+    }
+  }
+
   /// Handle incoming file share update (DEPRECATED - now handled in groupItem)
   /// 
   /// NOTE: File share updates are sent as groupItem with type='file_share_update'
@@ -448,6 +514,18 @@ class MessageListenerService {
   dynamic _getSocketFileClient() {
     try {
       // This should be injected properly
+      // For now, return null and handle gracefully
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  /// Helper to get VideoConferenceService instance
+  /// TODO: Inject via constructor or service locator
+  dynamic _getVideoConferenceService() {
+    try {
+      // This should be injected properly via Provider
       // For now, return null and handle gracefully
       return null;
     } catch (e) {

@@ -8,12 +8,16 @@ services:
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
+      # mediasoup RTP Ports (UDP + TCP)
+      - "40000-40099:40000-40099/udp"
+      - "40000-40099:40000-40099/tcp"
     volumes:
       - ./server/db:/usr/src/app/db
       - ./server/cert:/usr/src/app/cert:ro
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - PORT=${PORT:-3000}
+      # TURN Config (existing)
       - TURN_SECRET=${TURN_SECRET}
       - TURN_SERVER_EXTERNAL_HOST=${TURN_SERVER_EXTERNAL_HOST:-localhost}
       - TURN_SERVER_INTERNAL_HOST=${TURN_SERVER_INTERNAL_HOST:-peerwave-coturn}
@@ -21,6 +25,22 @@ services:
       - TURN_SERVER_PORT_TLS=${TURN_SERVER_PORT_TLS:-5349}
       - TURN_REALM=${TURN_REALM:-peerwave.local}
       - TURN_CREDENTIAL_TTL=${TURN_CREDENTIAL_TTL:-86400}
+      # mediasoup Config
+      - MEDIASOUP_MIN_PORT=${MEDIASOUP_MIN_PORT:-40000}
+      - MEDIASOUP_MAX_PORT=${MEDIASOUP_MAX_PORT:-40099}
+      - MEDIASOUP_LISTEN_IP=${MEDIASOUP_LISTEN_IP:-0.0.0.0}
+      - MEDIASOUP_ANNOUNCED_IP=${MEDIASOUP_ANNOUNCED_IP:-127.0.0.1}
+      - MEDIASOUP_NUM_WORKERS=${MEDIASOUP_NUM_WORKERS:-auto}
+      - MEDIASOUP_MAX_INCOMING_BITRATE=${MEDIASOUP_MAX_INCOMING_BITRATE:-1500}
+    # Resource Limits für Video Processing
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     networks:
       - peerwave-network
     depends_on:

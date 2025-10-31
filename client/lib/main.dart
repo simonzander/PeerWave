@@ -56,6 +56,8 @@ import 'widgets/socket_aware_widget.dart';
 import 'services/file_transfer/indexeddb_storage.dart' if (dart.library.io) 'services/file_transfer/native_storage.dart' show IndexedDBStorage;
 // ICE Config Service
 import 'services/ice_config_service.dart';
+// Video Conference imports
+import 'services/video_conference_service.dart';
 
 
 Future<void> main() async {
@@ -201,7 +203,7 @@ class _MyAppState extends State<MyApp> {
   }
   
   /// Initialize P2PCoordinator after Socket.IO is connected
-  void _initP2PCoordinator() {
+  void _initP2PCoordinator() async {
     if (_p2pCoordinator != null) {
       print('[P2P] P2PCoordinator already initialized');
       return;
@@ -228,6 +230,20 @@ class _MyAppState extends State<MyApp> {
         chunkingService: ChunkingService(),
       );
       print('[P2P] ✓ P2PCoordinator initialized successfully');
+      
+      // Initialize VideoConferenceService with Socket.IO and SignalService
+      print('[VideoConference] Initializing VideoConferenceService...');
+      try {
+        final videoService = VideoConferenceService();
+        await videoService.initialize(
+          socketService.socket!,
+          signalService: SignalService.instance,
+        );
+        print('[VideoConference] ✓ VideoConferenceService initialized');
+        // Note: Service is already in Provider tree, no need to setState
+      } catch (e) {
+        print('[VideoConference] ERROR initializing: $e');
+      }
       
       // Trigger rebuild to add P2PCoordinator to provider tree
       if (mounted) {
@@ -320,6 +336,10 @@ class _MyAppState extends State<MyApp> {
         ),
         ChangeNotifierProvider(
           create: (context) => NotificationProvider(),
+        ),
+        // Video Conference provider
+        ChangeNotifierProvider(
+          create: (context) => VideoConferenceService(),
         ),
         // P2P File Transfer providers - use the initialized services
         Provider<FileStorageInterface>.value(value: _fileStorage!),

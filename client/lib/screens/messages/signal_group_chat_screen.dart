@@ -15,6 +15,8 @@ import '../../services/file_transfer/socket_file_client.dart';
 import '../../models/role.dart';
 import '../../models/file_message.dart';
 import '../channel/channel_members_screen.dart';
+import '../../services/video_conference_service.dart';
+import '../../views/video_conference_view.dart';
 
 /// Screen for Signal Group Chats (encrypted group conversations)
 class SignalGroupChatScreen extends StatefulWidget {
@@ -720,6 +722,22 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         title: Text('# ${widget.channelName}'),
         backgroundColor: Colors.grey[850],
         actions: [
+          // Video Call Button
+          IconButton(
+            icon: const Icon(Icons.videocam),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => VideoConferenceView(
+                    channelId: widget.channelUuid,
+                    channelName: widget.channelName,
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Join Video Call',
+          ),
           IconButton(
             icon: const Icon(Icons.people),
             onPressed: () {

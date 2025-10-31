@@ -1,35 +1,17 @@
-PolyForm Noncommercial License 1.0.0
+PolyForm Shield License 1.0.0
 
-Copyright (c) 2024 Simon Zander
+This license prohibits using the software to provide a publicly available
+hosted or cloud service.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the “Software”), to use, copy,
-modify, and distribute the Software, subject to the following conditions:
+You are free to read, modify, and privately use this software for personal,
+non-commercial purposes.
 
-1. Noncommercial Use Only.
-   You may use the Software for personal, experimental, educational,
-   or noncommercial purposes. Commercial use of the Software is not permitted
-   under this license.
+Commercial use, including use within a company, distribution to others,
+or offering this software as part of a product, service, or SaaS platform,
+requires a commercial license from the copyright holder.
 
-2. Commercial Use.
-   If you wish to use the Software for commercial purposes, including
-   use by companies, organizations, or for-profit activities, you must obtain
-   a separate commercial license from the copyright holder.
+For commercial licensing, contact: license@peerwave.org
 
-3. Attribution.
-   You must retain the above copyright notice in all copies or substantial
-   portions of the Software.
+Copyright (c) 2025 Simon Zander
 
-4. Warranty Disclaimer.
-   THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
-   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
-   OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-   CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-   TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-For the complete license text, see: https://polyformproject.org/licenses/noncommercial/1.0.0/
-
----
-Commercial licensing: Please contact commercial@peerwave.org
+For the complete license text, see: https://polyformproject.org/licenses/shield/1.0.0/

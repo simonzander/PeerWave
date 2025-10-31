@@ -133,6 +133,11 @@ io.sockets.on("connection", socket => {
         deviceSockets.set(deviceKey, socket.id);
         console.log(`[SIGNAL SERVER] Device registered: ${deviceKey} -> ${socket.id}`);
         console.log(`[SIGNAL SERVER] Total devices online: ${deviceSockets.size}`);
+        
+        // Store userId in socket.data for mediasoup
+        socket.data.userId = socket.handshake.session.uuid;
+        socket.data.deviceId = socket.handshake.session.deviceId;
+        
         socket.emit("authenticated", { 
           authenticated: true,
           uuid: socket.handshake.session.uuid,
@@ -147,6 +152,10 @@ io.sockets.on("connection", socket => {
       socket.emit("authenticated", { authenticated: false });
     }
   });
+
+  // Setup mediasoup signaling routes
+  const { setupMediasoupSignaling } = require('./routes/mediasoup.signaling');
+  setupMediasoupSignaling(socket, io);
 
   // SIGNAL HANDLE START
 
@@ -2321,5 +2330,43 @@ app.get('*', (req, res) => {
 
 // Initialize cleanup cronjob
 initCleanupJob();
+
+// Initialize mediasoup (async - starts in background)
+const { initializeMediasoup } = require('./lib/mediasoup');
+initializeMediasoup()
+  .then(() => {
+    console.log('[mediasoup] ✓ Video conferencing system ready');
+  })
+  .catch((error) => {
+    console.error('[mediasoup] ✗ Failed to initialize video conferencing:', error);
+    console.error('[mediasoup] Server will continue without video conferencing support');
+  });
+
+// Graceful shutdown handler
+process.on('SIGTERM', async () => {
+  console.log('\n🛑 SIGTERM received, shutting down gracefully...');
+  
+  try {
+    const { shutdownMediasoup } = require('./lib/mediasoup');
+    await shutdownMediasoup();
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+});
+
+process.on('SIGINT', async () => {
+  console.log('\n🛑 SIGINT received, shutting down gracefully...');
+  
+  try {
+    const { shutdownMediasoup } = require('./lib/mediasoup');
+    await shutdownMediasoup();
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+});
 
 server.listen(port, () => console.log(`Server is running on port ${port}`));

@@ -1910,6 +1910,90 @@ Future<String> decryptItem({
     }
   }
 
+  /// Send video E2EE key to peer via Signal Protocol
+  /// 
+  /// For GROUP chats: Uses Sender Key encryption (Group Message)
+  /// For DIRECT chats: Uses Session encryption (1-to-1 Message)
+  /// 
+  /// This distributes the video encryption key to all participants in a video call
+  Future<void> sendVideoKey({
+    required String channelId,
+    required String chatType, // 'group' | 'direct'
+    required List<int> encryptedKey, // AES-256 key (32 bytes)
+    required List<String> recipientUserIds, // Users in the video call
+  }) async {
+    try {
+      if (_currentUserId == null || _currentDeviceId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      
+      // Convert key to base64 for JSON transport
+      final keyBase64 = base64Encode(encryptedKey);
+      
+      // Create video key payload
+      final videoKeyPayload = {
+        'channelId': channelId,
+        'key': keyBase64,
+        'senderId': _currentUserId,
+        'timestamp': timestamp,
+        'type': 'video_e2ee_key',
+      };
+
+      final payloadJson = jsonEncode(videoKeyPayload);
+
+      if (chatType == 'group') {
+        // GROUP: Send via Sender Key
+        final itemId = const Uuid().v4();
+        final encrypted = await encryptGroupMessage(channelId, payloadJson);
+        final timestampIso = DateTime.fromMillisecondsSinceEpoch(timestamp).toIso8601String();
+
+        // Store locally
+        await sentGroupItemsStore.storeSentGroupItem(
+          channelId: channelId,
+          itemId: itemId,
+          message: payloadJson,
+          timestamp: timestampIso,
+          type: 'video_e2ee_key',
+          status: 'sending',
+        );
+
+        // Send via Socket.IO
+        SocketService().emit("sendGroupItem", {
+          'channelId': channelId,
+          'itemId': itemId,
+          'type': 'video_e2ee_key',
+          'payload': encrypted['ciphertext'],
+          'cipherType': 4, // Sender Key
+          'timestamp': timestampIso,
+        });
+
+        print('[SIGNAL_SERVICE] Sent video E2EE key to group $channelId');
+      } else if (chatType == 'direct') {
+        // DIRECT: Send via Session encryption to each recipient
+        for (final userId in recipientUserIds) {
+          if (userId == _currentUserId) continue; // Skip self
+
+          // Use sendItem to encrypt for all devices
+          await sendItem(
+            recipientUserId: userId,
+            type: 'video_e2ee_key',
+            payload: payloadJson,
+          );
+
+          print('[SIGNAL_SERVICE] Sent video E2EE key to user $userId');
+        }
+      } else {
+        throw Exception('Invalid chatType: $chatType');
+      }
+
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Error sending video E2EE key: $e');
+      rethrow;
+    }
+  }
+
   Future<void> sendGroupItem({
     required String channelId,
     required String message,

@@ -15,6 +15,10 @@
   </a>
 </p>
 
+![License: Source-Available](https://img.shields.io/badge/license-Source--Available-blue.svg)
+![Commercial Use Requires License](https://img.shields.io/badge/commercial%20use-requires%20license-red.svg)
+![Not for SaaS Hosting](https://img.shields.io/badge/Hosting%2FSaaS-Requires%20Commercial%20License-orange)
+
 ## How it works?
 
 [![PeerWave Demo](https://img.youtube.com/vi/S69E2orWrys/default.jpg)](https://youtu.be/S69E2orWrys)
@@ -154,20 +158,26 @@ If you like this project, you can support me by [buying me a coffee](https://buy
 
 ## License
 
-This project is licensed under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/).  
-You may use it for personal, educational, or noncommercial purposes free of charge.  
+PeerWave is **Source-Available**.
 
-**Commercial use requires a paid license.**
+- Private and personal use: **free**
+- Viewing, studying, and modifying the source: **allowed**
+- Commercial use (including company internal use): **requires a paid license**
+- Hosting or offering PeerWave as a public service (SaaS / cloud / multi-tenant): **not permitted without a commercial license**
 
 ### Commercial Licensing
 
-For companies or organizations wishing to use this software commercially:
+Commercial licenses are based on company size (annual billing):
 
-- Small companies (<50 employees): €500 / year  
-- Medium companies (50–250 employees): €2,000 / year  
-- Large companies (>250 employees): €5,000 / year  
-- Enterprise: Contact for custom pricing  
+| Employees | Annual Price |
+|---|---:|
+| 1–5 | 199 € |
+| 6–25 | 499 € |
+| 26–100 | 1,499 € |
+| 101–500 | 4,999 € |
+| > 500 | Contact us |
 
-To request a commercial license, please email me at: commercial@peerwave.org
+**Contact for commercial use:**  
+📧 license@peerwave.org 
 
-⚠️ Note: Versions up to v0.x were licensed under MIT. Starting from v1.0.0, this project is licensed under the PolyForm Noncommercial License.
+⚠️ Note: Versions up to v0.x were licensed under MIT. Starting from v1.0.0, this project is licensed under the PolyForm Shield License 1.0.0.
