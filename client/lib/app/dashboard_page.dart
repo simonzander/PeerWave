@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../screens/messages/direct_messages_screen.dart';
 import '../screens/messages/signal_group_chat_screen.dart';
 import '../screens/file_transfer/file_manager_screen.dart';
+import '../views/video_conference_view.dart';
 import 'sidebar_panel.dart';
 import 'profile_card.dart';
 import '../services/api_service.dart';
@@ -32,12 +33,25 @@ class _DashboardPageState extends State<DashboardPage> {
   
   // People list
   List<dynamic> _people = [];
+  
+  // Flag to track if data has been loaded
+  bool _hasLoadedInitialData = false;
 
   @override
   void initState() {
     super.initState();
-    _loadPeople();
-    _loadChannels();
+    // Don't access context here - wait for didChangeDependencies
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Only load once when dependencies are ready
+    if (!_hasLoadedInitialData) {
+      _hasLoadedInitialData = true;
+      _loadPeople();
+      _loadChannels();
+    }
   }
 
   Future<void> _loadPeople() async {
@@ -192,12 +206,17 @@ class _DashboardPageState extends State<DashboardPage> {
               channelUuid: _activeChannelUuid!,
               channelName: _activeChannelName!,
             );
+          } else if (_activeChannelType == 'webrtc') {
+            // WebRTC channel - use VideoConferenceView
+            contentWidget = VideoConferenceView(
+              channelId: _activeChannelUuid!,
+              channelName: _activeChannelName!,
+            );
           } else {
-            // WebRTC channel - placeholder for now
             contentWidget = _EmptyStateWidget(
               icon: Icons.campaign,
-              title: 'WebRTC Channel',
-              subtitle: 'WebRTC channels are not yet implemented',
+              title: 'Unknown Channel Type',
+              subtitle: 'Channel type "$_activeChannelType" is not supported',
             );
           }
         } else {

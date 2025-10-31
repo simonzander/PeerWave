@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:provider/provider.dart';
 import '../services/video_conference_service.dart';
+import '../services/socket_service.dart';
 import '../services/insertable_streams_web.dart';
 import '../widgets/e2ee_debug_overlay.dart';
 
@@ -29,7 +30,7 @@ class VideoConferenceView extends StatefulWidget {
 }
 
 class _VideoConferenceViewState extends State<VideoConferenceView> {
-  late VideoConferenceService _service;
+  VideoConferenceService? _service;
   final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
   final Map<String, RTCVideoRenderer> _remoteRenderers = {};
   
@@ -41,6 +42,51 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   void initState() {
     super.initState();
     _initializeRenderers();
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Get service from Provider and initialize with socket
+    if (_service == null) {
+      try {
+        _service = Provider.of<VideoConferenceService>(context, listen: false);
+        
+        // Get the current socket from SocketService
+        final socketService = SocketService();
+        final currentSocket = socketService.socket;
+        
+        if (currentSocket == null || !socketService.isConnected) {
+          debugPrint('[VideoConferenceView] Socket not available or not connected');
+          setState(() {
+            _errorMessage = 'Socket connection not available. Please try again.';
+          });
+          return;
+        }
+        
+        // Initialize service with current socket if not already connected
+        if (!_service!.isConnected) {
+          debugPrint('[VideoConferenceView] Initializing service with socket...');
+          _service!.initialize(currentSocket).then((_) {
+            debugPrint('[VideoConferenceView] Service initialized successfully');
+          }).catchError((e) {
+            debugPrint('[VideoConferenceView] Service initialization failed: $e');
+            setState(() {
+              _errorMessage = 'Failed to initialize: $e';
+            });
+          });
+        } else {
+          debugPrint('[VideoConferenceView] Service already connected');
+        }
+        
+        debugPrint('[VideoConferenceView] Service obtained from Provider');
+      } catch (e) {
+        debugPrint('[VideoConferenceView] Failed to get service: $e');
+        setState(() {
+          _errorMessage = 'Service not available: $e';
+        });
+      }
+    }
   }
   
   Future<void> _initializeRenderers() async {
@@ -65,6 +111,11 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     });
     
     try {
+      // Check if service is available
+      if (_service == null) {
+        throw Exception('VideoConferenceService not available');
+      }
+      
       // Check browser support BEFORE joining
       if (kIsWeb && !BrowserDetector.isInsertableStreamsSupported()) {
         final unsupportedMessage = BrowserDetector.getUnsupportedMessage();
@@ -120,21 +171,19 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         return;
       }
       
-      _service = Provider.of<VideoConferenceService>(context, listen: false);
-      
       // Join channel
-      await _service.joinChannel(widget.channelId);
+      await _service!.joinChannel(widget.channelId);
       
       // Start local stream
-      await _service.startLocalStream(audio: true, video: true);
+      await _service!.startLocalStream(audio: true, video: true);
       
       // Set local stream to renderer
-      if (_service.localStream != null) {
-        _localRenderer.srcObject = _service.localStream;
+      if (_service!.localStream != null) {
+        _localRenderer.srcObject = _service!.localStream;
       }
       
       // Listen for remote streams
-      _service.addListener(_onServiceUpdate);
+      _service!.addListener(_onServiceUpdate);
       
       setState(() => _isJoining = false);
       
@@ -148,10 +197,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   }
   
   void _onServiceUpdate() {
-    if (!mounted) return;
+    if (!mounted || _service == null) return;
     
     // Update remote renderers
-    final remoteStreams = _service.remoteStreams;
+    final remoteStreams = _service!.remoteStreams;
     
     // Remove old renderers
     for (final peerId in _remoteRenderers.keys.toList()) {
@@ -178,8 +227,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   }
   
   Future<void> _leaveChannel() async {
+    if (_service == null) return;
+    
     try {
-      await _service.leaveChannel();
+      await _service!.leaveChannel();
       
       // Dispose renderers
       for (final renderer in _remoteRenderers.values) {
@@ -198,7 +249,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   
   @override
   void dispose() {
-    _service.removeListener(_onServiceUpdate);
+    _service?.removeListener(_onServiceUpdate);
     _localRenderer.dispose();
     for (final renderer in _remoteRenderers.values) {
       renderer.dispose();
@@ -214,7 +265,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(widget.channelName),
-            if (_service.e2eeEnabled)
+            if (_service?.e2eeEnabled ?? false)
               Row(
                 children: [
                   Icon(Icons.lock, size: 14, color: Colors.green[300]),
@@ -237,7 +288,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
-                '${_service.activePeers.length + 1} participants',
+                '${(_service?.activePeers.length ?? 0) + 1} participants',
                 style: const TextStyle(fontSize: 14),
               ),
             ),
@@ -255,10 +306,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         children: [
           _buildBody(),
           // E2EE Debug Overlay (only in debug mode)
-          if (_service.e2eeEnabled)
+          if (_service?.e2eeEnabled ?? false)
             E2EEDebugOverlay(
-              e2eeService: _service.e2eeService,
-              insertableStreams: _service.insertableStreams,
+              e2eeService: _service!.e2eeService,
+              insertableStreams: _service!.insertableStreams,
             ),
         ],
       ),
@@ -402,13 +453,13 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           ),
           
           // Muted indicators
-          if (isLocal && !_service.audioEnabled)
+          if (isLocal && !(_service?.audioEnabled ?? true))
             const Positioned(
               top: 8,
               right: 8,
               child: Icon(Icons.mic_off, color: Colors.red, size: 24),
             ),
-          if (isLocal && !_service.videoEnabled)
+          if (isLocal && !(_service?.videoEnabled ?? true))
             const Positioned(
               top: 8,
               left: 8,
@@ -420,6 +471,8 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   }
   
   Widget _buildControls() {
+    if (_service == null) return const SizedBox.shrink();
+    
     return Container(
       color: Colors.black87,
       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -428,18 +481,18 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         children: [
           // Toggle Audio
           _buildControlButton(
-            icon: _service.audioEnabled ? Icons.mic : Icons.mic_off,
+            icon: _service!.audioEnabled ? Icons.mic : Icons.mic_off,
             label: 'Audio',
-            onPressed: () => _service.toggleAudio(),
-            isActive: _service.audioEnabled,
+            onPressed: () => _service!.toggleAudio(),
+            isActive: _service!.audioEnabled,
           ),
           
           // Toggle Video
           _buildControlButton(
-            icon: _service.videoEnabled ? Icons.videocam : Icons.videocam_off,
+            icon: _service!.videoEnabled ? Icons.videocam : Icons.videocam_off,
             label: 'Video',
-            onPressed: () => _service.toggleVideo(),
-            isActive: _service.videoEnabled,
+            onPressed: () => _service!.toggleVideo(),
+            isActive: _service!.videoEnabled,
           ),
           
           // Leave Call

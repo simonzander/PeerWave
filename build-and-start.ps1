@@ -41,19 +41,32 @@ if ($mode -eq "quick") {
     Write-Host " Flutter built" -ForegroundColor Green
     
     Write-Host ""
-    Write-Host " [2/3] Hot-copying to running container..." -ForegroundColor Yellow
+    Write-Host " [2/3] Hot-copying to container..." -ForegroundColor Yellow
     
-    # Check if container is running
-    $containerRunning = docker ps --filter "name=peerwave-server" --format "{{.Names}}"
-    if (-not $containerRunning) {
-        Write-Host " Container not running! Starting..." -ForegroundColor Yellow
+    # Check if container exists
+    $containerExists = docker ps -a --filter "name=peerwave-server" --format "{{.Names}}"
+    if (-not $containerExists) {
+        Write-Host " Container doesn't exist! Starting..." -ForegroundColor Yellow
         docker-compose up -d
         Start-Sleep -Seconds 3
+    } else {
+        # Stop container to avoid file locking issues
+        Write-Host "   Stopping container..." -ForegroundColor Gray
+        docker-compose stop peerwave-server | Out-Null
+        Start-Sleep -Seconds 1
     }
     
     # Delete old web folder in container
     Write-Host "   Deleting old web folder..." -ForegroundColor Gray
-    docker exec peerwave-server rm -rf /app/web
+    docker exec peerwave-server rm -rf /app/web 2>$null
+    
+    # Add cache-busting timestamp to index.html
+    Write-Host "   Adding cache-busting..." -ForegroundColor Gray
+    $timestamp = (Get-Date).Ticks
+    $indexPath = "client/build/web/index.html"
+    $content = Get-Content $indexPath -Raw
+    $content = $content -replace '(main\.dart\.js)', "`$1?v=$timestamp"
+    $content | Set-Content $indexPath -NoNewline
     
     # Copy new build to container
     Write-Host "   Copying new build..." -ForegroundColor Gray
@@ -67,8 +80,8 @@ if ($mode -eq "quick") {
     Write-Host " Hot-copy complete" -ForegroundColor Green
     
     Write-Host ""
-    Write-Host " [3/3] Restarting container..." -ForegroundColor Yellow
-    docker-compose restart peerwave-server
+    Write-Host " [3/3] Starting container..." -ForegroundColor Yellow
+    docker-compose up -d peerwave-server
     
     Write-Host ""
     Write-Host " QUICK UPDATE DONE!" -ForegroundColor Green
