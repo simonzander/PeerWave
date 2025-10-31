@@ -54,6 +54,8 @@ import 'screens/file_transfer/file_transfer_hub.dart';
 import 'widgets/socket_aware_widget.dart';
 // Conditional storage imports
 import 'services/file_transfer/indexeddb_storage.dart' if (dart.library.io) 'services/file_transfer/native_storage.dart' show IndexedDBStorage;
+// ICE Config Service
+import 'services/ice_config_service.dart';
 
 
 Future<void> main() async {
@@ -81,6 +83,15 @@ Future<void> main() async {
   // Load server URL for role management
   String? serverUrl = await loadWebApiServer();
   serverUrl ??= 'http://localhost:3000'; // Fallback for non-web platforms
+  
+  // Load ICE server configuration
+  print('[INIT] Loading ICE server configuration...');
+  try {
+    await IceConfigService().loadConfig(serverUrl: serverUrl);
+    print('[INIT] ✅ ICE server configuration loaded');
+  } catch (e) {
+    print('[INIT] ⚠️ Failed to load ICE config, will use fallback: $e');
+  }
   
   runApp(MyApp(initialMagicKey: initialMagicKey, clientId: clientId, serverUrl: serverUrl));
 }
@@ -147,8 +158,13 @@ class _MyAppState extends State<MyApp> {
         encryptionService: _encryptionService!,
       );
       print('[P2P] DownloadManager created');
-      _webrtcService = WebRTCFileService();
-      print('[P2P] WebRTCFileService created');
+      
+      // Get ICE servers from config service
+      final iceServers = IceConfigService().getIceServers();
+      print('[P2P] Using ICE servers: ${iceServers['iceServers']?.length ?? 0} servers');
+      
+      _webrtcService = WebRTCFileService(iceServers: iceServers);
+      print('[P2P] WebRTCFileService created with dynamic ICE servers');
       
       // NOTE: P2PCoordinator will be created after Socket.IO connects
       // (in _initP2PCoordinator(), called after login)

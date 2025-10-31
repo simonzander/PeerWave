@@ -36,15 +36,27 @@ class WebRTCFileService extends ChangeNotifier {
   Function(String peerId, RTCIceCandidate candidate)? _iceCandidateCallback;
   
   // STUN/TURN servers
-  final Map<String, dynamic> iceServers;
+  Map<String, dynamic>? _iceServers;
   
   WebRTCFileService({
-    this.iceServers = const {
+    Map<String, dynamic>? iceServers,
+  }) : _iceServers = iceServers;
+  
+  /// Get current ICE servers configuration
+  Map<String, dynamic> get iceServers {
+    return _iceServers ?? {
       'iceServers': [
-        {'urls': 'stun:stun.l.google.com:19302'},
+        {'urls': 'stun:stun.l.google.com:19302'},  // Fallback
       ]
-    },
-  });
+    };
+  }
+  
+  /// Update ICE servers configuration (e.g., after reload)
+  void updateIceServers(Map<String, dynamic> newIceServers) {
+    debugPrint('[WebRTC] Updating ICE servers configuration');
+    _iceServers = newIceServers;
+    notifyListeners();
+  }
   
   /// Create a peer connection for a specific peer
   Future<RTCPeerConnection> _createPeerConnectionForPeer(String peerId) async {

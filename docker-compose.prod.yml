@@ -7,16 +7,20 @@ services:
     container_name: peerwave-server-prod
     restart: always
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:${PORT:-3000}"
     volumes:
       - ./server/db:/usr/src/app/db
       - ./server/cert:/usr/src/app/cert:ro
     environment:
       - NODE_ENV=production
-      - PORT=3000
-      - TURN_SERVER_HOST=peerwave-coturn
-      - TURN_SERVER_PORT=3478
+      - PORT=${PORT:-3000}
       - TURN_SECRET=${TURN_SECRET}
+      - TURN_SERVER_EXTERNAL_HOST=${TURN_SERVER_EXTERNAL_HOST}
+      - TURN_SERVER_INTERNAL_HOST=${TURN_SERVER_INTERNAL_HOST:-peerwave-coturn}
+      - TURN_SERVER_PORT=${TURN_SERVER_PORT:-3478}
+      - TURN_SERVER_PORT_TLS=${TURN_SERVER_PORT_TLS:-5349}
+      - TURN_REALM=${TURN_REALM:-peerwave.local}
+      - TURN_CREDENTIAL_TTL=${TURN_CREDENTIAL_TTL:-86400}
     networks:
       - peerwave-network
     depends_on:

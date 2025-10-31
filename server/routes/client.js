@@ -13,6 +13,7 @@ const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
 const { hasServerPermission } = require('../db/roleHelpers');
+const { buildIceServerConfig } = require('../lib/turnCredentials');
 
 async function getLocationFromIp(ip) {
     const response = await fetch(`https://ipapi.co/${ip}/json/`);
@@ -49,10 +50,29 @@ clientRoutes.use(session({
 }));
 
 clientRoutes.get("/client/meta", (req, res) => {
-    res.json({
+    const response = {
         name: "PeerWave",
         version: "1.0.0",
-    });
+    };
+    
+    // Add ICE server configuration if user is authenticated
+    // Use session UUID or generate a temporary ID for unauthenticated users
+    const userId = req.session.uuid || `guest_${Date.now()}`;
+    
+    try {
+        const iceServers = buildIceServerConfig(config, userId);
+        response.iceServers = iceServers;
+        
+        console.log(`[CLIENT META] Providing ICE servers to user ${userId}`);
+    } catch (error) {
+        console.error('[CLIENT META] Failed to build ICE server config:', error);
+        // Fallback to public STUN only
+        response.iceServers = [
+            { urls: ['stun:stun.l.google.com:19302'] }
+        ];
+    }
+    
+    res.json(response);
 });
 
 clientRoutes.get("/direct/messages/:userId", async (req, res) => {
