@@ -334,6 +334,14 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
   @override
   Widget build(BuildContext context) {
     final roleProvider = Provider.of<RoleProvider>(context);
+    
+    // Debug logging
+    debugPrint('[ChannelMembers] Channel ID: ${widget.channelId}');
+    debugPrint('[ChannelMembers] isAdmin: ${roleProvider.isAdmin}');
+    debugPrint('[ChannelMembers] isChannelOwner: ${roleProvider.isChannelOwner(widget.channelId)}');
+    debugPrint('[ChannelMembers] has role.assign: ${roleProvider.hasChannelPermission(widget.channelId, 'role.assign')}');
+    debugPrint('[ChannelMembers] has user.add: ${roleProvider.hasChannelPermission(widget.channelId, 'user.add')}');
+    
     final canManageRoles = roleProvider.isAdmin ||
         roleProvider.isChannelOwner(widget.channelId) ||
         roleProvider.hasChannelPermission(widget.channelId, 'role.assign');
@@ -341,6 +349,9 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
     final canAddUsers = roleProvider.isAdmin ||
         roleProvider.isChannelOwner(widget.channelId) ||
         roleProvider.hasChannelPermission(widget.channelId, 'user.add');
+    
+    debugPrint('[ChannelMembers] canManageRoles: $canManageRoles');
+    debugPrint('[ChannelMembers] canAddUsers: $canAddUsers');
 
     return Scaffold(
       appBar: AppBar(

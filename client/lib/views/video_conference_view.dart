@@ -6,6 +6,8 @@ import '../services/video_conference_service.dart';
 import '../services/socket_service.dart';
 import '../services/insertable_streams_web.dart';
 import '../widgets/e2ee_debug_overlay.dart';
+import '../screens/channel/channel_members_screen.dart';
+import '../models/role.dart';
 
 /// VideoConferenceView - UI for video conferencing
 /// 
@@ -282,13 +284,45 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
               ),
           ],
         ),
+        backgroundColor: Colors.grey[850],
         actions: [
+          // Members button (always visible, like in SignalGroupChatScreen)
+          IconButton(
+            icon: const Icon(Icons.people),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ChannelMembersScreen(
+                    channelId: widget.channelId,
+                    channelName: widget.channelName,
+                    channelScope: RoleScope.channelWebRtc,
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Members',
+          ),
+          // Settings button (placeholder)
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              // TODO: Navigate to channel settings
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Channel settings coming soon'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            tooltip: 'Settings',
+          ),
           // Participant count
           Center(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
-                '${(_service?.activePeers.length ?? 0) + 1} participants',
+                '${(_service?.activePeers.length ?? 0) + 1} online',
                 style: const TextStyle(fontSize: 14),
               ),
             ),

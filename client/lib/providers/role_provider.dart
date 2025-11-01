@@ -65,6 +65,16 @@ class RoleProvider with ChangeNotifier {
 
     try {
       _userRoles = await _apiService.getUserRoles();
+      
+      // Debug log to verify ownedChannelIds are loaded
+      debugPrint('[RoleProvider] UserRoles loaded:');
+      debugPrint('[RoleProvider] - Server roles: ${_userRoles?.serverRoles.length ?? 0}');
+      debugPrint('[RoleProvider] - Channel roles: ${_userRoles?.channelRoles.length ?? 0}');
+      debugPrint('[RoleProvider] - Owned channels: ${_userRoles?.ownedChannelIds.length ?? 0}');
+      if (_userRoles != null && _userRoles!.ownedChannelIds.isNotEmpty) {
+        debugPrint('[RoleProvider] - Owned channel IDs: ${_userRoles!.ownedChannelIds.join(", ")}');
+      }
+      
       _errorMessage = null;
     } catch (e) {
       _errorMessage = e.toString();

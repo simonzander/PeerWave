@@ -4,11 +4,13 @@ import 'role.dart';
 class UserRoles {
   final List<Role> serverRoles;
   final Map<String, List<Role>> channelRoles; // channelId (UUID) -> roles
+  final Set<String> ownedChannelIds; // Set of channel IDs user owns
 
   UserRoles({
     required this.serverRoles,
     required this.channelRoles,
-  });
+    Set<String>? ownedChannelIds,
+  }) : ownedChannelIds = ownedChannelIds ?? {};
 
   /// Creates a UserRoles from JSON data
   factory UserRoles.fromJson(Map<String, dynamic> json) {
@@ -30,9 +32,16 @@ class UserRoles {
       });
     }
 
+    // Parse owned channel IDs (new field from API)
+    final ownedChannelIdsList = (json['ownedChannelIds'] as List<dynamic>?)
+            ?.map((e) => e as String)
+            .toSet() ??
+        {};
+
     return UserRoles(
       serverRoles: serverRolesList,
       channelRoles: channelRolesMap,
+      ownedChannelIds: ownedChannelIdsList,
     );
   }
 
@@ -47,6 +56,7 @@ class UserRoles {
     return {
       'serverRoles': serverRoles.map((r) => r.toJson()).toList(),
       'channelRoles': channelRolesJson,
+      'ownedChannelIds': ownedChannelIds.toList(),
     };
   }
 
@@ -76,6 +86,12 @@ class UserRoles {
 
   /// Checks if the user is an owner of a specific channel
   bool isChannelOwner(String channelId) {
+    // First check if user owns the channel directly (from ownedChannelIds)
+    if (ownedChannelIds.contains(channelId)) {
+      return true;
+    }
+    
+    // Fallback: Check if user has "Channel Owner" role with full permissions
     final roles = channelRoles[channelId];
     if (roles == null) return false;
     return roles.any((role) => role.name == 'Channel Owner' && role.hasPermission('*'));
@@ -130,16 +146,18 @@ class UserRoles {
   UserRoles copyWith({
     List<Role>? serverRoles,
     Map<String, List<Role>>? channelRoles,
+    Set<String>? ownedChannelIds,
   }) {
     return UserRoles(
       serverRoles: serverRoles ?? this.serverRoles,
       channelRoles: channelRoles ?? this.channelRoles,
+      ownedChannelIds: ownedChannelIds ?? this.ownedChannelIds,
     );
   }
 
   @override
   String toString() {
-    return 'UserRoles(serverRoles: ${serverRoles.length}, channels: ${channelRoles.length})';
+    return 'UserRoles(serverRoles: ${serverRoles.length}, channels: ${channelRoles.length}, ownedChannels: ${ownedChannelIds.length})';
   }
 }
 

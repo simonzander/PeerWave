@@ -66,6 +66,14 @@ roleRoutes.get('/user/roles', requireAuth, async (req, res) => {
             }]
         });
         
+        // Get channels where user is owner (for both WebRTC and Signal channels)
+        const ownedChannels = await Channel.findAll({
+            where: { owner: userId },
+            attributes: ['uuid']
+        });
+        
+        const ownedChannelIds = new Set(ownedChannels.map(c => c.uuid));
+        
         // Group channel roles by channelId
         const channelRoles = {};
         if (user && user.ChannelRoles) {
@@ -87,6 +95,13 @@ roleRoutes.get('/user/roles', requireAuth, async (req, res) => {
             }
         }
         
+        // Add ownership info for channels user owns but may not have explicit roles in
+        for (const channelId of ownedChannelIds) {
+            if (!channelRoles[channelId]) {
+                channelRoles[channelId] = [];
+            }
+        }
+        
         res.json({
             serverRoles: serverRoles.map(r => ({
                 uuid: r.uuid,
@@ -98,7 +113,8 @@ roleRoutes.get('/user/roles', requireAuth, async (req, res) => {
                 createdAt: r.createdAt,
                 updatedAt: r.updatedAt
             })),
-            channelRoles: channelRoles
+            channelRoles: channelRoles,
+            ownedChannelIds: Array.from(ownedChannelIds) // New field: list of channel IDs user owns
         });
     } catch (error) {
         console.error('Error fetching user roles:', error);
