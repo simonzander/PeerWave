@@ -7,8 +7,12 @@ rtc:
   # Port range for WebRTC connections
   port_range_start: 50100
   port_range_end: 50200
-  # Use mDNS for local development
+  # Use localhost for local development
   use_external_ip: false
+  # STUN servers for NAT traversal
+  stun_servers:
+    - stun.l.google.com:19302
+    - stun1.l.google.com:19302
   
 # Room settings
 room:

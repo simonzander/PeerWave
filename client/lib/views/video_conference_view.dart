@@ -246,6 +246,15 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     final localParticipant = room.localParticipant;
     final remoteParticipants = _service!.remoteParticipants;
     
+    debugPrint('[VideoConferenceView] Building video grid:');
+    debugPrint('[VideoConferenceView]   - Local participant: ${localParticipant?.identity}');
+    debugPrint('[VideoConferenceView]   - Remote participants: ${remoteParticipants.length}');
+    for (final remote in remoteParticipants) {
+      debugPrint('[VideoConferenceView]     - ${remote.identity}');
+      debugPrint('[VideoConferenceView]       Video tracks: ${remote.videoTrackPublications.length}');
+      debugPrint('[VideoConferenceView]       Audio tracks: ${remote.audioTrackPublications.length}');
+    }
+    
     // Build participant list
     final List<dynamic> participants = [];
     if (localParticipant != null) {
@@ -254,6 +263,8 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     for (final remote in remoteParticipants) {
       participants.add({'participant': remote, 'isLocal': false});
     }
+    
+    debugPrint('[VideoConferenceView] Total participants to render: ${participants.length}');
     
     // Calculate grid dimensions
     final totalParticipants = participants.length;

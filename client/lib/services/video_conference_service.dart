@@ -169,6 +169,25 @@ class VideoConferenceService extends ChangeNotifier {
 
       print('[VideoConf] Got token, connecting to: $url');
 
+      // Request media permissions BEFORE creating room
+      print('[VideoConf] Requesting camera and microphone permissions...');
+      LocalVideoTrack? videoTrack;
+      LocalAudioTrack? audioTrack;
+      
+      try {
+        videoTrack = await LocalVideoTrack.createCameraTrack();
+        print('[VideoConf] ✓ Camera track created');
+      } catch (e) {
+        print('[VideoConf] ⚠️ Failed to create camera track: $e');
+      }
+      
+      try {
+        audioTrack = await LocalAudioTrack.create(AudioCaptureOptions());
+        print('[VideoConf] ✓ Microphone track created');
+      } catch (e) {
+        print('[VideoConf] ⚠️ Failed to create audio track: $e');
+      }
+
       // Create room WITHOUT E2EE for now (Web Worker issues)
       _room = Room(
         roomOptions: RoomOptions(
@@ -184,11 +203,38 @@ class VideoConferenceService extends ChangeNotifier {
       // Set up event listeners
       _setupRoomListeners();
 
-      // Connect to LiveKit
-      await _room!.connect(url, token);
+      // Connect to LiveKit room
+      print('[VideoConf] Connecting to LiveKit room...');
+      await _room!.connect(
+        url, 
+        token,
+        roomOptions: RoomOptions(
+          adaptiveStream: true,
+          dynacast: true,
+        ),
+      );
 
-      // Enable local camera and microphone
-      await _enableLocalMedia();
+      // Publish local tracks if available
+      if (videoTrack != null) {
+        print('[VideoConf] Publishing video track...');
+        await _room!.localParticipant?.publishVideoTrack(videoTrack);
+      }
+      
+      if (audioTrack != null) {
+        print('[VideoConf] Publishing audio track...');
+        await _room!.localParticipant?.publishAudioTrack(audioTrack);
+      }
+
+      // Add existing remote participants to map (for users who joined before us)
+      print('[VideoConf] Checking for existing participants...');
+      for (final participant in _room!.remoteParticipants.values) {
+        print('[VideoConf] Found existing participant: ${participant.identity}');
+        _remoteParticipants[participant.identity] = participant;
+        
+        // Exchange keys with existing participants
+        await _exchangeKeysWithParticipant(participant.identity);
+      }
+      print('[VideoConf] Total remote participants: ${_remoteParticipants.length}');
 
       _isConnected = true;
       _isConnecting = false;
@@ -201,23 +247,6 @@ class VideoConferenceService extends ChangeNotifier {
       _isConnected = false;
       notifyListeners();
       rethrow;
-    }
-  }
-
-  /// Enable local camera and microphone
-  Future<void> _enableLocalMedia() async {
-    try {
-      // Enable camera
-      await _room!.localParticipant?.setCameraEnabled(true);
-      
-      // Enable microphone
-      await _room!.localParticipant?.setMicrophoneEnabled(true);
-
-      // Get local tracks
-      print('[VideoConf] Local media enabled');
-      notifyListeners();
-    } catch (e) {
-      print('[VideoConf] Error enabling local media: $e');
     }
   }
 
@@ -256,6 +285,8 @@ class VideoConferenceService extends ChangeNotifier {
     // Track subscribed
     listener.on<TrackSubscribedEvent>((event) async {
       print('[VideoConf] Track subscribed: ${event.track.kind} from ${event.participant.identity}');
+      print('[VideoConf]   - Track SID: ${event.track.sid}');
+      print('[VideoConf]   - Track muted: ${event.track.muted}');
       _trackSubscribedController.add(event);
       notifyListeners();
     });
@@ -263,6 +294,19 @@ class VideoConferenceService extends ChangeNotifier {
     // Track unsubscribed
     listener.on<TrackUnsubscribedEvent>((event) {
       print('[VideoConf] Track unsubscribed: ${event.track.kind} from ${event.participant.identity}');
+      notifyListeners();
+    });
+
+    // Track published (important for seeing when tracks become available)
+    listener.on<TrackPublishedEvent>((event) {
+      print('[VideoConf] Track published: ${event.publication.kind} from ${event.participant.identity}');
+      print('[VideoConf]   - Track SID: ${event.publication.sid}');
+      notifyListeners();
+    });
+
+    // Track unpublished
+    listener.on<TrackUnpublishedEvent>((event) {
+      print('[VideoConf] Track unpublished: ${event.publication.kind} from ${event.participant.identity}');
       notifyListeners();
     });
 
