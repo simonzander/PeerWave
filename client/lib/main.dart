@@ -231,19 +231,9 @@ class _MyAppState extends State<MyApp> {
       );
       print('[P2P] ✓ P2PCoordinator initialized successfully');
       
-      // Initialize VideoConferenceService with Socket.IO and SignalService
-      print('[VideoConference] Initializing VideoConferenceService...');
-      try {
-        final videoService = VideoConferenceService();
-        await videoService.initialize(
-          socketService.socket!,
-          signalService: SignalService.instance,
-        );
-        print('[VideoConference] ✓ VideoConferenceService initialized');
-        // Note: Service is already in Provider tree, no need to setState
-      } catch (e) {
-        print('[VideoConference] ERROR initializing: $e');
-      }
+      // VideoConferenceService is initialized via Provider in build()
+      // No separate initialization needed - it will be created with SocketService injection
+      print('[VideoConference] VideoConferenceService will be initialized via Provider');
       
       // Trigger rebuild to add P2PCoordinator to provider tree
       if (mounted) {
@@ -337,9 +327,9 @@ class _MyAppState extends State<MyApp> {
         ChangeNotifierProvider(
           create: (context) => NotificationProvider(),
         ),
-        // Video Conference provider
+        // Video Conference provider (requires SocketService)
         ChangeNotifierProvider(
-          create: (context) => VideoConferenceService(),
+          create: (context) => VideoConferenceService(SocketService()),
         ),
         // P2P File Transfer providers - use the initialized services
         Provider<FileStorageInterface>.value(value: _fileStorage!),

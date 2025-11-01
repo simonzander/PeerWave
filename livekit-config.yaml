@@ -1,0 +1,49 @@
+# LiveKit Server Configuration
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+rtc:
+  # Port range for WebRTC connections
+  port_range_start: 50100
+  port_range_end: 50200
+  # Use mDNS for local development
+  use_external_ip: false
+  
+# Room settings
+room:
+  # Enable empty timeout (close empty rooms after 5 minutes)
+  empty_timeout: 300
+  # Maximum number of participants per room
+  max_participants: 100
+  # Enable auto-create rooms
+  auto_create: true
+
+# Logging
+logging:
+  level: info
+  # Available levels: debug, info, warn, error
+  sample: false
+
+# Keys for JWT authentication
+keys:
+  # API key and secret for token generation
+  # These should match your server environment variables
+  devkey: secret
+
+# Turn servers (optional - for production NAT traversal)
+# turn:
+#   enabled: true
+#   domain: turn.yourdomain.com
+#   tls_port: 5349
+#   udp_port: 3478
+
+# Webhook (optional - for room events)
+# webhook:
+#   urls:
+#     - http://server:3000/api/livekit/webhook
+#   api_key: devkey
+
+# Redis (optional - for scaling multiple LiveKit instances)
+# redis:
+#   address: redis:6379

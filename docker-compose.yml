@@ -1,4 +1,23 @@
 services:
+  # LiveKit SFU Server
+  peerwave-livekit:
+    image: livekit/livekit-server:latest
+    container_name: peerwave-livekit
+    restart: unless-stopped
+    ports:
+      - "7880:7880"   # WebRTC (main)
+      - "7881:7881"   # HTTP API
+      - "7882:7882"   # WebRTC TCP fallback
+      - "50100-50200:50100-50200/udp"  # RTP port range (smaller, non-conflicting)
+    volumes:
+      - ./livekit-config.yaml:/livekit.yaml:ro
+    environment:
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+    command: --config /livekit.yaml
+    networks:
+      - peerwave-network
+
   # PeerWave Node.js Server
   peerwave-server:
     build:
@@ -8,9 +27,6 @@ services:
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
-      # mediasoup RTP Ports (UDP + TCP)
-      - "40000-40099:40000-40099/udp"
-      - "40000-40099:40000-40099/tcp"
     volumes:
       - ./server/db:/usr/src/app/db
       - ./server/cert:/usr/src/app/cert:ro
@@ -25,13 +41,10 @@ services:
       - TURN_SERVER_PORT_TLS=${TURN_SERVER_PORT_TLS:-5349}
       - TURN_REALM=${TURN_REALM:-peerwave.local}
       - TURN_CREDENTIAL_TTL=${TURN_CREDENTIAL_TTL:-86400}
-      # mediasoup Config
-      - MEDIASOUP_MIN_PORT=${MEDIASOUP_MIN_PORT:-40000}
-      - MEDIASOUP_MAX_PORT=${MEDIASOUP_MAX_PORT:-40099}
-      - MEDIASOUP_LISTEN_IP=${MEDIASOUP_LISTEN_IP:-0.0.0.0}
-      - MEDIASOUP_ANNOUNCED_IP=${MEDIASOUP_ANNOUNCED_IP:-127.0.0.1}
-      - MEDIASOUP_NUM_WORKERS=${MEDIASOUP_NUM_WORKERS:-auto}
-      - MEDIASOUP_MAX_INCOMING_BITRATE=${MEDIASOUP_MAX_INCOMING_BITRATE:-1500}
+      # LiveKit Config
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://peerwave-livekit:7880}
     # Resource Limits für Video Processing
     deploy:
       resources:
@@ -44,6 +57,7 @@ services:
     networks:
       - peerwave-network
     depends_on:
+      - peerwave-livekit
       - peerwave-coturn
 
   # coturn STUN/TURN Server

@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:livekit_client/livekit_client.dart';
 import 'package:provider/provider.dart';
 import '../services/video_conference_service.dart';
-import '../services/socket_service.dart';
-import '../services/insertable_streams_web.dart';
-import '../widgets/e2ee_debug_overlay.dart';
 import '../screens/channel/channel_members_screen.dart';
 import '../models/role.dart';
 
@@ -33,79 +29,46 @@ class VideoConferenceView extends StatefulWidget {
 
 class _VideoConferenceViewState extends State<VideoConferenceView> {
   VideoConferenceService? _service;
-  final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
-  final Map<String, RTCVideoRenderer> _remoteRenderers = {};
   
-  bool _isInitialized = false;
   bool _isJoining = false;
   String? _errorMessage;
   
   @override
   void initState() {
     super.initState();
-    _initializeRenderers();
   }
   
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Get service from Provider and initialize with socket
+    // Get service from Provider
     if (_service == null) {
       try {
         _service = Provider.of<VideoConferenceService>(context, listen: false);
-        
-        // Get the current socket from SocketService
-        final socketService = SocketService();
-        final currentSocket = socketService.socket;
-        
-        if (currentSocket == null || !socketService.isConnected) {
-          debugPrint('[VideoConferenceView] Socket not available or not connected');
-          setState(() {
-            _errorMessage = 'Socket connection not available. Please try again.';
-          });
-          return;
-        }
-        
-        // Initialize service with current socket if not already connected
-        if (!_service!.isConnected) {
-          debugPrint('[VideoConferenceView] Initializing service with socket...');
-          _service!.initialize(currentSocket).then((_) {
-            debugPrint('[VideoConferenceView] Service initialized successfully');
-          }).catchError((e) {
-            debugPrint('[VideoConferenceView] Service initialization failed: $e');
-            setState(() {
-              _errorMessage = 'Failed to initialize: $e';
-            });
-          });
-        } else {
-          debugPrint('[VideoConferenceView] Service already connected');
-        }
-        
         debugPrint('[VideoConferenceView] Service obtained from Provider');
+        
+        // Schedule join for after build completes
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _joinChannel();
+          }
+        });
       } catch (e) {
         debugPrint('[VideoConferenceView] Failed to get service: $e');
-        setState(() {
-          _errorMessage = 'Service not available: $e';
+        // Schedule setState for after build
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _errorMessage = 'Service not available: $e';
+            });
+          }
         });
       }
     }
   }
   
-  Future<void> _initializeRenderers() async {
-    try {
-      await _localRenderer.initialize();
-      setState(() => _isInitialized = true);
-      
-      // Auto-join channel
-      _joinChannel();
-    } catch (e) {
-      debugPrint('[VideoConferenceView] Renderer init error: $e');
-      setState(() => _errorMessage = 'Failed to initialize video: $e');
-    }
-  }
-  
   Future<void> _joinChannel() async {
-    if (_isJoining) return;
+    if (_isJoining || _service == null) return;
     
     setState(() {
       _isJoining = true;
@@ -113,81 +76,16 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     });
     
     try {
-      // Check if service is available
-      if (_service == null) {
-        throw Exception('VideoConferenceService not available');
-      }
+      debugPrint('[VideoConferenceView] Joining channel: ${widget.channelId}');
       
-      // Check browser support BEFORE joining
-      if (kIsWeb && !BrowserDetector.isInsertableStreamsSupported()) {
-        final unsupportedMessage = BrowserDetector.getUnsupportedMessage();
-        
-        setState(() {
-          _isJoining = false;
-          _errorMessage = unsupportedMessage;
-        });
-        
-        // Show blocking dialog
-        if (mounted) {
-          await showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => AlertDialog(
-              title: Row(
-                children: const [
-                  Icon(Icons.warning, color: Colors.orange, size: 28),
-                  SizedBox(width: 12),
-                  Expanded(child: Text('Browser Not Supported')),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(unsupportedMessage),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Please use one of the following browsers:',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text('• Chrome 86+'),
-                  const Text('• Edge 86+'),
-                  const Text('• Safari 15.4+'),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context); // Close dialog
-                    Navigator.pop(context); // Go back to chat
-                  },
-                  child: const Text('Go Back'),
-                ),
-              ],
-            ),
-          );
-        }
-        
-        // Stop here - don't proceed with join
-        return;
-      }
+      // Join LiveKit room
+      await _service!.joinRoom(widget.channelId);
       
-      // Join channel
-      await _service!.joinChannel(widget.channelId);
-      
-      // Start local stream
-      await _service!.startLocalStream(audio: true, video: true);
-      
-      // Set local stream to renderer
-      if (_service!.localStream != null) {
-        _localRenderer.srcObject = _service!.localStream;
-      }
-      
-      // Listen for remote streams
+      // Listen for service updates
       _service!.addListener(_onServiceUpdate);
       
       setState(() => _isJoining = false);
+      debugPrint('[VideoConferenceView] Successfully joined channel');
       
     } catch (e) {
       debugPrint('[VideoConferenceView] Join error: $e');
@@ -199,32 +97,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   }
   
   void _onServiceUpdate() {
-    if (!mounted || _service == null) return;
-    
-    // Update remote renderers
-    final remoteStreams = _service!.remoteStreams;
-    
-    // Remove old renderers
-    for (final peerId in _remoteRenderers.keys.toList()) {
-      if (!remoteStreams.containsKey(peerId)) {
-        _remoteRenderers[peerId]?.dispose();
-        _remoteRenderers.remove(peerId);
-      }
-    }
-    
-    // Add new renderers
-    for (final entry in remoteStreams.entries) {
-      if (!_remoteRenderers.containsKey(entry.key)) {
-        final renderer = RTCVideoRenderer();
-        renderer.initialize().then((_) {
-          renderer.srcObject = entry.value;
-          setState(() {
-            _remoteRenderers[entry.key] = renderer;
-          });
-        });
-      }
-    }
-    
+    if (!mounted) return;
     setState(() {});
   }
   
@@ -232,13 +105,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     if (_service == null) return;
     
     try {
-      await _service!.leaveChannel();
-      
-      // Dispose renderers
-      for (final renderer in _remoteRenderers.values) {
-        await renderer.dispose();
-      }
-      _remoteRenderers.clear();
+      await _service!.leaveRoom();
       
       // Go back
       if (mounted) {
@@ -252,10 +119,6 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   @override
   void dispose() {
     _service?.removeListener(_onServiceUpdate);
-    _localRenderer.dispose();
-    for (final renderer in _remoteRenderers.values) {
-      renderer.dispose();
-    }
     super.dispose();
   }
   
@@ -267,26 +130,25 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(widget.channelName),
-            if (_service?.e2eeEnabled ?? false)
-              Row(
-                children: [
-                  Icon(Icons.lock, size: 14, color: Colors.green[300]),
-                  const SizedBox(width: 4),
-                  Text(
-                    'E2EE Enabled',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.green[300],
-                      fontWeight: FontWeight.normal,
-                    ),
+            Row(
+              children: [
+                Icon(Icons.lock, size: 14, color: Colors.green[300]),
+                const SizedBox(width: 4),
+                Text(
+                  'E2EE Enabled',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.green[300],
+                    fontWeight: FontWeight.normal,
                   ),
-                ],
-              ),
+                ),
+              ],
+            ),
           ],
         ),
         backgroundColor: Colors.grey[850],
         actions: [
-          // Members button (always visible, like in SignalGroupChatScreen)
+          // Members button
           IconButton(
             icon: const Icon(Icons.people),
             onPressed: () {
@@ -303,11 +165,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             },
             tooltip: 'Members',
           ),
-          // Settings button (placeholder)
+          // Settings button
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
-              // TODO: Navigate to channel settings
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Channel settings coming soon'),
@@ -322,7 +183,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
-                '${(_service?.activePeers.length ?? 0) + 1} online',
+                '${(_service?.remoteParticipants.length ?? 0) + 1} online',
                 style: const TextStyle(fontSize: 14),
               ),
             ),
@@ -336,26 +197,12 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          _buildBody(),
-          // E2EE Debug Overlay (only in debug mode)
-          if (_service?.e2eeEnabled ?? false)
-            E2EEDebugOverlay(
-              e2eeService: _service!.e2eeService,
-              insertableStreams: _service!.insertableStreams,
-            ),
-        ],
-      ),
+      body: _buildBody(),
       bottomNavigationBar: _buildControls(),
     );
   }
   
   Widget _buildBody() {
-    if (!_isInitialized) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    
     if (_isJoining) {
       return const Center(
         child: Column(
@@ -391,69 +238,88 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   }
   
   Widget _buildVideoGrid() {
-    final totalParticipants = _remoteRenderers.length + 1; // +1 for local
+    if (_service == null || _service!.room == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
+    final room = _service!.room!;
+    final localParticipant = room.localParticipant;
+    final remoteParticipants = _service!.remoteParticipants;
+    
+    // Build participant list
+    final List<dynamic> participants = [];
+    if (localParticipant != null) {
+      participants.add({'participant': localParticipant, 'isLocal': true});
+    }
+    for (final remote in remoteParticipants) {
+      participants.add({'participant': remote, 'isLocal': false});
+    }
     
     // Calculate grid dimensions
+    final totalParticipants = participants.length;
     int columns = 1;
     if (totalParticipants > 1) columns = 2;
     if (totalParticipants > 4) columns = 3;
     
-    final crossAxisCount = columns;
-    final childAspectRatio = 16 / 9;
-    
     return GridView.builder(
       padding: const EdgeInsets.all(8),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        childAspectRatio: childAspectRatio,
+        crossAxisCount: columns,
+        childAspectRatio: 16 / 9,
         crossAxisSpacing: 8,
         mainAxisSpacing: 8,
       ),
       itemCount: totalParticipants,
       itemBuilder: (context, index) {
-        if (index == 0) {
-          // Local video (always first)
-          return _buildVideoTile(
-            renderer: _localRenderer,
-            isLocal: true,
-            label: 'You',
-          );
-        } else {
-          // Remote videos
-          final peerIds = _remoteRenderers.keys.toList();
-          final peerId = peerIds[index - 1];
-          final renderer = _remoteRenderers[peerId];
-          
-          if (renderer == null) {
-            return const Card(child: Center(child: CircularProgressIndicator()));
-          }
-          
-          return _buildVideoTile(
-            renderer: renderer,
-            isLocal: false,
-            label: 'Peer ${index}',
-          );
-        }
+        final item = participants[index];
+        final participant = item['participant'];
+        final isLocal = item['isLocal'] as bool;
+        
+        return _buildVideoTile(
+          participant: participant,
+          isLocal: isLocal,
+        );
       },
     );
   }
   
   Widget _buildVideoTile({
-    required RTCVideoRenderer renderer,
+    required dynamic participant,
     required bool isLocal,
-    required String label,
   }) {
+    // Get video track
+    VideoTrack? videoTrack;
+    bool audioMuted = true;
+    
+    if (participant is LocalParticipant || participant is RemoteParticipant) {
+      final videoPubs = participant.videoTrackPublications;
+      if (videoPubs.isNotEmpty) {
+        videoTrack = videoPubs.first.track as VideoTrack?;
+      }
+      
+      final audioPubs = participant.audioTrackPublications;
+      audioMuted = audioPubs.isEmpty || audioPubs.first.muted;
+    }
+    
+    final identity = participant.identity ?? 'Unknown';
+    
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Stack(
         fit: StackFit.expand,
         children: [
           // Video
-          RTCVideoView(
-            renderer,
-            mirror: isLocal,
-            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-          ),
+          if (videoTrack != null && !videoTrack.muted)
+            VideoTrackRenderer(
+              videoTrack,
+            )
+          else
+            Container(
+              color: Colors.grey[900],
+              child: const Center(
+                child: Icon(Icons.videocam_off, size: 48, color: Colors.grey),
+              ),
+            ),
           
           // Label overlay
           Positioned(
@@ -475,7 +341,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    label,
+                    isLocal ? 'You' : identity,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -486,18 +352,12 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             ),
           ),
           
-          // Muted indicators
-          if (isLocal && !(_service?.audioEnabled ?? true))
+          // Muted indicator
+          if (audioMuted)
             const Positioned(
               top: 8,
               right: 8,
               child: Icon(Icons.mic_off, color: Colors.red, size: 24),
-            ),
-          if (isLocal && !(_service?.videoEnabled ?? true))
-            const Positioned(
-              top: 8,
-              left: 8,
-              child: Icon(Icons.videocam_off, color: Colors.red, size: 24),
             ),
         ],
       ),
@@ -507,6 +367,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   Widget _buildControls() {
     if (_service == null) return const SizedBox.shrink();
     
+    final isMicEnabled = _service!.isMicrophoneEnabled();
+    final isCameraEnabled = _service!.isCameraEnabled();
+    
     return Container(
       color: Colors.black87,
       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -515,18 +378,18 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         children: [
           // Toggle Audio
           _buildControlButton(
-            icon: _service!.audioEnabled ? Icons.mic : Icons.mic_off,
+            icon: isMicEnabled ? Icons.mic : Icons.mic_off,
             label: 'Audio',
-            onPressed: () => _service!.toggleAudio(),
-            isActive: _service!.audioEnabled,
+            onPressed: () => _service!.toggleMicrophone(),
+            isActive: isMicEnabled,
           ),
           
           // Toggle Video
           _buildControlButton(
-            icon: _service!.videoEnabled ? Icons.videocam : Icons.videocam_off,
+            icon: isCameraEnabled ? Icons.videocam : Icons.videocam_off,
             label: 'Video',
-            onPressed: () => _service!.toggleVideo(),
-            isActive: _service!.videoEnabled,
+            onPressed: () => _service!.toggleCamera(),
+            isActive: isCameraEnabled,
           ),
           
           // Leave Call

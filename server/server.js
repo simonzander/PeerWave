@@ -77,11 +77,13 @@ app.use(sessionMiddleware);
   const roleRoutes = require('./routes/roles');
   const groupItemRoutes = require('./routes/groupItems');
   const senderKeyRoutes = require('./routes/senderKeys');
+  const livekitRoutes = require('./routes/livekit');
 
   app.use(clientRoutes);
   app.use('/api', roleRoutes);
   app.use('/api/group-items', groupItemRoutes);
   app.use('/api/sender-keys', senderKeyRoutes);
+  app.use('/api/livekit', livekitRoutes);
 
   // License info endpoint
   app.get('/api/license-info', async (req, res) => {
