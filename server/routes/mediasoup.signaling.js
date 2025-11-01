@@ -60,6 +60,7 @@ function setupMediasoupSignaling(socket, io) {
 
       callback({
         success: true,
+        peerId: peerId,
         rtpCapabilities: rtpCapabilities,
         e2eeEnabled: room.e2eeEnabled, // Always true
         existingProducers: existingProducers

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'socket_service.dart';
 import 'signal_service.dart';
+import 'video_conference_service.dart';
 
 /// Global service that listens for all incoming messages (1:1 and group)
 /// and stores them in local storage, regardless of which screen is open.
@@ -13,6 +14,21 @@ class MessageListenerService {
 
   bool _isInitialized = false;
   final List<Function(MessageNotification)> _notificationCallbacks = [];
+  
+  // VideoConferenceService instance for E2EE key distribution
+  VideoConferenceService? _videoConferenceService;
+  
+  /// Register VideoConferenceService for E2EE key handling
+  void registerVideoConferenceService(VideoConferenceService service) {
+    _videoConferenceService = service;
+    print('[MESSAGE_LISTENER] VideoConferenceService registered for E2EE key handling');
+  }
+  
+  /// Unregister VideoConferenceService
+  void unregisterVideoConferenceService() {
+    _videoConferenceService = null;
+    print('[MESSAGE_LISTENER] VideoConferenceService unregistered');
+  }
 
   /// Initialize global message listeners
   Future<void> initialize() async {
@@ -469,8 +485,13 @@ class MessageListenerService {
       if (videoService != null) {
         // Add peer key to E2EE service
         if (videoService.e2eeService != null) {
-          videoService.e2eeService!.addPeerKey(keySenderId ?? senderId, keyBytes);
-          print('[MESSAGE_LISTENER] ✓ Video E2EE key added for peer $keySenderId');
+          // CRITICAL: peerId format is "userId-channelId", not just userId!
+          // We need to construct the peerId from userId and channelId
+          final senderUserId = keySenderId ?? senderId;
+          final peerId = '$senderUserId-$keyChannelId';
+          
+          videoService.e2eeService!.addPeerKey(peerId, keyBytes);
+          print('[MESSAGE_LISTENER] ✓ Video E2EE key added for peer $peerId (userId: $senderUserId)');
           
           // Note: No notification needed, this is internal crypto setup
         } else {
@@ -524,13 +545,8 @@ class MessageListenerService {
   /// Helper to get VideoConferenceService instance
   /// TODO: Inject via constructor or service locator
   dynamic _getVideoConferenceService() {
-    try {
-      // This should be injected properly via Provider
-      // For now, return null and handle gracefully
-      return null;
-    } catch (e) {
-      return null;
-    }
+    // Return registered VideoConferenceService instance
+    return _videoConferenceService;
   }
   
   /// Helper to get current user ID
