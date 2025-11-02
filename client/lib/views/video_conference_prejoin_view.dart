@@ -80,11 +80,9 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       
       // Step 5: Handle E2EE key exchange
       if (_isFirstParticipant) {
-        // First participant generates key locally (not shared yet)
-        setState(() {
-          _hasE2EEKey = true;
-          print('[PreJoin] First participant - will generate E2EE key on join');
-        });
+        // First participant generates key immediately in PreJoin
+        print('[PreJoin] First participant - generating E2EE key now');
+        await _generateE2EEKey();
       } else {
         // Request E2EE key from existing participants
         await _requestE2EEKey();
@@ -199,6 +197,51 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       setState(() {
         _isCheckingParticipants = false;
         _keyExchangeError = 'Failed to check participants: $e';
+      });
+    }
+  }
+  
+  /// Generate E2EE key (for first participant)
+  Future<void> _generateE2EEKey() async {
+    try {
+      print('═══════════════════════════════════════════════════════════');
+      print('[PreJoin][TEST] 🔐 GENERATING E2EE KEY (FIRST PARTICIPANT)');
+      print('[PreJoin][TEST] Channel: ${widget.channelId}');
+      
+      setState(() {
+        _isExchangingKey = true;
+        _keyExchangeError = null;
+      });
+      
+      // Generate key via VideoConferenceService
+      print('[PreJoin][TEST] 📤 Calling VideoConferenceService.generateE2EEKeyInPreJoin...');
+      final success = await VideoConferenceService.generateE2EEKeyInPreJoin(widget.channelId);
+      
+      setState(() {
+        _hasE2EEKey = success;
+        _isExchangingKey = false;
+        
+        if (!success) {
+          _keyExchangeError = 'Failed to generate encryption key';
+        }
+      });
+      
+      if (success) {
+        print('[PreJoin][TEST] ✅ E2EE KEY GENERATION SUCCESSFUL');
+        print('[PreJoin][TEST] Key stored in VideoConferenceService singleton');
+        print('[PreJoin][TEST] Ready to join call AND respond to key requests');
+        print('═══════════════════════════════════════════════════════════');
+      } else {
+        print('[PreJoin][TEST] ❌ E2EE KEY GENERATION FAILED');
+        print('═══════════════════════════════════════════════════════════');
+      }
+    } catch (e) {
+      print('[PreJoin][TEST] ❌ ERROR generating E2EE key: $e');
+      print('═══════════════════════════════════════════════════════════');
+      setState(() {
+        _hasE2EEKey = false;
+        _isExchangingKey = false;
+        _keyExchangeError = 'Key generation error: $e';
       });
     }
   }

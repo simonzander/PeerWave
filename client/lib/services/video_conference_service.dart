@@ -58,11 +58,49 @@ class VideoConferenceService extends ChangeNotifier {
   List<RemoteParticipant> get remoteParticipants => _remoteParticipants.values.toList();
   Room? get room => _room;
   bool get isFirstParticipant => _isFirstParticipant;  // Check if this participant originated the key
+  bool get hasE2EEKey => _keyTimestamp != null;  // Check if E2EE key is available (generated or received)
   
   // Streams
   Stream<RemoteParticipant> get onParticipantJoined => _participantJoinedController.stream;
   Stream<RemoteParticipant> get onParticipantLeft => _participantLeftController.stream;
   Stream<TrackSubscribedEvent> get onTrackSubscribed => _trackSubscribedController.stream;
+
+  /// Generate E2EE Key in PreJoin (called by FIRST participant from PreJoin)
+  /// This is a static method so PreJoin screen can call it before joining
+  /// Returns true if key was generated successfully, false otherwise
+  static Future<bool> generateE2EEKeyInPreJoin(String channelId) async {
+    final service = VideoConferenceService.instance;
+    
+    try {
+      print('═══════════════════════════════════════════════════════════');
+      print('[PreJoin][TEST] 🔐 GENERATING E2EE KEY (FIRST PARTICIPANT)');
+      print('[PreJoin][TEST] Channel: $channelId');
+      
+      // Set channel ID
+      service._currentChannelId = channelId;
+      print('[PreJoin][TEST] ✓ Channel ID set on service instance');
+      
+      // Register service with MessageListenerService to handle key requests
+      print('[PreJoin][TEST] 📝 Registering service with MessageListenerService...');
+      final messageListener = MessageListenerService.instance;
+      messageListener.registerVideoConferenceService(service);
+      print('[PreJoin][TEST] ✓ Service registered, ready to respond to key requests');
+      
+      // Initialize E2EE (generate key, create KeyProvider, initialize sender key)
+      await service._initializeE2EE();
+      
+      print('[PreJoin][TEST] ✅ E2EE KEY GENERATION SUCCESSFUL');
+      print('[PreJoin][TEST] Key stored in VideoConferenceService singleton');
+      print('[PreJoin][TEST] Ready to join call AND respond to key requests');
+      print('═══════════════════════════════════════════════════════════');
+      
+      return true;
+    } catch (e) {
+      print('[PreJoin][TEST] ❌ ERROR generating E2EE key: $e');
+      print('═══════════════════════════════════════════════════════════');
+      return false;
+    }
+  }
 
   /// Request E2EE Key from existing participants (called by NON-first participants from PreJoin)
   /// This is a static method so PreJoin screen can call it before joining

@@ -512,7 +512,7 @@ class MessageListenerService {
         print('[MESSAGE_LISTENER][TEST] Request Timestamp: $requestTimestamp');
         print('[MESSAGE_LISTENER][TEST] 🔍 Checking VideoConferenceService...');
         print('[MESSAGE_LISTENER][TEST]   - Service registered: ${_videoConferenceService != null}');
-        print('[MESSAGE_LISTENER][TEST]   - Service connected: ${_videoConferenceService?.isConnected ?? false}');
+        print('[MESSAGE_LISTENER][TEST]   - Has E2EE key: ${_videoConferenceService?.hasE2EEKey ?? false}');
         
         // ⚠️ IMPORTANT: Ignore our own key requests (sender receives their own broadcast)
         final currentUserId = SignalService.instance.currentUserId;
@@ -522,11 +522,12 @@ class MessageListenerService {
           return;
         }
         
-        if (_videoConferenceService != null && _videoConferenceService!.isConnected) {
+        // Respond if we have a key available (even if not connected to LiveKit room yet)
+        if (_videoConferenceService != null && _videoConferenceService!.hasE2EEKey) {
           print('[MESSAGE_LISTENER][TEST] ✓ Forwarding to VideoConferenceService.handleKeyRequest()');
           await _videoConferenceService!.handleKeyRequest(requesterId ?? senderId);
         } else {
-          print('[MESSAGE_LISTENER][TEST] ⚠️ VideoConferenceService not available or not connected');
+          print('[MESSAGE_LISTENER][TEST] ⚠️ VideoConferenceService not available or no key generated');
           print('[MESSAGE_LISTENER][TEST] ℹ️ This is expected if you are the requester waiting for response');
         }
         
