@@ -1536,10 +1536,25 @@ Future<String> decryptItem({
     
     final existingKey = await senderKeyStore.containsSenderKey(senderKeyName);
     if (existingKey) {
-      print('[SIGNAL_SERVICE] ℹ️ Sender key already exists for group $groupId, skipping creation');
-      // Load existing distribution message from server or regenerate
-      // For now, we'll just return empty bytes since the key is already distributed
-      return Uint8List(0);
+      print('[SIGNAL_SERVICE] ℹ️ Sender key already exists for group $groupId');
+      
+      // ⚠️ VALIDATION: Try to use the existing key - if it fails, regenerate
+      // Test by creating a GroupCipher and attempting a dummy encryption
+      try {
+        final testCipher = GroupCipher(senderKeyStore, senderKeyName);
+        // Try to encrypt a small test message to verify key validity
+        final testMessage = Uint8List.fromList([0x01, 0x02, 0x03]);
+        await testCipher.encrypt(testMessage);
+        print('[SIGNAL_SERVICE] ✓ Existing sender key is valid and functional');
+        // Return empty bytes - key is already distributed
+        return Uint8List(0);
+      } catch (e) {
+        print('[SIGNAL_SERVICE] ⚠️ WARNING: Existing sender key is corrupted or invalid ($e)');
+        print('[SIGNAL_SERVICE] Deleting corrupted key and regenerating...');
+        // Delete corrupted key
+        await senderKeyStore.removeSenderKey(senderKeyName);
+        // Fall through to regenerate
+      }
     }
 
     // Verify identity key pair exists
