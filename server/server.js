@@ -122,6 +122,101 @@ io.use(sharedSession(sessionMiddleware, { autoSave: true }));
 
 const deviceSockets = new Map(); // Key: userId:deviceId, Value: socket.id
 
+// ============================================
+// VIDEO CONFERENCE PARTICIPANT TRACKING (RAM)
+// ============================================
+
+/**
+ * In-Memory Storage für aktive WebRTC Channel Participants
+ * Structure: Map<channelId, Set<ParticipantInfo>>
+ * 
+ * ParticipantInfo: {
+ *   userId: string,
+ *   socketId: string,
+ *   joinedAt: number (timestamp),
+ *   hasE2EEKey: boolean
+ * }
+ * 
+ * Cleanup: Automatic on disconnect, manual on leave
+ */
+const activeVideoParticipants = new Map();
+
+/**
+ * Add participant to active participants list
+ */
+function addVideoParticipant(channelId, userId, socketId) {
+    if (!activeVideoParticipants.has(channelId)) {
+        activeVideoParticipants.set(channelId, new Set());
+    }
+    
+    const participants = activeVideoParticipants.get(channelId);
+    
+    // Remove existing entry for this user (if reconnecting)
+    participants.forEach(p => {
+        if (p.userId === userId) participants.delete(p);
+    });
+    
+    // Add new entry
+    participants.add({
+        userId,
+        socketId,
+        joinedAt: Date.now(),
+        hasE2EEKey: false
+    });
+    
+    console.log(`[VIDEO PARTICIPANTS] Added ${userId} to channel ${channelId} (total: ${participants.size})`);
+}
+
+/**
+ * Remove participant from active participants list
+ */
+function removeVideoParticipant(channelId, socketId) {
+    if (!activeVideoParticipants.has(channelId)) return;
+    
+    const participants = activeVideoParticipants.get(channelId);
+    let removedUserId = null;
+    
+    participants.forEach(p => {
+        if (p.socketId === socketId) {
+            removedUserId = p.userId;
+            participants.delete(p);
+        }
+    });
+    
+    // Cleanup empty channels
+    if (participants.size === 0) {
+        activeVideoParticipants.delete(channelId);
+        console.log(`[VIDEO PARTICIPANTS] Channel ${channelId} empty - removed from tracking`);
+    } else if (removedUserId) {
+        console.log(`[VIDEO PARTICIPANTS] Removed ${removedUserId} from channel ${channelId} (remaining: ${participants.size})`);
+    }
+}
+
+/**
+ * Get all participants for a channel
+ */
+function getVideoParticipants(channelId) {
+    if (!activeVideoParticipants.has(channelId)) {
+        return [];
+    }
+    return Array.from(activeVideoParticipants.get(channelId));
+}
+
+/**
+ * Update participant E2EE key status
+ */
+function updateParticipantKeyStatus(channelId, socketId, hasKey) {
+    if (!activeVideoParticipants.has(channelId)) return;
+    
+    const participants = activeVideoParticipants.get(channelId);
+    participants.forEach(p => {
+        if (p.socketId === socketId) {
+            p.hasE2EEKey = hasKey;
+            console.log(`[VIDEO PARTICIPANTS] Updated ${p.userId} key status: ${hasKey}`);
+        }
+    });
+}
+
 io.sockets.on("error", e => console.log(e));
 io.sockets.on("connection", socket => {
 
@@ -685,6 +780,66 @@ io.sockets.on("connection", socket => {
       socket.emit("senderKeyStored", { groupId, success: true });
     } catch (error) {
       console.error('[SIGNAL SERVER] Error in storeSenderKey:', error);
+    }
+  });
+
+  // Broadcast sender key distribution message to all group members
+  socket.on("broadcastSenderKey", async (data) => {
+    try {
+      if(!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+        console.error('[SIGNAL SERVER] ERROR: broadcastSenderKey blocked - not authenticated');
+        return;
+      }
+
+      const { groupId, distributionMessage } = data;
+      const userId = socket.handshake.session.uuid;
+      const deviceId = socket.handshake.session.deviceId;
+
+      console.log(`[SIGNAL SERVER] Broadcasting sender key for ${userId}:${deviceId} to group ${groupId}`);
+
+      // Get all channel members (same approach as sendGroupItem)
+      const members = await ChannelMembers.findAll({
+        where: { channelId: groupId }
+      });
+
+      if (!members || members.length === 0) {
+        console.log(`[SIGNAL SERVER] No members found for group ${groupId}`);
+        return;
+      }
+
+      // Get all client devices for these members
+      const memberUserIds = members.map(m => m.userId);
+      const memberClients = await Client.findAll({
+        where: {
+          owner: { [require('sequelize').Op.in]: memberUserIds }
+        }
+      });
+
+      // Broadcast to all member devices EXCEPT sender
+      const payload = {
+        groupId,
+        senderId: userId,
+        senderDeviceId: deviceId,
+        distributionMessage
+      };
+
+      let deliveredCount = 0;
+      for (const client of memberClients) {
+        // Skip sender's device
+        if (client.owner === userId && client.device_id === deviceId) {
+          continue;
+        }
+
+        const targetSocketId = deviceSockets.get(`${client.owner}:${client.device_id}`);
+        if (targetSocketId) {
+          io.to(targetSocketId).emit('receiveSenderKeyDistribution', payload);
+          deliveredCount++;
+        }
+      }
+
+      console.log(`[SIGNAL SERVER] ✓ Sender key distribution delivered to ${deliveredCount}/${memberClients.length - 1} devices`);
+    } catch (error) {
+      console.error('[SIGNAL SERVER] Error in broadcastSenderKey:', error);
     }
   });
 
@@ -1808,6 +1963,188 @@ io.sockets.on("connection", socket => {
     }
   });
 
+  // ============================================
+  // VIDEO CONFERENCE PARTICIPANT MANAGEMENT
+  // ============================================
+
+  /**
+   * Check participants in a channel (called by PreJoin screen)
+   * Client asks: "How many participants are in this channel? Am I first?"
+   */
+  socket.on("video:check-participants", async (data) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        console.error('[VIDEO PARTICIPANTS] Check blocked - not authenticated');
+        socket.emit("video:participants-info", { error: "Not authenticated" });
+        return;
+      }
+
+      const { channelId } = data;
+      const userId = socket.handshake.session.uuid;
+
+      if (!channelId) {
+        console.error('[VIDEO PARTICIPANTS] Missing channelId');
+        socket.emit("video:participants-info", { error: "Missing channelId" });
+        return;
+      }
+
+      // Check if user is member of channel
+      const membership = await ChannelMembers.findOne({
+        where: {
+          userId: userId,
+          channelId: channelId
+        }
+      });
+
+      if (!membership) {
+        console.error('[VIDEO PARTICIPANTS] User not member of channel');
+        socket.emit("video:participants-info", { error: "Not a member of this channel" });
+        return;
+      }
+
+      // Get active participants
+      const participants = getVideoParticipants(channelId);
+      
+      // Filter out requesting user from count (they're not "in" yet)
+      const otherParticipants = participants.filter(p => p.userId !== userId);
+      
+      console.log(`[VIDEO PARTICIPANTS] Check for channel ${channelId}: ${otherParticipants.length} active participants`);
+
+      socket.emit("video:participants-info", {
+        channelId: channelId,
+        participantCount: otherParticipants.length,
+        isFirstParticipant: otherParticipants.length === 0,
+        participants: otherParticipants.map(p => ({
+          userId: p.userId,
+          joinedAt: p.joinedAt,
+          hasE2EEKey: p.hasE2EEKey
+        }))
+      });
+    } catch (error) {
+      console.error('[VIDEO PARTICIPANTS] Error checking participants:', error);
+      socket.emit("video:participants-info", { error: "Internal server error" });
+    }
+  });
+
+  /**
+   * Register as participant (called by PreJoin screen after device selection)
+   * Client says: "I'm about to join, add me to the list"
+   */
+  socket.on("video:register-participant", async (data) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        console.error('[VIDEO PARTICIPANTS] Register blocked - not authenticated');
+        return;
+      }
+
+      const { channelId } = data;
+      const userId = socket.handshake.session.uuid;
+
+      if (!channelId) {
+        console.error('[VIDEO PARTICIPANTS] Missing channelId');
+        return;
+      }
+
+      // Verify channel membership
+      const membership = await ChannelMembers.findOne({
+        where: {
+          userId: userId,
+          channelId: channelId
+        }
+      });
+
+      if (!membership) {
+        console.error('[VIDEO PARTICIPANTS] User not member of channel');
+        return;
+      }
+
+      // Add to active participants
+      addVideoParticipant(channelId, userId, socket.id);
+
+      // Join Socket.IO room for this channel
+      socket.join(channelId);
+
+      // Notify other participants
+      socket.to(channelId).emit("video:participant-joined", {
+        userId: userId,
+        joinedAt: Date.now()
+      });
+
+      console.log(`[VIDEO PARTICIPANTS] User ${userId} registered for channel ${channelId}`);
+    } catch (error) {
+      console.error('[VIDEO PARTICIPANTS] Error registering participant:', error);
+    }
+  });
+
+  /**
+   * Confirm E2EE key received (called after successful key exchange)
+   * Client says: "I have the encryption key now"
+   */
+  socket.on("video:confirm-e2ee-key", async (data) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        console.error('[VIDEO PARTICIPANTS] Key confirm blocked - not authenticated');
+        return;
+      }
+
+      const { channelId } = data;
+      const userId = socket.handshake.session.uuid;
+
+      if (!channelId) {
+        console.error('[VIDEO PARTICIPANTS] Missing channelId');
+        return;
+      }
+
+      // Update key status
+      updateParticipantKeyStatus(channelId, socket.id, true);
+
+      // Notify other participants
+      socket.to(channelId).emit("video:participant-key-confirmed", {
+        userId: userId
+      });
+
+      console.log(`[VIDEO PARTICIPANTS] User ${userId} confirmed E2EE key for channel ${channelId}`);
+    } catch (error) {
+      console.error('[VIDEO PARTICIPANTS] Error confirming key:', error);
+    }
+  });
+
+  /**
+   * Leave channel (called when user closes video call)
+   * Client says: "I'm leaving the call"
+   */
+  socket.on("video:leave-channel", async (data) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        console.error('[VIDEO PARTICIPANTS] Leave blocked - not authenticated');
+        return;
+      }
+
+      const { channelId } = data;
+      const userId = socket.handshake.session.uuid;
+
+      if (!channelId) {
+        console.error('[VIDEO PARTICIPANTS] Missing channelId');
+        return;
+      }
+
+      // Remove from active participants
+      removeVideoParticipant(channelId, socket.id);
+
+      // Leave Socket.IO room
+      socket.leave(channelId);
+
+      // Notify other participants
+      socket.to(channelId).emit("video:participant-left", {
+        userId: userId
+      });
+
+      console.log(`[VIDEO PARTICIPANTS] User ${userId} left channel ${channelId}`);
+    } catch (error) {
+      console.error('[VIDEO PARTICIPANTS] Error leaving channel:', error);
+    }
+  });
+
   /**
    * Event handler to delete a specific item (1:1 message) for the current user/device as receiver
    * @param {Object} data - Contains itemId to delete
@@ -2077,15 +2414,34 @@ io.sockets.on("connection", socket => {
   });
 
   socket.on("disconnect", () => {
-    if(socket.handshake.session.uuid && socket.handshake.session.deviceId) {
-      const userId = socket.handshake.session.uuid;
-      const deviceId = socket.handshake.session.deviceId;
+    const userId = socket.handshake.session?.uuid;
+    const deviceId = socket.handshake.session?.deviceId;
+    
+    console.log(`[SOCKET] Client disconnected: ${socket.id} (User: ${userId}, Device: ${deviceId})`);
+    
+    if(userId && deviceId) {
       deviceSockets.delete(`${userId}:${deviceId}`);
       
       // Clean up P2P file sharing announcements (with deviceId)
       const fileRegistry = require('./store/fileRegistry');
       fileRegistry.handleUserDisconnect(userId, deviceId);
     }
+
+    // NEW: Cleanup video participants
+    activeVideoParticipants.forEach((participants, channelId) => {
+      const beforeSize = participants.size;
+      removeVideoParticipant(channelId, socket.id);
+      const afterSize = getVideoParticipants(channelId).length;
+      
+      if (beforeSize !== afterSize && userId) {
+        // Notify other participants in this channel
+        socket.to(channelId).emit("video:participant-left", {
+          userId: userId
+        });
+        console.log(`[VIDEO PARTICIPANTS] User ${userId} removed from channel ${channelId} due to disconnect`);
+      }
+    });
+
     if (!rooms) return;
 
 

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../screens/messages/direct_messages_screen.dart';
 import '../screens/messages/signal_group_chat_screen.dart';
 import '../screens/file_transfer/file_manager_screen.dart';
+import '../views/video_conference_prejoin_view.dart';
 import '../views/video_conference_view.dart';
 import 'sidebar_panel.dart';
 import 'profile_card.dart';
@@ -30,6 +31,9 @@ class _DashboardPageState extends State<DashboardPage> {
   String? _activeChannelUuid;
   String? _activeChannelName;
   String? _activeChannelType;
+  
+  // Video conference state
+  Map<String, dynamic>? _videoConferenceConfig;
   
   // People list
   List<dynamic> _people = [];
@@ -131,6 +135,7 @@ class _DashboardPageState extends State<DashboardPage> {
       _activeDirectMessageUuid = uuid;
       _activeDirectMessageDisplayName = displayName;
       _currentView = DashboardView.directMessages;
+      _videoConferenceConfig = null;  // Reset video conference when changing view
       
       // Add to direct messages list if not already present
       if (!_directMessages.any((dm) => dm.uuid == uuid)) {
@@ -148,18 +153,21 @@ class _DashboardPageState extends State<DashboardPage> {
       _activeChannelName = name;
       _activeChannelType = type;
       _currentView = DashboardView.channel;
+      _videoConferenceConfig = null;  // Reset video conference when switching channels
     });
   }
 
   void _onPeopleViewTap() {
     setState(() {
       _currentView = DashboardView.people;
+      _videoConferenceConfig = null;  // Reset video conference when changing view
     });
   }
 
   void _onFileManagerTap() {
     setState(() {
       _currentView = DashboardView.fileManager;
+      _videoConferenceConfig = null;  // Reset video conference when changing view
     });
   }
 
@@ -207,11 +215,28 @@ class _DashboardPageState extends State<DashboardPage> {
               channelName: _activeChannelName!,
             );
           } else if (_activeChannelType == 'webrtc') {
-            // WebRTC channel - use VideoConferenceView
-            contentWidget = VideoConferenceView(
-              channelId: _activeChannelUuid!,
-              channelName: _activeChannelName!,
-            );
+            // WebRTC channel - show PreJoin screen or VideoConferenceView
+            if (_videoConferenceConfig != null) {
+              // User completed PreJoin, show actual video conference
+              contentWidget = VideoConferenceView(
+                channelId: _videoConferenceConfig!['channelId'],
+                channelName: _videoConferenceConfig!['channelName'],
+                selectedCamera: _videoConferenceConfig!['selectedCamera'],
+                selectedMicrophone: _videoConferenceConfig!['selectedMicrophone'],
+              );
+            } else {
+              // Show PreJoin screen for device selection and E2EE key exchange
+              contentWidget = VideoConferencePreJoinView(
+                channelId: _activeChannelUuid!,
+                channelName: _activeChannelName!,
+                onJoinReady: (config) {
+                  // When user completes PreJoin, switch to VideoConferenceView
+                  setState(() {
+                    _videoConferenceConfig = config;
+                  });
+                },
+              );
+            }
           } else {
             contentWidget = _EmptyStateWidget(
               icon: Icons.campaign,

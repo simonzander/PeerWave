@@ -15,7 +15,7 @@ import '../../services/file_transfer/socket_file_client.dart';
 import '../../models/role.dart';
 import '../../models/file_message.dart';
 import '../channel/channel_members_screen.dart';
-import '../../services/video_conference_service.dart';
+import '../../views/video_conference_prejoin_view.dart';
 import '../../views/video_conference_view.dart';
 
 /// Screen for Signal Group Chats (encrypted group conversations)
@@ -722,19 +722,38 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         title: Text('# ${widget.channelName}'),
         backgroundColor: Colors.grey[850],
         actions: [
-          // Video Call Button
+          // Video Call Button - Navigate to PreJoin screen
           IconButton(
             icon: const Icon(Icons.videocam),
-            onPressed: () {
-              Navigator.push(
+            onPressed: () async {
+              // Open PreJoin screen for device selection and E2EE key exchange
+              final result = await Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => VideoConferenceView(
+                  builder: (context) => VideoConferencePreJoinView(
                     channelId: widget.channelUuid,
                     channelName: widget.channelName,
+                    // No callback needed - will return via Navigator.pop
                   ),
                 ),
               );
+              
+              // If user completed PreJoin, navigate to actual video conference
+              if (result != null && result is Map && result['hasE2EEKey'] == true) {
+                if (mounted) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => VideoConferenceView(
+                        channelId: result['channelId'],
+                        channelName: result['channelName'],
+                        selectedCamera: result['selectedCamera'],
+                        selectedMicrophone: result['selectedMicrophone'],
+                      ),
+                    ),
+                  );
+                }
+              }
             },
             tooltip: 'Join Video Call',
           ),

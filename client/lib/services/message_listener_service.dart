@@ -183,6 +183,21 @@ class MessageListenerService {
           return; // Don't store as regular message
         }
 
+        // Handle new video E2EE key exchange message types (with timestamp-based race condition resolution)
+        if (itemType == 'video_e2ee_key_request' || itemType == 'video_e2ee_key_response') {
+          await _processVideoE2EEKey(
+            itemId: itemId,
+            channelId: channelId,
+            senderId: senderId,
+            senderDeviceId: senderDeviceId,
+            timestamp: timestamp,
+            decryptedPayload: decrypted,
+            messageType: itemType,
+          );
+          return; // Don't store as regular message
+        }
+
+        // Legacy: Handle old video E2EE key exchange message types (deprecated)
         if (itemType == 'video_key_request' || itemType == 'video_key_response') {
           // Video E2EE key exchange - handle separately
           await _processVideoE2EEKey(
@@ -474,16 +489,80 @@ class MessageListenerService {
     String? messageType,
   }) async {
     try {
-      print('[MESSAGE_LISTENER] Processing video E2EE key from $senderId (type: $messageType)');
+      print('═══════════════════════════════════════════════════════════');
+      print('[MESSAGE_LISTENER][TEST] 📬 PROCESSING VIDEO E2EE KEY MESSAGE');
+      print('[MESSAGE_LISTENER][TEST] Sender: $senderId');
+      print('[MESSAGE_LISTENER][TEST] Message Type: $messageType');
+      print('[MESSAGE_LISTENER][TEST] Channel: $channelId');
       
       // Parse the decrypted JSON payload
       final Map<String, dynamic> keyData = jsonDecode(decryptedPayload);
+      
+      // NEW: Handle new message types with timestamp-based race condition resolution
+      if (messageType == 'video_e2ee_key_request') {
+        final requesterId = keyData['requesterId'] as String?;
+        final requestTimestamp = keyData['timestamp'] as int?;
+        
+        print('[MESSAGE_LISTENER][TEST] 📩 KEY REQUEST RECEIVED');
+        print('[MESSAGE_LISTENER][TEST] Requester: $requesterId');
+        print('[MESSAGE_LISTENER][TEST] Request Timestamp: $requestTimestamp');
+        print('[MESSAGE_LISTENER][TEST] 🔍 Checking VideoConferenceService...');
+        print('[MESSAGE_LISTENER][TEST]   - Service registered: ${_videoConferenceService != null}');
+        print('[MESSAGE_LISTENER][TEST]   - Service connected: ${_videoConferenceService?.isConnected ?? false}');
+        
+        // ⚠️ IMPORTANT: Ignore our own key requests (sender receives their own broadcast)
+        final currentUserId = SignalService.instance.currentUserId;
+        if (requesterId == currentUserId || senderId == currentUserId) {
+          print('[MESSAGE_LISTENER][TEST] ℹ️ Ignoring own key request (sender echo)');
+          print('═══════════════════════════════════════════════════════════');
+          return;
+        }
+        
+        if (_videoConferenceService != null && _videoConferenceService!.isConnected) {
+          print('[MESSAGE_LISTENER][TEST] ✓ Forwarding to VideoConferenceService.handleKeyRequest()');
+          await _videoConferenceService!.handleKeyRequest(requesterId ?? senderId);
+        } else {
+          print('[MESSAGE_LISTENER][TEST] ⚠️ VideoConferenceService not available or not connected');
+          print('[MESSAGE_LISTENER][TEST] ℹ️ This is expected if you are the requester waiting for response');
+        }
+        
+        print('═══════════════════════════════════════════════════════════');
+        return;
+      }
+      
+      if (messageType == 'video_e2ee_key_response') {
+        final targetUserId = keyData['targetUserId'] as String?;
+        final encryptedKey = keyData['encryptedKey'] as String?;
+        final keyTimestamp = keyData['timestamp'] as int?;
+        
+        print('[MESSAGE_LISTENER][TEST] 🔑 KEY RESPONSE RECEIVED');
+        print('[MESSAGE_LISTENER][TEST] Target User: $targetUserId');
+        print('[MESSAGE_LISTENER][TEST] Key Timestamp: $keyTimestamp');
+        print('[MESSAGE_LISTENER][TEST] Key Length: ${encryptedKey?.length ?? 0} chars (base64)');
+        
+        if (encryptedKey != null && keyTimestamp != null && _videoConferenceService != null) {
+          print('[MESSAGE_LISTENER][TEST] ✓ Forwarding to VideoConferenceService.handleE2EEKey()');
+          await _videoConferenceService!.handleE2EEKey(
+            senderUserId: senderId,
+            encryptedKey: encryptedKey,
+            channelId: channelId,
+            timestamp: keyTimestamp,  // Pass timestamp for race condition resolution
+          );
+        } else {
+          print('[MESSAGE_LISTENER][TEST] ⚠️ Missing data or VideoConferenceService not available');
+        }
+        
+        print('═══════════════════════════════════════════════════════════');
+        return;
+      }
+      
+      // LEGACY: Handle old message types (deprecated, but keep for compatibility)
       final type = keyData['type'] as String?;
       
       if (type == 'video_key_request') {
         // Someone is requesting the key
         final requesterId = keyData['requesterId'] as String?;
-        print('[MESSAGE_LISTENER] Received key request from $requesterId');
+        print('[MESSAGE_LISTENER][TEST] [LEGACY] Received key request from $requesterId');
         
         if (_videoConferenceService != null && _videoConferenceService!.isConnected) {
           await _videoConferenceService!.handleKeyRequest(requesterId ?? senderId);
@@ -492,23 +571,25 @@ class MessageListenerService {
       }
       
       if (type == 'video_key_response') {
-        // Someone sent us the key
+        // Someone sent us the key (legacy format without timestamp - use current time)
         final targetUserId = keyData['targetUserId'] as String?;
         final encryptedKey = keyData['encryptedKey'] as String?;
+        final legacyTimestamp = DateTime.now().millisecondsSinceEpoch;
         
-        print('[MESSAGE_LISTENER] Received key response for user: $targetUserId');
+        print('[MESSAGE_LISTENER] [LEGACY] Received key response for user: $targetUserId (no timestamp, using current: $legacyTimestamp)');
         
         if (encryptedKey != null && _videoConferenceService != null) {
           await _videoConferenceService!.handleE2EEKey(
             senderUserId: senderId,
             encryptedKey: encryptedKey,
             channelId: channelId,
+            timestamp: legacyTimestamp,  // Use current time for legacy messages
           );
         }
         return;
       }
       
-      print('[MESSAGE_LISTENER] Unknown video E2EE key type: $type');
+      print('[MESSAGE_LISTENER] Unknown video E2EE key type: $type or messageType: $messageType');
       
     } catch (e) {
       print('[MESSAGE_LISTENER] Error processing video E2EE key: $e');

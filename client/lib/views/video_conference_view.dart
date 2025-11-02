@@ -17,11 +17,15 @@ import '../models/role.dart';
 class VideoConferenceView extends StatefulWidget {
   final String channelId;
   final String channelName;
+  final MediaDevice? selectedCamera;        // NEW: Pre-selected from PreJoin
+  final MediaDevice? selectedMicrophone;    // NEW: Pre-selected from PreJoin
   
   const VideoConferenceView({
     super.key,
     required this.channelId,
     required this.channelName,
+    this.selectedCamera,        // NEW
+    this.selectedMicrophone,    // NEW
   });
   
   @override
@@ -83,8 +87,12 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     try {
       debugPrint('[VideoConferenceView] Joining channel: ${widget.channelId}');
       
-      // Join LiveKit room
-      await _service!.joinRoom(widget.channelId);
+      // Join LiveKit room with pre-selected devices from PreJoin
+      await _service!.joinRoom(
+        widget.channelId,
+        cameraDevice: widget.selectedCamera,        // Pass selected camera
+        microphoneDevice: widget.selectedMicrophone, // Pass selected microphone
+      );
       
       // Listen for service updates
       _service!.addListener(_onServiceUpdate);

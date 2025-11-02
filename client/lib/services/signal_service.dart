@@ -602,6 +602,30 @@ class SignalService {
     SocketService().registerListener("signalStatusResponse", (status) async {
       await _ensureSignalKeysPresent(status);
     });
+
+    // NEW: Receive sender key distribution messages
+    SocketService().registerListener("receiveSenderKeyDistribution", (data) async {
+      try {
+        final groupId = data['groupId'] as String;
+        final senderId = data['senderId'] as String;
+        final senderDeviceId = data['senderDeviceId'] as int;
+        final distributionMessageBase64 = data['distributionMessage'] as String;
+        
+        print('[SIGNAL_SERVICE] Received sender key distribution from $senderId:$senderDeviceId for group $groupId');
+        
+        final distributionMessageBytes = base64Decode(distributionMessageBase64);
+        await processSenderKeyDistribution(
+          groupId,
+          senderId,
+          senderDeviceId,
+          distributionMessageBytes,
+        );
+        
+        print('[SIGNAL_SERVICE] ✓ Sender key distribution processed');
+      } catch (e) {
+        print('[SIGNAL_SERVICE] Error processing sender key distribution: $e');
+      }
+    });
   }
 
   Future<void> _ensureSignalKeysPresent(status) async {
@@ -1472,12 +1496,27 @@ Future<String> decryptItem({
   /// Create and distribute sender key for a group
   /// This should be called when starting to send messages in a group
   /// Returns the serialized distribution message to send to all group members
-  Future<Uint8List> createGroupSenderKey(String groupId) async {
+  /// 
+  /// IMPORTANT: After calling this, you must broadcast the distribution message
+  /// to all group members so they can decrypt your messages
+  Future<Uint8List> createGroupSenderKey(String groupId, {bool broadcastDistribution = true}) async {
     if (_currentUserId == null || _currentDeviceId == null) {
       throw Exception('User info not set. Call setCurrentUserInfo first.');
     }
 
     print('[SIGNAL_SERVICE] Creating sender key for group $groupId, user $_currentUserId:$_currentDeviceId');
+
+    // ⚠️ CRITICAL: Check if sender key already exists to avoid chain corruption
+    final senderAddress = SignalProtocolAddress(_currentUserId!, _currentDeviceId!);
+    final senderKeyName = SenderKeyName(groupId, senderAddress);
+    
+    final existingKey = await senderKeyStore.containsSenderKey(senderKeyName);
+    if (existingKey) {
+      print('[SIGNAL_SERVICE] ℹ️ Sender key already exists for group $groupId, skipping creation');
+      // Load existing distribution message from server or regenerate
+      // For now, we'll just return empty bytes since the key is already distributed
+      return Uint8List(0);
+    }
 
     // Verify identity key pair exists
     try {
@@ -1490,8 +1529,7 @@ Future<String> decryptItem({
 
     // Verify sender key store is initialized
     try {
-      final testSenderKeyName = SenderKeyName(groupId, SignalProtocolAddress(_currentUserId!, _currentDeviceId!));
-      await senderKeyStore.loadSenderKey(testSenderKeyName);
+      await senderKeyStore.loadSenderKey(senderKeyName);
       print('[SIGNAL_SERVICE] Sender key store is accessible');
     } catch (e) {
       print('[SIGNAL_SERVICE] Error accessing sender key store: $e');
@@ -1499,8 +1537,6 @@ Future<String> decryptItem({
     }
 
     try {
-      final senderAddress = SignalProtocolAddress(_currentUserId!, _currentDeviceId!);
-      final senderKeyName = SenderKeyName(groupId, senderAddress);
       print('[SIGNAL_SERVICE] Created SenderKeyName for group $groupId, address ${senderAddress.getName()}:${senderAddress.getDeviceId()}');
       
       final groupSessionBuilder = GroupSessionBuilder(senderKeyStore);
@@ -1517,16 +1553,35 @@ Future<String> decryptItem({
       print('[SIGNAL_SERVICE] Created sender key for group $groupId');
       
       // Store sender key on server for backup/retrieval
-      try {
-        final senderKeyBase64 = base64Encode(serialized);
-        SocketService().emit('storeSenderKey', {
-          'groupId': groupId,
-          'senderKey': senderKeyBase64,
-        });
-        print('[SIGNAL_SERVICE] Stored sender key on server for group $groupId');
-      } catch (e) {
-        print('[SIGNAL_SERVICE] Warning: Failed to store sender key on server: $e');
-        // Don't fail - sender key is already stored locally
+      // Skip if serialized is empty (key already existed)
+      if (serialized.isNotEmpty) {
+        try {
+          final senderKeyBase64 = base64Encode(serialized);
+          SocketService().emit('storeSenderKey', {
+            'groupId': groupId,
+            'senderKey': senderKeyBase64,
+          });
+          print('[SIGNAL_SERVICE] Stored sender key on server for group $groupId');
+        } catch (e) {
+          print('[SIGNAL_SERVICE] Warning: Failed to store sender key on server: $e');
+          // Don't fail - sender key is already stored locally
+        }
+      }
+      
+      // Broadcast distribution message to all group members
+      // Skip if serialized is empty (key already existed)
+      if (broadcastDistribution && serialized.isNotEmpty) {
+        try {
+          print('[SIGNAL_SERVICE] Broadcasting sender key distribution message...');
+          SocketService().emit('broadcastSenderKey', {
+            'groupId': groupId,
+            'distributionMessage': base64Encode(serialized),
+          });
+          print('[SIGNAL_SERVICE] ✓ Sender key distribution message broadcast to group');
+        } catch (e) {
+          print('[SIGNAL_SERVICE] Warning: Failed to broadcast distribution message: $e');
+          // Don't fail - recipients can still request it from server
+        }
       }
       
       return serialized;
@@ -1604,60 +1659,11 @@ Future<String> decryptItem({
       print('[SIGNAL_SERVICE] Error in encryptGroupMessage: $e');
       print('[SIGNAL_SERVICE] Stack trace: $stackTrace');
       
-      // Check if this is a RangeError (corrupt/empty sender key)
-      if (e.toString().contains('RangeError') || e.toString().contains('Invalid value')) {
-        print('[SIGNAL_SERVICE] Detected RangeError - sender key is likely empty/corrupt');
-        print('[SIGNAL_SERVICE] Attempting to recreate sender key...');
-        
-        // Delete the corrupt sender key
-        try {
-          final senderAddress = SignalProtocolAddress(_currentUserId!, _currentDeviceId!);
-          final senderKeyName = SenderKeyName(groupId, senderAddress);
-          await senderKeyStore.removeSenderKey(senderKeyName);
-          print('[SIGNAL_SERVICE] Removed corrupt sender key');
-        } catch (removeError) {
-          print('[SIGNAL_SERVICE] Error removing corrupt key: $removeError');
-        }
-        
-        // Recreate the sender key
-        try {
-          print('[SIGNAL_SERVICE] Creating new sender key...');
-          final distributionMessage = await createGroupSenderKey(groupId);
-          print('[SIGNAL_SERVICE] New sender key created');
-          
-          // Trigger callback to notify that sender key was recreated
-          // This should trigger distribution to all group members
-          if (_itemTypeCallbacks.containsKey('senderKeyRecreated')) {
-            for (final callback in _itemTypeCallbacks['senderKeyRecreated']!) {
-              callback({
-                'groupId': groupId,
-                'distributionMessage': distributionMessage,
-              });
-            }
-          }
-          
-          print('[SIGNAL_SERVICE] Retrying encryption with new sender key...');
-          
-          // Retry encryption with new key
-          final messageBytes = Uint8List.fromList(utf8.encode(message));
-          final newSenderAddress = SignalProtocolAddress(_currentUserId!, _currentDeviceId!);
-          final newSenderKeyName = SenderKeyName(groupId, newSenderAddress);
-          final newGroupCipher = GroupCipher(senderKeyStore, newSenderKeyName);
-          final newCiphertext = await newGroupCipher.encrypt(messageBytes);
-          print('[SIGNAL_SERVICE] Successfully encrypted with new sender key');
-          
-          return {
-            'ciphertext': base64Encode(newCiphertext),
-            'senderId': _currentUserId,
-            'senderDeviceId': _currentDeviceId,
-          };
-        } catch (retryError) {
-          print('[SIGNAL_SERVICE] Failed to recreate and encrypt: $retryError');
-          rethrow;
-        }
-      }
+      // ⚠️ DO NOT attempt automatic recovery - it causes more problems
+      // RangeError typically means sender key chain is corrupt
+      // This should be prevented by checking containsSenderKey() before creation
+      // If it still happens, manual intervention is needed (clear storage, rejoin channel)
       
-      // Not a RangeError, rethrow the original error
       rethrow;
     }
   }
