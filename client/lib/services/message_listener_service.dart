@@ -183,8 +183,8 @@ class MessageListenerService {
           return; // Don't store as regular message
         }
 
-        if (itemType == 'video_e2ee_key') {
-          // Video E2EE key - handle separately
+        if (itemType == 'video_key_request' || itemType == 'video_key_response') {
+          // Video E2EE key exchange - handle separately
           await _processVideoE2EEKey(
             itemId: itemId,
             channelId: channelId,
@@ -192,6 +192,21 @@ class MessageListenerService {
             senderDeviceId: senderDeviceId,
             timestamp: timestamp,
             decryptedPayload: decrypted,
+            messageType: itemType,
+          );
+          return; // Don't store as regular message
+        }
+
+        if (itemType == 'video_e2ee_key') {
+          // Legacy video E2EE key - handle separately
+          await _processVideoE2EEKey(
+            itemId: itemId,
+            channelId: channelId,
+            senderId: senderId,
+            senderDeviceId: senderDeviceId,
+            timestamp: timestamp,
+            decryptedPayload: decrypted,
+            messageType: itemType,
           );
           return; // Don't store as regular message
         }
@@ -456,51 +471,45 @@ class MessageListenerService {
     required int senderDeviceId,
     required String? timestamp,
     required String decryptedPayload,
+    String? messageType,
   }) async {
     try {
-      print('[MESSAGE_LISTENER] Processing video E2EE key from $senderId');
+      print('[MESSAGE_LISTENER] Processing video E2EE key from $senderId (type: $messageType)');
       
       // Parse the decrypted JSON payload
       final Map<String, dynamic> keyData = jsonDecode(decryptedPayload);
-      final keyBase64 = keyData['key'] as String?;
-      final keyChannelId = keyData['channelId'] as String?;
-      final keySenderId = keyData['senderId'] as String?;
+      final type = keyData['type'] as String?;
       
-      if (keyBase64 == null || keyChannelId == null) {
-        print('[MESSAGE_LISTENER] Missing key or channelId in video E2EE key');
+      if (type == 'video_key_request') {
+        // Someone is requesting the key
+        final requesterId = keyData['requesterId'] as String?;
+        print('[MESSAGE_LISTENER] Received key request from $requesterId');
+        
+        if (_videoConferenceService != null && _videoConferenceService!.isConnected) {
+          await _videoConferenceService!.handleKeyRequest(requesterId ?? senderId);
+        }
         return;
       }
-
-      // Decode key from base64
-      final keyBytes = base64Decode(keyBase64);
       
-      print('[MESSAGE_LISTENER] Video E2EE key received:');
-      print('  Channel: $keyChannelId');
-      print('  Sender: $keySenderId');
-      print('  Key length: ${keyBytes.length} bytes');
-
-      // Get VideoConferenceService instance
-      final videoService = _getVideoConferenceService();
-      
-      if (videoService != null) {
-        // Add peer key to E2EE service
-        if (videoService.e2eeService != null) {
-          // CRITICAL: peerId format is "userId-channelId", not just userId!
-          // We need to construct the peerId from userId and channelId
-          final senderUserId = keySenderId ?? senderId;
-          final peerId = '$senderUserId-$keyChannelId';
-          
-          videoService.e2eeService!.addPeerKey(peerId, keyBytes);
-          print('[MESSAGE_LISTENER] ✓ Video E2EE key added for peer $peerId (userId: $senderUserId)');
-          
-          // Note: No notification needed, this is internal crypto setup
-        } else {
-          print('[MESSAGE_LISTENER] VideoConferenceService has no E2EE service');
+      if (type == 'video_key_response') {
+        // Someone sent us the key
+        final targetUserId = keyData['targetUserId'] as String?;
+        final encryptedKey = keyData['encryptedKey'] as String?;
+        
+        print('[MESSAGE_LISTENER] Received key response for user: $targetUserId');
+        
+        if (encryptedKey != null && _videoConferenceService != null) {
+          await _videoConferenceService!.handleE2EEKey(
+            senderUserId: senderId,
+            encryptedKey: encryptedKey,
+            channelId: channelId,
+          );
         }
-      } else {
-        print('[MESSAGE_LISTENER] VideoConferenceService not available');
+        return;
       }
-
+      
+      print('[MESSAGE_LISTENER] Unknown video E2EE key type: $type');
+      
     } catch (e) {
       print('[MESSAGE_LISTENER] Error processing video E2EE key: $e');
     }
@@ -542,15 +551,6 @@ class MessageListenerService {
     }
   }
   
-  /// Helper to get VideoConferenceService instance
-  /// TODO: Inject via constructor or service locator
-  dynamic _getVideoConferenceService() {
-    // Return registered VideoConferenceService instance
-    return _videoConferenceService;
-  }
-  
-  /// Helper to get current user ID
-  /// TODO: Inject via constructor or get from SignalService
   /// Handle delivery receipt for 1:1 messages
   void _handleDeliveryReceipt(dynamic data) {
     try {

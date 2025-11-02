@@ -329,7 +329,7 @@ class _MyAppState extends State<MyApp> {
         ),
         // Video Conference provider (requires SocketService)
         ChangeNotifierProvider(
-          create: (context) => VideoConferenceService(SocketService()),
+          create: (context) => VideoConferenceService(),
         ),
         // P2P File Transfer providers - use the initialized services
         Provider<FileStorageInterface>.value(value: _fileStorage!),

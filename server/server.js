@@ -1728,6 +1728,87 @@ io.sockets.on("connection", socket => {
   });
 
   /**
+   * Relay encryption key request for video conferencing (Signal Protocol encrypted)
+   * Used when a participant joins a room and needs the frame encryption key
+   */
+  socket.on("video:key-request", (data) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        console.error('[VIDEO E2EE] Key request blocked - not authenticated');
+        return;
+      }
+
+      const { targetUserId, channelId, signalMessage } = data;
+      const requesterId = socket.handshake.session.uuid;
+      
+      console.log(`[VIDEO E2EE] User ${requesterId} requesting key for channel ${channelId} from ${targetUserId}`);
+      
+      // Find target participant's socket and relay the key request
+      const targetSockets = Array.from(io.sockets.sockets.values())
+        .filter(s => s.handshake.session.uuid === targetUserId);
+      
+      if (targetSockets.length > 0) {
+        targetSockets.forEach(targetSocket => {
+          targetSocket.emit("video:key-request", {
+            fromUserId: requesterId,
+            channelId: channelId,
+            signalMessage: signalMessage
+          });
+        });
+        console.log(`[VIDEO E2EE] Key request relayed to ${targetUserId}`);
+      } else {
+        console.warn(`[VIDEO E2EE] Participant ${targetUserId} not found online`);
+        // Send error back to requester
+        socket.emit("video:key-response", {
+          fromUserId: targetUserId,
+          channelId: channelId,
+          error: "Participant not online"
+        });
+      }
+    } catch (error) {
+      console.error('[VIDEO E2EE] Error relaying key request:', error);
+    }
+  });
+
+  /**
+   * Relay encryption key response for video conferencing (Signal Protocol encrypted)
+   * Contains the LiveKit frame encryption key encrypted with Signal Protocol
+   */
+  socket.on("video:key-response", (data) => {
+    try {
+      if (!socket.handshake.session.uuid) {
+        console.error('[VIDEO E2EE] Key response blocked - not authenticated');
+        return;
+      }
+
+      const { targetUserId, channelId, signalMessage, error } = data;
+      const senderId = socket.handshake.session.uuid;
+      
+      console.log(`[VIDEO E2EE] User ${senderId} sending key for channel ${channelId} to ${targetUserId}`);
+      
+      // Find requester's socket and relay the key response
+      const targetSockets = Array.from(io.sockets.sockets.values())
+        .filter(s => s.handshake.session.uuid === targetUserId);
+      
+      if (targetSockets.length > 0) {
+        targetSockets.forEach(targetSocket => {
+          targetSocket.emit("video:key-response", {
+            fromUserId: senderId,
+            channelId: channelId,
+            signalMessage: signalMessage,
+            error: error
+          });
+        });
+        console.log(`[VIDEO E2EE] Key response relayed to ${targetUserId}`);
+      } else {
+        console.warn(`[VIDEO E2EE] Requester ${targetUserId} not found online`);
+      }
+    } catch (error) {
+      console.error('[VIDEO E2EE] Error relaying key response:', error);
+    }
+  });
+
+  /**
    * Event handler to delete a specific item (1:1 message) for the current user/device as receiver
    * @param {Object} data - Contains itemId to delete
    */

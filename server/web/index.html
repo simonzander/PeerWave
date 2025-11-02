@@ -31,6 +31,96 @@
 
   <title>peerwave_client</title>
   <link rel="manifest" href="manifest.json">
+  
+  <!-- LiveKit E2EE Crypto Worker (Inline) -->
+  <script>
+    // Create an inline Web Worker for LiveKit E2EE frame encryption
+    // This bypasses the need for a separate e2ee.worker.dart.js file
+    window.createE2EEWorker = function() {
+      const workerCode = `
+        // LiveKit E2EE Worker - AES-GCM Frame Encryption
+        let encryptionKey = null;
+        
+        // Import Web Crypto API
+        self.crypto = self.crypto || self.webkitCrypto;
+        
+        self.onmessage = async function(e) {
+          const { type, data } = e.data;
+          
+          try {
+            if (type === 'setKey') {
+              // Set the encryption key from base64
+              const keyData = Uint8Array.from(atob(data.key), c => c.charCodeAt(0));
+              encryptionKey = await crypto.subtle.importKey(
+                'raw',
+                keyData,
+                { name: 'AES-GCM' },
+                false,
+                ['encrypt', 'decrypt']
+              );
+              self.postMessage({ type: 'keySet', success: true });
+              
+            } else if (type === 'encrypt') {
+              if (!encryptionKey) {
+                throw new Error('Encryption key not set');
+              }
+              
+              const iv = crypto.getRandomValues(new Uint8Array(12));
+              const encrypted = await crypto.subtle.encrypt(
+                { name: 'AES-GCM', iv: iv },
+                encryptionKey,
+                data.frame
+              );
+              
+              // Prepend IV to encrypted data
+              const result = new Uint8Array(iv.length + encrypted.byteLength);
+              result.set(iv, 0);
+              result.set(new Uint8Array(encrypted), iv.length);
+              
+              self.postMessage({
+                type: 'encrypted',
+                data: result.buffer
+              }, [result.buffer]);
+              
+            } else if (type === 'decrypt') {
+              if (!encryptionKey) {
+                throw new Error('Encryption key not set');
+              }
+              
+              const frameData = new Uint8Array(data.frame);
+              const iv = frameData.slice(0, 12);
+              const encrypted = frameData.slice(12);
+              
+              const decrypted = await crypto.subtle.decrypt(
+                { name: 'AES-GCM', iv: iv },
+                encryptionKey,
+                encrypted
+              );
+              
+              self.postMessage({
+                type: 'decrypted',
+                data: decrypted
+              }, [decrypted]);
+            }
+          } catch (error) {
+            self.postMessage({
+              type: 'error',
+              error: error.message
+            });
+          }
+        };
+        
+        // Send ready message
+        self.postMessage({ type: 'ready' });
+      `;
+      
+      const blob = new Blob([workerCode], { type: 'application/javascript' });
+      const workerUrl = URL.createObjectURL(blob);
+      return new Worker(workerUrl);
+    };
+    
+    console.log('[E2EE] Inline worker factory registered');
+  </script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>

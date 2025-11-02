@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:provider/provider.dart';
 import '../services/video_conference_service.dart';
+import '../services/message_listener_service.dart';
 import '../screens/channel/channel_members_screen.dart';
 import '../models/role.dart';
 
@@ -46,6 +47,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       try {
         _service = Provider.of<VideoConferenceService>(context, listen: false);
         debugPrint('[VideoConferenceView] Service obtained from Provider');
+        
+        // Register with MessageListenerService for E2EE key exchange
+        MessageListenerService.instance.registerVideoConferenceService(_service!);
+        debugPrint('[VideoConferenceView] Registered VideoConferenceService with MessageListener');
         
         // Schedule join for after build completes
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -118,12 +123,21 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   
   @override
   void dispose() {
+    // Unregister from MessageListenerService
+    MessageListenerService.instance.unregisterVideoConferenceService();
+    debugPrint('[VideoConferenceView] Unregistered VideoConferenceService from MessageListener');
+    
     _service?.removeListener(_onServiceUpdate);
     super.dispose();
   }
   
   @override
   Widget build(BuildContext context) {
+    // E2EE Status: Frame encryption not available in Flutter Web (Web Worker limitation)
+    // But we still have:
+    // 1. WebRTC DTLS/SRTP transport encryption
+    // 2. Signal Protocol for signaling/key exchange
+    
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -132,13 +146,17 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             Text(widget.channelName),
             Row(
               children: [
-                Icon(Icons.lock, size: 14, color: Colors.green[300]),
+                Icon(
+                  Icons.verified_user,
+                  size: 14,
+                  color: Colors.blue[300],
+                ),
                 const SizedBox(width: 4),
                 Text(
-                  'E2EE Enabled',
+                  'DTLS/SRTP Encrypted',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.green[300],
+                    color: Colors.blue[300],
                     fontWeight: FontWeight.normal,
                   ),
                 ),

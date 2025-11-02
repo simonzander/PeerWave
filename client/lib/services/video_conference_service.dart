@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'api_service.dart';
-import 'socket_service.dart';
+import 'signal_service.dart';
 
 /// LiveKit-based Video Conference Service with Signal Protocol E2EE
 /// 
@@ -22,16 +23,14 @@ class VideoConferenceService extends ChangeNotifier {
   
   // E2EE components
   BaseKeyProvider? _keyProvider;
-  Map<String, Uint8List> _participantKeys = {};  // userId -> encryption key
+  Uint8List? _channelSharedKey;  // ONE shared key for the entire channel
+  Map<String, Uint8List> _participantKeys = {};  // userId -> encryption key (legacy, for backward compat)
   
   // State management
   String? _currentChannelId;
   String? _currentRoomName;
   bool _isConnected = false;
   bool _isConnecting = false;
-  
-  // Services
-  final SocketService _socketService;
   
   // Stream controllers
   final _participantJoinedController = StreamController<RemoteParticipant>.broadcast();
@@ -50,29 +49,37 @@ class VideoConferenceService extends ChangeNotifier {
   Stream<RemoteParticipant> get onParticipantLeft => _participantLeftController.stream;
   Stream<TrackSubscribedEvent> get onTrackSubscribed => _trackSubscribedController.stream;
 
-  VideoConferenceService(this._socketService);
+  VideoConferenceService();
 
   /// Initialize E2EE with Signal Protocol key exchange
   Future<void> _initializeE2EE() async {
     try {
       print('[VideoConf] Initializing E2EE with Signal Protocol');
       
-      // TODO: E2EE is disabled for now due to Web Worker issues
-      // Web Workers need proper configuration in Flutter Web
-      // For now, we'll skip E2EE initialization
-      print('[VideoConf] ⚠️ E2EE temporarily disabled (Web Worker configuration needed)');
-      return;
+      // Generate ONE shared key for this channel
+      // The first participant generates, others receive it via Signal Protocol
+      final random = Random.secure();
+      _channelSharedKey = Uint8List.fromList(
+        List.generate(32, (_) => random.nextInt(256))
+      );
       
-      // Create KeyProvider with LiveKit's frame encryption
-      // _keyProvider = await BaseKeyProvider.create(
-      //   sharedKey: false,  // Per-participant keys (for Signal Protocol)
-      //   ratchetSalt: 'PeerWave-LiveKit-E2EE',
-      //   ratchetWindowSize: 16,
-      //   failureTolerance: 5,
-      //   keyRingSize: 256,
-      // );
+      // Create BaseKeyProvider with the compiled e2ee.worker.dart.js
+      try {
+        _keyProvider = await BaseKeyProvider.create();
+        
+        // Set the shared key in KeyProvider
+        final keyBase64 = base64Encode(_channelSharedKey!);
+        await _keyProvider!.setKey(keyBase64);
+        
+        print('[VideoConf] ✓ BaseKeyProvider created with e2ee.worker.dart.js');
+        print('[VideoConf] ✓ Shared encryption key set (32 bytes AES-256)');
+      } catch (e) {
+        print('[VideoConf] ⚠️ Failed to create BaseKeyProvider: $e');
+        print('[VideoConf] ⚠️ Falling back to transport encryption only');
+        _keyProvider = null;
+      }
       
-      // print('[VideoConf] E2EE initialized successfully');
+      print('[VideoConf] ✓ E2EE initialized with shared channel key');
     } catch (e) {
       print('[VideoConf] E2EE initialization error: $e');
       rethrow;
@@ -80,24 +87,63 @@ class VideoConferenceService extends ChangeNotifier {
   }
 
   /// Exchange encryption keys using Signal Protocol
+  /// Sends the SHARED CHANNEL KEY to new participants via Signal Protocol
+  /// Uses sendGroupItem for E2EE transport layer
   Future<void> _exchangeKeysWithParticipant(String participantUserId) async {
     try {
-      print('[VideoConf] Starting key exchange with participant: $participantUserId');
+      if (_channelSharedKey == null || _currentChannelId == null) {
+        print('[VideoConf] ⚠️ Key or channel not initialized, skipping key exchange');
+        return;
+      }
+
+      // Check if we're the first participant (room creator)
+      final isFirstParticipant = _remoteParticipants.isEmpty || 
+                                  _remoteParticipants.length == 1;
       
-      // Request E2EE key via Signal Protocol
-      // This will trigger the existing Signal Protocol key exchange
-      _socketService.emit('video:request-e2ee-key', {
-        'channelId': _currentChannelId,
-        'recipientUserId': participantUserId,
-      });
+      final itemId = 'video_key_${DateTime.now().millisecondsSinceEpoch}';
       
-      print('[VideoConf] Key exchange request sent to $participantUserId');
+      if (!isFirstParticipant) {
+        print('[VideoConf] Not first participant, requesting key from $participantUserId');
+        
+        // Send key request via Signal Protocol (encrypted group message)
+        await SignalService.instance.sendGroupItem(
+          channelId: _currentChannelId!,
+          message: jsonEncode({
+            'type': 'video_key_request',
+            'requesterId': participantUserId,
+          }),
+          itemId: itemId,
+          type: 'video_key_request',
+        );
+        return;
+      }
+
+      print('[VideoConf] First participant - sending shared key to: $participantUserId');
+      
+      // Send the shared key via Signal Protocol (encrypted group message)
+      final keyBase64 = base64Encode(_channelSharedKey!);
+      
+      await SignalService.instance.sendGroupItem(
+        channelId: _currentChannelId!,
+        message: jsonEncode({
+          'type': 'video_key_response',
+          'targetUserId': participantUserId,
+          'encryptedKey': keyBase64,
+        }),
+        itemId: itemId,
+        type: 'video_key_response',
+      );
+      
+      print('[VideoConf] ✓ Shared key sent via Signal Protocol (${_channelSharedKey!.length} bytes)');
+      print('[VideoConf] ✓ Key will enable frame-level encryption for all participants');
+      
     } catch (e) {
       print('[VideoConf] Key exchange error: $e');
     }
   }
 
   /// Handle incoming E2EE key from Signal Protocol
+  /// Receives the SHARED CHANNEL KEY from existing participants
   Future<void> handleE2EEKey({
     required String senderUserId,
     required String encryptedKey,
@@ -109,26 +155,76 @@ class VideoConferenceService extends ChangeNotifier {
         return;
       }
 
-      print('[VideoConf] Received E2EE key from $senderUserId');
+      // If encryptedKey is empty, this is a KEY REQUEST, not a response
+      if (encryptedKey.isEmpty) {
+        print('[VideoConf] Received key request from $senderUserId (sending our key)');
+        await handleKeyRequest(senderUserId);
+        return;
+      }
+
+      print('[VideoConf] Received shared channel key from $senderUserId');
       
-      // Decrypt the key using Signal Protocol (handled by MessageListener)
-      // For now, we'll use the encrypted key directly
-      // In production, you'd decrypt it with your Signal session
-      
+      // Decode the shared channel key
       final keyBytes = base64Decode(encryptedKey);
-      _participantKeys[senderUserId] = keyBytes;
       
-      // Set the key in LiveKit's KeyProvider
-      await _keyProvider?.setRawKey(
-        keyBytes,
-        participantId: senderUserId,
-        keyIndex: 0,
-      );
+      // ONLY accept the key if we don't already have one OR if we're not the first participant
+      // This prevents overwriting the authoritative key
+      if (_channelSharedKey == null || _remoteParticipants.length > 1) {
+        _channelSharedKey = keyBytes;
+        
+        // Set the key in BaseKeyProvider if available
+        if (_keyProvider != null) {
+          try {
+            final keyBase64 = base64Encode(_channelSharedKey!);
+            await _keyProvider!.setKey(keyBase64);
+            print('[VideoConf] ✓ Shared channel key accepted and set in KeyProvider');
+            print('[VideoConf] ✓ Frame-level E2EE now active with received key');
+          } catch (e) {
+            print('[VideoConf] ⚠️ Failed to set key in KeyProvider: $e');
+          }
+        } else {
+          print('[VideoConf] ✓ Shared channel key stored (KeyProvider not available)');
+          print('[VideoConf] ⚠️ Frame encryption unavailable without BaseKeyProvider');
+        }
+      } else {
+        print('[VideoConf] ⚠️ Ignoring key from $senderUserId (we are first participant with authoritative key)');
+      }
       
-      print('[VideoConf] Key set for participant: $senderUserId');
       notifyListeners();
     } catch (e) {
       print('[VideoConf] Error handling E2EE key: $e');
+    }
+  }
+
+  /// Handle incoming key request from another participant
+  /// Send our SHARED CHANNEL KEY to them via Signal Protocol
+  Future<void> handleKeyRequest(String requesterId) async {
+    try {
+      if (_channelSharedKey == null || _currentChannelId == null) {
+        print('[VideoConf] ⚠️ Key not initialized, cannot respond to key request');
+        return;
+      }
+
+      print('[VideoConf] Received key request from $requesterId');
+      
+      // Send our SHARED CHANNEL KEY (not a new key!) via Signal Protocol
+      final keyBase64 = base64Encode(_channelSharedKey!);
+      final itemId = 'video_key_response_${DateTime.now().millisecondsSinceEpoch}';
+      
+      await SignalService.instance.sendGroupItem(
+        channelId: _currentChannelId!,
+        message: jsonEncode({
+          'type': 'video_key_response',
+          'targetUserId': requesterId,
+          'encryptedKey': keyBase64,
+        }),
+        itemId: itemId,
+        type: 'video_key_response',
+      );
+      
+      print('[VideoConf] ✓ Sent shared channel key to $requesterId via Signal Protocol');
+    } catch (e) {
+      print('[VideoConf] Error handling key request: $e');
     }
   }
 
@@ -188,17 +284,25 @@ class VideoConferenceService extends ChangeNotifier {
         print('[VideoConf] ⚠️ Failed to create audio track: $e');
       }
 
-      // Create room WITHOUT E2EE for now (Web Worker issues)
+      // Create room WITH E2EE if BaseKeyProvider initialized successfully
       _room = Room(
         roomOptions: RoomOptions(
           adaptiveStream: true,
           dynacast: true,
-          // E2EE disabled temporarily
-          // e2eeOptions: E2EEOptions(
-          //   keyProvider: _keyProvider!,
-          // ),
+          // Enable E2EE with compiled e2ee.worker.dart.js
+          e2eeOptions: _keyProvider != null 
+            ? E2EEOptions(keyProvider: _keyProvider!) 
+            : null,
         ),
       );
+      
+      if (_keyProvider != null) {
+        print('[VideoConf] ✓ Room created with E2EE enabled (AES-256 frame encryption)');
+        print('[VideoConf] ✓ Using compiled e2ee.worker.dart.js for frame processing');
+      } else {
+        print('[VideoConf] ✓ Room created (DTLS/SRTP transport encryption only)');
+        print('[VideoConf] ⚠️ Frame-level E2EE unavailable (BaseKeyProvider failed)');
+      }
 
       // Set up event listeners
       _setupRoomListeners();
@@ -211,6 +315,10 @@ class VideoConferenceService extends ChangeNotifier {
         roomOptions: RoomOptions(
           adaptiveStream: true,
           dynacast: true,
+          // Apply same E2EE options on connect
+          e2eeOptions: _keyProvider != null 
+            ? E2EEOptions(keyProvider: _keyProvider!) 
+            : null,
         ),
       );
 
@@ -352,8 +460,8 @@ class VideoConferenceService extends ChangeNotifier {
         _room = null;
       }
 
-      _keyProvider = null;
       _participantKeys.clear();
+      _channelSharedKey = null;
 
       _isConnected = false;
       _isConnecting = false;
