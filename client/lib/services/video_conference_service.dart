@@ -196,6 +196,10 @@ class VideoConferenceService extends ChangeNotifier {
         
         print('[VideoConf][TEST] ✓ BaseKeyProvider created with e2ee.worker.dart.js');
         print('[VideoConf][TEST] ✓ Key set in KeyProvider (AES-256 frame encryption ready)');
+        print('[VideoConf][TEST] 📊 KEY STATE:');
+        print('[VideoConf][TEST]    - Key Preview: $keyPreview...');
+        print('[VideoConf][TEST]    - Timestamp: $_keyTimestamp');
+        print('[VideoConf][TEST]    - Channel: $_currentChannelId');
       } catch (e) {
         print('[VideoConf][TEST] ⚠️ Failed to create BaseKeyProvider: $e');
         print('[VideoConf][TEST] ⚠️ Falling back to DTLS/SRTP transport encryption only');
@@ -251,12 +255,12 @@ class VideoConferenceService extends ChangeNotifier {
       await SignalService.instance.sendGroupItem(
         channelId: _currentChannelId!,
         message: jsonEncode({
-          'type': 'video_key_response',
           'targetUserId': participantUserId,
           'encryptedKey': keyBase64,
+          'timestamp': _keyTimestamp,  // Include ORIGINAL timestamp
         }),
         itemId: itemId,
-        type: 'video_key_response',
+        type: 'video_e2ee_key_response',  // Use new format with timestamp
       );
       
       print('[VideoConf] ✓ Shared key sent via Signal Protocol (${_channelSharedKey!.length} bytes)');
@@ -336,6 +340,17 @@ class VideoConferenceService extends ChangeNotifier {
           print('[VideoConf][TEST] ✓ Key set in BaseKeyProvider (KeyProvider available)');
           print('[VideoConf][TEST] ✓ Frame-level AES-256 E2EE now ACTIVE');
           print('[VideoConf][TEST] ✓ Role: KEY RECEIVER (non-first participant)');
+          print('[VideoConf][TEST] 📊 KEY STATE:');
+          print('[VideoConf][TEST]    - Key Preview: $keyPreview...');
+          print('[VideoConf][TEST]    - Timestamp: $_keyTimestamp');
+          print('[VideoConf][TEST]    - Channel: $_currentChannelId');
+          
+          // The KeyProvider will automatically encrypt/decrypt frames once the key is set
+          // No additional action needed - LiveKit handles the rest
+          if (_room != null && _isConnected) {
+            print('[VideoConf][TEST] ✓ Room already connected - KeyProvider will now decrypt incoming frames');
+            print('[VideoConf][TEST] ✓ All participants should now use the same key: timestamp=$_keyTimestamp');
+          }
         } catch (e) {
           print('[VideoConf][TEST] ❌ Failed to set key in KeyProvider: $e');
         }
@@ -413,7 +428,6 @@ class VideoConferenceService extends ChangeNotifier {
       await SignalService.instance.sendGroupItem(
         channelId: _currentChannelId!,
         message: jsonEncode({
-          'type': 'video_key_response',
           'targetUserId': requesterId,
           'encryptedKey': keyBase64,
           'timestamp': _keyTimestamp,  // Use ORIGINAL timestamp for race condition resolution
@@ -458,8 +472,43 @@ class VideoConferenceService extends ChangeNotifier {
       }
       print('[VideoConf] ✓ Signal Service ready for E2EE key exchange');
 
-      // Initialize E2EE
-      await _initializeE2EE();
+      // Initialize E2EE ONLY if we don't already have a key
+      // (non-first participants receive key in PreJoin before joining)
+      if (_keyTimestamp == null) {
+        print('[VideoConf] No existing E2EE key - initializing as first participant');
+        await _initializeE2EE();
+      } else {
+        print('[VideoConf] E2EE key already received (timestamp: $_keyTimestamp)');
+        print('[VideoConf] Skipping initialization - will use existing key');
+        
+        // Still need to ensure sender key exists for this participant
+        if (_currentChannelId != null) {
+          print('[VideoConf] 🔧 Ensuring sender key exists for channel...');
+          try {
+            await SignalService.instance.createGroupSenderKey(_currentChannelId!);
+            print('[VideoConf] ✓ Sender key ready');
+          } catch (e) {
+            if (e.toString().contains('already exists')) {
+              print('[VideoConf] ℹ️ Sender key already exists (OK)');
+            } else {
+              print('[VideoConf] ⚠️ Sender key error (continuing): $e');
+            }
+          }
+        }
+        
+        // Create KeyProvider with existing key
+        if (_keyProvider == null && _channelSharedKey != null) {
+          try {
+            _keyProvider = await BaseKeyProvider.create();
+            final keyBase64 = base64Encode(_channelSharedKey!);
+            await _keyProvider!.setKey(keyBase64);
+            print('[VideoConf] ✓ BaseKeyProvider created with received key');
+          } catch (e) {
+            print('[VideoConf] ⚠️ Failed to create KeyProvider: $e');
+            _keyProvider = null;
+          }
+        }
+      }
 
       // Get LiveKit token from server (credentials are automatically included)
       print('[VideoConf] Requesting token for channel: $channelId');
