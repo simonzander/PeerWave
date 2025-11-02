@@ -280,7 +280,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       final itemId = data['itemId'] as String;
       final channelId = data['channel'] as String;
       final senderId = data['sender'] as String;
-      final senderDeviceId = data['senderDevice'] as int;
+      // Parse senderDeviceId as int (socket might send String)
+      final senderDeviceId = data['senderDevice'] is int
+          ? data['senderDevice'] as int
+          : int.parse(data['senderDevice'].toString());
       final payload = data['payload'] as String;
       final timestamp = data['timestamp'] ?? DateTime.now().toIso8601String();
       final itemType = data['type'] as String? ?? 'message';
@@ -428,7 +431,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           try {
             final itemId = item['itemId'] as String;
             final senderId = item['sender'] as String;
-            final senderDeviceId = item['senderDevice'] as int;
+            // Parse senderDeviceId as int (REST API might return String)
+            final senderDeviceId = item['senderDevice'] is int
+                ? item['senderDevice'] as int
+                : int.parse(item['senderDevice'].toString());
             final payload = item['payload'] as String;
             final timestamp = item['timestamp'] as String;
             final itemType = item['type'] as String? ?? 'message';

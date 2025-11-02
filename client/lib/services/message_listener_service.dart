@@ -143,7 +143,11 @@ class MessageListenerService {
       final itemId = data['itemId'] as String?;
       final channelId = data['channel'] as String?;
       final senderId = data['sender'] as String?;
-      final senderDeviceId = data['senderDevice'] as int?;
+      // Parse senderDeviceId as int (socket might send String)
+      final senderDeviceIdRaw = data['senderDevice'];
+      final senderDeviceId = senderDeviceIdRaw is int
+          ? senderDeviceIdRaw
+          : (senderDeviceIdRaw != null ? int.tryParse(senderDeviceIdRaw.toString()) : null);
       final payload = data['payload'] as String?;
       final timestamp = data['timestamp'] as String?;
       final itemType = data['type'] as String? ?? 'message';

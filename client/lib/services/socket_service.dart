@@ -40,7 +40,11 @@ class SocketService {
         print('[SOCKET SERVICE] Authentication response: $data');
         // Store user info in SignalService for device filtering
         if (data is Map && data['authenticated'] == true && data['uuid'] != null && data['deviceId'] != null) {
-          SignalService.instance.setCurrentUserInfo(data['uuid'], data['deviceId']);
+          // Parse deviceId as int (server sends String)
+          final deviceId = data['deviceId'] is int
+              ? data['deviceId'] as int
+              : int.parse(data['deviceId'].toString());
+          SignalService.instance.setCurrentUserInfo(data['uuid'], deviceId);
         }
       });
       _socket!.on('disconnect', (_) {

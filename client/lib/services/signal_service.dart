@@ -608,7 +608,10 @@ class SignalService {
       try {
         final groupId = data['groupId'] as String;
         final senderId = data['senderId'] as String;
-        final senderDeviceId = data['senderDeviceId'] as int;
+        // Parse senderDeviceId as int (socket might send String)
+        final senderDeviceId = data['senderDeviceId'] is int
+            ? data['senderDeviceId'] as int
+            : int.parse(data['senderDeviceId'].toString());
         final distributionMessageBase64 = data['distributionMessage'] as String;
         
         print('[SIGNAL_SERVICE] Received sender key distribution from $senderId:$senderDeviceId for group $groupId');
@@ -769,7 +772,10 @@ class SignalService {
   /// Prüft zuerst den lokalen Cache, um DuplicateMessageException zu vermeiden
   Future<String> decryptItemFromData(Map<String, dynamic> data) async {
     final sender = data['sender'];
-    final senderDeviceId = data['senderDeviceId'];
+    // Parse senderDeviceId as int (server/storage might return String)
+    final senderDeviceId = data['senderDeviceId'] is int
+        ? data['senderDeviceId'] as int
+        : int.parse(data['senderDeviceId'].toString());
     final payload = data['payload'];
     final cipherType = data['cipherType'];
     final itemId = data['itemId'];
@@ -1014,15 +1020,33 @@ void deleteGroupItem(String itemId, String channelId) async {
           print(base64Decode(data['signedPreKey']['signed_prekey_data']).length);
           print("[DEBUG] Decoding signedPreKeySignature ${data['signedPreKey']['signed_prekey_signature']}");
           print(base64Decode(data['signedPreKey']['signed_prekey_signature']).length);
+          
+          // Parse ALL numeric IDs as int (SQLite INTEGER fields returned as String)
+          final deviceId = data['device_id'] is int 
+              ? data['device_id'] as int
+              : int.parse(data['device_id'].toString());
+          
+          final registrationId = data['registration_id'] is int
+              ? data['registration_id'] as int
+              : int.parse(data['registration_id'].toString());
+          
+          final preKeyId = data['preKey']['prekey_id'] is int
+              ? data['preKey']['prekey_id'] as int
+              : int.parse(data['preKey']['prekey_id'].toString());
+          
+          final signedPreKeyId = data['signedPreKey']['signed_prekey_id'] is int
+              ? data['signedPreKey']['signed_prekey_id'] as int
+              : int.parse(data['signedPreKey']['signed_prekey_id'].toString());
+          
           result.add({
             'clientid': data['clientid'],
             'userId': data['userId'],
-            'deviceId': data['device_id'],
+            'deviceId': deviceId,
             'publicKey': data['public_key'],
-            'registrationId': data['registration_id'],
-            'preKeyId': data['preKey']['prekey_id'],
+            'registrationId': registrationId,
+            'preKeyId': preKeyId,
             'preKeyPublic': Curve.decodePoint(base64Decode(data['preKey']['prekey_data']), 0),
-            'signedPreKeyId': data['signedPreKey']['signed_prekey_id'],
+            'signedPreKeyId': signedPreKeyId,
             'signedPreKeyPublic': Curve.decodePoint(base64Decode(data['signedPreKey']['signed_prekey_data']), 0),
             'signedPreKeySignature': base64Decode(data['signedPreKey']['signed_prekey_signature']),
             'identityKey': IdentityKey.fromBytes(base64Decode(data['public_key']), 0),
@@ -2191,7 +2215,10 @@ Future<String> decryptItem({
         for (final key in senderKeys) {
           try {
             final userId = key['userId'] as String;
-            final deviceId = key['deviceId'] as int;
+            // Parse deviceId as int (API might return String)
+            final deviceId = key['deviceId'] is int
+                ? key['deviceId'] as int
+                : int.parse(key['deviceId'].toString());
             final senderKeyBase64 = key['senderKey'] as String;
             final senderKeyBytes = base64Decode(senderKeyBase64);
             
@@ -2249,8 +2276,15 @@ Future<String> decryptItem({
         throw Exception('User not authenticated');
       }
       
-      // Create sender key distribution message
-      final distributionMessage = await createGroupSenderKey(channelId);
+      // Create sender key distribution message (without broadcasting)
+      final distributionMessage = await createGroupSenderKey(channelId, broadcastDistribution: false);
+      
+      // Check if key already existed (returns empty bytes)
+      if (distributionMessage.isEmpty) {
+        print('[SIGNAL_SERVICE] ℹ️ Sender key already exists, skipping upload');
+        return;
+      }
+      
       final senderKeyBase64 = base64Encode(distributionMessage);
       
       // Upload to server

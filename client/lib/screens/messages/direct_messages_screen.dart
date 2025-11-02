@@ -220,7 +220,11 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       });
 
       if (!isLocalSent && isFromTarget) {
-        _sendReadReceipt(item['itemId'], sender, item['senderDeviceId']);
+        // Parse senderDeviceId as int (might be String from storage/socket)
+        final senderDeviceId = item['senderDeviceId'] is int
+            ? item['senderDeviceId'] as int
+            : int.parse(item['senderDeviceId'].toString());
+        _sendReadReceipt(item['itemId'], sender, senderDeviceId);
       }
     }
   }
@@ -303,10 +307,15 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
           if (msgType == 'read_receipt') {
             try {
+              // Parse deviceSender as int (server returns String from SQLite INTEGER)
+              final deviceSender = msg['deviceSender'] is int
+                  ? msg['deviceSender'] as int
+                  : int.parse(msg['deviceSender'].toString());
+              
               final item = {
                 'itemId': msg['itemId'],
                 'sender': msg['sender'],
-                'senderDeviceId': msg['deviceSender'],
+                'senderDeviceId': deviceSender,
                 'payload': msg['payload'],
                 'cipherType': msg['cipherType'],
               };
@@ -340,10 +349,15 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             continue;
           }
 
+          // Parse deviceSender as int (server returns String from SQLite INTEGER)
+          final deviceSender = msg['deviceSender'] is int
+              ? msg['deviceSender'] as int
+              : int.parse(msg['deviceSender'].toString());
+
           final item = {
             'itemId': msg['itemId'],
             'sender': msg['sender'],
-            'senderDeviceId': msg['deviceSender'],
+            'senderDeviceId': deviceSender,
             'payload': msg['payload'],
             'cipherType': msg['cipherType'],
           };
@@ -355,7 +369,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           final decryptedMsg = {
             'itemId': msg['itemId'],
             'sender': msg['sender'],
-            'senderDeviceId': msg['deviceSender'],
+            'senderDeviceId': deviceSender,
             'text': decrypted,
             'message': decrypted,
             'payload': decrypted, // Add payload field for file messages
@@ -367,7 +381,11 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           decryptedMessages.add(decryptedMsg);
 
           if (msg['sender'] == widget.recipientUuid) {
-            await _sendReadReceipt(msg['itemId'], msg['sender'], msg['deviceSender']);
+            // Parse deviceSender as int (IndexedDB might return String)
+            final deviceSender = msg['deviceSender'] is int
+                ? msg['deviceSender'] as int
+                : int.parse(msg['deviceSender'].toString());
+            await _sendReadReceipt(msg['itemId'], msg['sender'], deviceSender);
           }
         }
 
