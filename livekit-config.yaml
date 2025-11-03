@@ -4,10 +4,12 @@ bind_addresses:
   - "0.0.0.0"
 
 rtc:
-  # Port range for WebRTC connections
-  port_range_start: 50100
-  port_range_end: 50200
-  # Use localhost for local development
+  # Port range for WebRTC connections (RTP media streams)
+  # MAXIMUM RANGE: 10001 ports for ~10000 concurrent streams
+  # Each peer connection uses ~1-2 ports (audio + video)
+  port_range_start: 40000
+  port_range_end: 50000
+  # Use localhost for local development (set to true for production!)
   use_external_ip: false
   # STUN servers for NAT traversal
   stun_servers:
@@ -35,12 +37,25 @@ keys:
   # These should match your server environment variables
   devkey: secret
 
-# Turn servers (optional - for production NAT traversal)
-# turn:
-#   enabled: true
-#   domain: turn.yourdomain.com
-#   tls_port: 5349
-#   udp_port: 3478
+# ============================================================
+# TURN Server (for P2P NAT traversal)
+# Replaces Coturn - embedded TURN server with JWT auth
+# ============================================================
+turn:
+  enabled: true
+  domain: turn.peerwave.local
+  # TURN/TLS - looks like HTTPS, passes corporate firewalls
+  tls_port: 5349
+  # TURN/UDP - modern QUIC-compatible, best performance
+  udp_port: 443
+  # TURN Relay port range (for P2P data relay)
+  # MAXIMUM RANGE: 10001 ports for ~10000 concurrent P2P connections
+  # Each TURN relay connection uses 1 port
+  relay_range_start: 50000
+  relay_range_end: 60000
+  # SSL certificates (mounted from ./livekit-certs/)
+  cert_file: /certs/turn-cert.pem
+  key_file: /certs/turn-key.pem
 
 # Webhook (optional - for room events)
 # webhook:

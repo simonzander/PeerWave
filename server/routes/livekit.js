@@ -147,6 +147,100 @@ router.post('/token', async (req, res) => {
 });
 
 /**
+ * Get LiveKit ICE Servers for P2P connections
+ * GET /api/livekit/ice-config
+ * 
+ * Returns ICE server configuration for P2P WebRTC connections
+ * Uses LiveKit's embedded TURN server with JWT authentication
+ * Replaces Coturn for P2P file transfer and direct messages
+ */
+router.get('/ice-config', async (req, res) => {
+  try {
+    // Check if user is authenticated
+    const session = req.session;
+    
+    if (!session || (!session.userinfo && !session.uuid)) {
+      console.log('[LiveKit ICE] Unauthorized - No session found');
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    // Get user info from either format
+    const userId = session.userinfo?.id || session.uuid;
+    const username = session.userinfo?.username || session.email || 'Unknown';
+
+    console.log(`[LiveKit ICE] Config request: userId=${userId}, username=${username}`);
+
+    // Get LiveKit configuration from environment
+    const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
+    const apiSecret = process.env.LIVEKIT_API_SECRET || 'secret';
+    const turnDomain = process.env.LIVEKIT_TURN_DOMAIN || 'localhost';
+
+    // Create access token for TURN authentication
+    // Note: For P2P, we don't need room access, just TURN credentials
+    const token = new AccessToken(apiKey, apiSecret, {
+      identity: `${userId}`,
+      name: username,
+      metadata: JSON.stringify({
+        userId,
+        username,
+        purpose: 'p2p-ice'
+      })
+    });
+
+    // Grant basic permissions (needed for token validity)
+    token.addGrant({
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true
+    });
+
+    // Generate JWT (will be used as TURN credential)
+    const jwt = await token.toJwt();
+
+    // Build ICE server configuration
+    const iceServers = [
+      // 1. Public STUN servers (always available, no auth needed)
+      {
+        urls: ['stun:stun.l.google.com:19302']
+      },
+      // 2. LiveKit TURN/TLS (looks like HTTPS, best firewall compatibility)
+      {
+        urls: [`turns:${turnDomain}:5349?transport=tcp`],
+        username: `${userId}`,
+        credential: jwt  // JWT token as credential
+      },
+      // 3. LiveKit TURN/UDP (modern QUIC-compatible, best performance)
+      {
+        urls: [`turn:${turnDomain}:443?transport=udp`],
+        username: `${userId}`,
+        credential: jwt
+      }
+    ];
+
+    // Token lifetime: 24 hours (default for LiveKit JWT)
+    const ttl = 3600 * 24;
+    const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
+
+    console.log(`[LiveKit ICE] Generated ICE config for user ${userId}:`, {
+      turnDomain,
+      serversCount: iceServers.length,
+      expiresAt
+    });
+
+    // Return ICE configuration
+    res.json({
+      iceServers,
+      ttl,
+      expiresAt
+    });
+
+  } catch (error) {
+    console.error('[LiveKit ICE] Error generating config:', error);
+    res.status(500).json({ error: 'Failed to generate ICE config' });
+  }
+});
+
+/**
  * Get current LiveKit room info
  * GET /api/livekit/room/:channelId
  */

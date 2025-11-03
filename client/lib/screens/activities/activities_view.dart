@@ -28,9 +28,9 @@ class _ActivitiesViewState extends State<ActivitiesView> {
   static const int _conversationsPerPage = 20;
   bool _hasMoreConversations = true;
 
-  // Cache for user/channel names
-  final Map<String, String> _userNames = {};
-  final Map<String, String> _channelNames = {};
+  // Cache for user/channel info (store full objects for avatars, @names, etc.)
+  final Map<String, Map<String, dynamic>> _userInfo = {};
+  final Map<String, Map<String, dynamic>> _channelInfo = {};
 
   @override
   void initState() {
@@ -49,6 +49,9 @@ class _ActivitiesViewState extends State<ActivitiesView> {
       
       // Load conversations (1:1 + Signal groups)
       await _loadMoreConversations();
+
+      // Batch fetch sender names for all messages in conversations
+      await _fetchSenderNamesForConversations();
 
       setState(() {
         _webrtcChannels = webrtcChannels.where((ch) => 
@@ -98,45 +101,155 @@ class _ActivitiesViewState extends State<ActivitiesView> {
     }
   }
 
-  /// Enrich conversations with actual user/channel names from API
+  /// Enrich conversations with actual user/channel names from API (BATCH OPTIMIZED)
   Future<void> _enrichConversationsWithNames(List<Map<String, dynamic>> conversations) async {
+    // Collect all uncached user IDs
+    final userIds = conversations
+        .where((c) => c['type'] == 'direct')
+        .map((c) => c['userId'] as String)
+        .where((id) => !_userInfo.containsKey(id))
+        .toList();
+
+    // Batch fetch all user info in one request
+    if (userIds.isNotEmpty) {
+      try {
+        ApiService.init();
+        final resp = await ApiService.post(
+          '${widget.host}/client/people/info',
+          data: {'userIds': userIds},
+        );
+        
+        if (resp.statusCode == 200) {
+          final users = resp.data is List ? resp.data : [];
+          for (final user in users) {
+            _userInfo[user['uuid']] = {
+              'displayName': user['displayName'] ?? user['uuid'],
+              'picture': user['picture'] ?? '',
+              'atName': user['atName'] ?? '',
+            };
+          }
+        }
+      } catch (e) {
+        print('[ACTIVITIES_VIEW] Error batch fetching user info: $e');
+        // Fallback: cache missing users with UUID as displayName
+        for (final userId in userIds) {
+          _userInfo[userId] = {
+            'displayName': userId,
+            'picture': '',
+            'atName': '',
+          };
+        }
+      }
+    }
+
+    // Collect all uncached channel IDs
+    final channelIds = conversations
+        .where((c) => c['type'] == 'group')
+        .map((c) => c['channelId'] as String)
+        .where((id) => !_channelInfo.containsKey(id))
+        .toList();
+
+    // Batch fetch all channel info in one request
+    if (channelIds.isNotEmpty) {
+      try {
+        ApiService.init();
+        final resp = await ApiService.post(
+          '${widget.host}/client/channels/info',
+          data: {'channelIds': channelIds},
+        );
+        
+        if (resp.statusCode == 200) {
+          final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
+          final channels = data['channels'] as List? ?? [];
+          for (final channel in channels) {
+            _channelInfo[channel['uuid']] = {
+              'name': channel['name'] ?? channel['uuid'],
+              'description': channel['description'] ?? '',
+              'private': channel['private'] ?? false,
+              'type': channel['type'] ?? 'signal',
+            };
+          }
+        }
+      } catch (e) {
+        print('[ACTIVITIES_VIEW] Error batch fetching channel info: $e');
+        // Fallback: cache missing channels with UUID as name
+        for (final channelId in channelIds) {
+          _channelInfo[channelId] = {
+            'name': channelId,
+            'description': '',
+            'private': false,
+            'type': 'signal',
+          };
+        }
+      }
+    }
+
+    // Apply cached info to conversations
     for (final conv in conversations) {
       if (conv['type'] == 'direct') {
         final userId = conv['userId'] as String;
-        if (!_userNames.containsKey(userId)) {
-          // Try to get user info from API
-          try {
-            ApiService.init();
-            final resp = await ApiService.get('${widget.host}/people/$userId');
-            if (resp.statusCode == 200) {
-              final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
-              _userNames[userId] = data['displayName'] ?? data['name'] ?? userId;
-            } else {
-              _userNames[userId] = userId;
-            }
-          } catch (e) {
-            _userNames[userId] = userId;
-          }
-        }
-        conv['displayName'] = _userNames[userId]!;
+        final userInfo = _userInfo[userId] ?? {
+          'displayName': userId,
+          'picture': '',
+          'atName': '',
+        };
+        conv['displayName'] = userInfo['displayName'];
+        conv['picture'] = userInfo['picture'];
+        conv['atName'] = userInfo['atName'];
       } else if (conv['type'] == 'group') {
         final channelId = conv['channelId'] as String;
-        if (!_channelNames.containsKey(channelId)) {
-          // Try to get channel info from API
-          try {
-            ApiService.init();
-            final resp = await ApiService.get('${widget.host}/client/channels/$channelId');
-            if (resp.statusCode == 200) {
-              final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
-              _channelNames[channelId] = data['name'] ?? channelId;
-            } else {
-              _channelNames[channelId] = channelId;
-            }
-          } catch (e) {
-            _channelNames[channelId] = channelId;
-          }
+        final channelInfo = _channelInfo[channelId] ?? {
+          'name': channelId,
+          'description': '',
+          'private': false,
+          'type': 'signal',
+        };
+        conv['channelName'] = channelInfo['name'];
+        conv['channelDescription'] = channelInfo['description'];
+        conv['channelPrivate'] = channelInfo['private'];
+        conv['channelType'] = channelInfo['type'];
+      }
+    }
+  }
+
+  /// Batch fetch sender names for all messages in conversations
+  Future<void> _fetchSenderNamesForConversations() async {
+    final senderIds = <String>{};
+    
+    // Collect all unique sender IDs from all messages
+    for (final conv in _conversations) {
+      final messages = (conv['lastMessages'] as List?) ?? [];
+      for (final msg in messages) {
+        final sender = msg['sender'] as String?;
+        if (sender != null && sender != 'self' && !_userInfo.containsKey(sender)) {
+          senderIds.add(sender);
         }
-        conv['channelName'] = _channelNames[channelId]!;
+      }
+    }
+    
+    // Batch fetch all at once
+    if (senderIds.isNotEmpty) {
+      try {
+        ApiService.init();
+        final resp = await ApiService.post(
+          '${widget.host}/client/people/info',
+          data: {'userIds': senderIds.toList()},
+        );
+        
+        if (resp.statusCode == 200) {
+          final users = resp.data is List ? resp.data : [];
+          setState(() {
+            for (final user in users) {
+              _userInfo[user['uuid']] = {
+                'displayName': user['displayName'] ?? user['uuid'],
+                'picture': user['picture'] ?? '',
+                'atName': user['atName'] ?? '',
+              };
+            }
+          });
+        }
+      } catch (e) {
+        print('[ACTIVITIES_VIEW] Error batch fetching sender names: $e');
       }
     }
   }
@@ -259,6 +372,17 @@ class _ActivitiesViewState extends State<ActivitiesView> {
         ? (conv['displayName'] ?? 'Unknown User')
         : (conv['channelName'] ?? 'Unknown Channel');
     
+    // Get additional info
+    final picture = type == 'direct' ? (conv['picture'] as String? ?? '') : '';
+    final atName = type == 'direct' ? (conv['atName'] as String? ?? '') : '';
+    final channelDescription = type == 'group' ? (conv['channelDescription'] as String? ?? '') : '';
+    final isPrivate = type == 'group' ? (conv['channelPrivate'] as bool? ?? false) : false;
+    
+    // Subtitle text
+    final subtitle = type == 'direct'
+        ? (atName.isNotEmpty ? '@$atName' : '')
+        : (channelDescription.isNotEmpty ? channelDescription : '');
+    
     // Ensure we show at least 3 messages, or all if less than 3
     final messagesToShow = lastMessages.length >= 3 ? lastMessages.take(3).toList() : lastMessages;
     
@@ -272,17 +396,27 @@ class _ActivitiesViewState extends State<ActivitiesView> {
             // Header
             Row(
               children: [
-                CircleAvatar(
-                  backgroundColor: type == 'direct'
-                      ? Theme.of(context).colorScheme.secondaryContainer
-                      : Theme.of(context).colorScheme.tertiaryContainer,
-                  child: Icon(
-                    type == 'direct' ? Icons.person : Icons.tag,
-                    color: type == 'direct'
-                        ? Theme.of(context).colorScheme.onSecondaryContainer
-                        : Theme.of(context).colorScheme.onTertiaryContainer,
-                  ),
-                ),
+                // Avatar with picture support
+                type == 'direct' && picture.isNotEmpty
+                    ? CircleAvatar(
+                        backgroundImage: NetworkImage('${widget.host}$picture'),
+                        onBackgroundImageError: (_, __) {
+                          // Fallback handled by error widget
+                        },
+                      )
+                    : CircleAvatar(
+                        backgroundColor: type == 'direct'
+                            ? Theme.of(context).colorScheme.secondaryContainer
+                            : Theme.of(context).colorScheme.tertiaryContainer,
+                        child: Icon(
+                          type == 'direct' 
+                              ? Icons.person 
+                              : (isPrivate ? Icons.lock : Icons.tag),
+                          color: type == 'direct'
+                              ? Theme.of(context).colorScheme.onSecondaryContainer
+                              : Theme.of(context).colorScheme.onTertiaryContainer,
+                        ),
+                      ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -295,6 +429,14 @@ class _ActivitiesViewState extends State<ActivitiesView> {
                           fontSize: 16,
                         ),
                       ),
+                      if (subtitle.isNotEmpty)
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                        ),
                       Text(
                         _formatLastMessageTime(conv['lastMessageTime'] ?? ''),
                         style: TextStyle(
@@ -344,17 +486,11 @@ class _ActivitiesViewState extends State<ActivitiesView> {
     final timestamp = _formatMessageTime(msg['timestamp'] ?? '');
     final senderUuid = msg['sender'] as String?;
     
-    // For group chats, get sender display name
+    // For group chats, get sender display name from cache
     String? senderName;
     if (isGroupChat && !isSelf && senderUuid != null) {
-      // Try to get cached sender name
-      senderName = _userNames[senderUuid];
-      
-      // If not cached, fetch it asynchronously
-      if (senderName == null) {
-        _fetchUserName(senderUuid);
-        senderName = senderUuid; // Fallback to UUID while loading
-      }
+      final userInfo = _userInfo[senderUuid];
+      senderName = userInfo?['displayName'] ?? senderUuid;
     }
     
     return Padding(
@@ -404,30 +540,6 @@ class _ActivitiesViewState extends State<ActivitiesView> {
         ],
       ),
     );
-  }
-
-  /// Fetch user display name and update state
-  Future<void> _fetchUserName(String userId) async {
-    if (_userNames.containsKey(userId)) return;
-    
-    try {
-      ApiService.init();
-      final resp = await ApiService.get('${widget.host}/people/$userId');
-      if (resp.statusCode == 200) {
-        final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
-        setState(() {
-          _userNames[userId] = data['displayName'] ?? data['name'] ?? userId;
-        });
-      } else {
-        setState(() {
-          _userNames[userId] = userId;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _userNames[userId] = userId;
-      });
-    }
   }
 
   String _formatLastMessageTime(String timestamp) {

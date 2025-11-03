@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/notification_provider.dart';
-import '../services/recent_conversations_service.dart';
+import '../services/signal_service.dart';
 import '../services/api_service.dart';
 import '../models/role.dart';
 import 'package:dio/dio.dart';
@@ -24,6 +24,8 @@ class DesktopNavigationDrawer extends StatefulWidget {
   final List<Map<String, dynamic>>? channels;
   final void Function(String uuid, String name, String type)? onChannelTap;
   final VoidCallback? onNavigateToPeople;
+  final VoidCallback? onNavigateToMessagesView; // Navigate to messages list view
+  final VoidCallback? onNavigateToChannelsView; // Navigate to channels list view
 
   const DesktopNavigationDrawer({
     super.key,
@@ -37,6 +39,8 @@ class DesktopNavigationDrawer extends StatefulWidget {
     this.channels,
     this.onChannelTap,
     this.onNavigateToPeople,
+    this.onNavigateToMessagesView,
+    this.onNavigateToChannelsView,
   });
 
   @override
@@ -46,7 +50,8 @@ class DesktopNavigationDrawer extends StatefulWidget {
 class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
   bool _messagesExpanded = true; // Non-collapsed by default
   bool _channelsExpanded = true; // Non-collapsed by default
-  List<Map<String, String>> _recentConversations = [];
+  List<Map<String, dynamic>> _recentConversations = [];
+  bool _loadingConversations = false;
 
   @override
   void initState() {
@@ -55,10 +60,123 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
   }
 
   Future<void> _loadRecentConversations() async {
-    final conversations = await RecentConversationsService.getRecentConversations();
+    if (_loadingConversations) return;
+    
     setState(() {
-      _recentConversations = conversations;
+      _loadingConversations = true;
     });
+
+    try {
+      final conversations = <Map<String, dynamic>>[];
+      final userIdsSet = <String>{};
+      
+      // Get all unique senders from received messages (IndexedDB/secure storage)
+      final receivedSenders = await SignalService.instance.decryptedMessagesStore.getAllUniqueSenders();
+      userIdsSet.addAll(receivedSenders);
+      
+      // Get all sent messages to find unique recipient IDs (IndexedDB/secure storage)
+      final allSentMessages = await SignalService.instance.sentMessagesStore.loadAllSentMessages();
+      for (final msg in allSentMessages) {
+        final recipientId = msg['recipientId'] as String?;
+        if (recipientId != null) {
+          userIdsSet.add(recipientId);
+        }
+      }
+      
+      // Get last message for each conversation
+      for (final userId in userIdsSet) {
+        // Get received messages from this user
+        final receivedMessages = await SignalService.instance.decryptedMessagesStore.getMessagesFromSender(userId);
+        
+        // Get sent messages to this user
+        final sentMessages = await SignalService.instance.loadSentMessages(userId);
+        
+        // Combine messages
+        final allMessages = <Map<String, dynamic>>[
+          ...receivedMessages,
+          ...sentMessages.map((msg) => {
+            'itemId': msg['itemId'],
+            'message': msg['message'],
+            'timestamp': msg['timestamp'],
+            'sender': 'self',
+            'type': msg['type'] ?? 'message',
+          }),
+        ];
+        
+        if (allMessages.isEmpty) continue;
+        
+        // Sort by timestamp (newest first)
+        allMessages.sort((a, b) {
+          final timeA = DateTime.tryParse(a['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final timeB = DateTime.tryParse(b['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return timeB.compareTo(timeA);
+        });
+        
+        final lastMessageTime = allMessages.isNotEmpty
+            ? DateTime.tryParse(allMessages.first['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0)
+            : DateTime.fromMillisecondsSinceEpoch(0);
+        
+        conversations.add({
+          'uuid': userId,
+          'displayName': userId, // Will be enriched with actual name from API
+          'lastMessageTime': lastMessageTime,
+        });
+      }
+      
+      // Sort by last message time
+      conversations.sort((a, b) {
+        final timeA = a['lastMessageTime'] as DateTime;
+        final timeB = b['lastMessageTime'] as DateTime;
+        return timeB.compareTo(timeA);
+      });
+      
+      // Limit to 20 most recent
+      final limitedConversations = conversations.take(20).toList();
+
+      // Batch fetch user info for display names
+      await _enrichWithUserInfo(limitedConversations);
+
+      setState(() {
+        _recentConversations = limitedConversations;
+        _loadingConversations = false;
+      });
+    } catch (e) {
+      print('[DESKTOP_NAV] Error loading conversations: $e');
+      setState(() {
+        _loadingConversations = false;
+      });
+    }
+  }
+
+  Future<void> _enrichWithUserInfo(List<Map<String, dynamic>> conversations) async {
+    final userIds = conversations.map((c) => c['uuid'] as String).toList();
+    
+    if (userIds.isEmpty) return;
+
+    try {
+      ApiService.init();
+      final resp = await ApiService.post(
+        '${widget.host}/client/people/info',
+        data: {'userIds': userIds},
+      );
+      
+      if (resp.statusCode == 200) {
+        final users = resp.data is List ? resp.data : [];
+        final userMap = <String, String>{};
+        
+        for (final user in users) {
+          userMap[user['uuid']] = user['displayName'] ?? user['uuid'];
+        }
+        
+        // Update display names
+        for (final conv in conversations) {
+          final userId = conv['uuid'] as String;
+          conv['displayName'] = userMap[userId] ?? userId;
+        }
+      }
+    } catch (e) {
+      print('[DESKTOP_NAV] Error enriching user info: $e');
+    }
   }
 
   @override
@@ -155,24 +273,8 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
   Widget _buildMessagesSection() {
     return Consumer<NotificationProvider>(
       builder: (context, notificationProvider, _) {
-        // Get and sort conversations by last message time
-        var conversationsList = List<Map<String, String>>.from(_recentConversations);
-        conversationsList.sort((a, b) {
-          final aTime = notificationProvider.lastMessageTimes[a['uuid']];
-          final bTime = notificationProvider.lastMessageTimes[b['uuid']];
-          
-          if (aTime != null && bTime != null) {
-            return bTime.compareTo(aTime);
-          }
-          if (aTime != null) return -1;
-          if (bTime != null) return 1;
-          return 0;
-        });
-
-        // Limit to 10 most recent
-        if (conversationsList.length > 10) {
-          conversationsList = conversationsList.sublist(0, 10);
-        }
+        // Limit to 10 most recent for sidebar display
+        var conversationsList = _recentConversations.take(10).toList();
 
         // Calculate total unread count for Messages
         final totalUnread = conversationsList.fold(0, (sum, dm) {
@@ -187,7 +289,13 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
               label: 'Messages',
               badge: totalUnread,
               expanded: _messagesExpanded,
-              onTap: () => setState(() => _messagesExpanded = !_messagesExpanded),
+              onTap: () {
+                // Navigate to messages list view
+                if (widget.onNavigateToMessagesView != null) {
+                  widget.onNavigateToMessagesView!();
+                }
+              },
+              onToggle: () => setState(() => _messagesExpanded = !_messagesExpanded),
               onAdd: widget.onNavigateToPeople, // Navigate to People
             ),
             if (_messagesExpanded)
@@ -204,6 +312,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
                     title: Text(
                       displayName,
                       style: const TextStyle(fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
                     ),
                     trailing: unreadCount > 0
                         ? Container(
@@ -242,19 +351,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
   Widget _buildChannelsSection() {
     return Consumer<NotificationProvider>(
       builder: (context, notificationProvider, _) {
-        // Get and sort channels by last message time
         var channelsList = List<Map<String, dynamic>>.from(widget.channels ?? []);
-        channelsList.sort((a, b) {
-          final aTime = notificationProvider.lastMessageTimes[a['uuid']];
-          final bTime = notificationProvider.lastMessageTimes[b['uuid']];
-          
-          if (aTime != null && bTime != null) {
-            return bTime.compareTo(aTime);
-          }
-          if (aTime != null) return -1;
-          if (bTime != null) return 1;
-          return 0;
-        });
 
         // Calculate total unread count for Channels
         final totalUnread = channelsList.fold(0, (sum, channel) {
@@ -269,7 +366,13 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
               label: 'Channels',
               badge: totalUnread,
               expanded: _channelsExpanded,
-              onTap: () => setState(() => _channelsExpanded = !_channelsExpanded),
+              onTap: () {
+                // Navigate to channels list view
+                if (widget.onNavigateToChannelsView != null) {
+                  widget.onNavigateToChannelsView!();
+                }
+              },
+              onToggle: () => setState(() => _channelsExpanded = !_channelsExpanded),
               onAdd: () => _showCreateChannelDialog(context), // Create channel
             ),
             if (_channelsExpanded)
@@ -302,6 +405,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
                           child: Text(
                             name,
                             style: const TextStyle(fontSize: 14),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (isPrivate)
@@ -352,6 +456,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
     required int badge,
     required bool expanded,
     required VoidCallback onTap,
+    VoidCallback? onToggle,
     VoidCallback? onAdd,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -390,9 +495,13 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
             ],
           ],
         ),
-        trailing: Icon(
-          expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-          size: 20,
+        trailing: IconButton(
+          icon: Icon(
+            expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+            size: 20,
+          ),
+          onPressed: onToggle,
+          tooltip: expanded ? 'Collapse' : 'Expand',
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),

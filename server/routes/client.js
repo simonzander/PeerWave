@@ -455,6 +455,49 @@ clientRoutes.get("/people/list", async (req, res) => {
     }
 });
 
+clientRoutes.post("/client/people/info", async (req, res) => {
+    if(req.session.authenticated !== true || !req.session.uuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    try {
+        const { userIds } = req.body;
+        if (!Array.isArray(userIds) || userIds.length === 0) {
+            return res.status(400).json({ status: "error", message: "userIds must be a non-empty array" });
+        }
+        const users = await User.findAll({
+            attributes: ['uuid', 'displayName', 'picture', 'atName'],
+            where: { uuid: userIds } // Include only the specified user IDs
+        });
+        res.status(200).json(users);
+    } catch (error) {
+        console.error('Error fetching users:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+clientRoutes.post("/client/channels/info", async (req, res) => {
+    if(req.session.authenticated !== true || !req.session.uuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+
+    try {
+        const { channelIds } = req.body;
+        if (!Array.isArray(channelIds) || channelIds.length === 0) {
+            return res.status(400).json({ status: "error", message: "channelIds must be a non-empty array" });
+        }
+
+        const channels = await Channel.findAll({
+            where: { uuid: channelIds },
+            attributes: ['uuid', 'name', 'description', 'owner', 'private', 'type']
+        });
+
+        res.status(200).json({ status: "success", channels });
+    } catch (error) {
+        console.error('Error fetching channel info:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
 clientRoutes.get("/client/channels", async(req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const typeFilter = req.query.type; // 'webrtc', 'signal', or undefined for all

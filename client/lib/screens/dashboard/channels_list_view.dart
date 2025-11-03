@@ -278,6 +278,7 @@ class _ChannelsListViewState extends State<ChannelsListView> {
   Widget _buildLiveWebRTCChannelTile(Map<String, dynamic> channel) {
     final name = channel['name'] as String? ?? 'Unknown Channel';
     final uuid = channel['uuid'] as String;
+    final description = channel['description'] as String? ?? '';
     final participants = (channel['participants'] as List?) ?? [];
     final participantCount = participants.length;
 
@@ -306,9 +307,24 @@ class _ChannelsListViewState extends State<ChannelsListView> {
           ),
         ],
       ),
-      title: Text(
-        name,
-        style: const TextStyle(fontWeight: FontWeight.bold),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              name,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          if (description.isNotEmpty)
+            Tooltip(
+              message: description,
+              child: Icon(
+                Icons.info_outline,
+                size: 16,
+                color: Colors.grey[600],
+              ),
+            ),
+        ],
       ),
       subtitle: Text(
         '$participantCount ${participantCount == 1 ? 'participant' : 'participants'} • LIVE',
@@ -324,6 +340,7 @@ class _ChannelsListViewState extends State<ChannelsListView> {
   Widget _buildSignalChannelTile(Map<String, dynamic> channel) {
     final name = channel['name'] as String? ?? 'Unknown Channel';
     final uuid = channel['uuid'] as String;
+    final description = channel['description'] as String? ?? '';
     final lastMessage = channel['lastMessage'] as String? ?? 'No messages';
     final lastMessageTime = channel['lastMessageTime'] as String? ?? '';
     final isPrivate = channel['private'] as bool? ?? false;
@@ -336,9 +353,24 @@ class _ChannelsListViewState extends State<ChannelsListView> {
           color: Theme.of(context).colorScheme.onPrimaryContainer,
         ),
       ),
-      title: Text(
-        name,
-        style: const TextStyle(fontWeight: FontWeight.bold),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              name,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          if (description.isNotEmpty)
+            Tooltip(
+              message: description,
+              child: Icon(
+                Icons.info_outline,
+                size: 16,
+                color: Colors.grey[600],
+              ),
+            ),
+        ],
       ),
       subtitle: Text(
         lastMessage.length > 50
@@ -363,6 +395,7 @@ class _ChannelsListViewState extends State<ChannelsListView> {
   Widget _buildWebRTCChannelTile(Map<String, dynamic> channel) {
     final name = channel['name'] as String? ?? 'Unknown Channel';
     final uuid = channel['uuid'] as String;
+    final description = channel['description'] as String? ?? '';
     final isPrivate = channel['private'] as bool? ?? false;
 
     return ListTile(
@@ -373,9 +406,24 @@ class _ChannelsListViewState extends State<ChannelsListView> {
           color: Theme.of(context).colorScheme.onSecondaryContainer,
         ),
       ),
-      title: Text(
-        name,
-        style: const TextStyle(fontWeight: FontWeight.bold),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              name,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          if (description.isNotEmpty)
+            Tooltip(
+              message: description,
+              child: Icon(
+                Icons.info_outline,
+                size: 16,
+                color: Colors.grey[600],
+              ),
+            ),
+        ],
       ),
       subtitle: const Text('Video channel • No active participants'),
       trailing: const Icon(Icons.arrow_forward_ios, size: 16),

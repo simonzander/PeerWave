@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 /// Jedes Schema unterstützt sowohl Light als auch Dark Mode.
 /// Schemas können über ihre ID referenziert werden.
 class AppColorSchemes {
-  /// PeerWave Dark - Standard Theme mit Türkis-Highlight
+  /// PeerWave - Standard Theme mit Türkis-Highlight
   /// Primary: RGB(0, 209, 178) = #00D1B2
-  static ColorScheme peerwaveDark(Brightness brightness) {
+  static ColorScheme peerwave(Brightness brightness) {
     const highlightColor = Color(0xFF00D1B2); // RGB(0, 209, 178) - Türkis/Cyan
     
     if (brightness == Brightness.dark) {
@@ -47,7 +47,7 @@ class AppColorSchemes {
         inversePrimary: Color(0xFF008B7D),
       );
     } else {
-      // Light variant (optional, falls User Light Mode für PeerWave Dark wählt)
+      // Light variant (optional, falls User Light Mode für PeerWave wählt)
       return const ColorScheme.light(
         primary: highlightColor,
         onPrimary: Colors.white,
@@ -564,29 +564,29 @@ class ColorSchemeOption {
 class ColorSchemeOptions {
   static final List<ColorSchemeOption> all = [
     ColorSchemeOption(
-      id: 'peerwave_dark',
-      name: 'PeerWave Dark',
+      id: 'peerwave',
+      name: 'PeerWave',
       description: 'Dark theme with turquoise highlight',
       icon: Icons.waves,
       previewColor: const Color(0xFF00D1B2),
-      schemeBuilder: AppColorSchemes.peerwaveDark,
+      schemeBuilder: AppColorSchemes.peerwave,
     ),
     ColorSchemeOption(
       id: 'monochrome_dark',
-      name: 'Monochrome Dark',
+      name: 'Monochrome',
       description: 'Grayscale with white accents',
       icon: Icons.brightness_2,
       previewColor: Colors.white,
       schemeBuilder: AppColorSchemes.monochromeDark,
     ),
-    ColorSchemeOption(
+    /*ColorSchemeOption(
       id: 'monochrome_light',
       name: 'Monochrome Light',
       description: 'Grayscale with black accents',
       icon: Icons.brightness_5,
       previewColor: Colors.black,
       schemeBuilder: AppColorSchemes.monochromeLight,
-    ),
+    ),*/
     ColorSchemeOption(
       id: 'oceanic_green',
       name: 'Oceanic Green',

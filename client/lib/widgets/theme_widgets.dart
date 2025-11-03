@@ -17,7 +17,7 @@ class QuickThemeFab extends StatelessWidget {
   Widget build(BuildContext context) {
     return FloatingActionButton(
       onPressed: () => ThemeSelectorDialog.show(context),
-      tooltip: 'Theme ändern',
+      tooltip: 'change theme',
       child: const Icon(Icons.palette_outlined),
     );
   }
@@ -43,7 +43,7 @@ class ThemeToggleButton extends StatelessWidget {
     
     return IconButton(
       onPressed: () => ThemeSelectorDialog.show(context),
-      tooltip: 'Theme ändern',
+      tooltip: 'change theme',
       icon: Icon(
         brightness == Brightness.dark 
           ? Icons.light_mode_outlined 

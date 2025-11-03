@@ -1,5 +1,5 @@
 services:
-  # LiveKit SFU Server
+  # LiveKit SFU Server (with embedded TURN)
   peerwave-livekit:
     image: livekit/livekit-server:latest
     container_name: peerwave-livekit
@@ -8,9 +8,13 @@ services:
       - "7880:7880"   # WebRTC (main)
       - "7881:7881"   # HTTP API
       - "7882:7882"   # WebRTC TCP fallback
-      - "50100-50200:50100-50200/udp"  # RTP port range (smaller, non-conflicting)
+      - "5349:5349"   # TURN/TLS (replaces Coturn)
+      - "443:443/udp" # TURN/UDP (QUIC-compatible)
+      - "40000-50000:40000-50000/udp"  # RTP port range - MAXIMUM 10001 ports
+      - "50000-60000:50000-60000/udp"  # TURN Relay range - MAXIMUM 10001 ports
     volumes:
       - ./livekit-config.yaml:/livekit.yaml:ro
+      - ./livekit-certs:/certs:ro  # SSL certificates for TURN
     environment:
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
@@ -33,18 +37,11 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - PORT=${PORT:-3000}
-      # TURN Config (existing)
-      - TURN_SECRET=${TURN_SECRET}
-      - TURN_SERVER_EXTERNAL_HOST=${TURN_SERVER_EXTERNAL_HOST:-localhost}
-      - TURN_SERVER_INTERNAL_HOST=${TURN_SERVER_INTERNAL_HOST:-peerwave-coturn}
-      - TURN_SERVER_PORT=${TURN_SERVER_PORT:-3478}
-      - TURN_SERVER_PORT_TLS=${TURN_SERVER_PORT_TLS:-5349}
-      - TURN_REALM=${TURN_REALM:-peerwave.local}
-      - TURN_CREDENTIAL_TTL=${TURN_CREDENTIAL_TTL:-86400}
       # LiveKit Config
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
       - LIVEKIT_URL=${LIVEKIT_URL:-ws://peerwave-livekit:7880}
+      - LIVEKIT_TURN_DOMAIN=${LIVEKIT_TURN_DOMAIN:-localhost}  # For P2P ICE config
     # Resource Limits für Video Processing
     deploy:
       resources:
@@ -58,48 +55,7 @@ services:
       - peerwave-network
     depends_on:
       - peerwave-livekit
-      - peerwave-coturn
-
-  # coturn STUN/TURN Server
-  peerwave-coturn:
-    image: coturn/coturn:latest
-    container_name: peerwave-coturn
-    restart: unless-stopped
-    # network_mode: host  # Für Production (direkter Port-Zugriff)
-    ports:
-      - "3478:3478/udp"    # STUN/TURN UDP
-      - "3478:3478/tcp"    # STUN/TURN TCP
-      - "5349:5349/tcp"    # TURNS (TLS)
-      - "5349:5349/udp"    # TURNS (TLS)
-      - "49152-49252:49152-49252/udp"  # TURN Relay Ports (100 Ports für Dev)
-    volumes:
-      - ./server/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
-      - ./server/coturn/data:/var/lib/coturn
-    environment:
-      - DETECT_EXTERNAL_IP=yes
-      - DETECT_RELAY_IP=yes
-    networks:
-      - peerwave-network
-
-  # Optional: coturn Monitoring (Prometheus Exporter)
-  coturn-exporter:
-    image: ghcr.io/mhameed/coturn-exporter:latest
-    container_name: peerwave-coturn-exporter
-    restart: unless-stopped
-    ports:
-      - "9641:9641"
-    command:
-      - "--coturn.server=http://peerwave-coturn:5766"
-    networks:
-      - peerwave-network
-    depends_on:
-      - peerwave-coturn
-    profiles:
-      - monitoring  # Nur mit --profile monitoring starten
 
 networks:
   peerwave-network:
     driver: bridge
-
-volumes:
-  coturn-data:

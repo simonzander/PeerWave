@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/signal_service.dart';
 import '../../services/api_service.dart';
-import 'dart:convert';
 
 /// Messages List View - Shows recent 1:1 conversations
 class MessagesListView extends StatefulWidget {
@@ -25,8 +24,8 @@ class _MessagesListViewState extends State<MessagesListView> {
   List<Map<String, dynamic>> _conversations = [];
   int _limit = 20;
 
-  // Cache for user info
-  final Map<String, Map<String, String>> _userCache = {};
+  // Cache for user info (store full objects)
+  final Map<String, Map<String, dynamic>> _userCache = {};
 
   @override
   void initState() {
@@ -126,33 +125,55 @@ class _MessagesListViewState extends State<MessagesListView> {
   }
 
   Future<void> _enrichWithUserInfo(List<Map<String, dynamic>> conversations) async {
-    for (final conv in conversations) {
-      final userId = conv['userId'] as String;
-      if (!_userCache.containsKey(userId)) {
-        try {
-          ApiService.init();
-          final resp = await ApiService.get('${widget.host}/people/$userId');
-          if (resp.statusCode == 200) {
-            final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
-            _userCache[userId] = {
-              'displayName': data['displayName'] ?? data['name'] ?? userId,
-              'picture': data['picture'] ?? '',
-            };
-          } else {
-            _userCache[userId] = {
-              'displayName': userId,
-              'picture': '',
+    // Collect all user IDs that need to be fetched
+    final userIdsToFetch = conversations
+        .map((conv) => conv['userId'] as String)
+        .where((userId) => !_userCache.containsKey(userId))
+        .toList();
+
+    // Batch fetch all user info in one request
+    if (userIdsToFetch.isNotEmpty) {
+      try {
+        ApiService.init();
+        final resp = await ApiService.post(
+          '${widget.host}/client/people/info',
+          data: {'userIds': userIdsToFetch},
+        );
+        
+        if (resp.statusCode == 200) {
+          final users = resp.data is List ? resp.data : [];
+          for (final user in users) {
+            _userCache[user['uuid']] = {
+              'displayName': user['displayName'] ?? user['uuid'],
+              'picture': user['picture'] ?? '',
+              'atName': user['atName'] ?? '',
             };
           }
-        } catch (e) {
+        }
+      } catch (e) {
+        print('[MESSAGES_LIST] Error batch fetching user info: $e');
+        // Fallback: cache missing users with UUID as displayName
+        for (final userId in userIdsToFetch) {
           _userCache[userId] = {
             'displayName': userId,
             'picture': '',
+            'atName': '',
           };
         }
       }
-      conv['displayName'] = _userCache[userId]!['displayName']!;
-      conv['picture'] = _userCache[userId]!['picture']!;
+    }
+    
+    // Apply cached info to conversations
+    for (final conv in conversations) {
+      final userId = conv['userId'] as String;
+      final userInfo = _userCache[userId] ?? {
+        'displayName': userId,
+        'picture': '',
+        'atName': '',
+      };
+      conv['displayName'] = userInfo['displayName'];
+      conv['picture'] = userInfo['picture'];
+      conv['atName'] = userInfo['atName'];
     }
   }
 
@@ -229,6 +250,7 @@ class _MessagesListViewState extends State<MessagesListView> {
   Widget _buildConversationTile(Map<String, dynamic> conv) {
     final displayName = conv['displayName'] as String? ?? 'Unknown User';
     final picture = conv['picture'] as String? ?? '';
+    final atName = conv['atName'] as String? ?? '';
     final lastMessages = (conv['lastMessages'] as List?) ?? [];
     final lastMessage = lastMessages.isNotEmpty
         ? (lastMessages.first['message'] as String? ?? '')
@@ -239,7 +261,10 @@ class _MessagesListViewState extends State<MessagesListView> {
     return ListTile(
       leading: picture.isNotEmpty
           ? CircleAvatar(
-              backgroundImage: NetworkImage(picture),
+              backgroundImage: NetworkImage('${widget.host}$picture'),
+              onBackgroundImageError: (_, __) {
+                // Fallback handled by error widget
+              },
             )
           : CircleAvatar(
               backgroundColor: Theme.of(context).colorScheme.primaryContainer,
@@ -252,12 +277,25 @@ class _MessagesListViewState extends State<MessagesListView> {
         displayName,
         style: const TextStyle(fontWeight: FontWeight.bold),
       ),
-      subtitle: Text(
-        lastMessage.length > 50
-            ? '${lastMessage.substring(0, 50)}...'
-            : lastMessage,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (atName.isNotEmpty)
+            Text(
+              '@$atName',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+            ),
+          Text(
+            lastMessage.length > 50
+                ? '${lastMessage.substring(0, 50)}...'
+                : lastMessage,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
       trailing: Text(
         _formatTime(lastMessageTime),

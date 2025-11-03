@@ -41,7 +41,7 @@ class IceConfigService extends ChangeNotifier {
     };
   }
 
-  /// Load ICE server configuration from server
+  /// Load ICE server configuration from LiveKit
   Future<void> loadConfig({bool force = false, String? serverUrl}) async {
     // Update server URL if provided
     if (serverUrl != null) {
@@ -63,24 +63,44 @@ class IceConfigService extends ChangeNotifier {
     }
 
     try {
-      debugPrint('[ICE CONFIG] Loading ICE server config from $_serverUrl...');
+      debugPrint('[ICE CONFIG] Loading ICE config from LiveKit...');
       
-      final response = await ApiService.get('$_serverUrl/client/meta');
+      // ✅ NEW: Fetch from LiveKit ICE endpoint instead of /client/meta
+      final response = await ApiService.get('$_serverUrl/api/livekit/ice-config');
       
       if (response.statusCode == 200) {
-        _clientMeta = ClientMetaResponse.fromJson(response.data);
+        final data = response.data;
+        
+        // Parse ICE servers from LiveKit response
+        final List<IceServer> servers = [];
+        if (data['iceServers'] != null) {
+          for (var server in data['iceServers']) {
+            servers.add(IceServer(
+              urls: List<String>.from(server['urls']),
+              username: server['username'],
+              credential: server['credential'],
+            ));
+          }
+        }
+        
+        _clientMeta = ClientMetaResponse(
+          name: 'PeerWave',
+          version: '1.0.0',
+          iceServers: servers,
+        );
+        
         _isLoaded = true;
         _lastLoaded = DateTime.now();
         
-        debugPrint('[ICE CONFIG] ✅ Config loaded successfully');
-        debugPrint('[ICE CONFIG] Server: ${_clientMeta!.name} v${_clientMeta!.version}');
+        debugPrint('[ICE CONFIG] ✅ LiveKit ICE config loaded successfully');
         debugPrint('[ICE CONFIG] ICE Servers: ${_clientMeta!.iceServers.length}');
+        debugPrint('[ICE CONFIG] TTL: ${data['ttl']}s, Expires: ${data['expiresAt']}');
         
         for (var i = 0; i < _clientMeta!.iceServers.length; i++) {
           final server = _clientMeta!.iceServers[i];
           debugPrint('[ICE CONFIG]   [$i] ${server.urls.join(", ")}');
           if (server.username != null) {
-            debugPrint('[ICE CONFIG]       Username: ${server.username}');
+            debugPrint('[ICE CONFIG]       Auth: JWT-based (LiveKit)');
           }
         }
         

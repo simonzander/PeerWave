@@ -363,11 +363,24 @@ class _DashboardPageState extends State<DashboardPage> {
                   _selectedIndex = 1; // Navigate to People tab (index 1 on desktop)
                 });
               },
+              onNavigateToMessagesView: () {
+                setState(() {
+                  _selectedIndex = 4; // Navigate to Messages list view (index 4 on desktop)
+                  _activeDirectMessageUuid = null;
+                  _activeDirectMessageDisplayName = null;
+                });
+              },
+              onNavigateToChannelsView: () {
+                setState(() {
+                  _selectedIndex = 3; // Navigate to Channels list view (index 3 on desktop)
+                  _activeChannelUuid = null;
+                  _activeChannelName = null;
+                  _activeChannelType = null;
+                });
+              },
               trailing: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const ThemeToggleButton(),
-                  const SizedBox(height: 8),
                   IconButton(
                     icon: const Icon(Icons.settings_outlined),
                     onPressed: () => GoRouter.of(context).go('/app/settings'),
@@ -550,9 +563,30 @@ class _DashboardPageState extends State<DashboardPage> {
         );
         
       case 'messages':
-        // Check if on mobile/tablet and no active conversation
-        if (layoutType != LayoutType.desktop && _activeDirectMessageUuid == null) {
-          // Show messages list view
+        // Desktop: Always show messages list view when Messages tab is selected
+        // Mobile/Tablet: Show list view when no active conversation
+        if (layoutType == LayoutType.desktop) {
+          // Desktop: Show list view to allow selecting conversations
+          if (_activeDirectMessageUuid == null) {
+            return MessagesListView(
+              host: host,
+              onMessageTap: _onDirectMessageTap,
+              onNavigateToPeople: () {
+                setState(() {
+                  _selectedIndex = 1; // Navigate to People tab
+                });
+              },
+            );
+          } else {
+            // Show conversation
+            return DirectMessagesScreen(
+              host: host,
+              recipientUuid: _activeDirectMessageUuid!,
+              recipientDisplayName: _activeDirectMessageDisplayName!,
+            );
+          }
+        } else if (_activeDirectMessageUuid == null) {
+          // Mobile/Tablet: Show list when no active conversation
           return MessagesListView(
             host: host,
             onMessageTap: _onDirectMessageTap,
@@ -572,25 +606,64 @@ class _DashboardPageState extends State<DashboardPage> {
               });
             },
           );
-        }
-        
-        if (_activeDirectMessageUuid != null && _activeDirectMessageDisplayName != null) {
+        } else {
+          // Mobile/Tablet: Show active conversation
           return DirectMessagesScreen(
             host: host,
             recipientUuid: _activeDirectMessageUuid!,
             recipientDisplayName: _activeDirectMessageDisplayName!,
           );
-        } else {
-          return _EmptyStateWidget(
-            icon: Icons.chat_bubble_outline,
-            title: 'Direct Messages',
-            subtitle: 'Select a conversation from People tab or start a new one',
-          );
         }
 
       case 'channels':
-        // Check if on mobile/tablet and no active channel
-        if (layoutType != LayoutType.desktop && _activeChannelUuid == null) {
+        // Desktop: Always show channels list view when Channels tab is selected
+        // Mobile/Tablet: Show list view when no active channel
+        if (layoutType == LayoutType.desktop) {
+          // Desktop: Show list view to allow selecting channels
+          if (_activeChannelUuid == null) {
+            return ChannelsListView(
+              host: host,
+              onChannelTap: _onChannelTap,
+              onCreateChannel: () {
+                // Reload channels after creation
+                _loadChannels();
+              },
+            );
+          } else if (_activeChannelType == 'signal') {
+            // Show Signal group chat
+            return SignalGroupChatScreen(
+              host: host,
+              channelUuid: _activeChannelUuid!,
+              channelName: _activeChannelName!,
+            );
+          } else if (_activeChannelType == 'webrtc') {
+            // Show WebRTC video conference
+            if (_videoConferenceConfig != null) {
+              return VideoConferenceView(
+                channelId: _videoConferenceConfig!['channelId'],
+                channelName: _videoConferenceConfig!['channelName'],
+                selectedCamera: _videoConferenceConfig!['selectedCamera'],
+                selectedMicrophone: _videoConferenceConfig!['selectedMicrophone'],
+              );
+            } else {
+              return VideoConferencePreJoinView(
+                channelId: _activeChannelUuid!,
+                channelName: _activeChannelName!,
+                onJoinReady: (config) {
+                  setState(() {
+                    _videoConferenceConfig = config;
+                  });
+                },
+              );
+            }
+          } else {
+            return _EmptyStateWidget(
+              icon: Icons.campaign,
+              title: 'Unknown Channel Type',
+              subtitle: 'Channel type "$_activeChannelType" is not supported',
+            );
+          }
+        } else if (_activeChannelUuid == null) {
           // Show channels list view
           return ChannelsListView(
             host: host,
