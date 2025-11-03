@@ -138,14 +138,28 @@ class VideoConferenceService extends ChangeNotifier {
       // First message in a fresh channel needs sender key initialization
       print('[VideoConf][TEST] 🔧 Initializing sender key for channel...');
       try {
+        // Validate sender key - will check server if corrupted locally
         await SignalService.instance.createGroupSenderKey(channelId);
         print('[VideoConf][TEST] ✓ Sender key initialized');
       } catch (e) {
-        // Sender key might already exist - that's OK
-        if (e.toString().contains('already exists')) {
-          print('[VideoConf][TEST] ℹ️ Sender key already exists (OK)');
-        } else {
-          print('[VideoConf][TEST] ⚠️ Sender key init error (continuing): $e');
+        print('[VideoConf][TEST] ⚠️ Sender key initialization failed: $e');
+        // Try to recover by loading from server
+        try {
+          print('[VideoConf][TEST] Attempting to load sender key from server...');
+          final loaded = await SignalService.instance.loadSenderKeyFromServer(
+            channelId: channelId,
+            userId: SignalService.instance.currentUserId!,
+            deviceId: SignalService.instance.currentDeviceId!,
+            forceReload: true,
+          );
+          if (loaded) {
+            print('[VideoConf][TEST] ✓ Sender key restored from server');
+          } else {
+            print('[VideoConf][TEST] ⚠️ No sender key on server - will be created on first send');
+          }
+        } catch (recoveryError) {
+          print('[VideoConf][TEST] ⚠️ Failed to load from server: $recoveryError');
+          // Will be created automatically during sendGroupItem if needed
         }
       }
       
@@ -213,14 +227,28 @@ class VideoConferenceService extends ChangeNotifier {
       if (_currentChannelId != null) {
         print('[VideoConf][TEST] 🔧 Initializing sender key for channel...');
         try {
+          // Validate sender key - will check server if corrupted locally
           await SignalService.instance.createGroupSenderKey(_currentChannelId!);
           print('[VideoConf][TEST] ✓ Sender key initialized (ready to respond to key requests)');
         } catch (e) {
-          // Sender key might already exist - that's OK
-          if (e.toString().contains('already exists')) {
-            print('[VideoConf][TEST] ℹ️ Sender key already exists (OK)');
-          } else {
-            print('[VideoConf][TEST] ⚠️ Sender key init error (continuing): $e');
+          print('[VideoConf][TEST] ⚠️ Sender key initialization failed: $e');
+          // Try to recover by loading from server
+          try {
+            print('[VideoConf][TEST] Attempting to load sender key from server...');
+            final loaded = await SignalService.instance.loadSenderKeyFromServer(
+              channelId: _currentChannelId!,
+              userId: SignalService.instance.currentUserId!,
+              deviceId: SignalService.instance.currentDeviceId!,
+              forceReload: true,
+            );
+            if (loaded) {
+              print('[VideoConf][TEST] ✓ Sender key restored from server');
+            } else {
+              print('[VideoConf][TEST] ⚠️ No sender key on server - will be created on first send');
+            }
+          } catch (recoveryError) {
+            print('[VideoConf][TEST] ⚠️ Failed to load from server: $recoveryError');
+            // Will be created automatically during sendGroupItem if needed
           }
         }
       }
@@ -442,14 +470,28 @@ class VideoConferenceService extends ChangeNotifier {
       // ⚠️ IMPORTANT: Ensure sender key exists before responding
       print('[VideoConf][TEST] 🔧 Ensuring sender key exists...');
       try {
+        // Validate sender key - will check server if corrupted locally
         await SignalService.instance.createGroupSenderKey(_currentChannelId!);
         print('[VideoConf][TEST] ✓ Sender key ready');
       } catch (e) {
-        // Sender key might already exist - that's OK
-        if (e.toString().contains('already exists')) {
-          print('[VideoConf][TEST] ℹ️ Sender key already exists (OK)');
-        } else {
-          print('[VideoConf][TEST] ⚠️ Sender key init error (continuing): $e');
+        print('[VideoConf][TEST] ⚠️ Sender key initialization failed: $e');
+        // Try to recover by loading from server
+        try {
+          print('[VideoConf][TEST] Attempting to load sender key from server...');
+          final loaded = await SignalService.instance.loadSenderKeyFromServer(
+            channelId: _currentChannelId!,
+            userId: SignalService.instance.currentUserId!,
+            deviceId: SignalService.instance.currentDeviceId!,
+            forceReload: true,
+          );
+          if (loaded) {
+            print('[VideoConf][TEST] ✓ Sender key restored from server');
+          } else {
+            print('[VideoConf][TEST] ⚠️ No sender key on server - will be created on first send');
+          }
+        } catch (recoveryError) {
+          print('[VideoConf][TEST] ⚠️ Failed to load from server: $recoveryError');
+          // Will be created automatically during sendGroupItem if needed
         }
       }
 
