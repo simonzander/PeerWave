@@ -1679,6 +1679,31 @@ Future<String> decryptItem({
       await senderKeyStore.loadSenderKey(senderKeyName);
       print('[SIGNAL_SERVICE] Loaded sender key record from store');
       
+      // Validate identity key pair exists before encryption (required for signing)
+      try {
+        final identityKeyPair = await identityStore.getIdentityKeyPair();
+        if (identityKeyPair.getPrivateKey().serialize().isEmpty) {
+          throw Exception('Identity private key is empty - cannot sign sender key messages');
+        }
+        print('[SIGNAL_SERVICE] Identity key pair validated for signing');
+      } catch (e) {
+        throw Exception('Identity key pair missing or corrupted: $e. Please regenerate Signal Protocol keys.');
+      }
+      
+      // ⚠️ CRITICAL: Test sender key validity BEFORE creating GroupCipher
+      // This prevents RangeError by detecting corrupted keys early
+      print('[SIGNAL_SERVICE] Testing sender key validity with dummy encryption...');
+      try {
+        final testCipher = GroupCipher(senderKeyStore, senderKeyName);
+        final testMessage = Uint8List.fromList([0x01, 0x02, 0x03]);
+        await testCipher.encrypt(testMessage);
+        print('[SIGNAL_SERVICE] ✓ Sender key validation passed');
+      } catch (validationError) {
+        print('[SIGNAL_SERVICE] ⚠️ Sender key validation FAILED: $validationError');
+        // Trigger RangeError handler to regenerate key
+        throw RangeError('Sender key corrupted - validation test failed: $validationError');
+      }
+      
       final groupCipher = GroupCipher(senderKeyStore, senderKeyName);
       print('[SIGNAL_SERVICE] Created GroupCipher');
       
@@ -1694,14 +1719,86 @@ Future<String> decryptItem({
         'senderId': _currentUserId,
         'senderDeviceId': _currentDeviceId,
       };
+    } on RangeError catch (e) {
+      // RangeError during encryption typically means sender key chain is corrupted
+      // This can happen if the key was created but signing key state is empty
+      print('[SIGNAL_SERVICE] RangeError during encryption - sender key chain corrupted: $e');
+      print('[SIGNAL_SERVICE] Attempting to recover sender key...');
+      
+      try {
+        final senderAddress = SignalProtocolAddress(_currentUserId!, _currentDeviceId!);
+        final senderKeyName = SenderKeyName(groupId, senderAddress);
+        
+        // STEP 1: Try to load key from server BEFORE regenerating
+        // This preserves message history if server has a good key
+        print('[SIGNAL_SERVICE] Step 1: Attempting to load sender key from server...');
+        
+        // Delete corrupted local key first
+        await senderKeyStore.removeSenderKey(senderKeyName);
+        print('[SIGNAL_SERVICE] Removed corrupted local sender key');
+        
+        // Try to reload from server
+        final keyLoadedFromServer = await loadSenderKeyFromServer(
+          channelId: groupId,
+          userId: _currentUserId!,
+          deviceId: _currentDeviceId!,
+          forceReload: true, // Already deleted above
+        );
+        
+        if (keyLoadedFromServer) {
+          print('[SIGNAL_SERVICE] ✓ Sender key restored from server backup');
+          
+          // Verify the restored key works
+          try {
+            final testCipher = GroupCipher(senderKeyStore, senderKeyName);
+            final testMessage = Uint8List.fromList([0x01, 0x02, 0x03]);
+            await testCipher.encrypt(testMessage);
+            print('[SIGNAL_SERVICE] ✓ Restored sender key is functional');
+            
+            // Retry encryption with restored key
+            final messageBytes = Uint8List.fromList(utf8.encode(message));
+            final restoredCipher = GroupCipher(senderKeyStore, senderKeyName);
+            final ciphertext = await restoredCipher.encrypt(messageBytes);
+            print('[SIGNAL_SERVICE] ✓ Successfully encrypted with restored key');
+            
+            return {
+              'ciphertext': base64Encode(ciphertext),
+              'senderId': _currentUserId,
+              'senderDeviceId': _currentDeviceId,
+            };
+          } catch (validationError) {
+            print('[SIGNAL_SERVICE] ⚠️ Restored key is also corrupted: $validationError');
+            // Fall through to regenerate
+          }
+        } else {
+          print('[SIGNAL_SERVICE] No sender key found on server');
+        }
+        
+        // STEP 2: If server has no key OR restored key is also corrupted, regenerate
+        print('[SIGNAL_SERVICE] Step 2: Generating new sender key...');
+        await createGroupSenderKey(groupId, broadcastDistribution: true);
+        print('[SIGNAL_SERVICE] ✓ Created and broadcast new sender key for group $groupId');
+        
+        // Retry encryption with new key
+        final messageBytes = Uint8List.fromList(utf8.encode(message));
+        final newGroupCipher = GroupCipher(senderKeyStore, senderKeyName);
+        final ciphertext = await newGroupCipher.encrypt(messageBytes);
+        print('[SIGNAL_SERVICE] ✓ Successfully encrypted with new key');
+        
+        return {
+          'ciphertext': base64Encode(ciphertext),
+          'senderId': _currentUserId,
+          'senderDeviceId': _currentDeviceId,
+        };
+      } catch (recoveryError) {
+        print('[SIGNAL_SERVICE] ❌ Failed to recover from corrupted sender key: $recoveryError');
+        throw Exception('Sender key chain corrupted and recovery failed. Please leave and rejoin the channel. Original error: $e');
+      }
     } catch (e, stackTrace) {
       print('[SIGNAL_SERVICE] Error in encryptGroupMessage: $e');
       print('[SIGNAL_SERVICE] Stack trace: $stackTrace');
       
-      // ⚠️ DO NOT attempt automatic recovery - it causes more problems
-      // RangeError typically means sender key chain is corrupt
-      // This should be prevented by checking containsSenderKey() before creation
-      // If it still happens, manual intervention is needed (clear storage, rejoin channel)
+      // ⚠️ DO NOT attempt automatic recovery for non-RangeError exceptions
       
       rethrow;
     }

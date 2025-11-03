@@ -795,44 +795,55 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(_error!, style: const TextStyle(color: Colors.red)),
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: _loadMessages,
-                              child: const Text('Retry'),
-                            ),
-                          ],
-                        ),
-                      )
+                    ? _buildErrorState()
                     : _messages.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey[600]),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'No messages yet',
-                                  style: TextStyle(color: Colors.grey[600], fontSize: 18),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Start the conversation!',
-                                  style: TextStyle(color: Colors.grey[500], fontSize: 14),
-                                ),
-                              ],
-                            ),
-                          )
+                        ? _buildEmptyState()
                         : MessageList(
+                            key: ValueKey(_messages.length), // Only rebuild when count changes
                             messages: _messages,
                             onFileDownload: _handleFileDownload,
                           ),
           ),
           MessageInput(onSendMessage: _sendMessage),
+        ],
+      ),
+    );
+  }
+
+  /// Build error state widget
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(_error!, style: const TextStyle(color: Colors.red)),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _loadMessages,
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build empty state widget
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey[600]),
+          const SizedBox(height: 16),
+          Text(
+            'No messages yet',
+            style: TextStyle(color: Colors.grey[600], fontSize: 18),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Start the conversation!',
+            style: TextStyle(color: Colors.grey[500], fontSize: 14),
+          ),
         ],
       ),
     );

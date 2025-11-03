@@ -356,66 +356,81 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
         title: Text('Join ${widget.channelName}'),
       ),
       body: _isLoadingDevices
-          ? Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
                 // Video Preview
                 Expanded(
                   flex: 3,
-                  child: Container(
-                    color: Colors.black,
-                    child: _previewTrack != null && _isCameraEnabled
-                        ? VideoTrackRenderer(_previewTrack!)
-                        : Center(
-                            child: Icon(
-                              Icons.videocam_off,
-                              size: 64,
-                              color: Colors.white54,
-                            ),
-                          ),
-                  ),
+                  child: _buildVideoPreview(),
                 ),
                 
                 // Controls
                 Expanded(
                   flex: 2,
-                  child: Container(
-                    padding: EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        // Device Selection
-                        _buildDeviceSelection(),
-                        
-                        SizedBox(height: 16),
-                        
-                        // E2EE Status
-                        _buildE2EEStatus(),
-                        
-                        Spacer(),
-                        
-                        // Join Button
-                        SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: ElevatedButton(
-                            onPressed: _hasE2EEKey && !_isExchangingKey ? _joinChannel : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
-                            ),
-                            child: Text(
-                              _hasE2EEKey 
-                                  ? 'Join Call' 
-                                  : (_isExchangingKey ? 'Exchanging Keys...' : 'Waiting for Encryption Key...'),
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  child: _buildControls(),
                 ),
               ],
             ),
+    );
+  }
+
+  /// Build video preview section
+  Widget _buildVideoPreview() {
+    return Container(
+      color: Colors.black,
+      child: _previewTrack != null && _isCameraEnabled
+          ? VideoTrackRenderer(_previewTrack!)
+          : const Center(
+              child: Icon(
+                Icons.videocam_off,
+                size: 64,
+                color: Colors.white54,
+              ),
+            ),
+    );
+  }
+
+  /// Build controls section
+  Widget _buildControls() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          // Device Selection
+          _buildDeviceSelection(),
+          
+          const SizedBox(height: 16),
+          
+          // E2EE Status
+          _buildE2EEStatus(),
+          
+          const Spacer(),
+          
+          // Join Button
+          _buildJoinButton(),
+        ],
+      ),
+    );
+  }
+
+  /// Build join button
+  Widget _buildJoinButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: ElevatedButton(
+        onPressed: _hasE2EEKey && !_isExchangingKey ? _joinChannel : null,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.green,
+        ),
+        child: Text(
+          _hasE2EEKey 
+              ? 'Join Call' 
+              : (_isExchangingKey ? 'Exchanging Keys...' : 'Waiting for Encryption Key...'),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+      ),
     );
   }
   
@@ -427,7 +442,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
         if (_cameras.isNotEmpty)
           DropdownButtonFormField<MediaDevice>(
             value: _selectedCamera,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Camera',
               prefixIcon: Icon(Icons.videocam),
               border: OutlineInputBorder(),
@@ -448,13 +463,13 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
             },
           ),
         
-        SizedBox(height: 8),
+        const SizedBox(height: 8),
         
         // Microphone Selection
         if (_microphones.isNotEmpty)
           DropdownButtonFormField<MediaDevice>(
             value: _selectedMicrophone,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Microphone',
               prefixIcon: Icon(Icons.mic),
               border: OutlineInputBorder(),
@@ -476,7 +491,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
   /// Build E2EE status indicator
   Widget _buildE2EEStatus() {
     if (_isCheckingParticipants) {
-      return ListTile(
+      return const ListTile(
         leading: CircularProgressIndicator(),
         title: Text('Checking participants...'),
         subtitle: Text('Verifying who else is in the call'),
@@ -484,7 +499,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
     }
     
     if (_isFirstParticipant) {
-      return ListTile(
+      return const ListTile(
         leading: Icon(Icons.lock, color: Colors.green, size: 32),
         title: Text('You are the first participant'),
         subtitle: Text('Encryption key will be generated when you join'),
@@ -493,14 +508,14 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
     
     if (_isExchangingKey) {
       return ListTile(
-        leading: CircularProgressIndicator(),
-        title: Text('Exchanging encryption keys...'),
+        leading: const CircularProgressIndicator(),
+        title: const Text('Exchanging encryption keys...'),
         subtitle: Text('$_participantCount ${_participantCount == 1 ? "participant" : "participants"} in call'),
       );
     }
     
     if (_hasE2EEKey) {
-      return ListTile(
+      return const ListTile(
         leading: Icon(Icons.lock, color: Colors.green, size: 32),
         title: Text('End-to-end encryption ready'),
         subtitle: Text('Keys exchanged securely via Signal Protocol'),
@@ -508,12 +523,12 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
     }
     
     return ListTile(
-      leading: Icon(Icons.error, color: Colors.red, size: 32),
-      title: Text('Key exchange failed'),
+      leading: const Icon(Icons.error, color: Colors.red, size: 32),
+      title: const Text('Key exchange failed'),
       subtitle: Text(_keyExchangeError ?? 'Unknown error'),
       trailing: TextButton(
         onPressed: _requestE2EEKey,
-        child: Text('Retry'),
+        child: const Text('Retry'),
       ),
     );
   }

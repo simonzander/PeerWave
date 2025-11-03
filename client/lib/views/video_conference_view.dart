@@ -94,8 +94,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         microphoneDevice: widget.selectedMicrophone, // Pass selected microphone
       );
       
-      // Listen for service updates
-      _service!.addListener(_onServiceUpdate);
+      // Consumer will automatically listen for updates - no manual listener needed
       
       setState(() => _isJoining = false);
       debugPrint('[VideoConferenceView] Successfully joined channel');
@@ -107,11 +106,6 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         _errorMessage = 'Failed to join: $e';
       });
     }
-  }
-  
-  void _onServiceUpdate() {
-    if (!mounted) return;
-    setState(() {});
   }
   
   Future<void> _leaveChannel() async {
@@ -135,7 +129,8 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     MessageListenerService.instance.unregisterVideoConferenceService();
     debugPrint('[VideoConferenceView] Unregistered VideoConferenceService from MessageListener');
     
-    _service?.removeListener(_onServiceUpdate);
+    // No need to remove listener - Consumer handles it
+    // _service?.removeListener(_onServiceUpdate); // Removed
     super.dispose();
   }
   
@@ -204,13 +199,16 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             },
             tooltip: 'Settings',
           ),
-          // Participant count
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                '${(_service?.remoteParticipants.length ?? 0) + 1} online',
-                style: const TextStyle(fontSize: 14),
+          // Participant count - optimized with Selector
+          Selector<VideoConferenceService, int>(
+            selector: (_, service) => service.remoteParticipants.length,
+            builder: (_, remoteCount, __) => Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  '${remoteCount + 1} online',
+                  style: const TextStyle(fontSize: 14),
+                ),
               ),
             ),
           ),
@@ -264,57 +262,62 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   }
   
   Widget _buildVideoGrid() {
-    if (_service == null || _service!.room == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    
-    final room = _service!.room!;
-    final localParticipant = room.localParticipant;
-    final remoteParticipants = _service!.remoteParticipants;
-    
-    debugPrint('[VideoConferenceView] Building video grid:');
-    debugPrint('[VideoConferenceView]   - Local participant: ${localParticipant?.identity}');
-    debugPrint('[VideoConferenceView]   - Remote participants: ${remoteParticipants.length}');
-    for (final remote in remoteParticipants) {
-      debugPrint('[VideoConferenceView]     - ${remote.identity}');
-      debugPrint('[VideoConferenceView]       Video tracks: ${remote.videoTrackPublications.length}');
-      debugPrint('[VideoConferenceView]       Audio tracks: ${remote.audioTrackPublications.length}');
-    }
-    
-    // Build participant list
-    final List<dynamic> participants = [];
-    if (localParticipant != null) {
-      participants.add({'participant': localParticipant, 'isLocal': true});
-    }
-    for (final remote in remoteParticipants) {
-      participants.add({'participant': remote, 'isLocal': false});
-    }
-    
-    debugPrint('[VideoConferenceView] Total participants to render: ${participants.length}');
-    
-    // Calculate grid dimensions
-    final totalParticipants = participants.length;
-    int columns = 1;
-    if (totalParticipants > 1) columns = 2;
-    if (totalParticipants > 4) columns = 3;
-    
-    return GridView.builder(
-      padding: const EdgeInsets.all(8),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: columns,
-        childAspectRatio: 16 / 9,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-      ),
-      itemCount: totalParticipants,
-      itemBuilder: (context, index) {
-        final item = participants[index];
-        final participant = item['participant'];
-        final isLocal = item['isLocal'] as bool;
+    // Use Consumer to only rebuild when service changes
+    return Consumer<VideoConferenceService>(
+      builder: (context, service, child) {
+        if (service.room == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
         
-        return _buildVideoTile(
-          participant: participant,
-          isLocal: isLocal,
+        final room = service.room!;
+        final localParticipant = room.localParticipant;
+        final remoteParticipants = service.remoteParticipants;
+        
+        debugPrint('[VideoConferenceView] Building video grid:');
+        debugPrint('[VideoConferenceView]   - Local participant: ${localParticipant?.identity}');
+        debugPrint('[VideoConferenceView]   - Remote participants: ${remoteParticipants.length}');
+        for (final remote in remoteParticipants) {
+          debugPrint('[VideoConferenceView]     - ${remote.identity}');
+          debugPrint('[VideoConferenceView]       Video tracks: ${remote.videoTrackPublications.length}');
+          debugPrint('[VideoConferenceView]       Audio tracks: ${remote.audioTrackPublications.length}');
+        }
+        
+        // Build participant list
+        final List<dynamic> participants = [];
+        if (localParticipant != null) {
+          participants.add({'participant': localParticipant, 'isLocal': true});
+        }
+        for (final remote in remoteParticipants) {
+          participants.add({'participant': remote, 'isLocal': false});
+        }
+        
+        debugPrint('[VideoConferenceView] Total participants to render: ${participants.length}');
+        
+        // Calculate grid dimensions
+        final totalParticipants = participants.length;
+        int columns = 1;
+        if (totalParticipants > 1) columns = 2;
+        if (totalParticipants > 4) columns = 3;
+        
+        return GridView.builder(
+          padding: const EdgeInsets.all(8),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            childAspectRatio: 16 / 9,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+          ),
+          itemCount: totalParticipants,
+          itemBuilder: (context, index) {
+            final item = participants[index];
+            final participant = item['participant'];
+            final isLocal = item['isLocal'] as bool;
+            
+            return _buildVideoTile(
+              participant: participant,
+              isLocal: isLocal,
+            );
+          },
         );
       },
     );

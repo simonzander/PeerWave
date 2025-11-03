@@ -642,25 +642,31 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(_error!, style: const TextStyle(color: Colors.red)),
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: _loadMessages,
-                              child: const Text('Retry'),
-                            ),
-                          ],
-                        ),
-                      )
+                    ? _buildErrorState()
                     : MessageList(
+                        key: ValueKey(_messages.length), // Only rebuild when count changes
                         messages: _messages,
                         onFileDownload: _handleFileDownload,
                       ),
           ),
           MessageInput(onSendMessage: _sendMessage),
+        ],
+      ),
+    );
+  }
+
+  /// Build error state widget
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(_error!, style: const TextStyle(color: Colors.red)),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _loadMessages,
+            child: const Text('Retry'),
+          ),
         ],
       ),
     );
