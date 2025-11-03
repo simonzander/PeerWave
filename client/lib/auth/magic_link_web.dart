@@ -57,37 +57,38 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
   @override
   Widget build(BuildContext context) {
     if (!kIsWeb) return const SizedBox.shrink();
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Scaffold(
-      backgroundColor: const Color(0xFF2C2F33),
+      backgroundColor: colorScheme.surface,
       body: Center(
         child: Container(
           padding: const EdgeInsets.all(20),
           width: 350,
           decoration: BoxDecoration(
-            color: const Color(0xFF23272A),
+            color: colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Magic Key', style: TextStyle(fontSize: 20, color: Colors.white)),
+              Text('Magic Key', style: TextStyle(fontSize: 20, color: colorScheme.onSurface)),
               const SizedBox(height: 20),
               TextField(
                 controller: magicKeyController,
                 maxLines: 4,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: 'your magic key',
                   filled: true,
-                  fillColor: Color(0xFF40444B),
-                  border: OutlineInputBorder(),
+                  fillColor: colorScheme.surfaceVariant,
+                  border: const OutlineInputBorder(),
                 ),
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: colorScheme.onSurface),
               ),
               const SizedBox(height: 20),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
+              FilledButton(
+                style: FilledButton.styleFrom(
                   minimumSize: const Size(double.infinity, 45),
-                  backgroundColor: Colors.blueAccent,
                 ),
                 onPressed: () async {
                   await Clipboard.setData(ClipboardData(text: magicKeyController.text));
@@ -95,11 +96,11 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
                   _status = 'Magic key copied to clipboard!';
                   });
                 },
-                child: _loading ? const CircularProgressIndicator(color: Colors.white) : const Text('Submit Key'),
+                child: _loading ? CircularProgressIndicator(color: colorScheme.onPrimary) : const Text('Submit Key'),
               ),
               if (_status != null) ...[
                 const SizedBox(height: 20),
-                Text(_status!, style: const TextStyle(color: Colors.green)),
+                Text(_status!, style: TextStyle(color: colorScheme.primary)),
               ],
             ],
           ),

@@ -12,6 +12,7 @@ import '../../services/api_service.dart';
 import '../../services/file_transfer/p2p_coordinator.dart';
 import '../../services/file_transfer/socket_file_client.dart';
 import '../../models/file_message.dart';
+import '../../extensions/snackbar_extensions.dart';
 
 /// Screen for Direct Messages (1:1 Signal chats)
 class DirectMessagesScreen extends StatefulWidget {
@@ -60,12 +61,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         
         // Show warning and set error state
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Signal Protocol initialization incomplete. Cannot send messages.'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 5),
-            ),
+          context.showErrorSnackBar(
+            'Signal Protocol initialization incomplete. Cannot send messages.',
+            duration: const Duration(seconds: 5),
           );
         }
         
@@ -469,12 +467,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     // CRITICAL: Check if Signal Protocol is initialized before sending
     if (_error != null && _error!.contains('Signal Protocol not initialized')) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cannot send message: Signal Protocol not initialized. Please refresh the page.'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 5),
-          ),
+        context.showErrorSnackBar(
+          'Cannot send message: Signal Protocol not initialized. Please refresh the page.',
+          duration: const Duration(seconds: 5),
         );
       }
       return; // ❌ BLOCK - Critical initialization error
@@ -489,27 +484,16 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       if (hasPreKeys == null) {
         // API error - show warning but allow sending (failsafe)
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Could not verify recipient keys. Attempting to send anyway...'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 4),
-            ),
-          );
+          context.showErrorSnackBar('Could not verify recipient keys. Attempting to send anyway...');
         }
         // Continue with sending
       } else if (!hasPreKeys) {
         // BLOCK: Recipient has no available PreKeys
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Cannot send message: ${widget.recipientDisplayName} has no PreKeys available. '
-                'Please ask them to register or refresh their device.'
-              ),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 5),
-            ),
+          context.showErrorSnackBar(
+            'Cannot send message: ${widget.recipientDisplayName} has no PreKeys available. '
+            'Please ask them to register or refresh their device.',
+            duration: const Duration(seconds: 5),
           );
         }
         return; // ❌ BLOCK - Do not send message
@@ -553,12 +537,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       );
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Not connected. Message queued and will be sent when reconnected.'),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 5),
-          ),
+        context.showErrorSnackBar(
+          'Not connected. Message queued and will be sent when reconnected.',
+          duration: const Duration(seconds: 5),
         );
       }
       
@@ -617,12 +598,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       }
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: errorColor,
-            duration: const Duration(seconds: 5),
-          ),
+        context.showCustomSnackBar(
+          errorMessage,
+          backgroundColor: errorColor,
+          duration: const Duration(seconds: 5),
         );
       }
     }
@@ -630,17 +609,26 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.recipientDisplayName),
-        backgroundColor: Colors.grey[850],
+        backgroundColor: colorScheme.surfaceContainerHighest,
+        foregroundColor: colorScheme.onSurface,
+        elevation: 1,
       ),
-      backgroundColor: const Color(0xFF36393F),
+      backgroundColor: colorScheme.surface,
       body: Column(
         children: [
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? Center(
+                    child: CircularProgressIndicator(
+                      color: colorScheme.primary,
+                    ),
+                  )
                 : _error != null
                     ? _buildErrorState()
                     : MessageList(
@@ -657,17 +645,40 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
   /// Build error state widget
   Widget _buildErrorState() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(_error!, style: const TextStyle(color: Colors.red)),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: _loadMessages,
-            child: const Text('Retry'),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: colorScheme.error,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _error!,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: colorScheme.error,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _loadMessages,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+              style: FilledButton.styleFrom(
+                backgroundColor: colorScheme.primary,
+                foregroundColor: colorScheme.onPrimary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -685,14 +696,11 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       print('[DIRECT_MSG] File Size: ${fileMessage.fileSizeFormatted}');
       print('[DIRECT_MSG] ================================================');
       
-      // Show loading feedback
+      // Show snackbar
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Starting download: ${fileMessage.fileName}...'),
-            backgroundColor: Colors.blue,
-            duration: const Duration(seconds: 2),
-          ),
+        context.showSuccessSnackBar(
+          'Starting download: ${fileMessage.fileName}...',
+          duration: const Duration(seconds: 2),
         );
       }
       
@@ -747,18 +755,16 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       
       // Show success feedback
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Download started: ${fileMessage.fileName}'),
-            backgroundColor: Colors.green,
-            action: SnackBarAction(
-              label: 'View',
-              textColor: Colors.white,
-              onPressed: () {
-                // TODO: Navigate to downloads screen
-                print('[DIRECT_MSG] Navigate to downloads screen');
-              },
-            ),
+        final colorScheme = Theme.of(context).colorScheme;
+        context.showSuccessSnackBar(
+          'Download started: ${fileMessage.fileName}',
+          action: SnackBarAction(
+            label: 'View',
+            textColor: colorScheme.onPrimaryContainer,
+            onPressed: () {
+              // TODO: Navigate to downloads screen
+              print('[DIRECT_MSG] Navigate to downloads screen');
+            },
           ),
         );
       }
@@ -768,12 +774,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       print('[DIRECT_MSG] Stack trace: $stackTrace');
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Download failed: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
+        context.showErrorSnackBar(
+          'Download failed: $e',
+          duration: const Duration(seconds: 5),
         );
       }
     }

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../models/role.dart';
 import '../../providers/role_provider.dart';
 import '../../services/user_management_service.dart';
+import '../../extensions/snackbar_extensions.dart';
 
 class UserManagementScreen extends StatefulWidget {
   const UserManagementScreen({Key? key}) : super(key: key);
@@ -138,9 +139,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isActive ? Colors.orange : Colors.green,
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: isActive ? Theme.of(context).colorScheme.tertiary : Theme.of(context).colorScheme.primary,
             ),
             onPressed: () async {
               Navigator.of(context).pop();
@@ -172,10 +173,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               '⚠️ WARNING: This action cannot be undone!',
               style: TextStyle(
-                color: Colors.red,
+                color: Theme.of(context).colorScheme.error,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -202,9 +203,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
             ),
             onPressed: () async {
               Navigator.of(context).pop();
@@ -224,15 +225,11 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   }
 
   void _showSuccess(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.green),
-    );
+    context.showSuccessSnackBar(message);
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
-    );
+    context.showErrorSnackBar(message);
   }
 
   @override
@@ -288,7 +285,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                           ),
                           child: ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: user.active ? null : Colors.grey,
+                              backgroundColor: user.active ? null : Theme.of(context).colorScheme.surfaceVariant,
                               child: Text(
                                 (user.displayName ?? user.email)
                                     .substring(0, 1)
@@ -301,7 +298,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                                   child: Text(
                                     user.displayName ?? user.email,
                                     style: TextStyle(
-                                      color: user.active ? null : Colors.grey,
+                                      color: user.active ? null : Theme.of(context).colorScheme.onSurfaceVariant,
                                     ),
                                   ),
                                 ),
@@ -312,15 +309,15 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                                       vertical: 2,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.grey[300],
+                                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    child: const Text(
+                                    child: Text(
                                       'INACTIVE',
                                       style: TextStyle(
                                         fontSize: 10,
                                         fontWeight: FontWeight.bold,
-                                        color: Colors.grey,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                                       ),
                                     ),
                                   ),
@@ -332,7 +329,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                                 Text(
                                   user.email,
                                   style: TextStyle(
-                                    color: user.active ? null : Colors.grey,
+                                    color: user.active ? null : Theme.of(context).colorScheme.onSurfaceVariant,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
@@ -345,7 +342,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                                                 role.name,
                                                 style: const TextStyle(fontSize: 12),
                                               ),
-                                              backgroundColor: Colors.blue.shade100,
+                                              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                                             ))
                                         .toList(),
                                   ),
@@ -364,14 +361,14 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                                   IconButton(
                                     icon: Icon(
                                       user.active ? Icons.person_off : Icons.person_add,
-                                      color: user.active ? Colors.orange : Colors.green,
+                                      color: user.active ? Theme.of(context).colorScheme.tertiary : Theme.of(context).colorScheme.primary,
                                     ),
                                     onPressed: () => _showActivateDeactivateDialog(user),
                                     tooltip: user.active ? 'Deactivate User' : 'Activate User',
                                   ),
                                 if (roleProvider.hasServerPermission('user.manage'))
                                   IconButton(
-                                    icon: const Icon(Icons.delete, color: Colors.red),
+                                    icon: Icon(Icons.delete, color: Theme.of(context).colorScheme.error),
                                     onPressed: () => _showDeleteUserDialog(user),
                                     tooltip: 'Delete User',
                                   ),

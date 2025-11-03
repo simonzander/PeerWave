@@ -14,6 +14,7 @@ import '../../services/file_transfer/p2p_coordinator.dart';
 import '../../services/file_transfer/socket_file_client.dart';
 import '../../models/role.dart';
 import '../../models/file_message.dart';
+import '../../extensions/snackbar_extensions.dart';
 import '../channel/channel_members_screen.dart';
 import '../../views/video_conference_prejoin_view.dart';
 import '../../views/video_conference_view.dart';
@@ -88,12 +89,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           print('[SIGNAL_GROUP] Failed to regenerate Signal Protocol: $regenerateError');
           // Show warning but don't block completely
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Signal Protocol initialization incomplete. Some features may not work.'),
-                backgroundColor: Colors.orange,
-                duration: Duration(seconds: 5),
-              ),
+            context.showCustomSnackBar(
+              'Signal Protocol initialization incomplete. Some features may not work.',
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 5),
             );
           }
           // Continue anyway - let sendMessage handle the blocking if needed
@@ -143,18 +142,16 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
             final memberList = failedKeys.map((k) => '${k['userId']}').take(3).join(', ');
             final remaining = failedKeys.length > 3 ? ' and ${failedKeys.length - 3} more' : '';
             
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Cannot decrypt messages from: $memberList$remaining'),
-                backgroundColor: Colors.orange,
-                duration: const Duration(seconds: 8),
-                action: SnackBarAction(
-                  label: 'Retry',
-                  textColor: Colors.white,
-                  onPressed: () {
-                    _initializeGroupChannel(); // Retry loading
-                  },
-                ),
+            context.showCustomSnackBar(
+              'Cannot decrypt messages from: $memberList$remaining',
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 8),
+              action: SnackBarAction(
+                label: 'Retry',
+                textColor: Colors.white,
+                onPressed: () {
+                  _initializeGroupChannel(); // Retry loading
+                },
               ),
             );
           }
@@ -166,21 +163,17 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           final errorMsg = loadError.toString();
           if (errorMsg.contains('Failed to load') && errorMsg.contains('sender key')) {
             // Partial failure - some member keys missing
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(loadError.toString().replaceAll('Exception: ', '')),
-                backgroundColor: Colors.orange,
-                duration: const Duration(seconds: 7),
-              ),
+            context.showCustomSnackBar(
+              loadError.toString().replaceAll('Exception: ', ''),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 7),
             );
           } else if (errorMsg.contains('HTTP') || errorMsg.contains('server')) {
             // Server error
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Failed to load member encryption keys. You may not be able to read all messages.'),
-                backgroundColor: Colors.orange,
-                duration: Duration(seconds: 7),
-              ),
+            context.showCustomSnackBar(
+              'Failed to load member encryption keys. You may not be able to read all messages.',
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 7),
             );
           }
         }
@@ -191,12 +184,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       print('[SIGNAL_GROUP] Error initializing group channel: $e');
       // Show error but don't block the UI completely
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to initialize group chat: $e'),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 5),
-          ),
+        context.showCustomSnackBar(
+          'Failed to initialize group chat: $e',
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 5),
         );
       }
     }
@@ -562,12 +553,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       // STEP 4: Check if Signal Protocol is initialized before sending
       if (_error != null && _error!.contains('Signal Protocol not initialized')) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Cannot send message: Signal Protocol not initialized. Please refresh the page.'),
-              backgroundColor: Colors.red,
-              duration: Duration(seconds: 5),
-            ),
+          context.showCustomSnackBar(
+            'Cannot send message: Signal Protocol not initialized. Please refresh the page.',
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           );
         }
         return; // ❌ BLOCK - Critical initialization error
@@ -590,12 +579,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         } catch (keyError) {
           // Show warning but allow retry
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Sender key creation failed. Retrying may work: $keyError'),
-                backgroundColor: Colors.orange,
-                duration: const Duration(seconds: 5),
-              ),
+            context.showCustomSnackBar(
+              'Sender key creation failed. Retrying may work: $keyError',
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 5),
             );
           }
           return; // Exit but allow user to retry
@@ -638,12 +625,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         );
         
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Not connected. Message queued and will be sent when reconnected.'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 5),
-            ),
+          context.showCustomSnackBar(
+            'Not connected. Message queued and will be sent when reconnected.',
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 5),
           );
         }
         
@@ -710,12 +695,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: errorColor,
-            duration: const Duration(seconds: 5),
-          ),
+        context.showCustomSnackBar(
+          errorMessage,
+          backgroundColor: errorColor,
+          duration: const Duration(seconds: 5),
         );
       }
     }
@@ -723,10 +706,15 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
       appBar: AppBar(
         title: Text('# ${widget.channelName}'),
-        backgroundColor: Colors.grey[850],
+        backgroundColor: colorScheme.surfaceContainerHighest,
+        foregroundColor: colorScheme.onSurface,
+        elevation: 1,
         actions: [
           // Video Call Button - Navigate to PreJoin screen
           IconButton(
@@ -788,12 +776,16 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           ),
         ],
       ),
-      backgroundColor: const Color(0xFF36393F),
+      backgroundColor: colorScheme.surface,
       body: Column(
         children: [
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? Center(
+                    child: CircularProgressIndicator(
+                      color: colorScheme.primary,
+                    ),
+                  )
                 : _error != null
                     ? _buildErrorState()
                     : _messages.isEmpty
@@ -812,37 +804,71 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
 
   /// Build error state widget
   Widget _buildErrorState() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(_error!, style: const TextStyle(color: Colors.red)),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: _loadMessages,
-            child: const Text('Retry'),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: colorScheme.error,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _error!,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: colorScheme.error,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _loadMessages,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+              style: FilledButton.styleFrom(
+                backgroundColor: colorScheme.primary,
+                foregroundColor: colorScheme.onPrimary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   /// Build empty state widget
   Widget _buildEmptyState() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey[600]),
+          Icon(
+            Icons.chat_bubble_outline,
+            size: 64,
+            color: colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(height: 16),
           Text(
             'No messages yet',
-            style: TextStyle(color: Colors.grey[600], fontSize: 18),
+            style: theme.textTheme.titleLarge?.copyWith(
+              color: colorScheme.onSurface,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             'Start the conversation!',
-            style: TextStyle(color: Colors.grey[500], fontSize: 14),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -862,14 +888,12 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       print('[GROUP_CHAT] File Size: ${fileMessage.fileSizeFormatted}');
       print('[GROUP_CHAT] ================================================');
       
-      // Show loading feedback
+      // Show snackbar
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Starting download: ${fileMessage.fileName}...'),
-            backgroundColor: Colors.blue,
-            duration: const Duration(seconds: 2),
-          ),
+        context.showCustomSnackBar(
+          'Starting download: ${fileMessage.fileName}...',
+          backgroundColor: Colors.blue,
+          duration: const Duration(seconds: 2),
         );
       }
       
@@ -924,18 +948,16 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       
       // Show success feedback
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Download started: ${fileMessage.fileName}'),
-            backgroundColor: Colors.green,
-            action: SnackBarAction(
-              label: 'View',
-              textColor: Colors.white,
-              onPressed: () {
-                // TODO: Navigate to downloads screen
-                print('[GROUP_CHAT] Navigate to downloads screen');
-              },
-            ),
+        context.showCustomSnackBar(
+          'Download started: ${fileMessage.fileName}',
+          backgroundColor: Colors.green,
+          action: SnackBarAction(
+            label: 'View',
+            textColor: Colors.white,
+            onPressed: () {
+              // TODO: Navigate to downloads screen
+              print('[GROUP_CHAT] Navigate to downloads screen');
+            },
           ),
         );
       }
@@ -945,12 +967,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       print('[GROUP_CHAT] Stack trace: $stackTrace');
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Download failed: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
+        context.showCustomSnackBar(
+          'Download failed: $e',
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
         );
       }
     }

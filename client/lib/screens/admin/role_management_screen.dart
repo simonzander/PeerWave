@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/role.dart';
 import '../../providers/role_provider.dart';
+import '../../extensions/snackbar_extensions.dart';
 
 class RoleManagementScreen extends StatefulWidget {
   const RoleManagementScreen({Key? key}) : super(key: key);
@@ -238,11 +239,10 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
             onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
             ),
             child: const Text('Delete'),
           ),
@@ -263,21 +263,11 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
-    );
+    context.showErrorSnackBar(message);
   }
 
   void _showSuccess(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-      ),
-    );
+    context.showSuccessSnackBar(message);
   }
 
   @override
@@ -330,7 +320,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
               padding: const EdgeInsets.all(16.0),
               child: Text(
                 _errorMessage!,
-                style: const TextStyle(color: Colors.red),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
           if (_isLoading)
@@ -355,7 +345,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                         role.name,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: role.standard ? Colors.grey : null,
+                          color: role.standard ? Theme.of(context).colorScheme.onSurfaceVariant : null,
                         ),
                       ),
                       subtitle: Column(
@@ -368,7 +358,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                             'Permissions: ${role.permissions.join(", ")}',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey[600],
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                           ),
                         ],
@@ -376,7 +366,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                       trailing: role.standard
                           ? Chip(
                               label: const Text('Standard'),
-                              backgroundColor: Colors.grey[300],
+                              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                             )
                           : PopupMenuButton(
                               itemBuilder: (context) => [
@@ -390,14 +380,16 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                                     ],
                                   ),
                                 ),
-                                const PopupMenuItem(
+                                PopupMenuItem(
                                   value: 'delete',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.delete, color: Colors.red),
-                                      SizedBox(width: 8),
-                                      Text('Delete', style: TextStyle(color: Colors.red)),
-                                    ],
+                                  child: Builder(
+                                    builder: (context) => Row(
+                                      children: [
+                                        Icon(Icons.delete, color: Theme.of(context).colorScheme.error),
+                                        const SizedBox(width: 8),
+                                        Text('Delete', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ],

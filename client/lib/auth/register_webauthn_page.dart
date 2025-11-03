@@ -5,6 +5,7 @@ import 'package:js/js_util.dart';
 import '../services/api_service.dart';
 import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
+import '../extensions/snackbar_extensions.dart';
 
 @JS('window.localStorage.getItem')
 external String localStorageGetItem(String key);
@@ -97,12 +98,7 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
 
   Future<void> _deleteCredential(String credentialId) async {
     if (webauthnCredentials.length <= 1) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You must have at least one security key!'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      context.showErrorSnackBar('You must have at least one security key!');
       return;
     }
 
@@ -137,8 +133,19 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
+    // Responsive width
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cardWidth = screenWidth < 600 
+        ? screenWidth * 0.9
+        : screenWidth < 840
+            ? 550.0
+            : 650.0;
+
     return Scaffold(
-      backgroundColor: const Color(0xFF2C2F33),
+      backgroundColor: colorScheme.surface,
       body: Column(
         children: [
           // Progress Bar
@@ -146,75 +153,98 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
           // Content
           Expanded(
             child: Center(
-              child: Container(
-                padding: const EdgeInsets.all(32),
-                width: 600,
-                constraints: const BoxConstraints(maxHeight: 700),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF23272A),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'Setup Security Key',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Container(
+                  padding: const EdgeInsets.all(32),
+                  width: cardWidth,
+                  constraints: const BoxConstraints(maxWidth: 700, maxHeight: 750),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: colorScheme.shadow.withOpacity(0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Register at least one security key (passkey) to secure your account. You can use your device\'s biometric authentication or a hardware security key.',
-                      style: TextStyle(color: Colors.white70, fontSize: 14),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 24),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Setup Security Key',
+                        style: theme.textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.onSurface,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Register at least one security key (passkey) to secure your account. You can use your device\'s biometric authentication or a hardware security key.',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
                     if (_error != null)
                       Container(
                         padding: const EdgeInsets.all(12),
                         margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.red),
+                          color: colorScheme.errorContainer,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: colorScheme.error),
                         ),
                         child: Text(
                           _error!,
-                          style: const TextStyle(color: Colors.red),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onErrorContainer,
+                          ),
                           textAlign: TextAlign.center,
                         ),
                       ),
                     // Credentials List
                     Expanded(
                       child: loading && webauthnCredentials.isEmpty
-                          ? const Center(
-                              child: CircularProgressIndicator(color: Colors.blueAccent),
+                          ? Center(
+                              child: CircularProgressIndicator(color: colorScheme.primary),
                             )
                           : webauthnCredentials.isEmpty
                               ? Container(
                                   padding: const EdgeInsets.all(24),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF40444B),
-                                    borderRadius: BorderRadius.circular(8),
+                                    color: colorScheme.surfaceContainerHigh,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: colorScheme.outlineVariant,
+                                    ),
                                   ),
-                                  child: const Column(
+                                  child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(Icons.security, color: Colors.white54, size: 48),
-                                      SizedBox(height: 16),
+                                      Icon(
+                                        Icons.security, 
+                                        color: colorScheme.onSurfaceVariant, 
+                                        size: 48,
+                                      ),
+                                      const SizedBox(height: 16),
                                       Text(
                                         'No security keys registered yet',
-                                        style: TextStyle(color: Colors.white70, fontSize: 16),
+                                        style: theme.textTheme.titleMedium?.copyWith(
+                                          color: colorScheme.onSurface,
+                                        ),
                                       ),
-                                      SizedBox(height: 8),
+                                      const SizedBox(height: 8),
                                       Text(
                                         'Click "Add Security Key" below to get started',
-                                        style: TextStyle(color: Colors.white54, fontSize: 13),
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: colorScheme.onSurfaceVariant,
+                                        ),
                                         textAlign: TextAlign.center,
                                       ),
                                     ],
@@ -222,31 +252,38 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
                                 )
                               : Container(
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF40444B),
-                                    borderRadius: BorderRadius.circular(8),
+                                    color: colorScheme.surfaceContainerHigh,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: colorScheme.outlineVariant,
+                                    ),
                                   ),
                                   child: ListView.separated(
                                     padding: const EdgeInsets.all(8),
                                     itemCount: webauthnCredentials.length,
-                                    separatorBuilder: (context, index) => const Divider(
-                                      color: Color(0xFF2C2F33),
+                                    separatorBuilder: (context, index) => Divider(
+                                      color: colorScheme.outlineVariant,
                                       height: 1,
                                     ),
                                     itemBuilder: (context, index) {
                                       final cred = webauthnCredentials[index];
                                       return ListTile(
-                                        leading: const Icon(Icons.key, color: Colors.blueAccent),
+                                        leading: Icon(Icons.key, color: colorScheme.primary),
                                         title: Text(
                                           cred['browser']?.toString() ?? 'Security Key ${index + 1}',
-                                          style: const TextStyle(color: Colors.white),
+                                          style: theme.textTheme.bodyLarge?.copyWith(
+                                            color: colorScheme.onSurface,
+                                          ),
                                         ),
                                         subtitle: Text(
                                           'Created: ${cred['created']?.toString() ?? 'Unknown'}',
-                                          style: const TextStyle(color: Colors.white54, fontSize: 12),
+                                          style: theme.textTheme.bodySmall?.copyWith(
+                                            color: colorScheme.onSurfaceVariant,
+                                          ),
                                         ),
                                         trailing: webauthnCredentials.length > 1
                                             ? IconButton(
-                                                icon: const Icon(Icons.delete, color: Colors.red),
+                                                icon: Icon(Icons.delete, color: colorScheme.error),
                                                 onPressed: () => _deleteCredential(cred['id']?.toString() ?? ''),
                                               )
                                             : null,
@@ -257,42 +294,51 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
                     ),
                     const SizedBox(height: 16),
                     // Add Credential Button
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50),
-                        backgroundColor: Colors.blueAccent,
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 52),
+                        foregroundColor: colorScheme.primary,
+                        side: BorderSide(color: colorScheme.outline),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                       onPressed: loading ? null : _addCredential,
                       icon: const Icon(Icons.add),
-                      label: const Text(
+                      label: Text(
                         'Add Security Key',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
                     // Next Button
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50),
-                        backgroundColor: Colors.green,
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 52),
+                        backgroundColor: colorScheme.primary,
+                        foregroundColor: colorScheme.onPrimary,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(12),
                         ),
+                        disabledBackgroundColor: colorScheme.surfaceContainerHighest,
+                        disabledForegroundColor: colorScheme.onSurfaceVariant,
                       ),
                       onPressed: webauthnCredentials.isEmpty
                           ? null
                           : () {
                               GoRouter.of(context).go('/register/profile');
                             },
-                      child: const Text(
+                      child: Text(
                         'Next',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

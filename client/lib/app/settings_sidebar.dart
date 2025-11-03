@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../providers/role_provider.dart';
+import '../widgets/theme_selector_dialog.dart';
 
 class SettingsSidebar extends StatelessWidget {
   final Widget child;
@@ -45,6 +46,11 @@ class SettingsSidebar extends StatelessWidget {
                 leading: const Icon(Icons.notifications),
                 title: const Text('Notifications'),
                 onTap: () => GoRouter.of(context).go('/app/settings/notifications'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.palette_outlined),
+                title: const Text('Theme'),
+                onTap: () => ThemeSelectorDialog.show(context),
               ),
               const Divider(),
               // P2P File Sharing

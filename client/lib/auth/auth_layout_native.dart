@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 //import '../web_config.dart';
 import 'webauthn_js_stub.dart';
+import '../extensions/snackbar_extensions.dart';
 import 'magic_link_native.dart';
 import '../services/api_service.dart';
 
@@ -209,9 +210,7 @@ class _AuthLayoutState extends State<AuthLayout> {
                             ),
                             onPressed: () {
                               Clipboard.setData(ClipboardData(text: _loginStatus!));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('URL copied to clipboard!')),
-                              );
+                              context.showSuccessSnackBar('URL copied to clipboard!');
                             },
                             child: const Icon(Icons.copy, color: Colors.white, size: 20),
                           ),

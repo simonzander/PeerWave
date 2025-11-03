@@ -53,8 +53,10 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
   @override
   Widget build(BuildContext context) {
     if (!kIsWeb) return const SizedBox.shrink();
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Scaffold(
-      backgroundColor: const Color(0xFF2C2F33),
+      backgroundColor: colorScheme.surface,
       body: Column(
         children: [
           // Progress Bar
@@ -66,36 +68,35 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
                 padding: const EdgeInsets.all(20),
                 width: 350,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF23272A),
+                  color: colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('Backup Codes', style: TextStyle(fontSize: 20, color: Colors.white)),
+                    Text('Backup Codes', style: TextStyle(fontSize: 20, color: colorScheme.onSurface)),
                     const SizedBox(height: 20),
-                    const Text(
+                    Text(
                       'Each backup code is valid once. If you lost your passkey, you can login with a backup code. The backup codes are saved encrypted on the server and can\'t be decrypted anymore. Please save your backup codes on safe place like a key vault (1Password, bitwarden, KeePass etc.) If you lost your access to your passkeys and backup codes you can\'t login to your account anymore. Keep this in your mind. Support through the administration is not possible through security reasons.',
-                      style: TextStyle(color: Colors.white, fontSize: 13),
+                      style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
                       textAlign: TextAlign.left,
                     ),
                     const SizedBox(height: 16),
                     TextField(
                       controller: backupCodesController,
                       maxLines: 4,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         hintText: 'your backup codes',
                         filled: true,
-                        fillColor: Color(0xFF40444B),
-                        border: OutlineInputBorder(),
+                        fillColor: colorScheme.surfaceVariant,
+                        border: const OutlineInputBorder(),
                       ),
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(color: colorScheme.onSurface),
                     ),
                     const SizedBox(height: 20),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
+                    FilledButton(
+                      style: FilledButton.styleFrom(
                         minimumSize: const Size(double.infinity, 45),
-                        backgroundColor: Colors.blueAccent,
                       ),
                       onPressed: () async {
                         await Clipboard.setData(ClipboardData(text: backupCodesController.text));
@@ -103,13 +104,12 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
                           _status = 'Backup codes copied to clipboard!';
                         });
                       },
-                      child: _loading ? const CircularProgressIndicator(color: Colors.white) : const Text('Copy Backup Codes to Clipboard'),
+                      child: _loading ? CircularProgressIndicator(color: colorScheme.onPrimary) : const Text('Copy Backup Codes to Clipboard'),
                     ),
                     const SizedBox(height: 10),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
                         minimumSize: const Size(double.infinity, 45),
-                        backgroundColor: Colors.deepPurple,
                       ),
                       onPressed: () {
                         final text = backupCodesController.text;
@@ -150,16 +150,15 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
                         Expanded(
                           child: Text(
                             "I know the backup codes can't be retrieved again. I downloaded / copied the codes and stored them safe.",
-                            style: const TextStyle(color: Colors.white),
+                            style: TextStyle(color: colorScheme.onSurface),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 10),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
+                    FilledButton(
+                      style: FilledButton.styleFrom(
                         minimumSize: const Size(double.infinity, 45),
-                        backgroundColor: Colors.green,
                       ),
                       onPressed: _acknowledged ? () {
                         GoRouter.of(context).go('/register/webauthn');
@@ -168,7 +167,7 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
                     ),
                     if (_status != null) ...[
                       const SizedBox(height: 20),
-                      Text(_status!, style: const TextStyle(color: Colors.green)),
+                      Text(_status!, style: TextStyle(color: colorScheme.primary)),
                     ],
                   ],
                 ),

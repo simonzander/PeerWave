@@ -93,8 +93,10 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Scaffold(
-      backgroundColor: const Color(0xFF2C2F33),
+      backgroundColor: colorScheme.surface,
       body: Center(
         child: Container(
           padding: const EdgeInsets.all(40),
@@ -113,13 +115,13 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
                     width: 200,
                     height: 200,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF40444B),
+                      color: colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(100),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.security,
                       size: 100,
-                      color: Colors.blueAccent,
+                      color: colorScheme.primary,
                     ),
                   );
                 },
@@ -133,8 +135,8 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
                   height: 12,
                   child: LinearProgressIndicator(
                     value: _progress,
-                    backgroundColor: const Color(0xFF40444B),
-                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+                    backgroundColor: colorScheme.surfaceContainerHighest,
+                    valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
                   ),
                 ),
               ),
@@ -143,8 +145,8 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
               // Status Text
               Text(
                 _statusText,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: colorScheme.onSurface,
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
                 ),
@@ -156,8 +158,8 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
               if (!_isComplete)
                 Text(
                   '${(_progress * 100).toInt()}% complete',
-                  style: const TextStyle(
-                    color: Colors.white70,
+                  style: TextStyle(
+                    color: colorScheme.onSurfaceVariant,
                     fontSize: 14,
                   ),
                   textAlign: TextAlign.center,
@@ -165,15 +167,15 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
 
               // Completion indicator
               if (_isComplete)
-                const Row(
+                Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.check_circle, color: Colors.green, size: 20),
-                    SizedBox(width: 8),
+                    Icon(Icons.check_circle, color: colorScheme.primary, size: 20),
+                    const SizedBox(width: 8),
                     Text(
                       'Ready!',
                       style: TextStyle(
-                        color: Colors.green,
+                        color: colorScheme.primary,
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
                       ),

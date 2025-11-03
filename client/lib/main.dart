@@ -37,6 +37,8 @@ import 'services/role_api_service.dart';
 import 'screens/admin/role_management_screen.dart';
 import 'screens/admin/user_management_screen.dart';
 import 'web_config.dart';
+// Theme imports
+import 'theme/theme_provider.dart';
 // P2P File Transfer imports
 import 'services/file_transfer/webrtc_service.dart';
 import 'services/file_transfer/p2p_coordinator.dart';
@@ -95,14 +97,33 @@ Future<void> main() async {
     print('[INIT] ⚠️ Failed to load ICE config, will use fallback: $e');
   }
   
-  runApp(MyApp(initialMagicKey: initialMagicKey, clientId: clientId, serverUrl: serverUrl));
+  // Initialize Theme Provider
+  print('[INIT] Initializing Theme Provider...');
+  final themeProvider = ThemeProvider();
+  await themeProvider.initialize();
+  print('[INIT] ✅ Theme Provider initialized');
+  
+  runApp(MyApp(
+    initialMagicKey: initialMagicKey, 
+    clientId: clientId, 
+    serverUrl: serverUrl,
+    themeProvider: themeProvider,
+  ));
 }
 
 class MyApp extends StatefulWidget {
   final String? initialMagicKey;
   final String clientId;
   final String serverUrl;
-  const MyApp({Key? key, this.initialMagicKey, required this.clientId, required this.serverUrl}) : super(key: key);
+  final ThemeProvider themeProvider;
+  
+  const MyApp({
+    Key? key, 
+    this.initialMagicKey, 
+    required this.clientId, 
+    required this.serverUrl,
+    required this.themeProvider,
+  }) : super(key: key);
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -319,6 +340,9 @@ class _MyAppState extends State<MyApp> {
     // Wrap the entire app with providers
     return MultiProvider(
       providers: [
+        // Theme Provider
+        ChangeNotifierProvider<ThemeProvider>.value(value: widget.themeProvider),
+        // Role Providers
         ChangeNotifierProvider(
           create: (context) => RoleProvider(
             apiService: RoleApiService(baseUrl: widget.serverUrl),
@@ -677,10 +701,16 @@ class _MyAppState extends State<MyApp> {
       },
     );
 
-    return MaterialApp.router(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(),
-      routerConfig: router,
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return MaterialApp.router(
+          debugShowCheckedModeBanner: false,
+          theme: themeProvider.lightTheme,
+          darkTheme: themeProvider.darkTheme,
+          themeMode: themeProvider.themeMode,
+          routerConfig: router,
+        );
+      },
     );
   }
 }

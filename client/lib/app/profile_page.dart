@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'dart:html' as html;
 import '../services/api_service.dart';
 import '../web_config.dart';
+import '../extensions/snackbar_extensions.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -246,12 +247,7 @@ class _ProfilePageState extends State<ProfilePage> {
         await _loadProfile();
         
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Profile updated successfully'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          context.showSuccessSnackBar('Profile updated successfully');
         }
       }
     } catch (e) {
@@ -278,9 +274,9 @@ class _ProfilePageState extends State<ProfilePage> {
             onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
             ),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Delete Account'),
@@ -318,20 +314,15 @@ class _ProfilePageState extends State<ProfilePage> {
               onPressed: () => Navigator.of(context).pop(false),
               child: const Text('Cancel'),
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
               ),
               onPressed: () {
                 if (confirmController.text == 'DELETE') {
                   Navigator.of(context).pop(true);
                 } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please type "DELETE" to confirm'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
+                  context.showErrorSnackBar('Please type "DELETE" to confirm');
                 }
               },
               child: const Text('Confirm Deletion'),
@@ -359,13 +350,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
       if (resp.statusCode == 200) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Account deleted successfully'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          
+          context.showSuccessSnackBar('Account deleted successfully');
           // Redirect to login
           context.go('/');
         }
@@ -411,11 +396,11 @@ class _ProfilePageState extends State<ProfilePage> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'Manage your profile information',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.grey,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -427,14 +412,14 @@ class _ProfilePageState extends State<ProfilePage> {
                     children: [
                       CircleAvatar(
                         radius: 60,
-                        backgroundColor: Colors.grey[300],
+                        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                         backgroundImage: _imageBytes != null
                             ? MemoryImage(_imageBytes!)
                             : (_currentImageBytes != null
                                 ? MemoryImage(_currentImageBytes!)
                                 : null),
                         child: (_imageBytes == null && _currentImageBytes == null)
-                            ? const Icon(Icons.person, size: 60, color: Colors.grey)
+                            ? Icon(Icons.person, size: 60, color: Theme.of(context).colorScheme.onSurfaceVariant)
                             : null,
                       ),
                       Positioned(
@@ -442,9 +427,9 @@ class _ProfilePageState extends State<ProfilePage> {
                         right: 0,
                         child: CircleAvatar(
                           radius: 20,
-                          backgroundColor: Theme.of(context).primaryColor,
+                          backgroundColor: Theme.of(context).colorScheme.primary,
                           child: IconButton(
-                            icon: const Icon(Icons.camera_alt, size: 20, color: Colors.white),
+                            icon: Icon(Icons.camera_alt, size: 20, color: Theme.of(context).colorScheme.onPrimary),
                             onPressed: _pickImage,
                           ),
                         ),
@@ -512,14 +497,14 @@ class _ProfilePageState extends State<ProfilePage> {
                             ),
                           )
                         : (_atNameError == null && _atNameController.text.isNotEmpty && _atNameController.text != _currentAtName
-                            ? const Icon(Icons.check_circle, color: Colors.green)
+                            ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary)
                             : null),
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Choose a unique @name for mentions in chat',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 24),
 
@@ -528,18 +513,18 @@ class _ProfilePageState extends State<ProfilePage> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.red[50],
+                      color: Theme.of(context).colorScheme.errorContainer,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red),
+                      border: Border.all(color: Theme.of(context).colorScheme.error),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.error_outline, color: Colors.red),
+                        Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             _error!,
-                            style: const TextStyle(color: Colors.red),
+                            style: TextStyle(color: Theme.of(context).colorScheme.error),
                           ),
                         ),
                       ],
@@ -571,18 +556,18 @@ class _ProfilePageState extends State<ProfilePage> {
                 const SizedBox(height: 16),
 
                 // Danger Zone
-                const Text(
+                Text(
                   'Danger Zone',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Colors.red,
+                    color: Theme.of(context).colorScheme.error,
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'Once you delete your account, there is no going back.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 16),
 
@@ -590,8 +575,8 @@ class _ProfilePageState extends State<ProfilePage> {
                 OutlinedButton(
                   onPressed: _loading ? null : _deleteAccount,
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                    side: BorderSide(color: Theme.of(context).colorScheme.error),
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),

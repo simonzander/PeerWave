@@ -127,6 +127,8 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   }
   
   Widget _buildEmptyState() {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     String message;
     switch (_currentFilter) {
       case FileFilter.myFiles:
@@ -149,20 +151,20 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
           Icon(
             Icons.folder_open,
             size: 64,
-            color: Colors.grey[400],
+            color: colorScheme.onSurfaceVariant,
           ),
           const SizedBox(height: 16),
           Text(
             message,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.grey[600],
+                  color: colorScheme.onSurface,
                 ),
           ),
           const SizedBox(height: 8),
           Text(
             'Upload a file to get started',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[500],
+                  color: colorScheme.onSurfaceVariant,
                 ),
           ),
         ],
@@ -193,12 +195,13 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   Widget _buildFilterChip(String label, FileFilter filter, IconData icon) {
     final isSelected = _currentFilter == filter;
     final count = _getFilterCount(filter);
+    final colorScheme = Theme.of(context).colorScheme;
     
     return FilterChip(
       label: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: isSelected ? Colors.white : null),
+          Icon(icon, size: 16, color: isSelected ? colorScheme.onPrimary : null),
           const SizedBox(width: 6),
           Text(label),
           if (count > 0) ...[
@@ -206,7 +209,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: isSelected ? Colors.white : Colors.grey[300],
+                color: isSelected ? colorScheme.onPrimary : colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
@@ -214,7 +217,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
-                  color: isSelected ? Theme.of(context).colorScheme.primary : Colors.black87,
+                  color: isSelected ? colorScheme.primary : colorScheme.onSurface,
                 ),
               ),
             ),
@@ -227,9 +230,9 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
           _currentFilter = filter;
         });
       },
-      selectedColor: Theme.of(context).colorScheme.primary,
+      selectedColor: colorScheme.primary,
       labelStyle: TextStyle(
-        color: isSelected ? Colors.white : null,
+        color: isSelected ? colorScheme.onPrimary : null,
       ),
     );
   }
@@ -409,8 +412,8 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
               LinearProgressIndicator(
                 value: progress,
                 minHeight: 6,
-                backgroundColor: Colors.grey[300],
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
               ),
             ],
             
@@ -438,27 +441,28 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   }
   
   Widget _buildFileIcon(String mimeType) {
+    final colorScheme = Theme.of(context).colorScheme;
     IconData icon;
     Color color;
     
     if (mimeType.startsWith('image/')) {
       icon = Icons.image;
-      color = Colors.blue;
+      color = colorScheme.primary;
     } else if (mimeType.startsWith('video/')) {
       icon = Icons.video_file;
-      color = Colors.purple;
+      color = colorScheme.tertiary;
     } else if (mimeType.startsWith('audio/')) {
       icon = Icons.audio_file;
-      color = Colors.orange;
+      color = colorScheme.secondary;
     } else if (mimeType.contains('pdf')) {
       icon = Icons.picture_as_pdf;
-      color = Colors.red;
+      color = colorScheme.error;
     } else if (mimeType.contains('text')) {
       icon = Icons.text_snippet;
-      color = Colors.green;
+      color = colorScheme.primary;
     } else {
       icon = Icons.insert_drive_file;
-      color = Colors.grey;
+      color = colorScheme.onSurfaceVariant;
     }
     
     return Container(
@@ -472,24 +476,25 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   }
   
   Widget _buildStatusBadge(String status, bool isSeeder) {
+    final colorScheme = Theme.of(context).colorScheme;
     Color color;
     IconData icon;
     String label;
     
     if (isSeeder) {
-      color = Colors.green;
+      color = colorScheme.primary;
       icon = Icons.cloud_done;
       label = 'Seeding';
     } else if (status == 'downloading') {
-      color = Colors.blue;
+      color = colorScheme.secondary;
       icon = Icons.cloud_download;
       label = 'Downloading';
     } else if (status == 'complete') {
-      color = Colors.grey;
+      color = colorScheme.onSurfaceVariant;
       icon = Icons.check_circle;
       label = 'Complete';
     } else {
-      color = Colors.grey;
+      color = colorScheme.onSurfaceVariant;
       icon = Icons.info;
       label = status;
     }
@@ -522,15 +527,17 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
       text = '$chunkCount chunks';
     }
     
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.grey.withOpacity(0.1),
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
         text,
-        style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+        style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
       ),
     );
   }

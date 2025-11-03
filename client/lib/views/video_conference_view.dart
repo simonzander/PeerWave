@@ -5,6 +5,7 @@ import '../services/video_conference_service.dart';
 import '../services/message_listener_service.dart';
 import '../screens/channel/channel_members_screen.dart';
 import '../models/role.dart';
+import '../extensions/snackbar_extensions.dart';
 
 /// VideoConferenceView - UI for video conferencing
 /// 
@@ -152,14 +153,14 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                 Icon(
                   Icons.verified_user,
                   size: 14,
-                  color: Colors.blue[300],
+                  color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(width: 4),
                 Text(
                   'DTLS/SRTP Encrypted',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.blue[300],
+                    color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.normal,
                   ),
                 ),
@@ -167,7 +168,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             ),
           ],
         ),
-        backgroundColor: Colors.grey[850],
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         actions: [
           // Members button
           IconButton(
@@ -190,11 +191,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Channel settings coming soon'),
-                  duration: Duration(seconds: 2),
-                ),
+              context.showInfoSnackBar(
+                'Channel settings coming soon',
+                duration: const Duration(seconds: 2),
               );
             },
             tooltip: 'Settings',
@@ -215,7 +214,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           // Leave button
           IconButton(
             icon: const Icon(Icons.call_end),
-            color: Colors.red,
+            color: Theme.of(context).colorScheme.error,
             onPressed: _leaveChannel,
             tooltip: 'Leave Call',
           ),
@@ -245,9 +244,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+            Icon(Icons.error_outline, size: 64, color: Theme.of(context).colorScheme.error),
             const SizedBox(height: 16),
-            Text(_errorMessage!, style: const TextStyle(color: Colors.red)),
+            Text(_errorMessage!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -355,9 +354,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             )
           else
             Container(
-              color: Colors.grey[900],
-              child: const Center(
-                child: Icon(Icons.videocam_off, size: 48, color: Colors.grey),
+              color: Theme.of(context).colorScheme.surfaceVariant,
+              child: Center(
+                child: Icon(Icons.videocam_off, size: 48, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             ),
           
@@ -368,7 +367,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.black54,
+                color: Theme.of(context).colorScheme.scrim.withOpacity(0.6),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Row(
@@ -377,13 +376,13 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                   Icon(
                     isLocal ? Icons.person : Icons.person_outline,
                     size: 14,
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                   const SizedBox(width: 4),
                   Text(
                     isLocal ? 'You' : identity,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontSize: 12,
                     ),
                   ),
@@ -394,10 +393,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           
           // Muted indicator
           if (audioMuted)
-            const Positioned(
+            Positioned(
               top: 8,
               right: 8,
-              child: Icon(Icons.mic_off, color: Colors.red, size: 24),
+              child: Icon(Icons.mic_off, color: Theme.of(context).colorScheme.error, size: 24),
             ),
         ],
       ),
@@ -411,7 +410,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     final isCameraEnabled = _service!.isCameraEnabled();
     
     return Container(
-      color: Colors.black87,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -438,7 +437,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             label: 'Leave',
             onPressed: _leaveChannel,
             isActive: false,
-            color: Colors.red,
+            color: Theme.of(context).colorScheme.error,
           ),
         ],
       ),
@@ -452,22 +451,26 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     required bool isActive,
     Color? color,
   }) {
-    final buttonColor = color ?? (isActive ? Colors.blue : Colors.grey[700]);
-    
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        FloatingActionButton(
-          onPressed: onPressed,
-          backgroundColor: buttonColor,
-          child: Icon(icon, color: Colors.white),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white, fontSize: 12),
-        ),
-      ],
+    return Builder(
+      builder: (context) {
+        final buttonColor = color ?? (isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.surfaceVariant);
+        
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FloatingActionButton(
+              onPressed: onPressed,
+              backgroundColor: buttonColor,
+              child: Icon(icon, color: Theme.of(context).colorScheme.onPrimary),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 12),
+            ),
+          ],
+        );
+      },
     );
   }
 }

@@ -57,34 +57,36 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Scaffold(
-      backgroundColor: const Color(0xFF36393F),
+      backgroundColor: colorScheme.surface,
       body: Center(
         child: SingleChildScrollView(
           child: Container(
             padding: const EdgeInsets.all(32),
             constraints: const BoxConstraints(maxWidth: 600),
             decoration: BoxDecoration(
-              color: const Color(0xFF2C2F33),
+              color: colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
+                Text(
                   'Backup Codes',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    color: colorScheme.onSurface,
                   ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
-                const Text(
+                Text(
                   'Each backup code is valid once. If you lost your passkey, you can login with a backup code. The backup codes are saved encrypted on the server and can\'t be decrypted anymore. Please save your backup codes in a safe place like a key vault (1Password, Bitwarden, KeePass etc.). If you lost access to your passkeys and backup codes you can\'t login to your account anymore. Support through the administration is not possible for security reasons.',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                  style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
                   textAlign: TextAlign.left,
                 ),
                 const SizedBox(height: 24),
@@ -94,14 +96,14 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
                   controller: backupCodesController,
                   maxLines: 8,
                   readOnly: true,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'Loading backup codes...',
                     filled: true,
-                    fillColor: Color(0xFF40444B),
-                    border: OutlineInputBorder(),
+                    fillColor: colorScheme.surfaceVariant,
+                    border: const OutlineInputBorder(),
                   ),
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: colorScheme.onSurface,
                     fontFamily: 'monospace',
                     fontSize: 14,
                   ),
@@ -109,10 +111,9 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
                 const SizedBox(height: 20),
                 
                 // Copy to Clipboard Button
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
                     minimumSize: const Size(double.infinity, 50),
-                    backgroundColor: Colors.blueAccent,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -141,10 +142,9 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
                 const SizedBox(height: 12),
                 
                 // Download as .txt Button
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
                     minimumSize: const Size(double.infinity, 50),
-                    backgroundColor: Colors.deepPurple,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -197,18 +197,18 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.2),
+                      color: colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.green),
+                      border: Border.all(color: colorScheme.primary),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.check_circle, color: Colors.green),
+                        Icon(Icons.check_circle, color: colorScheme.primary),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             _status!,
-                            style: const TextStyle(color: Colors.green),
+                            style: TextStyle(color: colorScheme.primary),
                           ),
                         ),
                       ],
@@ -219,8 +219,8 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
                 // Loading Indicator
                 if (_loading) ...[
                   const SizedBox(height: 20),
-                  const Center(
-                    child: CircularProgressIndicator(color: Colors.blueAccent),
+                  Center(
+                    child: CircularProgressIndicator(color: colorScheme.primary),
                   ),
                 ],
               ],

@@ -98,43 +98,44 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
   @override
   Widget build(BuildContext context) {
     if (!kIsWeb) return const SizedBox.shrink();
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Scaffold(
-      backgroundColor: const Color(0xFF2C2F33),
+      backgroundColor: colorScheme.surface,
       body: Center(
         child: Container(
           padding: const EdgeInsets.all(20),
           width: 350,
           decoration: BoxDecoration(
-            color: const Color(0xFF23272A),
+            color: colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Backup Code', style: TextStyle(fontSize: 20, color: Colors.white)),
+              Text('Backup Code', style: TextStyle(fontSize: 20, color: colorScheme.onSurface)),
               const SizedBox(height: 20),
-              const Text(
+              Text(
                 'Enter one of your backup codes below to recover your account access. Each code can only be used once.',
-                style: TextStyle(color: Colors.white, fontSize: 13),
+                style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
                 textAlign: TextAlign.left,
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: backupCodeController,
                 maxLines: 1,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: 'your backup code',
                   filled: true,
-                  fillColor: Color(0xFF40444B),
-                  border: OutlineInputBorder(),
+                  fillColor: colorScheme.surfaceVariant,
+                  border: const OutlineInputBorder(),
                 ),
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: colorScheme.onSurface),
               ),
               const SizedBox(height: 10),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
+              FilledButton(
+                style: FilledButton.styleFrom(
                   minimumSize: const Size(double.infinity, 45),
-                  backgroundColor: Colors.deepPurple,
                 ),
                 onPressed: (_waitTime != null && _waitTime! > 0) ? null : () {
                   _verifyBackupCode();

@@ -195,6 +195,56 @@ class PermanentDecryptedMessagesStore {
     return messages;
   }
 
+  /// Get all unique sender IDs from stored messages
+  Future<Set<String>> getAllUniqueSenders() async {
+    final Set<String> senders = {};
+
+    if (kIsWeb) {
+      final IdbFactory idbFactory = idbFactoryBrowser;
+      final db = await idbFactory.open(_storeName, version: 2,
+          onUpgradeNeeded: (VersionChangeEvent event) {
+        Database db = event.database;
+        if (!db.objectStoreNames.contains(_storeName)) {
+          db.createObjectStore(_storeName, autoIncrement: false);
+        }
+      });
+      var txn = db.transaction(_storeName, 'readonly');
+      var store = txn.objectStore(_storeName);
+      
+      // Get all keys
+      var cursor = store.openCursor(autoAdvance: true);
+      await cursor.forEach((cursorWithValue) {
+        final value = cursorWithValue.value;
+        if (value is String) {
+          final data = jsonDecode(value) as Map<String, dynamic>;
+          final sender = data['sender'] as String?;
+          if (sender != null && sender != 'self' && data['type'] != 'read_receipt') {
+            senders.add(sender);
+          }
+        }
+      });
+      await txn.completed;
+    } else {
+      final storage = FlutterSecureStorage();
+      String? keysJson = await storage.read(key: 'decrypted_message_keys');
+      if (keysJson != null) {
+        List<String> keys = List<String>.from(jsonDecode(keysJson));
+        for (var key in keys) {
+          var value = await storage.read(key: key);
+          if (value != null) {
+            final data = jsonDecode(value) as Map<String, dynamic>;
+            final sender = data['sender'] as String?;
+            if (sender != null && sender != 'self' && data['type'] != 'read_receipt') {
+              senders.add(sender);
+            }
+          }
+        }
+      }
+    }
+    
+    return senders;
+  }
+
   /// Store a decrypted 1:1 message (direct message only, no channelId)
   Future<void> storeDecryptedMessage({
     required String itemId,

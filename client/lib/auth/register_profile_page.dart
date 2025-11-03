@@ -123,9 +123,19 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
   @override
   Widget build(BuildContext context) {
     final isFormValid = _displayNameController.text.trim().isNotEmpty;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
+    // Responsive width
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cardWidth = screenWidth < 600 
+        ? screenWidth * 0.9
+        : screenWidth < 840
+            ? 500.0
+            : 600.0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF2C2F33),
+      backgroundColor: colorScheme.surface,
       body: Column(
         children: [
           // Progress Bar
@@ -133,48 +143,59 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
           // Content
           Expanded(
             child: Center(
-              child: Container(
-                padding: const EdgeInsets.all(32),
-                width: 450,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF23272A),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'Setup Your Profile',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Container(
+                  padding: const EdgeInsets.all(32),
+                  width: cardWidth,
+                  constraints: const BoxConstraints(maxWidth: 650),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: colorScheme.shadow.withOpacity(0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Complete your profile to finish registration',
-                      style: TextStyle(color: Colors.white70, fontSize: 14),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 32),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Setup Your Profile',
+                        style: theme.textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.onSurface,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Complete your profile to finish registration',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 32),
                     // Profile Picture
                     Center(
                       child: Stack(
                         children: [
                           CircleAvatar(
                             radius: 60,
-                            backgroundColor: const Color(0xFF40444B),
+                            backgroundColor: colorScheme.surfaceContainerHigh,
                             backgroundImage: _imageBytes != null
                                 ? MemoryImage(_imageBytes!)
                                 : null,
                             child: _imageBytes == null
-                                ? const Icon(
+                                ? Icon(
                                     Icons.person,
                                     size: 60,
-                                    color: Colors.white54,
+                                    color: colorScheme.onSurfaceVariant,
                                   )
                                 : null,
                           ),
@@ -183,10 +204,10 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
                             right: 0,
                             child: CircleAvatar(
                               radius: 20,
-                              backgroundColor: Colors.blueAccent,
+                              backgroundColor: colorScheme.primary,
                               child: IconButton(
                                 icon: const Icon(Icons.camera_alt, size: 20),
-                                color: Colors.white,
+                                color: colorScheme.onPrimary,
                                 onPressed: _pickImage,
                                 padding: EdgeInsets.zero,
                               ),
@@ -196,37 +217,47 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       'Click camera icon to upload profile picture (optional)',
-                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 32),
                     // Display Name Field
                     TextField(
                       controller: _displayNameController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Display Name *',
-                        labelStyle: TextStyle(color: Colors.white70),
                         hintText: 'Enter your display name',
-                        hintStyle: TextStyle(color: Colors.white38),
                         filled: true,
-                        fillColor: Color(0xFF40444B),
-                        border: OutlineInputBorder(),
+                        fillColor: colorScheme.surfaceContainerHigh,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: colorScheme.outline),
+                        ),
                         enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFF40444B)),
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: colorScheme.outline),
                         ),
                         focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Colors.blueAccent),
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: colorScheme.primary, width: 2),
                         ),
+                        prefixIcon: Icon(Icons.person_outline, color: colorScheme.onSurfaceVariant),
                       ),
-                      style: const TextStyle(color: Colors.white),
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: colorScheme.onSurface,
+                      ),
                       onChanged: (_) => setState(() {}),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       '* Required field',
-                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                     ),
                     const SizedBox(height: 24),
                     if (_error != null)
@@ -234,44 +265,49 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
                         padding: const EdgeInsets.all(12),
                         margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.red),
+                          color: colorScheme.errorContainer,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: colorScheme.error),
                         ),
                         child: Text(
                           _error!,
-                          style: const TextStyle(color: Colors.red),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onErrorContainer,
+                          ),
                           textAlign: TextAlign.center,
                         ),
                       ),
                     // Complete Registration Button
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50),
-                        backgroundColor: Colors.green,
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 52),
+                        backgroundColor: colorScheme.primary,
+                        foregroundColor: colorScheme.onPrimary,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(12),
                         ),
+                        disabledBackgroundColor: colorScheme.surfaceContainerHighest,
+                        disabledForegroundColor: colorScheme.onSurfaceVariant,
                       ),
                       onPressed: (_loading || !isFormValid) ? null : _completeRegistration,
                       child: _loading
-                          ? const SizedBox(
+                          ? SizedBox(
                               height: 20,
                               width: 20,
                               child: CircularProgressIndicator(
-                                color: Colors.white,
+                                color: colorScheme.onPrimary,
                                 strokeWidth: 2,
                               ),
                             )
-                          : const Text(
+                          : Text(
                               'Complete Registration',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                     ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

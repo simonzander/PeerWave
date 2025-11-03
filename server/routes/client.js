@@ -14,6 +14,7 @@ const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
 const { hasServerPermission } = require('../db/roleHelpers');
 const { buildIceServerConfig } = require('../lib/turnCredentials');
+const { RoomServiceClient } = require('livekit-server-sdk');
 
 async function getLocationFromIp(ip) {
     const response = await fetch(`https://ipapi.co/${ip}/json/`);
@@ -456,6 +457,8 @@ clientRoutes.get("/people/list", async (req, res) => {
 
 clientRoutes.get("/client/channels", async(req, res) => {
     const limit = parseInt(req.query.limit) || 20;
+    const typeFilter = req.query.type; // 'webrtc', 'signal', or undefined for all
+    
     if(req.session.authenticated !== true || !req.session.uuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
@@ -464,9 +467,15 @@ clientRoutes.get("/client/channels", async(req, res) => {
         const userUuid = req.session.uuid;
         const { ChannelMembers } = require('../db/model');
         
+        // Build where clause for type filter
+        const whereClause = { owner: userUuid };
+        if (typeFilter && ['webrtc', 'signal'].includes(typeFilter)) {
+            whereClause.type = typeFilter;
+        }
+        
         // Find channels where user is owner
         const ownedChannels = await Channel.findAll({
-            where: { owner: userUuid },
+            where: whereClause,
             order: [['updatedAt', 'DESC']]
         });
         
@@ -480,11 +489,16 @@ clientRoutes.get("/client/channels", async(req, res) => {
         
         let memberChannels = [];
         if (memberChannelUuids.length > 0) {
+            const memberWhereClause = {
+                uuid: { [Op.in]: memberChannelUuids },
+                owner: { [Op.ne]: userUuid } // Exclude owned channels to avoid duplicates
+            };
+            if (typeFilter && ['webrtc', 'signal'].includes(typeFilter)) {
+                memberWhereClause.type = typeFilter;
+            }
+            
             memberChannels = await Channel.findAll({
-                where: {
-                    uuid: { [Op.in]: memberChannelUuids },
-                    owner: { [Op.ne]: userUuid } // Exclude owned channels to avoid duplicates
-                },
+                where: memberWhereClause,
                 order: [['updatedAt', 'DESC']]
             });
         }
@@ -562,6 +576,108 @@ clientRoutes.post("/client/channels", async(req, res) => {
         }
     } catch (error) {
         console.error('Error creating channel:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// Get channel participants (current LiveKit room participants)
+clientRoutes.get("/client/channels/:channelUuid/participants", async(req, res) => {
+    const { channelUuid } = req.params;
+    
+    if(req.session.authenticated !== true || !req.session.uuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        const userUuid = req.session.uuid;
+        const { ChannelMembers } = require('../db/model');
+        
+        // Find the channel
+        const channel = await Channel.findOne({ where: { uuid: channelUuid } });
+        if (!channel) {
+            return res.status(404).json({ status: "error", message: "Channel not found" });
+        }
+        
+        // Check if user is owner or member of this channel
+        const isOwner = channel.owner === userUuid;
+        const isMember = await ChannelMembers.findOne({
+            where: { 
+                channelId: channelUuid,
+                userId: userUuid
+            }
+        });
+        
+        if (!isOwner && !isMember) {
+            return res.status(403).json({ status: "error", message: "Access denied. You are not a member of this channel." });
+        }
+        
+        // Get LiveKit configuration
+        const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
+        const apiSecret = process.env.LIVEKIT_API_SECRET || 'secret';
+        const livekitUrl = process.env.LIVEKIT_URL || 'ws://localhost:7880';
+        
+        // Initialize LiveKit RoomServiceClient
+        const roomService = new RoomServiceClient(livekitUrl, apiKey, apiSecret);
+        
+        // Get current participants from LiveKit room
+        const roomName = `channel-${channelUuid}`;
+        let livekitParticipants = [];
+        
+        try {
+            livekitParticipants = await roomService.listParticipants(roomName);
+        } catch (error) {
+            // Room might not exist or have no participants
+            console.log(`No active LiveKit room for channel ${channelUuid}:`, error.message);
+        }
+        
+        // Enrich participant data with user information from database
+        const participants = await Promise.all(livekitParticipants.map(async (participant) => {
+            let metadata = {};
+            try {
+                metadata = participant.metadata ? JSON.parse(participant.metadata) : {};
+            } catch (e) {
+                console.error('Failed to parse participant metadata:', e);
+            }
+            
+            const userId = participant.identity;
+            
+            // Fetch user details from database
+            const user = await User.findOne({
+                where: { uuid: userId },
+                attributes: ['uuid', 'displayName', 'email', 'picture']
+            });
+            
+            // Convert BigInt to Number for JSON serialization
+            const joinedAtTimestamp = participant.joinedAt 
+                ? Number(participant.joinedAt) 
+                : null;
+            
+            return {
+                uuid: userId,
+                displayName: user?.displayName || participant.name || metadata.username || 'Unknown',
+                email: user?.email || '',
+                picture: user?.picture || '',
+                permission: userId === channel.owner ? 'owner' : 'member',
+                isOwner: userId === channel.owner,
+                // LiveKit specific data (BigInt values converted to Number)
+                connectionState: participant.state,
+                joinedAt: joinedAtTimestamp,
+                tracks: {
+                    audio: participant.tracks.some(t => t.type === 'AUDIO'),
+                    video: participant.tracks.some(t => t.type === 'VIDEO'),
+                    screen: participant.tracks.some(t => t.source === 'SCREEN_SHARE')
+                }
+            };
+        }));
+        
+        res.status(200).json({ 
+            status: "success", 
+            participants: participants,
+            totalCount: participants.length,
+            roomName: roomName
+        });
+    } catch (error) {
+        console.error('Error fetching channel participants:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });

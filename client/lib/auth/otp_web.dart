@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
 import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
+import '../extensions/snackbar_extensions.dart';
 import 'dart:async';
 
 class OtpWebPage extends StatefulWidget {
@@ -47,9 +48,7 @@ class _OtpWebPageState extends State<OtpWebPage> {
       // Handle response as needed
       if (response.statusCode == 200) {
         // Success logic here
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('OTP send!')),
-        );
+        context.showSuccessSnackBar('OTP sent!');
       } else {
         setState(() {
           _error = 'server error.';
@@ -90,15 +89,11 @@ class _OtpWebPageState extends State<OtpWebPage> {
       // Handle response as needed
       if (response.statusCode == 200) {
         // Success logic here - existing user login
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('OTP Verified!')),
-        );
+        context.showSuccessSnackBar('OTP Verified!');
         GoRouter.of(context).go('/app');
       } else if (response.statusCode == 202) {
         // New user registration - go to backup codes
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('OTP Verified!')),
-        );
+        context.showSuccessSnackBar('OTP Verified!');
         GoRouter.of(context).go('/register/backupcode');
       } else {
         setState(() {
@@ -144,8 +139,10 @@ class _OtpWebPageState extends State<OtpWebPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Scaffold(
-      backgroundColor: const Color(0xFF2C2F33),
+      backgroundColor: colorScheme.surface,
       body: Column(
         children: [
           // Progress Bar
@@ -157,27 +154,27 @@ class _OtpWebPageState extends State<OtpWebPage> {
                 padding: const EdgeInsets.all(32),
                 width: 450,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF23272A),
+                  color: colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
+                    Text(
                       'Verify Your Email',
                       style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: colorScheme.onSurface,
                       ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 12),
                     Text(
                       'We sent a verification code to ${widget.email}',
-                      style: const TextStyle(
-                        color: Colors.white70,
+                      style: TextStyle(
+                        color: colorScheme.onSurfaceVariant,
                         fontSize: 14,
                       ),
                       textAlign: TextAlign.center,
@@ -185,23 +182,17 @@ class _OtpWebPageState extends State<OtpWebPage> {
                     const SizedBox(height: 32),
                     TextField(
                       controller: _otpController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Enter OTP Code',
-                        labelStyle: TextStyle(color: Colors.white70),
+                        labelStyle: TextStyle(color: colorScheme.onSurfaceVariant),
                         hintText: '000000',
-                        hintStyle: TextStyle(color: Colors.white38),
+                        hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withOpacity(0.5)),
                         filled: true,
-                        fillColor: Color(0xFF40444B),
-                        border: OutlineInputBorder(),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFF40444B)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Colors.blueAccent),
-                        ),
+                        fillColor: colorScheme.surfaceVariant,
+                        border: const OutlineInputBorder(),
                       ),
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: colorScheme.onSurface,
                         fontSize: 18,
                         letterSpacing: 4,
                       ),
@@ -214,32 +205,31 @@ class _OtpWebPageState extends State<OtpWebPage> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.1),
+                          color: colorScheme.errorContainer,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.red),
+                          border: Border.all(color: colorScheme.error),
                         ),
                         child: Text(
                           _error!,
-                          style: const TextStyle(color: Colors.red),
+                          style: TextStyle(color: colorScheme.error),
                           textAlign: TextAlign.center,
                         ),
                       ),
                     if (_error != null) const SizedBox(height: 20),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
+                    FilledButton(
+                      style: FilledButton.styleFrom(
                         minimumSize: const Size(double.infinity, 50),
-                        backgroundColor: Colors.blueAccent,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
                       onPressed: _loading ? null : _submitOtp,
                       child: _loading
-                          ? const SizedBox(
+                          ? SizedBox(
                               height: 20,
                               width: 20,
                               child: CircularProgressIndicator(
-                                color: Colors.white,
+                                color: colorScheme.onPrimary,
                                 strokeWidth: 2,
                               ),
                             )
@@ -264,9 +254,6 @@ class _OtpWebPageState extends State<OtpWebPage> {
                             ? 'Resend Code (${_wait}s)'
                             : 'Resend Code',
                         style: TextStyle(
-                          color: (_loading || (_wait != null && _wait! > 0))
-                              ? Colors.white38
-                              : Colors.blueAccent,
                           fontSize: 14,
                         ),
                       ),

@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:go_router/go_router.dart';
 import '../screens/messages/direct_messages_screen.dart';
 import '../screens/messages/signal_group_chat_screen.dart';
 import '../screens/file_transfer/file_manager_screen.dart';
+import '../screens/activities/activities_view.dart';
+import '../screens/dashboard/messages_list_view.dart';
+import '../screens/dashboard/channels_list_view.dart';
 import '../views/video_conference_prejoin_view.dart';
 import '../views/video_conference_view.dart';
-import 'sidebar_panel.dart';
-import 'profile_card.dart';
 import '../services/api_service.dart';
+import '../widgets/theme_widgets.dart';
+import '../widgets/adaptive/adaptive_scaffold.dart';
+import '../widgets/navigation_badge.dart';
+import '../widgets/desktop_navigation_drawer.dart';
+import '../config/layout_config.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -18,8 +23,8 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  // Track current view
-  DashboardView _currentView = DashboardView.directMessages;
+  // Navigation: Track current view using index
+  int _selectedIndex = 0;
   
   // Direct Messages
   List<DirectMessageInfo> _directMessages = [];
@@ -40,6 +45,130 @@ class _DashboardPageState extends State<DashboardPage> {
   
   // Flag to track if data has been loaded
   bool _hasLoadedInitialData = false;
+
+  // Get device-specific navigation destinations
+  List<NavigationDestination> _getNavigationDestinations(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final layoutType = LayoutConfig.getLayoutType(width);
+    
+    // Mobile: Activities, Channels, Messages, Files (4 items)
+    if (layoutType == LayoutType.mobile) {
+      return [
+        NavigationDestination(
+          icon: NavigationBadge(
+            icon: Icons.local_activity_outlined,
+            type: NavigationBadgeType.activities,
+          ),
+          selectedIcon: NavigationBadge(
+            icon: Icons.local_activity,
+            type: NavigationBadgeType.activities,
+            selected: true,
+          ),
+          label: 'Activities',
+        ),
+        NavigationDestination(
+          icon: NavigationBadge(
+            icon: Icons.tag_outlined,
+            type: NavigationBadgeType.channels,
+          ),
+          selectedIcon: NavigationBadge(
+            icon: Icons.tag,
+            type: NavigationBadgeType.channels,
+            selected: true,
+          ),
+          label: 'Channels',
+        ),
+        NavigationDestination(
+          icon: NavigationBadge(
+            icon: Icons.message_outlined,
+            type: NavigationBadgeType.messages,
+          ),
+          selectedIcon: NavigationBadge(
+            icon: Icons.message,
+            type: NavigationBadgeType.messages,
+            selected: true,
+          ),
+          label: 'Messages',
+        ),
+        NavigationDestination(
+          icon: NavigationBadge(
+            icon: Icons.folder_outlined,
+            type: NavigationBadgeType.files,
+          ),
+          selectedIcon: NavigationBadge(
+            icon: Icons.folder,
+            type: NavigationBadgeType.files,
+            selected: true,
+          ),
+          label: 'Files',
+        ),
+      ];
+    }
+    
+    // Tablet & Desktop: Activities, People, Files, Channels, Messages (5 items)
+    return [
+      NavigationDestination(
+        icon: NavigationBadge(
+          icon: Icons.local_activity_outlined,
+          type: NavigationBadgeType.activities,
+        ),
+        selectedIcon: NavigationBadge(
+          icon: Icons.local_activity,
+          type: NavigationBadgeType.activities,
+          selected: true,
+        ),
+        label: 'Activities',
+      ),
+      NavigationDestination(
+        icon: NavigationBadge(
+          icon: Icons.people_outline,
+          type: NavigationBadgeType.people,
+        ),
+        selectedIcon: NavigationBadge(
+          icon: Icons.people,
+          type: NavigationBadgeType.people,
+          selected: true,
+        ),
+        label: 'People',
+      ),
+      NavigationDestination(
+        icon: NavigationBadge(
+          icon: Icons.folder_outlined,
+          type: NavigationBadgeType.files,
+        ),
+        selectedIcon: NavigationBadge(
+          icon: Icons.folder,
+          type: NavigationBadgeType.files,
+          selected: true,
+        ),
+        label: 'Files',
+      ),
+      NavigationDestination(
+        icon: NavigationBadge(
+          icon: Icons.tag_outlined,
+          type: NavigationBadgeType.channels,
+        ),
+        selectedIcon: NavigationBadge(
+          icon: Icons.tag,
+          type: NavigationBadgeType.channels,
+          selected: true,
+        ),
+        label: 'Channels',
+      ),
+      NavigationDestination(
+        icon: NavigationBadge(
+          icon: Icons.message_outlined,
+          type: NavigationBadgeType.messages,
+        ),
+        selectedIcon: NavigationBadge(
+          icon: Icons.message,
+          type: NavigationBadgeType.messages,
+          selected: true,
+        ),
+        label: 'Messages',
+      ),
+    ];
+  }
 
   @override
   void initState() {
@@ -134,8 +263,17 @@ class _DashboardPageState extends State<DashboardPage> {
     setState(() {
       _activeDirectMessageUuid = uuid;
       _activeDirectMessageDisplayName = displayName;
-      _currentView = DashboardView.directMessages;
-      _videoConferenceConfig = null;  // Reset video conference when changing view
+      _videoConferenceConfig = null;
+      
+      // Set correct index based on device layout
+      final width = MediaQuery.of(context).size.width;
+      final layoutType = LayoutConfig.getLayoutType(width);
+      
+      if (layoutType == LayoutType.mobile) {
+        _selectedIndex = 2; // Mobile: Messages is at index 2
+      } else {
+        _selectedIndex = 4; // Tablet/Desktop: Messages is at index 4
+      }
       
       // Add to direct messages list if not already present
       if (!_directMessages.any((dm) => dm.uuid == uuid)) {
@@ -152,22 +290,35 @@ class _DashboardPageState extends State<DashboardPage> {
       _activeChannelUuid = uuid;
       _activeChannelName = name;
       _activeChannelType = type;
-      _currentView = DashboardView.channel;
-      _videoConferenceConfig = null;  // Reset video conference when switching channels
+      _videoConferenceConfig = null;
+      
+      // Set correct index based on device layout
+      final width = MediaQuery.of(context).size.width;
+      final layoutType = LayoutConfig.getLayoutType(width);
+      
+      if (layoutType == LayoutType.mobile) {
+        _selectedIndex = 1; // Mobile: Channels is at index 1
+      } else {
+        _selectedIndex = 3; // Tablet/Desktop: Channels is at index 3
+      }
     });
   }
 
-  void _onPeopleViewTap() {
+  void _onNavigationSelected(int index) {
     setState(() {
-      _currentView = DashboardView.people;
-      _videoConferenceConfig = null;  // Reset video conference when changing view
-    });
-  }
-
-  void _onFileManagerTap() {
-    setState(() {
-      _currentView = DashboardView.fileManager;
-      _videoConferenceConfig = null;  // Reset video conference when changing view
+      _selectedIndex = index;
+      _videoConferenceConfig = null;
+      
+      // Reset active items when switching views
+      if (index != 0) {
+        _activeDirectMessageUuid = null;
+        _activeDirectMessageDisplayName = null;
+      }
+      if (index != 1) {
+        _activeChannelUuid = null;
+        _activeChannelName = null;
+        _activeChannelType = null;
+      }
     });
   }
 
@@ -175,62 +326,308 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget build(BuildContext context) {
     final extra = GoRouterState.of(context).extra;
     String? host;
-    IO.Socket? socket;
     if (extra is Map) {
       host = extra['host'] as String?;
-      socket = extra['socket'] as IO.Socket?;
     }
 
-    final bool isWeb = MediaQuery.of(context).size.width > 600 ||
-        Theme.of(context).platform == TargetPlatform.macOS ||
-        Theme.of(context).platform == TargetPlatform.windows;
-    final double sidebarWidth = isWeb ? 350 : 300;
+    // Get device-specific destinations
+    final destinations = _getNavigationDestinations(context);
+    
+    // Build content based on selected index
+    Widget body = _buildContent(host ?? '');
 
-    // Build content widget based on current view
-    Widget contentWidget;
-    switch (_currentView) {
-      case DashboardView.directMessages:
+    // Check layout type for custom desktop drawer
+    final width = MediaQuery.of(context).size.width;
+    final layoutType = LayoutConfig.getLayoutType(width);
+    
+    if (layoutType == LayoutType.desktop) {
+      // Desktop: Use custom drawer with expandable sections
+      return Scaffold(
+        body: Row(
+          children: [
+            DesktopNavigationDrawer(
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: _onNavigationSelected,
+              destinations: destinations,
+              host: host ?? '',
+              channels: _channels.map((ch) => {
+                'uuid': ch.uuid,
+                'name': ch.name,
+                'type': ch.type,
+                'isPrivate': ch.isPrivate,
+              }).toList(),
+              onChannelTap: _onChannelTap,
+              onDirectMessageTap: _onDirectMessageTap,
+              onNavigateToPeople: () {
+                setState(() {
+                  _selectedIndex = 1; // Navigate to People tab (index 1 on desktop)
+                });
+              },
+              trailing: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const ThemeToggleButton(),
+                  const SizedBox(height: 8),
+                  IconButton(
+                    icon: const Icon(Icons.settings_outlined),
+                    onPressed: () => GoRouter.of(context).go('/app/settings'),
+                    tooltip: 'Settings',
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Column(
+                children: [
+                  // AppBar for desktop
+                  PreferredSize(
+                    preferredSize: const Size.fromHeight(64),
+                    child: AppBar(
+                      title: const Text('PeerWave'),
+                      centerTitle: true,
+                      elevation: 1,
+                      automaticallyImplyLeading: false,
+                    ),
+                  ),
+                  Expanded(child: body),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Mobile & Tablet: Use standard AdaptiveScaffold
+    return AdaptiveScaffold(
+      selectedIndex: _selectedIndex,
+      onDestinationSelected: _onNavigationSelected,
+      destinations: destinations,
+      appBarTitle: 'PeerWave',
+      appBarActions: [
+        const ThemeToggleButton(),
+        IconButton(
+          icon: const Icon(Icons.settings_outlined),
+          onPressed: () => GoRouter.of(context).go('/app/settings'),
+          tooltip: 'Settings',
+        ),
+      ],
+      // Mobile: Add drawer with additional menu items
+      drawer: layoutType == LayoutType.mobile ? _buildMobileDrawer(context, host ?? '') : null,
+      body: body,
+    );
+  }
+
+  // Build mobile drawer with additional options
+  Widget _buildMobileDrawer(BuildContext context, String host) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.waves,
+                  size: 48,
+                  color: colorScheme.onPrimaryContainer,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'PeerWave',
+                  style: TextStyle(
+                    color: colorScheme.onPrimaryContainer,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.people_outline),
+            title: const Text('People'),
+            onTap: () {
+              Navigator.pop(context);
+              // Navigate to People view (not available in mobile, so show message)
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('People view available on tablet/desktop'),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.settings_outlined),
+            title: const Text('Settings'),
+            onTap: () {
+              Navigator.pop(context);
+              GoRouter.of(context).go('/app/settings');
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('About'),
+            onTap: () {
+              Navigator.pop(context);
+              showAboutDialog(
+                context: context,
+                applicationName: 'PeerWave',
+                applicationVersion: '1.0.0',
+                applicationLegalese: '© 2025 PeerWave',
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent(String host) {
+    // Get layout type to determine index mapping
+    final width = MediaQuery.of(context).size.width;
+    final layoutType = LayoutConfig.getLayoutType(width);
+    
+    // Map index based on device type
+    // Mobile: 0=Activities, 1=Channels, 2=Messages, 3=Files
+    // Tablet/Desktop: 0=Activities, 1=People, 2=Files, 3=Channels, 4=Messages
+    
+    String viewType;
+    if (layoutType == LayoutType.mobile) {
+      switch (_selectedIndex) {
+        case 0:
+          viewType = 'activities';
+          break;
+        case 1:
+          viewType = 'channels';
+          break;
+        case 2:
+          viewType = 'messages';
+          break;
+        case 3:
+          viewType = 'files';
+          break;
+        default:
+          viewType = 'activities';
+      }
+    } else {
+      // Tablet & Desktop
+      switch (_selectedIndex) {
+        case 0:
+          viewType = 'activities';
+          break;
+        case 1:
+          viewType = 'people';
+          break;
+        case 2:
+          viewType = 'files';
+          break;
+        case 3:
+          viewType = 'channels';
+          break;
+        case 4:
+          viewType = 'messages';
+          break;
+        default:
+          viewType = 'activities';
+      }
+    }
+    
+    // Build content based on view type
+    switch (viewType) {
+      case 'activities':
+        return ActivitiesView(
+          host: host,
+          onDirectMessageTap: _onDirectMessageTap,
+          onChannelTap: _onChannelTap,
+        );
+        
+      case 'messages':
+        // Check if on mobile/tablet and no active conversation
+        if (layoutType != LayoutType.desktop && _activeDirectMessageUuid == null) {
+          // Show messages list view
+          return MessagesListView(
+            host: host,
+            onMessageTap: _onDirectMessageTap,
+            onNavigateToPeople: () {
+              setState(() {
+                if (layoutType == LayoutType.mobile) {
+                  // Mobile doesn't have People tab, show drawer
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Open drawer to access People'),
+                    ),
+                  );
+                } else {
+                  // Tablet/Desktop - switch to People tab
+                  _selectedIndex = 1;
+                }
+              });
+            },
+          );
+        }
+        
         if (_activeDirectMessageUuid != null && _activeDirectMessageDisplayName != null) {
-          contentWidget = DirectMessagesScreen(
-            host: host ?? '',
+          return DirectMessagesScreen(
+            host: host,
             recipientUuid: _activeDirectMessageUuid!,
             recipientDisplayName: _activeDirectMessageDisplayName!,
           );
         } else {
-          contentWidget = _EmptyStateWidget(
+          return _EmptyStateWidget(
             icon: Icons.chat_bubble_outline,
             title: 'Direct Messages',
-            subtitle: 'Select a conversation or start a new one',
+            subtitle: 'Select a conversation from People tab or start a new one',
           );
         }
-        break;
 
-      case DashboardView.channel:
+      case 'channels':
+        // Check if on mobile/tablet and no active channel
+        if (layoutType != LayoutType.desktop && _activeChannelUuid == null) {
+          // Show channels list view
+          return ChannelsListView(
+            host: host,
+            onChannelTap: _onChannelTap,
+            onCreateChannel: () {
+              // TODO: Navigate to channel creation screen
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Channel creation coming soon'),
+                ),
+              );
+            },
+          );
+        }
+        
         if (_activeChannelUuid != null && _activeChannelName != null && _activeChannelType != null) {
           // Use appropriate screen based on channel type
           if (_activeChannelType == 'signal') {
-            contentWidget = SignalGroupChatScreen(
-              host: host ?? '',
+            return SignalGroupChatScreen(
+              host: host,
               channelUuid: _activeChannelUuid!,
               channelName: _activeChannelName!,
             );
           } else if (_activeChannelType == 'webrtc') {
             // WebRTC channel - show PreJoin screen or VideoConferenceView
             if (_videoConferenceConfig != null) {
-              // User completed PreJoin, show actual video conference
-              contentWidget = VideoConferenceView(
+              return VideoConferenceView(
                 channelId: _videoConferenceConfig!['channelId'],
                 channelName: _videoConferenceConfig!['channelName'],
                 selectedCamera: _videoConferenceConfig!['selectedCamera'],
                 selectedMicrophone: _videoConferenceConfig!['selectedMicrophone'],
               );
             } else {
-              // Show PreJoin screen for device selection and E2EE key exchange
-              contentWidget = VideoConferencePreJoinView(
+              return VideoConferencePreJoinView(
                 channelId: _activeChannelUuid!,
                 channelName: _activeChannelName!,
                 onJoinReady: (config) {
-                  // When user completes PreJoin, switch to VideoConferenceView
                   setState(() {
                     _videoConferenceConfig = config;
                   });
@@ -238,78 +635,37 @@ class _DashboardPageState extends State<DashboardPage> {
               );
             }
           } else {
-            contentWidget = _EmptyStateWidget(
+            return _EmptyStateWidget(
               icon: Icons.campaign,
               title: 'Unknown Channel Type',
               subtitle: 'Channel type "$_activeChannelType" is not supported',
             );
           }
         } else {
-          contentWidget = _EmptyStateWidget(
+          return _EmptyStateWidget(
             icon: Icons.tag,
             title: 'Channels',
-            subtitle: 'Select a channel from the sidebar',
+            subtitle: 'Select a channel to start chatting',
           );
         }
-        break;
 
-      case DashboardView.people:
-        contentWidget = _PeopleListWidget(
+      case 'people':
+        return _PeopleListWidget(
           people: _people,
           onMessageTap: _onDirectMessageTap,
           onRefresh: _loadPeople,
         );
-        break;
 
-      case DashboardView.fileManager:
-        contentWidget = const FileManagerScreen();
-        break;
+      case 'files':
+        return const FileManagerScreen();
+
+      default:
+        return _EmptyStateWidget(
+          icon: Icons.error_outline,
+          title: 'Error',
+          subtitle: 'Unknown view',
+        );
     }
-
-    return Material(
-      color: Colors.transparent,
-      child: SizedBox.expand(
-        child: Row(
-          children: [
-            LayoutBuilder(
-              builder: (context, constraints) {
-                double width = sidebarWidth;
-                if (constraints.maxWidth < 600) width = 80;
-                return SizedBox(
-                  width: width,
-                  child: SidebarPanel(
-                    panelWidth: width,
-                    buildProfileCard: () => const ProfileCard(),
-                    socket: socket,
-                    host: host ?? '',
-                    onPeopleTap: _onPeopleViewTap,
-                    onFileManagerTap: _onFileManagerTap,
-                    directMessages: _directMessages.map((dm) => {
-                      'uuid': dm.uuid,
-                      'displayName': dm.displayName,
-                    }).toList(),
-                    onDirectMessageTap: _onDirectMessageTap,
-                    channels: _channels.map((ch) => {
-                      'uuid': ch.uuid,
-                      'name': ch.name,
-                      'type': ch.type,
-                      'isPrivate': ch.isPrivate,
-                    }).toList(),
-                    onChannelTap: _onChannelTap,
-                  ),
-                );
-              },
-            ),
-            Expanded(
-              child: Container(
-                color: const Color(0xFF36393F),
-                child: contentWidget,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 
@@ -410,6 +766,7 @@ class _PeopleListWidget extends StatelessWidget {
         title: const Text('People'),
         backgroundColor: Colors.grey[850],
         actions: [
+          const ThemeToggleButton(),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: onRefresh,

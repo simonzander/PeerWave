@@ -4,7 +4,6 @@ import 'dart:async';
 //import 'package:http/http.dart' as http;
 //import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart';
 //import 'package:url_launcher/url_launcher.dart';
 //import 'package:flutter/services.dart';
 import '../web_config.dart';
@@ -190,40 +189,76 @@ class _AuthLayoutState extends State<AuthLayout> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
+    // Responsive width based on screen size
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cardWidth = screenWidth < 600 
+        ? screenWidth * 0.9  // Mobile: 90% of screen width
+        : screenWidth < 840
+            ? 400.0  // Tablet: fixed 400px
+            : 450.0; // Desktop: fixed 450px
+    
     return Scaffold(
-      backgroundColor: const Color(0xFF2C2F33),
+      backgroundColor: colorScheme.surface,
       body: Center(
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          width: 300,
-          decoration: BoxDecoration(
-            color: const Color(0xFF23272A),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text("Login",
-                  style: TextStyle(fontSize: 20, color: Colors.white)),
-              const SizedBox(height: 20),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            width: cardWidth,
+            constraints: const BoxConstraints(maxWidth: 500),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: colorScheme.shadow.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "Login",
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 24),
               if (_loginStatus != null) ...[
                 Container(
                   key: ValueKey(_loginStatus),
                   width: double.infinity,
-                  padding: const EdgeInsets.all(8),
-                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
                     color: _loginStatus!.contains('Login successful')
-                        ? Colors.green.shade700
-                        : Colors.red.shade900,
-                    borderRadius: BorderRadius.circular(8),
+                        ? colorScheme.primaryContainer
+                        : colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _loginStatus!.contains('Login successful')
+                          ? colorScheme.primary
+                          : colorScheme.error,
+                      width: 1,
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         _loginStatus!,
-                        style: const TextStyle(color: Colors.white),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: _loginStatus!.contains('Login successful')
+                              ? colorScheme.onPrimaryContainer
+                              : colorScheme.onErrorContainer,
+                        ),
                       ),
                       if (_loginStatus!.contains('WebAuthn aborted') || _loginStatus!.contains('Login failed')) ...[
                         const SizedBox(height: 8),
@@ -233,13 +268,15 @@ class _AuthLayoutState extends State<AuthLayout> {
                             onTap: () {
                               context.go('/backupcode/recover');
                             },
+                            borderRadius: BorderRadius.circular(4),
                             child: Padding(
-                              padding: EdgeInsets.symmetric(vertical: 2, horizontal: 0),
+                              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 0),
                               child: Text(
                                 'Start recovery process',
-                                style: TextStyle(
-                                  color: Colors.blueAccent,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: colorScheme.primary,
                                   decoration: TextDecoration.underline,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ),
@@ -253,19 +290,40 @@ class _AuthLayoutState extends State<AuthLayout> {
               if (kIsWeb)
                 TextField(
                   controller: emailController,
-                  decoration: const InputDecoration(
-                    hintText: "Email",
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    labelText: "Email",
+                    hintText: "Enter your email address",
                     filled: true,
-                    fillColor: Color(0xFF40444B),
-                    border: OutlineInputBorder(),
+                    fillColor: colorScheme.surfaceContainerHigh,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: colorScheme.outline),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: colorScheme.outline),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: colorScheme.primary, width: 2),
+                    ),
+                    prefixIcon: Icon(Icons.email, color: colorScheme.onSurfaceVariant),
                   ),
-                  style: const TextStyle(color: Colors.white),
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: colorScheme.onSurface,
+                  ),
                 ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 45),
-                  backgroundColor: Colors.blueAccent,
+              const SizedBox(height: 24),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 52),
+                  backgroundColor: colorScheme.primary,
+                  foregroundColor: colorScheme.onPrimary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 2,
                 ),
                 onPressed: () async {
                   final email = emailController.text.trim();
@@ -288,11 +346,24 @@ class _AuthLayoutState extends State<AuthLayout> {
                     }
                   }
                 },
-                child: const Text("Login"),
+                child: Text(
+                  "Login",
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
-                const SizedBox(height: 12),
-                ElevatedButton(
-                  onPressed: () async {
+              const SizedBox(height: 16),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 52),
+                  foregroundColor: colorScheme.primary,
+                  side: BorderSide(color: colorScheme.outline),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () async {
                     try {
                       final email = emailController.text.trim();
                       final apiServer = await loadWebApiServer();
@@ -353,10 +424,15 @@ class _AuthLayoutState extends State<AuthLayout> {
                       });
                     }
                   },
-                  child: const Text('Register'),
+                  child: Text(
+                    'Register',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              // ...existing code...
-            ],
+              ],
+            ),
           ),
         ),
       ),

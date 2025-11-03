@@ -3,6 +3,7 @@ import 'package:livekit_client/livekit_client.dart';
 import '../services/video_conference_service.dart';
 import '../services/signal_service.dart';
 import '../services/socket_service.dart';
+import '../extensions/snackbar_extensions.dart';
 import 'dart:async';
 
 /// PreJoin screen for video conference
@@ -62,9 +63,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       if (!SignalService.instance.isInitialized) {
         print('[PreJoin] ⚠️ Signal Service not initialized! This should not happen.');
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Signal Service not initialized. Please restart the app.')),
-          );
+          context.showErrorSnackBar('Signal Service not initialized. Please restart the app.');
         }
         return;
       }
@@ -314,9 +313,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
   /// Join the video call
   Future<void> _joinChannel() async {
     if (!_hasE2EEKey) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Cannot join: Encryption key not ready')),
-      );
+      context.showErrorSnackBar('Cannot join: Encryption key not ready');
       return;
     }
     
@@ -343,9 +340,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       }
     } catch (e) {
       print('[PreJoin] Error joining channel: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to join: $e')),
-      );
+      context.showErrorSnackBar('Failed to join: $e');
     }
   }
   
@@ -378,14 +373,14 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
   /// Build video preview section
   Widget _buildVideoPreview() {
     return Container(
-      color: Colors.black,
+      color: Theme.of(context).colorScheme.surfaceVariant,
       child: _previewTrack != null && _isCameraEnabled
           ? VideoTrackRenderer(_previewTrack!)
-          : const Center(
+          : Center(
               child: Icon(
                 Icons.videocam_off,
                 size: 64,
-                color: Colors.white54,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
     );
@@ -419,11 +414,8 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
     return SizedBox(
       width: double.infinity,
       height: 48,
-      child: ElevatedButton(
+      child: FilledButton(
         onPressed: _hasE2EEKey && !_isExchangingKey ? _joinChannel : null,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green,
-        ),
         child: Text(
           _hasE2EEKey 
               ? 'Join Call' 
@@ -499,10 +491,10 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
     }
     
     if (_isFirstParticipant) {
-      return const ListTile(
-        leading: Icon(Icons.lock, color: Colors.green, size: 32),
-        title: Text('You are the first participant'),
-        subtitle: Text('Encryption key will be generated when you join'),
+      return ListTile(
+        leading: Icon(Icons.lock, color: Theme.of(context).colorScheme.primary, size: 32),
+        title: const Text('You are the first participant'),
+        subtitle: const Text('Encryption key will be generated when you join'),
       );
     }
     
@@ -515,15 +507,15 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
     }
     
     if (_hasE2EEKey) {
-      return const ListTile(
-        leading: Icon(Icons.lock, color: Colors.green, size: 32),
-        title: Text('End-to-end encryption ready'),
-        subtitle: Text('Keys exchanged securely via Signal Protocol'),
+      return ListTile(
+        leading: Icon(Icons.lock, color: Theme.of(context).colorScheme.primary, size: 32),
+        title: const Text('End-to-end encryption ready'),
+        subtitle: const Text('Keys exchanged securely via Signal Protocol'),
       );
     }
     
     return ListTile(
-      leading: const Icon(Icons.error, color: Colors.red, size: 32),
+      leading: Icon(Icons.error, color: Theme.of(context).colorScheme.error, size: 32),
       title: const Text('Key exchange failed'),
       subtitle: Text(_keyExchangeError ?? 'Unknown error'),
       trailing: TextButton(
