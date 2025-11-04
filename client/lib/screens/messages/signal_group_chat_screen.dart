@@ -16,6 +16,7 @@ import '../../services/file_transfer/socket_file_client.dart';
 import '../../models/role.dart';
 import '../../models/file_message.dart';
 import '../../extensions/snackbar_extensions.dart';
+import '../../providers/unread_messages_provider.dart';
 import '../channel/channel_members_screen.dart';
 import '../../views/video_conference_prejoin_view.dart';
 import '../../views/video_conference_view.dart';
@@ -397,6 +398,14 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       SignalService.instance.markGroupItemAsRead(itemId);
       _pendingReadReceipts.remove(itemId);
       print('[SIGNAL_GROUP] Sent read receipt for item: $itemId');
+      
+      // Mark this channel as read in the unread provider
+      try {
+        final provider = Provider.of<UnreadMessagesProvider>(context, listen: false);
+        provider.markChannelAsRead(widget.channelUuid);
+      } catch (e) {
+        print('[SIGNAL_GROUP] Error updating unread badge: $e');
+      }
     } catch (e) {
       print('[SIGNAL_GROUP] Error sending read receipt: $e');
     }

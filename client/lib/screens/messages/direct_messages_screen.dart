@@ -14,6 +14,7 @@ import '../../services/file_transfer/p2p_coordinator.dart';
 import '../../services/file_transfer/socket_file_client.dart';
 import '../../models/file_message.dart';
 import '../../extensions/snackbar_extensions.dart';
+import '../../providers/unread_messages_provider.dart';
 
 /// Whitelist of message types that should be displayed in UI
 const Set<String> DISPLAYABLE_MESSAGE_TYPES = {'message', 'file'};
@@ -259,6 +260,14 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           'readByDeviceId': myDeviceId,
         }),
       );
+      
+      // Mark this conversation as read in the unread provider
+      try {
+        final provider = Provider.of<UnreadMessagesProvider>(context, listen: false);
+        provider.markDirectMessageAsRead(sender);
+      } catch (e) {
+        print('[DM_SCREEN] Error updating unread badge: $e');
+      }
     } catch (e) {
       print('[DM_SCREEN] Error sending read receipt: $e');
     }
@@ -430,7 +439,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
           allMessages.add({
             'itemId': sentMsg['itemId'],
-            'sender': sentMsg['recipientUserId'],
+            'sender': SignalService.instance.currentUserId,
             'senderDisplayName': 'You',
             'text': message,
             'message': message,

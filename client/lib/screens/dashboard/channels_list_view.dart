@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import '../../services/activities_service.dart';
 import '../../services/api_service.dart';
 import '../../models/role.dart';
+import '../../providers/unread_messages_provider.dart';
+import '../../widgets/unread_badge.dart';
+import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
 
@@ -345,49 +348,64 @@ class _ChannelsListViewState extends State<ChannelsListView> {
     final lastMessageTime = channel['lastMessageTime'] as String? ?? '';
     final isPrivate = channel['private'] as bool? ?? false;
 
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        child: Icon(
-          isPrivate ? Icons.lock : Icons.tag,
-          color: Theme.of(context).colorScheme.onPrimaryContainer,
-        ),
-      ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              name,
-              style: const TextStyle(fontWeight: FontWeight.bold),
+    return Consumer<UnreadMessagesProvider>(
+      builder: (context, unreadProvider, _) {
+        final unreadCount = unreadProvider.getChannelUnreadCount(uuid);
+        
+        return ListTile(
+          leading: CircleAvatar(
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            child: Icon(
+              isPrivate ? Icons.lock : Icons.tag,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
             ),
           ),
-          if (description.isNotEmpty)
-            Tooltip(
-              message: description,
-              child: Icon(
-                Icons.info_outline,
-                size: 16,
-                color: Colors.grey[600],
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  name,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
               ),
-            ),
-        ],
-      ),
-      subtitle: Text(
-        lastMessage.length > 50
-            ? '${lastMessage.substring(0, 50)}...'
-            : lastMessage,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Text(
-        _formatTime(lastMessageTime),
-        style: TextStyle(
-          fontSize: 12,
-          color: Colors.grey[600],
-        ),
-      ),
-      onTap: () {
-        widget.onChannelTap(uuid, name, 'signal');
+              if (description.isNotEmpty)
+                Tooltip(
+                  message: description,
+                  child: Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: Colors.grey[600],
+                  ),
+                ),
+            ],
+          ),
+          subtitle: Text(
+            lastMessage.length > 50
+                ? '${lastMessage.substring(0, 50)}...'
+                : lastMessage,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (unreadCount > 0) ...[
+                UnreadBadge(count: unreadCount, isSmall: true),
+                const SizedBox(width: 8),
+              ],
+              Text(
+                _formatTime(lastMessageTime),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+          onTap: () {
+            widget.onChannelTap(uuid, name, 'signal');
+          },
+        );
       },
     );
   }

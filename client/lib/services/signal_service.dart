@@ -15,6 +15,7 @@ import 'permanent_decrypted_messages_store.dart';
 import 'sender_key_store.dart';
 import 'decrypted_group_items_store.dart';
 import 'sent_group_items_store.dart';
+import '../providers/unread_messages_provider.dart';
 
 /*class SocketPreKeyStore extends InMemoryPreKeyStore {
 
@@ -147,6 +148,9 @@ class SignalService {
   String? _currentUserId; // Store current user's UUID
   int? _currentDeviceId; // Store current device ID
   
+  // UnreadMessagesProvider reference (injected from outside)
+  UnreadMessagesProvider? _unreadMessagesProvider;
+  
   // Getters for current user and device info
   String? get currentUserId => _currentUserId;
   int? get currentDeviceId => _currentDeviceId;
@@ -156,6 +160,12 @@ class SignalService {
     _currentUserId = userId;
     _currentDeviceId = deviceId;
     print('[SIGNAL SERVICE] Current user set: userId=$userId, deviceId=$deviceId');
+  }
+  
+  /// Set the UnreadMessagesProvider for badge updates
+  void setUnreadMessagesProvider(UnreadMessagesProvider? provider) {
+    _unreadMessagesProvider = provider;
+    print('[SIGNAL SERVICE] UnreadMessagesProvider ${provider != null ? 'connected' : 'disconnected'}');
   }
 
   /// Retry a function with exponential backoff
@@ -566,6 +576,14 @@ class SignalService {
 
     // NEW: Group Item Socket.IO listener
     SocketService().registerListener("groupItem", (data) {
+      // Update unread count for group messages
+      if (_unreadMessagesProvider != null && data['channel'] != null && data['type'] != null) {
+        final channelId = data['channel'] as String;
+        final messageType = data['type'] as String;
+        // Only increment for 'message' and 'file' types
+        _unreadMessagesProvider!.incrementIfBadgeType(messageType, channelId, true);
+      }
+      
       if (_itemTypeCallbacks.containsKey('groupItem')) {
         for (final callback in _itemTypeCallbacks['groupItem']!) {
           callback(data);
@@ -884,6 +902,12 @@ class SignalService {
   } else if (type == 'delivery_receipt') {
     await _handleDeliveryReceipt(data);
     isSystemMessage = true;
+  }
+  
+  // ✅ Update unread count for non-system messages (only 'message' and 'file' types)
+  if (!isSystemMessage && _unreadMessagesProvider != null) {
+    // This is a 1:1 direct message (no channel)
+    _unreadMessagesProvider!.incrementIfBadgeType(type, sender, false);
   }
   
   // ✅ PHASE 3: Delete system messages after processing

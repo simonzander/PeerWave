@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/notification_provider.dart';
+import '../providers/unread_messages_provider.dart';
 
 /// Badge widget for navigation items showing notification counts
 /// 
@@ -28,9 +29,9 @@ class NavigationBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<NotificationProvider>(
-      builder: (context, notificationProvider, _) {
-        final count = _getCountForType(notificationProvider, type);
+    return Consumer2<NotificationProvider, UnreadMessagesProvider>(
+      builder: (context, notificationProvider, unreadProvider, _) {
+        final count = _getCountForType(notificationProvider, unreadProvider, type);
         
         if (count == 0) {
           return Icon(icon);
@@ -46,24 +47,27 @@ class NavigationBadge extends StatelessWidget {
     );
   }
 
-  int _getCountForType(NotificationProvider provider, NavigationBadgeType type) {
+  int _getCountForType(
+    NotificationProvider notificationProvider,
+    UnreadMessagesProvider unreadProvider,
+    NavigationBadgeType type,
+  ) {
     switch (type) {
       case NavigationBadgeType.messages:
-        // Count all notifications (for now, total unread)
-        // TODO: Distinguish between direct messages and channels
-        return provider.totalUnreadCount;
+        // Show unread direct message count
+        return unreadProvider.totalDirectMessageUnread;
       
       case NavigationBadgeType.channels:
-        // TODO: Implement channel-specific counting
-        return 0;
+        // Show unread channel message count
+        return unreadProvider.totalChannelUnread;
       
       case NavigationBadgeType.files:
         // TODO: Implement file notification tracking
         return 0;
       
       case NavigationBadgeType.activities:
-        // TODO: Implement activity notification tracking
-        return 0;
+        // Use existing notification provider for activities
+        return notificationProvider.totalUnreadCount;
       
       case NavigationBadgeType.people:
         return 0;
@@ -95,9 +99,9 @@ class NavigationLabelWithBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<NotificationProvider>(
-      builder: (context, notificationProvider, _) {
-        final count = _getCountForType(notificationProvider, type);
+    return Consumer2<NotificationProvider, UnreadMessagesProvider>(
+      builder: (context, notificationProvider, unreadProvider, _) {
+        final count = _getCountForType(notificationProvider, unreadProvider, type);
         
         if (count == 0) {
           return Text(label);
@@ -105,7 +109,7 @@ class NavigationLabelWithBadge extends StatelessWidget {
 
         return Text(
           '$label $count',
-          style: TextStyle(
+          style: const TextStyle(
             fontWeight: FontWeight.w500,
           ),
         );
@@ -113,19 +117,23 @@ class NavigationLabelWithBadge extends StatelessWidget {
     );
   }
 
-  int _getCountForType(NotificationProvider provider, NavigationBadgeType type) {
+  int _getCountForType(
+    NotificationProvider notificationProvider,
+    UnreadMessagesProvider unreadProvider,
+    NavigationBadgeType type,
+  ) {
     switch (type) {
       case NavigationBadgeType.messages:
-        return provider.totalUnreadCount;
+        return unreadProvider.totalDirectMessageUnread;
       
       case NavigationBadgeType.channels:
-        return 0;
+        return unreadProvider.totalChannelUnread;
       
       case NavigationBadgeType.files:
         return 0;
       
       case NavigationBadgeType.activities:
-        return 0;
+        return notificationProvider.totalUnreadCount;
       
       case NavigationBadgeType.people:
         return 0;

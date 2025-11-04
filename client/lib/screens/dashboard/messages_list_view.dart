@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import '../../services/signal_service.dart';
 import '../../services/api_service.dart';
 import '../../widgets/user_avatar.dart';
+import '../../providers/unread_messages_provider.dart';
+import '../../widgets/unread_badge.dart';
+import 'package:provider/provider.dart';
 
 /// Messages List View - Shows recent 1:1 conversations
 class MessagesListView extends StatefulWidget {
@@ -259,46 +262,61 @@ class _MessagesListViewState extends State<MessagesListView> {
     final lastMessageTime = conv['lastMessageTime'] as String? ?? '';
     final userId = conv['userId'] as String;
 
-    return ListTile(
-      leading: UserAvatar(
-        userId: userId,
-        displayName: displayName,
-        pictureData: picture,
-        size: 48,
-      ),
-      title: Text(
-        displayName,
-        style: const TextStyle(fontWeight: FontWeight.bold),
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (atName.isNotEmpty)
-            Text(
-              '@$atName',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
-            ),
-          Text(
-            lastMessage.length > 50
-                ? '${lastMessage.substring(0, 50)}...'
-                : lastMessage,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+    return Consumer<UnreadMessagesProvider>(
+      builder: (context, unreadProvider, _) {
+        final unreadCount = unreadProvider.getDirectMessageUnreadCount(userId);
+        
+        return ListTile(
+          leading: UserAvatar(
+            userId: userId,
+            displayName: displayName,
+            pictureData: picture,
+            size: 48,
           ),
-        ],
-      ),
-      trailing: Text(
-        _formatTime(lastMessageTime),
-        style: TextStyle(
-          fontSize: 12,
-          color: Colors.grey[600],
-        ),
-      ),
-      onTap: () {
-        widget.onMessageTap(userId, displayName);
+          title: Text(
+            displayName,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (atName.isNotEmpty)
+                Text(
+                  '@$atName',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              Text(
+                lastMessage.length > 50
+                    ? '${lastMessage.substring(0, 50)}...'
+                    : lastMessage,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (unreadCount > 0) ...[
+                UnreadBadge(count: unreadCount, isSmall: true),
+                const SizedBox(width: 8),
+              ],
+              Text(
+                _formatTime(lastMessageTime),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+          onTap: () {
+            widget.onMessageTap(userId, displayName);
+          },
+        );
       },
     );
   }

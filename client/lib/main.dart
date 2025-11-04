@@ -42,6 +42,8 @@ import 'screens/admin/user_management_screen.dart';
 import 'web_config.dart';
 // Theme imports
 import 'theme/theme_provider.dart';
+// Unread Messages Provider
+import 'providers/unread_messages_provider.dart';
 // P2P File Transfer imports
 import 'services/file_transfer/webrtc_service.dart';
 import 'services/file_transfer/p2p_coordinator.dart';
@@ -354,6 +356,10 @@ class _MyAppState extends State<MyApp> {
       providers: [
         // Theme Provider
         ChangeNotifierProvider<ThemeProvider>.value(value: widget.themeProvider),
+        // Unread Messages Provider
+        ChangeNotifierProvider(
+          create: (context) => UnreadMessagesProvider(),
+        ),
         // Role Providers
         ChangeNotifierProvider(
           create: (context) => RoleProvider(
@@ -629,6 +635,19 @@ class _MyAppState extends State<MyApp> {
             }
           } catch (e) {
             print('Error loading user profiles: $e');
+          }
+          
+          // Load unread message counts after successful login
+          try {
+            final unreadProvider = context.read<UnreadMessagesProvider>();
+            await unreadProvider.loadFromStorage();
+            print('[MAIN] Loaded unread message counts from storage');
+            
+            // Connect provider to SignalService
+            SignalService.instance.setUnreadMessagesProvider(unreadProvider);
+            print('[MAIN] Connected UnreadMessagesProvider to SignalService');
+          } catch (e) {
+            print('Error loading unread message counts: $e');
           }
           
           // Skip Signal key checks for authentication and registration flows
