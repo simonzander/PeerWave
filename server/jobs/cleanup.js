@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const { Op } = require('sequelize');
 const config = require('../config/config');
-const { User, Client, Item } = require('../db/model');
+const { User, Client, Item, GroupItem } = require('../db/model');
 const writeQueue = require('../db/writeQueue');
 
 /**
@@ -63,29 +63,76 @@ async function markInactiveUsers() {
 }
 
 /**
- * Delete old items (messages, receipts, etc.) older than X days
+ * Delete old items (messages, receipts, etc.) with separate retention periods
  */
 async function deleteOldItems() {
     try {
-        const daysAgo = new Date();
-        daysAgo.setDate(daysAgo.getDate() - config.cleanup.deleteOldItemsDays);
+        const now = new Date();
+        let totalDeleted = 0;
         
-        console.log(`[CLEANUP] Deleting items older than ${daysAgo.toISOString()}...`);
+        // 1. Delete system messages (read_receipt, etc.) after 1 day
+        const systemMessageTypes = [
+            'read_receipt', 
+            'senderKeyRequest', 
+            'senderKeyDistribution', 
+            'fileKeyRequest', 
+            'fileKeyResponse', 
+            'delivery_receipt'
+        ];
+        const systemDaysAgo = new Date(now);
+        systemDaysAgo.setDate(systemDaysAgo.getDate() - config.cleanup.deleteSystemMessagesDays);
         
-        // Delete items older than X days using writeQueue
-        const deletedCount = await writeQueue.enqueue(
+        console.log(`[CLEANUP] Deleting system messages older than ${systemDaysAgo.toISOString()}...`);
+        
+        const systemDeleted = await writeQueue.enqueue(
             () => Item.destroy({
                 where: {
-                    createdAt: {
-                        [Op.lt]: daysAgo
-                    }
+                    type: { [Op.in]: systemMessageTypes },
+                    createdAt: { [Op.lt]: systemDaysAgo }
                 }
             }),
-            'deleteOldItems'
+            'deleteOldSystemMessages'
         );
+        console.log(`[CLEANUP] ✓ Deleted ${systemDeleted} old system messages (>${config.cleanup.deleteSystemMessagesDays} days)`);
+        totalDeleted += systemDeleted;
         
-        console.log(`[CLEANUP] ✓ Deleted ${deletedCount} old items`);
-        return deletedCount;
+        // 2. Delete regular messages (message, file) after 7 days
+        const regularDaysAgo = new Date(now);
+        regularDaysAgo.setDate(regularDaysAgo.getDate() - config.cleanup.deleteRegularMessagesDays);
+        
+        console.log(`[CLEANUP] Deleting regular messages older than ${regularDaysAgo.toISOString()}...`);
+        
+        const regularDeleted = await writeQueue.enqueue(
+            () => Item.destroy({
+                where: {
+                    type: { [Op.in]: ['message', 'file'] },
+                    createdAt: { [Op.lt]: regularDaysAgo }
+                }
+            }),
+            'deleteOldRegularMessages'
+        );
+        console.log(`[CLEANUP] ✓ Deleted ${regularDeleted} old regular messages (>${config.cleanup.deleteRegularMessagesDays} days)`);
+        totalDeleted += regularDeleted;
+        
+        // 3. Delete old group messages after 30 days
+        const groupDaysAgo = new Date(now);
+        groupDaysAgo.setDate(groupDaysAgo.getDate() - config.cleanup.deleteGroupMessagesDays);
+        
+        console.log(`[CLEANUP] Deleting group messages older than ${groupDaysAgo.toISOString()}...`);
+        
+        const groupDeleted = await writeQueue.enqueue(
+            () => GroupItem.destroy({
+                where: {
+                    createdAt: { [Op.lt]: groupDaysAgo }
+                }
+            }),
+            'deleteOldGroupMessages'
+        );
+        console.log(`[CLEANUP] ✓ Deleted ${groupDeleted} old group messages (>${config.cleanup.deleteGroupMessagesDays} days)`);
+        totalDeleted += groupDeleted;
+        
+        console.log(`[CLEANUP] ✓ Total items deleted: ${totalDeleted}`);
+        return { systemDeleted, regularDeleted, groupDeleted, totalDeleted };
     } catch (error) {
         console.error('[CLEANUP] ❌ Error deleting old items:', error);
         throw error;

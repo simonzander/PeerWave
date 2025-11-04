@@ -16,10 +16,12 @@ class RegisterProfilePage extends StatefulWidget {
 
 class _RegisterProfilePageState extends State<RegisterProfilePage> {
   final TextEditingController _displayNameController = TextEditingController();
+  final TextEditingController _atNameController = TextEditingController();
   bool _loading = false;
   String? _error;
   Uint8List? _imageBytes;
   String? _imageFileName;
+  bool _atNameManuallyEdited = false;
 
   Future<void> _pickImage() async {
     if (!kIsWeb) return;
@@ -71,6 +73,20 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
       return;
     }
 
+    // Auto-generate atName if empty
+    String atName = _atNameController.text.trim();
+    if (atName.isEmpty) {
+      atName = _displayNameController.text.trim().replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '').toLowerCase();
+      if (atName.isEmpty) {
+        atName = 'user';
+      }
+    }
+
+    // Remove @ if user added it
+    if (atName.startsWith('@')) {
+      atName = atName.substring(1);
+    }
+
     setState(() {
       _loading = true;
       _error = null;
@@ -86,6 +102,7 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
       // Prepare request data
       final Map<String, dynamic> data = {
         'displayName': _displayNameController.text.trim(),
+        'atName': atName,
       };
 
       // Add image if selected
@@ -105,8 +122,10 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
           GoRouter.of(context).go('/app');
         }
       } else {
+        // Server might return error if atName is taken
+        final errorMsg = resp.data is Map ? (resp.data['error'] ?? resp.data['message']) : null;
         setState(() {
-          _error = 'Failed to save profile. Please try again.';
+          _error = errorMsg ?? 'Failed to save profile. Please try again.';
         });
       }
     } catch (e) {
@@ -250,7 +269,47 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
                       style: theme.textTheme.bodyLarge?.copyWith(
                         color: colorScheme.onSurface,
                       ),
-                      onChanged: (_) => setState(() {}),
+                      onChanged: (value) {
+                        setState(() {});
+                        // Auto-generate atName if not manually edited
+                        if (!_atNameManuallyEdited && value.isNotEmpty) {
+                          final generated = value.trim().replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '').toLowerCase();
+                          _atNameController.text = generated.isEmpty ? '' : generated;
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    // AtName Field
+                    TextField(
+                      controller: _atNameController,
+                      decoration: InputDecoration(
+                        labelText: 'Username (@atName) *',
+                        hintText: 'Enter your username',
+                        helperText: 'Used for mentions and unique identification',
+                        filled: true,
+                        fillColor: colorScheme.surfaceContainerHigh,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: colorScheme.outline),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: colorScheme.outline),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: colorScheme.primary, width: 2),
+                        ),
+                        prefixIcon: Icon(Icons.alternate_email, color: colorScheme.onSurfaceVariant),
+                      ),
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: colorScheme.onSurface,
+                      ),
+                      onChanged: (value) {
+                        setState(() {
+                          _atNameManuallyEdited = value.isNotEmpty;
+                        });
+                      },
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -320,6 +379,7 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
   @override
   void dispose() {
     _displayNameController.dispose();
+    _atNameController.dispose();
     super.dispose();
   }
 }

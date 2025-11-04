@@ -5,10 +5,10 @@ bind_addresses:
 
 rtc:
   # Port range for WebRTC connections (RTP media streams)
-  # MAXIMUM RANGE: 10001 ports for ~10000 concurrent streams
+  # Range: 4001 ports for ~4000 concurrent media streams
   # Each peer connection uses ~1-2 ports (audio + video)
-  port_range_start: 40000
-  port_range_end: 50000
+  port_range_start: 30100
+  port_range_end: 30400
   # Use localhost for local development (set to true for production!)
   use_external_ip: false
   # STUN servers for NAT traversal
@@ -49,10 +49,11 @@ turn:
   # TURN/UDP - modern QUIC-compatible, best performance
   udp_port: 443
   # TURN Relay port range (for P2P data relay)
-  # MAXIMUM RANGE: 10001 ports for ~10000 concurrent P2P connections
+  # Range: 4000 ports for ~4000 concurrent P2P connections
   # Each TURN relay connection uses 1 port
-  relay_range_start: 50000
-  relay_range_end: 60000
+  # Range 34001-38000 is safe (avoids Windows conflicts)
+  relay_range_start: 30300
+  relay_range_end: 30400
   # SSL certificates (mounted from ./livekit-certs/)
   cert_file: /certs/turn-cert.pem
   key_file: /certs/turn-key.pem

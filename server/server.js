@@ -14,7 +14,7 @@ const sharedSession = require('socket.io-express-session');
 const { User, Channel, Thread, Client, SignalSignedPreKey, SignalPreKey, Item, ChannelMembers, SignalSenderKey, GroupItem, GroupItemRead } = require('./db/model');
 const path = require('path');
 const writeQueue = require('./db/writeQueue');
-const { initCleanupJob } = require('./jobs/cleanup');
+const { initCleanupJob, runCleanup } = require('./jobs/cleanup');
 
 // Initialize license validator
 const licenseValidator = new LicenseValidator();
@@ -2306,6 +2306,56 @@ io.sockets.on("connection", socket => {
   });
 
   /**
+   * Delete a group item (for cleanup purposes)
+   * This is used by the cleanup service to remove old messages
+   */
+  socket.on("deleteGroupItem", async (data, callback) => {
+    try {
+      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+        console.error('[GROUP ITEM DELETE] ERROR: Not authenticated');
+        return callback?.({ success: false, error: "Not authenticated" });
+      }
+
+      const userId = socket.handshake.session.uuid;
+      const { itemId } = data;
+
+      if (!itemId) {
+        console.error('[GROUP ITEM DELETE] ERROR: Missing itemId');
+        return callback?.({ success: false, error: "Missing itemId" });
+      }
+
+      // Verify the user is the sender of this group item
+      const groupItem = await GroupItem.findOne({
+        where: { itemId: itemId }
+      });
+
+      if (!groupItem) {
+        console.log(`[GROUP ITEM DELETE] Item ${itemId} not found`);
+        return callback?.({ success: true, deletedCount: 0 });
+      }
+
+      if (groupItem.sender !== userId) {
+        console.error('[GROUP ITEM DELETE] ERROR: User is not the sender');
+        return callback?.({ success: false, error: "Only the sender can delete this item" });
+      }
+
+      // Delete the group item
+      const deletedCount = await writeQueue.enqueue(async () => {
+        return await GroupItem.destroy({
+          where: { itemId: itemId }
+        });
+      }, `deleteGroupItem-${itemId}-${userId}`);
+
+      console.log(`[GROUP ITEM DELETE] ✓ Deleted group item ${itemId} (count: ${deletedCount})`);
+      callback?.({ success: true, deletedCount });
+
+    } catch (error) {
+      console.error('[GROUP ITEM DELETE] Error deleting group item:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  /**
    * Mark a group item as read
    */
   socket.on("markGroupItemRead", async (data) => {
@@ -2769,6 +2819,7 @@ app.get('*', (req, res) => {
 
 // Initialize cleanup cronjob
 initCleanupJob();
+runCleanup();
 
 // Initialize mediasoup (async - starts in background)
 const { initializeMediasoup } = require('./lib/mediasoup');

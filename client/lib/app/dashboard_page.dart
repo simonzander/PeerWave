@@ -6,6 +6,7 @@ import '../screens/file_transfer/file_manager_screen.dart';
 import '../screens/activities/activities_view.dart';
 import '../screens/dashboard/messages_list_view.dart';
 import '../screens/dashboard/channels_list_view.dart';
+import '../screens/people/people_screen.dart';
 import '../views/video_conference_prejoin_view.dart';
 import '../views/video_conference_view.dart';
 import '../services/api_service.dart';
@@ -40,9 +41,6 @@ class _DashboardPageState extends State<DashboardPage> {
   // Video conference state
   Map<String, dynamic>? _videoConferenceConfig;
   
-  // People list
-  List<dynamic> _people = [];
-  
   // Flag to track if data has been loaded
   bool _hasLoadedInitialData = false;
 
@@ -56,15 +54,15 @@ class _DashboardPageState extends State<DashboardPage> {
       return [
         NavigationDestination(
           icon: NavigationBadge(
-            icon: Icons.local_activity_outlined,
+            icon: Icons.notifications_none,
             type: NavigationBadgeType.activities,
           ),
           selectedIcon: NavigationBadge(
-            icon: Icons.local_activity,
+            icon: Icons.notifications,
             type: NavigationBadgeType.activities,
             selected: true,
           ),
-          label: 'Activities',
+          label: 'Activitiy',
         ),
         NavigationDestination(
           icon: NavigationBadge(
@@ -109,15 +107,15 @@ class _DashboardPageState extends State<DashboardPage> {
     return [
       NavigationDestination(
         icon: NavigationBadge(
-          icon: Icons.local_activity_outlined,
+          icon: Icons.notifications_none,
           type: NavigationBadgeType.activities,
         ),
         selectedIcon: NavigationBadge(
-          icon: Icons.local_activity,
+          icon: Icons.notifications,
           type: NavigationBadgeType.activities,
           selected: true,
         ),
-        label: 'Activities',
+        label: 'Activity',
       ),
       NavigationDestination(
         icon: NavigationBadge(
@@ -182,47 +180,7 @@ class _DashboardPageState extends State<DashboardPage> {
     // Only load once when dependencies are ready
     if (!_hasLoadedInitialData) {
       _hasLoadedInitialData = true;
-      _loadPeople();
       _loadChannels();
-    }
-  }
-
-  Future<void> _loadPeople() async {
-    try {
-      final host = GoRouterState.of(context).extra as Map?;
-      final hostUrl = host?['host'] as String? ?? '';
-      
-      ApiService.init();
-      final resp = await ApiService.get('$hostUrl/people/list');
-      if (resp.statusCode == 200) {
-        print('[NEW_DASHBOARD] Raw people data type: ${resp.data.runtimeType}');
-        print('[NEW_DASHBOARD] Raw people data: ${resp.data}');
-        
-        setState(() {
-          // Handle different response formats
-          if (resp.data is List) {
-            _people = resp.data as List<dynamic>;
-          } else if (resp.data is Map) {
-            // API might return {"users": [...]} or similar
-            final data = resp.data as Map<String, dynamic>;
-            if (data.containsKey('users')) {
-              _people = data['users'] as List<dynamic>;
-            } else if (data.containsKey('people')) {
-              _people = data['people'] as List<dynamic>;
-            } else {
-              // If map has no known keys, wrap it in a list
-              _people = [resp.data];
-            }
-          } else {
-            // Fallback: wrap single item in list
-            _people = [resp.data];
-          }
-          print('[NEW_DASHBOARD] Loaded ${_people.length} people');
-        });
-      }
-    } catch (e, stackTrace) {
-      print('[NEW_DASHBOARD] Error loading people: $e');
-      print('[NEW_DASHBOARD] Stack trace: $stackTrace');
     }
   }
 
@@ -723,10 +681,9 @@ class _DashboardPageState extends State<DashboardPage> {
         }
 
       case 'people':
-        return _PeopleListWidget(
-          people: _people,
+        return PeopleScreen(
+          host: host,
           onMessageTap: _onDirectMessageTap,
-          onRefresh: _loadPeople,
         );
 
       case 'files':
@@ -816,93 +773,6 @@ class _EmptyStateWidget extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-// People list widget
-class _PeopleListWidget extends StatelessWidget {
-  final List<dynamic> people;
-  final Function(String uuid, String displayName) onMessageTap;
-  final VoidCallback onRefresh;
-
-  const _PeopleListWidget({
-    required this.people,
-    required this.onMessageTap,
-    required this.onRefresh,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('People'),
-        backgroundColor: Colors.grey[850],
-        actions: [
-          const ThemeToggleButton(),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: onRefresh,
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
-      backgroundColor: const Color(0xFF36393F),
-      body: people.isEmpty
-          ? const Center(
-              child: Text(
-                'No people found',
-                style: TextStyle(color: Colors.white54),
-              ),
-            )
-          : ListView.builder(
-              itemCount: people.length,
-              itemBuilder: (context, index) {
-                try {
-                  final person = people[index];
-                  
-                  // Safe extraction with type checking
-                  String avatarUrl = '';
-                  String displayName = 'Unknown';
-                  String uuid = '';
-                  
-                  if (person is Map) {
-                    // Extract picture/avatar URL
-                    final pictureField = person['picture'] ?? person['avatar'] ?? '';
-                    avatarUrl = pictureField is String ? pictureField : '';
-                    
-                    // Extract display name
-                    final nameField = person['displayName'] ?? person['name'] ?? person['username'] ?? 'Unknown';
-                    displayName = nameField is String ? nameField : nameField.toString();
-                    
-                    // Extract UUID
-                    final uuidField = person['uuid'] ?? person['id'] ?? '';
-                    uuid = uuidField is String ? uuidField : uuidField.toString();
-                  }
-                  
-                  print('[PEOPLE_LIST] Rendering person: uuid=$uuid, name=$displayName');
-                  
-                  return ListTile(
-                    leading: avatarUrl.isNotEmpty
-                        ? CircleAvatar(backgroundImage: NetworkImage(avatarUrl))
-                        : const CircleAvatar(child: Icon(Icons.person)),
-                    title: Text(displayName, style: const TextStyle(color: Colors.white)),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.message, color: Colors.amber),
-                      tooltip: 'Message',
-                      onPressed: () {
-                        onMessageTap(uuid, displayName);
-                      },
-                    ),
-                  );
-                } catch (e) {
-                  print('[PEOPLE_LIST] Error rendering person at index $index: $e');
-                  print('[PEOPLE_LIST] Person data: ${people[index]}');
-                  // Return empty container for invalid entries
-                  return const SizedBox.shrink();
-                }
-              },
-            ),
     );
   }
 }

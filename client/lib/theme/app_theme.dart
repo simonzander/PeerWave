@@ -1,16 +1,76 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 /// Material 3 Theme Generator für PeerWave
 /// 
 /// Erstellt vollständige ThemeData-Objekte mit allen Component Themes
 /// und Material 3 Design Tokens (Elevation, Shape, Typography).
+/// 
+/// Verwendet Google Fonts für eine moderne, professionelle Typografie.
 class AppTheme {
   // Private constructor - nur statische Methoden
   AppTheme._();
 
+  // ============================================================================
+  // Font Configuration
+  // ============================================================================
+
+  /// Standard Schriftart für die gesamte App
+  /// 
+  /// Beliebte Optionen:
+  /// - 'Inter' (Modern, clean - EMPFOHLEN)
+  /// - 'Roboto' (Google Standard)
+  /// - 'Poppins' (Friendly, rounded)
+  /// - 'Outfit' (Modern, geometric)
+  /// - 'Space Grotesk' (Tech, modern)
+  /// - 'Manrope' (Clean, readable)
+  /// - 'Plus Jakarta Sans' (Modern, elegant)
+  /// - 'DM Sans' (Clean, professional)
+  /// 
+  /// Siehe alle Schriftarten: https://fonts.google.com/
+  static const String fontFamily = 'Nunito Sans';
+  
+  /// Font-Variante für Breite (Width/Stretch)
+  /// Für Nunito Sans SemiCondensed verwenden wir die direkte Methode
+  /// Andere Varianten: normal, condensed, expanded
+  static const bool useSemiCondensed = true;
+
+  /// Monospace Schriftart für Code/technische Inhalte
+  static const String monospaceFontFamily = 'Fira Code';
+  
+  /// Helper: Gibt den korrekten TextStyle mit der richtigen Font-Variante zurück
+  static TextStyle _getFontStyle({
+    required double fontSize,
+    required FontWeight fontWeight,
+    required Color color,
+    double? letterSpacing,
+  }) {
+    if (useSemiCondensed) {
+      // Verwende die spezifische SemiCondensed Variante
+      return GoogleFonts.nunitoSans(
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        color: color,
+        letterSpacing: letterSpacing,
+        // SemiCondensed hat eine eigene font-feature
+      );
+    } else {
+      return GoogleFonts.getFont(
+        fontFamily,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        color: color,
+        letterSpacing: letterSpacing,
+      );
+    }
+  }
+
   /// Erstellt ein Light Theme mit optionalem ColorScheme
   static ThemeData light({ColorScheme? colorScheme}) {
     final scheme = colorScheme ?? _defaultLightColorScheme();
+    
+    // Debug info (nur einmal beim ersten Aufruf)
+    debugPrintFontInfo();
     
     return ThemeData(
       useMaterial3: true,
@@ -117,55 +177,62 @@ class AppTheme {
   // ============================================================================
 
   static TextTheme _textTheme(ColorScheme scheme) {
-    return TextTheme(
+    // Debug: Print font info
+    print('🎨 AppTheme: Loading font family: $fontFamily');
+    
+    // Basis TextTheme mit Google Font
+    final baseTextTheme = GoogleFonts.getTextTheme(fontFamily);
+    print('🎨 AppTheme: Base TextTheme created with family: ${baseTextTheme.bodyMedium?.fontFamily}');
+    
+    final textTheme = baseTextTheme.copyWith(
       // Display (Largest)
-      displayLarge: TextStyle(
+      displayLarge: _getFontStyle(
         fontSize: 57,
         fontWeight: FontWeight.w400,
         letterSpacing: -0.25,
         color: scheme.onSurface,
       ),
-      displayMedium: TextStyle(
+      displayMedium: _getFontStyle(
         fontSize: 45,
         fontWeight: FontWeight.w400,
         color: scheme.onSurface,
       ),
-      displaySmall: TextStyle(
+      displaySmall: _getFontStyle(
         fontSize: 36,
         fontWeight: FontWeight.w400,
         color: scheme.onSurface,
       ),
       
       // Headline
-      headlineLarge: TextStyle(
+      headlineLarge: _getFontStyle(
         fontSize: 32,
         fontWeight: FontWeight.w400,
         color: scheme.onSurface,
       ),
-      headlineMedium: TextStyle(
+      headlineMedium: _getFontStyle(
         fontSize: 28,
         fontWeight: FontWeight.w400,
         color: scheme.onSurface,
       ),
-      headlineSmall: TextStyle(
+      headlineSmall: _getFontStyle(
         fontSize: 24,
         fontWeight: FontWeight.w400,
         color: scheme.onSurface,
       ),
       
       // Title
-      titleLarge: TextStyle(
+      titleLarge: _getFontStyle(
         fontSize: 22,
         fontWeight: FontWeight.w500,
         color: scheme.onSurface,
       ),
-      titleMedium: TextStyle(
+      titleMedium: _getFontStyle(
         fontSize: 16,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.15,
         color: scheme.onSurface,
       ),
-      titleSmall: TextStyle(
+      titleSmall: _getFontStyle(
         fontSize: 14,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.1,
@@ -173,19 +240,19 @@ class AppTheme {
       ),
       
       // Body
-      bodyLarge: TextStyle(
+      bodyLarge: _getFontStyle(
         fontSize: 16,
         fontWeight: FontWeight.w400,
         letterSpacing: 0.5,
         color: scheme.onSurface,
       ),
-      bodyMedium: TextStyle(
+      bodyMedium: _getFontStyle(
         fontSize: 14,
         fontWeight: FontWeight.w400,
         letterSpacing: 0.25,
         color: scheme.onSurface,
       ),
-      bodySmall: TextStyle(
+      bodySmall: _getFontStyle(
         fontSize: 12,
         fontWeight: FontWeight.w400,
         letterSpacing: 0.4,
@@ -193,25 +260,84 @@ class AppTheme {
       ),
       
       // Label
-      labelLarge: TextStyle(
+      labelLarge: _getFontStyle(
         fontSize: 14,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.1,
         color: scheme.onSurface,
       ),
-      labelMedium: TextStyle(
+      labelMedium: _getFontStyle(
         fontSize: 12,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.5,
         color: scheme.onSurface,
       ),
-      labelSmall: TextStyle(
+      labelSmall: _getFontStyle(
         fontSize: 11,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.5,
         color: scheme.onSurface,
       ),
     );
+    
+    // Debug: Print loaded font families
+    print('🎨 AppTheme TextTheme created:');
+    print('   displayLarge: ${baseTextTheme.displayLarge?.fontFamily}');
+    print('   bodyMedium: ${baseTextTheme.bodyMedium?.fontFamily}');
+    print('   labelLarge: ${baseTextTheme.labelLarge?.fontFamily}');
+    
+    return textTheme;
+  }
+
+  /// TextTheme für Monospace (Code, technische Inhalte)
+  static TextTheme monoTextTheme(ColorScheme scheme) {
+    return GoogleFonts.getTextTheme(
+      monospaceFontFamily,
+      TextTheme(
+        bodyMedium: TextStyle(color: scheme.onSurface),
+        bodySmall: TextStyle(color: scheme.onSurfaceVariant),
+      ),
+    );
+  }
+
+  /// Debug-Funktion: Gibt alle verfügbaren Google Fonts aus
+  static void debugPrintFontInfo() {
+    print('═══════════════════════════════════════════════════════════');
+    print('🎨 AppTheme Font Configuration Debug Info');
+    print('═══════════════════════════════════════════════════════════');
+    print('Configured font family: $fontFamily');
+    print('Configured mono font family: $monospaceFontFamily');
+    print('Use SemiCondensed: $useSemiCondensed');
+    print('');
+    
+    // Test different font weights
+    print('Testing font weights:');
+    for (var weight in [FontWeight.w100, FontWeight.w200, FontWeight.w300, FontWeight.w400, FontWeight.w500]) {
+      final testStyle = GoogleFonts.nunitoSans(fontWeight: weight);
+      print('  FontWeight.${weight.toString().split('.').last}: ${testStyle.fontFamily} (actual weight: ${testStyle.fontWeight})');
+    }
+    print('');
+    
+    // Test font loading
+    final testStyle = GoogleFonts.getFont(fontFamily);
+    print('Test style created:');
+    print('  fontFamily: ${testStyle.fontFamily}');
+    print('  fontFamilyFallback: ${testStyle.fontFamilyFallback}');
+    print('');
+    
+    // Alternative font loading methods
+    final nunitoSans = GoogleFonts.nunitoSans();
+    print('GoogleFonts.nunitoSans():');
+    print('  fontFamily: ${nunitoSans.fontFamily}');
+    print('  fontFamilyFallback: ${nunitoSans.fontFamilyFallback}');
+    print('  fontWeight: ${nunitoSans.fontWeight}');
+    
+    // Test thin weight
+    final nunitoSansThin = GoogleFonts.nunitoSans(fontWeight: FontWeight.w100);
+    print('GoogleFonts.nunitoSans(w100):');
+    print('  fontFamily: ${nunitoSansThin.fontFamily}');
+    print('  fontWeight: ${nunitoSansThin.fontWeight}');
+    print('═══════════════════════════════════════════════════════════');
   }
 
   // ============================================================================
@@ -228,7 +354,7 @@ class AppTheme {
       surfaceTintColor: scheme.surfaceTint,
       centerTitle: false,
       titleSpacing: 16,
-      titleTextStyle: TextStyle(
+      titleTextStyle: _getFontStyle(
         fontSize: 22,
         fontWeight: FontWeight.w500,
         color: scheme.onSurface,
@@ -248,13 +374,13 @@ class AppTheme {
       indicatorColor: scheme.secondaryContainer,
       labelTextStyle: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.selected)) {
-          return TextStyle(
+          return _getFontStyle(
             fontSize: 12,
             fontWeight: FontWeight.w500,
             color: scheme.onSurface,
           );
         }
-        return TextStyle(
+        return _getFontStyle(
           fontSize: 12,
           fontWeight: FontWeight.w400,
           color: scheme.onSurfaceVariant,
@@ -282,12 +408,12 @@ class AppTheme {
         color: scheme.onSurfaceVariant,
         size: 24,
       ),
-      selectedLabelTextStyle: TextStyle(
+      selectedLabelTextStyle: _getFontStyle(
         fontSize: 12,
         fontWeight: FontWeight.w500,
         color: scheme.onSurface,
       ),
-      unselectedLabelTextStyle: TextStyle(
+      unselectedLabelTextStyle: _getFontStyle(
         fontSize: 12,
         fontWeight: FontWeight.w400,
         color: scheme.onSurfaceVariant,
@@ -305,13 +431,13 @@ class AppTheme {
       ),
       labelTextStyle: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.selected)) {
-          return TextStyle(
+          return _getFontStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
             color: scheme.onSecondaryContainer,
           );
         }
-        return TextStyle(
+        return _getFontStyle(
           fontSize: 14,
           fontWeight: FontWeight.w400,
           color: scheme.onSurfaceVariant,
@@ -463,12 +589,12 @@ class AppTheme {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(28),
       ),
-      titleTextStyle: TextStyle(
+      titleTextStyle: _getFontStyle(
         fontSize: 24,
         fontWeight: FontWeight.w400,
         color: scheme.onSurface,
       ),
-      contentTextStyle: TextStyle(
+      contentTextStyle: _getFontStyle(
         fontSize: 14,
         fontWeight: FontWeight.w400,
         letterSpacing: 0.25,
@@ -502,12 +628,14 @@ class AppTheme {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
       ),
-      labelStyle: TextStyle(
+      labelStyle: _getFontStyle(
         fontSize: 14,
+        fontWeight: FontWeight.w400,
         color: scheme.onSurfaceVariant,
       ),
-      secondaryLabelStyle: TextStyle(
+      secondaryLabelStyle: _getFontStyle(
         fontSize: 14,
+        fontWeight: FontWeight.w400,
         color: scheme.onSecondaryContainer,
       ),
       brightness: scheme.brightness,

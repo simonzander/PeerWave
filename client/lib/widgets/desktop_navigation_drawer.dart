@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../providers/notification_provider.dart';
+import 'user_avatar.dart';
 import '../services/signal_service.dart';
 import '../services/api_service.dart';
 import '../models/role.dart';
@@ -70,6 +69,9 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
       final conversations = <Map<String, dynamic>>[];
       final userIdsSet = <String>{};
       
+      // Displayable message types whitelist (same as ActivitiesService)
+      const displayableTypes = {'message', 'file'};
+      
       // Get all unique senders from received messages (IndexedDB/secure storage)
       final receivedSenders = await SignalService.instance.decryptedMessagesStore.getAllUniqueSenders();
       userIdsSet.addAll(receivedSenders);
@@ -91,10 +93,10 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
         // Get sent messages to this user
         final sentMessages = await SignalService.instance.loadSentMessages(userId);
         
-        // Combine messages
+        // Combine messages (filter by displayable types only)
         final allMessages = <Map<String, dynamic>>[
-          ...receivedMessages,
-          ...sentMessages.map((msg) => {
+          ...receivedMessages.where((msg) => displayableTypes.contains(msg['type'] ?? 'message')),
+          ...sentMessages.where((msg) => displayableTypes.contains(msg['type'] ?? 'message')).map((msg) => {
             'itemId': msg['itemId'],
             'message': msg['message'],
             'timestamp': msg['timestamp'],
@@ -162,16 +164,33 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
       
       if (resp.statusCode == 200) {
         final users = resp.data is List ? resp.data : [];
-        final userMap = <String, String>{};
+        final userMap = <String, Map<String, String?>>{};
         
         for (final user in users) {
-          userMap[user['uuid']] = user['displayName'] ?? user['uuid'];
+          // Extract picture as String (handle both direct string and nested objects)
+          String? pictureData;
+          final picture = user['picture'];
+          if (picture is String) {
+            pictureData = picture;
+          } else if (picture is Map && picture['data'] != null) {
+            pictureData = picture['data'] as String?;
+          }
+          
+          userMap[user['uuid']] = {
+            'displayName': user['displayName'] ?? user['uuid'],
+            'picture': pictureData,
+          };
         }
         
-        // Update display names
+        // Update display names and pictures
         for (final conv in conversations) {
           final userId = conv['uuid'] as String;
-          conv['displayName'] = userMap[userId] ?? userId;
+          if (userMap.containsKey(userId)) {
+            conv['displayName'] = userMap[userId]!['displayName'] ?? userId;
+            conv['picture'] = userMap[userId]!['picture'];
+          } else {
+            conv['displayName'] = userId;
+          }
         }
       }
     } catch (e) {
@@ -271,181 +290,176 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
   }
 
   Widget _buildMessagesSection() {
-    return Consumer<NotificationProvider>(
-      builder: (context, notificationProvider, _) {
-        // Limit to 10 most recent for sidebar display
-        var conversationsList = _recentConversations.take(10).toList();
+    // Limit to 10 most recent for sidebar display
+    var conversationsList = _recentConversations.take(10).toList();
 
-        // Calculate total unread count for Messages
-        final totalUnread = conversationsList.fold(0, (sum, dm) {
-          return sum + notificationProvider.getUnreadCount(dm['uuid'] ?? '');
-        });
+    // TODO: Calculate total unread count when NotificationProvider is available
+    final totalUnread = 0;
 
-        return Column(
-          children: [
-            _buildExpandableHeader(
-              icon: Icons.message_outlined,
-              selectedIcon: Icons.message,
-              label: 'Messages',
-              badge: totalUnread,
-              expanded: _messagesExpanded,
-              onTap: () {
-                // Navigate to messages list view
-                if (widget.onNavigateToMessagesView != null) {
-                  widget.onNavigateToMessagesView!();
-                }
-              },
-              onToggle: () => setState(() => _messagesExpanded = !_messagesExpanded),
-              onAdd: widget.onNavigateToPeople, // Navigate to People
-            ),
-            if (_messagesExpanded)
-              ...conversationsList.map((dm) {
-                final displayName = dm['displayName'] ?? 'Unknown';
-                final uuid = dm['uuid'] ?? '';
-                final unreadCount = notificationProvider.getUnreadCount(uuid);
-                
-                return Padding(
-                  padding: const EdgeInsets.only(left: 28, right: 12, top: 2, bottom: 2),
-                  child: ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.person, size: 20),
-                    title: Text(
-                      displayName,
-                      style: const TextStyle(fontSize: 14),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    trailing: unreadCount > 0
-                        ? Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.error,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              unreadCount > 99 ? '99+' : unreadCount.toString(),
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.onError,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          )
-                        : null,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    onTap: () {
-                      if (widget.onDirectMessageTap != null) {
-                        widget.onDirectMessageTap!(uuid, displayName);
-                      }
-                    },
-                  ),
-                );
-              }).toList(),
-          ],
-        );
-      },
+    return Column(
+      children: [
+        _buildExpandableHeader(
+          icon: Icons.message_outlined,
+          selectedIcon: Icons.message,
+          label: 'Messages',
+          badge: totalUnread,
+          expanded: _messagesExpanded,
+          onTap: () {
+            // Navigate to messages list view
+            if (widget.onNavigateToMessagesView != null) {
+              widget.onNavigateToMessagesView!();
+            }
+          },
+          onToggle: () => setState(() => _messagesExpanded = !_messagesExpanded),
+          onAdd: widget.onNavigateToPeople, // Navigate to People
+        ),
+        if (_messagesExpanded)
+          ...conversationsList.map((dm) {
+            final displayName = dm['displayName'] ?? 'Unknown';
+            final uuid = dm['uuid'] ?? '';
+            final picture = dm['picture'] as String?;
+            // TODO: Get unread count when NotificationProvider is available
+            final unreadCount = 0;
+            
+            return Padding(
+              padding: const EdgeInsets.only(left: 28, right: 12, top: 2, bottom: 2),
+              child: ListTile(
+                dense: true,
+                leading: SmallUserAvatar(
+                  userId: uuid,
+                  displayName: displayName,
+                  pictureData: picture,
+                ),
+                title: Text(
+                  displayName,
+                  style: const TextStyle(fontSize: 14),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: unreadCount > 0
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.error,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          unreadCount > 99 ? '99+' : unreadCount.toString(),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onError,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      )
+                    : null,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                onTap: () {
+                  if (widget.onDirectMessageTap != null) {
+                    widget.onDirectMessageTap!(uuid, displayName);
+                  }
+                },
+              ),
+            );
+          }).toList(),
+      ],
     );
   }
 
   Widget _buildChannelsSection() {
-    return Consumer<NotificationProvider>(
-      builder: (context, notificationProvider, _) {
-        var channelsList = List<Map<String, dynamic>>.from(widget.channels ?? []);
+    var channelsList = List<Map<String, dynamic>>.from(widget.channels ?? []);
 
-        // Calculate total unread count for Channels
-        final totalUnread = channelsList.fold(0, (sum, channel) {
-          return sum + notificationProvider.getUnreadCount(channel['uuid'] ?? '');
-        });
+    // TODO: Calculate total unread count when NotificationProvider is available
+    final totalUnread = 0;
 
-        return Column(
-          children: [
-            _buildExpandableHeader(
-              icon: Icons.tag_outlined,
-              selectedIcon: Icons.tag,
-              label: 'Channels',
-              badge: totalUnread,
-              expanded: _channelsExpanded,
-              onTap: () {
-                // Navigate to channels list view
-                if (widget.onNavigateToChannelsView != null) {
-                  widget.onNavigateToChannelsView!();
-                }
-              },
-              onToggle: () => setState(() => _channelsExpanded = !_channelsExpanded),
-              onAdd: () => _showCreateChannelDialog(context), // Create channel
-            ),
-            if (_channelsExpanded)
-              ...channelsList.map((channel) {
-                final name = channel['name'] ?? 'Unknown';
-                final uuid = channel['uuid'] ?? '';
-                final type = channel['type'] ?? 'webrtc';
-                final isPrivate = channel['isPrivate'] ?? false;
-                final unreadCount = notificationProvider.getUnreadCount(uuid);
-                
-                // Icon based on channel type
-                Widget leadingIcon;
-                if (type == 'signal') {
-                  leadingIcon = const Text(
-                    '# ',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  );
-                } else {
-                  leadingIcon = const Icon(Icons.campaign, size: 20);
-                }
-                
-                return Padding(
-                  padding: const EdgeInsets.only(left: 28, right: 12, top: 2, bottom: 2),
-                  child: ListTile(
-                    dense: true,
-                    leading: leadingIcon,
-                    title: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            name,
-                            style: const TextStyle(fontSize: 14),
-                            overflow: TextOverflow.ellipsis,
+    return Column(
+      children: [
+        _buildExpandableHeader(
+          icon: Icons.tag_outlined,
+          selectedIcon: Icons.tag,
+          label: 'Channels',
+          badge: totalUnread,
+          expanded: _channelsExpanded,
+          onTap: () {
+            // Navigate to channels list view
+            if (widget.onNavigateToChannelsView != null) {
+              widget.onNavigateToChannelsView!();
+            }
+          },
+          onToggle: () => setState(() => _channelsExpanded = !_channelsExpanded),
+          onAdd: () => _showCreateChannelDialog(context), // Create channel
+        ),
+        if (_channelsExpanded)
+          ...channelsList.map((channel) {
+            final name = channel['name'] ?? 'Unknown';
+            final uuid = channel['uuid'] ?? '';
+            final type = channel['type'] ?? 'webrtc';
+            final isPrivate = channel['isPrivate'] ?? false;
+            // TODO: Get unread count when NotificationProvider is available
+            final unreadCount = 0;
+            
+            // Icon based on channel type
+            Widget leadingIcon;
+            if (type == 'signal') {
+              leadingIcon = const Text(
+                '# ',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              );
+            } else {
+              leadingIcon = const Icon(Icons.campaign, size: 20);
+            }
+            
+            return Padding(
+              padding: const EdgeInsets.only(left: 28, right: 12, top: 2, bottom: 2),
+              child: ListTile(
+                dense: true,
+                leading: leadingIcon,
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(fontSize: 14),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isPrivate)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 4),
+                        child: Icon(Icons.lock, size: 14, color: Colors.grey),
+                      ),
+                  ],
+                ),
+                trailing: unreadCount > 0
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.error,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          unreadCount > 99 ? '99+' : unreadCount.toString(),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onError,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        if (isPrivate)
-                          const Padding(
-                            padding: EdgeInsets.only(left: 4),
-                            child: Icon(Icons.lock, size: 14, color: Colors.grey),
-                          ),
-                      ],
-                    ),
-                    trailing: unreadCount > 0
-                        ? Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.error,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              unreadCount > 99 ? '99+' : unreadCount.toString(),
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.onError,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          )
-                        : null,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    onTap: () {
-                      if (widget.onChannelTap != null) {
-                        widget.onChannelTap!(uuid, name, type);
-                      }
-                    },
-                  ),
-                );
-              }).toList(),
-          ],
-        );
-      },
+                      )
+                    : null,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                onTap: () {
+                  if (widget.onChannelTap != null) {
+                    widget.onChannelTap!(uuid, name, type);
+                  }
+                },
+              ),
+            );
+          }).toList(),
+      ],
     );
   }
 

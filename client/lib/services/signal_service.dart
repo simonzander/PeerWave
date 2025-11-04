@@ -867,27 +867,52 @@ class SignalService {
     'message': message,
   };
 
-  // Jetzt kannst du message weiterverarbeiten
+  // ✅ PHASE 3: Identify system messages for cleanup
+  bool isSystemMessage = false;
+  
+  // Handle read_receipt type
+  if (type == 'read_receipt') {
+    print('[SIGNAL_SERVICE] receiveItem detected read_receipt type, calling _handleReadReceipt');
+    await _handleReadReceipt(item);
+    isSystemMessage = true;
+  } else if (type == 'senderKeyRequest') {
+    // System message - will be handled by callbacks
+    isSystemMessage = true;
+  } else if (type == 'fileKeyRequest') {
+    // System message - will be handled by callbacks
+    isSystemMessage = true;
+  } else if (type == 'delivery_receipt') {
+    await _handleDeliveryReceipt(data);
+    isSystemMessage = true;
+  }
+  
+  // ✅ PHASE 3: Delete system messages after processing
+  if (isSystemMessage) {
+    // Delete from server
+    deleteItemFromServer(itemId);
+    
+    // ✅ Also delete from local storage (1:1 messages)
+    await decryptedMessagesStore.deleteDecryptedMessage(itemId);
+    print("[SIGNAL SERVICE] ✓ System message processed and cleaned up: type=$type, itemId=$itemId");
+    
+    // Don't trigger regular callbacks for system messages
+    return;
+  }
+
+  // Regular messages: Trigger callbacks
   if (cipherType != CiphertextMessage.whisperType && _itemTypeCallbacks.containsKey(cipherType)) {
     for (final callback in _itemTypeCallbacks[cipherType]!) {
       callback(message);
     }
   }
 
-  // Jetzt kannst du message weiterverarbeiten
   if (type != null && _itemTypeCallbacks.containsKey(type)) {
     for (final callback in _itemTypeCallbacks[type]!) {
       callback(item);
     }
   }
   
-  // Handle read_receipt type
-  if (type == 'read_receipt') {
-    print('[SIGNAL_SERVICE] receiveItem detected read_receipt type, calling _handleReadReceipt');
-    await _handleReadReceipt(item);
-  } else {
-    print('[SIGNAL_SERVICE] receiveItem type is: $type (not a read_receipt)');
-  }
+  // Delete from server (only for regular messages)
   deleteItemFromServer(itemId);
 }
 
@@ -1142,6 +1167,72 @@ void deleteGroupItem(String itemId, String channelId) async {
     }
   }
 
+  /// Send a file message to a group chat
+  /// 
+  /// Encrypts file metadata with Sender Key and sends as GroupItem with type='file'.
+  /// The file itself is transferred P2P via WebRTC DataChannels.
+  Future<void> sendFileGroupItem({
+    required String channelId,
+    required String fileId,
+    required String fileName,
+    required String mimeType,
+    required int fileSize,
+    required String checksum,
+    required int chunkCount,
+    required String encryptedFileKey,
+    String? message,
+    String? itemId,
+  }) async {
+    try {
+      if (_currentUserId == null || _currentDeviceId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      final messageItemId = itemId ?? const Uuid().v4();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+      // Create file message payload
+      final fileMessagePayload = {
+        'fileId': fileId,
+        'fileName': fileName,
+        'mimeType': mimeType,
+        'fileSize': fileSize,
+        'checksum': checksum,
+        'chunkCount': chunkCount,
+        'encryptedFileKey': encryptedFileKey,
+        'uploaderId': _currentUserId,
+        'timestamp': timestamp,
+        if (message != null && message.isNotEmpty) 'message': message,
+      };
+
+      final payloadJson = jsonEncode(fileMessagePayload);
+
+      // Send as GroupItem with type='file'
+      await sendGroupItem(
+        channelId: channelId,
+        message: payloadJson,  // sendGroupItem expects 'message' parameter
+        type: 'file',
+        itemId: messageItemId,
+      );
+
+      print('[SIGNAL_SERVICE] Sent file group item $messageItemId ($fileName) to channel $channelId');
+      
+      // Trigger callback to notify UI that file was sent
+      if (_itemTypeCallbacks['fileSent'] != null) {
+        for (final callback in _itemTypeCallbacks['fileSent']!) {
+          callback({
+            'channelId': channelId,
+            'itemId': messageItemId,
+            'fileName': fileName,
+          });
+        }
+      }
+    } catch (e) {
+      print('[SIGNAL_SERVICE] Error sending file group item: $e');
+      rethrow;
+    }
+  }
+
   /// Sendet eine verschlüsselte Nachricht an einen User
   /// 
   /// Diese Methode verschlüsselt die Nachricht für ALLE Geräte:
@@ -1175,10 +1266,19 @@ void deleteGroupItem(String itemId, String channelId) async {
     // Immediately notify UI with the PLAINTEXT message for the sending device
     // This allows Bob Device 1 to see his own sent message without decryption
     
+    // ✅ PHASE 4: Define types that should NOT be stored
+    const SKIP_STORAGE_TYPES = {
+      'fileKeyResponse',
+      'senderKeyDistribution',
+      'read_receipt',  // Already handled separately
+    };
+    
     // Store sent message in local storage for persistence after refresh
     // IMPORTANT: Only store actual chat messages and file messages, not system messages
     final timestamp = DateTime.now().toIso8601String();
-    if (type == 'message' || type == 'file') {
+    final shouldStore = !SKIP_STORAGE_TYPES.contains(type) && (type == 'message' || type == 'file');
+    
+    if (shouldStore) {
       await sentMessagesStore.storeSentMessage(
         recipientUserId: recipientUserId,
         itemId: messageItemId,
@@ -1188,7 +1288,7 @@ void deleteGroupItem(String itemId, String channelId) async {
       );
       print('[SIGNAL SERVICE] Step 0a: Stored sent $type in local storage');
     } else {
-      print('[SIGNAL SERVICE] Step 0a: Skipping storage for system message type: $type');
+      print('[SIGNAL SERVICE] Step 0a: Skipping storage for message type: $type (system message or skip-list)');
     }
     
     // Trigger local callback for UI updates (but not for read_receipt - they are system messages)
@@ -2151,17 +2251,30 @@ Future<String> decryptItem({
       final encrypted = await encryptGroupMessage(channelId, message);
       final timestamp = DateTime.now().toIso8601String();
 
-      // Store locally first
-      await sentGroupItemsStore.storeSentGroupItem(
-        channelId: channelId,
-        itemId: itemId,
-        message: message,
-        timestamp: timestamp,
-        type: type,
-        status: 'sending',
-      );
+      // ✅ PHASE 4: Skip storage for system message types
+      const SKIP_STORAGE_TYPES = {
+        'fileKeyResponse',
+        'senderKeyDistribution',
+      };
+      
+      final shouldStore = !SKIP_STORAGE_TYPES.contains(type);
 
-      // Send via Socket.IO
+      // Store locally first (unless it's a system message)
+      if (shouldStore) {
+        await sentGroupItemsStore.storeSentGroupItem(
+          channelId: channelId,
+          itemId: itemId,
+          message: message,
+          timestamp: timestamp,
+          type: type,
+          status: 'sending',
+        );
+        print('[SIGNAL_SERVICE] Stored group item $itemId locally');
+      } else {
+        print('[SIGNAL_SERVICE] Skipping storage for system message type: $type');
+      }
+
+      // Send via Socket.IO (always send, even if not stored)
       SocketService().emit("sendGroupItem", {
         'channelId': channelId,
         'itemId': itemId,

@@ -14,6 +14,7 @@ import 'package:go_router/go_router.dart';
 import 'package:dio/dio.dart';
 import '../services/api_service.dart';
 import '../services/clientid_web.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 @JS('webauthnLogin')
 external JSPromise webauthnLoginJs(String serverUrl, String email, String clientId);
@@ -223,12 +224,30 @@ class _AuthLayoutState extends State<AuthLayout> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  "Login",
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: FontWeight.bold,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                  SizedBox(
+                    height: 96,
+                    width: 96,
+                    child: Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: Image.asset(
+                      'assets/images/peerwave.png',
+                      fit: BoxFit.contain,
+                    ),
+                    ),
                   ),
+                  Text(
+                    "PeerWave",
+                    style: GoogleFonts.nunitoSans(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w200, // ExtraLight statt w100
+                      fontSize: 56,
+                      letterSpacing: -2.0, // Macht es optisch dünner
+                    ),
+                  ),
+                  ],
                 ),
                 const SizedBox(height: 24),
               if (_loginStatus != null) ...[

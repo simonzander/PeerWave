@@ -33,6 +33,12 @@ class SettingsSidebar extends StatelessWidget {
                 ),
               ),
               ListTile(
+                leading: const Icon(Icons.settings),
+                title: const Text('General'),
+                onTap: () => GoRouter.of(context).go('/app/settings/general'),
+              ),
+              const Divider(),
+              ListTile(
                 leading: const Icon(Icons.person),
                 title: const Text('Profile'),
                 onTap: () => GoRouter.of(context).go('/app/settings/profile'),

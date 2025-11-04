@@ -3,6 +3,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'file_message_widget.dart';
+import 'user_avatar.dart';
 import '../models/file_message.dart';
 import 'dart:convert';
 
@@ -11,11 +12,13 @@ import 'dart:convert';
 class MessageList extends StatelessWidget {
   final List<Map<String, dynamic>> messages;
   final void Function(FileMessage)? onFileDownload;
+  final ScrollController? scrollController;
 
   const MessageList({
     super.key,
     required this.messages,
     this.onFileDownload,
+    this.scrollController,
   });
 
   /// Format timestamp for display
@@ -159,6 +162,7 @@ class MessageList extends StatelessWidget {
     }
 
     return ListView.builder(
+      controller: scrollController,
       padding: const EdgeInsets.all(24),
       itemCount: messages.length,
       itemBuilder: (context, index) {
@@ -219,9 +223,10 @@ class MessageList extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CircleAvatar(
-                    backgroundColor: isLocalSent ? Colors.blue : Colors.grey,
-                    child: Text(sender.isNotEmpty ? sender[0] : '?'),
+                  UserAvatar(
+                    userId: msg['sender'],
+                    displayName: sender,
+                    size: 40,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -275,9 +280,12 @@ class MessageList extends StatelessWidget {
         final fileData = payloadJson is String ? jsonDecode(payloadJson) : payloadJson;
         final fileMessage = FileMessage.fromJson(fileData);
         
+        final isOwnMessage = msg['isLocalSent'] == true;
+        print('[MESSAGE_LIST] Rendering file message: isLocalSent=${msg['isLocalSent']}, isOwnMessage=$isOwnMessage');
+        
         return FileMessageWidget(
           fileMessage: fileMessage,
-          isOwnMessage: msg['isLocalSent'] == true,
+          isOwnMessage: isOwnMessage,
           onDownloadWithMessage: onFileDownload ?? (fileMsg) {
             print('[MESSAGE_LIST] Download requested for: ${fileMsg.fileId} (no handler provided)');
           },

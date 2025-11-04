@@ -586,7 +586,7 @@ class ColorSchemeOptions {
       icon: Icons.brightness_5,
       previewColor: Colors.black,
       schemeBuilder: AppColorSchemes.monochromeLight,
-    ),*/
+    ),
     ColorSchemeOption(
       id: 'oceanic_green',
       name: 'Oceanic Green',
@@ -595,6 +595,7 @@ class ColorSchemeOptions {
       previewColor: const Color(0xFF00BFA5),
       schemeBuilder: AppColorSchemes.oceanicGreen,
     ),
+    */
     ColorSchemeOption(
       id: 'sunset_orange',
       name: 'Sunset Orange',

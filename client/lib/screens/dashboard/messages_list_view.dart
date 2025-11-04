@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/signal_service.dart';
 import '../../services/api_service.dart';
+import '../../widgets/user_avatar.dart';
 
 /// Messages List View - Shows recent 1:1 conversations
 class MessagesListView extends StatefulWidget {
@@ -259,20 +260,12 @@ class _MessagesListViewState extends State<MessagesListView> {
     final userId = conv['userId'] as String;
 
     return ListTile(
-      leading: picture.isNotEmpty
-          ? CircleAvatar(
-              backgroundImage: NetworkImage('${widget.host}$picture'),
-              onBackgroundImageError: (_, __) {
-                // Fallback handled by error widget
-              },
-            )
-          : CircleAvatar(
-              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-              child: Icon(
-                Icons.person,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-              ),
-            ),
+      leading: UserAvatar(
+        userId: userId,
+        displayName: displayName,
+        pictureData: picture,
+        size: 48,
+      ),
       title: Text(
         displayName,
         style: const TextStyle(fontWeight: FontWeight.bold),

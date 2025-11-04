@@ -10,8 +10,8 @@ services:
       - "7882:7882"   # WebRTC TCP fallback
       - "5349:5349"   # TURN/TLS (replaces Coturn)
       - "443:443/udp" # TURN/UDP (QUIC-compatible)
-      - "40000-50000:40000-50000/udp"  # RTP port range - MAXIMUM 10001 ports
-      - "50000-60000:50000-60000/udp"  # TURN Relay range - MAXIMUM 10001 ports
+      - "30100-30200:30100-30200/udp"  # RTP port range (WebRTC media) - 1001 ports
+      - "30300-30400:30300-30400/udp"  # TURN Relay port range (P2P) - 1001 ports
     volumes:
       - ./livekit-config.yaml:/livekit.yaml:ro
       - ./livekit-certs:/certs:ro  # SSL certificates for TURN

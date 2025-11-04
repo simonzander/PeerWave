@@ -712,8 +712,56 @@ class FileTransferService {
       
       print('[FILE TRANSFER] ✓ Signal notifications sent to all ${allSeeders.length} seeders');
       
+      // Step 2.5: Send file message to chat (so it appears in conversation)
+      print('[FILE TRANSFER] Step 2.5/4: Sending file message to chat...');
+      
+      if (chatType == 'direct' && userIds.length == 1) {
+        // For direct chat: send file message to recipient
+        final recipientUserId = userIds.first;
+        
+        if (metadata != null) {
+          await _signalService.sendFileItem(
+            recipientUserId: recipientUserId,
+            fileId: fileId,
+            fileName: metadata['fileName'] as String,
+            mimeType: metadata['mimeType'] as String,
+            fileSize: metadata['fileSize'] as int,
+            checksum: metadata['checksum'] as String,
+            chunkCount: metadata['chunkCount'] as int,
+            encryptedFileKey: encryptedFileKey ?? '',
+            message: null, // Optional: could add a message like "Shared file"
+          );
+          
+          print('[FILE TRANSFER] ✓ File message sent to chat with $recipientUserId');
+        }
+      } else if (chatType == 'group') {
+        // For group chat: send file message to channel
+        print('[FILE TRANSFER] Preparing to send file message to group chat...');
+        print('[FILE TRANSFER] - channelId: $chatId');
+        print('[FILE TRANSFER] - metadata: ${metadata != null ? "present" : "null"}');
+        
+        if (metadata != null) {
+          print('[FILE TRANSFER] Calling sendFileGroupItem...');
+          await _signalService.sendFileGroupItem(
+            channelId: chatId,
+            fileId: fileId,
+            fileName: metadata['fileName'] as String,
+            mimeType: metadata['mimeType'] as String,
+            fileSize: metadata['fileSize'] as int,
+            checksum: metadata['checksum'] as String,
+            chunkCount: metadata['chunkCount'] as int,
+            encryptedFileKey: encryptedFileKey ?? '',
+            message: null, // Optional: could add a message
+          );
+          
+          print('[FILE TRANSFER] ✓ File message sent to group chat $chatId');
+        } else {
+          print('[FILE TRANSFER] ⚠️ Metadata is null, skipping group message');
+        }
+      }
+      
       // Step 3: Update local metadata
-      print('[FILE TRANSFER] Step 3/3: Updating local metadata...');
+      print('[FILE TRANSFER] Step 3/4: Updating local metadata...');
       
       if (metadata != null) {
         final currentSharedWith = (metadata['sharedWith'] as List?)?.cast<String>() ?? [];

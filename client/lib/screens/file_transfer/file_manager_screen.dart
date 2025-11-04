@@ -14,6 +14,7 @@ import '../../services/file_transfer/file_transfer_service.dart';
 import '../../services/socket_service.dart';
 import '../../services/signal_service.dart';
 import '../../services/api_service.dart';
+import '../../providers/role_provider.dart';
 import '../../web_config.dart';
 import '../../widgets/file_size_error_dialog.dart';
 
@@ -1241,20 +1242,32 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
         }
       }
       
-      // Get channels
-      final channelsResp = await ApiService.get('$urlString/client/channels?limit=50');
+      // Get Signal channels (where I'm a member/owner)
+      final channelsResp = await ApiService.get('$urlString/client/channels?type=signal&limit=50');
       if (channelsResp.statusCode == 200) {
-        final channels = channelsResp.data is List ? channelsResp.data as List : [];
+        // Parse response (could be direct list or wrapped in 'channels' key)
+        final responseData = channelsResp.data is String 
+            ? json.decode(channelsResp.data) 
+            : channelsResp.data;
+        
+        final channels = responseData is List 
+            ? responseData 
+            : (responseData['channels'] as List? ?? []);
+        
         for (final channel in channels) {
           final name = channel['name'] ?? '';
           final description = channel['description'] ?? '';
-          if (name.toLowerCase().contains(query.toLowerCase()) ||
-              description.toLowerCase().contains(query.toLowerCase())) {
+          final type = channel['type'] ?? '';
+          
+          // Only show Signal channels
+          if (type == 'signal' && 
+              (name.toLowerCase().contains(query.toLowerCase()) ||
+               description.toLowerCase().contains(query.toLowerCase()))) {
             results.add({
               'type': 'channel',
               'id': channel['uuid'],
               'name': name,
-              'subtitle': description.isNotEmpty ? description : 'Channel',
+              'subtitle': description.isNotEmpty ? description : 'Signal Channel',
               'icon': Icons.tag,
             });
           }
@@ -1336,24 +1349,27 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
         final channelId = _selectedItem!['id'];
         
         // Get all channel members (excluding self)
-        // TODO: Get actual channel members from channel service
-        final channelMembers = <String>[]; // Placeholder
+        final roleProvider = Provider.of<RoleProvider>(context, listen: false);
+        final members = await roleProvider.getChannelMembers(channelId);
         
-        if (channelMembers.isNotEmpty) {
-          // Use FileTransferService.addUsersToShare() for proper workflow
-          // This handles:
-          // 1. Server update (updateFileShare)
-          // 2. Signal broadcast to ALL seeders (file_share_update)
-          // 3. Local metadata update
-          // 4. Re-announce with updated sharedWith
-          await fileTransferService.addUsersToShare(
-            fileId: fileId,
-            chatId: channelId,
-            chatType: 'group',
-            userIds: channelMembers,
-            encryptedFileKey: encryptedFileKey,
-          );
-        }
+        // Get own userId from SignalService
+        final ownUserId = signalService.currentUserId;
+        
+        // Extract member userIds (excluding self)
+        final channelMembers = members
+            .map((m) => m.userId)
+            .where((userId) => userId != ownUserId)
+            .toList();
+        
+        // Always call addUsersToShare() even if channelMembers is empty
+        // This ensures the file message is sent to the channel chat
+        await fileTransferService.addUsersToShare(
+          fileId: fileId,
+          chatId: channelId,
+          chatType: 'group',
+          userIds: channelMembers,
+          encryptedFileKey: encryptedFileKey,
+        );
         
         if (mounted) {
           Navigator.pop(context);

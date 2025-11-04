@@ -335,4 +335,52 @@ class SentGroupItemsStore {
       }
     }
   }
+
+  /// Get all unique channel IDs (for cleanup operations)
+  Future<Set<String>> getAllChannels() async {
+    final Set<String> channels = {};
+
+    if (kIsWeb) {
+      final IdbFactory idbFactory = idbFactoryBrowser;
+      final db = await idbFactory.open(_storeName, version: 2,
+          onUpgradeNeeded: (VersionChangeEvent event) {
+        Database db = event.database;
+        if (!db.objectStoreNames.contains(_storeName)) {
+          db.createObjectStore(_storeName, autoIncrement: false);
+        }
+      });
+      var txn = db.transaction(_storeName, 'readonly');
+      var store = txn.objectStore(_storeName);
+      var index = store.index('channelId');
+      
+      // Use openKeyCursor to efficiently get unique channelIds
+      var cursor = index.openKeyCursor(autoAdvance: true);
+      await for (var cursorWithValue in cursor) {
+        final channelId = cursorWithValue.key;
+        if (channelId is String) {
+          channels.add(channelId);
+        }
+      }
+      
+      await txn.completed;
+    } else {
+      final storage = FlutterSecureStorage();
+      String? keysJson = await storage.read(key: 'sent_group_item_keys');
+      if (keysJson != null) {
+        List<String> keys = List<String>.from(jsonDecode(keysJson));
+        
+        for (var key in keys) {
+          // Extract channelId from key format: sent_group_item_{channelId}_{itemId}
+          if (key.startsWith(_keyPrefix)) {
+            final parts = key.substring(_keyPrefix.length).split('_');
+            if (parts.isNotEmpty) {
+              channels.add(parts[0]);
+            }
+          }
+        }
+      }
+    }
+
+    return channels;
+  }
 }

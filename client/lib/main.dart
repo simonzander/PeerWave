@@ -14,11 +14,14 @@ import 'auth/magic_link_native.dart' show MagicLinkWebPageWithServer;
 import 'screens/signal_setup_screen.dart';
 import 'services/signal_setup_service.dart';
 import 'services/signal_service.dart';
+import 'services/message_cleanup_service.dart';
+import 'services/user_profile_service.dart';
 import 'app/app_layout.dart';
 import 'app/dashboard_page.dart';
 import 'app/settings_sidebar.dart';
 import 'app/credentials_page.dart';
 import 'app/profile_page.dart';
+import 'app/settings/general_settings_page.dart';
 import 'app/webauthn_web.dart' if (dart.library.io) 'app/webauthn_stub.dart';
 import 'app/backupcode_web.dart' if (dart.library.io) 'app/backupcode_stub.dart';
 import 'app/backupcode_settings_page.dart';
@@ -102,6 +105,15 @@ Future<void> main() async {
   final themeProvider = ThemeProvider();
   await themeProvider.initialize();
   print('[INIT] ✅ Theme Provider initialized');
+  
+  // Initialize Message Cleanup Service (Auto-Delete)
+  print('[INIT] Initializing Message Cleanup Service...');
+  try {
+    await MessageCleanupService.instance.init();
+    print('[INIT] ✅ Message Cleanup Service initialized');
+  } catch (e) {
+    print('[INIT] ⚠️ Failed to initialize Message Cleanup Service: $e');
+  }
   
   runApp(MyApp(
     initialMagicKey: initialMagicKey, 
@@ -494,6 +506,10 @@ class _MyAppState extends State<MyApp> {
                       builder: (context, state) => const BackupCodeSettingsPage(),
                     ),
                     GoRoute(
+                      path: '/app/settings/general',
+                      builder: (context, state) => const GeneralSettingsPage(),
+                    ),
+                    GoRoute(
                       path: '/app/settings/profile',
                       builder: (context, state) => const ProfilePage(),
                     ),
@@ -605,6 +621,16 @@ class _MyAppState extends State<MyApp> {
             print('Error loading user roles: $e');
           }
           
+          // Load user profiles after successful login
+          try {
+            final UserProfileService profileService = UserProfileService.instance;
+            if (!profileService.isLoaded) {
+              await profileService.loadAllProfiles();
+            }
+          } catch (e) {
+            print('Error loading user profiles: $e');
+          }
+          
           // Skip Signal key checks for authentication and registration flows
           final isAuthFlow = location == '/otp' 
               || location == '/login'
@@ -690,7 +716,8 @@ class _MyAppState extends State<MyApp> {
         if (kIsWeb && loggedIn && fromParam == 'magic-link') {
           return '/magic-link';
         }
-        if (kIsWeb && !loggedIn) {
+        // Allow registration flow even when not logged in
+        if (kIsWeb && !loggedIn && !location.startsWith('/register/')) {
           return '/login';
         }
         if (kIsWeb && loggedIn && location == '/login') {

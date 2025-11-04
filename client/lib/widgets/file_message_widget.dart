@@ -114,42 +114,44 @@ class FileMessageWidget extends StatelessWidget {
                 
                 const SizedBox(height: 12),
                 
-                // Download button or progress
-                if (isDownloading && downloadProgress != null)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      LinearProgressIndicator(
-                        value: downloadProgress,
-                        backgroundColor: theme.colorScheme.surfaceVariant,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          theme.colorScheme.primary,
+                // Download button or progress (only for received messages)
+                if (!isOwnMessage) ...[
+                  if (isDownloading && downloadProgress != null)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        LinearProgressIndicator(
+                          value: downloadProgress,
+                          backgroundColor: theme.colorScheme.surfaceVariant,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            theme.colorScheme.primary,
+                          ),
                         ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Downloading... ${(downloadProgress! * 100).toStringAsFixed(0)}%',
+                          style: theme.textTheme.bodySmall,
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    )
+                  else
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        if (onDownloadWithMessage != null) {
+                          onDownloadWithMessage!(fileMessage);
+                        } else if (onDownload != null) {
+                          onDownload!();
+                        }
+                      },
+                      icon: const Icon(Icons.download, size: 18),
+                      label: const Text('Download'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: theme.colorScheme.primary,
+                        foregroundColor: theme.colorScheme.onPrimary,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Downloading... ${(downloadProgress! * 100).toStringAsFixed(0)}%',
-                        style: theme.textTheme.bodySmall,
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  )
-                else
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      if (onDownloadWithMessage != null) {
-                        onDownloadWithMessage!(fileMessage);
-                      } else if (onDownload != null) {
-                        onDownload!();
-                      }
-                    },
-                    icon: const Icon(Icons.download, size: 18),
-                    label: const Text('Download'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: theme.colorScheme.primary,
-                      foregroundColor: theme.colorScheme.onPrimary,
                     ),
-                  ),
+                ],
               ],
             ),
           ),

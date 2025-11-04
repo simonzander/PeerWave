@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:uuid/uuid.dart';
 import '../../widgets/message_list.dart';
 import '../../widgets/message_input.dart';
+import '../../widgets/user_avatar.dart';
 import '../../services/signal_service.dart';
 import '../../services/socket_service.dart';
 import '../../services/offline_message_queue.dart';
@@ -13,6 +14,9 @@ import '../../services/file_transfer/p2p_coordinator.dart';
 import '../../services/file_transfer/socket_file_client.dart';
 import '../../models/file_message.dart';
 import '../../extensions/snackbar_extensions.dart';
+
+/// Whitelist of message types that should be displayed in UI
+const Set<String> DISPLAYABLE_MESSAGE_TYPES = {'message', 'file'};
 
 /// Screen for Direct Messages (1:1 Signal chats)
 class DirectMessagesScreen extends StatefulWidget {
@@ -35,11 +39,37 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   List<Map<String, dynamic>> _messages = [];
   bool _loading = true;
   String? _error;
+  int _messageOffset = 0;
+  bool _hasMoreMessages = true;
+  bool _loadingMore = false;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _initialize();
+  }
+  
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    SignalService.instance.unregisterItemCallback('message', _handleNewMessage);
+    SignalService.instance.clearDeliveryCallbacks();
+    SignalService.instance.clearReadCallbacks();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(DirectMessagesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reload messages when recipient changes
+    if (oldWidget.recipientUuid != widget.recipientUuid) {
+      print('[DIRECT_MESSAGES] Recipient changed from ${oldWidget.recipientUuid} to ${widget.recipientUuid}');
+      _messages = []; // Clear old messages
+      _messageOffset = 0;
+      _hasMoreMessages = true;
+      _initialize(); // Reload
+    }
   }
 
   /// Initialize the direct messages screen: verify Signal Protocol, then load messages
@@ -77,14 +107,13 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     await _loadMessages();
     _setupMessageListener();
     _setupReceiptListeners();
-  }
-
-  @override
-  void dispose() {
-    SignalService.instance.unregisterItemCallback('message', _handleNewMessage);
-    SignalService.instance.clearDeliveryCallbacks();
-    SignalService.instance.clearReadCallbacks();
-    super.dispose();
+    
+    // Scroll to bottom after initial load
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
   }
 
   void _setupReceiptListeners() {
@@ -132,13 +161,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   void _handleNewMessage(dynamic item) {
     final itemType = item['type'];
 
-    // Filter out system messages that should not be displayed in chat
-    if (itemType == 'read_receipt' || 
-        itemType == 'senderKeyDistribution' || 
-        itemType == 'senderKeyRequest' ||
-        itemType == 'fileKeyRequest' ||
-        itemType == 'fileKeyResponse') {
-      // Handle read_receipt
+    // ✅ WHITELIST: Only display allowed message types
+    if (!DISPLAYABLE_MESSAGE_TYPES.contains(itemType)) {
+      // Handle read_receipt system message
       if (itemType == 'read_receipt') {
         try {
           final receiptData = jsonDecode(item['message']);
@@ -171,11 +196,6 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         }
       }
       // Don't display system messages in UI
-      return;
-    }
-
-    // Only handle actual chat messages (type: 'message' or 'file')
-    if (itemType != 'message' && itemType != 'file') {
       return;
     }
 
@@ -266,11 +286,18 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
   }
 
-  Future<void> _loadMessages() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _loadMessages({bool loadMore = false}) async {
+    if (loadMore) {
+      if (_loadingMore || !_hasMoreMessages) return;
+      setState(() {
+        _loadingMore = true;
+      });
+    } else {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
     try {
       ApiService.init();
@@ -416,6 +443,13 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         }
 
         for (var receivedMsg in receivedMessages) {
+          // Filter out system messages (only 'message' and 'file' types allowed)
+          final msgType = receivedMsg['type'] ?? 'message';
+          if (!DISPLAYABLE_MESSAGE_TYPES.contains(msgType)) {
+            print('[DM_SCREEN] Skipping received system message type: $msgType');
+            continue;
+          }
+
           allMessages.add({
             'itemId': receivedMsg['itemId'],
             'sender': receivedMsg['sender'],
@@ -425,13 +459,21 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             'payload': receivedMsg['message'], // Add payload field for file messages
             'time': receivedMsg['timestamp'] ?? receivedMsg['decryptedAt'],
             'isLocalSent': false,
-            'type': receivedMsg['type'] ?? 'message', // Preserve message type
+            'type': msgType, // Preserve message type
           });
         }
 
         for (var msg in decryptedMessages) {
           final itemId = msg['itemId'];
           final exists = allMessages.any((m) => m['itemId'] == itemId);
+          
+          // Filter out system messages
+          final msgType = msg['type'] ?? 'message';
+          if (!DISPLAYABLE_MESSAGE_TYPES.contains(msgType)) {
+            print('[DM_SCREEN] Skipping decrypted system message type: $msgType');
+            continue;
+          }
+          
           if (!exists) {
             allMessages.add(msg);
           }
@@ -443,20 +485,54 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           return timeA.compareTo(timeB);
         });
 
-        setState(() {
-          _messages = allMessages;
-          _loading = false;
-        });
+        // Apply pagination: load last 20 messages, or next 20 older messages
+        final totalMessages = allMessages.length;
+        final List<Map<String, dynamic>> paginatedMessages;
+        
+        if (loadMore) {
+          // Load 20 more older messages
+          final newOffset = _messageOffset + 20;
+          final startIndex = totalMessages - newOffset - 20;
+          final endIndex = totalMessages - newOffset;
+          
+          if (startIndex < 0) {
+            // No more messages to load
+            paginatedMessages = allMessages.sublist(0, endIndex > 0 ? endIndex : 0);
+            _hasMoreMessages = false;
+          } else {
+            paginatedMessages = allMessages.sublist(startIndex, endIndex);
+          }
+          
+          // Prepend to existing messages
+          setState(() {
+            _messages.insertAll(0, paginatedMessages);
+            _messageOffset = newOffset;
+            _loadingMore = false;
+          });
+        } else {
+          // Initial load: get last 20 messages
+          final startIndex = totalMessages > 20 ? totalMessages - 20 : 0;
+          paginatedMessages = allMessages.sublist(startIndex);
+          
+          setState(() {
+            _messages = paginatedMessages;
+            _messageOffset = 20;
+            _hasMoreMessages = totalMessages > 20;
+            _loading = false;
+          });
+        }
       } else {
         setState(() {
           _error = 'Failed to load messages: ${resp.statusCode}';
           _loading = false;
+          _loadingMore = false;
         });
       }
     } catch (e) {
       setState(() {
         _error = 'Error: $e';
         _loading = false;
+        _loadingMore = false;
       });
     }
   }
@@ -614,7 +690,16 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.recipientDisplayName),
+        title: Row(
+          children: [
+            SmallUserAvatar(
+              userId: widget.recipientUuid,
+              displayName: widget.recipientDisplayName,
+            ),
+            const SizedBox(width: 12),
+            Text(widget.recipientDisplayName),
+          ],
+        ),
         backgroundColor: colorScheme.surfaceContainerHighest,
         foregroundColor: colorScheme.onSurface,
         elevation: 1,
@@ -631,10 +716,35 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                   )
                 : _error != null
                     ? _buildErrorState()
-                    : MessageList(
-                        key: ValueKey(_messages.length), // Only rebuild when count changes
-                        messages: _messages,
-                        onFileDownload: _handleFileDownload,
+                    : Column(
+                        children: [
+                          if (_hasMoreMessages)
+                            Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: _loadingMore
+                                    ? const SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      )
+                                    : ActionChip(
+                                        avatar: const Icon(Icons.arrow_upward, size: 18),
+                                        label: const Text('Load older messages'),
+                                        onPressed: () => _loadMessages(loadMore: true),
+                                        backgroundColor: colorScheme.surfaceContainerHighest,
+                                      ),
+                              ),
+                            ),
+                          Expanded(
+                            child: MessageList(
+                              key: ValueKey(_messages.length),
+                              messages: _messages,
+                              onFileDownload: _handleFileDownload,
+                              scrollController: _scrollController,
+                            ),
+                          ),
+                        ],
                       ),
           ),
           MessageInput(onSendMessage: _sendMessage),
