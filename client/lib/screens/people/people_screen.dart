@@ -254,6 +254,23 @@ class _PeopleScreenState extends State<PeopleScreen> {
             ? resp.data 
             : (resp.data['users'] ?? []);
         
+        // Load profiles for all users if not cached
+        try {
+          final userUuids = allUsers
+              .where((u) => u['uuid'] != null)
+              .map((u) => u['uuid'] as String)
+              .toList();
+          
+          if (userUuids.isNotEmpty) {
+            print('[PEOPLE_SCREEN] Loading profiles for ${userUuids.length} discover users...');
+            await UserProfileService.instance.loadProfiles(userUuids);
+            print('[PEOPLE_SCREEN] ✓ Profiles loaded');
+          }
+        } catch (e) {
+          print('[PEOPLE_SCREEN] ⚠ Failed to load profiles (server may be unavailable): $e');
+          // Continue anyway - UI will show fallback names
+        }
+        
         // Filter out users who already have conversations
         final recentUserUuids = _recentConversationUsers
             .map((u) => u['uuid'] as String)
@@ -327,6 +344,23 @@ class _PeopleScreenState extends State<PeopleScreen> {
         final List<dynamic> allUsers = resp.data is List 
             ? resp.data 
             : (resp.data['users'] ?? []);
+        
+        // Load profiles for search results if not cached
+        try {
+          final userUuids = allUsers
+              .where((u) => u['uuid'] != null)
+              .map((u) => u['uuid'] as String)
+              .toList();
+          
+          if (userUuids.isNotEmpty) {
+            print('[PEOPLE_SCREEN] Loading profiles for ${userUuids.length} search result users...');
+            await UserProfileService.instance.loadProfiles(userUuids);
+            print('[PEOPLE_SCREEN] ✓ Profiles loaded');
+          }
+        } catch (e) {
+          print('[PEOPLE_SCREEN] ⚠ Failed to load profiles (server may be unavailable): $e');
+          // Continue anyway - UI will show fallback names
+        }
         
         // Filter by displayName or atName
         final queryLower = query.toLowerCase();

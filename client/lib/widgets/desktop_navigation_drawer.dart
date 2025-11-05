@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'user_avatar.dart';
 import '../services/signal_service.dart';
 import '../services/api_service.dart';
+import '../services/storage/sqlite_message_store.dart';
+import '../services/storage/sqlite_recent_conversations_store.dart';
 import '../models/role.dart';
 import '../providers/unread_messages_provider.dart';
 import '../providers/navigation_state_provider.dart';
@@ -72,62 +74,107 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
 
     try {
       final conversations = <Map<String, dynamic>>[];
-      final userIdsSet = <String>{};
       
       // Displayable message types whitelist (same as ActivitiesService)
       const displayableTypes = {'message', 'file'};
       
-      // Get all unique senders from received messages (IndexedDB/secure storage)
-      final receivedSenders = await SignalService.instance.decryptedMessagesStore.getAllUniqueSenders();
-      userIdsSet.addAll(receivedSenders);
-      
-      // Get all sent messages to find unique recipient IDs (IndexedDB/secure storage)
-      final allSentMessages = await SignalService.instance.sentMessagesStore.loadAllSentMessages();
-      for (final msg in allSentMessages) {
-        final recipientId = msg['recipientId'] as String?;
-        if (recipientId != null) {
-          userIdsSet.add(recipientId);
+      // MIGRATED: Use SQLite for better performance
+      try {
+        final messageStore = await SqliteMessageStore.getInstance();
+        final conversationsStore = await SqliteRecentConversationsStore.getInstance();
+        
+        // Get recent conversations from SQLite (FAST!)
+        var recentConvs = await conversationsStore.getRecentConversations(limit: 20);
+        
+        // FALLBACK: If conversations store is empty, get from messages
+        if (recentConvs.isEmpty) {
+          final uniqueSenders = await messageStore.getAllUniqueConversationPartners();
+          recentConvs = uniqueSenders.take(20).map((userId) => {
+            'userId': userId,
+            'displayName': userId,
+          }).toList();
         }
-      }
-      
-      // Get last message for each conversation
-      for (final userId in userIdsSet) {
-        // Get received messages from this user
-        final receivedMessages = await SignalService.instance.decryptedMessagesStore.getMessagesFromSender(userId);
         
-        // Get sent messages to this user
-        final sentMessages = await SignalService.instance.loadSentMessages(userId);
+        // Get last message for each conversation
+        for (final conv in recentConvs) {
+          final userId = conv['userId'] ?? conv['uuid'];
+          if (userId == null) continue;
+          
+          // Get last message from this conversation (FAST indexed query!)
+          final allMessages = await messageStore.getMessagesFromConversation(
+            userId,
+            types: displayableTypes.toList(),
+            limit: 1,
+          );
+          
+          if (allMessages.isEmpty) continue;
+          
+          final lastMsg = allMessages.first;
+          final lastMessageTime = DateTime.tryParse(lastMsg['timestamp'] ?? '') 
+              ?? DateTime.fromMillisecondsSinceEpoch(0);
+          
+          conversations.add({
+            'uuid': userId,
+            'displayName': conv['displayName'] ?? userId,
+            'lastMessageTime': lastMessageTime,
+          });
+        }
+      } catch (sqliteError) {
+        print('[DESKTOP_NAV] SQLite error, falling back to old storage: $sqliteError');
         
-        // Combine messages (filter by displayable types only)
-        final allMessages = <Map<String, dynamic>>[
-          ...receivedMessages.where((msg) => displayableTypes.contains(msg['type'] ?? 'message')),
-          ...sentMessages.where((msg) => displayableTypes.contains(msg['type'] ?? 'message')).map((msg) => {
-            'itemId': msg['itemId'],
-            'message': msg['message'],
-            'timestamp': msg['timestamp'],
-            'sender': 'self',
-            'type': msg['type'] ?? 'message',
-          }),
-        ];
+        // FALLBACK: Use old storage method
+        final userIdsSet = <String>{};
         
-        if (allMessages.isEmpty) continue;
+        final receivedSenders = await SignalService.instance.decryptedMessagesStore.getAllUniqueSenders();
+        userIdsSet.addAll(receivedSenders);
         
-        // Sort by timestamp (newest first)
-        allMessages.sort((a, b) {
-          final timeA = DateTime.tryParse(a['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final timeB = DateTime.tryParse(b['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-          return timeB.compareTo(timeA);
-        });
+        final allSentMessages = await SignalService.instance.sentMessagesStore.loadAllSentMessages();
+        for (final msg in allSentMessages) {
+          final recipientId = msg['recipientId'] as String?;
+          if (recipientId != null) {
+            userIdsSet.add(recipientId);
+          }
+        }
         
-        final lastMessageTime = allMessages.isNotEmpty
-            ? DateTime.tryParse(allMessages.first['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0)
-            : DateTime.fromMillisecondsSinceEpoch(0);
+        // Get last message for each conversation
+        for (final userId in userIdsSet) {
+          // Get received messages from this user
+          final receivedMessages = await SignalService.instance.decryptedMessagesStore.getMessagesFromSender(userId);
         
-        conversations.add({
-          'uuid': userId,
-          'displayName': userId, // Will be enriched with actual name from API
-          'lastMessageTime': lastMessageTime,
-        });
+          // Get sent messages to this user
+          final sentMessages = await SignalService.instance.loadSentMessages(userId);
+          
+          // Combine messages (filter by displayable types only)
+          final allMessages = <Map<String, dynamic>>[
+            ...receivedMessages.where((msg) => displayableTypes.contains(msg['type'] ?? 'message')),
+            ...sentMessages.where((msg) => displayableTypes.contains(msg['type'] ?? 'message')).map((msg) => {
+              'itemId': msg['itemId'],
+              'message': msg['message'],
+              'timestamp': msg['timestamp'],
+              'sender': 'self',
+              'type': msg['type'] ?? 'message',
+            }),
+          ];
+          
+          if (allMessages.isEmpty) continue;
+          
+          // Sort by timestamp (newest first)
+          allMessages.sort((a, b) {
+            final timeA = DateTime.tryParse(a['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final timeB = DateTime.tryParse(b['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return timeB.compareTo(timeA);
+          });
+          
+          final lastMessageTime = allMessages.isNotEmpty
+              ? DateTime.tryParse(allMessages.first['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0)
+              : DateTime.fromMillisecondsSinceEpoch(0);
+          
+          conversations.add({
+            'uuid': userId,
+            'displayName': userId, // Will be enriched with actual name from API
+            'lastMessageTime': lastMessageTime,
+          });
+        }
       }
       
       // Sort by last message time

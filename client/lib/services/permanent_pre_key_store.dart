@@ -48,13 +48,25 @@ class PermanentPreKeyStore extends PreKeyStore {
   Future<void> checkPreKeys() async {
     final allKeys = await _getAllPreKeyIds();
     if (allKeys.length < 20) {
-      print("Not enough pre keys, generating more");
-      var lastId = allKeys.isNotEmpty ? allKeys.reduce((a, b) => a > b ? a : b) : 0;
+      print("[PREKEY STORE] Not enough pre keys (${allKeys.length}/110), generating more");
+      var lastId = allKeys.isNotEmpty ? allKeys.reduce((a, b) => a > b ? a : b) : -1;
       if (lastId == 9007199254740991) {
-        lastId = 0;
+        lastId = -1; // Reset to -1 so we start from 0 again
       }
-      var newPreKeys = generatePreKeys(lastId + 1, lastId + 110);
+      
+      // Calculate how many keys we need to reach 110 total
+      final neededKeys = 110 - allKeys.length;
+      print("[PREKEY STORE] Need to generate $neededKeys more keys (current: ${allKeys.length}, target: 110)");
+      
+      // generatePreKeys is INCLUSIVE: generatePreKeys(a, b) generates (b - a + 1) keys
+      // To generate exactly `neededKeys`, we do: generatePreKeys(lastId + 1, lastId + neededKeys)
+      final startId = lastId + 1;
+      final endId = lastId + neededKeys;
+      print("[PREKEY STORE] Generating keys from $startId to $endId ($neededKeys keys)");
+      
+      var newPreKeys = generatePreKeys(startId, endId);
       await storePreKeys(newPreKeys);
+      print("[PREKEY STORE] ✓ Generated and stored ${newPreKeys.length} new pre keys");
     }
   }
 
@@ -125,7 +137,9 @@ class PermanentPreKeyStore extends PreKeyStore {
       // Case 2: Server has 0 PreKeys and local also empty → Generate new
       if (data.isEmpty) {
         print('[PREKEY STORE] No PreKeys found anywhere, generating 110 new ones');
-        var newPreKeys = generatePreKeys(0, 110);
+        // generatePreKeys is INCLUSIVE: generatePreKeys(0, 109) generates 110 keys (0-109)
+        var newPreKeys = generatePreKeys(0, 109);
+        print('[PREKEY STORE] Generated ${newPreKeys.length} pre keys (IDs 0-109)');
         await storePreKeys(newPreKeys);
         return;
       }
@@ -146,11 +160,23 @@ class PermanentPreKeyStore extends PreKeyStore {
         print('[PREKEY STORE] Both server and local are low, generating more');
         var lastId = data.isNotEmpty
             ? data.map((e) => e['prekey_id']).reduce((a, b) => a > b ? a : b)
-            : 0;
+            : -1; // Start from -1 so first key will be 0
         if (lastId == 9007199254740991) {
-          lastId = 0;
+          lastId = -1;
         }
-        var newPreKeys = generatePreKeys(lastId + 1, lastId + 110);
+        
+        // Calculate how many keys needed to reach 110
+        final currentCount = data.length;
+        final neededKeys = 110 - currentCount;
+        print('[PREKEY STORE] Need $neededKeys more keys (current: $currentCount, target: 110)');
+        
+        // generatePreKeys is INCLUSIVE: to generate neededKeys, use (lastId + 1) to (lastId + neededKeys)
+        final startId = lastId + 1;
+        final endId = lastId + neededKeys;
+        print('[PREKEY STORE] Generating keys from $startId to $endId');
+        
+        var newPreKeys = generatePreKeys(startId, endId);
+        print('[PREKEY STORE] Generated ${newPreKeys.length} pre keys');
         await storePreKeys(newPreKeys);
         return;
       }

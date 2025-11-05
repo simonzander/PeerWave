@@ -12,6 +12,7 @@ import '../views/video_conference_view.dart';
 import '../services/api_service.dart';
 import '../services/activities_service.dart';
 import '../services/user_profile_service.dart';
+import '../services/logout_service.dart';
 import '../widgets/theme_widgets.dart';
 import '../widgets/adaptive/adaptive_scaffold.dart';
 import '../widgets/navigation_badge.dart';
@@ -477,6 +478,14 @@ class _DashboardPageState extends State<DashboardPage> {
                     onTap: () => GoRouter.of(context).go('/app/settings'),
                     tooltip: 'Settings',
                   ),
+                  const SizedBox(height: 4),
+                  // Logout Icon
+                  _buildIconButton(
+                    icon: Icons.logout,
+                    isSelected: false,
+                    onTap: () => LogoutService.instance.logout(context),
+                    tooltip: 'Logout',
+                  ),
                   const SizedBox(height: 12),
                 ],
               ),
@@ -601,6 +610,14 @@ class _DashboardPageState extends State<DashboardPage> {
             },
           ),
           const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout),
+            title: const Text('Logout'),
+            onTap: () {
+              Navigator.pop(context);
+              LogoutService.instance.logout(context);
+            },
+          ),
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('About'),

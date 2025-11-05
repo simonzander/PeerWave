@@ -10,6 +10,7 @@ import '../../services/signal_service.dart';
 import '../../services/socket_service.dart';
 import '../../services/offline_message_queue.dart';
 import '../../services/api_service.dart';
+import '../../services/storage/sqlite_message_store.dart';
 import '../../services/file_transfer/p2p_coordinator.dart';
 import '../../services/file_transfer/socket_file_client.dart';
 import '../../models/file_message.dart';
@@ -311,11 +312,50 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     try {
       ApiService.init();
 
-      // Load sent messages from local storage
-      final sentMessages = await SignalService.instance.loadSentMessages(widget.recipientUuid);
+      // MIGRATED: Load sent messages from SQLite for better performance
+      List<Map<String, dynamic>> sentMessages;
+      try {
+        final messageStore = await SqliteMessageStore.getInstance();
+        final messages = await messageStore.getMessagesFromConversation(
+          widget.recipientUuid,
+          types: DISPLAYABLE_MESSAGE_TYPES.toList(),
+        );
+        sentMessages = messages
+            .where((msg) => msg['direction'] == 'sent')
+            .map((msg) => {
+              'itemId': msg['item_id'],
+              'message': msg['message'],
+              'timestamp': msg['timestamp'],
+              'type': msg['type'],
+            })
+            .toList();
+      } catch (sqliteError) {
+        print('[DM_SCREEN] SQLite error, falling back to old storage: $sqliteError');
+        sentMessages = await SignalService.instance.loadSentMessages(widget.recipientUuid);
+      }
 
-      // Load received messages from local storage (1:1 direct messages only)
-      final receivedMessages = await SignalService.instance.decryptedMessagesStore.getMessagesFromSender(widget.recipientUuid);
+      // MIGRATED: Load received messages from SQLite
+      List<Map<String, dynamic>> receivedMessages;
+      try {
+        final messageStore = await SqliteMessageStore.getInstance();
+        final messages = await messageStore.getMessagesFromConversation(
+          widget.recipientUuid,
+          types: DISPLAYABLE_MESSAGE_TYPES.toList(),
+        );
+        receivedMessages = messages
+            .where((msg) => msg['direction'] == 'received')
+            .map((msg) => {
+              'itemId': msg['item_id'],
+              'message': msg['message'],
+              'timestamp': msg['timestamp'],
+              'sender': msg['sender'],
+              'type': msg['type'],
+            })
+            .toList();
+      } catch (sqliteError) {
+        print('[DM_SCREEN] SQLite error, falling back to old storage: $sqliteError');
+        receivedMessages = await SignalService.instance.decryptedMessagesStore.getMessagesFromSender(widget.recipientUuid);
+      }
 
       // Load new messages from server
       final resp = await ApiService.get('${widget.host}/direct/messages/${widget.recipientUuid}');

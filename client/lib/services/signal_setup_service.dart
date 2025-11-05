@@ -1,12 +1,159 @@
+import 'dart:async';
 import 'signal_service.dart';
+import 'user_profile_service.dart';
+import '../providers/unread_messages_provider.dart';
+import 'message_listener_service.dart';
+import 'storage/database_helper.dart';
 
 /// Service to check if Signal Protocol keys are properly set up
+/// and handle post-login initialization
 class SignalSetupService {
   static final SignalSetupService instance = SignalSetupService._internal();
   factory SignalSetupService() => instance;
   SignalSetupService._internal();
 
-  /// Check if Signal keys need to be set up or regenerated
+  bool _postLoginInitComplete = false;
+  Completer<void>? _initializationCompleter;
+
+  /// Initialize all services after successful login
+  /// This consolidates multiple async operations into one sequential flow
+  /// to avoid race conditions and provide a single loading indicator
+  /// 
+  /// Uses a Completer to ensure only one initialization runs at a time.
+  /// Subsequent calls will wait for the first initialization to complete.
+  Future<void> initializeAfterLogin({
+    required UnreadMessagesProvider unreadProvider,
+    Function(String step, int current, int total)? onProgress,
+  }) async {
+    // If already complete, do nothing
+    if (_postLoginInitComplete) {
+      print('[SIGNAL SETUP] Already initialized, skipping');
+      return;
+    }
+
+    // If currently initializing, wait for it to complete
+    if (_initializationCompleter != null) {
+      print('[SIGNAL SETUP] Initialization in progress, waiting for completion...');
+      await _initializationCompleter!.future;
+      print('[SIGNAL SETUP] Initialization completed by another caller');
+      return;
+    }
+
+    // Start new initialization
+    _initializationCompleter = Completer<void>();
+    print('[SIGNAL SETUP] Starting new initialization...');
+
+    try {
+      final totalSteps = 6;
+      var currentStep = 0;
+
+      // Step 1: Initialize Database (if not already done)
+      currentStep++;
+      onProgress?.call('Initializing database...', currentStep, totalSteps);
+      print('[SIGNAL SETUP] [$currentStep/$totalSteps] Initializing database...');
+      try {
+        await DatabaseHelper.database; // Ensures DB is initialized
+        print('[SIGNAL SETUP] ✓ Database initialized');
+      } catch (e) {
+        print('[SIGNAL SETUP] ⚠ Database initialization error (may already be initialized): $e');
+      }
+
+      // Step 2: Load user profiles (smart loading)
+      currentStep++;
+      onProgress?.call('Loading user profiles...', currentStep, totalSteps);
+      print('[SIGNAL SETUP] [$currentStep/$totalSteps] Loading user profiles...');
+      try {
+        final profileService = UserProfileService.instance;
+        if (!profileService.isLoaded) {
+          await profileService.initProfiles();
+          print('[SIGNAL SETUP] ✓ User profiles loaded: ${profileService.cacheSize} profiles');
+        } else {
+          print('[SIGNAL SETUP] ✓ User profiles already loaded');
+        }
+      } catch (e) {
+        print('[SIGNAL SETUP] ⚠ Error loading user profiles: $e');
+        // Don't block initialization on profile loading failure
+      }
+
+      // Step 3: Load unread message counts
+      currentStep++;
+      onProgress?.call('Loading unread messages...', currentStep, totalSteps);
+      print('[SIGNAL SETUP] [$currentStep/$totalSteps] Loading unread message counts...');
+      try {
+        await unreadProvider.loadFromStorage();
+        print('[SIGNAL SETUP] ✓ Loaded unread message counts from storage');
+      } catch (e) {
+        print('[SIGNAL SETUP] ⚠ Error loading unread message counts: $e');
+      }
+
+      // Step 4: Connect UnreadMessagesProvider to SignalService
+      currentStep++;
+      onProgress?.call('Connecting services...', currentStep, totalSteps);
+      print('[SIGNAL SETUP] [$currentStep/$totalSteps] Connecting UnreadMessagesProvider...');
+      try {
+        SignalService.instance.setUnreadMessagesProvider(unreadProvider);
+        print('[SIGNAL SETUP] ✓ Connected UnreadMessagesProvider to SignalService');
+      } catch (e) {
+        print('[SIGNAL SETUP] ⚠ Error connecting unread provider: $e');
+      }
+
+      // Step 5: Initialize SignalService stores and listeners
+      currentStep++;
+      onProgress?.call('Initializing Signal Protocol...', currentStep, totalSteps);
+      print('[SIGNAL SETUP] [$currentStep/$totalSteps] Initializing Signal stores and listeners...');
+      try {
+        if (!SignalService.instance.isInitialized) {
+          await SignalService.instance.initStoresAndListeners();
+          print('[SIGNAL SETUP] ✓ Signal stores and listeners initialized');
+        } else {
+          print('[SIGNAL SETUP] ✓ Signal already initialized');
+        }
+      } catch (e) {
+        print('[SIGNAL SETUP] ⚠ Error initializing Signal stores: $e');
+        // This is more critical, but still continue
+      }
+
+      // Step 6: Initialize global message listeners
+      currentStep++;
+      onProgress?.call('Setting up message listeners...', currentStep, totalSteps);
+      print('[SIGNAL SETUP] [$currentStep/$totalSteps] Initializing message listeners...');
+      try {
+        await MessageListenerService.instance.initialize();
+        print('[SIGNAL SETUP] ✓ Message listeners initialized');
+      } catch (e) {
+        print('[SIGNAL SETUP] ⚠ Error initializing message listeners: $e');
+      }
+
+      _postLoginInitComplete = true;
+      print('[SIGNAL SETUP] ========================================');
+      print('[SIGNAL SETUP] ✅ Post-login initialization complete');
+      print('[SIGNAL SETUP] ========================================');
+      
+      // Complete the future successfully
+      _initializationCompleter!.complete();
+      
+    } catch (e, stackTrace) {
+      print('[SIGNAL SETUP] ❌ Initialization failed: $e');
+      print('[SIGNAL SETUP] Stack trace: $stackTrace');
+      
+      // Complete with error so waiting callers also get the error
+      _initializationCompleter!.completeError(e, stackTrace);
+      rethrow;
+    } finally {
+      // Clear the completer after a short delay to allow waiting callers to complete
+      Future.delayed(Duration(milliseconds: 100), () {
+        _initializationCompleter = null;
+      });
+    }
+  }
+
+  /// Check if post-login initialization is complete
+  bool get isPostLoginInitComplete => _postLoginInitComplete;
+
+  /// Check if currently initializing
+  bool get isInitializing => _initializationCompleter != null;
+
+  /// Check if Signal Protocol keys are properly set up
   /// Returns a map with setup status and missing keys information
   Future<Map<String, dynamic>> checkKeysStatus() async {
     final missingKeys = <String, dynamic>{};
@@ -85,5 +232,19 @@ class SignalSetupService {
   Future<bool> needsSetup() async {
     final status = await checkKeysStatus();
     return status['needsSetup'] as bool;
+  }
+
+  /// Cleanup on logout - reset initialization state
+  void cleanupOnLogout() {
+    print('[SIGNAL SETUP] Cleaning up on logout...');
+    
+    // Dispose message listeners
+    MessageListenerService.instance.dispose();
+    
+    // Reset initialization flags
+    _postLoginInitComplete = false;
+    _initializationCompleter = null;
+    
+    print('[SIGNAL SETUP] ✓ Cleanup complete');
   }
 }

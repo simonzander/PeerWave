@@ -455,8 +455,8 @@ class AppTheme {
     );
   }
 
-  static CardTheme _cardTheme(ColorScheme scheme) {
-    return CardTheme(
+  static CardThemeData _cardTheme(ColorScheme scheme) {
+    return CardThemeData(
       color: scheme.surfaceContainerHighest,
       elevation: 1,
       shadowColor: scheme.shadow,
@@ -599,8 +599,8 @@ class AppTheme {
     );
   }
 
-  static DialogTheme _dialogTheme(ColorScheme scheme) {
-    return DialogTheme(
+  static DialogThemeData _dialogTheme(ColorScheme scheme) {
+    return DialogThemeData(
       backgroundColor: scheme.surfaceContainerHighest,
       surfaceTintColor: scheme.surfaceTint,
       elevation: 6,

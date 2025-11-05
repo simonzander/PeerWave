@@ -2,9 +2,10 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:idb_shim/idb_browser.dart';
 import 'dart:convert';
+import 'storage/sqlite_group_message_store.dart';
 
 /// Store for decrypted group items (messages, reactions, etc.)
-/// Separate from decryptedMessagesStore (which is for 1:1 messages)
+/// Now uses SQLite for better performance, with fallback to old storage
 class DecryptedGroupItemsStore {
   static const String _storeName = 'decryptedGroupItems';
   static const String _keyPrefix = 'group_item_';
@@ -74,6 +75,24 @@ class DecryptedGroupItemsStore {
     required String timestamp,
     String type = 'message',
   }) async {
+    // Try SQLite first
+    try {
+      final sqliteStore = await SqliteGroupMessageStore.getInstance();
+      await sqliteStore.storeDecryptedGroupItem(
+        itemId: itemId,
+        channelId: channelId,
+        sender: sender,
+        senderDevice: senderDevice,
+        message: message,
+        timestamp: timestamp,
+        type: type,
+      );
+      print('[GROUP ITEMS] ✓ Stored in SQLite: $itemId');
+    } catch (e) {
+      print('[GROUP ITEMS] ⚠ SQLite failed, using fallback: $e');
+    }
+    
+    // Also store in old storage (dual write for safety)
     final key = '$_keyPrefix${channelId}_$itemId';
     final data = jsonEncode({
       'itemId': itemId,
@@ -118,6 +137,31 @@ class DecryptedGroupItemsStore {
 
   /// Get all decrypted items for a specific channel
   Future<List<Map<String, dynamic>>> getChannelItems(String channelId) async {
+    // Try SQLite first
+    try {
+      final sqliteStore = await SqliteGroupMessageStore.getInstance();
+      final messages = await sqliteStore.getChannelMessages(channelId);
+      
+      if (messages.isNotEmpty) {
+        print('[GROUP ITEMS] ✓ Loaded ${messages.length} messages from SQLite');
+        
+        // Convert SQLite format to expected format
+        return messages.map((msg) => {
+          'itemId': msg['item_id'],
+          'channelId': msg['channel_id'],
+          'sender': msg['sender'],
+          'senderDevice': msg['sender_device_id'] ?? 0,
+          'message': msg['message'],
+          'timestamp': msg['timestamp'],
+          'type': msg['type'] ?? 'message',
+          'decryptedAt': msg['decrypted_at'],
+        }).toList();
+      }
+    } catch (e) {
+      print('[GROUP ITEMS] ⚠ SQLite failed, using fallback: $e');
+    }
+    
+    // Fallback to old storage
     final items = <Map<String, dynamic>>[];
     final prefix = '$_keyPrefix$channelId';
 
@@ -169,6 +213,7 @@ class DecryptedGroupItemsStore {
       }
     }
 
+    print('[GROUP ITEMS] ✓ Loaded ${items.length} messages from fallback storage');
     return items;
   }
 

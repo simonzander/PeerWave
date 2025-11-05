@@ -15,7 +15,9 @@ import 'screens/signal_setup_screen.dart';
 import 'services/signal_setup_service.dart';
 import 'services/signal_service.dart';
 import 'services/message_cleanup_service.dart';
-import 'services/user_profile_service.dart';
+import 'services/logout_service.dart';
+import 'services/api_service.dart' show setGlobalUnauthorizedHandler;
+import 'services/socket_service.dart' show setSocketUnauthorizedHandler;
 import 'app/app_layout.dart';
 import 'app/dashboard_page.dart';
 import 'app/settings_sidebar.dart';
@@ -32,7 +34,6 @@ import 'services/clientid_native.dart' if (dart.library.html) 'services/clientid
 import 'services/api_service.dart';
 import 'auth/backup_recover_web.dart' if (dart.library.io) 'auth/backup_recover_stub.dart';
 import 'services/socket_service.dart';
-import 'services/message_listener_service.dart';
 // Role management imports
 import 'providers/role_provider.dart';
 import 'providers/notification_provider.dart';
@@ -392,6 +393,20 @@ class _MyAppState extends State<MyApp> {
   }
 
   Widget _buildMaterialApp() {
+    // Initialize 401 Unauthorized handlers (one-time setup)
+    setGlobalUnauthorizedHandler(() {
+      if (mounted) {
+        LogoutService.instance.autoLogout(context);
+      }
+    });
+    
+    setSocketUnauthorizedHandler(() {
+      if (mounted) {
+        LogoutService.instance.autoLogout(context);
+      }
+    });
+    
+    print('[MAIN] ✓ Unauthorized handlers initialized');
 
     // Use ShellRoute for native, flat routes for web
     final List<RouteBase> routes = kIsWeb
@@ -632,28 +647,11 @@ class _MyAppState extends State<MyApp> {
             print('Error loading user roles: $e');
           }
           
-          // Load user profiles after successful login
-          try {
-            final UserProfileService profileService = UserProfileService.instance;
-            if (!profileService.isLoaded) {
-              await profileService.loadAllProfiles();
-            }
-          } catch (e) {
-            print('Error loading user profiles: $e');
-          }
-          
-          // Load unread message counts after successful login
-          try {
-            final unreadProvider = context.read<UnreadMessagesProvider>();
-            await unreadProvider.loadFromStorage();
-            print('[MAIN] Loaded unread message counts from storage');
-            
-            // Connect provider to SignalService
-            SignalService.instance.setUnreadMessagesProvider(unreadProvider);
-            print('[MAIN] Connected UnreadMessagesProvider to SignalService');
-          } catch (e) {
-            print('Error loading unread message counts: $e');
-          }
+          // ========================================
+          // CONSOLIDATED POST-LOGIN INITIALIZATION
+          // ========================================
+          // This replaces multiple scattered async operations with one
+          // sequential flow to avoid race conditions
           
           // Skip Signal key checks for authentication and registration flows
           final isAuthFlow = location == '/otp' 
@@ -668,40 +666,55 @@ class _MyAppState extends State<MyApp> {
               try {
                 final needsSetup = await SignalSetupService.instance.needsSetup();
                 if (needsSetup) {
-                  print('Signal keys need setup, redirecting to /signal-setup');
+                  print('[MAIN] Signal keys need setup, redirecting to /signal-setup');
                   return '/signal-setup';
                 }
                 
-                // If we get here, keys are already present
-                // Initialize SignalService stores and listeners (without generating keys)
-                if (!SignalService.instance.isInitialized) {
-                  print('[MAIN] Signal keys exist, initializing stores and listeners...');
-                  await SignalService.instance.initStoresAndListeners();
-                }
+                // Keys exist - run consolidated initialization
+                print('[MAIN] ========================================');
+                print('[MAIN] Starting post-login initialization...');
+                print('[MAIN] ========================================');
+                
+                final unreadProvider = context.read<UnreadMessagesProvider>();
+                await SignalSetupService.instance.initializeAfterLogin(
+                  unreadProvider: unreadProvider,
+                  onProgress: (step, current, total) {
+                    print('[MAIN] [$current/$total] $step');
+                  },
+                );
+                
+                print('[MAIN] ========================================');
+                print('[MAIN] ✅ Post-login initialization complete');
+                print('[MAIN] ========================================');
                 
               } catch (e) {
-                print('Error checking Signal key status: $e');
+                print('[MAIN] ⚠ Error during initialization: $e');
               }
             } else {
-              // For other app routes (e.g. /app/channels), just initialize stores if not already done
+              // For other app routes (e.g. /app/channels), ensure initialization is done
               try {
-                if (!SignalService.instance.isInitialized) {
-                  print('[MAIN] Initializing Signal stores for app route: $location');
-                  await SignalService.instance.initStoresAndListeners();
+                if (!SignalSetupService.instance.isPostLoginInitComplete) {
+                  print('[MAIN] Running initialization for app route: $location');
+                  
+                  final unreadProvider = context.read<UnreadMessagesProvider>();
+                  await SignalSetupService.instance.initializeAfterLogin(
+                    unreadProvider: unreadProvider,
+                    onProgress: (step, current, total) {
+                      print('[MAIN] [$current/$total] $step');
+                    },
+                  );
                 }
               } catch (e) {
-                print('Error initializing Signal stores: $e');
+                print('[MAIN] ⚠ Error initializing for app route: $e');
               }
             }
           }
-          
-          // Initialize global message listeners (after SignalService is ready)
-          await MessageListenerService.instance.initialize();
         } else {
+          // Logout cleanup
           if(SocketService().isConnected) SocketService().disconnect();
           
-          // Dispose global message listeners
-          MessageListenerService.instance.dispose();
+          // Consolidated cleanup via SignalSetupService
+          SignalSetupService.instance.cleanupOnLogout();
           
           // Clear roles on logout
           try {

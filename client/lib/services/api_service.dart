@@ -3,6 +3,38 @@ import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 
+/// Callback for handling 401 Unauthorized responses
+typedef UnauthorizedCallback = void Function();
+
+/// Global callback for 401 handling (set by app)
+UnauthorizedCallback? _globalUnauthorizedCallback;
+
+/// Set global 401 handler
+void setGlobalUnauthorizedHandler(UnauthorizedCallback callback) {
+  _globalUnauthorizedCallback = callback;
+}
+
+/// Interceptor for handling 401 Unauthorized responses
+class UnauthorizedInterceptor extends Interceptor {
+  @override
+  void onResponse(Response response, ResponseInterceptorHandler handler) {
+    if (response.statusCode == 401) {
+      print('[API] ⚠️  401 Unauthorized detected - triggering auto-logout');
+      _globalUnauthorizedCallback?.call();
+    }
+    super.onResponse(response, handler);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) {
+    if (err.response?.statusCode == 401) {
+      print('[API] ⚠️  401 Unauthorized detected in error - triggering auto-logout');
+      _globalUnauthorizedCallback?.call();
+    }
+    super.onError(err, handler);
+  }
+}
+
 /// Custom retry interceptor for handling 503 (database busy) and network errors
 class RetryInterceptor extends Interceptor {
   final Dio dio;
@@ -109,6 +141,9 @@ class ApiService {
       if (!kIsWeb) {
         dio.interceptors.add(CookieManager(cookieJar));
       }
+      
+      // Add 401 Unauthorized interceptor (should be first)
+      dio.interceptors.add(UnauthorizedInterceptor());
       
       // Add custom retry interceptor for handling 503 (database busy) and network errors
       dio.interceptors.add(

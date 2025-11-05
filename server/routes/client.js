@@ -455,6 +455,34 @@ clientRoutes.get("/people/list", async (req, res) => {
     }
 });
 
+// Batch load profiles by UUIDs (GET endpoint for smart loading)
+clientRoutes.get("/people/profiles", async (req, res) => {
+    if(req.session.authenticated !== true || !req.session.uuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    try {
+        const uuidsParam = req.query.uuids;
+        if (!uuidsParam) {
+            return res.status(200).json({ profiles: [] });
+        }
+        
+        const uuids = uuidsParam.split(',').map(uuid => uuid.trim()).filter(Boolean);
+        if (uuids.length === 0) {
+            return res.status(200).json({ profiles: [] });
+        }
+        
+        const users = await User.findAll({
+            attributes: ['uuid', 'displayName', 'picture', 'atName'],
+            where: { uuid: uuids }
+        });
+        
+        res.status(200).json({ profiles: users });
+    } catch (error) {
+        console.error('Error fetching user profiles:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
 clientRoutes.post("/client/people/info", async (req, res) => {
     if(req.session.authenticated !== true || !req.session.uuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });

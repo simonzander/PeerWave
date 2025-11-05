@@ -2,6 +2,17 @@ import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../web_config.dart';
 import 'signal_service.dart';
 
+/// Callback for handling socket unauthorized events
+typedef SocketUnauthorizedCallback = void Function();
+
+/// Global callback for socket unauthorized handling
+SocketUnauthorizedCallback? _socketUnauthorizedCallback;
+
+/// Set global socket unauthorized handler
+void setSocketUnauthorizedHandler(SocketUnauthorizedCallback callback) {
+  _socketUnauthorizedCallback = callback;
+}
+
 class SocketService {
   static final SocketService _instance = SocketService._internal();
   factory SocketService() => _instance;
@@ -57,6 +68,18 @@ class SocketService {
       });
       _socket!.on('reconnect_attempt', (_) {
         print('[SOCKET SERVICE] Socket reconnecting...');
+      });
+      // Listen for unauthorized/authentication errors
+      _socket!.on('unauthorized', (_) {
+        print('[SOCKET SERVICE] ⚠️  Unauthorized - triggering auto-logout');
+        _socketUnauthorizedCallback?.call();
+      });
+      _socket!.on('error', (data) {
+        print('[SOCKET SERVICE] Socket error: $data');
+        if (data is Map && (data['message']?.toString().contains('unauthorized') ?? false)) {
+          print('[SOCKET SERVICE] ⚠️  Unauthorized error - triggering auto-logout');
+          _socketUnauthorizedCallback?.call();
+        }
       });
       // Register all listeners
       _listeners.forEach((event, callbacks) {

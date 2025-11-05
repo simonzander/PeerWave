@@ -31,7 +31,7 @@ Write-Host ""
 if ($mode -eq "quick") {
     Write-Host " [1/3] Building Flutter Web..." -ForegroundColor Yellow
     Set-Location client
-    flutter build web --debug
+    flutter build web --debug --no-wasm-dry-run
     if ($LASTEXITCODE -ne 0) {
         Write-Host " Flutter build failed!" -ForegroundColor Red
         Set-Location ..
@@ -100,7 +100,7 @@ if ($mode -eq "flutter" -or $mode -eq "full") {
     Write-Host " [FLUTTER] Building Flutter Web..." -ForegroundColor Yellow
     Set-Location client
     flutter clean | Out-Null
-    flutter build web --debug
+    flutter build web --debug --no-wasm-dry-run
     if ($LASTEXITCODE -ne 0) {
         Write-Host " Flutter build failed!" -ForegroundColor Red
         Set-Location ..

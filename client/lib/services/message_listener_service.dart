@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'socket_service.dart';
 import 'signal_service.dart';
 import 'video_conference_service.dart';
+import 'user_profile_service.dart';
 
 /// Global service that listens for all incoming messages (1:1 and group)
 /// and stores them in local storage, regardless of which screen is open.
@@ -240,6 +241,19 @@ class MessageListenerService {
           timestamp: timestamp ?? DateTime.now().toIso8601String(),
           type: itemType,
         );
+
+        // Load sender's profile if not already cached
+        try {
+          final profileService = UserProfileService.instance;
+          if (!profileService.isProfileCached(senderId)) {
+            print("[MESSAGE_LISTENER] Loading profile for group message sender: $senderId");
+            await profileService.loadProfiles([senderId]);
+            print("[MESSAGE_LISTENER] ✓ Sender profile loaded");
+          }
+        } catch (e) {
+          print("[MESSAGE_LISTENER] ⚠ Failed to load sender profile (server may be unavailable): $e");
+          // Don't block message processing if profile loading fails
+        }
 
         // Trigger notification with decrypted content
         _triggerNotification(MessageNotification(

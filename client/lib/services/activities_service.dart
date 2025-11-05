@@ -1,7 +1,8 @@
 import 'signal_service.dart';
 import 'api_service.dart';
-import 'recent_conversations_service.dart';
 import 'user_profile_service.dart';
+import 'storage/sqlite_message_store.dart';
+import 'storage/sqlite_recent_conversations_store.dart';
 import 'dart:convert';
 
 /// Service for aggregating and managing activities
@@ -58,71 +59,54 @@ class ActivitiesService {
     const displayableTypes = {'message', 'file'};
     
     try {
-      // Get recent conversation user IDs from RecentConversationsService
-      var recentConvs = await RecentConversationsService.getRecentConversations();
+      // Use SqliteMessageStore for better performance
+      final messageStore = await SqliteMessageStore.getInstance();
+      final conversationsStore = await SqliteRecentConversationsStore.getInstance();
       
-      // FALLBACK: If RecentConversationsService is empty, get all unique senders from storage
+      // Get recent conversation user IDs from SqliteRecentConversationsStore
+      var recentConvs = await conversationsStore.getRecentConversations(limit: limit);
+      
+      // FALLBACK: If conversations store is empty, get all unique senders from message store
       if (recentConvs.isEmpty) {
-        print('[ACTIVITIES_SERVICE] RecentConversationsService empty, loading from storage...');
+        print('[ACTIVITIES_SERVICE] Conversations store empty, loading from message store...');
         
-        // Get all unique senders from received messages
-        final receivedSenders = await SignalService.instance.decryptedMessagesStore.getAllUniqueSenders();
+        // Get all unique conversation partners from messages (FAST with index!)
+        final uniqueSenders = await messageStore.getAllUniqueConversationPartners();
         
-        // Get all sent message recipients
-        final allSentMessages = await SignalService.instance.sentMessagesStore.loadAllSentMessages();
-        final sentRecipients = allSentMessages
-            .map((msg) => msg['recipientId'] as String?)
-            .where((id) => id != null)
-            .toSet()
-            .cast<String>()
-            .toList();
-        
-        // Combine unique user IDs
-        final allUserIds = <String>{...receivedSenders, ...sentRecipients}.toList();
-        
-        print('[ACTIVITIES_SERVICE] Found ${allUserIds.length} unique conversation partners');
+        print('[ACTIVITIES_SERVICE] Found ${uniqueSenders.length} unique conversation partners');
         
         // Create conversation objects
-        recentConvs = allUserIds.map((userId) => {
+        recentConvs = uniqueSenders.map((userId) => {
           'uuid': userId,
+          'userId': userId,
           'displayName': userId, // Will be enriched later
         }).toList();
       }
       
-      // Get messages for each user
+      // Get messages for each user (FAST with indexed queries!)
       for (final conv in recentConvs) {
-        final userId = conv['uuid'];
+        final userId = conv['userId'] ?? conv['uuid'];
         if (userId == null) continue;
         
-        // Get received messages
-        final receivedMessages = await SignalService.instance.decryptedMessagesStore.getMessagesFromSender(userId);
-        
-        // Get sent messages
-        final sentMessages = await SignalService.instance.loadSentMessages(userId);
-        
-        // Combine and convert sent messages to same format
-        final allMessages = <Map<String, dynamic>>[
-          ...receivedMessages.where((msg) => displayableTypes.contains(msg['type'] ?? 'message')),
-          ...sentMessages.where((msg) => displayableTypes.contains(msg['type'] ?? 'message')).map((msg) => {
-            'itemId': msg['itemId'],
-            'message': msg['message'],
-            'timestamp': msg['timestamp'],
-            'sender': 'self',
-            'type': msg['type'] ?? 'message',
-          }),
-        ];
+        // Get all messages from this conversation (received + sent)
+        // Uses indexed query: SELECT * FROM messages WHERE sender = ? ORDER BY timestamp DESC
+        final allMessages = await messageStore.getMessagesFromConversation(
+          userId,
+          types: displayableTypes.toList(),
+        );
         
         if (allMessages.isEmpty) continue;
         
-        // Sort by timestamp (newest first)
-        allMessages.sort((a, b) {
-          final timeA = DateTime.tryParse(a['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final timeB = DateTime.tryParse(b['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-          return timeB.compareTo(timeA);
-        });
-        
+        // Messages are already sorted by timestamp DESC
         // Get last 3 messages
-        final lastMessages = allMessages.take(3).toList();
+        final lastMessages = allMessages.take(3).map((msg) => {
+          'itemId': msg['itemId'],
+          'message': msg['message'],
+          'timestamp': msg['timestamp'],
+          'sender': msg['direction'] == 'sent' ? 'self' : msg['sender'],
+          'type': msg['type'],
+        }).toList();
+        
         final lastMessageTime = allMessages.isNotEmpty
             ? DateTime.tryParse(allMessages.first['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0)
             : DateTime.fromMillisecondsSinceEpoch(0);

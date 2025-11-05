@@ -2,9 +2,10 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:idb_shim/idb_browser.dart';
 import 'dart:convert';
+import 'storage/sqlite_group_message_store.dart';
 
 /// Store for sent group items (messages, reactions, etc.)
-/// Separate from sentMessagesStore (which is for 1:1 messages)
+/// Now uses SQLite for better performance, with fallback to old storage
 class SentGroupItemsStore {
   static const String _storeName = 'sentGroupItems';
   static const String _keyPrefix = 'sent_group_item_';
@@ -72,6 +73,22 @@ class SentGroupItemsStore {
     String status = 'sending',
     String type = 'message',
   }) async {
+    // Try SQLite first
+    try {
+      final sqliteStore = await SqliteGroupMessageStore.getInstance();
+      await sqliteStore.storeSentGroupItem(
+        itemId: itemId,
+        channelId: channelId,
+        message: message,
+        timestamp: timestamp,
+        type: type,
+      );
+      print('[SENT GROUP ITEMS] ✓ Stored in SQLite: $itemId');
+    } catch (e) {
+      print('[SENT GROUP ITEMS] ⚠ SQLite failed, using fallback: $e');
+    }
+    
+    // Also store in old storage (dual write for safety)
     final key = '$_keyPrefix${channelId}_$itemId';
     final data = jsonEncode({
       'itemId': itemId,
@@ -117,6 +134,35 @@ class SentGroupItemsStore {
 
   /// Load all sent items for a channel
   Future<List<Map<String, dynamic>>> loadSentItems(String channelId) async {
+    // Try SQLite first
+    try {
+      final sqliteStore = await SqliteGroupMessageStore.getInstance();
+      final messages = await sqliteStore.getChannelMessages(channelId);
+      
+      // Filter for sent messages only
+      final sentMessages = messages.where((msg) => msg['direction'] == 'sent').toList();
+      
+      if (sentMessages.isNotEmpty) {
+        print('[SENT GROUP ITEMS] ✓ Loaded ${sentMessages.length} messages from SQLite');
+        
+        // Convert SQLite format to expected format
+        return sentMessages.map((msg) => {
+          'itemId': msg['item_id'],
+          'channelId': msg['channel_id'],
+          'message': msg['message'],
+          'timestamp': msg['timestamp'],
+          'type': msg['type'] ?? 'message',
+          'status': 'sent', // All stored messages are sent
+          'deliveredCount': 0,
+          'readCount': 0,
+          'totalCount': 0,
+        }).toList();
+      }
+    } catch (e) {
+      print('[SENT GROUP ITEMS] ⚠ SQLite failed, using fallback: $e');
+    }
+    
+    // Fallback to old storage
     final items = <Map<String, dynamic>>[];
     final prefix = '$_keyPrefix$channelId';
 
@@ -168,6 +214,7 @@ class SentGroupItemsStore {
       }
     }
 
+    print('[SENT GROUP ITEMS] ✓ Loaded ${items.length} messages from fallback storage');
     return items;
   }
 
