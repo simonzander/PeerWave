@@ -10,11 +10,14 @@ import '../screens/people/people_screen.dart';
 import '../views/video_conference_prejoin_view.dart';
 import '../views/video_conference_view.dart';
 import '../services/api_service.dart';
+import '../services/activities_service.dart';
+import '../services/user_profile_service.dart';
 import '../widgets/theme_widgets.dart';
 import '../widgets/adaptive/adaptive_scaffold.dart';
 import '../widgets/navigation_badge.dart';
-import '../widgets/desktop_navigation_drawer.dart';
+import '../widgets/context_panel.dart';
 import '../config/layout_config.dart';
+import '../theme/app_theme_constants.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -41,6 +44,11 @@ class _DashboardPageState extends State<DashboardPage> {
   // Video conference state
   Map<String, dynamic>? _videoConferenceConfig;
   
+  // People (for context panel)
+  List<Map<String, dynamic>> _recentPeople = [];
+  bool _isLoadingRecentPeople = false;
+  bool _hasLoadedRecentPeople = false;
+  
   // Flag to track if data has been loaded
   bool _hasLoadedInitialData = false;
 
@@ -54,11 +62,11 @@ class _DashboardPageState extends State<DashboardPage> {
       return [
         NavigationDestination(
           icon: NavigationBadge(
-            icon: Icons.notifications_none,
+            icon: Icons.bolt,
             type: NavigationBadgeType.activities,
           ),
           selectedIcon: NavigationBadge(
-            icon: Icons.notifications,
+            icon: Icons.bolt,
             type: NavigationBadgeType.activities,
             selected: true,
           ),
@@ -107,11 +115,11 @@ class _DashboardPageState extends State<DashboardPage> {
     return [
       NavigationDestination(
         icon: NavigationBadge(
-          icon: Icons.notifications_none,
+          icon: Icons.bolt,
           type: NavigationBadgeType.activities,
         ),
         selectedIcon: NavigationBadge(
-          icon: Icons.notifications,
+          icon: Icons.bolt,
           type: NavigationBadgeType.activities,
           selected: true,
         ),
@@ -174,6 +182,26 @@ class _DashboardPageState extends State<DashboardPage> {
     // Don't access context here - wait for didChangeDependencies
   }
   
+  /// Safe picture extraction from API response
+  /// Handles String, Map, JSArray, and null values
+  String _extractPictureData(dynamic picture) {
+    if (picture == null) return '';
+    
+    try {
+      if (picture is String) {
+        return picture;
+      } else if (picture is Map) {
+        final data = picture['data'];
+        if (data is String) return data;
+      }
+      // If it's JSArray or other type, return empty string
+      return '';
+    } catch (e) {
+      print('[DASHBOARD] Error extracting picture: $e');
+      return '';
+    }
+  }
+  
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -181,6 +209,7 @@ class _DashboardPageState extends State<DashboardPage> {
     if (!_hasLoadedInitialData) {
       _hasLoadedInitialData = true;
       _loadChannels();
+      _loadRecentPeople();
     }
   }
 
@@ -214,6 +243,97 @@ class _DashboardPageState extends State<DashboardPage> {
     } catch (e, stackTrace) {
       print('[DASHBOARD] Error loading channels: $e');
       print('[DASHBOARD] Stack trace: $stackTrace');
+    }
+  }
+
+  Future<void> _loadRecentPeople() async {
+    if (_isLoadingRecentPeople || _hasLoadedRecentPeople) return;
+    
+    setState(() {
+      _isLoadingRecentPeople = true;
+    });
+    
+    try {
+      final host = GoRouterState.of(context).extra as Map?;
+      final hostUrl = host?['host'] as String? ?? '';
+      
+      print('[DASHBOARD] Loading recent people...');
+      
+      // Get recent direct conversations from ActivitiesService
+      final conversations = await ActivitiesService.getRecentDirectConversations(
+        limit: 10,
+      );
+      
+      print('[DASHBOARD] Found ${conversations.length} recent conversations');
+      
+      final userMap = <String, Map<String, dynamic>>{};
+      
+      for (final conv in conversations) {
+        final userId = conv['userId'] as String?;
+        if (userId != null && userId.isNotEmpty) {
+          // Try to get profile from UserProfileService first
+          final profile = UserProfileService.instance.getProfile(userId);
+          
+          userMap[userId] = {
+            'uuid': userId,
+            'displayName': profile?['displayName'] ?? conv['displayName'] ?? userId,
+            'atName': profile?['atName'] ?? '',
+            'picture': profile?['picture'] ?? '',
+            'online': false, // TODO: Get real online status
+          };
+        }
+      }
+      
+      // Batch fetch display names from API if still showing UUIDs
+      final userIdsNeedingNames = userMap.entries
+          .where((entry) => entry.value['displayName'] == entry.key)
+          .map((entry) => entry.key)
+          .toList();
+      
+      if (userIdsNeedingNames.isNotEmpty && hostUrl.isNotEmpty) {
+        print('[DASHBOARD] Fetching display names for ${userIdsNeedingNames.length} users from API...');
+        try {
+          ApiService.init();
+          final resp = await ApiService.post(
+            '$hostUrl/client/people/info',
+            data: {'userIds': userIdsNeedingNames},
+          );
+          
+          if (resp.statusCode == 200) {
+            final users = resp.data is List ? resp.data : [];
+            for (final user in users) {
+              final userId = user['uuid'] as String?;
+              if (userId != null && userMap.containsKey(userId)) {
+                userMap[userId]!['displayName'] = user['displayName'] ?? userId;
+                userMap[userId]!['atName'] = user['atName'] ?? '';
+                userMap[userId]!['picture'] = _extractPictureData(user['picture']);
+              }
+            }
+            print('[DASHBOARD] Updated ${users.length} display names from API');
+          }
+        } catch (e) {
+          print('[DASHBOARD] Error fetching display names from API: $e');
+        }
+      }
+      
+      if (!mounted) return;
+      
+      setState(() {
+        _recentPeople = userMap.values.toList();
+        _isLoadingRecentPeople = false;
+        _hasLoadedRecentPeople = true;
+      });
+      
+      print('[DASHBOARD] Loaded ${_recentPeople.length} recent people');
+    } catch (e, stackTrace) {
+      print('[DASHBOARD] Error loading recent people: $e');
+      print('[DASHBOARD] Stack trace: $stackTrace');
+      
+      if (!mounted) return;
+      
+      setState(() {
+        _isLoadingRecentPeople = false;
+      });
     }
   }
 
@@ -299,69 +419,107 @@ class _DashboardPageState extends State<DashboardPage> {
     final layoutType = LayoutConfig.getLayoutType(width);
     
     if (layoutType == LayoutType.desktop) {
-      // Desktop: Use custom drawer with expandable sections
+      // Desktop: 3-column layout (Icon Sidebar + Context Panel + Main View)
       return Scaffold(
         body: Row(
           children: [
-            DesktopNavigationDrawer(
-              selectedIndex: _selectedIndex,
-              onDestinationSelected: _onNavigationSelected,
-              destinations: destinations,
-              host: host ?? '',
-              channels: _channels.map((ch) => {
-                'uuid': ch.uuid,
-                'name': ch.name,
-                'type': ch.type,
-                'isPrivate': ch.isPrivate,
-              }).toList(),
-              onChannelTap: _onChannelTap,
-              onDirectMessageTap: _onDirectMessageTap,
-              onNavigateToPeople: () {
-                setState(() {
-                  _selectedIndex = 1; // Navigate to People tab (index 1 on desktop)
-                });
-              },
-              onNavigateToMessagesView: () {
-                setState(() {
-                  _selectedIndex = 4; // Navigate to Messages list view (index 4 on desktop)
-                  _activeDirectMessageUuid = null;
-                  _activeDirectMessageDisplayName = null;
-                });
-              },
-              onNavigateToChannelsView: () {
-                setState(() {
-                  _selectedIndex = 3; // Navigate to Channels list view (index 3 on desktop)
-                  _activeChannelUuid = null;
-                  _activeChannelName = null;
-                  _activeChannelType = null;
-                });
-              },
-              trailing: Column(
-                mainAxisSize: MainAxisSize.min,
+            // 1. Narrow Icon-Only Sidebar (~60px)
+            Container(
+              width: 60,
+              color: AppThemeConstants.sidebarBackground,
+              child: Column(
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.settings_outlined),
-                    onPressed: () => GoRouter.of(context).go('/app/settings'),
+                  const SizedBox(height: 12),
+                  // Activity Icon
+                  _buildIconButton(
+                    icon: Icons.bolt,
+                    isSelected: _selectedIndex == 0,
+                    onTap: () => _onNavigationSelected(0),
+                    tooltip: 'Activity',
+                  ),
+                  const SizedBox(height: 4),
+                  // People Icon
+                  _buildIconButton(
+                    icon: Icons.people,
+                    isSelected: _selectedIndex == 1,
+                    onTap: () => _onNavigationSelected(1),
+                    tooltip: 'People',
+                  ),
+                  const SizedBox(height: 4),
+                  // Files Icon
+                  _buildIconButton(
+                    icon: Icons.folder,
+                    isSelected: _selectedIndex == 2,
+                    onTap: () => _onNavigationSelected(2),
+                    tooltip: 'Files',
+                  ),
+                  const SizedBox(height: 4),
+                  // Channels Icon
+                  _buildIconButton(
+                    icon: Icons.tag,
+                    isSelected: _selectedIndex == 3,
+                    onTap: () => _onNavigationSelected(3),
+                    tooltip: 'Channels',
+                  ),
+                  const SizedBox(height: 4),
+                  // Messages Icon
+                  _buildIconButton(
+                    icon: Icons.message,
+                    isSelected: _selectedIndex == 4,
+                    onTap: () => _onNavigationSelected(4),
+                    tooltip: 'Messages',
+                  ),
+                  const Spacer(),
+                  // Settings Icon at bottom
+                  _buildIconButton(
+                    icon: Icons.settings,
+                    isSelected: false,
+                    onTap: () => GoRouter.of(context).go('/app/settings'),
                     tooltip: 'Settings',
                   ),
+                  const SizedBox(height: 12),
                 ],
               ),
             ),
+            
+            // 2. Context Panel (~280px) - Shows different content based on selection
+            if (_shouldShowContextPanel())
+              ContextPanel(
+                type: _getContextPanelType(),
+                host: host ?? '',
+                onChannelTap: _onChannelTap,
+                onMessageTap: _onDirectMessageTap,
+                onNavigateToPeople: () {
+                  setState(() {
+                    _selectedIndex = 1; // Navigate to People tab
+                  });
+                },
+                onCreateChannel: _loadChannels,
+                recentPeople: _recentPeople,
+                favoritePeople: [], // TODO: Implement favorites
+                isLoadingPeople: _isLoadingRecentPeople,
+              ),
+            
+            // 3. Main View (rest of space)
             Expanded(
-              child: Column(
-                children: [
-                  // AppBar for desktop
-                  PreferredSize(
-                    preferredSize: const Size.fromHeight(64),
-                    child: AppBar(
-                      title: const Text('PeerWave'),
-                      centerTitle: true,
-                      elevation: 1,
-                      automaticallyImplyLeading: false,
+              child: Container(
+                color: AppThemeConstants.mainViewBackground,
+                child: Column(
+                  children: [
+                    // AppBar for desktop
+                    PreferredSize(
+                      preferredSize: const Size.fromHeight(64),
+                      child: AppBar(
+                        title: Text(_getAppBarTitle()),
+                        centerTitle: false,
+                        elevation: 0,
+                        automaticallyImplyLeading: false,
+                        backgroundColor: AppThemeConstants.mainViewBackground,
+                      ),
                     ),
-                  ),
-                  Expanded(child: body),
-                ],
+                    Expanded(child: body),
+                  ],
+                ),
               ),
             ),
           ],
@@ -681,9 +839,13 @@ class _DashboardPageState extends State<DashboardPage> {
         }
 
       case 'people':
+        final width = MediaQuery.of(context).size.width;
+        final layoutType = LayoutConfig.getLayoutType(width);
+        
         return PeopleScreen(
           host: host,
           onMessageTap: _onDirectMessageTap,
+          showRecentSection: layoutType != LayoutType.desktop, // Hide on desktop, show on mobile/tablet
         );
 
       case 'files':
@@ -774,5 +936,94 @@ class _EmptyStateWidget extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+// Helper extension for _DashboardPageState
+extension _DashboardPageHelpers on _DashboardPageState {
+  /// Build icon button for sidebar
+  Widget _buildIconButton({
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+    required String tooltip,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: isSelected 
+                ? colorScheme.primary.withOpacity(0.15)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: isSelected
+                ? Border.all(color: colorScheme.primary, width: 2)
+                : null,
+          ),
+          child: Icon(
+            icon,
+            color: isSelected 
+                ? colorScheme.primary
+                : AppThemeConstants.textSecondary,
+            size: 24,
+          ),
+        ),
+      ),
+    );
+  }
+  
+  /// Get AppBar title based on current selection
+  String _getAppBarTitle() {
+    switch (_selectedIndex) {
+      case 0:
+        return 'Activity';
+      case 1:
+        return 'People';
+      case 2:
+        return 'Files';
+      case 3:
+        if (_activeChannelName != null) {
+          return '# $_activeChannelName';
+        }
+        return 'Channels';
+      case 4:
+        if (_activeDirectMessageDisplayName != null) {
+          return _activeDirectMessageDisplayName!;
+        }
+        return 'Messages';
+      default:
+        return 'PeerWave';
+    }
+  }
+  
+  /// Determine if context panel should be shown
+  bool _shouldShowContextPanel() {
+    // Show for Channels, Messages, and optionally People/Files
+    return _selectedIndex == 1 || // People (optional, currently placeholder)
+           _selectedIndex == 3 || // Channels
+           _selectedIndex == 4;   // Messages
+  }
+  
+  /// Get the type of context panel to display
+  ContextPanelType _getContextPanelType() {
+    switch (_selectedIndex) {
+      case 1:
+        return ContextPanelType.people; // Currently placeholder
+      case 2:
+        return ContextPanelType.none; // Files - no context panel for now
+      case 3:
+        return ContextPanelType.channels;
+      case 4:
+        return ContextPanelType.messages;
+      default:
+        return ContextPanelType.none;
+    }
   }
 }

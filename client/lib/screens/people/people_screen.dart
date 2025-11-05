@@ -14,14 +14,17 @@ import '../../widgets/user_avatar.dart';
 /// - Shows 10 random users without conversations
 /// - Grid card layout with profile picture, name, online status, atName
 /// - Load More button for 20 additional random users
+/// - Responsive: showRecentSection controls visibility of "Recent Conversations"
 class PeopleScreen extends StatefulWidget {
   final String host;
   final Function(String uuid, String displayName) onMessageTap;
+  final bool showRecentSection;
 
   const PeopleScreen({
     Key? key,
     required this.host,
     required this.onMessageTap,
+    this.showRecentSection = true,
   }) : super(key: key);
 
   @override
@@ -58,6 +61,26 @@ class _PeopleScreenState extends State<PeopleScreen> {
     super.dispose();
   }
 
+  /// Safe picture extraction from API response
+  /// Handles String, Map, JSArray, and null values
+  String _extractPictureData(dynamic picture) {
+    if (picture == null) return '';
+    
+    try {
+      if (picture is String) {
+        return picture;
+      } else if (picture is Map) {
+        final data = picture['data'];
+        if (data is String) return data;
+      }
+      // If it's JSArray or other type, return empty string
+      return '';
+    } catch (e) {
+      print('[PEOPLE_SCREEN] Error extracting picture: $e');
+      return '';
+    }
+  }
+
   void _onSearchChanged() {
     // Debounce search to avoid too many API calls
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
@@ -86,6 +109,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
   Future<void> _loadRecentConversationUsers() async {
     if (_isLoadingRecent) return;
     
+    if (!mounted) return;
+    
     setState(() => _isLoadingRecent = true);
     
     try {
@@ -103,16 +128,28 @@ class _PeopleScreenState extends State<PeopleScreen> {
         final displayName = conv['displayName'];
         
         if (userId != null && userId.isNotEmpty) {
-          // Try to get full profile from UserProfileService
+          // FIRST: Try to get full profile from UserProfileService cache
           final profile = UserProfileService.instance.getProfile(userId);
           
-          userMap[userId] = {
-            'uuid': userId,
-            'displayName': displayName ?? profile?['displayName'] ?? 'Unknown',
-            'atName': profile?['atName'] ?? '',
-            'picture': conv['picture'] ?? profile?['picture'] ?? '',
-            'isOnline': false, // TODO: Get online status from server
-          };
+          if (profile != null) {
+            // Use cached profile data
+            userMap[userId] = {
+              'uuid': userId,
+              'displayName': profile['displayName'] ?? userId,
+              'atName': profile['atName'] ?? '',
+              'picture': profile['picture'] ?? '',
+              'isOnline': false, // TODO: Get online status from server
+            };
+          } else {
+            // Profile not in cache, use conversation data
+            userMap[userId] = {
+              'uuid': userId,
+              'displayName': displayName ?? userId,
+              'atName': '',
+              'picture': conv['picture'] ?? '',
+              'isOnline': false,
+            };
+          }
         }
       }
       
@@ -167,18 +204,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                 if (userId != null && userMap.containsKey(userId)) {
                   userMap[userId]!['displayName'] = user['displayName'] ?? userId;
                   userMap[userId]!['atName'] = user['atName'] ?? '';
-                  
-                  // Extract picture as String
-                  String? pictureData;
-                  final picture = user['picture'];
-                  if (picture is String) {
-                    pictureData = picture;
-                  } else if (picture is Map && picture['data'] != null) {
-                    pictureData = picture['data'] as String?;
-                  }
-                  if (pictureData != null) {
-                    userMap[userId]!['picture'] = pictureData;
-                  }
+                  userMap[userId]!['picture'] = _extractPictureData(user['picture']);
                 }
               }
               print('[PEOPLE_SCREEN] Updated ${users.length} display names from API');
@@ -206,6 +232,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
   /// Load random users (excluding those with conversations)
   Future<void> _loadRandomUsers({bool reset = false}) async {
     if (_isLoadingRandom) return;
+    
+    if (!mounted) return;
     
     setState(() => _isLoadingRandom = true);
     
@@ -236,12 +264,19 @@ class _PeopleScreenState extends State<PeopleScreen> {
               final uuid = user['uuid'] as String?;
               return uuid != null && !recentUserUuids.contains(uuid);
             })
-            .map((user) => {
-              'uuid': user['uuid'] as String,
-              'displayName': user['displayName'] ?? user['username'] ?? 'Unknown',
-              'atName': user['atName'] ?? '',
-              'picture': user['picture'] ?? '',
-              'isOnline': false, // TODO: Get online status
+            .map((user) {
+              final userId = user['uuid'] as String;
+              
+              // Check UserProfileService cache first
+              final profile = UserProfileService.instance.getProfile(userId);
+              
+              return {
+                'uuid': userId,
+                'displayName': profile?['displayName'] ?? user['displayName'] ?? user['username'] ?? 'Unknown',
+                'atName': profile?['atName'] ?? user['atName'] ?? '',
+                'picture': profile?['picture'] ?? _extractPictureData(user['picture']),
+                'isOnline': false, // TODO: Get online status
+              };
             })
             .toList();
         
@@ -275,6 +310,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
   /// Perform search with displayName and atName filter
   Future<void> _performSearch(String query) async {
+    if (!mounted) return;
+    
     setState(() {
       _searchQuery = query;
       _isSearching = true;
@@ -299,14 +336,23 @@ class _PeopleScreenState extends State<PeopleScreen> {
               final atName = (user['atName'] ?? '').toString().toLowerCase();
               return displayName.contains(queryLower) || atName.contains(queryLower);
             })
-            .map((user) => {
-              'uuid': user['uuid'] as String,
-              'displayName': user['displayName'] ?? user['username'] ?? 'Unknown',
-              'atName': user['atName'] ?? '',
-              'picture': user['picture'] ?? '',
-              'isOnline': false, // TODO: Get online status
+            .map((user) {
+              final userId = user['uuid'] as String;
+              
+              // Check UserProfileService cache first
+              final profile = UserProfileService.instance.getProfile(userId);
+              
+              return {
+                'uuid': userId,
+                'displayName': profile?['displayName'] ?? user['displayName'] ?? user['username'] ?? 'Unknown',
+                'atName': profile?['atName'] ?? user['atName'] ?? '',
+                'picture': profile?['picture'] ?? _extractPictureData(user['picture']),
+                'isOnline': false, // TODO: Get online status
+              };
             })
             .toList();
+        
+        if (!mounted) return;
         
         setState(() {
           _searchResults = filtered;
@@ -317,6 +363,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
       }
     } catch (e) {
       print('[PEOPLE_SCREEN] Search error: $e');
+      if (!mounted) return;
+      
       setState(() => _isSearching = false);
     }
   }
@@ -427,7 +475,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     return CustomScrollView(
       slivers: [
         // Section headers (only when not searching)
-        if (_searchQuery.isEmpty && _recentConversationUsers.isNotEmpty) ...[
+        if (_searchQuery.isEmpty && widget.showRecentSection && _recentConversationUsers.isNotEmpty) ...[
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
@@ -543,7 +591,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   }
 }
 
-/// User Card Widget
+/// User Card Widget - Badge/Work Card Style
 class _UserCard extends StatelessWidget {
   final Map<String, dynamic> user;
   final ColorScheme colorScheme;
@@ -560,87 +608,111 @@ class _UserCard extends StatelessWidget {
     final displayName = user['displayName'] as String? ?? 'Unknown';
     final atName = user['atName'] as String? ?? '';
     final isOnline = user['isOnline'] as bool? ?? false;
+    final userId = user['uuid'] as String? ?? '';
     
     return Container(
       decoration: BoxDecoration(
-        color: colorScheme.onInverseSurface, // Dunklerer Grauton
+        color: colorScheme.onInverseSurface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: colorScheme.outlineVariant, // Grüne Umrandung
+          color: colorScheme.outlineVariant,
           width: 2,
         ),
       ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Profile Picture with Online Status
-              SizedBox(
-                width: 80,
-                height: 80,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    UserAvatar(
-                      userId: user['uuid'] as String,
-                      size: 80,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Picture at top (takes ~60% of card height)
+            Expanded(
+              flex: 3,
+              child: Stack(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(10),
+                        topRight: Radius.circular(10),
+                      ),
                     ),
-                    if (isOnline)
-                      Positioned(
-                        right: 0,
-                        bottom: 0,
-                        child: Container(
-                          width: 20,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            color: Colors.green,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: colorScheme.surface,
-                              width: 2,
-                            ),
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(10),
+                        topRight: Radius.circular(10),
+                      ),
+                      child: SquareUserAvatar(
+                        userId: userId,
+                        displayName: displayName,
+                        pictureData: user['picture'] as String?,
+                        size: double.infinity,
+                      ),
+                    ),
+                  ),
+                  // Online status indicator
+                  if (isOnline)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: Colors.green,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: colorScheme.surface,
+                            width: 2,
                           ),
                         ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            
+            // Name section at bottom (~40% of card height)
+            Expanded(
+              flex: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Display Name
+                    Text(
+                      displayName,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.onSurface,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                    
+                    const SizedBox(height: 4),
+                    
+                    // @username
+                    if (atName.isNotEmpty)
+                      Text(
+                        '@$atName',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
                       ),
                   ],
                 ),
               ),
-              
-              const SizedBox(height: 12),
-              
-              // Display Name
-              Text(
-                displayName,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onSurface,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-              ),
-              
-              const SizedBox(height: 4),
-              
-              // @username
-              if (atName.isNotEmpty)
-                Text(
-                  '@$atName',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

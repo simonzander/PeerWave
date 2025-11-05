@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'app_theme_constants.dart';
 
 /// Material 3 Theme Generator für PeerWave
 /// 
-/// Erstellt vollständige ThemeData-Objekte mit allen Component Themes
-/// und Material 3 Design Tokens (Elevation, Shape, Typography).
-/// 
-/// Verwendet Google Fonts für eine moderne, professionelle Typografie.
+/// Erstellt vollständige ThemeData-Objekte mit PeerWave Design System:
+/// - Spacing: 6 / 12 / 20 / 26
+/// - Radius: 14px Standard
+/// - Animationen: 150ms / 250ms / 350ms
+/// - Icons: Filled Style
+/// - Farben: Tonwert-Trennung statt Linien
 class AppTheme {
   // Private constructor - nur statische Methoden
   AppTheme._();
@@ -99,8 +102,8 @@ class AppTheme {
       iconTheme: _iconTheme(scheme),
       listTileTheme: _listTileTheme(scheme),
       
-      // Scaffold
-      scaffoldBackgroundColor: scheme.surface,
+      // Scaffold (Main View Background)
+      scaffoldBackgroundColor: AppThemeConstants.mainViewBackground,
       
       // Splash & Highlight
       splashFactory: InkRipple.splashFactory,
@@ -140,8 +143,8 @@ class AppTheme {
       iconTheme: _iconTheme(scheme),
       listTileTheme: _listTileTheme(scheme),
       
-      // Scaffold
-      scaffoldBackgroundColor: scheme.surface,
+      // Scaffold (Main View Background)
+      scaffoldBackgroundColor: AppThemeConstants.mainViewBackground,
       
       // Splash & Highlight
       splashFactory: InkRipple.splashFactory,
@@ -470,12 +473,15 @@ class AppTheme {
       style: ElevatedButton.styleFrom(
         backgroundColor: scheme.surfaceContainerHighest,
         foregroundColor: scheme.primary,
-        elevation: 1,
+        elevation: AppThemeConstants.elevationHover,
         shadowColor: scheme.shadow,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: AppThemeConstants.borderRadiusStandard,
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+        padding: EdgeInsets.symmetric(
+          horizontal: AppThemeConstants.spacingMd,
+          vertical: AppThemeConstants.spacingSm,
+        ),
         minimumSize: const Size(64, 40),
       ),
     );
@@ -486,11 +492,14 @@ class AppTheme {
       style: FilledButton.styleFrom(
         backgroundColor: scheme.primary,
         foregroundColor: scheme.onPrimary,
-        elevation: 0,
+        elevation: AppThemeConstants.elevationNone,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: AppThemeConstants.borderRadiusStandard,
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+        padding: EdgeInsets.symmetric(
+          horizontal: AppThemeConstants.spacingMd,
+          vertical: AppThemeConstants.spacingSm,
+        ),
         minimumSize: const Size(64, 40),
       ),
     );
@@ -500,12 +509,18 @@ class AppTheme {
     return OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         foregroundColor: scheme.primary,
-        side: BorderSide(color: scheme.outline),
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+        side: BorderSide(
+          color: scheme.outline,
+          width: AppThemeConstants.borderWidthStandard,
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+        elevation: AppThemeConstants.elevationNone,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppThemeConstants.borderRadiusStandard,
+        ),
+        padding: EdgeInsets.symmetric(
+          horizontal: AppThemeConstants.spacingMd,
+          vertical: AppThemeConstants.spacingSm,
+        ),
         minimumSize: const Size(64, 40),
       ),
     );
@@ -515,11 +530,14 @@ class AppTheme {
     return TextButtonThemeData(
       style: TextButton.styleFrom(
         foregroundColor: scheme.primary,
-        elevation: 0,
+        elevation: AppThemeConstants.elevationNone,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: AppThemeConstants.borderRadiusStandard,
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: EdgeInsets.symmetric(
+          horizontal: AppThemeConstants.spacingSm,
+          vertical: AppThemeConstants.spacingSm,
+        ),
         minimumSize: const Size(64, 40),
       ),
     );
@@ -540,30 +558,30 @@ class AppTheme {
   static InputDecorationTheme _inputDecorationTheme(ColorScheme scheme) {
     return InputDecorationTheme(
       filled: true,
-      fillColor: scheme.surfaceContainerHighest,
+      fillColor: AppThemeConstants.inputBackground,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppThemeConstants.borderRadiusStandard,
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppThemeConstants.borderRadiusStandard,
         borderSide: BorderSide.none,
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: scheme.primary, width: 2),
+        borderRadius: AppThemeConstants.borderRadiusStandard,
+        borderSide: BorderSide(color: scheme.primary, width: AppThemeConstants.borderWidthStandard),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: scheme.error, width: 1),
+        borderRadius: AppThemeConstants.borderRadiusStandard,
+        borderSide: BorderSide(color: scheme.error, width: AppThemeConstants.borderWidthStandard),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: scheme.error, width: 2),
+        borderRadius: AppThemeConstants.borderRadiusStandard,
+        borderSide: BorderSide(color: scheme.error, width: AppThemeConstants.borderWidthThick),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      hintStyle: TextStyle(color: scheme.onSurfaceVariant),
-      labelStyle: TextStyle(color: scheme.onSurfaceVariant),
+      contentPadding: AppThemeConstants.paddingSm,
+      hintStyle: const TextStyle(color: AppThemeConstants.textSecondary),
+      labelStyle: const TextStyle(color: AppThemeConstants.textSecondary),
       floatingLabelStyle: TextStyle(color: scheme.primary),
     );
   }
@@ -618,24 +636,23 @@ class AppTheme {
 
   static ChipThemeData _chipTheme(ColorScheme scheme) {
     return ChipThemeData(
-      backgroundColor: scheme.surfaceContainerHighest,
-      deleteIconColor: scheme.onSurfaceVariant,
+      backgroundColor: AppThemeConstants.inputBackground,
+      deleteIconColor: AppThemeConstants.textSecondary,
       disabledColor: scheme.onSurface.withOpacity(0.12),
       selectedColor: scheme.secondaryContainer,
       secondarySelectedColor: scheme.secondaryContainer,
-      labelPadding: const EdgeInsets.symmetric(horizontal: 8),
-      padding: const EdgeInsets.all(4),
+      labelPadding: EdgeInsets.symmetric(horizontal: AppThemeConstants.spacingXs),
+      padding: EdgeInsets.all(AppThemeConstants.spacingXs),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppThemeConstants.radiusSmall), // 8px
       ),
-      labelStyle: _getFontStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w400,
-        color: scheme.onSurfaceVariant,
+      labelStyle: const TextStyle(
+        fontSize: AppThemeConstants.fontSizeCaption,
+        color: AppThemeConstants.textPrimary,
       ),
       secondaryLabelStyle: _getFontStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w400,
+        fontSize: AppThemeConstants.fontSizeCaption,
+        fontWeight: AppThemeConstants.fontWeightCaption,
         color: scheme.onSecondaryContainer,
       ),
       brightness: scheme.brightness,
@@ -644,9 +661,11 @@ class AppTheme {
 
   static DividerThemeData _dividerTheme(ColorScheme scheme) {
     return DividerThemeData(
-      color: scheme.outlineVariant,
+      color: scheme.outlineVariant.withOpacity(0.1), // Sehr subtil
       thickness: 1,
       space: 1,
+      indent: 0,
+      endIndent: 0,
     );
   }
 
@@ -659,15 +678,17 @@ class AppTheme {
 
   static ListTileThemeData _listTileTheme(ColorScheme scheme) {
     return ListTileThemeData(
-      tileColor: scheme.surface,
-      selectedTileColor: scheme.secondaryContainer.withOpacity(0.3),
-      selectedColor: scheme.onSecondaryContainer,
-      iconColor: scheme.onSurfaceVariant,
-      textColor: scheme.onSurface,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      tileColor: Colors.transparent,
+      selectedTileColor: AppThemeConstants.activeChannelBackground,
+      selectedColor: scheme.primary,
+      iconColor: AppThemeConstants.textPrimary,
+      textColor: AppThemeConstants.textPrimary,
+      contentPadding: AppThemeConstants.paddingHorizontalSm,
       minLeadingWidth: 40,
+      dense: true,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppThemeConstants.borderRadiusStandard,
+        side: BorderSide.none,
       ),
     );
   }

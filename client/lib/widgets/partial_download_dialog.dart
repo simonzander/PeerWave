@@ -44,18 +44,11 @@ class PartialDownloadDialog extends StatelessWidget {
     }
     
     return AlertDialog(
-      title: Row(
-        children: [
-          Icon(
-            warningIcon,
-            color: warningColor,
-            size: 28,
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Text('Incomplete File'),
-          ),
-        ],
+      title: const Text('Incomplete File'),
+      icon: Icon(
+        warningIcon,
+        color: warningColor,
+        size: 48,
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,

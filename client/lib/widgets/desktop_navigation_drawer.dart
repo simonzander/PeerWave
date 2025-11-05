@@ -5,7 +5,9 @@ import '../services/signal_service.dart';
 import '../services/api_service.dart';
 import '../models/role.dart';
 import '../providers/unread_messages_provider.dart';
-import '../widgets/unread_badge.dart';
+import '../providers/navigation_state_provider.dart';
+import 'animated_widgets.dart';
+import '../theme/app_theme_constants.dart';
 import 'package:dio/dio.dart';
 
 /// Desktop Navigation Drawer with expandable Messages and Channels sections
@@ -296,8 +298,8 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
     // Limit to 10 most recent for sidebar display
     var conversationsList = _recentConversations.take(10).toList();
 
-    return Consumer<UnreadMessagesProvider>(
-      builder: (context, unreadProvider, _) {
+    return Consumer2<UnreadMessagesProvider, NavigationStateProvider>(
+      builder: (context, unreadProvider, navProvider, _) {
         final totalUnread = unreadProvider.totalDirectMessageUnread;
 
         return Column(
@@ -323,11 +325,14 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
                 final uuid = dm['uuid'] ?? '';
                 final picture = dm['picture'] as String?;
                 final unreadCount = unreadProvider.getDirectMessageUnreadCount(uuid);
+                final isSelected = navProvider.isDirectMessageSelected(uuid);
                 
                 return Padding(
-                  padding: const EdgeInsets.only(left: 28, right: 12, top: 2, bottom: 2),
-                  child: ListTile(
-                    dense: true,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: AppThemeConstants.spacingSm,
+                    vertical: 2,
+                  ),
+                  child: AnimatedSelectionTile(
                     leading: SmallUserAvatar(
                       userId: uuid,
                       displayName: displayName,
@@ -335,16 +340,16 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
                     ),
                     title: Text(
                       displayName,
-                      style: const TextStyle(fontSize: 14),
+                      style: const TextStyle(
+                        fontSize: AppThemeConstants.fontSizeBody,
+                        color: AppThemeConstants.textPrimary,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
-                    trailing: unreadCount > 0
-                        ? UnreadBadge(count: unreadCount, isSmall: true)
-                        : null,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    trailing: AnimatedBadge(count: unreadCount, isSmall: true),
+                    selected: isSelected,
                     onTap: () {
+                      navProvider.selectDirectMessage(uuid);
                       if (widget.onDirectMessageTap != null) {
                         widget.onDirectMessageTap!(uuid, displayName);
                       }
@@ -361,8 +366,8 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
   Widget _buildChannelsSection() {
     var channelsList = List<Map<String, dynamic>>.from(widget.channels ?? []);
 
-    return Consumer<UnreadMessagesProvider>(
-      builder: (context, unreadProvider, _) {
+    return Consumer2<UnreadMessagesProvider, NavigationStateProvider>(
+      builder: (context, unreadProvider, navProvider, _) {
         final totalUnread = unreadProvider.totalChannelUnread;
 
         return Column(
@@ -389,6 +394,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
                 final type = channel['type'] ?? 'webrtc';
                 final isPrivate = channel['isPrivate'] ?? false;
                 final unreadCount = unreadProvider.getChannelUnreadCount(uuid);
+                final isSelected = navProvider.isChannelSelected(uuid);
                 
                 // Icon based on channel type
                 Widget leadingIcon;
@@ -402,33 +408,24 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
                 }
                 
                 return Padding(
-                  padding: const EdgeInsets.only(left: 28, right: 12, top: 2, bottom: 2),
-                  child: ListTile(
-                    dense: true,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: AppThemeConstants.spacingSm,
+                    vertical: 2,
+                  ),
+                  child: AnimatedSelectionTile(
                     leading: leadingIcon,
-                    title: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            name,
-                            style: const TextStyle(fontSize: 14),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (isPrivate)
-                          const Padding(
-                            padding: EdgeInsets.only(left: 4),
-                            child: Icon(Icons.lock, size: 14, color: Colors.grey),
-                          ),
-                      ],
+                    title: Text(
+                      isPrivate ? '🔒 $name' : name,
+                      style: const TextStyle(
+                        fontSize: AppThemeConstants.fontSizeBody,
+                        color: AppThemeConstants.textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    trailing: unreadCount > 0
-                        ? UnreadBadge(count: unreadCount, isSmall: true)
-                        : null,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    trailing: AnimatedBadge(count: unreadCount, isSmall: true),
+                    selected: isSelected,
                     onTap: () {
+                      navProvider.selectChannel(uuid, type);
                       if (widget.onChannelTap != null) {
                         widget.onChannelTap!(uuid, name, type);
                       }
@@ -442,23 +439,6 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
     );
   }
 
-  Widget _buildServerSection() {
-    return Column(
-      children: [
-        _buildExpandableHeader(
-          icon: Icons.dns_outlined,
-          selectedIcon: Icons.dns,
-          label: 'Server',
-          badge: 0,
-          expanded: false,
-          onTap: () {
-            // Navigate to server overview
-          },
-        ),
-      ],
-    );
-  }
-
   Widget _buildExpandableHeader({
     required IconData icon,
     required IconData selectedIcon,
@@ -469,54 +449,54 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
     VoidCallback? onToggle,
     VoidCallback? onAdd,
   }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      child: ListTile(
-        leading: Icon(icon),
-        title: Row(
-          children: [
-            Expanded(child: Text(label)),
-            if (badge > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: colorScheme.error,
-                  borderRadius: BorderRadius.circular(12),
-                ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(icon, size: 24, color: AppThemeConstants.textPrimary),
+              const SizedBox(width: 12),
+              Expanded(
                 child: Text(
-                  badge > 99 ? '99+' : badge.toString(),
-                  style: TextStyle(
-                    color: colorScheme.onError,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
+                  label,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: AppThemeConstants.textPrimary,
                   ),
                 ),
               ),
-            if (onAdd != null) ...[
+              if (badge > 0) ...[
+                const SizedBox(width: 8),
+                AnimatedBadge(count: badge, isSmall: false),
+              ],
+              if (onAdd != null) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.add, size: 18),
+                  onPressed: onAdd,
+                  tooltip: 'Add',
+                  visualDensity: VisualDensity.compact,
+                  color: AppThemeConstants.textSecondary,
+                ),
+              ],
               const SizedBox(width: 4),
               IconButton(
-                icon: const Icon(Icons.add, size: 18),
-                onPressed: onAdd,
-                tooltip: 'Add',
+                icon: Icon(
+                  expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                  size: 20,
+                ),
+                onPressed: onToggle,
+                tooltip: expanded ? 'Collapse' : 'Expand',
                 visualDensity: VisualDensity.compact,
+                color: AppThemeConstants.textSecondary,
               ),
             ],
-          ],
-        ),
-        trailing: IconButton(
-          icon: Icon(
-            expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-            size: 20,
           ),
-          onPressed: onToggle,
-          tooltip: expanded ? 'Collapse' : 'Expand',
         ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        onTap: onTap,
       ),
     );
   }

@@ -3,7 +3,9 @@ import '../../services/signal_service.dart';
 import '../../services/api_service.dart';
 import '../../widgets/user_avatar.dart';
 import '../../providers/unread_messages_provider.dart';
-import '../../widgets/unread_badge.dart';
+import '../../providers/navigation_state_provider.dart';
+import '../../widgets/animated_widgets.dart';
+import '../../theme/app_theme_constants.dart';
 import 'package:provider/provider.dart';
 
 /// Messages List View - Shows recent 1:1 conversations
@@ -262,30 +264,35 @@ class _MessagesListViewState extends State<MessagesListView> {
     final lastMessageTime = conv['lastMessageTime'] as String? ?? '';
     final userId = conv['userId'] as String;
 
-    return Consumer<UnreadMessagesProvider>(
-      builder: (context, unreadProvider, _) {
+    return Consumer2<UnreadMessagesProvider, NavigationStateProvider>(
+      builder: (context, unreadProvider, navProvider, _) {
         final unreadCount = unreadProvider.getDirectMessageUnreadCount(userId);
+        final isSelected = navProvider.isDirectMessageSelected(userId);
         
-        return ListTile(
+        return AnimatedSelectionTile(
           leading: UserAvatar(
             userId: userId,
             displayName: displayName,
             pictureData: picture,
-            size: 48,
+            size: 40,
           ),
           title: Text(
             displayName,
-            style: const TextStyle(fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+              color: AppThemeConstants.textPrimary,
+            ),
           ),
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               if (atName.isNotEmpty)
                 Text(
                   '@$atName',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
+                  style: const TextStyle(
+                    fontSize: AppThemeConstants.fontSizeCaption,
+                    color: AppThemeConstants.textSecondary,
                   ),
                 ),
               Text(
@@ -294,26 +301,24 @@ class _MessagesListViewState extends State<MessagesListView> {
                     : lastMessage,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: AppThemeConstants.fontSizeCaption,
+                  color: AppThemeConstants.textSecondary,
+                ),
               ),
-            ],
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (unreadCount > 0) ...[
-                UnreadBadge(count: unreadCount, isSmall: true),
-                const SizedBox(width: 8),
-              ],
               Text(
                 _formatTime(lastMessageTime),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: AppThemeConstants.textSecondary,
                 ),
               ),
             ],
           ),
+          trailing: AnimatedBadge(count: unreadCount, isSmall: true),
+          selected: isSelected,
           onTap: () {
+            navProvider.selectDirectMessage(userId);
             widget.onMessageTap(userId, displayName);
           },
         );

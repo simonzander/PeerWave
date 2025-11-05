@@ -197,3 +197,143 @@ class LargeUserAvatar extends StatelessWidget {
     );
   }
 }
+
+/// Square avatar with rounded corners - for context panels and lists
+class SquareUserAvatar extends StatelessWidget {
+  final String? userId;
+  final String? displayName;
+  final String? pictureData;
+  final double size;
+  final bool showOnlineStatus;
+  final bool isOnline;
+
+  const SquareUserAvatar({
+    Key? key,
+    this.userId,
+    this.displayName,
+    this.pictureData,
+    this.size = 40,
+    this.showOnlineStatus = false,
+    this.isOnline = false,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    // Try to get profile from service if userId is provided
+    String? effectiveDisplayName = displayName;
+    String? effectivePicture = pictureData;
+    
+    final userIdValue = userId;
+    if (userIdValue != null && userIdValue.isNotEmpty) {
+      final profile = UserProfileService.instance.getProfile(userIdValue);
+      if (profile != null) {
+        effectiveDisplayName ??= profile['displayName'];
+        effectivePicture ??= profile['picture'];
+      }
+    }
+    
+    // Fallback to userId if no displayName
+    effectiveDisplayName ??= userId ?? 'U';
+    
+    // Get first letter for initials
+    final initials = _getInitials(effectiveDisplayName);
+    
+    // Parse picture data
+    ImageProvider? imageProvider;
+    if (effectivePicture != null && effectivePicture.isNotEmpty) {
+      try {
+        if (effectivePicture.startsWith('data:image/')) {
+          // Base64 encoded image
+          final base64Data = effectivePicture.split(',').last;
+          final bytes = base64Decode(base64Data);
+          imageProvider = MemoryImage(bytes);
+        } else if (effectivePicture.startsWith('http://') || effectivePicture.startsWith('https://')) {
+          // URL
+          imageProvider = NetworkImage(effectivePicture);
+        }
+      } catch (e) {
+        print('[SquareUserAvatar] Error parsing picture: $e');
+      }
+    }
+    
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: imageProvider == null 
+                  ? _getColorForUser(effectiveDisplayName)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(8), // Theme's standard rounded corners
+              image: imageProvider != null 
+                  ? DecorationImage(
+                      image: imageProvider,
+                      fit: BoxFit.cover,
+                    )
+                  : null,
+            ),
+            child: imageProvider == null
+                ? Center(
+                    child: Text(
+                      initials,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: size / 2.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  )
+                : null,
+          ),
+          // Online status indicator
+          if (showOnlineStatus)
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: Container(
+                width: size / 4,
+                height: size / 4,
+                decoration: BoxDecoration(
+                  color: isOnline ? Colors.green : Colors.grey,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: colorScheme.surface,
+                    width: 2,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _getInitials(String name) {
+    final parts = name.trim().split(' ');
+    if (parts.isEmpty) return 'U';
+    if (parts.length == 1) return parts[0][0].toUpperCase();
+    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  }
+
+  Color _getColorForUser(String name) {
+    final hash = name.hashCode;
+    const colors = [
+      Color(0xFF9C27B0), // Purple
+      Color(0xFFF44336), // Red
+      Color(0xFF4CAF50), // Green
+      Color(0xFF2196F3), // Blue
+      Color(0xFFFF9800), // Orange
+      Color(0xFF00BCD4), // Cyan
+      Color(0xFFE91E63), // Pink
+      Color(0xFF795548), // Brown
+    ];
+    return colors[hash.abs() % colors.length];
+  }
+}

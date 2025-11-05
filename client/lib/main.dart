@@ -36,6 +36,7 @@ import 'services/message_listener_service.dart';
 // Role management imports
 import 'providers/role_provider.dart';
 import 'providers/notification_provider.dart';
+import 'providers/navigation_state_provider.dart';
 import 'services/role_api_service.dart';
 import 'screens/admin/role_management_screen.dart';
 import 'screens/admin/user_management_screen.dart';
@@ -356,6 +357,10 @@ class _MyAppState extends State<MyApp> {
       providers: [
         // Theme Provider
         ChangeNotifierProvider<ThemeProvider>.value(value: widget.themeProvider),
+        // Navigation State Provider
+        ChangeNotifierProvider(
+          create: (context) => NavigationStateProvider(),
+        ),
         // Unread Messages Provider
         ChangeNotifierProvider(
           create: (context) => UnreadMessagesProvider(),

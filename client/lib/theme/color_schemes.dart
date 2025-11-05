@@ -6,36 +6,37 @@ import 'package:flutter/material.dart';
 /// Schemas können über ihre ID referenziert werden.
 class AppColorSchemes {
   /// PeerWave - Standard Theme mit Türkis-Highlight
-  /// Primary: RGB(0, 209, 178) = #00D1B2
+  /// Primary: RGB(14, 132, 129) = #0E8481
   static ColorScheme peerwave(Brightness brightness) {
-    const highlightColor = Color(0xFF00D1B2); // RGB(0, 209, 178) - Türkis/Cyan
+    const highlightColor = Color(0xFF0E8481); // RGB(14, 132, 129) - Türkis/Cyan
     
     if (brightness == Brightness.dark) {
       return const ColorScheme.dark(
-        primary: highlightColor,              // #00D1B2 - Türkis
-        onPrimary: Colors.black,              // Schwarzer Text auf Türkis
-        primaryContainer: Color(0xFF008B7D), // Dunkleres Türkis für Container
+        primary: highlightColor,              // #0E8481 - Türkis
+        onPrimary: Colors.white,              // Weißer Text auf Türkis
+        primaryContainer: Color(0xFF0A5F5D), // Dunkleres Türkis für Container
         onPrimaryContainer: Color(0xFFE0FFF9), // Heller Text auf Primary Container
         
-        secondary: Color(0xFF00FFC8),         // Helleres Türkis für Sekundär
-        onSecondary: Colors.black,
-        secondaryContainer: Color(0xFF00C8A0),
+        secondary: Color(0xFF0E8481),         // Gleiche Farbe für Konsistenz
+        onSecondary: Colors.white,
+        secondaryContainer: Color(0xFF0A5F5D),
         onSecondaryContainer: Color(0xFFE0FFFA),
         
-        tertiary: Color(0xFF00B8A0),          // Dunkleres Türkis
-        onTertiary: Colors.black,
-        tertiaryContainer: Color(0xFF008878),
+        tertiary: Color(0xFF0E8481),          // Gleiche Farbe für Konsistenz
+        onTertiary: Colors.white,
+        tertiaryContainer: Color(0xFF0A5F5D),
         onTertiaryContainer: Color(0xFFD0F5EE),
         
         error: Color(0xFFFF5555),             // Rot für Fehler
-        onError: Colors.black,
+        onError: Colors.white,
         errorContainer: Color(0xFFCC0000),
         onErrorContainer: Color(0xFFFFDADA),
         
-        surface: Color(0xFF1E1E1E),           // Dunkelgrau für Surfaces
-        onSurface: Colors.white,
-        surfaceContainerHighest: Color(0xFF2A2A2A),
-        onSurfaceVariant: Color(0xFFE0E0E0),
+        // Layout-spezifische Surfaces
+        surface: Color(0xFF181C21),           // Main View Background
+        onSurface: Color.fromRGBO(255, 255, 255, 0.85), // Items 85% Weiß
+        surfaceContainerHighest: Color(0xFF14181D), // Context Panel Background
+        onSurfaceVariant: Color.fromRGBO(255, 255, 255, 0.6), // Überschriften 60% Grau
         
         outline: Color(0xFF6B6B6B),
         outlineVariant: Color(0xFF3D3D3D),
@@ -43,8 +44,8 @@ class AppColorSchemes {
         shadow: Colors.black,
         scrim: Colors.black,
         inverseSurface: Color(0xFFE0E0E0),
-        onInverseSurface: Color(0xFF1E1E1E),
-        inversePrimary: Color(0xFF008B7D),
+        onInverseSurface: Color(0xFF0E1218),
+        inversePrimary: highlightColor,
       );
     } else {
       // Light variant (optional, falls User Light Mode für PeerWave wählt)
@@ -568,7 +569,7 @@ class ColorSchemeOptions {
       name: 'PeerWave',
       description: 'Dark theme with turquoise highlight',
       icon: Icons.waves,
-      previewColor: const Color(0xFF00D1B2),
+      previewColor: const Color(0xFF0E8481),
       schemeBuilder: AppColorSchemes.peerwave,
     ),
     ColorSchemeOption(

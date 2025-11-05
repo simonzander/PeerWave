@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/video_conference_service.dart';
 import '../services/message_listener_service.dart';
 import '../screens/channel/channel_members_screen.dart';
+import '../widgets/animated_widgets.dart';
 import '../models/role.dart';
 import '../extensions/snackbar_extensions.dart';
 
@@ -176,7 +177,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
+                SlidePageRoute(
                   builder: (context) => ChannelMembersScreen(
                     channelId: widget.channelId,
                     channelName: widget.channelName,

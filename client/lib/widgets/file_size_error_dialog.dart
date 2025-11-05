@@ -20,22 +20,16 @@ class FileSizeErrorDialog extends StatelessWidget {
     final isOverRecommended = fileSize > recommendedSize && fileSize <= maxSize;
     
     return AlertDialog(
-      title: Row(
-        children: [
-          Icon(
-            isOverRecommended ? Icons.warning : Icons.error,
-            color: isOverRecommended ? Colors.orange : Colors.red,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              isOverRecommended ? 'Large File Warning' : 'File Too Large',
-              style: TextStyle(
-                color: isOverRecommended ? Colors.orange : Colors.red,
-              ),
-            ),
-          ),
-        ],
+      title: Text(
+        isOverRecommended ? 'Large File Warning' : 'File Too Large',
+        style: TextStyle(
+          color: isOverRecommended ? Colors.orange : Colors.red,
+        ),
+      ),
+      icon: Icon(
+        isOverRecommended ? Icons.warning : Icons.error,
+        color: isOverRecommended ? Colors.orange : Colors.red,
+        size: 48,
       ),
       content: SingleChildScrollView(
         child: Column(

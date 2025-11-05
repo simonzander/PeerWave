@@ -3,7 +3,9 @@ import '../../services/activities_service.dart';
 import '../../services/api_service.dart';
 import '../../models/role.dart';
 import '../../providers/unread_messages_provider.dart';
-import '../../widgets/unread_badge.dart';
+import '../../providers/navigation_state_provider.dart';
+import '../../widgets/animated_widgets.dart';
+import '../../theme/app_theme_constants.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
@@ -255,25 +257,13 @@ class _ChannelsListViewState extends State<ChannelsListView> {
   }
 
   Widget _buildSectionHeader(String title, IconData icon, [Color? color]) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 20,
-            color: color ?? Theme.of(context).colorScheme.primary,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: color ?? Theme.of(context).colorScheme.primary,
-            ),
-          ),
-        ],
+    return ContextPanelHeader(
+      title: title,
+      padding: EdgeInsets.fromLTRB(
+        AppThemeConstants.spacingSm,
+        AppThemeConstants.spacingMd,
+        AppThemeConstants.spacingSm,
+        AppThemeConstants.spacingXs,
       ),
     );
   }
@@ -310,28 +300,26 @@ class _ChannelsListViewState extends State<ChannelsListView> {
           ),
         ],
       ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              name,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          if (description.isNotEmpty)
-            Tooltip(
-              message: description,
-              child: Icon(
-                Icons.info_outline,
-                size: 16,
-                color: Colors.grey[600],
-              ),
-            ),
-        ],
+      title: Text(
+        name,
+        style: const TextStyle(fontWeight: FontWeight.bold),
       ),
-      subtitle: Text(
-        '$participantCount ${participantCount == 1 ? 'participant' : 'participants'} • LIVE',
-        style: const TextStyle(color: Colors.red),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (description.isNotEmpty)
+            Text(
+              description,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          Text(
+            '$participantCount ${participantCount == 1 ? 'participant' : 'participants'} • LIVE',
+            style: const TextStyle(color: Colors.red),
+          ),
+        ],
       ),
       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
       onTap: () {
@@ -348,61 +336,62 @@ class _ChannelsListViewState extends State<ChannelsListView> {
     final lastMessageTime = channel['lastMessageTime'] as String? ?? '';
     final isPrivate = channel['private'] as bool? ?? false;
 
-    return Consumer<UnreadMessagesProvider>(
-      builder: (context, unreadProvider, _) {
+    return Consumer2<UnreadMessagesProvider, NavigationStateProvider>(
+      builder: (context, unreadProvider, navProvider, _) {
         final unreadCount = unreadProvider.getChannelUnreadCount(uuid);
+        final isSelected = navProvider.isChannelSelected(uuid);
         
-        return ListTile(
-          leading: CircleAvatar(
-            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-            child: Icon(
-              isPrivate ? Icons.lock : Icons.tag,
-              color: Theme.of(context).colorScheme.onPrimaryContainer,
+        return AnimatedSelectionTile(
+          leading: Icon(
+            isPrivate ? Icons.lock : AppThemeConstants.iconChannels,
+            size: AppThemeConstants.iconSizeSmall,
+          ),
+          title: Text(
+            '# $name',
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+              color: AppThemeConstants.textPrimary,
             ),
           ),
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  name,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              if (description.isNotEmpty)
-                Tooltip(
-                  message: description,
-                  child: Icon(
-                    Icons.info_outline,
-                    size: 16,
-                    color: Colors.grey[600],
-                  ),
-                ),
-            ],
-          ),
-          subtitle: Text(
-            lastMessage.length > 50
-                ? '${lastMessage.substring(0, 50)}...'
-                : lastMessage,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: Row(
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (unreadCount > 0) ...[
-                UnreadBadge(count: unreadCount, isSmall: true),
-                const SizedBox(width: 8),
-              ],
+              if (description.isNotEmpty)
+                Text(
+                  description,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: AppThemeConstants.fontSizeCaption,
+                    color: AppThemeConstants.textSecondary,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              Text(
+                lastMessage.length > 50
+                    ? '${lastMessage.substring(0, 50)}...'
+                    : lastMessage,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: AppThemeConstants.fontSizeCaption,
+                  color: AppThemeConstants.textSecondary,
+                ),
+              ),
               Text(
                 _formatTime(lastMessageTime),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: AppThemeConstants.textSecondary,
                 ),
               ),
             ],
           ),
+          trailing: AnimatedBadge(count: unreadCount, isSmall: true),
+          selected: isSelected,
           onTap: () {
+            navProvider.selectChannel(uuid, 'signal');
             widget.onChannelTap(uuid, name, 'signal');
           },
         );
@@ -424,26 +413,24 @@ class _ChannelsListViewState extends State<ChannelsListView> {
           color: Theme.of(context).colorScheme.onSecondaryContainer,
         ),
       ),
-      title: Row(
+      title: Text(
+        name,
+        style: const TextStyle(fontWeight: FontWeight.bold),
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: Text(
-              name,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
           if (description.isNotEmpty)
-            Tooltip(
-              message: description,
-              child: Icon(
-                Icons.info_outline,
-                size: 16,
-                color: Colors.grey[600],
-              ),
+            Text(
+              description,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
+          const Text('Video channel • No active participants'),
         ],
       ),
-      subtitle: const Text('Video channel • No active participants'),
       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
       onTap: () {
         widget.onChannelTap(uuid, name, 'webrtc');
@@ -471,12 +458,18 @@ class _ChannelsListViewState extends State<ChannelsListView> {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      trailing: ElevatedButton(
-        onPressed: () {
-          // TODO: Join channel API call
-          widget.onChannelTap(uuid, name, type);
-        },
-        child: const Text('Join'),
+      trailing: SizedBox(
+        width: 80,
+        child: ElevatedButton(
+          onPressed: () {
+            // TODO: Join channel API call
+            widget.onChannelTap(uuid, name, type);
+          },
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          ),
+          child: const Text('Join', style: TextStyle(fontSize: 12)),
+        ),
       ),
     );
   }

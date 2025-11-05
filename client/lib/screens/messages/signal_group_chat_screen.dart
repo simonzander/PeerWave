@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import '../../widgets/message_list.dart';
 import '../../widgets/message_input.dart';
+import '../../widgets/animated_widgets.dart';
 import '../../services/api_service.dart';
 import '../../services/signal_service.dart';
 import '../../services/socket_service.dart';
@@ -831,7 +832,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
               // Open PreJoin screen for device selection and E2EE key exchange
               final result = await Navigator.push(
                 context,
-                MaterialPageRoute(
+                SlidePageRoute(
                   builder: (context) => VideoConferencePreJoinView(
                     channelId: widget.channelUuid,
                     channelName: widget.channelName,
@@ -845,7 +846,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                 if (mounted) {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
+                    SlidePageRoute(
                       builder: (context) => VideoConferenceView(
                         channelId: result['channelId'],
                         channelName: result['channelName'],
@@ -864,7 +865,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
+                SlidePageRoute(
                   builder: (context) => ChannelMembersScreen(
                     channelId: widget.channelUuid,
                     channelName: widget.channelName,

@@ -39,6 +39,8 @@ class _ActivitiesViewState extends State<ActivitiesView> {
   }
 
   Future<void> _loadActivities() async {
+    if (!mounted) return;
+    
     setState(() {
       _loading = true;
     });
@@ -53,6 +55,8 @@ class _ActivitiesViewState extends State<ActivitiesView> {
       // Batch fetch sender names for all messages in conversations
       await _fetchSenderNamesForConversations();
 
+      if (!mounted) return;
+      
       setState(() {
         _webrtcChannels = webrtcChannels.where((ch) => 
           (ch['participants'] as List?)?.isNotEmpty ?? false
@@ -61,6 +65,8 @@ class _ActivitiesViewState extends State<ActivitiesView> {
       });
     } catch (e) {
       print('[ACTIVITIES_VIEW] Error loading activities: $e');
+      if (!mounted) return;
+      
       setState(() {
         _loading = false;
       });
@@ -91,6 +97,8 @@ class _ActivitiesViewState extends State<ActivitiesView> {
       // Enrich with names
       await _enrichConversationsWithNames(newConversations);
 
+      if (!mounted) return;
+      
       setState(() {
         _conversations.addAll(newConversations);
         _conversationsPage++;
@@ -238,6 +246,8 @@ class _ActivitiesViewState extends State<ActivitiesView> {
         
         if (resp.statusCode == 200) {
           final users = resp.data is List ? resp.data : [];
+          if (!mounted) return;
+          
           setState(() {
             for (final user in users) {
               _userInfo[user['uuid']] = {
@@ -264,6 +274,8 @@ class _ActivitiesViewState extends State<ActivitiesView> {
 
     return RefreshIndicator(
       onRefresh: () async {
+        if (!mounted) return;
+        
         setState(() {
           _conversations.clear();
           _conversationsPage = 0;
