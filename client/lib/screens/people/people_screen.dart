@@ -625,8 +625,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
   }
 }
 
-/// User Card Widget - Badge/Work Card Style
-class _UserCard extends StatelessWidget {
+/// User Card Widget - Badge/Work Card Style with Hover Effects
+class _UserCard extends StatefulWidget {
   final Map<String, dynamic> user;
   final ColorScheme colorScheme;
   final VoidCallback onTap;
@@ -638,118 +638,202 @@ class _UserCard extends StatelessWidget {
   });
 
   @override
+  State<_UserCard> createState() => _UserCardState();
+}
+
+class _UserCardState extends State<_UserCard> {
+  bool _isHovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    final displayName = user['displayName'] as String? ?? 'Unknown';
-    final atName = user['atName'] as String? ?? '';
-    final isOnline = user['isOnline'] as bool? ?? false;
-    final userId = user['uuid'] as String? ?? '';
+    final displayName = widget.user['displayName'] as String? ?? 'Unknown';
+    final atName = widget.user['atName'] as String? ?? '';
+    final isOnline = widget.user['isOnline'] as bool? ?? false;
+    final userId = widget.user['uuid'] as String? ?? '';
+    final pictureData = widget.user['picture'] as String?;
+    final hasPicture = pictureData != null && pictureData.isNotEmpty;
     
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.onInverseSurface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colorScheme.outlineVariant,
-          width: 2,
-        ),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Picture at top (takes ~60% of card height)
-            Expanded(
-              flex: 3,
-              child: Stack(
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(10),
-                        topRight: Radius.circular(10),
-                      ),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(10),
-                        topRight: Radius.circular(10),
-                      ),
-                      child: SquareUserAvatar(
-                        userId: userId,
-                        displayName: displayName,
-                        pictureData: user['picture'] as String?,
-                        size: double.infinity,
-                      ),
-                    ),
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        transform: Matrix4.identity()..scale(_isHovered ? 1.05 : 1.0),
+        decoration: BoxDecoration(
+          color: widget.colorScheme.onInverseSurface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: widget.colorScheme.outlineVariant,
+            width: 0,
+          ),
+          boxShadow: _isHovered
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
                   ),
-                  // Online status indicator
-                  if (isOnline)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Container(
-                        width: 16,
-                        height: 16,
+                ]
+              : [],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Picture at top (takes ~60% of card height)
+                Expanded(
+                  flex: 3,
+                  child: Stack(
+                    children: [
+                      Container(
                         decoration: BoxDecoration(
-                          color: Colors.green,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: colorScheme.surface,
-                            width: 2,
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(10),
+                            topRight: Radius.circular(10),
                           ),
                         ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            
-            // Name section at bottom (~40% of card height)
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // Display Name
-                    Text(
-                      displayName,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: colorScheme.onSurface,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                    ),
-                    
-                    const SizedBox(height: 4),
-                    
-                    // @username
-                    if (atName.isNotEmpty)
-                      Text(
-                        '@$atName',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: colorScheme.onSurfaceVariant,
+                        child: ClipRRect(
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(10),
+                            topRight: Radius.circular(10),
+                          ),
+                          child: hasPicture
+                              ? SquareUserAvatar(
+                                  userId: userId,
+                                  displayName: displayName,
+                                  pictureData: pictureData,
+                                  size: double.infinity,
+                                )
+                              : _buildInitialsBanner(displayName),
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
                       ),
-                  ],
+                      // Online status indicator
+                      if (isOnline)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            width: 16,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              color: Colors.green,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: widget.colorScheme.surface,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
+                
+                // Name section at bottom (~40% of card height)
+                Expanded(
+                  flex: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Display Name
+                        Text(
+                          displayName,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: widget.colorScheme.onSurface,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                        ),
+                        
+                        const SizedBox(height: 4),
+                        
+                        // @username
+                        if (atName.isNotEmpty)
+                          Text(
+                            '@$atName',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: widget.colorScheme.onSurfaceVariant,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
+  }
+
+  /// Build a colored banner with the first letter of the display name
+  Widget _buildInitialsBanner(String displayName) {
+    final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
+    final color = _getColorForUser(displayName);
+    
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            color,
+            color.withOpacity(0.8),
+          ],
+        ),
+      ),
+      child: Center(
+        child: Text(
+          initial,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 64,
+            fontWeight: FontWeight.bold,
+            shadows: [
+              Shadow(
+                color: Colors.black26,
+                offset: Offset(2, 2),
+                blurRadius: 4,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Generate consistent theme-compatible color for user
+  Color _getColorForUser(String name) {
+    final hash = name.hashCode;
+    const colors = [
+      Color(0xFF7C4DFF), // Deep Purple (softer)
+      Color(0xFF5C6BC0), // Indigo (softer)
+      Color(0xFF42A5F5), // Blue (softer)
+      Color(0xFF26A69A), // Teal (softer)
+      Color(0xFF66BB6A), // Green (softer)
+      Color(0xFFFF7043), // Deep Orange (softer)
+      Color(0xFFEC407A), // Pink (softer)
+      Color(0xFFAB47BC), // Purple (softer)
+    ];
+    return colors[hash.abs() % colors.length];
   }
 }
 

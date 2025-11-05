@@ -126,19 +126,18 @@ class UserAvatar extends StatelessWidget {
   }
 
   /// Generate consistent color for user based on name
+  /// Uses theme-compatible pastel colors for better visual harmony
   Color _getColorForUser(String name) {
     final hash = name.hashCode;
     final colors = [
-      const Color(0xFF5865F2), // Blurple
-      const Color(0xFFEB459E), // Pink
-      const Color(0xFFED4245), // Red
-      const Color(0xFFFEE75C), // Yellow
-      const Color(0xFF57F287), // Green
-      const Color(0xFF00D9FF), // Cyan
-      const Color(0xFFFF6B6B), // Coral
-      const Color(0xFF9B59B6), // Purple
-      const Color(0xFF3498DB), // Blue
-      const Color(0xFFE67E22), // Orange
+      const Color(0xFF7C4DFF), // Deep Purple (softer)
+      const Color(0xFF5C6BC0), // Indigo (softer)
+      const Color(0xFF42A5F5), // Blue (softer)
+      const Color(0xFF26A69A), // Teal (softer)
+      const Color(0xFF66BB6A), // Green (softer)
+      const Color(0xFFFF7043), // Deep Orange (softer)
+      const Color(0xFFEC407A), // Pink (softer)
+      const Color(0xFFAB47BC), // Purple (softer)
     ];
     return colors[hash.abs() % colors.length];
   }
@@ -322,17 +321,19 @@ class SquareUserAvatar extends StatelessWidget {
     return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
   }
 
+  /// Generate consistent color for user based on name
+  /// Uses theme-compatible pastel colors for better visual harmony
   Color _getColorForUser(String name) {
     final hash = name.hashCode;
     const colors = [
-      Color(0xFF9C27B0), // Purple
-      Color(0xFFF44336), // Red
-      Color(0xFF4CAF50), // Green
-      Color(0xFF2196F3), // Blue
-      Color(0xFFFF9800), // Orange
-      Color(0xFF00BCD4), // Cyan
-      Color(0xFFE91E63), // Pink
-      Color(0xFF795548), // Brown
+      Color(0xFF7C4DFF), // Deep Purple (softer)
+      Color(0xFF5C6BC0), // Indigo (softer)
+      Color(0xFF42A5F5), // Blue (softer)
+      Color(0xFF26A69A), // Teal (softer)
+      Color(0xFF66BB6A), // Green (softer)
+      Color(0xFFFF7043), // Deep Orange (softer)
+      Color(0xFFEC407A), // Pink (softer)
+      Color(0xFFAB47BC), // Purple (softer)
     ];
     return colors[hash.abs() % colors.length];
   }

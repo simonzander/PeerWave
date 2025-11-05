@@ -32,50 +32,7 @@ class PeopleContextPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'People',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: AppThemeConstants.textPrimary,
-              ),
-            ),
-          ),
-          
-          // Search Box (compact)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Search...',
-                hintStyle: TextStyle(
-                  color: AppThemeConstants.textSecondary,
-                  fontSize: 14,
-                ),
-                prefixIcon: Icon(
-                  Icons.search,
-                  size: 20,
-                  color: AppThemeConstants.textSecondary,
-                ),
-                filled: true,
-                fillColor: AppThemeConstants.inputBackground,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                isDense: true,
-              ),
-              style: const TextStyle(fontSize: 14),
-            ),
-          ),
-          
+  
           const Divider(height: 1),
           
           // Content
@@ -148,99 +105,108 @@ class PeopleContextPanel extends StatelessWidget {
     final isOnline = person['online'] as bool? ?? false;
     final userId = person['uuid'] as String? ?? '';
 
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          children: [
-            // Square avatar with online indicator
-            SizedBox(
-              width: 48,
-              height: 48,
-              child: Stack(
-                children: [
-                  SquareUserAvatar(
-                    userId: userId,
-                    displayName: displayName,
-                    pictureData: picture.isNotEmpty ? picture : null,
-                    size: 48,
-                  ),
-                  if (isOnline)
-                    Positioned(
-                      right: -2,
-                      bottom: -2,
-                      child: Container(
-                        width: 14,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: Colors.green,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: AppThemeConstants.contextPanelBackground,
-                            width: 2,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          hoverColor: const Color(0xFF1A1E24), // Lighter grey for hover
+          splashColor: const Color(0xFF252A32),
+          highlightColor: const Color(0xFF1F242B),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                // Square avatar with online indicator
+                SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: Stack(
+                    children: [
+                      SquareUserAvatar(
+                        userId: userId,
+                        displayName: displayName,
+                        pictureData: picture.isNotEmpty ? picture : null,
+                        size: 48,
+                      ),
+                      if (isOnline)
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: Container(
+                            width: 14,
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: Colors.green,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: AppThemeConstants.contextPanelBackground,
+                                width: 2,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            
-            // Name and @username in column
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                
+                // Name and @username in column
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Flexible(
-                        child: Text(
-                          displayName,
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              displayName,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: AppThemeConstants.textPrimary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (showStar) ...[
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.star,
+                              size: 14,
+                              color: Colors.amber,
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (atName.isNotEmpty)
+                        Text(
+                          '@$atName',
                           style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppThemeConstants.textPrimary,
+                            fontSize: 12,
+                            color: AppThemeConstants.textSecondary,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      if (showStar) ...[
-                        const SizedBox(width: 4),
-                        const Icon(
-                          Icons.star,
-                          size: 14,
-                          color: Colors.amber,
-                        ),
-                      ],
                     ],
                   ),
-                  if (atName.isNotEmpty)
-                    Text(
-                      '@$atName',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppThemeConstants.textSecondary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                ],
-              ),
+                ),
+                
+                const SizedBox(width: 8),
+                
+                // Message icon
+                Icon(
+                  Icons.message_outlined,
+                  size: 18,
+                  color: AppThemeConstants.textSecondary,
+                ),
+              ],
             ),
-            
-            const SizedBox(width: 8),
-            
-            // Message icon
-            Icon(
-              Icons.message_outlined,
-              size: 18,
-              color: AppThemeConstants.textSecondary,
-            ),
-          ],
+          ),
         ),
       ),
     );
