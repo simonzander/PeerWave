@@ -313,5 +313,92 @@ final IdentityKeyPair identityKeyPair;
       await storage.write(key: 'signedprekey_keys', value: jsonEncode(keys));
     }
   }
+
+  /// Check if SignedPreKey needs rotation (older than 7 days)
+  /// Returns true if rotation is needed
+  Future<bool> needsRotation() async {
+    try {
+      final allKeys = await loadAllStoredSignedPreKeys();
+      if (allKeys.isEmpty) {
+        debugPrint('[SIGNED_PREKEY_ROTATION] No SignedPreKeys found');
+        return false;
+      }
+
+      // Find the newest key
+      allKeys.sort((a, b) {
+        if (a.createdAt == null && b.createdAt == null) return 0;
+        if (a.createdAt == null) return 1;
+        if (b.createdAt == null) return -1;
+        return b.createdAt!.compareTo(a.createdAt!);
+      });
+
+      final newestKey = allKeys.first;
+      if (newestKey.createdAt == null) {
+        debugPrint('[SIGNED_PREKEY_ROTATION] Newest key has no createdAt timestamp, assuming rotation needed');
+        return true;
+      }
+
+      final daysSinceCreation = DateTime.now().difference(newestKey.createdAt!).inDays;
+      debugPrint('[SIGNED_PREKEY_ROTATION] Newest SignedPreKey is $daysSinceCreation days old');
+
+      if (daysSinceCreation >= 7) {
+        debugPrint('[SIGNED_PREKEY_ROTATION] ⚠️  SignedPreKey needs rotation (>= 7 days old)');
+        return true;
+      }
+
+      return false;
+    } catch (e) {
+      debugPrint('[SIGNED_PREKEY_ROTATION] Error checking rotation: $e');
+      return false;
+    }
+  }
+
+  /// Rotate SignedPreKey: Generate new key and keep old one for 7 days
+  /// 
+  /// This ensures that:
+  /// - New PreKeyBundles use the new SignedPreKey
+  /// - Existing sessions can still use old SignedPreKey for a grace period
+  /// - Old keys are automatically cleaned up after 7 days
+  Future<void> rotateSignedPreKey(IdentityKeyPair identityKeyPair) async {
+    try {
+      debugPrint('[SIGNED_PREKEY_ROTATION] Starting SignedPreKey rotation...');
+
+      final allKeys = await loadAllStoredSignedPreKeys();
+      final nextId = allKeys.isEmpty ? 0 : allKeys.map((k) => k.record.id).reduce((a, b) => a > b ? a : b) + 1;
+
+      // Generate new SignedPreKey
+      debugPrint('[SIGNED_PREKEY_ROTATION] Generating new SignedPreKey with ID $nextId');
+      final newSignedPreKey = generateSignedPreKey(identityKeyPair, nextId);
+
+      // Store new SignedPreKey (automatically uploads to server)
+      await storeSignedPreKey(newSignedPreKey.id, newSignedPreKey);
+      debugPrint('[SIGNED_PREKEY_ROTATION] ✓ New SignedPreKey generated and stored');
+
+      // Clean up old keys (older than 7 days)
+      int deletedCount = 0;
+      final cutoffDate = DateTime.now().subtract(const Duration(days: 7));
+
+      for (final key in allKeys) {
+        if (key.createdAt != null && key.createdAt!.isBefore(cutoffDate)) {
+          debugPrint('[SIGNED_PREKEY_ROTATION] Deleting old SignedPreKey ID ${key.record.id} (created ${key.createdAt})');
+          await removeSignedPreKey(key.record.id);
+          deletedCount++;
+        }
+      }
+
+      if (deletedCount > 0) {
+        debugPrint('[SIGNED_PREKEY_ROTATION] ✓ Deleted $deletedCount old SignedPreKeys');
+      } else {
+        debugPrint('[SIGNED_PREKEY_ROTATION] No old SignedPreKeys to delete');
+      }
+
+      debugPrint('[SIGNED_PREKEY_ROTATION] ✅ SignedPreKey rotation completed successfully');
+    } catch (e, stackTrace) {
+      debugPrint('[SIGNED_PREKEY_ROTATION] ❌ ERROR during rotation: $e');
+      debugPrint('[SIGNED_PREKEY_ROTATION] Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
 }
+
 

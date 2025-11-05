@@ -172,6 +172,18 @@ class SignalService {
     debugPrint('[SIGNAL SERVICE] UnreadMessagesProvider ${provider != null ? 'connected' : 'disconnected'}');
   }
 
+  /// 🔒 SYNC-LOCK: Wait if identity key regeneration is in progress
+  /// This prevents race conditions during key operations
+  Future<void> _waitForRegenerationIfNeeded() async {
+    if (identityStore.isRegenerating) {
+      debugPrint('[SIGNAL SERVICE] 🔒 Identity regeneration in progress - waiting...');
+      // The acquire lock will wait until regeneration completes
+      await identityStore.acquireLock();
+      identityStore.releaseLock();
+      debugPrint('[SIGNAL SERVICE] ✓ Identity regeneration completed - proceeding');
+    }
+  }
+
   /// Retry a function with exponential backoff
   /// 
   /// Retries a failing operation with increasing delays between attempts.
@@ -623,6 +635,9 @@ class SignalService {
 
     SocketService().registerListener("signalStatusResponse", (status) async {
       await _ensureSignalKeysPresent(status);
+      
+      // Check SignedPreKey rotation after status check
+      await _checkSignedPreKeyRotation();
     });
 
     // NEW: Receive sender key distribution messages
@@ -742,6 +757,31 @@ class SignalService {
           'signature': base64Encode(latest.signature),
         });
       }
+    }
+  }
+
+  /// Check if SignedPreKey needs rotation and rotate if necessary
+  /// Called automatically after signalStatus check
+  Future<void> _checkSignedPreKeyRotation() async {
+    try {
+      if (!_isInitialized) {
+        debugPrint('[SIGNAL_SERVICE] Not initialized, skipping SignedPreKey rotation check');
+        return;
+      }
+
+      final needsRotation = await signedPreKeyStore.needsRotation();
+      if (needsRotation) {
+        debugPrint('[SIGNAL_SERVICE] SignedPreKey rotation needed, starting rotation...');
+        final identityKeyPair = await identityStore.getIdentityKeyPair();
+        await signedPreKeyStore.rotateSignedPreKey(identityKeyPair);
+        debugPrint('[SIGNAL_SERVICE] ✓ SignedPreKey rotation completed');
+      } else {
+        debugPrint('[SIGNAL_SERVICE] SignedPreKey rotation not needed (< 7 days old)');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('[SIGNAL_SERVICE] Error during SignedPreKey rotation check: $e');
+      debugPrint('[SIGNAL_SERVICE] Stack trace: $stackTrace');
+      // Don't rethrow - rotation failure shouldn't block normal operations
     }
   }
 
@@ -1137,6 +1177,8 @@ void deleteGroupItem(String itemId, String channelId) async {
           debugPrint('[DEBUG] devices.length: \\${devices.length}');
         }
         final List<Map<String, dynamic>> result = [];
+        int skippedDevices = 0;
+        
         for (final data in devices) {
           debugPrint('[DEBUG] signedPreKey: ' + jsonEncode(data['signedPreKey']));
           final hasAllFields =
@@ -1149,7 +1191,8 @@ void deleteGroupItem(String itemId, String channelId) async {
             data['signedPreKey']['signed_prekey_signature'] != null &&
             data['signedPreKey']['signed_prekey_signature'].toString().isNotEmpty;
           if (!hasAllFields) {
-            debugPrint('[SIGNAL SERVICE][WARN] Device ${data['clientid']} skipped: missing required Signal fields.');
+            debugPrint('[SIGNAL SERVICE][MULTI-DEVICE] Device ${data['clientid']} skipped: missing Signal keys (this is OK - will try other devices)');
+            skippedDevices++;
             continue;
           }
           debugPrint('[DEBUG] Decoding preKey ${data['preKey']['prekey_data']}');
@@ -1190,9 +1233,27 @@ void deleteGroupItem(String itemId, String channelId) async {
             'identityKey': IdentityKey.fromBytes(base64Decode(data['public_key']), 0),
           });
         }
+        
+        // Multi-Device Logic:
+        // - If NO devices have keys → Show error
+        // - If SOME devices have keys → Success (skip devices without keys)
+        // - Skipped devices will not receive messages, but that's expected behavior
         if (result.isEmpty) {
-          debugPrint('[SIGNAL SERVICE][ERROR] No valid Signal devices found for user $userId.');
+          if (skippedDevices > 0) {
+            debugPrint('[SIGNAL SERVICE][ERROR] ❌ User $userId has $skippedDevices devices but NONE have valid Signal keys!');
+            debugPrint('[SIGNAL SERVICE][ERROR] User needs to register Signal keys on at least one device.');
+          } else {
+            debugPrint('[SIGNAL SERVICE][ERROR] ❌ User $userId has no devices at all.');
+          }
+        } else {
+          if (skippedDevices > 0) {
+            debugPrint('[SIGNAL SERVICE][MULTI-DEVICE] ✓ Found ${result.length} devices with keys, $skippedDevices devices without keys');
+            debugPrint('[SIGNAL SERVICE][MULTI-DEVICE] Messages will be sent to devices with keys only.');
+          } else {
+            debugPrint('[SIGNAL SERVICE][MULTI-DEVICE] ✓ All ${result.length} devices have valid keys');
+          }
         }
+        
         return result;
       } catch (e, st) {
         debugPrint('[ERROR] Exception while decoding response: \\${e}\\n\\${st}');
@@ -1362,6 +1423,9 @@ void deleteGroupItem(String itemId, String channelId) async {
     required dynamic payload,
     String? itemId, // Optional: allow pre-generated itemId from UI
   }) async {
+    // 🔒 SYNC-LOCK: Wait if identity regeneration is in progress
+    await _waitForRegenerationIfNeeded();
+    
     dynamic ciphertextMessage;
     
     // Use provided itemId or generate new one
@@ -1890,6 +1954,9 @@ Future<String> decryptItem({
     String groupId,
     String message,
   ) async {
+    // 🔒 SYNC-LOCK: Wait if identity regeneration is in progress
+    await _waitForRegenerationIfNeeded();
+    
     if (_currentUserId == null || _currentDeviceId == null) {
       throw Exception('User info not set. Call setCurrentUserInfo first.');
     }
@@ -1940,6 +2007,23 @@ Future<String> decryptItem({
         throw RangeError('Sender key corrupted - validation test failed: $validationError');
       }
       
+      // ✨ ROTATION CHECK: Check if sender key needs rotation (7 days or 1000 messages)
+      final needsRotation = await senderKeyStore.needsRotation(senderKeyName);
+      if (needsRotation) {
+        debugPrint('[SIGNAL_SERVICE] 🔄 Sender key needs rotation - regenerating...');
+        try {
+          // Remove old key
+          await senderKeyStore.removeSenderKey(senderKeyName);
+          
+          // Create new sender key and broadcast
+          await createGroupSenderKey(groupId, broadcastDistribution: true);
+          debugPrint('[SIGNAL_SERVICE] ✓ Sender key rotated successfully for group $groupId');
+        } catch (rotationError) {
+          debugPrint('[SIGNAL_SERVICE] ⚠️ Warning: Sender key rotation failed: $rotationError');
+          // Don't fail the message - continue with existing key if rotation fails
+        }
+      }
+      
       final groupCipher = GroupCipher(senderKeyStore, senderKeyName);
       debugPrint('[SIGNAL_SERVICE] Created GroupCipher');
       
@@ -1949,6 +2033,9 @@ Future<String> decryptItem({
       debugPrint('[SIGNAL_SERVICE] Calling groupCipher.encrypt()...');
       final ciphertext = await groupCipher.encrypt(messageBytes);
       debugPrint('[SIGNAL_SERVICE] Successfully encrypted message, ciphertext length: ${ciphertext.length}');
+      
+      // Increment message count for rotation tracking
+      await senderKeyStore.incrementMessageCount(senderKeyName);
       
       return {
         'ciphertext': base64Encode(ciphertext),

@@ -45,6 +45,14 @@ class PermanentSenderKeyStore extends SenderKeyStore {
     final key = _getStorageKey(senderKeyName);
     final serialized = base64Encode(record.serialize());
 
+    // Store metadata for rotation tracking
+    final metadata = {
+      'createdAt': DateTime.now().toIso8601String(),
+      'messageCount': 0,
+      'lastRotation': DateTime.now().toIso8601String(),
+    };
+    final metadataKey = '${key}_metadata';
+
     if (kIsWeb) {
       final IdbFactory idbFactory = idbFactoryBrowser;
       final db = await idbFactory.open(_storeName, version: 1,
@@ -58,12 +66,38 @@ class PermanentSenderKeyStore extends SenderKeyStore {
       var txn = db.transaction(_storeName, 'readwrite');
       var store = txn.objectStore(_storeName);
       await store.put(serialized, key);
+      
+      // Check if metadata exists, if so preserve messageCount
+      var existingMetadata = await store.getObject(metadataKey);
+      if (existingMetadata != null && existingMetadata is String) {
+        try {
+          final existing = jsonDecode(existingMetadata);
+          metadata['messageCount'] = existing['messageCount'] ?? 0;
+        } catch (e) {
+          // Ignore parse errors, use default metadata
+        }
+      }
+      
+      await store.put(jsonEncode(metadata), metadataKey);
       await txn.completed;
       
       debugPrint('[SENDER_KEY_STORE] Stored sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
     } else {
       final storage = FlutterSecureStorage();
       await storage.write(key: key, value: serialized);
+
+      // Check if metadata exists, if so preserve messageCount
+      String? existingMetadataJson = await storage.read(key: metadataKey);
+      if (existingMetadataJson != null) {
+        try {
+          final existing = jsonDecode(existingMetadataJson);
+          metadata['messageCount'] = existing['messageCount'] ?? 0;
+        } catch (e) {
+          // Ignore parse errors, use default metadata
+        }
+      }
+      
+      await storage.write(key: metadataKey, value: jsonEncode(metadata));
 
       // Update key list
       String? keysJson = await storage.read(key: 'sender_key_list');
@@ -278,6 +312,144 @@ class PermanentSenderKeyStore extends SenderKeyStore {
     }
 
     return groupIds.toList();
+  }
+
+  /// Increment message count for a sender key
+  Future<void> incrementMessageCount(SenderKeyName senderKeyName) async {
+    final key = _getStorageKey(senderKeyName);
+    final metadataKey = '${key}_metadata';
+
+    if (kIsWeb) {
+      final IdbFactory idbFactory = idbFactoryBrowser;
+      final db = await idbFactory.open(_storeName, version: 1,
+          onUpgradeNeeded: (VersionChangeEvent event) {
+        Database db = event.database;
+        if (!db.objectStoreNames.contains(_storeName)) {
+          db.createObjectStore(_storeName, autoIncrement: false);
+        }
+      });
+
+      var txn = db.transaction(_storeName, 'readwrite');
+      var store = txn.objectStore(_storeName);
+      
+      var metadataValue = await store.getObject(metadataKey);
+      if (metadataValue != null && metadataValue is String) {
+        final metadata = jsonDecode(metadataValue);
+        metadata['messageCount'] = (metadata['messageCount'] ?? 0) + 1;
+        await store.put(jsonEncode(metadata), metadataKey);
+      }
+      
+      await txn.completed;
+    } else {
+      final storage = FlutterSecureStorage();
+      String? metadataJson = await storage.read(key: metadataKey);
+      
+      if (metadataJson != null) {
+        final metadata = jsonDecode(metadataJson);
+        metadata['messageCount'] = (metadata['messageCount'] ?? 0) + 1;
+        await storage.write(key: metadataKey, value: jsonEncode(metadata));
+      }
+    }
+  }
+
+  /// Check if sender key needs rotation (7 days or 1000 messages)
+  Future<bool> needsRotation(SenderKeyName senderKeyName) async {
+    final key = _getStorageKey(senderKeyName);
+    final metadataKey = '${key}_metadata';
+
+    Map<String, dynamic>? metadata;
+
+    if (kIsWeb) {
+      final IdbFactory idbFactory = idbFactoryBrowser;
+      final db = await idbFactory.open(_storeName, version: 1,
+          onUpgradeNeeded: (VersionChangeEvent event) {
+        Database db = event.database;
+        if (!db.objectStoreNames.contains(_storeName)) {
+          db.createObjectStore(_storeName, autoIncrement: false);
+        }
+      });
+
+      var txn = db.transaction(_storeName, 'readonly');
+      var store = txn.objectStore(_storeName);
+      
+      var metadataValue = await store.getObject(metadataKey);
+      await txn.completed;
+      
+      if (metadataValue != null && metadataValue is String) {
+        metadata = jsonDecode(metadataValue);
+      }
+    } else {
+      final storage = FlutterSecureStorage();
+      String? metadataJson = await storage.read(key: metadataKey);
+      
+      if (metadataJson != null) {
+        metadata = jsonDecode(metadataJson);
+      }
+    }
+
+    if (metadata == null) {
+      return false; // No metadata, probably a new key
+    }
+
+    // Check age (7 days = 604800 seconds)
+    final lastRotation = DateTime.parse(metadata['lastRotation'] ?? metadata['createdAt']);
+    final age = DateTime.now().difference(lastRotation);
+    if (age.inDays >= 7) {
+      debugPrint('[SENDER_KEY_STORE] Sender key age: ${age.inDays} days - rotation needed');
+      return true;
+    }
+
+    // Check message count (1000 messages)
+    final messageCount = metadata['messageCount'] ?? 0;
+    if (messageCount >= 1000) {
+      debugPrint('[SENDER_KEY_STORE] Sender key message count: $messageCount - rotation needed');
+      return true;
+    }
+
+    return false;
+  }
+
+  /// Update rotation timestamp (called after rotation)
+  Future<void> updateRotationTimestamp(SenderKeyName senderKeyName) async {
+    final key = _getStorageKey(senderKeyName);
+    final metadataKey = '${key}_metadata';
+
+    if (kIsWeb) {
+      final IdbFactory idbFactory = idbFactoryBrowser;
+      final db = await idbFactory.open(_storeName, version: 1,
+          onUpgradeNeeded: (VersionChangeEvent event) {
+        Database db = event.database;
+        if (!db.objectStoreNames.contains(_storeName)) {
+          db.createObjectStore(_storeName, autoIncrement: false);
+        }
+      });
+
+      var txn = db.transaction(_storeName, 'readwrite');
+      var store = txn.objectStore(_storeName);
+      
+      var metadataValue = await store.getObject(metadataKey);
+      if (metadataValue != null && metadataValue is String) {
+        final metadata = jsonDecode(metadataValue);
+        metadata['lastRotation'] = DateTime.now().toIso8601String();
+        metadata['messageCount'] = 0; // Reset counter
+        await store.put(jsonEncode(metadata), metadataKey);
+      }
+      
+      await txn.completed;
+      debugPrint('[SENDER_KEY_STORE] Updated rotation timestamp for group ${senderKeyName.groupId}');
+    } else {
+      final storage = FlutterSecureStorage();
+      String? metadataJson = await storage.read(key: metadataKey);
+      
+      if (metadataJson != null) {
+        final metadata = jsonDecode(metadataJson);
+        metadata['lastRotation'] = DateTime.now().toIso8601String();
+        metadata['messageCount'] = 0; // Reset counter
+        await storage.write(key: metadataKey, value: jsonEncode(metadata));
+      }
+      
+      debugPrint('[SENDER_KEY_STORE] Updated rotation timestamp for group ${senderKeyName.groupId}');
+    }
   }
 }
 

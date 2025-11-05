@@ -318,6 +318,89 @@ io.sockets.on("connection", socket => {
     }
   });
 
+  // CRITICAL: Delete ALL Signal keys for current device (when IdentityKeyPair is regenerated)
+  socket.on("deleteAllSignalKeys", async (data) => {
+    console.log("[SIGNAL SERVER] deleteAllSignalKeys event received", data);
+    try {
+      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+        const uuid = socket.handshake.session.uuid;
+        const clientId = socket.handshake.session.clientId;
+        const reason = data.reason || 'Unknown';
+        const timestamp = data.timestamp || new Date().toISOString();
+        
+        console.log(`[SIGNAL SERVER] ⚠️  CRITICAL: Deleting ALL Signal keys for user ${uuid}, client ${clientId}`);
+        console.log(`[SIGNAL SERVER] Reason: ${reason}, Timestamp: ${timestamp}`);
+        
+        let deletedPreKeys = 0;
+        let deletedSignedPreKeys = 0;
+        let deletedSenderKeys = 0;
+        
+        // 1. Delete all PreKeys
+        try {
+          deletedPreKeys = await writeQueue.enqueue(async () => {
+            return await SignalPreKey.destroy({
+              where: { owner: uuid, client: clientId }
+            });
+          }, `deleteAllPreKeys-${clientId}`);
+          console.log(`[SIGNAL SERVER] ✓ Deleted ${deletedPreKeys} PreKeys`);
+        } catch (error) {
+          console.error(`[SIGNAL SERVER] Error deleting PreKeys: ${error}`);
+        }
+        
+        // 2. Delete all SignedPreKeys
+        try {
+          deletedSignedPreKeys = await writeQueue.enqueue(async () => {
+            return await SignalSignedPreKey.destroy({
+              where: { owner: uuid, client: clientId }
+            });
+          }, `deleteAllSignedPreKeys-${clientId}`);
+          console.log(`[SIGNAL SERVER] ✓ Deleted ${deletedSignedPreKeys} SignedPreKeys`);
+        } catch (error) {
+          console.error(`[SIGNAL SERVER] Error deleting SignedPreKeys: ${error}`);
+        }
+        
+        // 3. Delete all SenderKeys
+        try {
+          deletedSenderKeys = await writeQueue.enqueue(async () => {
+            return await SignalSenderKey.destroy({
+              where: { owner: uuid, client: clientId }
+            });
+          }, `deleteAllSenderKeys-${clientId}`);
+          console.log(`[SIGNAL SERVER] ✓ Deleted ${deletedSenderKeys} SenderKeys`);
+        } catch (error) {
+          console.error(`[SIGNAL SERVER] Error deleting SenderKeys: ${error}`);
+        }
+        
+        console.log(`[SIGNAL SERVER] ✅ Cascade delete completed:`);
+        console.log(`[SIGNAL SERVER]    PreKeys: ${deletedPreKeys}`);
+        console.log(`[SIGNAL SERVER]    SignedPreKeys: ${deletedSignedPreKeys}`);
+        console.log(`[SIGNAL SERVER]    SenderKeys: ${deletedSenderKeys}`);
+        
+        // Send confirmation to client
+        socket.emit("deleteAllSignalKeysResponse", {
+          success: true,
+          deletedPreKeys,
+          deletedSignedPreKeys,
+          deletedSenderKeys,
+          reason,
+          timestamp
+        });
+      } else {
+        console.error('[SIGNAL SERVER] ERROR: deleteAllSignalKeys blocked - not authenticated');
+        socket.emit("deleteAllSignalKeysResponse", { 
+          success: false, 
+          error: 'Not authenticated' 
+        });
+      }
+    } catch (error) {
+      console.error('[SIGNAL SERVER] Error in deleteAllSignalKeys:', error);
+      socket.emit("deleteAllSignalKeysResponse", { 
+        success: false, 
+        error: error.message 
+      });
+    }
+  });
+
   socket.on("storeSignedPreKey", async (data) => {
     try {
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
