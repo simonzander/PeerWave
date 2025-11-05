@@ -72,7 +72,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     super.didUpdateWidget(oldWidget);
     // Reload messages when channel changes
     if (oldWidget.channelUuid != widget.channelUuid) {
-      print('[SIGNAL_GROUP] Channel changed from ${oldWidget.channelUuid} to ${widget.channelUuid}');
+      debugPrint('[SIGNAL_GROUP] Channel changed from ${oldWidget.channelUuid} to ${widget.channelUuid}');
       _messages = []; // Clear old messages
       _messageOffset = 0;
       _hasMoreMessages = true;
@@ -108,22 +108,22 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       try {
         await signalService.identityStore.getIdentityKeyPair();
         hasIdentityKey = true;
-        print('[SIGNAL_GROUP] Identity key pair verified');
+        debugPrint('[SIGNAL_GROUP] Identity key pair verified');
       } catch (e) {
-        print('[SIGNAL_GROUP] Identity key pair check failed: $e');
+        debugPrint('[SIGNAL_GROUP] Identity key pair check failed: $e');
         hasIdentityKey = false;
       }
       
       // Attempt to regenerate if missing (instead of giving up)
       if (!hasIdentityKey) {
-        print('[SIGNAL_GROUP] Attempting to regenerate Signal Protocol...');
+        debugPrint('[SIGNAL_GROUP] Attempting to regenerate Signal Protocol...');
         try {
           // Try to re-initialize Signal Protocol (this should generate keys)
           await signalService.init();
-          print('[SIGNAL_GROUP] Signal Protocol regenerated successfully');
+          debugPrint('[SIGNAL_GROUP] Signal Protocol regenerated successfully');
           hasIdentityKey = true;
         } catch (regenerateError) {
-          print('[SIGNAL_GROUP] Failed to regenerate Signal Protocol: $regenerateError');
+          debugPrint('[SIGNAL_GROUP] Failed to regenerate Signal Protocol: $regenerateError');
           // Show warning but don't block completely
           if (mounted) {
             context.showCustomSnackBar(
@@ -148,7 +148,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       );
 
       if (!hasSenderKey) {
-        print('[SIGNAL_GROUP] Creating and uploading sender key for group ${widget.channelUuid}');
+        debugPrint('[SIGNAL_GROUP] Creating and uploading sender key for group ${widget.channelUuid}');
         
         // Create sender key
         await signalService.createGroupSenderKey(widget.channelUuid);
@@ -156,16 +156,16 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         // Upload to server via REST API (replaces 1:1 distribution)
         await signalService.uploadSenderKeyToServer(widget.channelUuid);
         
-        print('[SIGNAL_GROUP] Sender key uploaded to server successfully');
+        debugPrint('[SIGNAL_GROUP] Sender key uploaded to server successfully');
       } else {
-        print('[SIGNAL_GROUP] Sender key already exists');
+        debugPrint('[SIGNAL_GROUP] Sender key already exists');
       }
       
       // Load ALL sender keys for this channel from server (batch load)
-      print('[SIGNAL_GROUP] Loading all sender keys for channel from server...');
+      debugPrint('[SIGNAL_GROUP] Loading all sender keys for channel from server...');
       try {
         final result = await signalService.loadAllSenderKeysForChannel(widget.channelUuid);
-        print('[SIGNAL_GROUP] All sender keys loaded successfully');
+        debugPrint('[SIGNAL_GROUP] All sender keys loaded successfully');
         
         // Store failed keys for later reference
         if (result['failedKeys'] != null && (result['failedKeys'] as List).isNotEmpty) {
@@ -194,7 +194,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           }
         }
       } catch (loadError) {
-        print('[SIGNAL_GROUP] Error loading sender keys: $loadError');
+        debugPrint('[SIGNAL_GROUP] Error loading sender keys: $loadError');
         // Show warning but don't block completely
         if (mounted) {
           final errorMsg = loadError.toString();
@@ -218,7 +218,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       }
       
     } catch (e) {
-      print('[SIGNAL_GROUP] Error initializing group channel: $e');
+      debugPrint('[SIGNAL_GROUP] Error initializing group channel: $e');
       // Show error but don't block the UI completely
       if (mounted) {
         context.showCustomSnackBar(
@@ -243,7 +243,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       final itemId = data['itemId'] as String;
       final recipientCount = data['recipientCount'] as int;
 
-      print('[SIGNAL_GROUP] Delivery receipt: message delivered to server, $recipientCount recipients');
+      debugPrint('[SIGNAL_GROUP] Delivery receipt: message delivered to server, $recipientCount recipients');
 
       // Update message status in UI
       setState(() {
@@ -256,7 +256,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         }
       });
     } catch (e) {
-      print('[SIGNAL_GROUP] Error handling delivery receipt: $e');
+      debugPrint('[SIGNAL_GROUP] Error handling delivery receipt: $e');
     }
   }
 
@@ -269,7 +269,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       final totalCount = data['totalCount'] as int;
       final allRead = data['allRead'] as bool;
 
-      print('[SIGNAL_GROUP] Read receipt: $readCount/$totalCount read, $deliveredCount delivered');
+      debugPrint('[SIGNAL_GROUP] Read receipt: $readCount/$totalCount read, $deliveredCount delivered');
 
       // Update message status in UI
       setState(() {
@@ -290,7 +290,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         }
       });
     } catch (e) {
-      print('[SIGNAL_GROUP] Error handling read receipt: $e');
+      debugPrint('[SIGNAL_GROUP] Error handling read receipt: $e');
     }
   }
 
@@ -310,7 +310,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       
       // ✅ WHITELIST: Filter out system messages (only display 'message' and 'file')
       if (!DISPLAYABLE_MESSAGE_TYPES.contains(itemType)) {
-        print('[SIGNAL_GROUP] Skipping system message type: $itemType');
+        debugPrint('[SIGNAL_GROUP] Skipping system message type: $itemType');
         return;
       }
       
@@ -324,7 +324,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         return;
       }
       
-      print('[SIGNAL_GROUP] Received groupItem via Socket.IO: $itemId');
+      debugPrint('[SIGNAL_GROUP] Received groupItem via Socket.IO: $itemId');
       
       final signalService = SignalService.instance;
       
@@ -338,7 +338,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           ciphertext: payload,
         );
       } catch (e) {
-        print('[SIGNAL_GROUP] Error decrypting groupItem (auto-reload failed): $e');
+        debugPrint('[SIGNAL_GROUP] Error decrypting groupItem (auto-reload failed): $e');
         // Auto-reload already tried, message is unreadable
         return;
       }
@@ -381,14 +381,14 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         });
       });
       
-      print('[SIGNAL_GROUP] GroupItem decrypted and displayed successfully');
+      debugPrint('[SIGNAL_GROUP] GroupItem decrypted and displayed successfully');
       
       // Send read receipt (only for others' messages)
       if (!isOwnMessage) {
         _sendReadReceiptForMessage(itemId);
       }
     } catch (e) {
-      print('[SIGNAL_GROUP] Error handling groupItem: $e');
+      debugPrint('[SIGNAL_GROUP] Error handling groupItem: $e');
     }
   }
 
@@ -398,17 +398,17 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       // NEW: Use markGroupItemAsRead from SignalService
       SignalService.instance.markGroupItemAsRead(itemId);
       _pendingReadReceipts.remove(itemId);
-      print('[SIGNAL_GROUP] Sent read receipt for item: $itemId');
+      debugPrint('[SIGNAL_GROUP] Sent read receipt for item: $itemId');
       
       // Mark this channel as read in the unread provider
       try {
         final provider = Provider.of<UnreadMessagesProvider>(context, listen: false);
         provider.markChannelAsRead(widget.channelUuid);
       } catch (e) {
-        print('[SIGNAL_GROUP] Error updating unread badge: $e');
+        debugPrint('[SIGNAL_GROUP] Error updating unread badge: $e');
       }
     } catch (e) {
-      print('[SIGNAL_GROUP] Error sending read receipt: $e');
+      debugPrint('[SIGNAL_GROUP] Error sending read receipt: $e');
     }
   }
 
@@ -416,7 +416,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
   void _sendPendingReadReceipts() {
     if (_pendingReadReceipts.isEmpty) return;
     
-    print('[SIGNAL_GROUP] Sending ${_pendingReadReceipts.length} pending read receipts');
+    debugPrint('[SIGNAL_GROUP] Sending ${_pendingReadReceipts.length} pending read receipts');
     final receiptsToSend = List<String>.from(_pendingReadReceipts);
     
     for (final itemId in receiptsToSend) {
@@ -454,14 +454,14 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
 
       // NEW: Load sent group items from new store
       final sentGroupItems = await signalService.loadSentGroupItems(widget.channelUuid);
-      print('[SIGNAL_GROUP] Loaded ${sentGroupItems.length} sent items');
+      debugPrint('[SIGNAL_GROUP] Loaded ${sentGroupItems.length} sent items');
       for (final item in sentGroupItems) {
-        print('[SIGNAL_GROUP] Sent item: itemId=${item['itemId']}, type=${item['type']}, message length=${(item['message'] as String?)?.length}');
+        debugPrint('[SIGNAL_GROUP] Sent item: itemId=${item['itemId']}, type=${item['type']}, message length=${(item['message'] as String?)?.length}');
       }
 
       // NEW: Load received/decrypted group items from new store
       final receivedGroupItems = await signalService.loadReceivedGroupItems(widget.channelUuid);
-      print('[SIGNAL_GROUP] Loaded ${receivedGroupItems.length} received items');
+      debugPrint('[SIGNAL_GROUP] Loaded ${receivedGroupItems.length} received items');
 
       // NEW: Load group items from server via REST API
       final resp = await ApiService.get('/api/group-items/${widget.channelUuid}?limit=100');
@@ -504,7 +504,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                 ciphertext: payload,
               );
             } catch (e) {
-              print('[SIGNAL_GROUP] Error decrypting item $itemId: $e');
+              debugPrint('[SIGNAL_GROUP] Error decrypting item $itemId: $e');
               continue; // Skip unreadable messages
             }
             
@@ -536,7 +536,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
               'type': itemType,
             });
           } catch (e) {
-            print('[SIGNAL_GROUP] Error processing group item: $e');
+            debugPrint('[SIGNAL_GROUP] Error processing group item: $e');
           }
         }
 
@@ -546,7 +546,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
             final msgType = m['type'] ?? 'message';
             final isDisplayable = DISPLAYABLE_MESSAGE_TYPES.contains(msgType);
             if (!isDisplayable) {
-              print('[SIGNAL_GROUP] Skipping sent system message type: $msgType');
+              debugPrint('[SIGNAL_GROUP] Skipping sent system message type: $msgType');
             }
             return isDisplayable;
           }).map((m) => {
@@ -561,7 +561,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
             final msgType = m['type'] ?? 'message';
             final isDisplayable = DISPLAYABLE_MESSAGE_TYPES.contains(msgType);
             if (!isDisplayable) {
-              print('[SIGNAL_GROUP] Skipping received system message type: $msgType');
+              debugPrint('[SIGNAL_GROUP] Skipping received system message type: $msgType');
             }
             return isDisplayable;
           }).map((m) => {
@@ -572,7 +572,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
               final senderId = m['sender'];
               final isReceivedOwnMessage = senderId == signalService.currentUserId;
               final displayName = isReceivedOwnMessage ? 'You' : UserProfileService.instance.getDisplayName(senderId);
-              print('[SIGNAL_GROUP] Mapping received message: senderId=$senderId, displayName=$displayName, type=${m['type']}');
+              debugPrint('[SIGNAL_GROUP] Mapping received message: senderId=$senderId, displayName=$displayName, type=${m['type']}');
               return displayName;
             }(),
             'time': m['timestamp'],
@@ -641,7 +641,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         });
       }
     } catch (e) {
-      print('[SIGNAL_GROUP] Error loading messages: $e');
+      debugPrint('[SIGNAL_GROUP] Error loading messages: $e');
       setState(() {
         _error = 'Error: $e';
         _loading = false;
@@ -680,11 +680,11 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       
       if (!hasSenderKey) {
         // Attempt to create sender key on-the-fly (failsafe)
-        print('[SIGNAL_GROUP] Sender key missing, attempting to create...');
+        debugPrint('[SIGNAL_GROUP] Sender key missing, attempting to create...');
         try {
           await signalService.createGroupSenderKey(widget.channelUuid);
           await signalService.uploadSenderKeyToServer(widget.channelUuid);
-          print('[SIGNAL_GROUP] Sender key created successfully');
+          debugPrint('[SIGNAL_GROUP] Sender key created successfully');
         } catch (keyError) {
           // Show warning but allow retry
           if (mounted) {
@@ -767,10 +767,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         }
       });
 
-      print('[SIGNAL_GROUP] Message sent successfully: $itemId');
+      debugPrint('[SIGNAL_GROUP] Message sent successfully: $itemId');
 
     } catch (e) {
-      print('[SIGNAL_GROUP] Error sending message: $e');
+      debugPrint('[SIGNAL_GROUP] Error sending message: $e');
       
       // Update message status to error
       setState(() {
@@ -1015,12 +1015,12 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       // Cast to FileMessage
       final FileMessage fileMessage = fileMessageDynamic as FileMessage;
       
-      print('[GROUP_CHAT] ================================================');
-      print('[GROUP_CHAT] File download requested');
-      print('[GROUP_CHAT] File ID: ${fileMessage.fileId}');
-      print('[GROUP_CHAT] File Name: ${fileMessage.fileName}');
-      print('[GROUP_CHAT] File Size: ${fileMessage.fileSizeFormatted}');
-      print('[GROUP_CHAT] ================================================');
+      debugPrint('[GROUP_CHAT] ================================================');
+      debugPrint('[GROUP_CHAT] File download requested');
+      debugPrint('[GROUP_CHAT] File ID: ${fileMessage.fileId}');
+      debugPrint('[GROUP_CHAT] File Name: ${fileMessage.fileName}');
+      debugPrint('[GROUP_CHAT] File Size: ${fileMessage.fileSizeFormatted}');
+      debugPrint('[GROUP_CHAT] ================================================');
       
       // Show snackbar
       if (mounted) {
@@ -1045,7 +1045,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       final socketClient = SocketFileClient(socket: socketService.socket!);
       
       // 1. Fetch file info and seeder chunks from server
-      print('[GROUP_CHAT] Fetching file info and seeders...');
+      debugPrint('[GROUP_CHAT] Fetching file info and seeders...');
       // Fetch file info for validation and to get sharedWith list
       final fileInfo = await socketClient.getFileInfo(fileMessage.fileId);
       final seederChunks = await socketClient.getAvailableChunks(fileMessage.fileId);
@@ -1054,18 +1054,18 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         throw Exception('No seeders available for this file');
       }
       
-      print('[GROUP_CHAT] Found ${seederChunks.length} seeders');
+      debugPrint('[GROUP_CHAT] Found ${seederChunks.length} seeders');
       
       // Register as leecher
       await socketClient.registerLeecher(fileMessage.fileId);
       
       // 2. Decode the encrypted file key (base64 → Uint8List)
-      print('[GROUP_CHAT] Decoding file encryption key...');
+      debugPrint('[GROUP_CHAT] Decoding file encryption key...');
       final Uint8List fileKey = base64Decode(fileMessage.encryptedFileKey);
-      print('[GROUP_CHAT] File key decoded: ${fileKey.length} bytes');
+      debugPrint('[GROUP_CHAT] File key decoded: ${fileKey.length} bytes');
       
       // 3. Start P2P download with the file key
-      print('[GROUP_CHAT] Starting P2P download...');
+      debugPrint('[GROUP_CHAT] Starting P2P download...');
       await p2pCoordinator.startDownload(
         fileId: fileMessage.fileId,
         fileName: fileMessage.fileName,
@@ -1078,7 +1078,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         sharedWith: (fileInfo['sharedWith'] as List?)?.cast<String>(), // ✅ NEW: Pass sharedWith from fileInfo
       );
       
-      print('[GROUP_CHAT] Download started successfully!');
+      debugPrint('[GROUP_CHAT] Download started successfully!');
       
       // Show success feedback
       if (mounted) {
@@ -1090,15 +1090,15 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
             textColor: Colors.white,
             onPressed: () {
               // TODO: Navigate to downloads screen
-              print('[GROUP_CHAT] Navigate to downloads screen');
+              debugPrint('[GROUP_CHAT] Navigate to downloads screen');
             },
           ),
         );
       }
       
     } catch (e, stackTrace) {
-      print('[GROUP_CHAT] ❌ Download failed: $e');
-      print('[GROUP_CHAT] Stack trace: $stackTrace');
+      debugPrint('[GROUP_CHAT] ❌ Download failed: $e');
+      debugPrint('[GROUP_CHAT] Stack trace: $stackTrace');
       
       if (mounted) {
         context.showCustomSnackBar(
@@ -1110,3 +1110,4 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     }
   }
 }
+

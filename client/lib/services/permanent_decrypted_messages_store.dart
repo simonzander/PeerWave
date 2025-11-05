@@ -353,3 +353,4 @@ class PermanentDecryptedMessagesStore {
     }
   }
 }
+

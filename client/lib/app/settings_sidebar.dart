@@ -100,3 +100,4 @@ class SettingsSidebar extends StatelessWidget {
     );
   }
 }
+

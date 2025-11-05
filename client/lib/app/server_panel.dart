@@ -117,7 +117,7 @@ class _ServerPanelState extends State<ServerPanel> {
 
             socket.on('authenticated', (data) {
               if(data.authenticated == true) {
-                print('Socket authenticated for $host');
+                debugPrint('Socket authenticated for $host');
                 setState(() {
                   final idx = loaded.indexWhere((s) => s.host == host);
                   if (idx != -1) {

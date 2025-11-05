@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:sqflite/sqflite.dart';
 import 'database_helper.dart';
 
@@ -19,7 +20,7 @@ class SqliteGroupMessageStore {
       throw Exception('[GROUP STORE] Database not properly initialized');
     }
     
-    print('[GROUP STORE] ✓ Initialized SqliteGroupMessageStore');
+    debugPrint('[GROUP STORE] ✓ Initialized SqliteGroupMessageStore');
     return _instance!;
   }
 
@@ -53,10 +54,10 @@ class SqliteGroupMessageStore {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
       
-      print('[GROUP STORE] ✓ Stored group message $itemId in channel $channelId');
+      debugPrint('[GROUP STORE] ✓ Stored group message $itemId in channel $channelId');
     } catch (e, stackTrace) {
-      print('[GROUP STORE] ✗ Error storing group message: $e');
-      print('[GROUP STORE] Stack trace: $stackTrace');
+      debugPrint('[GROUP STORE] ✗ Error storing group message: $e');
+      debugPrint('[GROUP STORE] Stack trace: $stackTrace');
       rethrow;
     }
   }
@@ -89,10 +90,10 @@ class SqliteGroupMessageStore {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
       
-      print('[GROUP STORE] ✓ Stored sent group message $itemId in channel $channelId');
+      debugPrint('[GROUP STORE] ✓ Stored sent group message $itemId in channel $channelId');
     } catch (e, stackTrace) {
-      print('[GROUP STORE] ✗ Error storing sent group message: $e');
-      print('[GROUP STORE] Stack trace: $stackTrace');
+      debugPrint('[GROUP STORE] ✗ Error storing sent group message: $e');
+      debugPrint('[GROUP STORE] Stack trace: $stackTrace');
       rethrow;
     }
   }
@@ -109,11 +110,11 @@ class SqliteGroupMessageStore {
         orderBy: 'timestamp DESC',
       );
       
-      print('[GROUP STORE] ✓ Retrieved ${results.length} messages for channel $channelId');
+      debugPrint('[GROUP STORE] ✓ Retrieved ${results.length} messages for channel $channelId');
       return results;
     } catch (e, stackTrace) {
-      print('[GROUP STORE] ✗ Error getting channel messages: $e');
-      print('[GROUP STORE] Stack trace: $stackTrace');
+      debugPrint('[GROUP STORE] ✗ Error getting channel messages: $e');
+      debugPrint('[GROUP STORE] Stack trace: $stackTrace');
       return [];
     }
   }
@@ -131,14 +132,14 @@ class SqliteGroupMessageStore {
       );
       
       if (results.isEmpty) {
-        print('[GROUP STORE] ⚠ Message not found: $itemId in channel $channelId');
+        debugPrint('[GROUP STORE] ⚠ Message not found: $itemId in channel $channelId');
         return null;
       }
       
       return results.first;
     } catch (e, stackTrace) {
-      print('[GROUP STORE] ✗ Error getting group item: $e');
-      print('[GROUP STORE] Stack trace: $stackTrace');
+      debugPrint('[GROUP STORE] ✗ Error getting group item: $e');
+      debugPrint('[GROUP STORE] Stack trace: $stackTrace');
       return null;
     }
   }
@@ -159,11 +160,11 @@ class SqliteGroupMessageStore {
           .map((row) => row['channel_id'] as String)
           .toList();
       
-      print('[GROUP STORE] ✓ Retrieved ${channels.length} unique channels');
+      debugPrint('[GROUP STORE] ✓ Retrieved ${channels.length} unique channels');
       return channels;
     } catch (e, stackTrace) {
-      print('[GROUP STORE] ✗ Error getting channels: $e');
-      print('[GROUP STORE] Stack trace: $stackTrace');
+      debugPrint('[GROUP STORE] ✗ Error getting channels: $e');
+      debugPrint('[GROUP STORE] Stack trace: $stackTrace');
       return [];
     }
   }
@@ -183,11 +184,11 @@ class SqliteGroupMessageStore {
         orderBy: 'timestamp DESC',
       );
       
-      print('[GROUP STORE] ✓ Retrieved ${results.length} messages of type $type');
+      debugPrint('[GROUP STORE] ✓ Retrieved ${results.length} messages of type $type');
       return results;
     } catch (e, stackTrace) {
-      print('[GROUP STORE] ✗ Error getting messages by type: $e');
-      print('[GROUP STORE] Stack trace: $stackTrace');
+      debugPrint('[GROUP STORE] ✗ Error getting messages by type: $e');
+      debugPrint('[GROUP STORE] Stack trace: $stackTrace');
       return [];
     }
   }
@@ -207,11 +208,11 @@ class SqliteGroupMessageStore {
         orderBy: 'timestamp DESC',
       );
       
-      print('[GROUP STORE] ✓ Retrieved ${results.length} messages from $sender');
+      debugPrint('[GROUP STORE] ✓ Retrieved ${results.length} messages from $sender');
       return results;
     } catch (e, stackTrace) {
-      print('[GROUP STORE] ✗ Error getting messages by sender: $e');
-      print('[GROUP STORE] Stack trace: $stackTrace');
+      debugPrint('[GROUP STORE] ✗ Error getting messages by sender: $e');
+      debugPrint('[GROUP STORE] Stack trace: $stackTrace');
       return [];
     }
   }
@@ -228,13 +229,13 @@ class SqliteGroupMessageStore {
       );
       
       if (deleted > 0) {
-        print('[GROUP STORE] ✓ Deleted message $itemId');
+        debugPrint('[GROUP STORE] ✓ Deleted message $itemId');
       } else {
-        print('[GROUP STORE] ⚠ Message not found: $itemId');
+        debugPrint('[GROUP STORE] ⚠ Message not found: $itemId');
       }
     } catch (e, stackTrace) {
-      print('[GROUP STORE] ✗ Error deleting message: $e');
-      print('[GROUP STORE] Stack trace: $stackTrace');
+      debugPrint('[GROUP STORE] ✗ Error deleting message: $e');
+      debugPrint('[GROUP STORE] Stack trace: $stackTrace');
       rethrow;
     }
   }
@@ -250,10 +251,10 @@ class SqliteGroupMessageStore {
         whereArgs: [channelId],
       );
       
-      print('[GROUP STORE] ✓ Deleted $deleted messages from channel $channelId');
+      debugPrint('[GROUP STORE] ✓ Deleted $deleted messages from channel $channelId');
     } catch (e, stackTrace) {
-      print('[GROUP STORE] ✗ Error deleting channel messages: $e');
-      print('[GROUP STORE] Stack trace: $stackTrace');
+      debugPrint('[GROUP STORE] ✗ Error deleting channel messages: $e');
+      debugPrint('[GROUP STORE] Stack trace: $stackTrace');
       rethrow;
     }
   }
@@ -270,11 +271,11 @@ class SqliteGroupMessageStore {
       ''', [channelId]);
       
       final count = result.first['count'] as int;
-      print('[GROUP STORE] ✓ Channel $channelId has $count messages');
+      debugPrint('[GROUP STORE] ✓ Channel $channelId has $count messages');
       return count;
     } catch (e, stackTrace) {
-      print('[GROUP STORE] ✗ Error getting message count: $e');
-      print('[GROUP STORE] Stack trace: $stackTrace');
+      debugPrint('[GROUP STORE] ✗ Error getting message count: $e');
+      debugPrint('[GROUP STORE] Stack trace: $stackTrace');
       return 0;
     }
   }
@@ -298,9 +299,10 @@ class SqliteGroupMessageStore {
       
       return results.first;
     } catch (e, stackTrace) {
-      print('[GROUP STORE] ✗ Error getting last message: $e');
-      print('[GROUP STORE] Stack trace: $stackTrace');
+      debugPrint('[GROUP STORE] ✗ Error getting last message: $e');
+      debugPrint('[GROUP STORE] Stack trace: $stackTrace');
       return null;
     }
   }
 }
+

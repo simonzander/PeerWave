@@ -206,7 +206,7 @@ class _MessageInputState extends State<MessageInput> {
                 color: Colors.grey[800],
                 tooltip: 'Attach',
                 onSelected: (value) {
-                  print('[MESSAGE_INPUT] Selected attachment type: $value');
+                  debugPrint('[MESSAGE_INPUT] Selected attachment type: $value');
                 },
                 itemBuilder: (context) => [
                   const PopupMenuItem(
@@ -483,3 +483,4 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
     );
   }
 }
+

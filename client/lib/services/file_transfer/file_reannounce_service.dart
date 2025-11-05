@@ -195,3 +195,4 @@ class ReannounceResult {
   bool get hasErrors => errors.isNotEmpty;
   bool get allSuccessful => reannounced == totalFiles && failed == 0;
 }
+

@@ -140,3 +140,4 @@ class NavigationLabelWithBadge extends StatelessWidget {
     }
   }
 }
+

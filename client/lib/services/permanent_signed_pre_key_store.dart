@@ -145,7 +145,7 @@ final IdentityKeyPair identityKeyPair;
     SocketService().registerListener("getSignedPreKeysResponse", (data) async {
       // Server does not store private keys; nothing to reconstruct here.
       if (data.isEmpty) {
-        print("No signed pre keys found, creating new one");
+        debugPrint("No signed pre keys found, creating new one");
         var newPreSignedKey = generateSignedPreKey(identityKeyPair, 0);
         await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
       }
@@ -153,7 +153,7 @@ final IdentityKeyPair identityKeyPair;
     // check if we have any signed prekeys, if not create one
     loadAllStoredSignedPreKeys().then((keys) async {
       if (keys.isEmpty) {
-        print("No signed pre keys found locally, creating new one");
+        debugPrint("No signed pre keys found locally, creating new one");
         var newPreSignedKey = generateSignedPreKey(identityKeyPair, 0);
         await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
         return;
@@ -170,14 +170,14 @@ final IdentityKeyPair identityKeyPair;
       final newest = keys.first;
       final createdAt = newest.createdAt;
       if (createdAt != null && DateTime.now().difference(createdAt).inDays > 7) {
-        print("Found expired signed pre key (older than 7 days), creating new one");
+        debugPrint("Found expired signed pre key (older than 7 days), creating new one");
         var newPreSignedKey = generateSignedPreKey(identityKeyPair, keys.length);
         await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
       }
       
       // Delete all old signed prekeys except the newest one
       for (int i = 1; i < keys.length; i++) {
-        print("Removing old signed pre key: ${keys[i].record.id}");
+        debugPrint("Removing old signed pre key: ${keys[i].record.id}");
         await removeSignedPreKey(keys[i].record.id);
       }
     });
@@ -210,7 +210,7 @@ final IdentityKeyPair identityKeyPair;
 
   @override
   Future<void> storeSignedPreKey(int signedPreKeyId, SignedPreKeyRecord record) async {
-    print("Storing signed pre key: $signedPreKeyId");
+    debugPrint("Storing signed pre key: $signedPreKeyId");
     // Split SignedPreKeyRecord into publicKey and signature for storage
     final publicKey = base64Encode(record.getKeyPair().publicKey.serialize());
     final signature = base64Encode(record.signature);
@@ -281,7 +281,7 @@ final IdentityKeyPair identityKeyPair;
 
   @override
   Future<void> removeSignedPreKey(int signedPreKeyId) async {
-    print("Removing signed pre key: $signedPreKeyId");
+    debugPrint("Removing signed pre key: $signedPreKeyId");
     SocketService().emit("removeSignedPreKey", {
       'id': signedPreKeyId,
     });
@@ -314,3 +314,4 @@ final IdentityKeyPair identityKeyPair;
     }
   }
 }
+

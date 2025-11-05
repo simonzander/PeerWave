@@ -92,3 +92,4 @@ class ClientMetaResponse {
     return 'ClientMetaResponse(name: $name, version: $version, iceServers: ${iceServers.length})';
   }
 }
+

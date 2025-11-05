@@ -5,3 +5,4 @@
 void webauthnLogin(String serverUrl, String email) {
   throw UnsupportedError('WebAuthn is only available on Flutter web.');
 }
+

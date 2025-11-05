@@ -29,7 +29,7 @@ class LogoutService {
   /// - When session expires
   Future<void> logout(BuildContext? context, {bool showMessage = true}) async {
     if (_isLoggingOut) {
-      print('[LOGOUT] Already logging out, skipping duplicate call');
+      debugPrint('[LOGOUT] Already logging out, skipping duplicate call');
       return;
     }
 
@@ -37,22 +37,22 @@ class LogoutService {
     _logoutComplete = false;
 
     try {
-      print('[LOGOUT] ========================================');
-      print('[LOGOUT] Starting logout process...');
-      print('[LOGOUT] ========================================');
+      debugPrint('[LOGOUT] ========================================');
+      debugPrint('[LOGOUT] Starting logout process...');
+      debugPrint('[LOGOUT] ========================================');
 
       // 1. Disconnect socket
       if (SocketService().isConnected) {
-        print('[LOGOUT] Disconnecting socket...');
+        debugPrint('[LOGOUT] Disconnecting socket...');
         SocketService().disconnect();
       }
 
       // 2. Cleanup SignalSetupService
-      print('[LOGOUT] Cleaning up Signal setup...');
+      debugPrint('[LOGOUT] Cleaning up Signal setup...');
       SignalSetupService.instance.cleanupOnLogout();
 
       // 3. Clear user profiles cache
-      print('[LOGOUT] Clearing user profiles...');
+      debugPrint('[LOGOUT] Clearing user profiles...');
       UserProfileService.instance.clearCache();
 
       // Note: Roles and unread messages will be cleared by redirect handler
@@ -60,7 +60,7 @@ class LogoutService {
 
       // 4. Call server logout endpoint FIRST
       try {
-        print('[LOGOUT] Calling server logout endpoint...');
+        debugPrint('[LOGOUT] Calling server logout endpoint...');
         final apiServer = await loadWebApiServer();
         String urlString = apiServer ?? '';
         if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
@@ -69,19 +69,19 @@ class LogoutService {
         
         ApiService.init();
         await ApiService.post('$urlString/auth/logout');
-        print('[LOGOUT] ✓ Server logout successful');
+        debugPrint('[LOGOUT] ✓ Server logout successful');
       } catch (e) {
-        print('[LOGOUT] ⚠ Server logout failed (may already be logged out): $e');
+        debugPrint('[LOGOUT] ⚠ Server logout failed (may already be logged out): $e');
       }
 
       // 5. Clear local auth state
-      print('[LOGOUT] Clearing local auth state...');
+      debugPrint('[LOGOUT] Clearing local auth state...');
       AuthService.isLoggedIn = false;
       _logoutComplete = true;
 
-      print('[LOGOUT] ========================================');
-      print('[LOGOUT] ✅ Logout complete');
-      print('[LOGOUT] ========================================');
+      debugPrint('[LOGOUT] ========================================');
+      debugPrint('[LOGOUT] ✅ Logout complete');
+      debugPrint('[LOGOUT] ========================================');
 
       // 6. Show message if requested (BEFORE navigation)
       final validContext = context;
@@ -94,7 +94,7 @@ class LogoutService {
             ),
           );
         } catch (e) {
-          print('[LOGOUT] ⚠ Could not show logout message (ScaffoldMessenger not available): $e');
+          debugPrint('[LOGOUT] ⚠ Could not show logout message (ScaffoldMessenger not available): $e');
         }
       }
 
@@ -103,20 +103,20 @@ class LogoutService {
       await Future.delayed(const Duration(milliseconds: 50));
       if (validContext != null && validContext.mounted) {
         try {
-          print('[LOGOUT] Navigating to login screen...');
+          debugPrint('[LOGOUT] Navigating to login screen...');
           validContext.go('/login');
-          print('[LOGOUT] ✓ Navigation to /login triggered');
+          debugPrint('[LOGOUT] ✓ Navigation to /login triggered');
         } catch (e) {
-          print('[LOGOUT] ⚠ Could not navigate (GoRouter not available): $e');
+          debugPrint('[LOGOUT] ⚠ Could not navigate (GoRouter not available): $e');
           // If navigation fails, the redirect handler in main.dart will catch it
-          print('[LOGOUT] Redirect handler will handle navigation to /login');
+          debugPrint('[LOGOUT] Redirect handler will handle navigation to /login');
         }
         
         // Reset logout complete flag after navigation
         await Future.delayed(const Duration(milliseconds: 500));
         _logoutComplete = false;
       } else {
-        print('[LOGOUT] No valid context for navigation - redirect handler will handle it');
+        debugPrint('[LOGOUT] No valid context for navigation - redirect handler will handle it');
         // Reset logout complete flag
         await Future.delayed(const Duration(milliseconds: 500));
         _logoutComplete = false;
@@ -129,7 +129,7 @@ class LogoutService {
   /// Auto-logout on 401 Unauthorized
   /// This is called from interceptors when server returns 401
   Future<void> autoLogout(BuildContext? context) async {
-    print('[LOGOUT] ⚠️  401 Unauthorized detected - auto-logout');
+    debugPrint('[LOGOUT] ⚠️  401 Unauthorized detected - auto-logout');
     
     // Perform logout first (without showing success message)
     await logout(context, showMessage: false);
@@ -151,7 +151,7 @@ class LogoutService {
                   try {
                     GoRouter.of(validContext).go('/login');
                   } catch (e) {
-                    print('[LOGOUT] Could not navigate to login: $e');
+                    debugPrint('[LOGOUT] Could not navigate to login: $e');
                   }
                 }
               },
@@ -159,10 +159,11 @@ class LogoutService {
           ),
         );
       } catch (e) {
-        print('[LOGOUT] ⚠ Could not show session expired message (ScaffoldMessenger not available): $e');
+        debugPrint('[LOGOUT] ⚠ Could not show session expired message (ScaffoldMessenger not available): $e');
       }
     } else {
-      print('[LOGOUT] No valid context - session expired, redirect handler will navigate to /login');
+      debugPrint('[LOGOUT] No valid context - session expired, redirect handler will navigate to /login');
     }
   }
 }
+

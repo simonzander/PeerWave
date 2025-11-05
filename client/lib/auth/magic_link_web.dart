@@ -47,7 +47,7 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
         }
       }
     } catch (e) {
-      print('Error fetching magic key: $e');
+      debugPrint('Error fetching magic key: $e');
     }
   }
   final TextEditingController serverController = TextEditingController();
@@ -109,3 +109,4 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
     );
   }
 }
+

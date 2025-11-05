@@ -246,3 +246,4 @@ class ThemeSettingsPage extends StatelessWidget {
     }
   }
 }
+

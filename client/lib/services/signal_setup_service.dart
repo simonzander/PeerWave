@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'signal_service.dart';
 import 'user_profile_service.dart';
 import '../providers/unread_messages_provider.dart';
@@ -27,21 +28,21 @@ class SignalSetupService {
   }) async {
     // If already complete, do nothing
     if (_postLoginInitComplete) {
-      print('[SIGNAL SETUP] Already initialized, skipping');
+      debugPrint('[SIGNAL SETUP] Already initialized, skipping');
       return;
     }
 
     // If currently initializing, wait for it to complete
     if (_initializationCompleter != null) {
-      print('[SIGNAL SETUP] Initialization in progress, waiting for completion...');
+      debugPrint('[SIGNAL SETUP] Initialization in progress, waiting for completion...');
       await _initializationCompleter!.future;
-      print('[SIGNAL SETUP] Initialization completed by another caller');
+      debugPrint('[SIGNAL SETUP] Initialization completed by another caller');
       return;
     }
 
     // Start new initialization
     _initializationCompleter = Completer<void>();
-    print('[SIGNAL SETUP] Starting new initialization...');
+    debugPrint('[SIGNAL SETUP] Starting new initialization...');
 
     try {
       final totalSteps = 6;
@@ -50,91 +51,91 @@ class SignalSetupService {
       // Step 1: Initialize Database (if not already done)
       currentStep++;
       onProgress?.call('Initializing database...', currentStep, totalSteps);
-      print('[SIGNAL SETUP] [$currentStep/$totalSteps] Initializing database...');
+      debugPrint('[SIGNAL SETUP] [$currentStep/$totalSteps] Initializing database...');
       try {
         await DatabaseHelper.database; // Ensures DB is initialized
-        print('[SIGNAL SETUP] ✓ Database initialized');
+        debugPrint('[SIGNAL SETUP] ✓ Database initialized');
       } catch (e) {
-        print('[SIGNAL SETUP] ⚠ Database initialization error (may already be initialized): $e');
+        debugPrint('[SIGNAL SETUP] ⚠ Database initialization error (may already be initialized): $e');
       }
 
       // Step 2: Load user profiles (smart loading)
       currentStep++;
       onProgress?.call('Loading user profiles...', currentStep, totalSteps);
-      print('[SIGNAL SETUP] [$currentStep/$totalSteps] Loading user profiles...');
+      debugPrint('[SIGNAL SETUP] [$currentStep/$totalSteps] Loading user profiles...');
       try {
         final profileService = UserProfileService.instance;
         if (!profileService.isLoaded) {
           await profileService.initProfiles();
-          print('[SIGNAL SETUP] ✓ User profiles loaded: ${profileService.cacheSize} profiles');
+          debugPrint('[SIGNAL SETUP] ✓ User profiles loaded: ${profileService.cacheSize} profiles');
         } else {
-          print('[SIGNAL SETUP] ✓ User profiles already loaded');
+          debugPrint('[SIGNAL SETUP] ✓ User profiles already loaded');
         }
       } catch (e) {
-        print('[SIGNAL SETUP] ⚠ Error loading user profiles: $e');
+        debugPrint('[SIGNAL SETUP] ⚠ Error loading user profiles: $e');
         // Don't block initialization on profile loading failure
       }
 
       // Step 3: Load unread message counts
       currentStep++;
       onProgress?.call('Loading unread messages...', currentStep, totalSteps);
-      print('[SIGNAL SETUP] [$currentStep/$totalSteps] Loading unread message counts...');
+      debugPrint('[SIGNAL SETUP] [$currentStep/$totalSteps] Loading unread message counts...');
       try {
         await unreadProvider.loadFromStorage();
-        print('[SIGNAL SETUP] ✓ Loaded unread message counts from storage');
+        debugPrint('[SIGNAL SETUP] ✓ Loaded unread message counts from storage');
       } catch (e) {
-        print('[SIGNAL SETUP] ⚠ Error loading unread message counts: $e');
+        debugPrint('[SIGNAL SETUP] ⚠ Error loading unread message counts: $e');
       }
 
       // Step 4: Connect UnreadMessagesProvider to SignalService
       currentStep++;
       onProgress?.call('Connecting services...', currentStep, totalSteps);
-      print('[SIGNAL SETUP] [$currentStep/$totalSteps] Connecting UnreadMessagesProvider...');
+      debugPrint('[SIGNAL SETUP] [$currentStep/$totalSteps] Connecting UnreadMessagesProvider...');
       try {
         SignalService.instance.setUnreadMessagesProvider(unreadProvider);
-        print('[SIGNAL SETUP] ✓ Connected UnreadMessagesProvider to SignalService');
+        debugPrint('[SIGNAL SETUP] ✓ Connected UnreadMessagesProvider to SignalService');
       } catch (e) {
-        print('[SIGNAL SETUP] ⚠ Error connecting unread provider: $e');
+        debugPrint('[SIGNAL SETUP] ⚠ Error connecting unread provider: $e');
       }
 
       // Step 5: Initialize SignalService stores and listeners
       currentStep++;
       onProgress?.call('Initializing Signal Protocol...', currentStep, totalSteps);
-      print('[SIGNAL SETUP] [$currentStep/$totalSteps] Initializing Signal stores and listeners...');
+      debugPrint('[SIGNAL SETUP] [$currentStep/$totalSteps] Initializing Signal stores and listeners...');
       try {
         if (!SignalService.instance.isInitialized) {
           await SignalService.instance.initStoresAndListeners();
-          print('[SIGNAL SETUP] ✓ Signal stores and listeners initialized');
+          debugPrint('[SIGNAL SETUP] ✓ Signal stores and listeners initialized');
         } else {
-          print('[SIGNAL SETUP] ✓ Signal already initialized');
+          debugPrint('[SIGNAL SETUP] ✓ Signal already initialized');
         }
       } catch (e) {
-        print('[SIGNAL SETUP] ⚠ Error initializing Signal stores: $e');
+        debugPrint('[SIGNAL SETUP] ⚠ Error initializing Signal stores: $e');
         // This is more critical, but still continue
       }
 
       // Step 6: Initialize global message listeners
       currentStep++;
       onProgress?.call('Setting up message listeners...', currentStep, totalSteps);
-      print('[SIGNAL SETUP] [$currentStep/$totalSteps] Initializing message listeners...');
+      debugPrint('[SIGNAL SETUP] [$currentStep/$totalSteps] Initializing message listeners...');
       try {
         await MessageListenerService.instance.initialize();
-        print('[SIGNAL SETUP] ✓ Message listeners initialized');
+        debugPrint('[SIGNAL SETUP] ✓ Message listeners initialized');
       } catch (e) {
-        print('[SIGNAL SETUP] ⚠ Error initializing message listeners: $e');
+        debugPrint('[SIGNAL SETUP] ⚠ Error initializing message listeners: $e');
       }
 
       _postLoginInitComplete = true;
-      print('[SIGNAL SETUP] ========================================');
-      print('[SIGNAL SETUP] ✅ Post-login initialization complete');
-      print('[SIGNAL SETUP] ========================================');
+      debugPrint('[SIGNAL SETUP] ========================================');
+      debugPrint('[SIGNAL SETUP] ✅ Post-login initialization complete');
+      debugPrint('[SIGNAL SETUP] ========================================');
       
       // Complete the future successfully
       _initializationCompleter!.complete();
       
     } catch (e, stackTrace) {
-      print('[SIGNAL SETUP] ❌ Initialization failed: $e');
-      print('[SIGNAL SETUP] Stack trace: $stackTrace');
+      debugPrint('[SIGNAL SETUP] ❌ Initialization failed: $e');
+      debugPrint('[SIGNAL SETUP] Stack trace: $stackTrace');
       
       // Complete with error so waiting callers also get the error
       _initializationCompleter!.completeError(e, stackTrace);
@@ -173,7 +174,7 @@ class SignalSetupService {
         await SignalService.instance.identityStore.getIdentityKeyPair();
         result['hasIdentity'] = true; // If no exception, key exists
       } catch (e) {
-        print('[SIGNAL SETUP] No identity key pair found: $e');
+        debugPrint('[SIGNAL SETUP] No identity key pair found: $e');
         result['hasIdentity'] = false;
       }
 
@@ -182,7 +183,7 @@ class SignalSetupService {
         final signedPreKeys = await SignalService.instance.signedPreKeyStore.loadSignedPreKeys();
         result['hasSignedPreKey'] = signedPreKeys.isNotEmpty;
       } catch (e) {
-        print('[SIGNAL SETUP] No signed pre keys found: $e');
+        debugPrint('[SIGNAL SETUP] No signed pre keys found: $e');
         result['hasSignedPreKey'] = false;
       }
 
@@ -191,7 +192,7 @@ class SignalSetupService {
         final preKeys = await SignalService.instance.preKeyStore.getAllPreKeys();
         result['preKeysCount'] = preKeys.length;
       } catch (e) {
-        print('[SIGNAL SETUP] Error getting pre keys count: $e');
+        debugPrint('[SIGNAL SETUP] Error getting pre keys count: $e');
         result['preKeysCount'] = 0;
       }
 
@@ -216,11 +217,11 @@ class SignalSetupService {
         missingKeys['preKeys'] = 'Insufficient pre keys: $preKeysCount/$minRequired';
       }
 
-      print('[SIGNAL SETUP] Status check: needsSetup=${result['needsSetup']}, identity=$hasIdentity, signedPreKey=$hasSignedPreKey, preKeys=$preKeysCount');
+      debugPrint('[SIGNAL SETUP] Status check: needsSetup=${result['needsSetup']}, identity=$hasIdentity, signedPreKey=$hasSignedPreKey, preKeys=$preKeysCount');
 
       return result;
     } catch (e) {
-      print('[SIGNAL SETUP] Error checking keys status: $e');
+      debugPrint('[SIGNAL SETUP] Error checking keys status: $e');
       // If we can't check, assume setup is needed
       result['needsSetup'] = true;
       missingKeys['error'] = 'Unable to check keys: $e';
@@ -236,7 +237,7 @@ class SignalSetupService {
 
   /// Cleanup on logout - reset initialization state
   void cleanupOnLogout() {
-    print('[SIGNAL SETUP] Cleaning up on logout...');
+    debugPrint('[SIGNAL SETUP] Cleaning up on logout...');
     
     // Dispose message listeners
     MessageListenerService.instance.dispose();
@@ -245,6 +246,7 @@ class SignalSetupService {
     _postLoginInitComplete = false;
     _initializationCompleter = null;
     
-    print('[SIGNAL SETUP] ✓ Cleanup complete');
+    debugPrint('[SIGNAL SETUP] ✓ Cleanup complete');
   }
 }
+

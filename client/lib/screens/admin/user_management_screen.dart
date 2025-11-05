@@ -492,3 +492,4 @@ class UserInfo {
     );
   }
 }
+

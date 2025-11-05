@@ -72,32 +72,32 @@ class VideoConferenceService extends ChangeNotifier {
     final service = VideoConferenceService.instance;
     
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('[PreJoin][TEST] 🔐 GENERATING E2EE KEY (FIRST PARTICIPANT)');
-      print('[PreJoin][TEST] Channel: $channelId');
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('[PreJoin][TEST] 🔐 GENERATING E2EE KEY (FIRST PARTICIPANT)');
+      debugPrint('[PreJoin][TEST] Channel: $channelId');
       
       // Set channel ID
       service._currentChannelId = channelId;
-      print('[PreJoin][TEST] ✓ Channel ID set on service instance');
+      debugPrint('[PreJoin][TEST] ✓ Channel ID set on service instance');
       
       // Register service with MessageListenerService to handle key requests
-      print('[PreJoin][TEST] 📝 Registering service with MessageListenerService...');
+      debugPrint('[PreJoin][TEST] 📝 Registering service with MessageListenerService...');
       final messageListener = MessageListenerService.instance;
       messageListener.registerVideoConferenceService(service);
-      print('[PreJoin][TEST] ✓ Service registered, ready to respond to key requests');
+      debugPrint('[PreJoin][TEST] ✓ Service registered, ready to respond to key requests');
       
       // Initialize E2EE (generate key, create KeyProvider, initialize sender key)
       await service._initializeE2EE();
       
-      print('[PreJoin][TEST] ✅ E2EE KEY GENERATION SUCCESSFUL');
-      print('[PreJoin][TEST] Key stored in VideoConferenceService singleton');
-      print('[PreJoin][TEST] Ready to join call AND respond to key requests');
-      print('═══════════════════════════════════════════════════════════');
+      debugPrint('[PreJoin][TEST] ✅ E2EE KEY GENERATION SUCCESSFUL');
+      debugPrint('[PreJoin][TEST] Key stored in VideoConferenceService singleton');
+      debugPrint('[PreJoin][TEST] Ready to join call AND respond to key requests');
+      debugPrint('═══════════════════════════════════════════════════════════');
       
       return true;
     } catch (e) {
-      print('[PreJoin][TEST] ❌ ERROR generating E2EE key: $e');
-      print('═══════════════════════════════════════════════════════════');
+      debugPrint('[PreJoin][TEST] ❌ ERROR generating E2EE key: $e');
+      debugPrint('═══════════════════════════════════════════════════════════');
       return false;
     }
   }
@@ -109,43 +109,43 @@ class VideoConferenceService extends ChangeNotifier {
     final service = VideoConferenceService.instance;
     
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('[VideoConf][TEST] 🔑 REQUESTING E2EE KEY');
-      print('[VideoConf][TEST] Channel: $channelId');
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('[VideoConf][TEST] 🔑 REQUESTING E2EE KEY');
+      debugPrint('[VideoConf][TEST] Channel: $channelId');
       
       // ⚠️ CRITICAL: Set channel ID so response handler knows which channel this is for
       service._currentChannelId = channelId;
-      print('[VideoConf][TEST] ✓ Channel ID set on service instance');
+      debugPrint('[VideoConf][TEST] ✓ Channel ID set on service instance');
       
       // ⚠️ CRITICAL: Register this service instance with MessageListenerService
       // so it receives E2EE key responses
-      print('[VideoConf][TEST] 📝 Registering service with MessageListenerService...');
+      debugPrint('[VideoConf][TEST] 📝 Registering service with MessageListenerService...');
       final messageListener = MessageListenerService.instance;
       messageListener.registerVideoConferenceService(service);
-      print('[VideoConf][TEST] ✓ Service registered, ready to receive key responses');
+      debugPrint('[VideoConf][TEST] ✓ Service registered, ready to receive key responses');
       
       final requestTimestamp = DateTime.now().millisecondsSinceEpoch;
       
       // Get current user ID from SignalService
       final userId = SignalService.instance.currentUserId ?? 'unknown';
       
-      print('[VideoConf][TEST] Requester ID: $userId');
-      print('[VideoConf][TEST] Request Timestamp: $requestTimestamp');
-      print('[VideoConf][TEST] Message Type: video_e2ee_key_request');
+      debugPrint('[VideoConf][TEST] Requester ID: $userId');
+      debugPrint('[VideoConf][TEST] Request Timestamp: $requestTimestamp');
+      debugPrint('[VideoConf][TEST] Message Type: video_e2ee_key_request');
       
       // ⚠️ IMPORTANT: Initialize sender key BEFORE sending request
       // WebRTC channels use Signal Protocol for E2EE key exchange
       // First message in a fresh channel needs sender key initialization
-      print('[VideoConf][TEST] 🔧 Initializing sender key for channel...');
+      debugPrint('[VideoConf][TEST] 🔧 Initializing sender key for channel...');
       try {
         // Validate sender key - will check server if corrupted locally
         await SignalService.instance.createGroupSenderKey(channelId);
-        print('[VideoConf][TEST] ✓ Sender key initialized');
+        debugPrint('[VideoConf][TEST] ✓ Sender key initialized');
       } catch (e) {
-        print('[VideoConf][TEST] ⚠️ Sender key initialization failed: $e');
+        debugPrint('[VideoConf][TEST] ⚠️ Sender key initialization failed: $e');
         // Try to recover by loading from server
         try {
-          print('[VideoConf][TEST] Attempting to load sender key from server...');
+          debugPrint('[VideoConf][TEST] Attempting to load sender key from server...');
           final loaded = await SignalService.instance.loadSenderKeyFromServer(
             channelId: channelId,
             userId: SignalService.instance.currentUserId!,
@@ -153,12 +153,12 @@ class VideoConferenceService extends ChangeNotifier {
             forceReload: true,
           );
           if (loaded) {
-            print('[VideoConf][TEST] ✓ Sender key restored from server');
+            debugPrint('[VideoConf][TEST] ✓ Sender key restored from server');
           } else {
-            print('[VideoConf][TEST] ⚠️ No sender key on server - will be created on first send');
+            debugPrint('[VideoConf][TEST] ⚠️ No sender key on server - will be created on first send');
           }
         } catch (recoveryError) {
-          print('[VideoConf][TEST] ⚠️ Failed to load from server: $recoveryError');
+          debugPrint('[VideoConf][TEST] ⚠️ Failed to load from server: $recoveryError');
           // Will be created automatically during sendGroupItem if needed
         }
       }
@@ -174,8 +174,8 @@ class VideoConferenceService extends ChangeNotifier {
         type: 'video_e2ee_key_request', // NEW itemType!
       );
       
-      print('[VideoConf][TEST] ✓ Key request sent via Signal Protocol');
-      print('[VideoConf][TEST] ⏳ Waiting for key response (10 second timeout)...');
+      debugPrint('[VideoConf][TEST] ✓ Key request sent via Signal Protocol');
+      debugPrint('[VideoConf][TEST] ⏳ Waiting for key response (10 second timeout)...');
       
       // Wait for key response (handled by MessageListenerService)
       service._keyReceivedCompleter = Completer<bool>();
@@ -184,14 +184,14 @@ class VideoConferenceService extends ChangeNotifier {
       return await service._keyReceivedCompleter!.future.timeout(
         Duration(seconds: 10),
         onTimeout: () {
-          print('[VideoConf][TEST] ❌ KEY REQUEST TIMEOUT - No response in 10 seconds');
-          print('═══════════════════════════════════════════════════════════');
+          debugPrint('[VideoConf][TEST] ❌ KEY REQUEST TIMEOUT - No response in 10 seconds');
+          debugPrint('═══════════════════════════════════════════════════════════');
           return false;
         },
       );
     } catch (e) {
-      print('[VideoConf][TEST] ❌ ERROR requesting E2EE key: $e');
-      print('═══════════════════════════════════════════════════════════');
+      debugPrint('[VideoConf][TEST] ❌ ERROR requesting E2EE key: $e');
+      debugPrint('═══════════════════════════════════════════════════════════');
       return false;
     }
   }
@@ -199,8 +199,8 @@ class VideoConferenceService extends ChangeNotifier {
   /// Initialize E2EE with Signal Protocol key exchange
   Future<void> _initializeE2EE() async {
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('[VideoConf][TEST] 🔐 INITIALIZING E2EE (FIRST PARTICIPANT)');
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('[VideoConf][TEST] 🔐 INITIALIZING E2EE (FIRST PARTICIPANT)');
       
       // Generate ONE shared key for this channel
       // The first participant generates, others receive it via Signal Protocol
@@ -218,23 +218,23 @@ class VideoConferenceService extends ChangeNotifier {
       final keyBase64 = base64Encode(_channelSharedKey!);
       final keyPreview = keyBase64.substring(0, 16);
       
-      print('[VideoConf][TEST] Key Generated: $keyPreview... (${_channelSharedKey!.length} bytes)');
-      print('[VideoConf][TEST] Key Timestamp: $_keyTimestamp');
-      print('[VideoConf][TEST] Is First Participant: $_isFirstParticipant');
+      debugPrint('[VideoConf][TEST] Key Generated: $keyPreview... (${_channelSharedKey!.length} bytes)');
+      debugPrint('[VideoConf][TEST] Key Timestamp: $_keyTimestamp');
+      debugPrint('[VideoConf][TEST] Is First Participant: $_isFirstParticipant');
       
       // ⚠️ IMPORTANT: Initialize sender key for responding to key requests
       // First participant needs sender key to send key responses to new joiners
       if (_currentChannelId != null) {
-        print('[VideoConf][TEST] 🔧 Initializing sender key for channel...');
+        debugPrint('[VideoConf][TEST] 🔧 Initializing sender key for channel...');
         try {
           // Validate sender key - will check server if corrupted locally
           await SignalService.instance.createGroupSenderKey(_currentChannelId!);
-          print('[VideoConf][TEST] ✓ Sender key initialized (ready to respond to key requests)');
+          debugPrint('[VideoConf][TEST] ✓ Sender key initialized (ready to respond to key requests)');
         } catch (e) {
-          print('[VideoConf][TEST] ⚠️ Sender key initialization failed: $e');
+          debugPrint('[VideoConf][TEST] ⚠️ Sender key initialization failed: $e');
           // Try to recover by loading from server
           try {
-            print('[VideoConf][TEST] Attempting to load sender key from server...');
+            debugPrint('[VideoConf][TEST] Attempting to load sender key from server...');
             final loaded = await SignalService.instance.loadSenderKeyFromServer(
               channelId: _currentChannelId!,
               userId: SignalService.instance.currentUserId!,
@@ -242,12 +242,12 @@ class VideoConferenceService extends ChangeNotifier {
               forceReload: true,
             );
             if (loaded) {
-              print('[VideoConf][TEST] ✓ Sender key restored from server');
+              debugPrint('[VideoConf][TEST] ✓ Sender key restored from server');
             } else {
-              print('[VideoConf][TEST] ⚠️ No sender key on server - will be created on first send');
+              debugPrint('[VideoConf][TEST] ⚠️ No sender key on server - will be created on first send');
             }
           } catch (recoveryError) {
-            print('[VideoConf][TEST] ⚠️ Failed to load from server: $recoveryError');
+            debugPrint('[VideoConf][TEST] ⚠️ Failed to load from server: $recoveryError');
             // Will be created automatically during sendGroupItem if needed
           }
         }
@@ -260,23 +260,23 @@ class VideoConferenceService extends ChangeNotifier {
         // Set the shared key in KeyProvider
         await _keyProvider!.setKey(keyBase64);
         
-        print('[VideoConf][TEST] ✓ BaseKeyProvider created with e2ee.worker.dart.js');
-        print('[VideoConf][TEST] ✓ Key set in KeyProvider (AES-256 frame encryption ready)');
-        print('[VideoConf][TEST] 📊 KEY STATE:');
-        print('[VideoConf][TEST]    - Key Preview: $keyPreview...');
-        print('[VideoConf][TEST]    - Timestamp: $_keyTimestamp');
-        print('[VideoConf][TEST]    - Channel: $_currentChannelId');
+        debugPrint('[VideoConf][TEST] ✓ BaseKeyProvider created with e2ee.worker.dart.js');
+        debugPrint('[VideoConf][TEST] ✓ Key set in KeyProvider (AES-256 frame encryption ready)');
+        debugPrint('[VideoConf][TEST] 📊 KEY STATE:');
+        debugPrint('[VideoConf][TEST]    - Key Preview: $keyPreview...');
+        debugPrint('[VideoConf][TEST]    - Timestamp: $_keyTimestamp');
+        debugPrint('[VideoConf][TEST]    - Channel: $_currentChannelId');
       } catch (e) {
-        print('[VideoConf][TEST] ⚠️ Failed to create BaseKeyProvider: $e');
-        print('[VideoConf][TEST] ⚠️ Falling back to DTLS/SRTP transport encryption only');
+        debugPrint('[VideoConf][TEST] ⚠️ Failed to create BaseKeyProvider: $e');
+        debugPrint('[VideoConf][TEST] ⚠️ Falling back to DTLS/SRTP transport encryption only');
         _keyProvider = null;
       }
       
-      print('[VideoConf][TEST] ✓ E2EE INITIALIZATION COMPLETE');
-      print('[VideoConf][TEST] ✓ Role: KEY ORIGINATOR (first participant)');
-      print('═══════════════════════════════════════════════════════════');
+      debugPrint('[VideoConf][TEST] ✓ E2EE INITIALIZATION COMPLETE');
+      debugPrint('[VideoConf][TEST] ✓ Role: KEY ORIGINATOR (first participant)');
+      debugPrint('═══════════════════════════════════════════════════════════');
     } catch (e) {
-      print('[VideoConf] E2EE initialization error: $e');
+      debugPrint('[VideoConf] E2EE initialization error: $e');
       rethrow;
     }
   }
@@ -287,7 +287,7 @@ class VideoConferenceService extends ChangeNotifier {
   Future<void> _exchangeKeysWithParticipant(String participantUserId) async {
     try {
       if (_channelSharedKey == null || _currentChannelId == null) {
-        print('[VideoConf] ⚠️ Key or channel not initialized, skipping key exchange');
+        debugPrint('[VideoConf] ⚠️ Key or channel not initialized, skipping key exchange');
         return;
       }
 
@@ -298,7 +298,7 @@ class VideoConferenceService extends ChangeNotifier {
       final itemId = 'video_key_${DateTime.now().millisecondsSinceEpoch}';
       
       if (!isFirstParticipant) {
-        print('[VideoConf] Not first participant, requesting key from $participantUserId');
+        debugPrint('[VideoConf] Not first participant, requesting key from $participantUserId');
         
         // Send key request via Signal Protocol (encrypted group message)
         await SignalService.instance.sendGroupItem(
@@ -313,7 +313,7 @@ class VideoConferenceService extends ChangeNotifier {
         return;
       }
 
-      print('[VideoConf] First participant - sending shared key to: $participantUserId');
+      debugPrint('[VideoConf] First participant - sending shared key to: $participantUserId');
       
       // Send the shared key via Signal Protocol (encrypted group message)
       final keyBase64 = base64Encode(_channelSharedKey!);
@@ -329,11 +329,11 @@ class VideoConferenceService extends ChangeNotifier {
         type: 'video_e2ee_key_response',  // Use new format with timestamp
       );
       
-      print('[VideoConf] ✓ Shared key sent via Signal Protocol (${_channelSharedKey!.length} bytes)');
-      print('[VideoConf] ✓ Key will enable frame-level encryption for all participants');
+      debugPrint('[VideoConf] ✓ Shared key sent via Signal Protocol (${_channelSharedKey!.length} bytes)');
+      debugPrint('[VideoConf] ✓ Key will enable frame-level encryption for all participants');
       
     } catch (e) {
-      print('[VideoConf] Key exchange error: $e');
+      debugPrint('[VideoConf] Key exchange error: $e');
     }
   }
 
@@ -346,39 +346,39 @@ class VideoConferenceService extends ChangeNotifier {
     required int timestamp,  // For race condition resolution
   }) async {
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('[VideoConf][TEST] 📨 RECEIVED E2EE KEY MESSAGE');
-      print('[VideoConf][TEST] Sender: $senderUserId');
-      print('[VideoConf][TEST] Channel: $channelId');
-      print('[VideoConf][TEST] Timestamp: $timestamp');
-      print('[VideoConf][TEST] Current Channel: $_currentChannelId');
-      print('[VideoConf][TEST] Current Timestamp: $_keyTimestamp');
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('[VideoConf][TEST] 📨 RECEIVED E2EE KEY MESSAGE');
+      debugPrint('[VideoConf][TEST] Sender: $senderUserId');
+      debugPrint('[VideoConf][TEST] Channel: $channelId');
+      debugPrint('[VideoConf][TEST] Timestamp: $timestamp');
+      debugPrint('[VideoConf][TEST] Current Channel: $_currentChannelId');
+      debugPrint('[VideoConf][TEST] Current Timestamp: $_keyTimestamp');
       
       if (channelId != _currentChannelId) {
-        print('[VideoConf][TEST] ❌ Ignoring key for different channel');
-        print('═══════════════════════════════════════════════════════════');
+        debugPrint('[VideoConf][TEST] ❌ Ignoring key for different channel');
+        debugPrint('═══════════════════════════════════════════════════════════');
         return;
       }
 
       // If encryptedKey is empty, this is a KEY REQUEST, not a response
       if (encryptedKey.isEmpty) {
-        print('[VideoConf][TEST] 📩 This is a KEY REQUEST from $senderUserId');
-        print('[VideoConf][TEST] 🔄 Sending our key in response...');
-        print('═══════════════════════════════════════════════════════════');
+        debugPrint('[VideoConf][TEST] 📩 This is a KEY REQUEST from $senderUserId');
+        debugPrint('[VideoConf][TEST] 🔄 Sending our key in response...');
+        debugPrint('═══════════════════════════════════════════════════════════');
         await handleKeyRequest(senderUserId);
         return;
       }
 
-      print('[VideoConf][TEST] 🔑 This is a KEY RESPONSE');
+      debugPrint('[VideoConf][TEST] 🔑 This is a KEY RESPONSE');
       
       // RACE CONDITION RESOLUTION: Compare timestamps (oldest wins)
       if (_keyTimestamp != null && timestamp > _keyTimestamp!) {
-        print('[VideoConf][TEST] ⚠️ RACE CONDITION DETECTED!');
-        print('[VideoConf][TEST] Our timestamp: $_keyTimestamp (older)');
-        print('[VideoConf][TEST] Received timestamp: $timestamp (newer)');
-        print('[VideoConf][TEST] ✓ REJECTING NEWER KEY - Keeping our older key');
-        print('[VideoConf][TEST] Rule: Oldest timestamp wins!');
-        print('═══════════════════════════════════════════════════════════');
+        debugPrint('[VideoConf][TEST] ⚠️ RACE CONDITION DETECTED!');
+        debugPrint('[VideoConf][TEST] Our timestamp: $_keyTimestamp (older)');
+        debugPrint('[VideoConf][TEST] Received timestamp: $timestamp (newer)');
+        debugPrint('[VideoConf][TEST] ✓ REJECTING NEWER KEY - Keeping our older key');
+        debugPrint('[VideoConf][TEST] Rule: Oldest timestamp wins!');
+        debugPrint('═══════════════════════════════════════════════════════════');
         return;
       }
       
@@ -387,57 +387,57 @@ class VideoConferenceService extends ChangeNotifier {
       final keyBase64 = base64Encode(keyBytes);
       final keyPreview = keyBase64.substring(0, 16);
       
-      print('[VideoConf][TEST] 📦 Decoding received key...');
-      print('[VideoConf][TEST] Key Preview: $keyPreview... (${keyBytes.length} bytes)');
+      debugPrint('[VideoConf][TEST] 📦 Decoding received key...');
+      debugPrint('[VideoConf][TEST] Key Preview: $keyPreview... (${keyBytes.length} bytes)');
       
       // Accept the key and update timestamp
       _channelSharedKey = keyBytes;
       _keyTimestamp = timestamp;
       _isFirstParticipant = false;  // We received the key, so we're NOT the first participant
       
-      print('[VideoConf][TEST] ✓ KEY ACCEPTED');
-      print('[VideoConf][TEST] Updated Timestamp: $_keyTimestamp');
-      print('[VideoConf][TEST] Is First Participant: $_isFirstParticipant');
+      debugPrint('[VideoConf][TEST] ✓ KEY ACCEPTED');
+      debugPrint('[VideoConf][TEST] Updated Timestamp: $_keyTimestamp');
+      debugPrint('[VideoConf][TEST] Is First Participant: $_isFirstParticipant');
       
       // Set the key in BaseKeyProvider if available
       if (_keyProvider != null) {
         try {
           await _keyProvider!.setKey(keyBase64);
-          print('[VideoConf][TEST] ✓ Key set in BaseKeyProvider (KeyProvider available)');
-          print('[VideoConf][TEST] ✓ Frame-level AES-256 E2EE now ACTIVE');
-          print('[VideoConf][TEST] ✓ Role: KEY RECEIVER (non-first participant)');
-          print('[VideoConf][TEST] 📊 KEY STATE:');
-          print('[VideoConf][TEST]    - Key Preview: $keyPreview...');
-          print('[VideoConf][TEST]    - Timestamp: $_keyTimestamp');
-          print('[VideoConf][TEST]    - Channel: $_currentChannelId');
+          debugPrint('[VideoConf][TEST] ✓ Key set in BaseKeyProvider (KeyProvider available)');
+          debugPrint('[VideoConf][TEST] ✓ Frame-level AES-256 E2EE now ACTIVE');
+          debugPrint('[VideoConf][TEST] ✓ Role: KEY RECEIVER (non-first participant)');
+          debugPrint('[VideoConf][TEST] 📊 KEY STATE:');
+          debugPrint('[VideoConf][TEST]    - Key Preview: $keyPreview...');
+          debugPrint('[VideoConf][TEST]    - Timestamp: $_keyTimestamp');
+          debugPrint('[VideoConf][TEST]    - Channel: $_currentChannelId');
           
           // The KeyProvider will automatically encrypt/decrypt frames once the key is set
           // No additional action needed - LiveKit handles the rest
           if (_room != null && _isConnected) {
-            print('[VideoConf][TEST] ✓ Room already connected - KeyProvider will now decrypt incoming frames');
-            print('[VideoConf][TEST] ✓ All participants should now use the same key: timestamp=$_keyTimestamp');
+            debugPrint('[VideoConf][TEST] ✓ Room already connected - KeyProvider will now decrypt incoming frames');
+            debugPrint('[VideoConf][TEST] ✓ All participants should now use the same key: timestamp=$_keyTimestamp');
           }
         } catch (e) {
-          print('[VideoConf][TEST] ❌ Failed to set key in KeyProvider: $e');
+          debugPrint('[VideoConf][TEST] ❌ Failed to set key in KeyProvider: $e');
         }
       } else {
-        print('[VideoConf][TEST] ⚠️ KeyProvider not available - frame encryption disabled');
-        print('[VideoConf][TEST] ⚠️ Only DTLS/SRTP transport encryption active');
+        debugPrint('[VideoConf][TEST] ⚠️ KeyProvider not available - frame encryption disabled');
+        debugPrint('[VideoConf][TEST] ⚠️ Only DTLS/SRTP transport encryption active');
       }
       
       // Complete the key received completer if PreJoin is waiting
       if (_keyReceivedCompleter != null && !_keyReceivedCompleter!.isCompleted) {
         _keyReceivedCompleter!.complete(true);
-        print('[VideoConf][TEST] ✓ PreJoin screen notified - key exchange complete!');
+        debugPrint('[VideoConf][TEST] ✓ PreJoin screen notified - key exchange complete!');
       }
       
-      print('[VideoConf][TEST] ✅ KEY EXCHANGE SUCCESSFUL');
-      print('═══════════════════════════════════════════════════════════');
+      debugPrint('[VideoConf][TEST] ✅ KEY EXCHANGE SUCCESSFUL');
+      debugPrint('═══════════════════════════════════════════════════════════');
       
       notifyListeners();
     } catch (e) {
-      print('[VideoConf][TEST] ❌ ERROR handling E2EE key: $e');
-      print('═══════════════════════════════════════════════════════════');
+      debugPrint('[VideoConf][TEST] ❌ ERROR handling E2EE key: $e');
+      debugPrint('═══════════════════════════════════════════════════════════');
       // Complete with error if PreJoin is waiting
       if (_keyReceivedCompleter != null && !_keyReceivedCompleter!.isCompleted) {
         _keyReceivedCompleter!.completeError(e);
@@ -449,35 +449,35 @@ class VideoConferenceService extends ChangeNotifier {
   /// Send our SHARED CHANNEL KEY to them via Signal Protocol
   Future<void> handleKeyRequest(String requesterId) async {
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('[VideoConf][TEST] 📬 HANDLING KEY REQUEST');
-      print('[VideoConf][TEST] Requester: $requesterId');
-      print('[VideoConf][TEST] Our Timestamp: $_keyTimestamp');
-      print('[VideoConf][TEST] Is First Participant: $_isFirstParticipant');
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('[VideoConf][TEST] 📬 HANDLING KEY REQUEST');
+      debugPrint('[VideoConf][TEST] Requester: $requesterId');
+      debugPrint('[VideoConf][TEST] Our Timestamp: $_keyTimestamp');
+      debugPrint('[VideoConf][TEST] Is First Participant: $_isFirstParticipant');
       
       if (_channelSharedKey == null || _currentChannelId == null) {
-        print('[VideoConf][TEST] ❌ Key not initialized, cannot respond');
-        print('═══════════════════════════════════════════════════════════');
+        debugPrint('[VideoConf][TEST] ❌ Key not initialized, cannot respond');
+        debugPrint('═══════════════════════════════════════════════════════════');
         return;
       }
       
       if (_keyTimestamp == null) {
-        print('[VideoConf][TEST] ❌ Key timestamp not available, cannot respond');
-        print('═══════════════════════════════════════════════════════════');
+        debugPrint('[VideoConf][TEST] ❌ Key timestamp not available, cannot respond');
+        debugPrint('═══════════════════════════════════════════════════════════');
         return;
       }
 
       // ⚠️ IMPORTANT: Ensure sender key exists before responding
-      print('[VideoConf][TEST] 🔧 Ensuring sender key exists...');
+      debugPrint('[VideoConf][TEST] 🔧 Ensuring sender key exists...');
       try {
         // Validate sender key - will check server if corrupted locally
         await SignalService.instance.createGroupSenderKey(_currentChannelId!);
-        print('[VideoConf][TEST] ✓ Sender key ready');
+        debugPrint('[VideoConf][TEST] ✓ Sender key ready');
       } catch (e) {
-        print('[VideoConf][TEST] ⚠️ Sender key initialization failed: $e');
+        debugPrint('[VideoConf][TEST] ⚠️ Sender key initialization failed: $e');
         // Try to recover by loading from server
         try {
-          print('[VideoConf][TEST] Attempting to load sender key from server...');
+          debugPrint('[VideoConf][TEST] Attempting to load sender key from server...');
           final loaded = await SignalService.instance.loadSenderKeyFromServer(
             channelId: _currentChannelId!,
             userId: SignalService.instance.currentUserId!,
@@ -485,12 +485,12 @@ class VideoConferenceService extends ChangeNotifier {
             forceReload: true,
           );
           if (loaded) {
-            print('[VideoConf][TEST] ✓ Sender key restored from server');
+            debugPrint('[VideoConf][TEST] ✓ Sender key restored from server');
           } else {
-            print('[VideoConf][TEST] ⚠️ No sender key on server - will be created on first send');
+            debugPrint('[VideoConf][TEST] ⚠️ No sender key on server - will be created on first send');
           }
         } catch (recoveryError) {
-          print('[VideoConf][TEST] ⚠️ Failed to load from server: $recoveryError');
+          debugPrint('[VideoConf][TEST] ⚠️ Failed to load from server: $recoveryError');
           // Will be created automatically during sendGroupItem if needed
         }
       }
@@ -500,10 +500,10 @@ class VideoConferenceService extends ChangeNotifier {
       final keyPreview = keyBase64.substring(0, 16);
       final itemId = 'video_key_response_${DateTime.now().millisecondsSinceEpoch}';
       
-      print('[VideoConf][TEST] 📤 Sending key response...');
-      print('[VideoConf][TEST] Key Preview: $keyPreview...');
-      print('[VideoConf][TEST] ORIGINAL Timestamp: $_keyTimestamp (NOT new timestamp!)');
-      print('[VideoConf][TEST] Message Type: video_e2ee_key_response');
+      debugPrint('[VideoConf][TEST] 📤 Sending key response...');
+      debugPrint('[VideoConf][TEST] Key Preview: $keyPreview...');
+      debugPrint('[VideoConf][TEST] ORIGINAL Timestamp: $_keyTimestamp (NOT new timestamp!)');
+      debugPrint('[VideoConf][TEST] Message Type: video_e2ee_key_response');
       
       await SignalService.instance.sendGroupItem(
         channelId: _currentChannelId!,
@@ -516,12 +516,12 @@ class VideoConferenceService extends ChangeNotifier {
         type: 'video_e2ee_key_response',
       );
       
-      print('[VideoConf][TEST] ✓ Key response sent via Signal Protocol');
-      print('[VideoConf][TEST] ✓ Requester $requesterId will receive key with timestamp $_keyTimestamp');
-      print('═══════════════════════════════════════════════════════════');
+      debugPrint('[VideoConf][TEST] ✓ Key response sent via Signal Protocol');
+      debugPrint('[VideoConf][TEST] ✓ Requester $requesterId will receive key with timestamp $_keyTimestamp');
+      debugPrint('═══════════════════════════════════════════════════════════');
     } catch (e) {
-      print('[VideoConf][TEST] ❌ ERROR handling key request: $e');
-      print('═══════════════════════════════════════════════════════════');
+      debugPrint('[VideoConf][TEST] ❌ ERROR handling key request: $e');
+      debugPrint('═══════════════════════════════════════════════════════════');
     }
   }
 
@@ -532,7 +532,7 @@ class VideoConferenceService extends ChangeNotifier {
     MediaDevice? microphoneDevice,  // NEW: Optional pre-selected microphone
   }) async {
     if (_isConnecting || _isConnected) {
-      print('[VideoConf] Already connecting or connected');
+      debugPrint('[VideoConf] Already connecting or connected');
       return;
     }
 
@@ -541,7 +541,7 @@ class VideoConferenceService extends ChangeNotifier {
       _currentChannelId = channelId;
       notifyListeners();
 
-      print('[VideoConf] Joining room for channel: $channelId');
+      debugPrint('[VideoConf] Joining room for channel: $channelId');
 
       // CRITICAL: Signal Service must be initialized for E2EE key exchange
       if (!SignalService.instance.isInitialized) {
@@ -550,28 +550,28 @@ class VideoConferenceService extends ChangeNotifier {
           'Key exchange requires Signal Protocol encryption.'
         );
       }
-      print('[VideoConf] ✓ Signal Service ready for E2EE key exchange');
+      debugPrint('[VideoConf] ✓ Signal Service ready for E2EE key exchange');
 
       // Initialize E2EE ONLY if we don't already have a key
       // (non-first participants receive key in PreJoin before joining)
       if (_keyTimestamp == null) {
-        print('[VideoConf] No existing E2EE key - initializing as first participant');
+        debugPrint('[VideoConf] No existing E2EE key - initializing as first participant');
         await _initializeE2EE();
       } else {
-        print('[VideoConf] E2EE key already received (timestamp: $_keyTimestamp)');
-        print('[VideoConf] Skipping initialization - will use existing key');
+        debugPrint('[VideoConf] E2EE key already received (timestamp: $_keyTimestamp)');
+        debugPrint('[VideoConf] Skipping initialization - will use existing key');
         
         // Still need to ensure sender key exists for this participant
         if (_currentChannelId != null) {
-          print('[VideoConf] 🔧 Ensuring sender key exists for channel...');
+          debugPrint('[VideoConf] 🔧 Ensuring sender key exists for channel...');
           try {
             await SignalService.instance.createGroupSenderKey(_currentChannelId!);
-            print('[VideoConf] ✓ Sender key ready');
+            debugPrint('[VideoConf] ✓ Sender key ready');
           } catch (e) {
             if (e.toString().contains('already exists')) {
-              print('[VideoConf] ℹ️ Sender key already exists (OK)');
+              debugPrint('[VideoConf] ℹ️ Sender key already exists (OK)');
             } else {
-              print('[VideoConf] ⚠️ Sender key error (continuing): $e');
+              debugPrint('[VideoConf] ⚠️ Sender key error (continuing): $e');
             }
           }
         }
@@ -582,22 +582,22 @@ class VideoConferenceService extends ChangeNotifier {
             _keyProvider = await BaseKeyProvider.create();
             final keyBase64 = base64Encode(_channelSharedKey!);
             await _keyProvider!.setKey(keyBase64);
-            print('[VideoConf] ✓ BaseKeyProvider created with received key');
+            debugPrint('[VideoConf] ✓ BaseKeyProvider created with received key');
           } catch (e) {
-            print('[VideoConf] ⚠️ Failed to create KeyProvider: $e');
+            debugPrint('[VideoConf] ⚠️ Failed to create KeyProvider: $e');
             _keyProvider = null;
           }
         }
       }
 
       // Get LiveKit token from server (credentials are automatically included)
-      print('[VideoConf] Requesting token for channel: $channelId');
+      debugPrint('[VideoConf] Requesting token for channel: $channelId');
       final response = await ApiService.post(
         '/api/livekit/token',
         data: {'channelId': channelId},
       );
 
-      print('[VideoConf] Token response status: ${response.statusCode}');
+      debugPrint('[VideoConf] Token response status: ${response.statusCode}');
 
       if (response.statusCode != 200) {
         throw Exception('Failed to get LiveKit token: ${response.statusCode}');
@@ -608,41 +608,41 @@ class VideoConferenceService extends ChangeNotifier {
       final url = data['url'];
       _currentRoomName = data['roomName'];
 
-      print('[VideoConf] Got token, connecting to: $url');
+      debugPrint('[VideoConf] Got token, connecting to: $url');
 
       // Request media permissions BEFORE creating room
-      print('[VideoConf] Requesting camera and microphone permissions...');
+      debugPrint('[VideoConf] Requesting camera and microphone permissions...');
       LocalVideoTrack? videoTrack;
       LocalAudioTrack? audioTrack;
       
       try {
         // Use pre-selected camera device if available
         if (cameraDevice != null) {
-          print('[VideoConf] Using pre-selected camera: ${cameraDevice.label}');
+          debugPrint('[VideoConf] Using pre-selected camera: ${cameraDevice.label}');
           videoTrack = await LocalVideoTrack.createCameraTrack(
             CameraCaptureOptions(deviceId: cameraDevice.deviceId),
           );
         } else {
           videoTrack = await LocalVideoTrack.createCameraTrack();
         }
-        print('[VideoConf] ✓ Camera track created');
+        debugPrint('[VideoConf] ✓ Camera track created');
       } catch (e) {
-        print('[VideoConf] ⚠️ Failed to create camera track: $e');
+        debugPrint('[VideoConf] ⚠️ Failed to create camera track: $e');
       }
       
       try {
         // Use pre-selected microphone device if available
         if (microphoneDevice != null) {
-          print('[VideoConf] Using pre-selected microphone: ${microphoneDevice.label}');
+          debugPrint('[VideoConf] Using pre-selected microphone: ${microphoneDevice.label}');
           audioTrack = await LocalAudioTrack.create(
             AudioCaptureOptions(deviceId: microphoneDevice.deviceId),
           );
         } else {
           audioTrack = await LocalAudioTrack.create(AudioCaptureOptions());
         }
-        print('[VideoConf] ✓ Microphone track created');
+        debugPrint('[VideoConf] ✓ Microphone track created');
       } catch (e) {
-        print('[VideoConf] ⚠️ Failed to create audio track: $e');
+        debugPrint('[VideoConf] ⚠️ Failed to create audio track: $e');
       }
 
       // Create room WITH E2EE if BaseKeyProvider initialized successfully
@@ -658,18 +658,18 @@ class VideoConferenceService extends ChangeNotifier {
       );
       
       if (_keyProvider != null) {
-        print('[VideoConf] ✓ Room created with E2EE enabled (AES-256 frame encryption)');
-        print('[VideoConf] ✓ Using compiled e2ee.worker.dart.js for frame processing');
+        debugPrint('[VideoConf] ✓ Room created with E2EE enabled (AES-256 frame encryption)');
+        debugPrint('[VideoConf] ✓ Using compiled e2ee.worker.dart.js for frame processing');
       } else {
-        print('[VideoConf] ✓ Room created (DTLS/SRTP transport encryption only)');
-        print('[VideoConf] ⚠️ Frame-level E2EE unavailable (BaseKeyProvider failed)');
+        debugPrint('[VideoConf] ✓ Room created (DTLS/SRTP transport encryption only)');
+        debugPrint('[VideoConf] ⚠️ Frame-level E2EE unavailable (BaseKeyProvider failed)');
       }
 
       // Set up event listeners
       _setupRoomListeners();
 
       // Connect to LiveKit room
-      print('[VideoConf] Connecting to LiveKit room...');
+      debugPrint('[VideoConf] Connecting to LiveKit room...');
       await _room!.connect(
         url, 
         token,
@@ -685,33 +685,33 @@ class VideoConferenceService extends ChangeNotifier {
 
       // Publish local tracks if available
       if (videoTrack != null) {
-        print('[VideoConf] Publishing video track...');
+        debugPrint('[VideoConf] Publishing video track...');
         await _room!.localParticipant?.publishVideoTrack(videoTrack);
       }
       
       if (audioTrack != null) {
-        print('[VideoConf] Publishing audio track...');
+        debugPrint('[VideoConf] Publishing audio track...');
         await _room!.localParticipant?.publishAudioTrack(audioTrack);
       }
 
       // Add existing remote participants to map (for users who joined before us)
-      print('[VideoConf] Checking for existing participants...');
+      debugPrint('[VideoConf] Checking for existing participants...');
       for (final participant in _room!.remoteParticipants.values) {
-        print('[VideoConf] Found existing participant: ${participant.identity}');
+        debugPrint('[VideoConf] Found existing participant: ${participant.identity}');
         _remoteParticipants[participant.identity] = participant;
         
         // Exchange keys with existing participants
         await _exchangeKeysWithParticipant(participant.identity);
       }
-      print('[VideoConf] Total remote participants: ${_remoteParticipants.length}');
+      debugPrint('[VideoConf] Total remote participants: ${_remoteParticipants.length}');
 
       _isConnected = true;
       _isConnecting = false;
       notifyListeners();
 
-      print('[VideoConf] Successfully joined room: $_currentRoomName');
+      debugPrint('[VideoConf] Successfully joined room: $_currentRoomName');
     } catch (e) {
-      print('[VideoConf] Error joining room: $e');
+      debugPrint('[VideoConf] Error joining room: $e');
       _isConnecting = false;
       _isConnected = false;
       notifyListeners();
@@ -731,7 +731,7 @@ class VideoConferenceService extends ChangeNotifier {
 
     // Participant joined
     listener.on<ParticipantConnectedEvent>((event) async {
-      print('[VideoConf] Participant joined: ${event.participant.identity}');
+      debugPrint('[VideoConf] Participant joined: ${event.participant.identity}');
       _remoteParticipants[event.participant.identity] = event.participant;
       
       // Exchange encryption keys with new participant
@@ -743,7 +743,7 @@ class VideoConferenceService extends ChangeNotifier {
 
     // Participant left
     listener.on<ParticipantDisconnectedEvent>((event) {
-      print('[VideoConf] Participant left: ${event.participant.identity}');
+      debugPrint('[VideoConf] Participant left: ${event.participant.identity}');
       _remoteParticipants.remove(event.participant.identity);
       _participantKeys.remove(event.participant.identity);
       
@@ -753,46 +753,46 @@ class VideoConferenceService extends ChangeNotifier {
 
     // Track subscribed
     listener.on<TrackSubscribedEvent>((event) async {
-      print('[VideoConf] Track subscribed: ${event.track.kind} from ${event.participant.identity}');
-      print('[VideoConf]   - Track SID: ${event.track.sid}');
-      print('[VideoConf]   - Track muted: ${event.track.muted}');
+      debugPrint('[VideoConf] Track subscribed: ${event.track.kind} from ${event.participant.identity}');
+      debugPrint('[VideoConf]   - Track SID: ${event.track.sid}');
+      debugPrint('[VideoConf]   - Track muted: ${event.track.muted}');
       _trackSubscribedController.add(event);
       notifyListeners();
     });
 
     // Track unsubscribed
     listener.on<TrackUnsubscribedEvent>((event) {
-      print('[VideoConf] Track unsubscribed: ${event.track.kind} from ${event.participant.identity}');
+      debugPrint('[VideoConf] Track unsubscribed: ${event.track.kind} from ${event.participant.identity}');
       notifyListeners();
     });
 
     // Track published (important for seeing when tracks become available)
     listener.on<TrackPublishedEvent>((event) {
-      print('[VideoConf] Track published: ${event.publication.kind} from ${event.participant.identity}');
-      print('[VideoConf]   - Track SID: ${event.publication.sid}');
+      debugPrint('[VideoConf] Track published: ${event.publication.kind} from ${event.participant.identity}');
+      debugPrint('[VideoConf]   - Track SID: ${event.publication.sid}');
       notifyListeners();
     });
 
     // Track unpublished
     listener.on<TrackUnpublishedEvent>((event) {
-      print('[VideoConf] Track unpublished: ${event.publication.kind} from ${event.participant.identity}');
+      debugPrint('[VideoConf] Track unpublished: ${event.publication.kind} from ${event.participant.identity}');
       notifyListeners();
     });
 
     // Room disconnected
     listener.on<RoomDisconnectedEvent>((event) {
-      print('[VideoConf] Room disconnected: ${event.reason}');
+      debugPrint('[VideoConf] Room disconnected: ${event.reason}');
       _handleDisconnection();
     });
 
     // Connection state changed
     listener.on<RoomAttemptReconnectEvent>((event) {
-      print('[VideoConf] Attempting to reconnect...');
+      debugPrint('[VideoConf] Attempting to reconnect...');
       notifyListeners();
     });
 
     listener.on<RoomReconnectedEvent>((event) {
-      print('[VideoConf] Reconnected successfully');
+      debugPrint('[VideoConf] Reconnected successfully');
       notifyListeners();
     });
   }
@@ -804,7 +804,7 @@ class VideoConferenceService extends ChangeNotifier {
 
   /// Handle disconnection
   void _handleDisconnection() {
-    print('[VideoConf] Handling disconnection - cleaning up state');
+    debugPrint('[VideoConf] Handling disconnection - cleaning up state');
     
     // Emit Socket.IO leave event on unexpected disconnection
     if (_currentChannelId != null) {
@@ -812,9 +812,9 @@ class VideoConferenceService extends ChangeNotifier {
         SocketService().emit('video:leave-channel', {
           'channelId': _currentChannelId,
         });
-        print('[VideoConf] ✓ Emitted video:leave-channel after disconnection');
+        debugPrint('[VideoConf] ✓ Emitted video:leave-channel after disconnection');
       } catch (e) {
-        print('[VideoConf] ⚠️ Failed to emit leave event on disconnection: $e');
+        debugPrint('[VideoConf] ⚠️ Failed to emit leave event on disconnection: $e');
       }
     }
     
@@ -830,13 +830,13 @@ class VideoConferenceService extends ChangeNotifier {
     _currentChannelId = null;
     
     notifyListeners();
-    print('[VideoConf] ✓ Disconnection handled (E2EE state cleared)');
+    debugPrint('[VideoConf] ✓ Disconnection handled (E2EE state cleared)');
   }
 
   /// Leave the current room
   Future<void> leaveRoom() async {
     try {
-      print('[VideoConf] Leaving room');
+      debugPrint('[VideoConf] Leaving room');
 
       // Emit Socket.IO leave event BEFORE disconnecting from LiveKit
       if (_currentChannelId != null) {
@@ -844,9 +844,9 @@ class VideoConferenceService extends ChangeNotifier {
           SocketService().emit('video:leave-channel', {
             'channelId': _currentChannelId,
           });
-          print('[VideoConf] ✓ Emitted video:leave-channel to server');
+          debugPrint('[VideoConf] ✓ Emitted video:leave-channel to server');
         } catch (e) {
-          print('[VideoConf] ⚠️ Failed to emit leave event: $e');
+          debugPrint('[VideoConf] ⚠️ Failed to emit leave event: $e');
         }
       }
 
@@ -870,9 +870,9 @@ class VideoConferenceService extends ChangeNotifier {
       _remoteParticipants.clear();
 
       notifyListeners();
-      print('[VideoConf] ✓ Left room successfully (E2EE state cleared)');
+      debugPrint('[VideoConf] ✓ Left room successfully (E2EE state cleared)');
     } catch (e) {
-      print('[VideoConf] Error leaving room: $e');
+      debugPrint('[VideoConf] Error leaving room: $e');
     }
   }
 
@@ -885,7 +885,7 @@ class VideoConferenceService extends ChangeNotifier {
       await _room!.localParticipant?.setCameraEnabled(!enabled);
       notifyListeners();
     } catch (e) {
-      print('[VideoConf] Error toggling camera: $e');
+      debugPrint('[VideoConf] Error toggling camera: $e');
     }
   }
 
@@ -898,7 +898,7 @@ class VideoConferenceService extends ChangeNotifier {
       await _room!.localParticipant?.setMicrophoneEnabled(!enabled);
       notifyListeners();
     } catch (e) {
-      print('[VideoConf] Error toggling microphone: $e');
+      debugPrint('[VideoConf] Error toggling microphone: $e');
     }
   }
 
@@ -921,3 +921,4 @@ class VideoConferenceService extends ChangeNotifier {
     super.dispose();
   }
 }
+

@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:idb_shim/idb_browser.dart';
 import 'storage_interface.dart';
 
@@ -154,12 +155,12 @@ class IndexedDBStorage implements FileStorageInterface {
     final existingChunk = await getChunk(fileId, chunkIndex);
     
     if (existingChunk != null && existingChunk.length == encryptedData.length) {
-      print('[STORAGE] Chunk $chunkIndex already exists, skipping duplicate');
+      debugPrint('[STORAGE] Chunk $chunkIndex already exists, skipping duplicate');
       return false; // Not saved (duplicate)
     }
     
     if (existingChunk != null) {
-      print('[STORAGE] ⚠️ Chunk $chunkIndex size mismatch, overwriting');
+      debugPrint('[STORAGE] ⚠️ Chunk $chunkIndex size mismatch, overwriting');
     }
     
     // Save chunk
@@ -249,9 +250,9 @@ class IndexedDBStorage implements FileStorageInterface {
   
   @override
   Future<void> saveFileKey(String fileId, Uint8List key) async {
-    print('[STORAGE DEBUG] saveFileKey($fileId):');
-    print('  Input key type: ${key.runtimeType}');
-    print('  Input key length: ${key.length} bytes');
+    debugPrint('[STORAGE DEBUG] saveFileKey($fileId):');
+    debugPrint('  Input key type: ${key.runtimeType}');
+    debugPrint('  Input key length: ${key.length} bytes');
     
     final tx = _db!.transaction(STORE_FILE_KEYS, idbModeReadWrite);
     final store = tx.objectStore(STORE_FILE_KEYS);
@@ -260,7 +261,7 @@ class IndexedDBStorage implements FileStorageInterface {
     // IndexedDB doesn't preserve Uint8List type correctly
     final keyList = key.toList();
     
-    print('  Storing as List<int> with ${keyList.length} elements');
+    debugPrint('  Storing as List<int> with ${keyList.length} elements');
     
     await store.put({
       'fileId': fileId,
@@ -270,7 +271,7 @@ class IndexedDBStorage implements FileStorageInterface {
     });
     
     await tx.completed;
-    print('  ✓ Saved successfully');
+    debugPrint('  ✓ Saved successfully');
   }
   
   @override
@@ -286,22 +287,22 @@ class IndexedDBStorage implements FileStorageInterface {
     // Convert List<int> back to Uint8List
     final keyData = data['key'];
     
-    print('[STORAGE DEBUG] getFileKey($fileId):');
-    print('  Raw keyData type: ${keyData.runtimeType}');
-    print('  Raw keyData length: ${keyData is List ? keyData.length : "N/A"}');
+    debugPrint('[STORAGE DEBUG] getFileKey($fileId):');
+    debugPrint('  Raw keyData type: ${keyData.runtimeType}');
+    debugPrint('  Raw keyData length: ${keyData is List ? keyData.length : "N/A"}');
     
     if (keyData is Uint8List) {
       // Already Uint8List (shouldn't happen but handle it)
-      print('  Returning as Uint8List: ${keyData.length} bytes');
+      debugPrint('  Returning as Uint8List: ${keyData.length} bytes');
       return keyData;
     } else if (keyData is List) {
       // Convert List<int> to Uint8List
       final converted = Uint8List.fromList(keyData.cast<int>());
-      print('  Converted to Uint8List: ${converted.length} bytes');
+      debugPrint('  Converted to Uint8List: ${converted.length} bytes');
       return converted;
     }
     
-    print('  ERROR: Invalid key data type');
+    debugPrint('  ERROR: Invalid key data type');
     return null;
   }
   
@@ -364,3 +365,4 @@ class IndexedDBStorage implements FileStorageInterface {
     await tx.completed;
   }
 }
+

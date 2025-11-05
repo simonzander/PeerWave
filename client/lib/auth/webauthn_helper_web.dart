@@ -6,3 +6,4 @@ import 'dart:js' as js;
 void webauthnLogin(String serverUrl, String email) {
   js.context.callMethod('webauthnLogin', [serverUrl, email]);
 }
+

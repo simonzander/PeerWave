@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'signal_service.dart';
 import 'api_service.dart';
 import 'user_profile_service.dart';
@@ -39,14 +40,14 @@ class ActivitiesService {
               });
             }
           } catch (e) {
-            print('[ACTIVITIES_SERVICE] Error loading participants for channel ${channel['uuid']}: $e');
+            debugPrint('[ACTIVITIES_SERVICE] Error loading participants for channel ${channel['uuid']}: $e');
           }
         }
         
         return channelsWithParticipants;
       }
     } catch (e) {
-      print('[ACTIVITIES_SERVICE] Error loading WebRTC channels: $e');
+      debugPrint('[ACTIVITIES_SERVICE] Error loading WebRTC channels: $e');
     }
     return [];
   }
@@ -68,12 +69,12 @@ class ActivitiesService {
       
       // FALLBACK: If conversations store is empty, get all unique senders from message store
       if (recentConvs.isEmpty) {
-        print('[ACTIVITIES_SERVICE] Conversations store empty, loading from message store...');
+        debugPrint('[ACTIVITIES_SERVICE] Conversations store empty, loading from message store...');
         
         // Get all unique conversation partners from messages (FAST with index!)
         final uniqueSenders = await messageStore.getAllUniqueConversationPartners();
         
-        print('[ACTIVITIES_SERVICE] Found ${uniqueSenders.length} unique conversation partners');
+        debugPrint('[ACTIVITIES_SERVICE] Found ${uniqueSenders.length} unique conversation partners');
         
         // Create conversation objects
         recentConvs = uniqueSenders.map((userId) => {
@@ -121,7 +122,7 @@ class ActivitiesService {
         });
       }
       
-      print('[ACTIVITIES_SERVICE] Loaded ${conversations.length} direct conversations');
+      debugPrint('[ACTIVITIES_SERVICE] Loaded ${conversations.length} direct conversations');
       
       // Sort by last message time
       conversations.sort((a, b) {
@@ -140,7 +141,7 @@ class ActivitiesService {
           .toList();
       
       if (userIdsNeedingNames.isNotEmpty) {
-        print('[ACTIVITIES_SERVICE] Enriching ${userIdsNeedingNames.length} user display names...');
+        debugPrint('[ACTIVITIES_SERVICE] Enriching ${userIdsNeedingNames.length} user display names...');
         // Note: This requires 'host' parameter - will be handled by caller or use UserProfileService
         for (final conv in limitedConversations) {
           final userId = conv['userId'] as String;
@@ -156,7 +157,7 @@ class ActivitiesService {
       
       return limitedConversations;
     } catch (e) {
-      print('[ACTIVITIES_SERVICE] Error loading direct conversations: $e');
+      debugPrint('[ACTIVITIES_SERVICE] Error loading direct conversations: $e');
     }
     
     return [];
@@ -230,7 +231,7 @@ class ActivitiesService {
         });
       }
       
-      print('[ACTIVITIES_SERVICE] Loaded ${conversations.length} group conversations');
+      debugPrint('[ACTIVITIES_SERVICE] Loaded ${conversations.length} group conversations');
       
       // Sort by last message time
       conversations.sort((a, b) {
@@ -241,7 +242,7 @@ class ActivitiesService {
       
       return conversations.take(limit).toList();
     } catch (e) {
-      print('[ACTIVITIES_SERVICE] Error loading group conversations: $e');
+      debugPrint('[ACTIVITIES_SERVICE] Error loading group conversations: $e');
     }
     
     return [];
@@ -265,3 +266,4 @@ class ActivitiesService {
     return mixed.take(limit).toList();
   }
 }
+

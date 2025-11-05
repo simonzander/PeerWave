@@ -111,8 +111,8 @@ class _OtpWebPageState extends State<OtpWebPage> {
   @override
   void initState() {
     super.initState();
-    print('OtpWebPage initState with wait: ${widget.wait}');
-    print('Email: ${widget.email}, ServerUrl: ${widget.serverUrl}');
+    debugPrint('OtpWebPage initState with wait: ${widget.wait}');
+    debugPrint('Email: ${widget.email}, ServerUrl: ${widget.serverUrl}');
     if (widget.wait != null && widget.wait! > 0) {
       _wait = widget.wait;
       _timer = Timer.periodic(const Duration(seconds: 1), (timer) {

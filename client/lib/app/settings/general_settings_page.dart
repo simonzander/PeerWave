@@ -366,3 +366,4 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
     );
   }
 }
+

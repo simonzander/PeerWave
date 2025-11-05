@@ -138,3 +138,4 @@ enum ContextPanelType {
   /// Shows list of recent files
   files,
 }
+

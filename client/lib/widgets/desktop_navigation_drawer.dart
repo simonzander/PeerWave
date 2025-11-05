@@ -120,7 +120,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
           });
         }
       } catch (sqliteError) {
-        print('[DESKTOP_NAV] SQLite error, falling back to old storage: $sqliteError');
+        debugPrint('[DESKTOP_NAV] SQLite error, falling back to old storage: $sqliteError');
         
         // FALLBACK: Use old storage method
         final userIdsSet = <String>{};
@@ -195,7 +195,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
         _loadingConversations = false;
       });
     } catch (e) {
-      print('[DESKTOP_NAV] Error loading conversations: $e');
+      debugPrint('[DESKTOP_NAV] Error loading conversations: $e');
       setState(() {
         _loadingConversations = false;
       });
@@ -246,7 +246,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
         }
       }
     } catch (e) {
-      print('[DESKTOP_NAV] Error enriching user info: $e');
+      debugPrint('[DESKTOP_NAV] Error enriching user info: $e');
     }
   }
 
@@ -614,7 +614,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
       }
     } catch (e) {
       setState(() => isLoadingRoles = false);
-      print('Error loading roles: $e');
+      debugPrint('Error loading roles: $e');
     }
   }
 
@@ -743,7 +743,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
         }
       }
     } catch (e) {
-      print('Error creating channel: $e');
+      debugPrint('Error creating channel: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error creating channel: $e')),
@@ -752,3 +752,4 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
     }
   }
 }
+

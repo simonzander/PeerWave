@@ -89,3 +89,4 @@ class FileTransferConfig {
     return fileSize <= getRecommendedSize();
   }
 }
+

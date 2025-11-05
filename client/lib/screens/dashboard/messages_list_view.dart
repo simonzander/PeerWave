@@ -96,7 +96,7 @@ class _MessagesListViewState extends State<MessagesListView> {
           });
         }
       } catch (sqliteError) {
-        print('[MESSAGES_LIST] SQLite error, falling back to old storage: $sqliteError');
+        debugPrint('[MESSAGES_LIST] SQLite error, falling back to old storage: $sqliteError');
         
         // FALLBACK: Use old storage method
         final userIdsSet = <String>{};
@@ -173,7 +173,7 @@ class _MessagesListViewState extends State<MessagesListView> {
         _loading = false;
       });
     } catch (e) {
-      print('[MESSAGES_LIST] Error loading conversations: $e');
+      debugPrint('[MESSAGES_LIST] Error loading conversations: $e');
       setState(() {
         _loading = false;
       });
@@ -207,7 +207,7 @@ class _MessagesListViewState extends State<MessagesListView> {
           }
         }
       } catch (e) {
-        print('[MESSAGES_LIST] Error batch fetching user info: $e');
+        debugPrint('[MESSAGES_LIST] Error batch fetching user info: $e');
         // Fallback: cache missing users with UUID as displayName
         for (final userId in userIdsToFetch) {
           _userCache[userId] = {
@@ -411,3 +411,4 @@ class _MessagesListViewState extends State<MessagesListView> {
     }
   }
 }
+

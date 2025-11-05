@@ -198,7 +198,7 @@ class _DashboardPageState extends State<DashboardPage> {
       // If it's JSArray or other type, return empty string
       return '';
     } catch (e) {
-      print('[DASHBOARD] Error extracting picture: $e');
+      debugPrint('[DASHBOARD] Error extracting picture: $e');
       return '';
     }
   }
@@ -219,16 +219,16 @@ class _DashboardPageState extends State<DashboardPage> {
       final host = GoRouterState.of(context).extra as Map?;
       final hostUrl = host?['host'] as String? ?? '';
       
-      print('[DASHBOARD] Loading channels from: $hostUrl/client/channels?limit=20');
+      debugPrint('[DASHBOARD] Loading channels from: $hostUrl/client/channels?limit=20');
       ApiService.init();
       final resp = await ApiService.get('$hostUrl/client/channels?limit=20');
-      print('[DASHBOARD] Channel response status: ${resp.statusCode}');
-      print('[DASHBOARD] Channel response data type: ${resp.data.runtimeType}');
-      print('[DASHBOARD] Channel response data: ${resp.data}');
+      debugPrint('[DASHBOARD] Channel response status: ${resp.statusCode}');
+      debugPrint('[DASHBOARD] Channel response data type: ${resp.data.runtimeType}');
+      debugPrint('[DASHBOARD] Channel response data: ${resp.data}');
       
       if (resp.statusCode == 200) {
         final channels = (resp.data['channels'] as List<dynamic>? ?? []);
-        print('[DASHBOARD] Loaded ${channels.length} channels: ${channels.map((ch) => ch['name']).toList()}');
+        debugPrint('[DASHBOARD] Loaded ${channels.length} channels: ${channels.map((ch) => ch['name']).toList()}');
         
         setState(() {
           _channels = channels.map((ch) => ChannelInfo(
@@ -239,11 +239,11 @@ class _DashboardPageState extends State<DashboardPage> {
             description: ch['description'],
           )).toList();
         });
-        print('[DASHBOARD] State updated with ${_channels.length} channels');
+        debugPrint('[DASHBOARD] State updated with ${_channels.length} channels');
       }
     } catch (e, stackTrace) {
-      print('[DASHBOARD] Error loading channels: $e');
-      print('[DASHBOARD] Stack trace: $stackTrace');
+      debugPrint('[DASHBOARD] Error loading channels: $e');
+      debugPrint('[DASHBOARD] Stack trace: $stackTrace');
     }
   }
 
@@ -258,14 +258,14 @@ class _DashboardPageState extends State<DashboardPage> {
       final host = GoRouterState.of(context).extra as Map?;
       final hostUrl = host?['host'] as String? ?? '';
       
-      print('[DASHBOARD] Loading recent people...');
+      debugPrint('[DASHBOARD] Loading recent people...');
       
       // Get recent direct conversations from ActivitiesService
       final conversations = await ActivitiesService.getRecentDirectConversations(
         limit: 10,
       );
       
-      print('[DASHBOARD] Found ${conversations.length} recent conversations');
+      debugPrint('[DASHBOARD] Found ${conversations.length} recent conversations');
       
       final userMap = <String, Map<String, dynamic>>{};
       
@@ -292,7 +292,7 @@ class _DashboardPageState extends State<DashboardPage> {
           .toList();
       
       if (userIdsNeedingNames.isNotEmpty && hostUrl.isNotEmpty) {
-        print('[DASHBOARD] Fetching display names for ${userIdsNeedingNames.length} users from API...');
+        debugPrint('[DASHBOARD] Fetching display names for ${userIdsNeedingNames.length} users from API...');
         try {
           ApiService.init();
           final resp = await ApiService.post(
@@ -310,10 +310,10 @@ class _DashboardPageState extends State<DashboardPage> {
                 userMap[userId]!['picture'] = _extractPictureData(user['picture']);
               }
             }
-            print('[DASHBOARD] Updated ${users.length} display names from API');
+            debugPrint('[DASHBOARD] Updated ${users.length} display names from API');
           }
         } catch (e) {
-          print('[DASHBOARD] Error fetching display names from API: $e');
+          debugPrint('[DASHBOARD] Error fetching display names from API: $e');
         }
       }
       
@@ -325,10 +325,10 @@ class _DashboardPageState extends State<DashboardPage> {
         _hasLoadedRecentPeople = true;
       });
       
-      print('[DASHBOARD] Loaded ${_recentPeople.length} recent people');
+      debugPrint('[DASHBOARD] Loaded ${_recentPeople.length} recent people');
     } catch (e, stackTrace) {
-      print('[DASHBOARD] Error loading recent people: $e');
-      print('[DASHBOARD] Stack trace: $stackTrace');
+      debugPrint('[DASHBOARD] Error loading recent people: $e');
+      debugPrint('[DASHBOARD] Stack trace: $stackTrace');
       
       if (!mounted) return;
       
@@ -1044,3 +1044,4 @@ extension _DashboardPageHelpers on _DashboardPageState {
     }
   }
 }
+

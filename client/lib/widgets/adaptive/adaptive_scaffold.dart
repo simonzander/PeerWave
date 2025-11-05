@@ -426,3 +426,4 @@ class AdaptiveNestedScaffold extends StatelessWidget {
     );
   }
 }
+

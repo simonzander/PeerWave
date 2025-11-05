@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../web_config.dart';
 import 'signal_service.dart';
@@ -45,12 +46,12 @@ class SocketService {
         'withCredentials': true, // Send cookies for session management
       });
       _socket!.on('connect', (_) {
-        print('[SOCKET SERVICE] Socket connected');
+        debugPrint('[SOCKET SERVICE] Socket connected');
         // Authenticate with the server after connection
         _socket!.emit('authenticate', null);
       });
       _socket!.on('authenticated', (data) {
-        print('[SOCKET SERVICE] Authentication response: $data');
+        debugPrint('[SOCKET SERVICE] Authentication response: $data');
         // Store user info in SignalService for device filtering
         if (data is Map && data['authenticated'] == true && data['uuid'] != null && data['deviceId'] != null) {
           // Parse deviceId as int (server sends String)
@@ -61,35 +62,35 @@ class SocketService {
         }
       });
       _socket!.on('disconnect', (_) {
-        print('[SOCKET SERVICE] Socket disconnected');
+        debugPrint('[SOCKET SERVICE] Socket disconnected');
       });
       _socket!.on('reconnect', (_) {
-        print('[SOCKET SERVICE] Socket reconnected');
+        debugPrint('[SOCKET SERVICE] Socket reconnected');
         // Re-authenticate after reconnection
         _socket!.emit('authenticate', null);
       });
       _socket!.on('reconnect_attempt', (_) {
-        print('[SOCKET SERVICE] Socket reconnecting...');
+        debugPrint('[SOCKET SERVICE] Socket reconnecting...');
       });
       // Listen for unauthorized/authentication errors
       _socket!.on('unauthorized', (_) {
         // Only trigger auto-logout if user is logged in
         if (AuthService.isLoggedIn) {
-          print('[SOCKET SERVICE] ⚠️  Unauthorized - triggering auto-logout');
+          debugPrint('[SOCKET SERVICE] ⚠️  Unauthorized - triggering auto-logout');
           _socketUnauthorizedCallback?.call();
         } else {
-          print('[SOCKET SERVICE] Unauthorized - user not logged in yet, ignoring');
+          debugPrint('[SOCKET SERVICE] Unauthorized - user not logged in yet, ignoring');
         }
       });
       _socket!.on('error', (data) {
-        print('[SOCKET SERVICE] Socket error: $data');
+        debugPrint('[SOCKET SERVICE] Socket error: $data');
         if (data is Map && (data['message']?.toString().contains('unauthorized') ?? false)) {
           // Only trigger auto-logout if user is logged in
           if (AuthService.isLoggedIn) {
-            print('[SOCKET SERVICE] ⚠️  Unauthorized error - triggering auto-logout');
+            debugPrint('[SOCKET SERVICE] ⚠️  Unauthorized error - triggering auto-logout');
             _socketUnauthorizedCallback?.call();
           } else {
-            print('[SOCKET SERVICE] Unauthorized error - user not logged in yet, ignoring');
+            debugPrint('[SOCKET SERVICE] Unauthorized error - user not logged in yet, ignoring');
           }
         }
       });
@@ -101,7 +102,7 @@ class SocketService {
       });
       
       // Manually connect after everything is set up
-      print('[SOCKET SERVICE] Manually connecting socket with credentials...');
+      debugPrint('[SOCKET SERVICE] Manually connecting socket with credentials...');
       _socket!.connect();
     } finally {
       _connecting = false;
@@ -136,9 +137,10 @@ class SocketService {
 
   /// Manually trigger authentication (useful for re-authenticating)
   void authenticate() {
-    print('[SOCKET SERVICE] Manually triggering authentication');
+    debugPrint('[SOCKET SERVICE] Manually triggering authentication');
     _socket?.emit('authenticate', null);
   }
 
   bool get isConnected => _socket?.connected ?? false;
 }
+

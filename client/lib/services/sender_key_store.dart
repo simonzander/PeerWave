@@ -60,7 +60,7 @@ class PermanentSenderKeyStore extends SenderKeyStore {
       await store.put(serialized, key);
       await txn.completed;
       
-      print('[SENDER_KEY_STORE] Stored sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
+      debugPrint('[SENDER_KEY_STORE] Stored sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
     } else {
       final storage = FlutterSecureStorage();
       await storage.write(key: key, value: serialized);
@@ -73,7 +73,7 @@ class PermanentSenderKeyStore extends SenderKeyStore {
         await storage.write(key: 'sender_key_list', value: jsonEncode(keys));
       }
       
-      print('[SENDER_KEY_STORE] Stored sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
+      debugPrint('[SENDER_KEY_STORE] Stored sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
     }
   }
 
@@ -99,11 +99,11 @@ class PermanentSenderKeyStore extends SenderKeyStore {
       if (value != null && value is String) {
         final bytes = base64Decode(value);
         final record = SenderKeyRecord.fromSerialized(bytes);
-        print('[SENDER_KEY_STORE] Loaded sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
+        debugPrint('[SENDER_KEY_STORE] Loaded sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
         return record;
       }
       // Return new empty record if not found (required by libsignal API)
-      print('[SENDER_KEY_STORE] No sender key found for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}, returning empty record');
+      debugPrint('[SENDER_KEY_STORE] No sender key found for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}, returning empty record');
       return SenderKeyRecord();
     } else {
       final storage = FlutterSecureStorage();
@@ -112,11 +112,11 @@ class PermanentSenderKeyStore extends SenderKeyStore {
       if (value != null) {
         final bytes = base64Decode(value);
         final record = SenderKeyRecord.fromSerialized(bytes);
-        print('[SENDER_KEY_STORE] Loaded sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
+        debugPrint('[SENDER_KEY_STORE] Loaded sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
         return record;
       }
       // Return new empty record if not found (required by libsignal API)
-      print('[SENDER_KEY_STORE] No sender key found for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}, returning empty record');
+      debugPrint('[SENDER_KEY_STORE] No sender key found for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}, returning empty record');
       return SenderKeyRecord();
     }
   }
@@ -167,7 +167,7 @@ class PermanentSenderKeyStore extends SenderKeyStore {
       await store.delete(key);
       await txn.completed;
       
-      print('[SENDER_KEY_STORE] Removed sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
+      debugPrint('[SENDER_KEY_STORE] Removed sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
     } else {
       final storage = FlutterSecureStorage();
       await storage.delete(key: key);
@@ -180,7 +180,7 @@ class PermanentSenderKeyStore extends SenderKeyStore {
         await storage.write(key: 'sender_key_list', value: jsonEncode(keys));
       }
       
-      print('[SENDER_KEY_STORE] Removed sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
+      debugPrint('[SENDER_KEY_STORE] Removed sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
     }
   }
 
@@ -209,7 +209,7 @@ class PermanentSenderKeyStore extends SenderKeyStore {
       });
       
       await txn.completed;
-      print('[SENDER_KEY_STORE] Cleared all sender keys for group $groupId');
+      debugPrint('[SENDER_KEY_STORE] Cleared all sender keys for group $groupId');
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'sender_key_list');
@@ -226,7 +226,7 @@ class PermanentSenderKeyStore extends SenderKeyStore {
         await storage.write(key: 'sender_key_list', value: jsonEncode(keys));
       }
       
-      print('[SENDER_KEY_STORE] Cleared all sender keys for group $groupId');
+      debugPrint('[SENDER_KEY_STORE] Cleared all sender keys for group $groupId');
     }
   }
 
@@ -280,3 +280,4 @@ class PermanentSenderKeyStore extends SenderKeyStore {
     return groupIds.toList();
   }
 }
+

@@ -66,7 +66,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     super.didUpdateWidget(oldWidget);
     // Reload messages when recipient changes
     if (oldWidget.recipientUuid != widget.recipientUuid) {
-      print('[DIRECT_MESSAGES] Recipient changed from ${oldWidget.recipientUuid} to ${widget.recipientUuid}');
+      debugPrint('[DIRECT_MESSAGES] Recipient changed from ${oldWidget.recipientUuid} to ${widget.recipientUuid}');
       _messages = []; // Clear old messages
       _messageOffset = 0;
       _hasMoreMessages = true;
@@ -79,17 +79,17 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     // Verify own identity keys are available
     try {
       await SignalService.instance.identityStore.getIdentityKeyPair();
-      print('[DIRECT_MESSAGES] Identity key pair verified');
+      debugPrint('[DIRECT_MESSAGES] Identity key pair verified');
     } catch (e) {
-      print('[DIRECT_MESSAGES] Identity key pair check failed: $e');
+      debugPrint('[DIRECT_MESSAGES] Identity key pair check failed: $e');
       
       // Attempt to regenerate if missing
-      print('[DIRECT_MESSAGES] Attempting to regenerate Signal Protocol...');
+      debugPrint('[DIRECT_MESSAGES] Attempting to regenerate Signal Protocol...');
       try {
         await SignalService.instance.init();
-        print('[DIRECT_MESSAGES] Signal Protocol regenerated successfully');
+        debugPrint('[DIRECT_MESSAGES] Signal Protocol regenerated successfully');
       } catch (regenerateError) {
-        print('[DIRECT_MESSAGES] Failed to regenerate Signal Protocol: $regenerateError');
+        debugPrint('[DIRECT_MESSAGES] Failed to regenerate Signal Protocol: $regenerateError');
         
         // Show warning and set error state
         if (mounted) {
@@ -194,7 +194,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             _deleteMessageFromServer(item['itemId']);
           }
         } catch (e) {
-          print('[DM_SCREEN] Error processing read_receipt: $e');
+          debugPrint('[DM_SCREEN] Error processing read_receipt: $e');
         }
       }
       // Don't display system messages in UI
@@ -267,10 +267,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         final provider = Provider.of<UnreadMessagesProvider>(context, listen: false);
         provider.markDirectMessageAsRead(sender);
       } catch (e) {
-        print('[DM_SCREEN] Error updating unread badge: $e');
+        debugPrint('[DM_SCREEN] Error updating unread badge: $e');
       }
     } catch (e) {
-      print('[DM_SCREEN] Error sending read receipt: $e');
+      debugPrint('[DM_SCREEN] Error sending read receipt: $e');
     }
   }
 
@@ -292,7 +292,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
       await ApiService.delete(url);
     } catch (e) {
-      print('[DM_SCREEN] Error deleting message from server: $e');
+      debugPrint('[DM_SCREEN] Error deleting message from server: $e');
     }
   }
 
@@ -330,7 +330,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             })
             .toList();
       } catch (sqliteError) {
-        print('[DM_SCREEN] SQLite error, falling back to old storage: $sqliteError');
+        debugPrint('[DM_SCREEN] SQLite error, falling back to old storage: $sqliteError');
         sentMessages = await SignalService.instance.loadSentMessages(widget.recipientUuid);
       }
 
@@ -353,7 +353,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             })
             .toList();
       } catch (sqliteError) {
-        print('[DM_SCREEN] SQLite error, falling back to old storage: $sqliteError');
+        debugPrint('[DM_SCREEN] SQLite error, falling back to old storage: $sqliteError');
         receivedMessages = await SignalService.instance.decryptedMessagesStore.getMessagesFromSender(widget.recipientUuid);
       }
 
@@ -375,7 +375,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
           // Skip system messages (senderKeyDistribution, senderKeyRequest)
           if (msgType == 'senderKeyDistribution' || msgType == 'senderKeyRequest') {
-            print('[DM_SCREEN] Skipping system message type: $msgType');
+            debugPrint('[DM_SCREEN] Skipping system message type: $msgType');
             continue;
           }
 
@@ -418,7 +418,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                 await _deleteMessageFromServer(msg['itemId']);
               }
             } catch (e) {
-              print('[DM_SCREEN] Error processing read_receipt: $e');
+              debugPrint('[DM_SCREEN] Error processing read_receipt: $e');
             }
             continue;
           }
@@ -473,7 +473,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           // Filter out system messages (only 'message' and 'file' types allowed)
           final msgType = sentMsg['type'] ?? 'message';
           if (msgType != 'message' && msgType != 'file') {
-            print('[DM_SCREEN] Skipping sent system message type: $msgType');
+            debugPrint('[DM_SCREEN] Skipping sent system message type: $msgType');
             continue;
           }
 
@@ -495,7 +495,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           // Filter out system messages (only 'message' and 'file' types allowed)
           final msgType = receivedMsg['type'] ?? 'message';
           if (!DISPLAYABLE_MESSAGE_TYPES.contains(msgType)) {
-            print('[DM_SCREEN] Skipping received system message type: $msgType');
+            debugPrint('[DM_SCREEN] Skipping received system message type: $msgType');
             continue;
           }
 
@@ -519,7 +519,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           // Filter out system messages
           final msgType = msg['type'] ?? 'message';
           if (!DISPLAYABLE_MESSAGE_TYPES.contains(msgType)) {
-            print('[DM_SCREEN] Skipping decrypted system message type: $msgType');
+            debugPrint('[DM_SCREEN] Skipping decrypted system message type: $msgType');
             continue;
           }
           
@@ -625,7 +625,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       }
     } catch (e) {
       // On check error: still try to send (failsafe approach)
-      print('[DIRECT MESSAGES] PreKey check failed, attempting to send anyway: $e');
+      debugPrint('[DIRECT MESSAGES] PreKey check failed, attempting to send anyway: $e');
     }
 
     final itemId = Uuid().v4();
@@ -848,12 +848,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       // Cast to FileMessage
       final FileMessage fileMessage = fileMessageDynamic as FileMessage;
       
-      print('[DIRECT_MSG] ================================================');
-      print('[DIRECT_MSG] File download requested');
-      print('[DIRECT_MSG] File ID: ${fileMessage.fileId}');
-      print('[DIRECT_MSG] File Name: ${fileMessage.fileName}');
-      print('[DIRECT_MSG] File Size: ${fileMessage.fileSizeFormatted}');
-      print('[DIRECT_MSG] ================================================');
+      debugPrint('[DIRECT_MSG] ================================================');
+      debugPrint('[DIRECT_MSG] File download requested');
+      debugPrint('[DIRECT_MSG] File ID: ${fileMessage.fileId}');
+      debugPrint('[DIRECT_MSG] File Name: ${fileMessage.fileName}');
+      debugPrint('[DIRECT_MSG] File Size: ${fileMessage.fileSizeFormatted}');
+      debugPrint('[DIRECT_MSG] ================================================');
       
       // Show snackbar
       if (mounted) {
@@ -877,7 +877,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       final socketClient = SocketFileClient(socket: socketService.socket!);
       
       // 1. Fetch file info and seeder chunks from server
-      print('[DIRECT_MSG] Fetching file info and seeders...');
+      debugPrint('[DIRECT_MSG] Fetching file info and seeders...');
       // Fetch file info for validation and to get sharedWith list
       final fileInfo = await socketClient.getFileInfo(fileMessage.fileId);
       final seederChunks = await socketClient.getAvailableChunks(fileMessage.fileId);
@@ -886,18 +886,18 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         throw Exception('No seeders available for this file');
       }
       
-      print('[DIRECT_MSG] Found ${seederChunks.length} seeders');
+      debugPrint('[DIRECT_MSG] Found ${seederChunks.length} seeders');
       
       // Register as leecher
       await socketClient.registerLeecher(fileMessage.fileId);
       
       // 2. Decode the encrypted file key (base64 → Uint8List)
-      print('[DIRECT_MSG] Decoding file encryption key...');
+      debugPrint('[DIRECT_MSG] Decoding file encryption key...');
       final Uint8List fileKey = base64Decode(fileMessage.encryptedFileKey);
-      print('[DIRECT_MSG] File key decoded: ${fileKey.length} bytes');
+      debugPrint('[DIRECT_MSG] File key decoded: ${fileKey.length} bytes');
       
       // 3. Start P2P download with the file key
-      print('[DIRECT_MSG] Starting P2P download...');
+      debugPrint('[DIRECT_MSG] Starting P2P download...');
       await p2pCoordinator.startDownload(
         fileId: fileMessage.fileId,
         fileName: fileMessage.fileName,
@@ -910,7 +910,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         sharedWith: (fileInfo['sharedWith'] as List?)?.cast<String>(), // ✅ NEW: Pass sharedWith from fileInfo
       );
       
-      print('[DIRECT_MSG] Download started successfully!');
+      debugPrint('[DIRECT_MSG] Download started successfully!');
       
       // Show success feedback
       if (mounted) {
@@ -922,15 +922,15 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             textColor: colorScheme.onPrimaryContainer,
             onPressed: () {
               // TODO: Navigate to downloads screen
-              print('[DIRECT_MSG] Navigate to downloads screen');
+              debugPrint('[DIRECT_MSG] Navigate to downloads screen');
             },
           ),
         );
       }
       
     } catch (e, stackTrace) {
-      print('[DIRECT_MSG] ❌ Download failed: $e');
-      print('[DIRECT_MSG] Stack trace: $stackTrace');
+      debugPrint('[DIRECT_MSG] ❌ Download failed: $e');
+      debugPrint('[DIRECT_MSG] Stack trace: $stackTrace');
       
       if (mounted) {
         context.showErrorSnackBar(
@@ -941,3 +941,4 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
   }
 }
+

@@ -61,7 +61,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
     try {
       // Step 1: Ensure Signal Service is initialized (should already be initialized by app startup)
       if (!SignalService.instance.isInitialized) {
-        print('[PreJoin] ⚠️ Signal Service not initialized! This should not happen.');
+        debugPrint('[PreJoin] ⚠️ Signal Service not initialized! This should not happen.');
         if (mounted) {
           context.showErrorSnackBar('Signal Service not initialized. Please restart the app.');
         }
@@ -80,7 +80,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       // Step 5: Handle E2EE key exchange
       if (_isFirstParticipant) {
         // First participant generates key immediately in PreJoin
-        print('[PreJoin] First participant - generating E2EE key now');
+        debugPrint('[PreJoin] First participant - generating E2EE key now');
         await _generateE2EEKey();
       } else {
         // Request E2EE key from existing participants
@@ -93,7 +93,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       }
       
     } catch (e) {
-      print('[PreJoin] Initialization error: $e');
+      debugPrint('[PreJoin] Initialization error: $e');
       setState(() {
         _keyExchangeError = 'Initialization failed: $e';
       });
@@ -116,9 +116,9 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       
       setState(() => _isLoadingDevices = false);
       
-      print('[PreJoin] Loaded ${_cameras.length} cameras, ${_microphones.length} microphones');
+      debugPrint('[PreJoin] Loaded ${_cameras.length} cameras, ${_microphones.length} microphones');
     } catch (e) {
-      print('[PreJoin] Error loading devices: $e');
+      debugPrint('[PreJoin] Error loading devices: $e');
       setState(() {
         _isLoadingDevices = false;
         _keyExchangeError = 'Failed to load media devices: $e';
@@ -132,18 +132,18 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       SocketService().emit('video:register-participant', {
         'channelId': widget.channelId,
       });
-      print('[PreJoin] Registered as participant');
+      debugPrint('[PreJoin] Registered as participant');
     } catch (e) {
-      print('[PreJoin] Error registering participant: $e');
+      debugPrint('[PreJoin] Error registering participant: $e');
     }
   }
   
   /// Check participant status (am I first?)
   Future<void> _checkParticipantStatus() async {
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('[PreJoin][TEST] 🔍 CHECKING PARTICIPANT STATUS');
-      print('[PreJoin][TEST] Channel ID: ${widget.channelId}');
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('[PreJoin][TEST] 🔍 CHECKING PARTICIPANT STATUS');
+      debugPrint('[PreJoin][TEST] Channel ID: ${widget.channelId}');
       
       setState(() => _isCheckingParticipants = true);
       
@@ -152,7 +152,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       
       void listener(dynamic data) {
         if (data['channelId'] == widget.channelId) {
-          print('[PreJoin][TEST] 📨 Received participants info from server');
+          debugPrint('[PreJoin][TEST] 📨 Received participants info from server');
           completer.complete(Map<String, dynamic>.from(data));
         }
       }
@@ -160,7 +160,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       SocketService().registerListener('video:participants-info', listener);
       
       // Request participant info
-      print('[PreJoin][TEST] 📤 Emitting video:check-participants...');
+      debugPrint('[PreJoin][TEST] 📤 Emitting video:check-participants...');
       SocketService().emit('video:check-participants', {
         'channelId': widget.channelId,
       });
@@ -169,7 +169,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       final result = await completer.future.timeout(
         Duration(seconds: 5),
         onTimeout: () {
-          print('[PreJoin][TEST] ❌ TIMEOUT waiting for participant info');
+          debugPrint('[PreJoin][TEST] ❌ TIMEOUT waiting for participant info');
           return {'error': 'Timeout'};
         },
       );
@@ -186,13 +186,13 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
         _isCheckingParticipants = false;
       });
       
-      print('[PreJoin][TEST] ✅ PARTICIPANT STATUS RECEIVED');
-      print('[PreJoin][TEST] Is First Participant: $_isFirstParticipant');
-      print('[PreJoin][TEST] Participant Count: $_participantCount');
-      print('═══════════════════════════════════════════════════════════');
+      debugPrint('[PreJoin][TEST] ✅ PARTICIPANT STATUS RECEIVED');
+      debugPrint('[PreJoin][TEST] Is First Participant: $_isFirstParticipant');
+      debugPrint('[PreJoin][TEST] Participant Count: $_participantCount');
+      debugPrint('═══════════════════════════════════════════════════════════');
     } catch (e) {
-      print('[PreJoin][TEST] ❌ ERROR checking participants: $e');
-      print('═══════════════════════════════════════════════════════════');
+      debugPrint('[PreJoin][TEST] ❌ ERROR checking participants: $e');
+      debugPrint('═══════════════════════════════════════════════════════════');
       setState(() {
         _isCheckingParticipants = false;
         _keyExchangeError = 'Failed to check participants: $e';
@@ -203,9 +203,9 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
   /// Generate E2EE key (for first participant)
   Future<void> _generateE2EEKey() async {
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('[PreJoin][TEST] 🔐 GENERATING E2EE KEY (FIRST PARTICIPANT)');
-      print('[PreJoin][TEST] Channel: ${widget.channelId}');
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('[PreJoin][TEST] 🔐 GENERATING E2EE KEY (FIRST PARTICIPANT)');
+      debugPrint('[PreJoin][TEST] Channel: ${widget.channelId}');
       
       setState(() {
         _isExchangingKey = true;
@@ -213,7 +213,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       });
       
       // Generate key via VideoConferenceService
-      print('[PreJoin][TEST] 📤 Calling VideoConferenceService.generateE2EEKeyInPreJoin...');
+      debugPrint('[PreJoin][TEST] 📤 Calling VideoConferenceService.generateE2EEKeyInPreJoin...');
       final success = await VideoConferenceService.generateE2EEKeyInPreJoin(widget.channelId);
       
       setState(() {
@@ -226,17 +226,17 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       });
       
       if (success) {
-        print('[PreJoin][TEST] ✅ E2EE KEY GENERATION SUCCESSFUL');
-        print('[PreJoin][TEST] Key stored in VideoConferenceService singleton');
-        print('[PreJoin][TEST] Ready to join call AND respond to key requests');
-        print('═══════════════════════════════════════════════════════════');
+        debugPrint('[PreJoin][TEST] ✅ E2EE KEY GENERATION SUCCESSFUL');
+        debugPrint('[PreJoin][TEST] Key stored in VideoConferenceService singleton');
+        debugPrint('[PreJoin][TEST] Ready to join call AND respond to key requests');
+        debugPrint('═══════════════════════════════════════════════════════════');
       } else {
-        print('[PreJoin][TEST] ❌ E2EE KEY GENERATION FAILED');
-        print('═══════════════════════════════════════════════════════════');
+        debugPrint('[PreJoin][TEST] ❌ E2EE KEY GENERATION FAILED');
+        debugPrint('═══════════════════════════════════════════════════════════');
       }
     } catch (e) {
-      print('[PreJoin][TEST] ❌ ERROR generating E2EE key: $e');
-      print('═══════════════════════════════════════════════════════════');
+      debugPrint('[PreJoin][TEST] ❌ ERROR generating E2EE key: $e');
+      debugPrint('═══════════════════════════════════════════════════════════');
       setState(() {
         _hasE2EEKey = false;
         _isExchangingKey = false;
@@ -248,9 +248,9 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
   /// Request E2EE key from existing participants
   Future<void> _requestE2EEKey() async {
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('[PreJoin][TEST] 🔐 REQUESTING E2EE KEY FROM PARTICIPANTS');
-      print('[PreJoin][TEST] Channel: ${widget.channelId}');
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('[PreJoin][TEST] 🔐 REQUESTING E2EE KEY FROM PARTICIPANTS');
+      debugPrint('[PreJoin][TEST] Channel: ${widget.channelId}');
       
       setState(() {
         _isExchangingKey = true;
@@ -259,7 +259,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       
       // Send key request via Signal Protocol
       // The VideoConferenceService singleton will register itself to receive the response
-      print('[PreJoin][TEST] 📤 Sending key request...');
+      debugPrint('[PreJoin][TEST] 📤 Sending key request...');
       final success = await VideoConferenceService.requestE2EEKey(widget.channelId);
       
       setState(() {
@@ -272,18 +272,18 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       });
       
       if (success) {
-        print('[PreJoin][TEST] ✅ E2EE KEY EXCHANGE SUCCESSFUL');
-        print('[PreJoin][TEST] Key stored in VideoConferenceService singleton');
-        print('[PreJoin][TEST] Ready to join call with encryption');
-        print('═══════════════════════════════════════════════════════════');
+        debugPrint('[PreJoin][TEST] ✅ E2EE KEY EXCHANGE SUCCESSFUL');
+        debugPrint('[PreJoin][TEST] Key stored in VideoConferenceService singleton');
+        debugPrint('[PreJoin][TEST] Ready to join call with encryption');
+        debugPrint('═══════════════════════════════════════════════════════════');
       } else {
-        print('[PreJoin][TEST] ❌ E2EE KEY EXCHANGE FAILED');
-        print('[PreJoin][TEST] Reason: Timeout or no response from participants');
-        print('═══════════════════════════════════════════════════════════');
+        debugPrint('[PreJoin][TEST] ❌ E2EE KEY EXCHANGE FAILED');
+        debugPrint('[PreJoin][TEST] Reason: Timeout or no response from participants');
+        debugPrint('═══════════════════════════════════════════════════════════');
       }
     } catch (e) {
-      print('[PreJoin][TEST] ❌ ERROR requesting E2EE key: $e');
-      print('═══════════════════════════════════════════════════════════');
+      debugPrint('[PreJoin][TEST] ❌ ERROR requesting E2EE key: $e');
+      debugPrint('═══════════════════════════════════════════════════════════');
       setState(() {
         _hasE2EEKey = false;
         _isExchangingKey = false;
@@ -304,9 +304,9 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       );
       
       setState(() {});
-      print('[PreJoin] Camera preview started');
+      debugPrint('[PreJoin] Camera preview started');
     } catch (e) {
-      print('[PreJoin] Error starting camera preview: $e');
+      debugPrint('[PreJoin] Error starting camera preview: $e');
     }
   }
   
@@ -339,7 +339,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
         Navigator.of(context).pop(joinData);
       }
     } catch (e) {
-      print('[PreJoin] Error joining channel: $e');
+      debugPrint('[PreJoin] Error joining channel: $e');
       context.showErrorSnackBar('Failed to join: $e');
     }
   }
@@ -525,3 +525,4 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
     );
   }
 }
+

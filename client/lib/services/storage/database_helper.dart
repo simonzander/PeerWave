@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:path_provider/path_provider.dart';
@@ -16,28 +16,28 @@ class DatabaseHelper {
   /// Get the singleton database instance
   static Future<Database> get database async {
     if (_database != null) {
-      print('[DATABASE] Returning existing database instance');
+      debugPrint('[DATABASE] Returning existing database instance');
       return _database!;
     }
     
     // Prevent multiple simultaneous initializations
     if (_initializing) {
-      print('[DATABASE] Already initializing, waiting...');
+      debugPrint('[DATABASE] Already initializing, waiting...');
       // Wait for initialization to complete
       while (_database == null && _initializing) {
         await Future.delayed(Duration(milliseconds: 100));
       }
       if (_database != null) {
-        print('[DATABASE] Initialization completed by another caller');
+        debugPrint('[DATABASE] Initialization completed by another caller');
         return _database!;
       }
     }
     
     _initializing = true;
     try {
-      print('[DATABASE] Starting database initialization...');
+      debugPrint('[DATABASE] Starting database initialization...');
       _database = await _initDatabase();
-      print('[DATABASE] Database initialization successful');
+      debugPrint('[DATABASE] Database initialization successful');
       return _database!;
     } finally {
       _initializing = false;
@@ -50,61 +50,61 @@ class DatabaseHelper {
       if (kIsWeb) {
         // Web: Use IndexedDB backend (set factory only once)
         if (!_factoryInitialized) {
-          print('[DATABASE] Initializing web database (IndexedDB)...');
+          debugPrint('[DATABASE] Initializing web database (IndexedDB)...');
           
           // Use the web worker version for better performance
-          print('[DATABASE] Setting database factory to databaseFactoryFfiWeb...');
+          debugPrint('[DATABASE] Setting database factory to databaseFactoryFfiWeb...');
           databaseFactory = databaseFactoryFfiWeb;
           _factoryInitialized = true;
-          print('[DATABASE] ✓ Web database factory initialized');
+          debugPrint('[DATABASE] ✓ Web database factory initialized');
         }
         
-        print('[DATABASE] Opening database: $_databaseName (version $_databaseVersion)');
-        print('[DATABASE] About to call openDatabase...');
+        debugPrint('[DATABASE] Opening database: $_databaseName (version $_databaseVersion)');
+        debugPrint('[DATABASE] About to call openDatabase...');
         
         final db = await openDatabase(
           _databaseName,
           version: _databaseVersion,
           onCreate: (db, version) async {
-            print('[DATABASE] ✓ onCreate called - Creating new database v$version');
+            debugPrint('[DATABASE] ✓ onCreate called - Creating new database v$version');
             await _onCreate(db, version);
-            print('[DATABASE] ✓ onCreate completed');
+            debugPrint('[DATABASE] ✓ onCreate completed');
           },
           onUpgrade: (db, oldVersion, newVersion) async {
-            print('[DATABASE] ✓ onUpgrade called - Upgrading from v$oldVersion to v$newVersion');
+            debugPrint('[DATABASE] ✓ onUpgrade called - Upgrading from v$oldVersion to v$newVersion');
             await _onUpgrade(db, oldVersion, newVersion);
-            print('[DATABASE] ✓ onUpgrade completed');
+            debugPrint('[DATABASE] ✓ onUpgrade completed');
           },
           onOpen: (db) async {
-            print('[DATABASE] ✓ onOpen called - Database opened successfully');
+            debugPrint('[DATABASE] ✓ onOpen called - Database opened successfully');
             try {
               final tables = await db.rawQuery(
                 "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
               );
               final tableNames = tables.map((t) => t['name']).toList();
-              print('[DATABASE] ✓ Existing tables (${tableNames.length}): ${tableNames.join(", ")}');
+              debugPrint('[DATABASE] ✓ Existing tables (${tableNames.length}): ${tableNames.join(", ")}');
             } catch (e) {
-              print('[DATABASE] ✗ Error listing tables: $e');
+              debugPrint('[DATABASE] ✗ Error listing tables: $e');
             }
           },
         ).timeout(
           Duration(seconds: 30),
           onTimeout: () {
-            print('[DATABASE] ✗ TIMEOUT after 30 seconds!');
+            debugPrint('[DATABASE] ✗ TIMEOUT after 30 seconds!');
             throw Exception('[DATABASE] Timeout opening database after 30 seconds');
           },
         );
         
-        print('[DATABASE] ✓ openDatabase completed, got database instance');
-        print('[DATABASE] ✓ Web database initialization complete');
+        debugPrint('[DATABASE] ✓ openDatabase completed, got database instance');
+        debugPrint('[DATABASE] ✓ Web database initialization complete');
         return db;
       } else {
         // Native: Use file system
-        print('[DATABASE] Initializing native database...');
+        debugPrint('[DATABASE] Initializing native database...');
         final directory = await getApplicationDocumentsDirectory();
         final path = join(directory.path, _databaseName);
         
-        print('[DATABASE] Database path: $path');
+        debugPrint('[DATABASE] Database path: $path');
         
         final db = await openDatabase(
           path,
@@ -112,23 +112,23 @@ class DatabaseHelper {
           onCreate: _onCreate,
           onUpgrade: _onUpgrade,
           onOpen: (db) async {
-            print('[DATABASE] Database opened successfully');
+            debugPrint('[DATABASE] Database opened successfully');
           },
         );
         
-        print('[DATABASE] Native database initialization complete');
+        debugPrint('[DATABASE] Native database initialization complete');
         return db;
       }
     } catch (e, stackTrace) {
-      print('[DATABASE] *** ERROR initializing database: $e');
-      print('[DATABASE] Stack trace: $stackTrace');
+      debugPrint('[DATABASE] *** ERROR initializing database: $e');
+      debugPrint('[DATABASE] Stack trace: $stackTrace');
       rethrow;
     }
   }
 
   /// Create database tables
   static Future<void> _onCreate(Database db, int version) async {
-    print('[DATABASE] Creating database schema version $version...');
+    debugPrint('[DATABASE] Creating database schema version $version...');
     
     // =============================================
     // MESSAGES TABLE (1:1 and Group Messages)
@@ -156,7 +156,7 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_messages_direction ON messages(direction)');
     await db.execute('CREATE INDEX idx_messages_conversation ON messages(sender, channel_id, timestamp DESC)');
     
-    print('[DATABASE] ✓ Created messages table with indexes');
+    debugPrint('[DATABASE] ✓ Created messages table with indexes');
 
     // =============================================
     // RECENT CONVERSATIONS TABLE
@@ -177,7 +177,7 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_conversations_timestamp ON recent_conversations(last_message_at DESC)');
     await db.execute('CREATE INDEX idx_conversations_pinned ON recent_conversations(pinned DESC, last_message_at DESC)');
     
-    print('[DATABASE] ✓ Created recent_conversations table');
+    debugPrint('[DATABASE] ✓ Created recent_conversations table');
 
     // =============================================
     // SIGNAL PROTOCOL TABLES
@@ -230,14 +230,14 @@ class DatabaseHelper {
       )
     ''');
     
-    print('[DATABASE] ✓ Created Signal protocol tables');
+    debugPrint('[DATABASE] ✓ Created Signal protocol tables');
 
-    print('[DATABASE] Database schema created successfully!');
+    debugPrint('[DATABASE] Database schema created successfully!');
   }
 
   /// Handle database upgrades
   static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    print('[DATABASE] Upgrading database from version $oldVersion to $newVersion...');
+    debugPrint('[DATABASE] Upgrading database from version $oldVersion to $newVersion...');
     
     // Add migration logic here when needed
     // Example:
@@ -251,7 +251,7 @@ class DatabaseHelper {
     if (_database != null) {
       await _database!.close();
       _database = null;
-      print('[DATABASE] Database closed');
+      debugPrint('[DATABASE] Database closed');
     }
   }
 
@@ -269,14 +269,14 @@ class DatabaseHelper {
       final hasAllTables = requiredTables.every((table) => tableNames.contains(table));
       
       if (hasAllTables) {
-        print('[DATABASE] All required tables present: ${tableNames.join(", ")}');
+        debugPrint('[DATABASE] All required tables present: ${tableNames.join(", ")}');
       } else {
-        print('[DATABASE] Missing tables. Found: ${tableNames.join(", ")}');
+        debugPrint('[DATABASE] Missing tables. Found: ${tableNames.join(", ")}');
       }
       
       return hasAllTables;
     } catch (e) {
-      print('[DATABASE] Error checking database readiness: $e');
+      debugPrint('[DATABASE] Error checking database readiness: $e');
       return false;
     }
   }
@@ -286,27 +286,27 @@ class DatabaseHelper {
     await close();
     
     if (kIsWeb) {
-      print('[DATABASE] Deleting web database...');
+      debugPrint('[DATABASE] Deleting web database...');
       await databaseFactoryFfiWeb.deleteDatabase(_databaseName);
-      print('[DATABASE] Web database deleted');
+      debugPrint('[DATABASE] Web database deleted');
     } else {
-      print('[DATABASE] Deleting native database...');
+      debugPrint('[DATABASE] Deleting native database...');
       final directory = await getApplicationDocumentsDirectory();
       final path = join(directory.path, _databaseName);
       await databaseFactory.deleteDatabase(path);
-      print('[DATABASE] Native database deleted');
+      debugPrint('[DATABASE] Native database deleted');
     }
     
     _factoryInitialized = false;
-    print('[DATABASE] Database deletion complete');
+    debugPrint('[DATABASE] Database deletion complete');
   }
 
   /// Reset database (delete and recreate)
   static Future<void> resetDatabase() async {
-    print('[DATABASE] Resetting database...');
+    debugPrint('[DATABASE] Resetting database...');
     await deleteDatabase();
     _database = await _initDatabase();
-    print('[DATABASE] Database reset complete');
+    debugPrint('[DATABASE] Database reset complete');
   }
 
   /// Get database info for debugging
@@ -336,3 +336,4 @@ class DatabaseHelper {
     return info;
   }
 }
+

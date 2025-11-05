@@ -181,11 +181,11 @@ class AppTheme {
 
   static TextTheme _textTheme(ColorScheme scheme) {
     // Debug: Print font info
-    print('🎨 AppTheme: Loading font family: $fontFamily');
+    debugPrint('🎨 AppTheme: Loading font family: $fontFamily');
     
     // Basis TextTheme mit Google Font
     final baseTextTheme = GoogleFonts.getTextTheme(fontFamily);
-    print('🎨 AppTheme: Base TextTheme created with family: ${baseTextTheme.bodyMedium?.fontFamily}');
+    debugPrint('🎨 AppTheme: Base TextTheme created with family: ${baseTextTheme.bodyMedium?.fontFamily}');
     
     final textTheme = baseTextTheme.copyWith(
       // Display (Largest)
@@ -284,10 +284,10 @@ class AppTheme {
     );
     
     // Debug: Print loaded font families
-    print('🎨 AppTheme TextTheme created:');
-    print('   displayLarge: ${baseTextTheme.displayLarge?.fontFamily}');
-    print('   bodyMedium: ${baseTextTheme.bodyMedium?.fontFamily}');
-    print('   labelLarge: ${baseTextTheme.labelLarge?.fontFamily}');
+    debugPrint('🎨 AppTheme TextTheme created:');
+    debugPrint('   displayLarge: ${baseTextTheme.displayLarge?.fontFamily}');
+    debugPrint('   bodyMedium: ${baseTextTheme.bodyMedium?.fontFamily}');
+    debugPrint('   labelLarge: ${baseTextTheme.labelLarge?.fontFamily}');
     
     return textTheme;
   }
@@ -305,42 +305,42 @@ class AppTheme {
 
   /// Debug-Funktion: Gibt alle verfügbaren Google Fonts aus
   static void debugPrintFontInfo() {
-    print('═══════════════════════════════════════════════════════════');
-    print('🎨 AppTheme Font Configuration Debug Info');
-    print('═══════════════════════════════════════════════════════════');
-    print('Configured font family: $fontFamily');
-    print('Configured mono font family: $monospaceFontFamily');
-    print('Use SemiCondensed: $useSemiCondensed');
-    print('');
+    debugPrint('═══════════════════════════════════════════════════════════');
+    debugPrint('🎨 AppTheme Font Configuration Debug Info');
+    debugPrint('═══════════════════════════════════════════════════════════');
+    debugPrint('Configured font family: $fontFamily');
+    debugPrint('Configured mono font family: $monospaceFontFamily');
+    debugPrint('Use SemiCondensed: $useSemiCondensed');
+    debugPrint('');
     
     // Test different font weights
-    print('Testing font weights:');
+    debugPrint('Testing font weights:');
     for (var weight in [FontWeight.w100, FontWeight.w200, FontWeight.w300, FontWeight.w400, FontWeight.w500]) {
       final testStyle = GoogleFonts.nunitoSans(fontWeight: weight);
-      print('  FontWeight.${weight.toString().split('.').last}: ${testStyle.fontFamily} (actual weight: ${testStyle.fontWeight})');
+      debugPrint('  FontWeight.${weight.toString().split('.').last}: ${testStyle.fontFamily} (actual weight: ${testStyle.fontWeight})');
     }
-    print('');
+    debugPrint('');
     
     // Test font loading
     final testStyle = GoogleFonts.getFont(fontFamily);
-    print('Test style created:');
-    print('  fontFamily: ${testStyle.fontFamily}');
-    print('  fontFamilyFallback: ${testStyle.fontFamilyFallback}');
-    print('');
+    debugPrint('Test style created:');
+    debugPrint('  fontFamily: ${testStyle.fontFamily}');
+    debugPrint('  fontFamilyFallback: ${testStyle.fontFamilyFallback}');
+    debugPrint('');
     
     // Alternative font loading methods
     final nunitoSans = GoogleFonts.nunitoSans();
-    print('GoogleFonts.nunitoSans():');
-    print('  fontFamily: ${nunitoSans.fontFamily}');
-    print('  fontFamilyFallback: ${nunitoSans.fontFamilyFallback}');
-    print('  fontWeight: ${nunitoSans.fontWeight}');
+    debugPrint('GoogleFonts.nunitoSans():');
+    debugPrint('  fontFamily: ${nunitoSans.fontFamily}');
+    debugPrint('  fontFamilyFallback: ${nunitoSans.fontFamilyFallback}');
+    debugPrint('  fontWeight: ${nunitoSans.fontWeight}');
     
     // Test thin weight
     final nunitoSansThin = GoogleFonts.nunitoSans(fontWeight: FontWeight.w100);
-    print('GoogleFonts.nunitoSans(w100):');
-    print('  fontFamily: ${nunitoSansThin.fontFamily}');
-    print('  fontWeight: ${nunitoSansThin.fontWeight}');
-    print('═══════════════════════════════════════════════════════════');
+    debugPrint('GoogleFonts.nunitoSans(w100):');
+    debugPrint('  fontFamily: ${nunitoSansThin.fontFamily}');
+    debugPrint('  fontWeight: ${nunitoSansThin.fontWeight}');
+    debugPrint('═══════════════════════════════════════════════════════════');
   }
 
   // ============================================================================
@@ -693,3 +693,4 @@ class AppTheme {
     );
   }
 }
+

@@ -455,3 +455,4 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     );
   }
 }
+

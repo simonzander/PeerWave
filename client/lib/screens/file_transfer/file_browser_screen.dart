@@ -462,7 +462,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         throw Exception('P2P Coordinator not initialized. Please ensure you are logged in and Socket.IO is connected.');
       }
       
-      print('[FILE BROWSER] Starting download with automatic key request');
+      debugPrint('[FILE BROWSER] Starting download with automatic key request');
       
       // Start download with automatic key request
       // This will:
@@ -480,7 +480,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         sharedWith: (fileInfo['sharedWith'] as List?)?.cast<String>(), // ✅ NEW: Pass sharedWith from fileInfo
       );
       
-      print('[FILE BROWSER] Download started for file: $fileId');
+      debugPrint('[FILE BROWSER] Download started for file: $fileId');
       
       // Navigate to downloads screen
       if (mounted) {
@@ -501,3 +501,4 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     );
   }
 }
+

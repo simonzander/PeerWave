@@ -261,3 +261,4 @@ enum AppBarSize {
 //   bool get isTablet => layoutType == LayoutType.tablet;
 //   bool get isDesktop => layoutType == LayoutType.desktop;
 // }
+

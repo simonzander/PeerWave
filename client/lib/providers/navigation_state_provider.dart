@@ -87,3 +87,4 @@ enum NavigationView {
   directMessage,
   settings,
 }
+

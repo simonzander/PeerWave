@@ -91,7 +91,6 @@ class _WebauthnPageState extends State<WebauthnPage> {
         urlString = 'https://$urlString';
       }
       final resp = await ApiService.get('$urlString/webauthn/list');
-      print(resp);
       if (resp.statusCode == 200 && resp.data != null) {
         if (resp.data is List) {
           setState(() {
@@ -119,7 +118,6 @@ class _WebauthnPageState extends State<WebauthnPage> {
         urlString = 'https://$urlString';
       }
       final resp = await ApiService.get('$urlString/client/list');
-      print(resp);
       if (resp.statusCode == 200 && resp.data != null) {
         if (resp.data is List) {
           setState(() {
@@ -370,3 +368,4 @@ class _WebauthnPageState extends State<WebauthnPage> {
     );
   }
 }
+

@@ -110,21 +110,21 @@ class _AuthLayoutState extends State<AuthLayout> {
     });
     Future<void> sendClientIdToServer(String host) async {
       final clientId = await ClientIdService.getClientId();
-      print('Sending clientId to server: $clientId');
+      debugPrint('Sending clientId to server: $clientId');
       ApiService.init();
       final dio = ApiService.dio;
       await dio.post('$host/client/addweb', data: {'clientId': clientId});
     }
     // Setup JS callback for WebAuthn abort using dart:js_interop
     setupWebAuthnAbortCallback((error) {
-      print('WebAuthn aborted: $error');
+      debugPrint('WebAuthn aborted: $error');
       setState(() {
         _loginStatus = 'WebAuthn aborted: $error';
       });
     });
     // Setup JS callback for WebAuthn success using dart:js_interop
     setupWebAuthnCallback((status) async {
-      print('STATUS: $status');
+      debugPrint('STATUS: $status');
       if (status == 200) {
         setState(() {
           _loginStatus = 'Login successful! Status: $status';
@@ -148,7 +148,7 @@ class _AuthLayoutState extends State<AuthLayout> {
         if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
           urlString = 'https://$urlString';
         }
-        print('lastEMail: $_lastEmail');
+        debugPrint('lastEMail: $_lastEmail');
         setState(() {
           _loginStatus = 'Login failed with status: $status';
         });
@@ -458,3 +458,4 @@ class _AuthLayoutState extends State<AuthLayout> {
     );
   }
 }
+

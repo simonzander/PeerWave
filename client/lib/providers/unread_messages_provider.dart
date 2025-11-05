@@ -102,7 +102,7 @@ class UnreadMessagesProvider extends ChangeNotifier {
     bool isChannel,
   ) {
     if (!BADGE_MESSAGE_TYPES.contains(messageType)) {
-      print('[UnreadProvider] Ignoring non-badge type: $messageType');
+      debugPrint('[UnreadProvider] Ignoring non-badge type: $messageType');
       return;
     }
     
@@ -120,7 +120,7 @@ class UnreadMessagesProvider extends ChangeNotifier {
   /// Mark all messages in a channel as read (reset count to 0)
   void markChannelAsRead(String channelUuid) {
     if (_channelUnreadCounts.containsKey(channelUuid)) {
-      print('[UnreadProvider] Marking channel $channelUuid as read');
+      debugPrint('[UnreadProvider] Marking channel $channelUuid as read');
       _channelUnreadCounts.remove(channelUuid);
       notifyListeners();
       saveToStorage();
@@ -130,7 +130,7 @@ class UnreadMessagesProvider extends ChangeNotifier {
   /// Mark all messages in a direct message conversation as read (reset count to 0)
   void markDirectMessageAsRead(String userUuid) {
     if (_directMessageUnreadCounts.containsKey(userUuid)) {
-      print('[UnreadProvider] Marking DM $userUuid as read');
+      debugPrint('[UnreadProvider] Marking DM $userUuid as read');
       _directMessageUnreadCounts.remove(userUuid);
       notifyListeners();
       saveToStorage();
@@ -177,7 +177,7 @@ class UnreadMessagesProvider extends ChangeNotifier {
   
   /// Reset all unread counts (both channels and direct messages)
   void resetAll() {
-    print('[UnreadProvider] Resetting all unread counts');
+    debugPrint('[UnreadProvider] Resetting all unread counts');
     _channelUnreadCounts.clear();
     _directMessageUnreadCounts.clear();
     notifyListeners();
@@ -186,7 +186,7 @@ class UnreadMessagesProvider extends ChangeNotifier {
   
   /// Reset all channel unread counts
   void resetAllChannels() {
-    print('[UnreadProvider] Resetting all channel unread counts');
+    debugPrint('[UnreadProvider] Resetting all channel unread counts');
     _channelUnreadCounts.clear();
     notifyListeners();
     saveToStorage();
@@ -194,7 +194,7 @@ class UnreadMessagesProvider extends ChangeNotifier {
   
   /// Reset all direct message unread counts
   void resetAllDirectMessages() {
-    print('[UnreadProvider] Resetting all DM unread counts');
+    debugPrint('[UnreadProvider] Resetting all DM unread counts');
     _directMessageUnreadCounts.clear();
     notifyListeners();
     saveToStorage();
@@ -217,13 +217,13 @@ class UnreadMessagesProvider extends ChangeNotifier {
         if (channelsJson != null && channelsJson.isNotEmpty) {
           final decoded = jsonDecode(channelsJson) as Map<String, dynamic>;
           _channelUnreadCounts = decoded.map((k, v) => MapEntry(k, v as int));
-          print('[UnreadProvider] Loaded ${_channelUnreadCounts.length} channel counts from storage');
+          debugPrint('[UnreadProvider] Loaded ${_channelUnreadCounts.length} channel counts from storage');
         }
         
         if (dmJson != null && dmJson.isNotEmpty) {
           final decoded = jsonDecode(dmJson) as Map<String, dynamic>;
           _directMessageUnreadCounts = decoded.map((k, v) => MapEntry(k, v as int));
-          print('[UnreadProvider] Loaded ${_directMessageUnreadCounts.length} DM counts from storage');
+          debugPrint('[UnreadProvider] Loaded ${_directMessageUnreadCounts.length} DM counts from storage');
         }
       } else {
         // Native: Use SharedPreferences
@@ -234,19 +234,19 @@ class UnreadMessagesProvider extends ChangeNotifier {
         if (channelsJson != null && channelsJson.isNotEmpty) {
           final decoded = jsonDecode(channelsJson) as Map<String, dynamic>;
           _channelUnreadCounts = decoded.map((k, v) => MapEntry(k, v as int));
-          print('[UnreadProvider] Loaded ${_channelUnreadCounts.length} channel counts from storage');
+          debugPrint('[UnreadProvider] Loaded ${_channelUnreadCounts.length} channel counts from storage');
         }
         
         if (dmJson != null && dmJson.isNotEmpty) {
           final decoded = jsonDecode(dmJson) as Map<String, dynamic>;
           _directMessageUnreadCounts = decoded.map((k, v) => MapEntry(k, v as int));
-          print('[UnreadProvider] Loaded ${_directMessageUnreadCounts.length} DM counts from storage');
+          debugPrint('[UnreadProvider] Loaded ${_directMessageUnreadCounts.length} DM counts from storage');
         }
       }
       
       notifyListeners();
     } catch (e) {
-      print('[UnreadProvider] Error loading from storage: $e');
+      debugPrint('[UnreadProvider] Error loading from storage: $e');
       // Don't throw - continue with empty state
     }
   }
@@ -265,7 +265,7 @@ class UnreadMessagesProvider extends ChangeNotifier {
         await prefs.setString(_storageKeyDirectMessages, jsonEncode(_directMessageUnreadCounts));
       }
     } catch (e) {
-      print('[UnreadProvider] Error saving to storage: $e');
+      debugPrint('[UnreadProvider] Error saving to storage: $e');
       // Don't throw - storage failure shouldn't crash the app
     }
   }
@@ -299,7 +299,7 @@ class UnreadMessagesProvider extends ChangeNotifier {
       await txn.completed;
       db.close();
     } catch (e) {
-      print('[UnreadProvider] Error saving to IndexedDB: $e');
+      debugPrint('[UnreadProvider] Error saving to IndexedDB: $e');
     }
   }
   
@@ -326,7 +326,7 @@ class UnreadMessagesProvider extends ChangeNotifier {
 
       return value as String?;
     } catch (e) {
-      print('[UnreadProvider] Error loading from IndexedDB: $e');
+      debugPrint('[UnreadProvider] Error loading from IndexedDB: $e');
       return null;
     }
   }
@@ -357,11 +357,12 @@ class UnreadMessagesProvider extends ChangeNotifier {
   
   /// Debug method to print current state
   void debugPrintState() {
-    print('[UnreadProvider] ========== STATE DUMP ==========');
-    print('[UnreadProvider] Total Channel Unread: $totalChannelUnread');
-    print('[UnreadProvider] Total DM Unread: $totalDirectMessageUnread');
-    print('[UnreadProvider] Channel Counts: $_channelUnreadCounts');
-    print('[UnreadProvider] DM Counts: $_directMessageUnreadCounts');
-    print('[UnreadProvider] ================================');
+    debugPrint('[UnreadProvider] ========== STATE DUMP ==========');
+    debugPrint('[UnreadProvider] Total Channel Unread: $totalChannelUnread');
+    debugPrint('[UnreadProvider] Total DM Unread: $totalDirectMessageUnread');
+    debugPrint('[UnreadProvider] Channel Counts: $_channelUnreadCounts');
+    debugPrint('[UnreadProvider] DM Counts: $_directMessageUnreadCounts');
+    debugPrint('[UnreadProvider] ================================');
   }
 }
+

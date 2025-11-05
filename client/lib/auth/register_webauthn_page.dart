@@ -348,3 +348,4 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
     );
   }
 }
+

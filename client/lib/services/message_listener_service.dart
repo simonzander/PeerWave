@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'socket_service.dart';
 import 'signal_service.dart';
 import 'video_conference_service.dart';
@@ -22,23 +23,23 @@ class MessageListenerService {
   /// Register VideoConferenceService for E2EE key handling
   void registerVideoConferenceService(VideoConferenceService service) {
     _videoConferenceService = service;
-    print('[MESSAGE_LISTENER] VideoConferenceService registered for E2EE key handling');
+    debugPrint('[MESSAGE_LISTENER] VideoConferenceService registered for E2EE key handling');
   }
   
   /// Unregister VideoConferenceService
   void unregisterVideoConferenceService() {
     _videoConferenceService = null;
-    print('[MESSAGE_LISTENER] VideoConferenceService unregistered');
+    debugPrint('[MESSAGE_LISTENER] VideoConferenceService unregistered');
   }
 
   /// Initialize global message listeners
   Future<void> initialize() async {
     if (_isInitialized) {
-      print('[MESSAGE_LISTENER] Already initialized');
+      debugPrint('[MESSAGE_LISTENER] Already initialized');
       return;
     }
 
-    print('[MESSAGE_LISTENER] Initializing global message listeners...');
+    debugPrint('[MESSAGE_LISTENER] Initializing global message listeners...');
 
     // Listen for 1:1 messages
     SocketService().registerListener('receiveItem', _handleDirectMessage);
@@ -57,7 +58,7 @@ class MessageListenerService {
     SocketService().registerListener('groupItemReadUpdate', _handleGroupReadReceipt);
 
     _isInitialized = true;
-    print('[MESSAGE_LISTENER] Global message listeners initialized');
+    debugPrint('[MESSAGE_LISTENER] Global message listeners initialized');
   }
 
   /// Cleanup listeners
@@ -73,31 +74,31 @@ class MessageListenerService {
 
     _notificationCallbacks.clear();
     _isInitialized = false;
-    print('[MESSAGE_LISTENER] Global message listeners disposed');
+    debugPrint('[MESSAGE_LISTENER] Global message listeners disposed');
   }
 
   /// Register a callback for message notifications
   void registerNotificationCallback(Function(MessageNotification) callback) {
     if (!_notificationCallbacks.contains(callback)) {
       _notificationCallbacks.add(callback);
-      print('[MESSAGE_LISTENER] Registered notification callback (total: ${_notificationCallbacks.length})');
+      debugPrint('[MESSAGE_LISTENER] Registered notification callback (total: ${_notificationCallbacks.length})');
     }
   }
 
   /// Unregister a callback
   void unregisterNotificationCallback(Function(MessageNotification) callback) {
     _notificationCallbacks.remove(callback);
-    print('[MESSAGE_LISTENER] Unregistered notification callback (total: ${_notificationCallbacks.length})');
+    debugPrint('[MESSAGE_LISTENER] Unregistered notification callback (total: ${_notificationCallbacks.length})');
   }
 
   /// Trigger notification for all registered callbacks
   void _triggerNotification(MessageNotification notification) {
-    print('[MESSAGE_LISTENER] Triggering notification: ${notification.type} from ${notification.senderId}');
+    debugPrint('[MESSAGE_LISTENER] Triggering notification: ${notification.type} from ${notification.senderId}');
     for (final callback in _notificationCallbacks) {
       try {
         callback(notification);
       } catch (e) {
-        print('[MESSAGE_LISTENER] Error in notification callback: $e');
+        debugPrint('[MESSAGE_LISTENER] Error in notification callback: $e');
       }
     }
   }
@@ -105,7 +106,7 @@ class MessageListenerService {
   /// Handle incoming 1:1 message
   Future<void> _handleDirectMessage(dynamic data) async {
     try {
-      print('[MESSAGE_LISTENER] Received 1:1 message');
+      debugPrint('[MESSAGE_LISTENER] Received 1:1 message');
       
       final itemId = data['itemId'] as String?;
       final sender = data['sender'] as String?;
@@ -114,7 +115,7 @@ class MessageListenerService {
       final timestamp = data['timestamp'] as String?;
 
       if (itemId == null || sender == null || deviceSender == null || payload == null) {
-        print('[MESSAGE_LISTENER] Missing required fields in 1:1 message');
+        debugPrint('[MESSAGE_LISTENER] Missing required fields in 1:1 message');
         return;
       }
 
@@ -130,16 +131,16 @@ class MessageListenerService {
         encrypted: true,
       ));
 
-      print('[MESSAGE_LISTENER] 1:1 message notification triggered: $itemId');
+      debugPrint('[MESSAGE_LISTENER] 1:1 message notification triggered: $itemId');
     } catch (e) {
-      print('[MESSAGE_LISTENER] Error handling 1:1 message: $e');
+      debugPrint('[MESSAGE_LISTENER] Error handling 1:1 message: $e');
     }
   }
 
   /// Handle incoming group message
   Future<void> _handleGroupMessage(dynamic data) async {
     try {
-      print('[MESSAGE_LISTENER] Received group message');
+      debugPrint('[MESSAGE_LISTENER] Received group message');
       
       final itemId = data['itemId'] as String?;
       final channelId = data['channel'] as String?;
@@ -155,7 +156,7 @@ class MessageListenerService {
 
       if (itemId == null || channelId == null || senderId == null || 
           senderDeviceId == null || payload == null) {
-        print('[MESSAGE_LISTENER] Missing required fields in group message');
+        debugPrint('[MESSAGE_LISTENER] Missing required fields in group message');
         return;
       }
 
@@ -246,12 +247,12 @@ class MessageListenerService {
         try {
           final profileService = UserProfileService.instance;
           if (!profileService.isProfileCached(senderId)) {
-            print("[MESSAGE_LISTENER] Loading profile for group message sender: $senderId");
+            debugPrint("[MESSAGE_LISTENER] Loading profile for group message sender: $senderId");
             await profileService.loadProfiles([senderId]);
-            print("[MESSAGE_LISTENER] ✓ Sender profile loaded");
+            debugPrint("[MESSAGE_LISTENER] ✓ Sender profile loaded");
           }
         } catch (e) {
-          print("[MESSAGE_LISTENER] ⚠ Failed to load sender profile (server may be unavailable): $e");
+          debugPrint("[MESSAGE_LISTENER] ⚠ Failed to load sender profile (server may be unavailable): $e");
           // Don't block message processing if profile loading fails
         }
 
@@ -267,9 +268,9 @@ class MessageListenerService {
           message: decrypted,
         ));
 
-        print('[MESSAGE_LISTENER] Group message decrypted and stored: $itemId');
+        debugPrint('[MESSAGE_LISTENER] Group message decrypted and stored: $itemId');
       } catch (e) {
-        print('[MESSAGE_LISTENER] Error decrypting group message: $e');
+        debugPrint('[MESSAGE_LISTENER] Error decrypting group message: $e');
         
         // Still trigger notification, but mark as encrypted
         _triggerNotification(MessageNotification(
@@ -283,7 +284,7 @@ class MessageListenerService {
         ));
       }
     } catch (e) {
-      print('[MESSAGE_LISTENER] Error handling group message: $e');
+      debugPrint('[MESSAGE_LISTENER] Error handling group message: $e');
     }
   }
 
@@ -297,7 +298,7 @@ class MessageListenerService {
     required String decryptedPayload,
   }) async {
     try {
-      print('[MESSAGE_LISTENER] Processing file share update');
+      debugPrint('[MESSAGE_LISTENER] Processing file share update');
       
       // Parse the decrypted JSON payload
       final Map<String, dynamic> shareData = jsonDecode(decryptedPayload);
@@ -307,14 +308,14 @@ class MessageListenerService {
       final checksum = shareData['checksum'] as String?;
       
       if (fileId == null || action == null) {
-        print('[MESSAGE_LISTENER] Missing fileId or action in share update');
+        debugPrint('[MESSAGE_LISTENER] Missing fileId or action in share update');
         return;
       }
 
-      print('[MESSAGE_LISTENER] File share update: $action for file $fileId');
-      print('[MESSAGE_LISTENER] Affected users: $affectedUserIds');
+      debugPrint('[MESSAGE_LISTENER] File share update: $action for file $fileId');
+      debugPrint('[MESSAGE_LISTENER] Affected users: $affectedUserIds');
       if (checksum != null) {
-        print('[MESSAGE_LISTENER] Checksum: ${checksum.substring(0, 16)}...');
+        debugPrint('[MESSAGE_LISTENER] Checksum: ${checksum.substring(0, 16)}...');
       }
 
       // ========================================
@@ -329,14 +330,14 @@ class MessageListenerService {
       // 2. Checksum verification (file integrity, see below)
       // 3. Merge strategy (eventual consistency across peers)
       
-      print('[P2P] Processing Signal-authenticated share update (action: $action)');
+      debugPrint('[P2P] Processing Signal-authenticated share update (action: $action)');
       
       final fileTransferService = _getFileTransferService();
       final socketFileClient = _getSocketFileClient();
 
       // Verify checksum with server before processing (if action is 'add')
       if (checksum != null && action == 'add' && fileTransferService != null) {
-        print('[SECURITY] Verifying checksum before accepting share...');
+        debugPrint('[SECURITY] Verifying checksum before accepting share...');
         
         final isValid = await fileTransferService.verifyChecksumBeforeDownload(
           fileId,
@@ -344,7 +345,7 @@ class MessageListenerService {
         );
         
         if (!isValid) {
-          print('[SECURITY] ❌ Checksum verification FAILED - ignoring share update');
+          debugPrint('[SECURITY] ❌ Checksum verification FAILED - ignoring share update');
           
           // Show warning to user
           _triggerNotification(MessageNotification(
@@ -361,7 +362,7 @@ class MessageListenerService {
           return; // ❌ ABORT - don't process compromised file
         }
         
-        print('[SECURITY] ✅ Checksum verified - share is authentic');
+        debugPrint('[SECURITY] ✅ Checksum verified - share is authentic');
       }
 
       // ========================================
@@ -370,7 +371,7 @@ class MessageListenerService {
       
       if (action == 'add') {
         // User was added to file share
-        print('[FILE SHARE] You were given access to file: $fileId');
+        debugPrint('[FILE SHARE] You were given access to file: $fileId');
         
         // ========================================
         // P2P MERGE: Add sender to local sharedWith
@@ -393,14 +394,14 @@ class MessageListenerService {
                   'sharedWith': mergedSharedWith,
                   'lastSync': DateTime.now().millisecondsSinceEpoch,
                 });
-                print('[FILE SHARE] ✓ Merged sender into sharedWith: ${mergedSharedWith.length} users');
-                print('[FILE SHARE] sharedWith: $mergedSharedWith');
+                debugPrint('[FILE SHARE] ✓ Merged sender into sharedWith: ${mergedSharedWith.length} users');
+                debugPrint('[FILE SHARE] sharedWith: $mergedSharedWith');
               } else {
-                print('[FILE SHARE] Sender already in sharedWith - no change needed');
+                debugPrint('[FILE SHARE] Sender already in sharedWith - no change needed');
               }
             } else {
               // File doesn't exist yet - save minimal metadata with sender in sharedWith
-              print('[FILE SHARE] File not downloaded yet - saving metadata for future download');
+              debugPrint('[FILE SHARE] File not downloaded yet - saving metadata for future download');
               
               // Get file info from server to have all metadata ready
               try {
@@ -419,13 +420,13 @@ class MessageListenerService {
                   'sharedWith': [senderId], // Start with sender only (will merge on announce)
                   'downloadedChunks': [],
                 });
-                print('[FILE SHARE] ✓ Saved file metadata with sender in sharedWith');
+                debugPrint('[FILE SHARE] ✓ Saved file metadata with sender in sharedWith');
               } catch (e) {
-                print('[FILE SHARE] Warning: Could not save file metadata: $e');
+                debugPrint('[FILE SHARE] Warning: Could not save file metadata: $e');
               }
             }
           } catch (e) {
-            print('[FILE SHARE] Warning: Could not update local sharedWith: $e');
+            debugPrint('[FILE SHARE] Warning: Could not update local sharedWith: $e');
           }
         }
         
@@ -449,7 +450,7 @@ class MessageListenerService {
         // ========================================
         
         // User's access was revoked
-        print('[FILE SHARE] Your access to file was revoked: $fileId');
+        debugPrint('[FILE SHARE] Your access to file was revoked: $fileId');
         
         // P2P NOTE: We trust Signal E2E encrypted revoke message
         // No server verification needed - Signal Protocol guarantees authenticity
@@ -457,20 +458,20 @@ class MessageListenerService {
         // Cancel any active downloads for this file
         if (fileTransferService != null) {
           try {
-            print('[FILE SHARE] Canceling active downloads for revoked file...');
+            debugPrint('[FILE SHARE] Canceling active downloads for revoked file...');
             await fileTransferService.cancelDownload(fileId);
-            print('[FILE SHARE] ✓ Active downloads canceled');
+            debugPrint('[FILE SHARE] ✓ Active downloads canceled');
           } catch (e) {
-            print('[FILE SHARE] Error canceling downloads: $e');
+            debugPrint('[FILE SHARE] Error canceling downloads: $e');
           }
           
           // Optionally: Delete already downloaded chunks
           try {
-            print('[FILE SHARE] Deleting downloaded chunks for revoked file...');
+            debugPrint('[FILE SHARE] Deleting downloaded chunks for revoked file...');
             await fileTransferService.deleteFile(fileId);
-            print('[FILE SHARE] ✓ Downloaded chunks deleted');
+            debugPrint('[FILE SHARE] ✓ Downloaded chunks deleted');
           } catch (e) {
-            print('[FILE SHARE] Error deleting chunks: $e');
+            debugPrint('[FILE SHARE] Error deleting chunks: $e');
           }
         }
         
@@ -489,10 +490,10 @@ class MessageListenerService {
         ));
       }
 
-      print('[MESSAGE_LISTENER] File share update processed successfully');
+      debugPrint('[MESSAGE_LISTENER] File share update processed successfully');
       
     } catch (e) {
-      print('[MESSAGE_LISTENER] Error processing file share update: $e');
+      debugPrint('[MESSAGE_LISTENER] Error processing file share update: $e');
     }
   }
 
@@ -507,11 +508,11 @@ class MessageListenerService {
     String? messageType,
   }) async {
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('[MESSAGE_LISTENER][TEST] 📬 PROCESSING VIDEO E2EE KEY MESSAGE');
-      print('[MESSAGE_LISTENER][TEST] Sender: $senderId');
-      print('[MESSAGE_LISTENER][TEST] Message Type: $messageType');
-      print('[MESSAGE_LISTENER][TEST] Channel: $channelId');
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('[MESSAGE_LISTENER][TEST] 📬 PROCESSING VIDEO E2EE KEY MESSAGE');
+      debugPrint('[MESSAGE_LISTENER][TEST] Sender: $senderId');
+      debugPrint('[MESSAGE_LISTENER][TEST] Message Type: $messageType');
+      debugPrint('[MESSAGE_LISTENER][TEST] Channel: $channelId');
       
       // Parse the decrypted JSON payload
       final Map<String, dynamic> keyData = jsonDecode(decryptedPayload);
@@ -521,31 +522,31 @@ class MessageListenerService {
         final requesterId = keyData['requesterId'] as String?;
         final requestTimestamp = keyData['timestamp'] as int?;
         
-        print('[MESSAGE_LISTENER][TEST] 📩 KEY REQUEST RECEIVED');
-        print('[MESSAGE_LISTENER][TEST] Requester: $requesterId');
-        print('[MESSAGE_LISTENER][TEST] Request Timestamp: $requestTimestamp');
-        print('[MESSAGE_LISTENER][TEST] 🔍 Checking VideoConferenceService...');
-        print('[MESSAGE_LISTENER][TEST]   - Service registered: ${_videoConferenceService != null}');
-        print('[MESSAGE_LISTENER][TEST]   - Has E2EE key: ${_videoConferenceService?.hasE2EEKey ?? false}');
+        debugPrint('[MESSAGE_LISTENER][TEST] 📩 KEY REQUEST RECEIVED');
+        debugPrint('[MESSAGE_LISTENER][TEST] Requester: $requesterId');
+        debugPrint('[MESSAGE_LISTENER][TEST] Request Timestamp: $requestTimestamp');
+        debugPrint('[MESSAGE_LISTENER][TEST] 🔍 Checking VideoConferenceService...');
+        debugPrint('[MESSAGE_LISTENER][TEST]   - Service registered: ${_videoConferenceService != null}');
+        debugPrint('[MESSAGE_LISTENER][TEST]   - Has E2EE key: ${_videoConferenceService?.hasE2EEKey ?? false}');
         
         // ⚠️ IMPORTANT: Ignore our own key requests (sender receives their own broadcast)
         final currentUserId = SignalService.instance.currentUserId;
         if (requesterId == currentUserId || senderId == currentUserId) {
-          print('[MESSAGE_LISTENER][TEST] ℹ️ Ignoring own key request (sender echo)');
-          print('═══════════════════════════════════════════════════════════');
+          debugPrint('[MESSAGE_LISTENER][TEST] ℹ️ Ignoring own key request (sender echo)');
+          debugPrint('═══════════════════════════════════════════════════════════');
           return;
         }
         
         // Respond if we have a key available (even if not connected to LiveKit room yet)
         if (_videoConferenceService != null && _videoConferenceService!.hasE2EEKey) {
-          print('[MESSAGE_LISTENER][TEST] ✓ Forwarding to VideoConferenceService.handleKeyRequest()');
+          debugPrint('[MESSAGE_LISTENER][TEST] ✓ Forwarding to VideoConferenceService.handleKeyRequest()');
           await _videoConferenceService!.handleKeyRequest(requesterId ?? senderId);
         } else {
-          print('[MESSAGE_LISTENER][TEST] ⚠️ VideoConferenceService not available or no key generated');
-          print('[MESSAGE_LISTENER][TEST] ℹ️ This is expected if you are the requester waiting for response');
+          debugPrint('[MESSAGE_LISTENER][TEST] ⚠️ VideoConferenceService not available or no key generated');
+          debugPrint('[MESSAGE_LISTENER][TEST] ℹ️ This is expected if you are the requester waiting for response');
         }
         
-        print('═══════════════════════════════════════════════════════════');
+        debugPrint('═══════════════════════════════════════════════════════════');
         return;
       }
       
@@ -554,13 +555,13 @@ class MessageListenerService {
         final encryptedKey = keyData['encryptedKey'] as String?;
         final keyTimestamp = keyData['timestamp'] as int?;
         
-        print('[MESSAGE_LISTENER][TEST] 🔑 KEY RESPONSE RECEIVED');
-        print('[MESSAGE_LISTENER][TEST] Target User: $targetUserId');
-        print('[MESSAGE_LISTENER][TEST] Key Timestamp: $keyTimestamp');
-        print('[MESSAGE_LISTENER][TEST] Key Length: ${encryptedKey?.length ?? 0} chars (base64)');
+        debugPrint('[MESSAGE_LISTENER][TEST] 🔑 KEY RESPONSE RECEIVED');
+        debugPrint('[MESSAGE_LISTENER][TEST] Target User: $targetUserId');
+        debugPrint('[MESSAGE_LISTENER][TEST] Key Timestamp: $keyTimestamp');
+        debugPrint('[MESSAGE_LISTENER][TEST] Key Length: ${encryptedKey?.length ?? 0} chars (base64)');
         
         if (encryptedKey != null && keyTimestamp != null && _videoConferenceService != null) {
-          print('[MESSAGE_LISTENER][TEST] ✓ Forwarding to VideoConferenceService.handleE2EEKey()');
+          debugPrint('[MESSAGE_LISTENER][TEST] ✓ Forwarding to VideoConferenceService.handleE2EEKey()');
           await _videoConferenceService!.handleE2EEKey(
             senderUserId: senderId,
             encryptedKey: encryptedKey,
@@ -568,10 +569,10 @@ class MessageListenerService {
             timestamp: keyTimestamp,  // Pass timestamp for race condition resolution
           );
         } else {
-          print('[MESSAGE_LISTENER][TEST] ⚠️ Missing data or VideoConferenceService not available');
+          debugPrint('[MESSAGE_LISTENER][TEST] ⚠️ Missing data or VideoConferenceService not available');
         }
         
-        print('═══════════════════════════════════════════════════════════');
+        debugPrint('═══════════════════════════════════════════════════════════');
         return;
       }
       
@@ -581,7 +582,7 @@ class MessageListenerService {
       if (type == 'video_key_request') {
         // Someone is requesting the key
         final requesterId = keyData['requesterId'] as String?;
-        print('[MESSAGE_LISTENER][TEST] [LEGACY] Received key request from $requesterId');
+        debugPrint('[MESSAGE_LISTENER][TEST] [LEGACY] Received key request from $requesterId');
         
         if (_videoConferenceService != null && _videoConferenceService!.isConnected) {
           await _videoConferenceService!.handleKeyRequest(requesterId ?? senderId);
@@ -595,7 +596,7 @@ class MessageListenerService {
         final encryptedKey = keyData['encryptedKey'] as String?;
         final legacyTimestamp = DateTime.now().millisecondsSinceEpoch;
         
-        print('[MESSAGE_LISTENER] [LEGACY] Received key response for user: $targetUserId (no timestamp, using current: $legacyTimestamp)');
+        debugPrint('[MESSAGE_LISTENER] [LEGACY] Received key response for user: $targetUserId (no timestamp, using current: $legacyTimestamp)');
         
         if (encryptedKey != null && _videoConferenceService != null) {
           await _videoConferenceService!.handleE2EEKey(
@@ -608,10 +609,10 @@ class MessageListenerService {
         return;
       }
       
-      print('[MESSAGE_LISTENER] Unknown video E2EE key type: $type or messageType: $messageType');
+      debugPrint('[MESSAGE_LISTENER] Unknown video E2EE key type: $type or messageType: $messageType');
       
     } catch (e) {
-      print('[MESSAGE_LISTENER] Error processing video E2EE key: $e');
+      debugPrint('[MESSAGE_LISTENER] Error processing video E2EE key: $e');
     }
   }
 
@@ -620,8 +621,8 @@ class MessageListenerService {
   /// NOTE: File share updates are sent as groupItem with type='file_share_update'
   /// This handler is kept for backward compatibility but may not receive events
   Future<void> _handleFileShareUpdate(dynamic data) async {
-    print('[MESSAGE_LISTENER] ⚠️ Received file_share_update via dedicated event (deprecated)');
-    print('[MESSAGE_LISTENER] File shares should arrive as groupItem with type=file_share_update');
+    debugPrint('[MESSAGE_LISTENER] ⚠️ Received file_share_update via dedicated event (deprecated)');
+    debugPrint('[MESSAGE_LISTENER] File shares should arrive as groupItem with type=file_share_update');
     
     // Route to groupItem handler
     await _handleGroupMessage(data);
@@ -663,7 +664,7 @@ class MessageListenerService {
         ));
       }
     } catch (e) {
-      print('[MESSAGE_LISTENER] Error handling delivery receipt: $e');
+      debugPrint('[MESSAGE_LISTENER] Error handling delivery receipt: $e');
     }
   }
 
@@ -684,7 +685,7 @@ class MessageListenerService {
         ));
       }
     } catch (e) {
-      print('[MESSAGE_LISTENER] Error handling group delivery receipt: $e');
+      debugPrint('[MESSAGE_LISTENER] Error handling group delivery receipt: $e');
     }
   }
 
@@ -709,7 +710,7 @@ class MessageListenerService {
         ));
       }
     } catch (e) {
-      print('[MESSAGE_LISTENER] Error handling group read receipt: $e');
+      debugPrint('[MESSAGE_LISTENER] Error handling group read receipt: $e');
     }
   }
 }
@@ -763,3 +764,4 @@ class MessageNotification {
     return 'MessageNotification(type: $type, itemId: $itemId, channelId: $channelId, sender: $senderId, encrypted: $encrypted)';
   }
 }
+

@@ -326,3 +326,4 @@ class AnimatedSection extends StatelessWidget {
     );
   }
 }
+

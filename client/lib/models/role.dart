@@ -164,3 +164,4 @@ extension RoleScopeExtension on RoleScope {
   /// Returns all available role scopes
   static List<RoleScope> get values => RoleScope.values;
 }
+

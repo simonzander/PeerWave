@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:idb_shim/idb_browser.dart';
 import 'dart:convert';
@@ -87,9 +87,9 @@ class DecryptedGroupItemsStore {
         timestamp: timestamp,
         type: type,
       );
-      print('[GROUP ITEMS] ✓ Stored in SQLite: $itemId');
+      debugPrint('[GROUP ITEMS] ✓ Stored in SQLite: $itemId');
     } catch (e) {
-      print('[GROUP ITEMS] ⚠ SQLite failed, using fallback: $e');
+      debugPrint('[GROUP ITEMS] ⚠ SQLite failed, using fallback: $e');
     }
     
     // Also store in old storage (dual write for safety)
@@ -143,7 +143,7 @@ class DecryptedGroupItemsStore {
       final messages = await sqliteStore.getChannelMessages(channelId);
       
       if (messages.isNotEmpty) {
-        print('[GROUP ITEMS] ✓ Loaded ${messages.length} messages from SQLite');
+        debugPrint('[GROUP ITEMS] ✓ Loaded ${messages.length} messages from SQLite');
         
         // Convert SQLite format to expected format
         return messages.map((msg) => {
@@ -158,7 +158,7 @@ class DecryptedGroupItemsStore {
         }).toList();
       }
     } catch (e) {
-      print('[GROUP ITEMS] ⚠ SQLite failed, using fallback: $e');
+      debugPrint('[GROUP ITEMS] ⚠ SQLite failed, using fallback: $e');
     }
     
     // Fallback to old storage
@@ -186,7 +186,7 @@ class DecryptedGroupItemsStore {
               final item = jsonDecode(value);
               items.add(item);
             } catch (e) {
-              print('[DecryptedGroupItemsStore] Error decoding item: $e');
+              debugPrint('[DecryptedGroupItemsStore] Error decoding item: $e');
             }
           }
         }
@@ -205,7 +205,7 @@ class DecryptedGroupItemsStore {
                 final item = jsonDecode(value);
                 items.add(item);
               } catch (e) {
-                print('[DecryptedGroupItemsStore] Error decoding item: $e');
+                debugPrint('[DecryptedGroupItemsStore] Error decoding item: $e');
               }
             }
           }
@@ -213,7 +213,7 @@ class DecryptedGroupItemsStore {
       }
     }
 
-    print('[GROUP ITEMS] ✓ Loaded ${items.length} messages from fallback storage');
+    debugPrint('[GROUP ITEMS] ✓ Loaded ${items.length} messages from fallback storage');
     return items;
   }
 
@@ -392,3 +392,4 @@ class DecryptedGroupItemsStore {
     return channels;
   }
 }
+

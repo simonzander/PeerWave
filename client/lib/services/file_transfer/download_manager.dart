@@ -538,3 +538,4 @@ class _CancelToken {
     _cancelled = true;
   }
 }
+

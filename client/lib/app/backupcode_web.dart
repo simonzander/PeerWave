@@ -43,7 +43,7 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
         }
       }
     } catch (e) {
-      print('Error fetching backup codes: $e');
+      debugPrint('Error fetching backup codes: $e');
     }
   }
   final TextEditingController serverController = TextEditingController();
@@ -179,3 +179,4 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
     );
   }
 }
+

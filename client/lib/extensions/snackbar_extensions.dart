@@ -111,3 +111,4 @@ extension SnackBarExtensions on BuildContext {
     );
   }
 }
+

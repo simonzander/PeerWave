@@ -63,7 +63,7 @@ class _ChannelsListViewState extends State<ChannelsListView> {
         _loading = false;
       });
     } catch (e) {
-      print('[CHANNELS_LIST] Error loading channels: $e');
+      debugPrint('[CHANNELS_LIST] Error loading channels: $e');
       setState(() {
         _loading = false;
       });
@@ -129,7 +129,7 @@ class _ChannelsListViewState extends State<ChannelsListView> {
         });
       }
     } catch (e) {
-      print('[CHANNELS_LIST] Error loading member channels: $e');
+      debugPrint('[CHANNELS_LIST] Error loading member channels: $e');
     }
   }
 
@@ -176,7 +176,7 @@ class _ChannelsListViewState extends State<ChannelsListView> {
         _publicChannels = [];
       });
     } catch (e) {
-      print('[CHANNELS_LIST] Error loading public channels: $e');
+      debugPrint('[CHANNELS_LIST] Error loading public channels: $e');
     }
   }
 
@@ -597,7 +597,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
       }
     } catch (e) {
       setState(() => isLoadingRoles = false);
-      print('Error loading roles: $e');
+      debugPrint('Error loading roles: $e');
     }
   }
 
@@ -726,7 +726,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
         }
       }
     } catch (e) {
-      print('Error creating channel: $e');
+      debugPrint('Error creating channel: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error creating channel: $e')),
@@ -735,3 +735,4 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
     }
   }
 }
+

@@ -1279,7 +1279,7 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
         _isSearching = false;
       });
     } catch (e) {
-      print('[SHARE_DIALOG] Search error: $e');
+      debugPrint('[SHARE_DIALOG] Search error: $e');
       setState(() => _isSearching = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1382,7 +1382,7 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
         }
       }
     } catch (e) {
-      print('[SHARE_DIALOG] Share error: $e');
+      debugPrint('[SHARE_DIALOG] Share error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1749,3 +1749,4 @@ class _DownloadFileProgressDialogState extends State<_DownloadFileProgressDialog
     );
   }
 }
+

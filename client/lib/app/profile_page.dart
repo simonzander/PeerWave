@@ -131,7 +131,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 _currentImageBytes = base64Decode(base64String);
               }
             } catch (e) {
-              print('Error decoding profile picture: $e');
+              debugPrint('Error decoding profile picture: $e');
             }
           }
           
@@ -599,3 +599,4 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 }
+

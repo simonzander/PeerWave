@@ -118,3 +118,4 @@ class GlobalNotificationBadge extends StatelessWidget {
     );
   }
 }
+

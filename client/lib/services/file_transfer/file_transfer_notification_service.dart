@@ -368,3 +368,4 @@ class FileTransferNotificationService {
     );
   }
 }
+

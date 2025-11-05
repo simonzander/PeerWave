@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:sqflite/sqflite.dart';
 import 'database_helper.dart';
 
@@ -27,7 +28,7 @@ class SqliteMessageStore {
       throw Exception('[SQLITE_MESSAGE_STORE] Database tables not ready!');
     }
     
-    print('[SQLITE_MESSAGE_STORE] Initialized - Database ready');
+    debugPrint('[SQLITE_MESSAGE_STORE] Initialized - Database ready');
   }
 
   /// Check if a message exists
@@ -84,7 +85,7 @@ class SqliteMessageStore {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     
-    print('[SQLITE_MESSAGE_STORE] Stored received message: $itemId (type: $type, sender: $sender, channel: $channelId)');
+    debugPrint('[SQLITE_MESSAGE_STORE] Stored received message: $itemId (type: $type, sender: $sender, channel: $channelId)');
   }
 
   /// Store a sent message (1:1 or group)
@@ -114,7 +115,7 @@ class SqliteMessageStore {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     
-    print('[SQLITE_MESSAGE_STORE] Stored sent message: $itemId (type: $type, recipient: $recipientId, channel: $channelId)');
+    debugPrint('[SQLITE_MESSAGE_STORE] Stored sent message: $itemId (type: $type, recipient: $recipientId, channel: $channelId)');
   }
 
   /// Get all messages from a 1:1 conversation (both directions)
@@ -279,7 +280,7 @@ class SqliteMessageStore {
       whereArgs: [itemId],
     );
     
-    print('[SQLITE_MESSAGE_STORE] Deleted message: $itemId');
+    debugPrint('[SQLITE_MESSAGE_STORE] Deleted message: $itemId');
   }
 
   /// Delete all messages from a conversation
@@ -292,7 +293,7 @@ class SqliteMessageStore {
       whereArgs: [userId],
     );
     
-    print('[SQLITE_MESSAGE_STORE] Deleted $count messages from conversation: $userId');
+    debugPrint('[SQLITE_MESSAGE_STORE] Deleted $count messages from conversation: $userId');
   }
 
   /// Delete all messages from a channel
@@ -305,7 +306,7 @@ class SqliteMessageStore {
       whereArgs: [channelId],
     );
     
-    print('[SQLITE_MESSAGE_STORE] Deleted $count messages from channel: $channelId');
+    debugPrint('[SQLITE_MESSAGE_STORE] Deleted $count messages from channel: $channelId');
   }
 
   /// Clear all messages
@@ -314,7 +315,7 @@ class SqliteMessageStore {
     
     await db.delete('messages');
     
-    print('[SQLITE_MESSAGE_STORE] Cleared all messages');
+    debugPrint('[SQLITE_MESSAGE_STORE] Cleared all messages');
   }
 
   /// Get database statistics
@@ -355,3 +356,4 @@ class SqliteMessageStore {
     };
   }
 }
+

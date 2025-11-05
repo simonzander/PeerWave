@@ -61,3 +61,4 @@ class SeederInfo {
   @override
   int get hashCode => userId.hashCode ^ deviceId.hashCode;
 }
+

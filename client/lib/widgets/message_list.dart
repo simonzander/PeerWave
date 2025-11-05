@@ -281,17 +281,17 @@ class MessageList extends StatelessWidget {
         final fileMessage = FileMessage.fromJson(fileData);
         
         final isOwnMessage = msg['isLocalSent'] == true;
-        print('[MESSAGE_LIST] Rendering file message: isLocalSent=${msg['isLocalSent']}, isOwnMessage=$isOwnMessage');
+        debugPrint('[MESSAGE_LIST] Rendering file message: isLocalSent=${msg['isLocalSent']}, isOwnMessage=$isOwnMessage');
         
         return FileMessageWidget(
           fileMessage: fileMessage,
           isOwnMessage: isOwnMessage,
           onDownloadWithMessage: onFileDownload ?? (fileMsg) {
-            print('[MESSAGE_LIST] Download requested for: ${fileMsg.fileId} (no handler provided)');
+            debugPrint('[MESSAGE_LIST] Download requested for: ${fileMsg.fileId} (no handler provided)');
           },
         );
       } catch (e) {
-        print('[MESSAGE_LIST] Failed to parse file message: $e');
+        debugPrint('[MESSAGE_LIST] Failed to parse file message: $e');
         // Fallback to text rendering
         return Text(
           'File message (failed to load)',
@@ -341,3 +341,4 @@ class MessageList extends StatelessWidget {
     );
   }
 }
+

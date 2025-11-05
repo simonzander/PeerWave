@@ -181,3 +181,4 @@ class PartialDownloadDialog extends StatelessWidget {
     );
   }
 }
+

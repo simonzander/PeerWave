@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 /// Abstract interface for file storage implementations
 /// 
@@ -45,18 +46,18 @@ abstract class FileStorageInterface {
     final existingChunk = await getChunk(fileId, chunkIndex);
     
     if (existingChunk != null && existingChunk.length == encryptedData.length) {
-      print('[STORAGE] Chunk $chunkIndex already exists (${existingChunk.length} bytes), skipping duplicate');
+      debugPrint('[STORAGE] Chunk $chunkIndex already exists (${existingChunk.length} bytes), skipping duplicate');
       return false;
     }
     
     if (existingChunk != null) {
-      print('[STORAGE] ⚠️ Chunk $chunkIndex size mismatch: ${existingChunk.length} != ${encryptedData.length}, overwriting');
+      debugPrint('[STORAGE] ⚠️ Chunk $chunkIndex size mismatch: ${existingChunk.length} != ${encryptedData.length}, overwriting');
     }
     
     // Atomic save
     await saveChunk(fileId, chunkIndex, encryptedData, iv: iv, chunkHash: chunkHash);
     
-    print('[STORAGE] ✓ Chunk $chunkIndex saved safely (${encryptedData.length} bytes)');
+    debugPrint('[STORAGE] ✓ Chunk $chunkIndex saved safely (${encryptedData.length} bytes)');
     return true;
   }
   
@@ -229,3 +230,4 @@ class ChunkMetadata {
     timestamp: DateTime.parse(json['timestamp']),
   );
 }
+

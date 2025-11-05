@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:sqflite/sqflite.dart';
 import 'database_helper.dart';
 
@@ -26,7 +27,7 @@ class SqliteRecentConversationsStore {
       throw Exception('[SQLITE_CONVERSATIONS_STORE] Database tables not ready!');
     }
     
-    print('[SQLITE_CONVERSATIONS_STORE] Initialized - Database ready');
+    debugPrint('[SQLITE_CONVERSATIONS_STORE] Initialized - Database ready');
   }
 
   /// Add or update a conversation (moves to top if exists)
@@ -53,7 +54,7 @@ class SqliteRecentConversationsStore {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     
-    print('[SQLITE_CONVERSATIONS_STORE] Updated conversation: $userId');
+    debugPrint('[SQLITE_CONVERSATIONS_STORE] Updated conversation: $userId');
   }
 
   /// Get all recent conversations (sorted: pinned first, then by timestamp)
@@ -199,7 +200,7 @@ class SqliteRecentConversationsStore {
       whereArgs: [userId],
     );
     
-    print('[SQLITE_CONVERSATIONS_STORE] Removed conversation: $userId');
+    debugPrint('[SQLITE_CONVERSATIONS_STORE] Removed conversation: $userId');
   }
 
   /// Clear all conversations
@@ -208,7 +209,7 @@ class SqliteRecentConversationsStore {
     
     await db.delete('recent_conversations');
     
-    print('[SQLITE_CONVERSATIONS_STORE] Cleared all conversations');
+    debugPrint('[SQLITE_CONVERSATIONS_STORE] Cleared all conversations');
   }
 
   /// Get conversation statistics
@@ -242,3 +243,4 @@ class SqliteRecentConversationsStore {
     };
   }
 }
+

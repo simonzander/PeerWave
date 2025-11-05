@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 import 'storage_interface.dart';
@@ -152,12 +153,12 @@ class NativeStorage implements FileStorageInterface {
     final existingChunk = await getChunk(fileId, chunkIndex);
     
     if (existingChunk != null && existingChunk.length == encryptedData.length) {
-      print('[STORAGE] Chunk $chunkIndex already exists, skipping duplicate');
+      debugPrint('[STORAGE] Chunk $chunkIndex already exists, skipping duplicate');
       return false; // Not saved (duplicate)
     }
     
     if (existingChunk != null) {
-      print('[STORAGE] ⚠️ Chunk $chunkIndex size mismatch, overwriting');
+      debugPrint('[STORAGE] ⚠️ Chunk $chunkIndex size mismatch, overwriting');
     }
     
     // Save chunk
@@ -338,3 +339,4 @@ class NativeStorage implements FileStorageInterface {
     await _saveAllChunkMetadata(fileId, allMeta);
   }
 }
+

@@ -53,12 +53,12 @@ class ThemeProvider extends ChangeNotifier {
       _themeMode = _parseThemeMode(savedThemeMode);
       _colorSchemeId = savedSchemeId;
 
-      print('[ThemeProvider] Initialized: mode=$savedThemeMode, scheme=$savedSchemeId');
+      debugPrint('[ThemeProvider] Initialized: mode=$savedThemeMode, scheme=$savedSchemeId');
       
       _isInitialized = true;
       notifyListeners();
     } catch (e) {
-      print('[ThemeProvider] Error initializing: $e');
+      debugPrint('[ThemeProvider] Error initializing: $e');
       // Use defaults
       _themeMode = ThemeMode.system;
       _colorSchemeId = 'peerwave_dark';
@@ -78,7 +78,7 @@ class ThemeProvider extends ChangeNotifier {
     final modeString = _themeModeToString(mode);
     await _prefsService.saveThemeMode(modeString);
     
-    print('[ThemeProvider] Theme mode changed to: $modeString');
+    debugPrint('[ThemeProvider] Theme mode changed to: $modeString');
   }
 
   /// Ändert das Color Scheme
@@ -86,7 +86,7 @@ class ThemeProvider extends ChangeNotifier {
     // Validate scheme ID
     final scheme = ColorSchemeOptions.byId(schemeId);
     if (scheme == null) {
-      print('[ThemeProvider] Invalid scheme ID: $schemeId');
+      debugPrint('[ThemeProvider] Invalid scheme ID: $schemeId');
       return;
     }
 
@@ -98,7 +98,7 @@ class ThemeProvider extends ChangeNotifier {
     // Persist
     await _prefsService.saveColorSchemeId(schemeId);
     
-    print('[ThemeProvider] Color scheme changed to: $schemeId');
+    debugPrint('[ThemeProvider] Color scheme changed to: $schemeId');
   }
 
   /// Setzt Theme auf Light Mode
@@ -118,7 +118,7 @@ class ThemeProvider extends ChangeNotifier {
     await _prefsService.clearAll();
     
     notifyListeners();
-    print('[ThemeProvider] Reset to defaults');
+    debugPrint('[ThemeProvider] Reset to defaults');
   }
 
   // ============================================================================
@@ -150,11 +150,12 @@ class ThemeProvider extends ChangeNotifier {
 
   /// Debug Info
   void printDebugInfo() {
-    print('=== ThemeProvider Debug Info ===');
-    print('Initialized: $_isInitialized');
-    print('Theme Mode: ${_themeModeToString(_themeMode)}');
-    print('Color Scheme ID: $_colorSchemeId');
-    print('Color Scheme Name: ${currentScheme.name}');
-    print('================================');
+    debugPrint('=== ThemeProvider Debug Info ===');
+    debugPrint('Initialized: $_isInitialized');
+    debugPrint('Theme Mode: ${_themeModeToString(_themeMode)}');
+    debugPrint('Color Scheme ID: $_colorSchemeId');
+    debugPrint('Color Scheme Name: ${currentScheme.name}');
+    debugPrint('================================');
   }
 }
+

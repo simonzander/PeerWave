@@ -151,3 +151,4 @@ class UnreadDotBadge extends StatelessWidget {
     );
   }
 }
+

@@ -15,3 +15,4 @@ export 'widgets/partial_download_dialog.dart';
 
 // Signal Integration
 // (already accessible via services/signal_service.dart)
+

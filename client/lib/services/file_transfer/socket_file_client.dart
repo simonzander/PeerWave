@@ -497,3 +497,4 @@ class SocketFileClient {
     _eventListeners.clear();
   }
 }
+

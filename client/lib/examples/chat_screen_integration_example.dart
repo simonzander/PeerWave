@@ -105,3 +105,4 @@ class _ExampleChatScreenIntegrationState extends State<ExampleChatScreenIntegrat
     );
   }
 }
+

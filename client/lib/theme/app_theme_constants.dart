@@ -404,3 +404,4 @@ class _AnimationHelper {
   Duration get slow => AppThemeConstants.animationSlow;
   Curve get curve => AppThemeConstants.animationCurve;
 }
+

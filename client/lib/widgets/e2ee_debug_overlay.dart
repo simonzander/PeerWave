@@ -167,3 +167,4 @@ class E2EEDebugOverlay extends StatelessWidget {
     }
   }
 }
+

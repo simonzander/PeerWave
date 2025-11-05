@@ -143,7 +143,7 @@ class PermanentSentMessagesStore {
               final msg = jsonDecode(value);
               messages.add(msg);
             } catch (e) {
-              print('[SentMessagesStore] Error decoding message: $e');
+              debugPrint('[SentMessagesStore] Error decoding message: $e');
             }
           }
         }
@@ -162,7 +162,7 @@ class PermanentSentMessagesStore {
                 final msg = jsonDecode(value);
                 messages.add(msg);
               } catch (e) {
-                print('[SentMessagesStore] Error decoding message: $e');
+                debugPrint('[SentMessagesStore] Error decoding message: $e');
               }
             }
           }
@@ -205,7 +205,7 @@ class PermanentSentMessagesStore {
               final msg = jsonDecode(value);
               messages.add(msg);
             } catch (e) {
-              print('[SentMessagesStore] Error decoding message: $e');
+              debugPrint('[SentMessagesStore] Error decoding message: $e');
             }
           }
         }
@@ -224,7 +224,7 @@ class PermanentSentMessagesStore {
                 final msg = jsonDecode(value);
                 messages.add(msg);
               } catch (e) {
-                print('[SentMessagesStore] Error decoding message: $e');
+                debugPrint('[SentMessagesStore] Error decoding message: $e');
               }
             }
           }
@@ -376,7 +376,7 @@ class PermanentSentMessagesStore {
               await store.put(jsonEncode(msg), key);
               break;
             } catch (e) {
-              print('[SentMessagesStore] Error updating status: $e');
+              debugPrint('[SentMessagesStore] Error updating status: $e');
             }
           }
         }
@@ -399,7 +399,7 @@ class PermanentSentMessagesStore {
                 await storage.write(key: key, value: jsonEncode(msg));
                 break;
               } catch (e) {
-                print('[SentMessagesStore] Error updating status: $e');
+                debugPrint('[SentMessagesStore] Error updating status: $e');
               }
             }
           }
@@ -436,3 +436,4 @@ class PermanentSentMessagesStore {
     }
   }
 }
+

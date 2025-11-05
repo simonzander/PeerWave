@@ -25,7 +25,7 @@ import 'user_profile_service.dart';
 
   Future<void> checkPreKeys() async {
     if(store.length < 20) {
-      print("Not enough pre keys, generating more");
+      debugPrint("Not enough pre keys, generating more");
       var lastId = store.isNotEmpty ? store.keys.reduce((a, b) => a > b ? a : b) : 0;
       if(lastId == 9007199254740991) {
           lastId = 0;
@@ -39,21 +39,21 @@ import 'user_profile_service.dart';
 
   Future<void> loadRemotePreKeys() async {
     SocketService().registerListener("getPreKeysResponse", (data) {
-      print(data);
+      debugPrint(data);
       for (var item in data) {
           if(item['prekey_id'] != null && item['prekey_data'] != null) {
            store[item['prekey_id']] = base64Decode(item['prekey_data']);
           }
       }
       if(data.isEmpty) {
-        print("No pre keys found, generating more");
+        debugPrint("No pre keys found, generating more");
         var newPreKeys = generatePreKeys(0, 110);
         for (var newPreKey in newPreKeys) {
           storePreKey(newPreKey.id, newPreKey);
         }
       }
       if(data.length <= 20) {
-        print("Not enough pre keys found, generating more");
+        debugPrint("Not enough pre keys found, generating more");
         var lastId = data.isNotEmpty ? data.map((e) => e['prekey_id']).reduce((a, b) => a > b ? a : b) : 0;
         if(lastId == 9007199254740991) {
           lastId = 0;
@@ -69,7 +69,7 @@ import 'user_profile_service.dart';
 
   @override
   Future<void> storePreKey(int preKeyId, PreKeyRecord record) async {
-    print("Storing pre key: $preKeyId");
+    debugPrint("Storing pre key: $preKeyId");
     SocketService().emit("storePreKey", {
       'id': preKeyId,
       'data': base64Encode(record.serialize()),
@@ -86,7 +86,7 @@ import 'user_profile_service.dart';
 
   Future<void> loadRemoteSignedPreKeys() async {
     SocketService().registerListener("getSignedPreKeysResponse", (data) {
-      print(data);
+      debugPrint(data);
       for (var item in data) {
         if(item['signed_prekey_id'] != null && item['signed_prekey_data'] != null && item['createdAt'] != null) {
            store[item['signed_prekey_id']] = base64Decode(item['signed_prekey_data']);
@@ -99,7 +99,7 @@ import 'user_profile_service.dart';
         }
       }
       if(data.isEmpty) {
-        print("No signed pre keys found, creating new one");
+        debugPrint("No signed pre keys found, creating new one");
         var newPreSignedKey = generateSignedPreKey(identityKeyPair, 0);
         storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
       }
@@ -109,7 +109,7 @@ import 'user_profile_service.dart';
 
   @override
   Future<void> removeSignedPreKey(int signedPreKeyId) async {
-    print("Removing signed pre key: $signedPreKeyId");
+    debugPrint("Removing signed pre key: $signedPreKeyId");
     SocketService().emit("removeSignedPreKey", {
       'id': signedPreKeyId,
     });
@@ -119,7 +119,7 @@ import 'user_profile_service.dart';
   @override
   Future<void> storeSignedPreKey(
       int signedPreKeyId, SignedPreKeyRecord record) async {
-    print("Storing signed pre key: $signedPreKeyId");
+    debugPrint("Storing signed pre key: $signedPreKeyId");
     SocketService().emit("storeSignedPreKey", {
       'id': signedPreKeyId,
       'data': base64Encode(record.serialize()),
@@ -163,13 +163,13 @@ class SignalService {
   void setCurrentUserInfo(String userId, int deviceId) {
     _currentUserId = userId;
     _currentDeviceId = deviceId;
-    print('[SIGNAL SERVICE] Current user set: userId=$userId, deviceId=$deviceId');
+    debugPrint('[SIGNAL SERVICE] Current user set: userId=$userId, deviceId=$deviceId');
   }
   
   /// Set the UnreadMessagesProvider for badge updates
   void setUnreadMessagesProvider(UnreadMessagesProvider? provider) {
     _unreadMessagesProvider = provider;
-    print('[SIGNAL SERVICE] UnreadMessagesProvider ${provider != null ? 'connected' : 'disconnected'}');
+    debugPrint('[SIGNAL SERVICE] UnreadMessagesProvider ${provider != null ? 'connected' : 'disconnected'}');
   }
 
   /// Retry a function with exponential backoff
@@ -196,26 +196,26 @@ class SignalService {
     while (true) {
       try {
         attempt++;
-        print('[SIGNAL SERVICE] Retry attempt $attempt/$maxAttempts');
+        debugPrint('[SIGNAL SERVICE] Retry attempt $attempt/$maxAttempts');
         return await operation();
       } catch (e) {
-        print('[SIGNAL SERVICE] Attempt $attempt failed: $e');
+        debugPrint('[SIGNAL SERVICE] Attempt $attempt failed: $e');
         
         // Check if we should retry this error
         if (shouldRetry != null && !shouldRetry(e)) {
-          print('[SIGNAL SERVICE] Error is not retryable, throwing immediately');
+          debugPrint('[SIGNAL SERVICE] Error is not retryable, throwing immediately');
           rethrow;
         }
         
         // Check if we've exhausted attempts
         if (attempt >= maxAttempts) {
-          print('[SIGNAL SERVICE] Max attempts reached, giving up');
+          debugPrint('[SIGNAL SERVICE] Max attempts reached, giving up');
           rethrow;
         }
         
         // Calculate delay with exponential backoff
         final currentDelay = (delay * (1 << (attempt - 1))).clamp(initialDelay, maxDelay);
-        print('[SIGNAL SERVICE] Waiting ${currentDelay}ms before retry...');
+        debugPrint('[SIGNAL SERVICE] Waiting ${currentDelay}ms before retry...');
         await Future.delayed(Duration(milliseconds: currentDelay));
       }
     }
@@ -239,11 +239,11 @@ class SignalService {
     final queue = OfflineMessageQueue.instance;
     
     if (!queue.hasMessages) {
-      print('[SIGNAL SERVICE] No messages in offline queue');
+      debugPrint('[SIGNAL SERVICE] No messages in offline queue');
       return;
     }
 
-    print('[SIGNAL SERVICE] Processing ${queue.queueSize} queued messages...');
+    debugPrint('[SIGNAL SERVICE] Processing ${queue.queueSize} queued messages...');
 
     await queue.processQueue(
       sendFunction: (queuedMessage) async {
@@ -251,7 +251,7 @@ class SignalService {
           if (queuedMessage.type == 'group') {
             // Send group message
             final channelId = queuedMessage.metadata['channelId'] as String;
-            print('[SIGNAL SERVICE] Sending queued group message to channel $channelId');
+            debugPrint('[SIGNAL SERVICE] Sending queued group message to channel $channelId');
             
             await sendGroupItem(
               channelId: channelId,
@@ -263,7 +263,7 @@ class SignalService {
           } else if (queuedMessage.type == 'direct') {
             // Send direct message
             final recipientId = queuedMessage.metadata['recipientId'] as String;
-            print('[SIGNAL SERVICE] Sending queued direct message to $recipientId');
+            debugPrint('[SIGNAL SERVICE] Sending queued direct message to $recipientId');
             
             await sendItem(
               recipientUserId: recipientId,
@@ -273,24 +273,24 @@ class SignalService {
             );
             return true;
           } else {
-            print('[SIGNAL SERVICE] Unknown message type: ${queuedMessage.type}');
+            debugPrint('[SIGNAL SERVICE] Unknown message type: ${queuedMessage.type}');
             return false;
           }
         } catch (e) {
-          print('[SIGNAL SERVICE] Failed to send queued message ${queuedMessage.itemId}: $e');
+          debugPrint('[SIGNAL SERVICE] Failed to send queued message ${queuedMessage.itemId}: $e');
           return false;
         }
       },
       onProgress: (processed, total) {
-        print('[SIGNAL SERVICE] Queue progress: $processed/$total');
+        debugPrint('[SIGNAL SERVICE] Queue progress: $processed/$total');
       },
     );
 
-    print('[SIGNAL SERVICE] Offline queue processing complete');
+    debugPrint('[SIGNAL SERVICE] Offline queue processing complete');
   }
 
   Future<void> test() async {
-    print("SignalService test method called");
+    debugPrint("SignalService test method called");
     final AliceIdentityKeyPair = generateIdentityKeyPair();
     final AliceRegistrationId = generateRegistrationId(false);
     final AliceIdentityStore = InMemoryIdentityKeyStore(AliceIdentityKeyPair, AliceRegistrationId);
@@ -344,7 +344,7 @@ class SignalService {
     final bobSignedPreKeys = await BobSignedPreKeyStore.loadSignedPreKeys();
     
     if (bobPreKeys.isEmpty || bobSignedPreKeys.isEmpty) {
-      print("ERROR: Bob has no preKeys or signedPreKeys!");
+      debugPrint("ERROR: Bob has no preKeys or signedPreKeys!");
       return;
     }
 
@@ -364,10 +364,10 @@ class SignalService {
       AliceSessionStore, AlicePreKeyStore, AliceSignedPreKeyStore, AliceIdentityStore, BobAddress);
     final ciphertext = await aliceSessionCipher
         .encrypt(Uint8List.fromList(utf8.encode('Hello Mixin🤣')));
-    // ignore: avoid_print
-    print(ciphertext);
-    // ignore: avoid_print
-    print(ciphertext.serialize());
+    // ignore: avoid_debugPrint
+    debugPrint('Ciphertext: $ciphertext');
+    // ignore: avoid_debugPrint
+    debugPrint('Ciphertext serialized: ${ciphertext.serialize()}');
     //deliver(ciphertext);
 
     // Bob decrypts using his real stores (not a new empty store!)
@@ -383,12 +383,12 @@ class SignalService {
       await bobSessionCipher
           .decryptWithCallback(ciphertext as PreKeySignalMessage, (plaintext) {
         // ignore: avoid_print
-        print('Bob decrypted: ${utf8.decode(plaintext)}');
+        debugPrint('Bob decrypted: ${utf8.decode(plaintext)}');
       });
     } else if (ciphertext.getType() == CiphertextMessage.whisperType) {
       final plaintext = await bobSessionCipher.decryptFromSignal(ciphertext as SignalMessage);
       // ignore: avoid_print
-      print('Bob decrypted: ${utf8.decode(plaintext)}');
+      debugPrint('Bob decrypted: ${utf8.decode(plaintext)}');
     }
 
 }
@@ -410,7 +410,7 @@ class SignalService {
 
     // Load offline message queue
     await OfflineMessageQueue.instance.loadQueue();
-    print('[SIGNAL SERVICE] Offline queue loaded: ${OfflineMessageQueue.instance.queueSize} messages');
+    debugPrint('[SIGNAL SERVICE] Offline queue loaded: ${OfflineMessageQueue.instance.queueSize} messages');
 
     // --- Signal status check and conditional upload ---
     SocketService().emit("signalStatus", null);
@@ -422,7 +422,7 @@ class SignalService {
   /// Initialize stores and listeners without generating keys
   /// Used when keys already exist (after successful setup or on returning user)
   Future<void> initStoresAndListeners() async {
-    print('[SIGNAL SERVICE] Initializing stores and listeners (keys already exist)...');
+    debugPrint('[SIGNAL SERVICE] Initializing stores and listeners (keys already exist)...');
     
     // Initialize all stores
     identityStore = PermanentIdentityKeyStore();
@@ -443,7 +443,7 @@ class SignalService {
     SocketService().emit("signalStatus", null);
 
     _isInitialized = true;
-    print('[SIGNAL SERVICE] Stores and listeners initialized successfully');
+    debugPrint('[SIGNAL SERVICE] Stores and listeners initialized successfully');
   }
 
   /// Progressive initialization with progress callbacks
@@ -478,9 +478,9 @@ class SignalService {
     updateProgress('Generating identity key pair...', currentStep);
     try {
       await identityStore.getIdentityKeyPair();
-      print('[SIGNAL INIT] Identity key pair exists');
+      debugPrint('[SIGNAL INIT] Identity key pair exists');
     } catch (e) {
-      print('[SIGNAL INIT] Identity key pair will be generated: $e');
+      debugPrint('[SIGNAL INIT] Identity key pair will be generated: $e');
     }
     final identityKeyPair = await identityStore.getIdentityKeyPair();
     signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
@@ -494,9 +494,9 @@ class SignalService {
     if (existingSignedKeys.isEmpty) {
       final signedPreKey = generateSignedPreKey(identityKeyPair, 0);
       await signedPreKeyStore.storeSignedPreKey(signedPreKey.id, signedPreKey);
-      print('[SIGNAL INIT] Signed pre key generated');
+      debugPrint('[SIGNAL INIT] Signed pre key generated');
     } else {
-      print('[SIGNAL INIT] Signed pre key already exists');
+      debugPrint('[SIGNAL INIT] Signed pre key already exists');
     }
     currentStep++;
     updateProgress('Signed pre key ready', currentStep);
@@ -507,7 +507,7 @@ class SignalService {
     final neededPreKeys = 110 - existingPreKeys.length;
     
     if (neededPreKeys > 0) {
-      print('[SIGNAL INIT] Generating $neededPreKeys pre keys');
+      debugPrint('[SIGNAL INIT] Generating $neededPreKeys pre keys');
       final startId = existingPreKeys.isNotEmpty 
           ? existingPreKeys.map((k) => k.id).reduce((a, b) => a > b ? a : b) + 1 
           : 0;
@@ -538,7 +538,7 @@ class SignalService {
         await Future.delayed(const Duration(milliseconds: 100));
       }
     } else {
-      print('[SIGNAL INIT] Pre keys already sufficient (${existingPreKeys.length}/110)');
+      debugPrint('[SIGNAL INIT] Pre keys already sufficient (${existingPreKeys.length}/110)');
       // Skip to end
       currentStep = totalSteps;
       updateProgress('Pre keys already ready', currentStep);
@@ -554,14 +554,14 @@ class SignalService {
     SocketService().emit("signalStatus", null);
 
     _isInitialized = true;
-    print('[SIGNAL INIT] Progressive initialization complete');
+    debugPrint('[SIGNAL INIT] Progressive initialization complete');
   }
 
   /// Register all Socket.IO listeners (extracted for reuse)
   Future<void> _registerSocketListeners() async {
     // Setup offline queue processing on reconnect
     SocketService().registerListener("connect", (_) {
-      print('[SIGNAL SERVICE] Socket reconnected, processing offline queue...');
+      debugPrint('[SIGNAL SERVICE] Socket reconnected, processing offline queue...');
       _processOfflineQueue();
     });
     
@@ -636,7 +636,7 @@ class SignalService {
             : int.parse(data['senderDeviceId'].toString());
         final distributionMessageBase64 = data['distributionMessage'] as String;
         
-        print('[SIGNAL_SERVICE] Received sender key distribution from $senderId:$senderDeviceId for group $groupId');
+        debugPrint('[SIGNAL_SERVICE] Received sender key distribution from $senderId:$senderDeviceId for group $groupId');
         
         final distributionMessageBytes = base64Decode(distributionMessageBase64);
         await processSenderKeyDistribution(
@@ -646,26 +646,26 @@ class SignalService {
           distributionMessageBytes,
         );
         
-        print('[SIGNAL_SERVICE] ✓ Sender key distribution processed');
+        debugPrint('[SIGNAL_SERVICE] ✓ Sender key distribution processed');
       } catch (e) {
-        print('[SIGNAL_SERVICE] Error processing sender key distribution: $e');
+        debugPrint('[SIGNAL_SERVICE] Error processing sender key distribution: $e');
       }
     });
   }
 
   Future<void> _ensureSignalKeysPresent(status) async {
     // Use a socket callback to get status
-    print('[SIGNAL SERVICE] signalStatus: $status');
+    debugPrint('[SIGNAL SERVICE] signalStatus: $status');
     
     // Check if user is authenticated
     if (status is Map && status['error'] != null) {
-      print('[SIGNAL SERVICE] ERROR: ${status['error']} - Cannot upload Signal keys without authentication');
+      debugPrint('[SIGNAL SERVICE] ERROR: ${status['error']} - Cannot upload Signal keys without authentication');
       return;
     }
     
     // 1. Identity
     if (status is Map && status['identity'] != true) {
-      print('[SIGNAL SERVICE] Uploading missing identity');
+      debugPrint('[SIGNAL SERVICE] Uploading missing identity');
     final identityData = await identityStore.getIdentityKeyPairData();
     final registrationId = await identityStore.getLocalRegistrationId();
       SocketService().emit("signalIdentity", {
@@ -675,23 +675,23 @@ class SignalService {
     }
     // 2. PreKeys - Enhanced sync check
     final int preKeysCount = (status is Map && status['preKeys'] is int) ? status['preKeys'] : 0;
-    print('[SIGNAL SERVICE] Server has $preKeysCount PreKeys');
+    debugPrint('[SIGNAL SERVICE] Server has $preKeysCount PreKeys');
     
     // ALWAYS load local PreKeys to check for sync issues
     final localPreKeys = await preKeyStore.getAllPreKeys();
-    print('[SIGNAL SERVICE] Local has ${localPreKeys.length} PreKeys');
+    debugPrint('[SIGNAL SERVICE] Local has ${localPreKeys.length} PreKeys');
     
     if (preKeysCount < 20) {
       // Server critically low
       if (localPreKeys.isEmpty) {
         // No local PreKeys → Generate new ones
-        print('[SIGNAL SERVICE] ⚠️  No local PreKeys found, generating 110 new ones');
+        debugPrint('[SIGNAL SERVICE] ⚠️  No local PreKeys found, generating 110 new ones');
         final newPreKeys = generatePreKeys(0, 110);
         await preKeyStore.storePreKeys(newPreKeys);
       } else if (preKeysCount == 0) {
         // Server has 0 but we have local → CRITICAL sync issue!
-        print('[SIGNAL SERVICE] ⚠️  CRITICAL: Server has 0 PreKeys but local has ${localPreKeys.length}!');
-        print('[SIGNAL SERVICE] Re-uploading ALL local PreKeys to server...');
+        debugPrint('[SIGNAL SERVICE] ⚠️  CRITICAL: Server has 0 PreKeys but local has ${localPreKeys.length}!');
+        debugPrint('[SIGNAL SERVICE] Re-uploading ALL local PreKeys to server...');
         final preKeysPayload = localPreKeys.map((pk) => {
           'id': pk.id,
           'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
@@ -699,8 +699,8 @@ class SignalService {
         SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
       } else if (localPreKeys.length > preKeysCount + 10) {
         // Server significantly behind local (>10 difference) → Re-sync
-        print('[SIGNAL SERVICE] ⚠️  Sync gap detected: Server has $preKeysCount, local has ${localPreKeys.length}');
-        print('[SIGNAL SERVICE] Uploading ${localPreKeys.length} local PreKeys to server...');
+        debugPrint('[SIGNAL SERVICE] ⚠️  Sync gap detected: Server has $preKeysCount, local has ${localPreKeys.length}');
+        debugPrint('[SIGNAL SERVICE] Uploading ${localPreKeys.length} local PreKeys to server...');
         final preKeysPayload = localPreKeys.map((pk) => {
           'id': pk.id,
           'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
@@ -708,7 +708,7 @@ class SignalService {
         SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
       } else {
         // Server has some but < 20 → Upload what we have
-        print('[SIGNAL SERVICE] Server needs more PreKeys, uploading ${localPreKeys.length} local keys');
+        debugPrint('[SIGNAL SERVICE] Server needs more PreKeys, uploading ${localPreKeys.length} local keys');
         final preKeysPayload = localPreKeys.map((pk) => {
           'id': pk.id,
           'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
@@ -719,20 +719,20 @@ class SignalService {
       // NEW: Server has enough (>= 20), but local has MORE
       // This happens when PreKeys are generated locally but not uploaded yet
       // Find the PreKeys that exist locally but not on server
-      print('[SIGNAL SERVICE] 🔄 Local has ${localPreKeys.length - preKeysCount} more PreKeys than server');
-      print('[SIGNAL SERVICE] Uploading ALL local PreKeys to ensure server sync...');
+      debugPrint('[SIGNAL SERVICE] 🔄 Local has ${localPreKeys.length - preKeysCount} more PreKeys than server');
+      debugPrint('[SIGNAL SERVICE] Uploading ALL local PreKeys to ensure server sync...');
       final preKeysPayload = localPreKeys.map((pk) => {
         'id': pk.id,
         'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
       }).toList();
       SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
     } else {
-      print('[SIGNAL SERVICE] ✅ Server has sufficient PreKeys ($preKeysCount >= 20) and is in sync');
+      debugPrint('[SIGNAL SERVICE] ✅ Server has sufficient PreKeys ($preKeysCount >= 20) and is in sync');
     }
     // 3. SignedPreKey
     final signedPreKey = status is Map ? status['signedPreKey'] : null;
     if (signedPreKey == null) {
-      print('[SIGNAL SERVICE] No signed pre-key on server, uploading');
+      debugPrint('[SIGNAL SERVICE] No signed pre-key on server, uploading');
   final allSigned = await signedPreKeyStore.loadSignedPreKeys();
       if (allSigned.isNotEmpty) {
         final latest = allSigned.last;
@@ -802,7 +802,7 @@ class SignalService {
           })
           .toList();
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error loading sent messages from SQLite, falling back to old store: $e');
+      debugPrint('[SIGNAL_SERVICE] Error loading sent messages from SQLite, falling back to old store: $e');
       return await sentMessagesStore.loadSentMessages(recipientUserId);
     }
   }
@@ -828,7 +828,7 @@ class SignalService {
         'type': msg['type'],
       }).toList();
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error loading all sent messages from SQLite, falling back to old store: $e');
+      debugPrint('[SIGNAL_SERVICE] Error loading all sent messages from SQLite, falling back to old store: $e');
       return await sentMessagesStore.loadAllSentMessages();
     }
   }
@@ -849,16 +849,16 @@ class SignalService {
     if (itemId != null) {
       final cached = await decryptedMessagesStore.getDecryptedMessage(itemId);
       if (cached != null) {
-        print("[SIGNAL SERVICE] ✓ Using cached decrypted message for itemId: $itemId (message: ${cached.substring(0, cached.length > 50 ? 50 : cached.length)}...)");
+        debugPrint("[SIGNAL SERVICE] ✓ Using cached decrypted message for itemId: $itemId (message: ${cached.substring(0, cached.length > 50 ? 50 : cached.length)}...)");
         return cached;
       } else {
-        print("[SIGNAL SERVICE] Cache miss for itemId: $itemId - will decrypt");
+        debugPrint("[SIGNAL SERVICE] Cache miss for itemId: $itemId - will decrypt");
       }
     } else {
-      print("[SIGNAL SERVICE] No itemId provided - cannot use cache");
+      debugPrint("[SIGNAL SERVICE] No itemId provided - cannot use cache");
     }
     
-    print("[SIGNAL SERVICE] Decrypting new message: itemId=$itemId, sender=$sender, deviceId=$senderDeviceId");
+    debugPrint("[SIGNAL SERVICE] Decrypting new message: itemId=$itemId, sender=$sender, deviceId=$senderDeviceId");
     final senderAddress = SignalProtocolAddress(sender, senderDeviceId);
     
     try {
@@ -906,30 +906,30 @@ class SignalService {
           // Increment unread count for this conversation
           await conversationsStore.incrementUnreadCount(sender);
           
-          print("[SIGNAL SERVICE] ✓ Cached decrypted 1:1 message in SQLite for itemId: $itemId");
+          debugPrint("[SIGNAL SERVICE] ✓ Cached decrypted 1:1 message in SQLite for itemId: $itemId");
           
           // Load sender's profile if not already cached
           try {
             final profileService = UserProfileService.instance;
             if (!profileService.isProfileCached(sender)) {
-              print("[SIGNAL SERVICE] Loading profile for sender: $sender");
+              debugPrint("[SIGNAL SERVICE] Loading profile for sender: $sender");
               await profileService.loadProfiles([sender]);
-              print("[SIGNAL SERVICE] ✓ Sender profile loaded");
+              debugPrint("[SIGNAL SERVICE] ✓ Sender profile loaded");
             }
           } catch (e) {
-            print("[SIGNAL SERVICE] ⚠ Failed to load sender profile (server may be unavailable): $e");
+            debugPrint("[SIGNAL SERVICE] ⚠ Failed to load sender profile (server may be unavailable): $e");
             // Don't block message processing if profile loading fails
           }
         } catch (e) {
-          print("[SIGNAL SERVICE] ✗ Failed to cache in SQLite: $e");
+          debugPrint("[SIGNAL SERVICE] ✗ Failed to cache in SQLite: $e");
         }
       } else if (data['channel'] != null) {
-        print("[SIGNAL SERVICE] ⚠ Skipping cache for group message (use DecryptedGroupItemsStore)");
+        debugPrint("[SIGNAL SERVICE] ⚠ Skipping cache for group message (use DecryptedGroupItemsStore)");
       }
       
       return message;
     } catch (e) {
-      print('[SIGNAL SERVICE] ✗ Decryption failed for itemId: $itemId - $e');
+      debugPrint('[SIGNAL SERVICE] ✗ Decryption failed for itemId: $itemId - $e');
       // Return empty string on error (will be filtered out later)
       return '';
     }
@@ -941,10 +941,10 @@ class SignalService {
   /// (deviceId) verschlüsselt wurden. Die Nachricht wird dann mit dem Session-Schlüssel
   /// dieses Geräts entschlüsselt.
   void receiveItem(data) async {
-  print("[SIGNAL SERVICE] ===============================================");
-  print("[SIGNAL SERVICE] receiveItem called for this device");
-  print("[SIGNAL SERVICE] ===============================================");
-  print("[SIGNAL SERVICE] receiveItem: $data");
+  debugPrint("[SIGNAL SERVICE] ===============================================");
+  debugPrint("[SIGNAL SERVICE] receiveItem called for this device");
+  debugPrint("[SIGNAL SERVICE] ===============================================");
+  debugPrint("[SIGNAL SERVICE] receiveItem: $data");
   final type = data['type'];
   final sender = data['sender']; // z.B. Absender-UUID
   final senderDeviceId = data['senderDeviceId'];
@@ -957,11 +957,11 @@ class SignalService {
 
   // Skip messages only if decryption failed (empty result from error handling)
   if (message.isEmpty) {
-    print("[SIGNAL SERVICE] Skipping message - decryption failed or returned empty result");
+    debugPrint("[SIGNAL SERVICE] Skipping message - decryption failed or returned empty result");
     return;
   }
 
-  print("[SIGNAL SERVICE] Message decrypted successfully: '$message' (cipherType: $cipherType)");
+  debugPrint("[SIGNAL SERVICE] Message decrypted successfully: '$message' (cipherType: $cipherType)");
 
   final recipient = data['recipient']; // Empfänger-UUID vom Server
 
@@ -979,7 +979,7 @@ class SignalService {
   
   // Handle read_receipt type
   if (type == 'read_receipt') {
-    print('[SIGNAL_SERVICE] receiveItem detected read_receipt type, calling _handleReadReceipt');
+    debugPrint('[SIGNAL_SERVICE] receiveItem detected read_receipt type, calling _handleReadReceipt');
     await _handleReadReceipt(item);
     isSystemMessage = true;
   } else if (type == 'senderKeyRequest') {
@@ -1006,7 +1006,7 @@ class SignalService {
     
     // ✅ Also delete from local storage (1:1 messages)
     await decryptedMessagesStore.deleteDecryptedMessage(itemId);
-    print("[SIGNAL SERVICE] ✓ System message processed and cleaned up: type=$type, itemId=$itemId");
+    debugPrint("[SIGNAL SERVICE] ✓ System message processed and cleaned up: type=$type, itemId=$itemId");
     
     // Don't trigger regular callbacks for system messages
     return;
@@ -1030,30 +1030,30 @@ class SignalService {
 }
 
 void deleteItemFromServer(String itemId) {
-  print("[SIGNAL SERVICE] Deleting item with itemId: $itemId");
+  debugPrint("[SIGNAL SERVICE] Deleting item with itemId: $itemId");
   SocketService().emit("deleteItem", {'itemId': itemId});
 }
 
 void deleteItem(String itemId) async {
-  print("[SIGNAL SERVICE] Deleting item locally with itemId: $itemId");
+  debugPrint("[SIGNAL SERVICE] Deleting item locally with itemId: $itemId");
   await decryptedMessagesStore.deleteDecryptedMessage(itemId);
   await sentMessagesStore.deleteSentMessage(itemId);
 }
 
 void deleteGroupItemFromServer(String itemId) async {
-  print("[SIGNAL SERVICE] Deleting group item with itemId: $itemId");
+  debugPrint("[SIGNAL SERVICE] Deleting group item with itemId: $itemId");
   SocketService().emit("deleteGroupItem", {'itemId': itemId});
 }
 
 void deleteGroupItem(String itemId, String channelId) async {
-  print("[SIGNAL SERVICE] Deleting group item locally with itemId: $itemId");
+  debugPrint("[SIGNAL SERVICE] Deleting group item locally with itemId: $itemId");
   await decryptedGroupItemsStore.clearItem(itemId, channelId);
   await sentGroupItemsStore.clearChannelItem(itemId, channelId);
 }
   /// Handle delivery receipt from server
   Future<void> _handleDeliveryReceipt(Map<String, dynamic> data) async {
     final itemId = data['itemId'];
-    print('[SIGNAL SERVICE] Delivery receipt received for itemId: $itemId');
+    debugPrint('[SIGNAL SERVICE] Delivery receipt received for itemId: $itemId');
     
     // Update local store
     await sentMessagesStore.markAsDelivered(itemId);
@@ -1068,7 +1068,7 @@ void deleteGroupItem(String itemId, String channelId) async {
 
   /// Handle group message read receipt (from Socket.IO)
   void _handleGroupMessageReadReceipt(Map<String, dynamic> data) {
-    print('[SIGNAL SERVICE] Group message read receipt received: $data');
+    debugPrint('[SIGNAL SERVICE] Group message read receipt received: $data');
     
     // Trigger callbacks with the full receipt data
     if (_itemTypeCallbacks.containsKey('groupMessageReadReceipt')) {
@@ -1080,31 +1080,31 @@ void deleteGroupItem(String itemId, String channelId) async {
 
   /// Handle read receipt (encrypted Signal message)
   Future<void> _handleReadReceipt(Map<String, dynamic> item) async {
-    print('[SIGNAL_SERVICE] _handleReadReceipt called with item: $item');
+    debugPrint('[SIGNAL_SERVICE] _handleReadReceipt called with item: $item');
     try {
       final receiptData = jsonDecode(item['message']);
       final itemId = receiptData['itemId'];
       final readByDeviceId = receiptData['readByDeviceId'] as int?;
       final readByUserId = item['sender']; // The user who sent the read receipt
-      print('[SIGNAL_SERVICE] Processing read receipt for itemId: $itemId, readByDeviceId: $readByDeviceId, readByUserId: $readByUserId');
+      debugPrint('[SIGNAL_SERVICE] Processing read receipt for itemId: $itemId, readByDeviceId: $readByDeviceId, readByUserId: $readByUserId');
       
       // Update local store
       await sentMessagesStore.markAsRead(itemId);
       
       // Trigger callbacks with itemId, deviceId, and userId
       if (_readCallbacks.containsKey('default')) {
-        print('[SIGNAL_SERVICE] Triggering ${_readCallbacks['default']!.length} read receipt callbacks');
+        debugPrint('[SIGNAL_SERVICE] Triggering ${_readCallbacks['default']!.length} read receipt callbacks');
         for (final callback in _readCallbacks['default']!) {
           // Pass all three parameters: itemId, readByDeviceId, readByUserId
           callback({'itemId': itemId, 'readByDeviceId': readByDeviceId, 'readByUserId': readByUserId});
         }
-        print('[SIGNAL_SERVICE] ✓ All read receipt callbacks executed');
+        debugPrint('[SIGNAL_SERVICE] ✓ All read receipt callbacks executed');
       } else {
-        print('[SIGNAL_SERVICE] ⚠ No read receipt callbacks registered');
+        debugPrint('[SIGNAL_SERVICE] ⚠ No read receipt callbacks registered');
       }
     } catch (e, stack) {
-      print('[SIGNAL_SERVICE] ❌ Error handling read receipt: $e');
-      print('[SIGNAL_SERVICE] Stack trace: $stack');
+      debugPrint('[SIGNAL_SERVICE] ❌ Error handling read receipt: $e');
+      debugPrint('[SIGNAL_SERVICE] Stack trace: $stack');
     }
   }
 
@@ -1125,20 +1125,20 @@ void deleteGroupItem(String itemId, String channelId) async {
       urlString = 'https://$urlString';
     }
     final response = await ApiService.get('$urlString/signal/prekey_bundle/$userId');
-    print('[DEBUG] response.statusCode: \\${response.statusCode}');
-    print('[DEBUG] response.data: \\${response.data}');
-    print('[DEBUG] response.data.runtimeType: \\${response.data.runtimeType}');
+    debugPrint('[DEBUG] response.statusCode: \\${response.statusCode}');
+    debugPrint('[DEBUG] response.data: \\${response.data}');
+    debugPrint('[DEBUG] response.data.runtimeType: \\${response.data.runtimeType}');
     if (response.statusCode == 200) {
       try {
         final devices = response.data is String ? jsonDecode(response.data) : response.data;
-        print('[DEBUG] devices: \\${devices}');
-        print('[DEBUG] devices.runtimeType: \\${devices.runtimeType}');
+        debugPrint('[DEBUG] devices: \\${devices}');
+        debugPrint('[DEBUG] devices.runtimeType: \\${devices.runtimeType}');
         if (devices is List) {
-          print('[DEBUG] devices.length: \\${devices.length}');
+          debugPrint('[DEBUG] devices.length: \\${devices.length}');
         }
         final List<Map<String, dynamic>> result = [];
         for (final data in devices) {
-          print('[DEBUG] signedPreKey: ' + jsonEncode(data['signedPreKey']));
+          debugPrint('[DEBUG] signedPreKey: ' + jsonEncode(data['signedPreKey']));
           final hasAllFields =
             data['public_key'] != null &&
             data['registration_id'] != null &&
@@ -1149,15 +1149,15 @@ void deleteGroupItem(String itemId, String channelId) async {
             data['signedPreKey']['signed_prekey_signature'] != null &&
             data['signedPreKey']['signed_prekey_signature'].toString().isNotEmpty;
           if (!hasAllFields) {
-            print('[SIGNAL SERVICE][WARN] Device ${data['clientid']} skipped: missing required Signal fields.');
+            debugPrint('[SIGNAL SERVICE][WARN] Device ${data['clientid']} skipped: missing required Signal fields.');
             continue;
           }
-          print('[DEBUG] Decoding preKey ${data['preKey']['prekey_data']}');
-          print(base64Decode(data['preKey']['prekey_data']).length);
-          print("[DEBUG] Decoding signedPreKey ${data['signedPreKey']['signed_prekey_data']}");
-          print(base64Decode(data['signedPreKey']['signed_prekey_data']).length);
-          print("[DEBUG] Decoding signedPreKeySignature ${data['signedPreKey']['signed_prekey_signature']}");
-          print(base64Decode(data['signedPreKey']['signed_prekey_signature']).length);
+          debugPrint('[DEBUG] Decoding preKey ${data['preKey']['prekey_data']}');
+          debugPrint('[DEBUG] PreKey length: ${base64Decode(data['preKey']['prekey_data']).length}');
+          debugPrint("[DEBUG] Decoding signedPreKey ${data['signedPreKey']['signed_prekey_data']}");
+          debugPrint('[DEBUG] SignedPreKey length: ${base64Decode(data['signedPreKey']['signed_prekey_data']).length}');
+          debugPrint("[DEBUG] Decoding signedPreKeySignature ${data['signedPreKey']['signed_prekey_signature']}");
+          debugPrint('[DEBUG] SignedPreKey signature length: ${base64Decode(data['signedPreKey']['signed_prekey_signature']).length}');
           
           // Parse ALL numeric IDs as int (SQLite INTEGER fields returned as String)
           final deviceId = data['device_id'] is int 
@@ -1191,11 +1191,11 @@ void deleteGroupItem(String itemId, String channelId) async {
           });
         }
         if (result.isEmpty) {
-          print('[SIGNAL SERVICE][ERROR] No valid Signal devices found for user $userId.');
+          debugPrint('[SIGNAL SERVICE][ERROR] No valid Signal devices found for user $userId.');
         }
         return result;
       } catch (e, st) {
-        print('[ERROR] Exception while decoding response: \\${e}\\n\\${st}');
+        debugPrint('[ERROR] Exception while decoding response: \\${e}\\n\\${st}');
         rethrow;
       }
     } else {
@@ -1215,7 +1215,7 @@ void deleteGroupItem(String itemId, String channelId) async {
       ).toList();
       return recipientDevices.isNotEmpty;
     } catch (e) {
-      print('[SIGNAL SERVICE][ERROR] Failed to check PreKeys for $recipientUserId: $e');
+      debugPrint('[SIGNAL SERVICE][ERROR] Failed to check PreKeys for $recipientUserId: $e');
       // Return null to indicate check failed (not true/false)
       return null;
     }
@@ -1273,9 +1273,9 @@ void deleteGroupItem(String itemId, String channelId) async {
         itemId: messageItemId,
       );
 
-      print('[SIGNAL_SERVICE] Sent file item $messageItemId ($fileName) to $recipientUserId');
+      debugPrint('[SIGNAL_SERVICE] Sent file item $messageItemId ($fileName) to $recipientUserId');
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error sending file item: $e');
+      debugPrint('[SIGNAL_SERVICE] Error sending file item: $e');
       rethrow;
     }
   }
@@ -1328,7 +1328,7 @@ void deleteGroupItem(String itemId, String channelId) async {
         itemId: messageItemId,
       );
 
-      print('[SIGNAL_SERVICE] Sent file group item $messageItemId ($fileName) to channel $channelId');
+      debugPrint('[SIGNAL_SERVICE] Sent file group item $messageItemId ($fileName) to channel $channelId');
       
       // Trigger callback to notify UI that file was sent
       if (_itemTypeCallbacks['fileSent'] != null) {
@@ -1341,7 +1341,7 @@ void deleteGroupItem(String itemId, String channelId) async {
         }
       }
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error sending file group item: $e');
+      debugPrint('[SIGNAL_SERVICE] Error sending file group item: $e');
       rethrow;
     }
   }
@@ -1375,7 +1375,7 @@ void deleteGroupItem(String itemId, String channelId) async {
       payloadString = jsonEncode(payload);
     }
     
-    print('[SIGNAL SERVICE] Step 0: Trigger local callback for sent message');
+    debugPrint('[SIGNAL SERVICE] Step 0: Trigger local callback for sent message');
     // Immediately notify UI with the PLAINTEXT message for the sending device
     // This allows Bob Device 1 to see his own sent message without decryption
     
@@ -1419,12 +1419,12 @@ void deleteGroupItem(String itemId, String channelId) async {
           displayName: recipientUserId, // Will be enriched by UI layer
         );
         
-        print('[SIGNAL SERVICE] Step 0a: Stored sent $type in SQLite storage');
+        debugPrint('[SIGNAL SERVICE] Step 0a: Stored sent $type in SQLite storage');
       } catch (e) {
-        print('[SIGNAL SERVICE] ✗ Failed to store in SQLite: $e');
+        debugPrint('[SIGNAL SERVICE] ✗ Failed to store in SQLite: $e');
       }
     } else {
-      print('[SIGNAL SERVICE] Step 0a: Skipping storage for message type: $type (system message or skip-list)');
+      debugPrint('[SIGNAL SERVICE] Step 0a: Skipping storage for message type: $type (system message or skip-list)');
     }
     
     // Trigger local callback for UI updates (but not for read_receipt - they are system messages)
@@ -1445,44 +1445,44 @@ void deleteGroupItem(String itemId, String channelId) async {
       for (final callback in _itemTypeCallbacks[callbackType]!) {
         callback(localItem);
       }
-      print('[SIGNAL SERVICE] Step 0b: Triggered ${_itemTypeCallbacks[callbackType]!.length} local callbacks for type: $type (using callback: $callbackType)');
+      debugPrint('[SIGNAL SERVICE] Step 0b: Triggered ${_itemTypeCallbacks[callbackType]!.length} local callbacks for type: $type (using callback: $callbackType)');
     }
     
-    print('[SIGNAL SERVICE] Step 1: fetchPreKeyBundleForUser($recipientUserId)');
-    print('[SIGNAL SERVICE] This fetches devices for BOTH users: recipient AND sender (own devices)');
+    debugPrint('[SIGNAL SERVICE] Step 1: fetchPreKeyBundleForUser($recipientUserId)');
+    debugPrint('[SIGNAL SERVICE] This fetches devices for BOTH users: recipient AND sender (own devices)');
     final preKeyBundles = await fetchPreKeyBundleForUser(recipientUserId);
-    print('[SIGNAL SERVICE] Step 1 result: $preKeyBundles');
-    print('[SIGNAL SERVICE] Number of devices (Alice + Bob): ${preKeyBundles.length}');
+    debugPrint('[SIGNAL SERVICE] Step 1 result: $preKeyBundles');
+    debugPrint('[SIGNAL SERVICE] Number of devices (Alice + Bob): ${preKeyBundles.length}');
     for (final bundle in preKeyBundles) {
-      print('[SIGNAL SERVICE] Device: userId=${bundle['userId']}, deviceId=${bundle['deviceId']}');
+      debugPrint('[SIGNAL SERVICE] Device: userId=${bundle['userId']}, deviceId=${bundle['deviceId']}');
     }
 
     // Verschlüssele für jedes Gerät separat
     for (final bundle in preKeyBundles) {
-      print('[SIGNAL SERVICE] ===============================================');
-      print('[SIGNAL SERVICE] Encrypting for device: ${bundle['userId']}:${bundle['deviceId']}');
-      print('[SIGNAL SERVICE] ===============================================');
+      debugPrint('[SIGNAL SERVICE] ===============================================');
+      debugPrint('[SIGNAL SERVICE] Encrypting for device: ${bundle['userId']}:${bundle['deviceId']}');
+      debugPrint('[SIGNAL SERVICE] ===============================================');
       
       // CRITICAL: Skip encryption for our own current device
       // We cannot decrypt messages we encrypt to ourselves (same session direction)
       final isCurrentDevice = (bundle['userId'] == _currentUserId && bundle['deviceId'] == _currentDeviceId);
       if (isCurrentDevice) {
-        print('[SIGNAL SERVICE] Skipping current device (cannot encrypt to self): ${bundle['userId']}:${bundle['deviceId']}');
+        debugPrint('[SIGNAL SERVICE] Skipping current device (cannot encrypt to self): ${bundle['userId']}:${bundle['deviceId']}');
         continue;
       }
       
-      print('[SIGNAL SERVICE] Step 2: Prepare recipientAddress for deviceId ${bundle['deviceId']}');
+      debugPrint('[SIGNAL SERVICE] Step 2: Prepare recipientAddress for deviceId ${bundle['deviceId']}');
       final recipientAddress = SignalProtocolAddress(bundle['userId'], bundle['deviceId']);
       
       // Check if this is our own device (not the intended recipient)
       // This happens when the backend returns our own devices for multi-device support
       final isOwnDevice = (bundle['userId'] != recipientUserId);
       
-      print('[SIGNAL SERVICE] Step 3: Check session for $recipientAddress');
+      debugPrint('[SIGNAL SERVICE] Step 3: Check session for $recipientAddress');
       var hasSession = await sessionStore.containsSession(recipientAddress);
-      print('[SIGNAL SERVICE] Step 3 result: hasSession=$hasSession, isOwnDevice=$isOwnDevice');
+      debugPrint('[SIGNAL SERVICE] Step 3 result: hasSession=$hasSession, isOwnDevice=$isOwnDevice');
 
-      print('[SIGNAL SERVICE] Step 4: Create SessionCipher for $recipientAddress');
+      debugPrint('[SIGNAL SERVICE] Step 4: Create SessionCipher for $recipientAddress');
       final sessionCipher = SessionCipher(
         sessionStore,
         preKeyStore,
@@ -1492,7 +1492,7 @@ void deleteGroupItem(String itemId, String channelId) async {
       );
 
       if (!hasSession) {
-        print('[SIGNAL SERVICE] Step 5: Build session for $recipientAddress');
+        debugPrint('[SIGNAL SERVICE] Step 5: Build session for $recipientAddress');
         final preKeyBundle = PreKeyBundle(
           bundle['registrationId'],
           bundle['deviceId'],
@@ -1511,32 +1511,32 @@ void deleteGroupItem(String itemId, String channelId) async {
           recipientAddress,
         );
         await sessionBuilder.processPreKeyBundle(preKeyBundle);
-        print('[SIGNAL SERVICE] Step 5 done');
+        debugPrint('[SIGNAL SERVICE] Step 5 done');
       }
 
       
 
-      print('[SIGNAL SERVICE] Step 6: Using pre-prepared payload');
+      debugPrint('[SIGNAL SERVICE] Step 6: Using pre-prepared payload');
       // payloadString is already prepared before the loop
-      print('[SIGNAL SERVICE] Step 6: payload is: $payloadString');
+      debugPrint('[SIGNAL SERVICE] Step 6: payload is: $payloadString');
       
-      print('[SIGNAL SERVICE] Step 7: Encrypt payload with message: $payloadString');
+      debugPrint('[SIGNAL SERVICE] Step 7: Encrypt payload with message: $payloadString');
       ciphertextMessage = await sessionCipher.encrypt(Uint8List.fromList(utf8.encode(payloadString)));
 
       
 
-      print('[SIGNAL SERVICE] Step 8: Serialize ciphertext');
+      debugPrint('[SIGNAL SERVICE] Step 8: Serialize ciphertext');
       final serialized = base64Encode(ciphertextMessage.serialize());
-      print('[SIGNAL SERVICE] Step 8 result: cipherType=${ciphertextMessage.getType()}, hasSession=$hasSession');
+      debugPrint('[SIGNAL SERVICE] Step 8 result: cipherType=${ciphertextMessage.getType()}, hasSession=$hasSession');
       
       // CRITICAL: If we get PreKey message despite having a session, the session is corrupted
       // Delete it and rebuild from scratch
       if (ciphertextMessage.getType() == 3 && hasSession) {
-        print('[SIGNAL SERVICE] WARNING: PreKey message despite existing session! Session is corrupted.');
-        print('[SIGNAL SERVICE] Deleting corrupted session with ${recipientAddress}');
+        debugPrint('[SIGNAL SERVICE] WARNING: PreKey message despite existing session! Session is corrupted.');
+        debugPrint('[SIGNAL SERVICE] Deleting corrupted session with ${recipientAddress}');
         await sessionStore.deleteSession(recipientAddress);
         hasSession = false;
-        print('[SIGNAL SERVICE] Session deleted. Rebuilding...');
+        debugPrint('[SIGNAL SERVICE] Session deleted. Rebuilding...');
         
         // Rebuild session
         final preKeyBundle = PreKeyBundle(
@@ -1557,13 +1557,13 @@ void deleteGroupItem(String itemId, String channelId) async {
           recipientAddress,
         );
         await sessionBuilder.processPreKeyBundle(preKeyBundle);
-        print('[SIGNAL SERVICE] Session rebuilt');
+        debugPrint('[SIGNAL SERVICE] Session rebuilt');
         
         // Re-encrypt with new session
-        print('[SIGNAL SERVICE] Re-encrypting message with rebuilt session');
+        debugPrint('[SIGNAL SERVICE] Re-encrypting message with rebuilt session');
         ciphertextMessage = await sessionCipher.encrypt(Uint8List.fromList(utf8.encode(payloadString)));
         final newSerialized = base64Encode(ciphertextMessage.serialize());
-        print('[SIGNAL SERVICE] Re-encrypted cipherType=${ciphertextMessage.getType()}');
+        debugPrint('[SIGNAL SERVICE] Re-encrypted cipherType=${ciphertextMessage.getType()}');
         
         // Update data with new encryption (use same itemId)
         final data = {
@@ -1575,12 +1575,12 @@ void deleteGroupItem(String itemId, String channelId) async {
           'itemId': messageItemId,
         };
         
-        print('[SIGNAL SERVICE] Sending rebuilt message: cipherType=${ciphertextMessage.getType()}');
+        debugPrint('[SIGNAL SERVICE] Sending rebuilt message: cipherType=${ciphertextMessage.getType()}');
         SocketService().emit("sendItem", data);
         continue; // Skip normal sending path
       }
 
-      print('[SIGNAL SERVICE] Step 9: Build data packet');
+      debugPrint('[SIGNAL SERVICE] Step 9: Build data packet');
       // Use the pre-generated itemId from before the loop
       final data = {
         'recipient': recipientAddress.getName(),
@@ -1591,16 +1591,16 @@ void deleteGroupItem(String itemId, String channelId) async {
         'itemId': messageItemId,
       };
 
-      print('[SIGNAL SERVICE] Step 10: Sending item: $data');
+      debugPrint('[SIGNAL SERVICE] Step 10: Sending item: $data');
       SocketService().emit("sendItem", data);
       
       // Log message type for debugging
       final isPreKeyMessage = ciphertextMessage.getType() == 3;
       if(isPreKeyMessage) {
-        print('[SIGNAL SERVICE] Step 11: PreKey message sent (first message to establish session)');
-        print('[SIGNAL SERVICE] Step 11a: This message contains the actual content and will establish the session');
+        debugPrint('[SIGNAL SERVICE] Step 11: PreKey message sent (first message to establish session)');
+        debugPrint('[SIGNAL SERVICE] Step 11a: This message contains the actual content and will establish the session');
       } else {
-        print('[SIGNAL SERVICE] Step 11: Whisper message sent (session already exists)');
+        debugPrint('[SIGNAL SERVICE] Step 11: Whisper message sent (session already exists)');
       }
     }
   }
@@ -1636,7 +1636,7 @@ Future<String> decryptItem({
     }
     
     if (preKeyId != null) {
-      print('[SIGNAL SERVICE] Removing used PreKey $preKeyId after session establishment');
+      debugPrint('[SIGNAL SERVICE] Removing used PreKey $preKeyId after session establishment');
       await preKeyStore.removePreKey(preKeyId);
       
       // Check if we need to generate more PreKeys locally
@@ -1645,7 +1645,7 @@ Future<String> decryptItem({
       // CRITICAL: Trigger server sync check after PreKey deletion
       // This ensures server stays in sync with local PreKey count
       Future.delayed(Duration(seconds: 2), () {
-        print('[SIGNAL SERVICE] Triggering PreKey sync check after deletion...');
+        debugPrint('[SIGNAL SERVICE] Triggering PreKey sync check after deletion...');
         SocketService().emit("signalStatus", null);
       });
     }
@@ -1655,7 +1655,7 @@ Future<String> decryptItem({
     // Normale Nachricht
     final signalMsg = SignalMessage.fromSerialized(serialized);
     final plaintext = await sessionCipher.decryptFromSignal(signalMsg);
-    print('[SIGNAL SERVICE] Step 8: Decrypted plaintext: $plaintext');
+    debugPrint('[SIGNAL SERVICE] Step 8: Decrypted plaintext: $plaintext');
     return utf8.decode(plaintext);
   } else if (cipherType == CiphertextMessage.senderKeyType) {
     // Group message - should NOT be processed here!
@@ -1665,7 +1665,7 @@ Future<String> decryptItem({
     throw Exception('Unknown cipherType: $cipherType');
   }
   } catch (e, st) {
-    print('[ERROR] Exception while decrypting message: \\${e}\\n\\${st}');
+    debugPrint('[ERROR] Exception while decrypting message: \\${e}\\n\\${st}');
     return '';
   }
 }
@@ -1764,7 +1764,7 @@ Future<String> decryptItem({
       throw Exception('User info not set. Call setCurrentUserInfo first.');
     }
 
-    print('[SIGNAL_SERVICE] Creating sender key for group $groupId, user $_currentUserId:$_currentDeviceId');
+    debugPrint('[SIGNAL_SERVICE] Creating sender key for group $groupId, user $_currentUserId:$_currentDeviceId');
 
     // ⚠️ CRITICAL: Check if sender key already exists to avoid chain corruption
     final senderAddress = SignalProtocolAddress(_currentUserId!, _currentDeviceId!);
@@ -1772,7 +1772,7 @@ Future<String> decryptItem({
     
     final existingKey = await senderKeyStore.containsSenderKey(senderKeyName);
     if (existingKey) {
-      print('[SIGNAL_SERVICE] ℹ️ Sender key already exists for group $groupId');
+      debugPrint('[SIGNAL_SERVICE] ℹ️ Sender key already exists for group $groupId');
       
       // ⚠️ VALIDATION: Try to use the existing key - if it fails, regenerate
       // Test by creating a GroupCipher and attempting a dummy encryption
@@ -1781,12 +1781,12 @@ Future<String> decryptItem({
         // Try to encrypt a small test message to verify key validity
         final testMessage = Uint8List.fromList([0x01, 0x02, 0x03]);
         await testCipher.encrypt(testMessage);
-        print('[SIGNAL_SERVICE] ✓ Existing sender key is valid and functional');
+        debugPrint('[SIGNAL_SERVICE] ✓ Existing sender key is valid and functional');
         // Return empty bytes - key is already distributed
         return Uint8List(0);
       } catch (e) {
-        print('[SIGNAL_SERVICE] ⚠️ WARNING: Existing sender key is corrupted or invalid ($e)');
-        print('[SIGNAL_SERVICE] Deleting corrupted key and regenerating...');
+        debugPrint('[SIGNAL_SERVICE] ⚠️ WARNING: Existing sender key is corrupted or invalid ($e)');
+        debugPrint('[SIGNAL_SERVICE] Deleting corrupted key and regenerating...');
         // Delete corrupted key
         await senderKeyStore.removeSenderKey(senderKeyName);
         // Fall through to regenerate
@@ -1796,36 +1796,36 @@ Future<String> decryptItem({
     // Verify identity key pair exists
     try {
       final identityKeyPair = await identityStore.getIdentityKeyPair();
-      print('[SIGNAL_SERVICE] Identity key pair verified - PublicKey: ${identityKeyPair.getPublicKey().toString().substring(0, 20)}...');
+      debugPrint('[SIGNAL_SERVICE] Identity key pair verified - PublicKey: ${identityKeyPair.getPublicKey().toString().substring(0, 20)}...');
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error verifying identity key pair: $e');
+      debugPrint('[SIGNAL_SERVICE] Error verifying identity key pair: $e');
       throw Exception('Cannot create sender key: Identity key pair not available. Please register Signal keys first. Error: $e');
     }
 
     // Verify sender key store is initialized
     try {
       await senderKeyStore.loadSenderKey(senderKeyName);
-      print('[SIGNAL_SERVICE] Sender key store is accessible');
+      debugPrint('[SIGNAL_SERVICE] Sender key store is accessible');
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error accessing sender key store: $e');
+      debugPrint('[SIGNAL_SERVICE] Error accessing sender key store: $e');
       throw Exception('Cannot create sender key: Sender key store error: $e');
     }
 
     try {
-      print('[SIGNAL_SERVICE] Created SenderKeyName for group $groupId, address ${senderAddress.getName()}:${senderAddress.getDeviceId()}');
+      debugPrint('[SIGNAL_SERVICE] Created SenderKeyName for group $groupId, address ${senderAddress.getName()}:${senderAddress.getDeviceId()}');
       
       final groupSessionBuilder = GroupSessionBuilder(senderKeyStore);
-      print('[SIGNAL_SERVICE] Created GroupSessionBuilder');
+      debugPrint('[SIGNAL_SERVICE] Created GroupSessionBuilder');
       
       // Create sender key distribution message
-      print('[SIGNAL_SERVICE] Calling groupSessionBuilder.create()...');
+      debugPrint('[SIGNAL_SERVICE] Calling groupSessionBuilder.create()...');
       final distributionMessage = await groupSessionBuilder.create(senderKeyName);
-      print('[SIGNAL_SERVICE] Successfully created distribution message');
+      debugPrint('[SIGNAL_SERVICE] Successfully created distribution message');
       
       final serialized = distributionMessage.serialize();
-      print('[SIGNAL_SERVICE] Serialized distribution message, length: ${serialized.length}');
+      debugPrint('[SIGNAL_SERVICE] Serialized distribution message, length: ${serialized.length}');
       
-      print('[SIGNAL_SERVICE] Created sender key for group $groupId');
+      debugPrint('[SIGNAL_SERVICE] Created sender key for group $groupId');
       
       // Store sender key on server for backup/retrieval
       // Skip if serialized is empty (key already existed)
@@ -1836,9 +1836,9 @@ Future<String> decryptItem({
             'groupId': groupId,
             'senderKey': senderKeyBase64,
           });
-          print('[SIGNAL_SERVICE] Stored sender key on server for group $groupId');
+          debugPrint('[SIGNAL_SERVICE] Stored sender key on server for group $groupId');
         } catch (e) {
-          print('[SIGNAL_SERVICE] Warning: Failed to store sender key on server: $e');
+          debugPrint('[SIGNAL_SERVICE] Warning: Failed to store sender key on server: $e');
           // Don't fail - sender key is already stored locally
         }
       }
@@ -1847,22 +1847,22 @@ Future<String> decryptItem({
       // Skip if serialized is empty (key already existed)
       if (broadcastDistribution && serialized.isNotEmpty) {
         try {
-          print('[SIGNAL_SERVICE] Broadcasting sender key distribution message...');
+          debugPrint('[SIGNAL_SERVICE] Broadcasting sender key distribution message...');
           SocketService().emit('broadcastSenderKey', {
             'groupId': groupId,
             'distributionMessage': base64Encode(serialized),
           });
-          print('[SIGNAL_SERVICE] ✓ Sender key distribution message broadcast to group');
+          debugPrint('[SIGNAL_SERVICE] ✓ Sender key distribution message broadcast to group');
         } catch (e) {
-          print('[SIGNAL_SERVICE] Warning: Failed to broadcast distribution message: $e');
+          debugPrint('[SIGNAL_SERVICE] Warning: Failed to broadcast distribution message: $e');
           // Don't fail - recipients can still request it from server
         }
       }
       
       return serialized;
     } catch (e, stackTrace) {
-      print('[SIGNAL_SERVICE] Error in createGroupSenderKey: $e');
-      print('[SIGNAL_SERVICE] Stack trace: $stackTrace');
+      debugPrint('[SIGNAL_SERVICE] Error in createGroupSenderKey: $e');
+      debugPrint('[SIGNAL_SERVICE] Stack trace: $stackTrace');
       rethrow;
     }
   }
@@ -1882,7 +1882,7 @@ Future<String> decryptItem({
     
     await groupSessionBuilder.process(senderKeyName, distributionMessage);
     
-    print('[SIGNAL_SERVICE] Processed sender key from $senderId:$senderDeviceId for group $groupId');
+    debugPrint('[SIGNAL_SERVICE] Processed sender key from $senderId:$senderDeviceId for group $groupId');
   }
 
   /// Encrypt message for group using sender key
@@ -1894,18 +1894,18 @@ Future<String> decryptItem({
       throw Exception('User info not set. Call setCurrentUserInfo first.');
     }
 
-    print('[SIGNAL_SERVICE] encryptGroupMessage: groupId=$groupId, userId=$_currentUserId:$_currentDeviceId, messageLength=${message.length}');
+    debugPrint('[SIGNAL_SERVICE] encryptGroupMessage: groupId=$groupId, userId=$_currentUserId:$_currentDeviceId, messageLength=${message.length}');
 
     try {
       final senderAddress = SignalProtocolAddress(_currentUserId!, _currentDeviceId!);
-      print('[SIGNAL_SERVICE] Created sender address: ${senderAddress.getName()}:${senderAddress.getDeviceId()}');
+      debugPrint('[SIGNAL_SERVICE] Created sender address: ${senderAddress.getName()}:${senderAddress.getDeviceId()}');
       
       final senderKeyName = SenderKeyName(groupId, senderAddress);
-      print('[SIGNAL_SERVICE] Created sender key name for group $groupId');
+      debugPrint('[SIGNAL_SERVICE] Created sender key name for group $groupId');
       
       // Check if sender key exists
       final hasSenderKey = await senderKeyStore.containsSenderKey(senderKeyName);
-      print('[SIGNAL_SERVICE] Sender key exists: $hasSenderKey');
+      debugPrint('[SIGNAL_SERVICE] Sender key exists: $hasSenderKey');
       
       if (!hasSenderKey) {
         throw Exception('No sender key found for this group. Please initialize sender key first.');
@@ -1913,7 +1913,7 @@ Future<String> decryptItem({
       
       // Load the sender key record to verify it's valid
       await senderKeyStore.loadSenderKey(senderKeyName);
-      print('[SIGNAL_SERVICE] Loaded sender key record from store');
+      debugPrint('[SIGNAL_SERVICE] Loaded sender key record from store');
       
       // Validate identity key pair exists before encryption (required for signing)
       try {
@@ -1921,34 +1921,34 @@ Future<String> decryptItem({
         if (identityKeyPair.getPrivateKey().serialize().isEmpty) {
           throw Exception('Identity private key is empty - cannot sign sender key messages');
         }
-        print('[SIGNAL_SERVICE] Identity key pair validated for signing');
+        debugPrint('[SIGNAL_SERVICE] Identity key pair validated for signing');
       } catch (e) {
         throw Exception('Identity key pair missing or corrupted: $e. Please regenerate Signal Protocol keys.');
       }
       
       // ⚠️ CRITICAL: Test sender key validity BEFORE creating GroupCipher
       // This prevents RangeError by detecting corrupted keys early
-      print('[SIGNAL_SERVICE] Testing sender key validity with dummy encryption...');
+      debugPrint('[SIGNAL_SERVICE] Testing sender key validity with dummy encryption...');
       try {
         final testCipher = GroupCipher(senderKeyStore, senderKeyName);
         final testMessage = Uint8List.fromList([0x01, 0x02, 0x03]);
         await testCipher.encrypt(testMessage);
-        print('[SIGNAL_SERVICE] ✓ Sender key validation passed');
+        debugPrint('[SIGNAL_SERVICE] ✓ Sender key validation passed');
       } catch (validationError) {
-        print('[SIGNAL_SERVICE] ⚠️ Sender key validation FAILED: $validationError');
+        debugPrint('[SIGNAL_SERVICE] ⚠️ Sender key validation FAILED: $validationError');
         // Trigger RangeError handler to regenerate key
         throw RangeError('Sender key corrupted - validation test failed: $validationError');
       }
       
       final groupCipher = GroupCipher(senderKeyStore, senderKeyName);
-      print('[SIGNAL_SERVICE] Created GroupCipher');
+      debugPrint('[SIGNAL_SERVICE] Created GroupCipher');
       
       final messageBytes = Uint8List.fromList(utf8.encode(message));
-      print('[SIGNAL_SERVICE] Encoded message to bytes, length: ${messageBytes.length}');
+      debugPrint('[SIGNAL_SERVICE] Encoded message to bytes, length: ${messageBytes.length}');
       
-      print('[SIGNAL_SERVICE] Calling groupCipher.encrypt()...');
+      debugPrint('[SIGNAL_SERVICE] Calling groupCipher.encrypt()...');
       final ciphertext = await groupCipher.encrypt(messageBytes);
-      print('[SIGNAL_SERVICE] Successfully encrypted message, ciphertext length: ${ciphertext.length}');
+      debugPrint('[SIGNAL_SERVICE] Successfully encrypted message, ciphertext length: ${ciphertext.length}');
       
       return {
         'ciphertext': base64Encode(ciphertext),
@@ -1958,8 +1958,8 @@ Future<String> decryptItem({
     } on RangeError catch (e) {
       // RangeError during encryption typically means sender key chain is corrupted
       // This can happen if the key was created but signing key state is empty
-      print('[SIGNAL_SERVICE] RangeError during encryption - sender key chain corrupted: $e');
-      print('[SIGNAL_SERVICE] Attempting to recover sender key...');
+      debugPrint('[SIGNAL_SERVICE] RangeError during encryption - sender key chain corrupted: $e');
+      debugPrint('[SIGNAL_SERVICE] Attempting to recover sender key...');
       
       try {
         final senderAddress = SignalProtocolAddress(_currentUserId!, _currentDeviceId!);
@@ -1967,11 +1967,11 @@ Future<String> decryptItem({
         
         // STEP 1: Try to load key from server BEFORE regenerating
         // This preserves message history if server has a good key
-        print('[SIGNAL_SERVICE] Step 1: Attempting to load sender key from server...');
+        debugPrint('[SIGNAL_SERVICE] Step 1: Attempting to load sender key from server...');
         
         // Delete corrupted local key first
         await senderKeyStore.removeSenderKey(senderKeyName);
-        print('[SIGNAL_SERVICE] Removed corrupted local sender key');
+        debugPrint('[SIGNAL_SERVICE] Removed corrupted local sender key');
         
         // Try to reload from server
         final keyLoadedFromServer = await loadSenderKeyFromServer(
@@ -1982,20 +1982,20 @@ Future<String> decryptItem({
         );
         
         if (keyLoadedFromServer) {
-          print('[SIGNAL_SERVICE] ✓ Sender key restored from server backup');
+          debugPrint('[SIGNAL_SERVICE] ✓ Sender key restored from server backup');
           
           // Verify the restored key works
           try {
             final testCipher = GroupCipher(senderKeyStore, senderKeyName);
             final testMessage = Uint8List.fromList([0x01, 0x02, 0x03]);
             await testCipher.encrypt(testMessage);
-            print('[SIGNAL_SERVICE] ✓ Restored sender key is functional');
+            debugPrint('[SIGNAL_SERVICE] ✓ Restored sender key is functional');
             
             // Retry encryption with restored key
             final messageBytes = Uint8List.fromList(utf8.encode(message));
             final restoredCipher = GroupCipher(senderKeyStore, senderKeyName);
             final ciphertext = await restoredCipher.encrypt(messageBytes);
-            print('[SIGNAL_SERVICE] ✓ Successfully encrypted with restored key');
+            debugPrint('[SIGNAL_SERVICE] ✓ Successfully encrypted with restored key');
             
             return {
               'ciphertext': base64Encode(ciphertext),
@@ -2003,23 +2003,23 @@ Future<String> decryptItem({
               'senderDeviceId': _currentDeviceId,
             };
           } catch (validationError) {
-            print('[SIGNAL_SERVICE] ⚠️ Restored key is also corrupted: $validationError');
+            debugPrint('[SIGNAL_SERVICE] ⚠️ Restored key is also corrupted: $validationError');
             // Fall through to regenerate
           }
         } else {
-          print('[SIGNAL_SERVICE] No sender key found on server');
+          debugPrint('[SIGNAL_SERVICE] No sender key found on server');
         }
         
         // STEP 2: If server has no key OR restored key is also corrupted, regenerate
-        print('[SIGNAL_SERVICE] Step 2: Generating new sender key...');
+        debugPrint('[SIGNAL_SERVICE] Step 2: Generating new sender key...');
         await createGroupSenderKey(groupId, broadcastDistribution: true);
-        print('[SIGNAL_SERVICE] ✓ Created and broadcast new sender key for group $groupId');
+        debugPrint('[SIGNAL_SERVICE] ✓ Created and broadcast new sender key for group $groupId');
         
         // Retry encryption with new key
         final messageBytes = Uint8List.fromList(utf8.encode(message));
         final newGroupCipher = GroupCipher(senderKeyStore, senderKeyName);
         final ciphertext = await newGroupCipher.encrypt(messageBytes);
-        print('[SIGNAL_SERVICE] ✓ Successfully encrypted with new key');
+        debugPrint('[SIGNAL_SERVICE] ✓ Successfully encrypted with new key');
         
         return {
           'ciphertext': base64Encode(ciphertext),
@@ -2027,12 +2027,12 @@ Future<String> decryptItem({
           'senderDeviceId': _currentDeviceId,
         };
       } catch (recoveryError) {
-        print('[SIGNAL_SERVICE] ❌ Failed to recover from corrupted sender key: $recoveryError');
+        debugPrint('[SIGNAL_SERVICE] ❌ Failed to recover from corrupted sender key: $recoveryError');
         throw Exception('Sender key chain corrupted and recovery failed. Please leave and rejoin the channel. Original error: $e');
       }
     } catch (e, stackTrace) {
-      print('[SIGNAL_SERVICE] Error in encryptGroupMessage: $e');
-      print('[SIGNAL_SERVICE] Stack trace: $stackTrace');
+      debugPrint('[SIGNAL_SERVICE] Error in encryptGroupMessage: $e');
+      debugPrint('[SIGNAL_SERVICE] Stack trace: $stackTrace');
       
       // ⚠️ DO NOT attempt automatic recovery for non-RangeError exceptions
       
@@ -2066,7 +2066,7 @@ Future<String> decryptItem({
     required String message,
     String? itemId,
   }) async {
-    print('[SIGNAL_SERVICE] WARNING: sendGroupMessage is deprecated, use sendGroupItem instead');
+    debugPrint('[SIGNAL_SERVICE] WARNING: sendGroupMessage is deprecated, use sendGroupItem instead');
     // Redirect to new implementation
     await sendGroupItem(
       channelId: groupId,
@@ -2088,9 +2088,9 @@ Future<String> decryptItem({
         },
       );
       
-      print('[SIGNAL_SERVICE] Requested sender key from $userId:$deviceId for group $groupId');
+      debugPrint('[SIGNAL_SERVICE] Requested sender key from $userId:$deviceId for group $groupId');
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error requesting sender key: $e');
+      debugPrint('[SIGNAL_SERVICE] Error requesting sender key: $e');
       rethrow;
     }
   }
@@ -2115,7 +2115,7 @@ Future<String> decryptItem({
       // So we'll rely on the containsSenderKey check
       return true;
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error checking sender key: $e');
+      debugPrint('[SIGNAL_SERVICE] Error checking sender key: $e');
       return false;
     }
   }
@@ -2123,7 +2123,7 @@ Future<String> decryptItem({
   /// Clear all sender keys for a group (e.g., when leaving)
   Future<void> clearGroupSenderKeys(String groupId) async {
     await senderKeyStore.clearGroupSenderKeys(groupId);
-    print('[SIGNAL_SERVICE] Cleared all sender keys for group $groupId');
+    debugPrint('[SIGNAL_SERVICE] Cleared all sender keys for group $groupId');
   }
 
   // ===== NEW: GROUP ITEM API METHODS =====
@@ -2196,9 +2196,9 @@ Future<String> decryptItem({
           timestamp: timestampIso,
           type: 'file',
         );
-        print('[SIGNAL_SERVICE] Stored file message in SQLite');
+        debugPrint('[SIGNAL_SERVICE] Stored file message in SQLite');
       } catch (e) {
-        print('[SIGNAL_SERVICE] ✗ Failed to store file message in SQLite: $e');
+        debugPrint('[SIGNAL_SERVICE] ✗ Failed to store file message in SQLite: $e');
       };
 
       // Send via Socket.IO
@@ -2211,9 +2211,9 @@ Future<String> decryptItem({
         'timestamp': timestampIso,
       });
 
-      print('[SIGNAL_SERVICE] Sent file message $itemId ($fileName) to channel $channelId');
+      debugPrint('[SIGNAL_SERVICE] Sent file message $itemId ($fileName) to channel $channelId');
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error sending file message: $e');
+      debugPrint('[SIGNAL_SERVICE] Error sending file message: $e');
       rethrow;
     }
   }
@@ -2279,7 +2279,7 @@ Future<String> decryptItem({
           'timestamp': timestampIso,
         });
 
-        print('[SIGNAL_SERVICE] Sent file share update ($action) to group $chatId');
+        debugPrint('[SIGNAL_SERVICE] Sent file share update ($action) to group $chatId');
       } else if (chatType == 'direct') {
         // DIRECT: Send via Session encryption to each affected user
         for (final userId in affectedUserIds) {
@@ -2292,14 +2292,14 @@ Future<String> decryptItem({
             payload: payloadJson,
           );
 
-          print('[SIGNAL_SERVICE] Sent file share update ($action) to user $userId');
+          debugPrint('[SIGNAL_SERVICE] Sent file share update ($action) to user $userId');
         }
       } else {
         throw Exception('Invalid chatType: $chatType');
       }
 
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error sending file share update: $e');
+      debugPrint('[SIGNAL_SERVICE] Error sending file share update: $e');
       rethrow;
     }
   }
@@ -2363,7 +2363,7 @@ Future<String> decryptItem({
           'timestamp': timestampIso,
         });
 
-        print('[SIGNAL_SERVICE] Sent video E2EE key to group $channelId');
+        debugPrint('[SIGNAL_SERVICE] Sent video E2EE key to group $channelId');
       } else if (chatType == 'direct') {
         // DIRECT: Send via Session encryption to each recipient
         for (final userId in recipientUserIds) {
@@ -2376,14 +2376,14 @@ Future<String> decryptItem({
             payload: payloadJson,
           );
 
-          print('[SIGNAL_SERVICE] Sent video E2EE key to user $userId');
+          debugPrint('[SIGNAL_SERVICE] Sent video E2EE key to user $userId');
         }
       } else {
         throw Exception('Invalid chatType: $chatType');
       }
 
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error sending video E2EE key: $e');
+      debugPrint('[SIGNAL_SERVICE] Error sending video E2EE key: $e');
       rethrow;
     }
   }
@@ -2434,14 +2434,14 @@ Future<String> decryptItem({
             timestamp: timestamp,
             type: type,
           );
-          print('[SIGNAL_SERVICE] Stored group item $itemId in SQLite');
+          debugPrint('[SIGNAL_SERVICE] Stored group item $itemId in SQLite');
         } catch (e) {
-          print('[SIGNAL_SERVICE] ✗ Failed to store group item in SQLite: $e');
+          debugPrint('[SIGNAL_SERVICE] ✗ Failed to store group item in SQLite: $e');
         }
         
-        print('[SIGNAL_SERVICE] Stored group item $itemId locally');
+        debugPrint('[SIGNAL_SERVICE] Stored group item $itemId locally');
       } else {
-        print('[SIGNAL_SERVICE] Skipping storage for system message type: $type');
+        debugPrint('[SIGNAL_SERVICE] Skipping storage for system message type: $type');
       }
 
       // Send via Socket.IO (always send, even if not stored)
@@ -2454,9 +2454,9 @@ Future<String> decryptItem({
         'timestamp': timestamp,
       });
 
-      print('[SIGNAL_SERVICE] Sent group item $itemId to channel $channelId');
+      debugPrint('[SIGNAL_SERVICE] Sent group item $itemId to channel $channelId');
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error sending group item: $e');
+      debugPrint('[SIGNAL_SERVICE] Error sending group item: $e');
       rethrow;
     }
   }
@@ -2480,7 +2480,7 @@ Future<String> decryptItem({
       
       return decrypted;
     } catch (e) {
-      print('[SIGNAL_SERVICE] Decrypt error: $e');
+      debugPrint('[SIGNAL_SERVICE] Decrypt error: $e');
       
       // Check if this is a decryption error that might be fixed by reloading sender key
       if (retryOnError && (
@@ -2489,7 +2489,7 @@ Future<String> decryptItem({
           e.toString().contains('DuplicateMessageException') ||
           e.toString().contains('Invalid'))) {
         
-        print('[SIGNAL_SERVICE] Attempting to reload sender key from server...');
+        debugPrint('[SIGNAL_SERVICE] Attempting to reload sender key from server...');
         
         // Try to reload sender key from server
         final keyLoaded = await loadSenderKeyFromServer(
@@ -2500,7 +2500,7 @@ Future<String> decryptItem({
         );
         
         if (keyLoaded) {
-          print('[SIGNAL_SERVICE] Sender key reloaded, retrying decrypt...');
+          debugPrint('[SIGNAL_SERVICE] Sender key reloaded, retrying decrypt...');
           
           // Retry decrypt (without retry to avoid infinite loop)
           return await decryptGroupItem(
@@ -2526,7 +2526,7 @@ Future<String> decryptItem({
     bool forceReload = false,
   }) async {
     try {
-      print('[SIGNAL_SERVICE] Loading sender key from server: $userId:$deviceId (forceReload: $forceReload)');
+      debugPrint('[SIGNAL_SERVICE] Loading sender key from server: $userId:$deviceId (forceReload: $forceReload)');
       
       // If forceReload, delete old key first
       if (forceReload) {
@@ -2534,9 +2534,9 @@ Future<String> decryptItem({
           final address = SignalProtocolAddress(userId, deviceId);
           final senderKeyName = SenderKeyName(channelId, address);
           await senderKeyStore.removeSenderKey(senderKeyName);
-          print('[SIGNAL_SERVICE] Removed old sender key before reload');
+          debugPrint('[SIGNAL_SERVICE] Removed old sender key before reload');
         } catch (removeError) {
-          print('[SIGNAL_SERVICE] Error removing old key: $removeError');
+          debugPrint('[SIGNAL_SERVICE] Error removing old key: $removeError');
         }
       }
       
@@ -2557,14 +2557,14 @@ Future<String> decryptItem({
           senderKeyBytes,
         );
         
-        print('[SIGNAL_SERVICE] ✓ Sender key loaded from server');
+        debugPrint('[SIGNAL_SERVICE] ✓ Sender key loaded from server');
         return true;
       } else {
-        print('[SIGNAL_SERVICE] Sender key not found on server');
+        debugPrint('[SIGNAL_SERVICE] Sender key not found on server');
         return false;
       }
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error loading sender key from server: $e');
+      debugPrint('[SIGNAL_SERVICE] Error loading sender key from server: $e');
       return false;
     }
   }
@@ -2589,7 +2589,7 @@ Future<String> decryptItem({
     };
     
     try {
-      print('[SIGNAL_SERVICE] Loading all sender keys for channel $channelId');
+      debugPrint('[SIGNAL_SERVICE] Loading all sender keys for channel $channelId');
       
       final response = await ApiService.get('/api/sender-keys/$channelId');
       
@@ -2598,14 +2598,14 @@ Future<String> decryptItem({
         
         // Handle null or empty senderKeys
         if (senderKeysData == null) {
-          print('[SIGNAL_SERVICE] No sender keys found for channel');
+          debugPrint('[SIGNAL_SERVICE] No sender keys found for channel');
           return result;
         }
         
         final senderKeys = senderKeysData as List<dynamic>;
         result['totalKeys'] = senderKeys.length;
         
-        print('[SIGNAL_SERVICE] Found ${senderKeys.length} sender keys');
+        debugPrint('[SIGNAL_SERVICE] Found ${senderKeys.length} sender keys');
         
         for (final key in senderKeys) {
           try {
@@ -2630,7 +2630,7 @@ Future<String> decryptItem({
             );
             
             result['loadedKeys'] = (result['loadedKeys'] as int) + 1;
-            print('[SIGNAL_SERVICE] ✓ Loaded sender key for $userId:$deviceId');
+            debugPrint('[SIGNAL_SERVICE] ✓ Loaded sender key for $userId:$deviceId');
           } catch (keyError) {
             final userId = key['userId'] as String?;
             final deviceId = key['deviceId'] as int?;
@@ -2639,7 +2639,7 @@ Future<String> decryptItem({
               'deviceId': deviceId?.toString() ?? 'unknown',
               'error': keyError.toString(),
             });
-            print('[SIGNAL_SERVICE] Error loading key for $userId:$deviceId - $keyError');
+            debugPrint('[SIGNAL_SERVICE] Error loading key for $userId:$deviceId - $keyError');
           }
         }
         
@@ -2650,7 +2650,7 @@ Future<String> decryptItem({
           throw Exception('Failed to load $failedCount sender key(s). Some messages may not decrypt.');
         }
         
-        print('[SIGNAL_SERVICE] ✓ Loaded ${result['loadedKeys']} sender keys for channel');
+        debugPrint('[SIGNAL_SERVICE] ✓ Loaded ${result['loadedKeys']} sender keys for channel');
         return result;
       } else {
         // HTTP error or unsuccessful response
@@ -2658,7 +2658,7 @@ Future<String> decryptItem({
         throw Exception('Failed to load sender keys from server: HTTP ${response.statusCode}');
       }
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error loading all sender keys: $e');
+      debugPrint('[SIGNAL_SERVICE] Error loading all sender keys: $e');
       result['success'] = false;
       rethrow; // CRITICAL: Re-throw to notify caller
     }
@@ -2676,7 +2676,7 @@ Future<String> decryptItem({
       
       // Check if key already existed (returns empty bytes)
       if (distributionMessage.isEmpty) {
-        print('[SIGNAL_SERVICE] ℹ️ Sender key already exists, skipping upload');
+        debugPrint('[SIGNAL_SERVICE] ℹ️ Sender key already exists, skipping upload');
         return;
       }
       
@@ -2692,12 +2692,12 @@ Future<String> decryptItem({
       );
       
       if (response.statusCode == 200) {
-        print('[SIGNAL_SERVICE] ✓ Sender key uploaded to server');
+        debugPrint('[SIGNAL_SERVICE] ✓ Sender key uploaded to server');
       } else {
-        print('[SIGNAL_SERVICE] Failed to upload sender key: ${response.statusCode}');
+        debugPrint('[SIGNAL_SERVICE] Failed to upload sender key: ${response.statusCode}');
       }
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error uploading sender key: $e');
+      debugPrint('[SIGNAL_SERVICE] Error uploading sender key: $e');
       rethrow;
     }
   }
@@ -2706,7 +2706,7 @@ Future<String> decryptItem({
   Future<void> markGroupItemAsRead(String itemId) async {
     try {
       if (_currentDeviceId == null) {
-        print('[SIGNAL_SERVICE] Cannot mark as read: device ID not set');
+        debugPrint('[SIGNAL_SERVICE] Cannot mark as read: device ID not set');
         return;
       }
       
@@ -2714,9 +2714,9 @@ Future<String> decryptItem({
         'itemId': itemId,
       });
       
-      print('[SIGNAL_SERVICE] Marked group item $itemId as read');
+      debugPrint('[SIGNAL_SERVICE] Marked group item $itemId as read');
     } catch (e) {
-      print('[SIGNAL_SERVICE] Error marking item as read: $e');
+      debugPrint('[SIGNAL_SERVICE] Error marking item as read: $e');
     }
   }
 
@@ -2730,4 +2730,5 @@ Future<String> decryptItem({
     return await decryptedGroupItemsStore.getChannelItems(channelId);
   }
 }
+
 

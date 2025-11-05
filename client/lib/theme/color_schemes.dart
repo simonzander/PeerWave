@@ -643,3 +643,4 @@ class ColorSchemeOptions {
   /// Standard Schema (PeerWave Dark)
   static ColorSchemeOption get defaultScheme => all.first;
 }
+

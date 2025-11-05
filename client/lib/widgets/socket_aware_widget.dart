@@ -30,7 +30,7 @@ class _SocketAwareWidgetState extends State<SocketAwareWidget> {
     try {
       final socketService = SocketService();
       final connected = socketService.socket != null && socketService.isConnected;
-      print('[SOCKET_AWARE] Checking connection: socket=${socketService.socket != null}, connected=${socketService.isConnected}');
+      debugPrint('[SOCKET_AWARE] Checking connection: socket=${socketService.socket != null}, connected=${socketService.isConnected}');
       
       if (mounted) {
         setState(() {
@@ -39,7 +39,7 @@ class _SocketAwareWidgetState extends State<SocketAwareWidget> {
         });
       }
     } catch (e) {
-      print('[SOCKET_AWARE] Error checking connection: $e');
+      debugPrint('[SOCKET_AWARE] Error checking connection: $e');
       if (mounted) {
         setState(() {
           _isConnected = false;
@@ -116,3 +116,4 @@ class _SocketAwareWidgetState extends State<SocketAwareWidget> {
     return widget.child;
   }
 }
+

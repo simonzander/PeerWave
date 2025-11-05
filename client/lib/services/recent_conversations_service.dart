@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
@@ -55,7 +56,7 @@ class RecentConversationsService {
         };
       }).toList();
     } catch (e) {
-      print('[RECENT_CONVERSATIONS] Error parsing conversations: $e');
+      debugPrint('[RECENT_CONVERSATIONS] Error parsing conversations: $e');
       return [];
     }
   }
@@ -91,3 +92,4 @@ class RecentConversationsService {
     }
   }
 }
+

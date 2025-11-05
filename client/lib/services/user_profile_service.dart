@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'api_service.dart';
 import '../web_config.dart';
 import 'storage/sqlite_recent_conversations_store.dart';
@@ -42,7 +43,7 @@ class UserProfileService {
     
     _isInitialLoading = true;
     try {
-      print('[UserProfileService] Starting initial profile load...');
+      debugPrint('[UserProfileService] Starting initial profile load...');
       
       // 1. Load own profile
       await loadOwnProfile();
@@ -72,9 +73,9 @@ class UserProfileService {
           }
         }
         
-        print('[UserProfileService] Found ${uuidsToLoad.length} users from recent conversations');
+        debugPrint('[UserProfileService] Found ${uuidsToLoad.length} users from recent conversations');
       } catch (e) {
-        print('[UserProfileService] Error loading UUIDs from database: $e');
+        debugPrint('[UserProfileService] Error loading UUIDs from database: $e');
       }
       
       // 3. Load profiles for these users
@@ -82,9 +83,9 @@ class UserProfileService {
         await loadProfiles(uuidsToLoad.toList());
       }
       
-      print('[UserProfileService] Initial profile load complete. Cached: ${_cache.length} profiles');
+      debugPrint('[UserProfileService] Initial profile load complete. Cached: ${_cache.length} profiles');
     } catch (e) {
-      print('[UserProfileService] Error during init: $e');
+      debugPrint('[UserProfileService] Error during init: $e');
       rethrow;
     } finally {
       _isInitialLoading = false;
@@ -107,7 +108,7 @@ class UserProfileService {
     }
     
     if (uuidsToLoad.isEmpty) {
-      print('[UserProfileService] All ${uuids.length} profiles already cached');
+      debugPrint('[UserProfileService] All ${uuids.length} profiles already cached');
       return;
     }
     
@@ -115,7 +116,7 @@ class UserProfileService {
     _loadingUuids.addAll(uuidsToLoad);
     
     try {
-      print('[UserProfileService] Loading ${uuidsToLoad.length} profiles...');
+      debugPrint('[UserProfileService] Loading ${uuidsToLoad.length} profiles...');
       
       final apiServer = await loadWebApiServer();
       if (apiServer == null || apiServer.isEmpty) {
@@ -154,12 +155,12 @@ class UserProfileService {
           }
         }
         
-        print('[UserProfileService] ✓ Loaded ${profiles.length}/${uuidsToLoad.length} profiles');
+        debugPrint('[UserProfileService] ✓ Loaded ${profiles.length}/${uuidsToLoad.length} profiles');
       } else {
         throw Exception('Failed to load profiles: ${resp.statusCode}');
       }
     } catch (e) {
-      print('[UserProfileService] ✗ Error loading profiles: $e');
+      debugPrint('[UserProfileService] ✗ Error loading profiles: $e');
       rethrow;
     } finally {
       _loadingUuids.removeAll(uuidsToLoad);
@@ -328,13 +329,13 @@ class UserProfileService {
         
         if (uuid != null) {
           _cacheProfile(uuid, Map<String, dynamic>.from(data));
-          print('[UserProfileService] ✓ Cached own profile: $uuid');
+          debugPrint('[UserProfileService] ✓ Cached own profile: $uuid');
         }
       } else {
         throw Exception('Failed to load own profile: ${resp.statusCode}');
       }
     } catch (e) {
-      print('[UserProfileService] ✗ Error loading own profile: $e');
+      debugPrint('[UserProfileService] ✗ Error loading own profile: $e');
       rethrow;
     }
   }
@@ -343,7 +344,8 @@ class UserProfileService {
   /// New code should use initProfiles() instead
   @Deprecated('Use initProfiles() instead')
   Future<void> loadAllProfiles() async {
-    print('[UserProfileService] ⚠️ loadAllProfiles() is deprecated, use initProfiles()');
+    debugPrint('[UserProfileService] ⚠️ loadAllProfiles() is deprecated, use initProfiles()');
     return initProfiles();
   }
 }
+

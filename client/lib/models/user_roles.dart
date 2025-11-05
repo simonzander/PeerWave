@@ -232,3 +232,4 @@ class ChannelMember {
   @override
   int get hashCode => userId.hashCode;
 }
+

@@ -77,7 +77,7 @@ Future<void> main() async {
 
   // Initialize and load client ID for native only
     clientId = await ClientIdService.getClientId();
-    print('Client ID: $clientId');
+    debugPrint('Client ID: $clientId');
 
   if (!kIsWeb) {
     // Listen for initial link (when app is started via deep link)
@@ -96,27 +96,27 @@ Future<void> main() async {
   serverUrl ??= 'http://localhost:3000'; // Fallback for non-web platforms
   
   // Load ICE server configuration
-  print('[INIT] Loading ICE server configuration...');
+  debugPrint('[INIT] Loading ICE server configuration...');
   try {
     await IceConfigService().loadConfig(serverUrl: serverUrl);
-    print('[INIT] ✅ ICE server configuration loaded');
+    debugPrint('[INIT] ✅ ICE server configuration loaded');
   } catch (e) {
-    print('[INIT] ⚠️ Failed to load ICE config, will use fallback: $e');
+    debugPrint('[INIT] ⚠️ Failed to load ICE config, will use fallback: $e');
   }
   
   // Initialize Theme Provider
-  print('[INIT] Initializing Theme Provider...');
+  debugPrint('[INIT] Initializing Theme Provider...');
   final themeProvider = ThemeProvider();
   await themeProvider.initialize();
-  print('[INIT] ✅ Theme Provider initialized');
+  debugPrint('[INIT] ✅ Theme Provider initialized');
   
   // Initialize Message Cleanup Service (Auto-Delete)
-  print('[INIT] Initializing Message Cleanup Service...');
+  debugPrint('[INIT] Initializing Message Cleanup Service...');
   try {
     await MessageCleanupService.instance.init();
-    print('[INIT] ✅ Message Cleanup Service initialized');
+    debugPrint('[INIT] ✅ Message Cleanup Service initialized');
   } catch (e) {
-    print('[INIT] ⚠️ Failed to initialize Message Cleanup Service: $e');
+    debugPrint('[INIT] ⚠️ Failed to initialize Message Cleanup Service: $e');
   }
   
   runApp(MyApp(
@@ -171,7 +171,7 @@ class _MyAppState extends State<MyApp> {
           if (magicKey != null) {
             setState(() {
               _magicKey = magicKey;
-              print('Received magicKey: $_magicKey');
+              debugPrint('Received magicKey: $_magicKey');
             });
             // Optionally, navigate to your magic link page here
           }
@@ -183,43 +183,43 @@ class _MyAppState extends State<MyApp> {
   }
   
   void _initServices() {
-    print('[P2P] Starting service initialization...');
+    debugPrint('[P2P] Starting service initialization...');
     try {
       _fileStorage = IndexedDBStorage();
-      print('[P2P] FileStorage created');
+      debugPrint('[P2P] FileStorage created');
       _encryptionService = EncryptionService();
-      print('[P2P] EncryptionService created');
+      debugPrint('[P2P] EncryptionService created');
       _chunkingService = ChunkingService();
-      print('[P2P] ChunkingService created');
+      debugPrint('[P2P] ChunkingService created');
       _downloadManager = DownloadManager(
         storage: _fileStorage!,
         chunkingService: _chunkingService!,
         encryptionService: _encryptionService!,
       );
-      print('[P2P] DownloadManager created');
+      debugPrint('[P2P] DownloadManager created');
       
       // Get ICE servers from config service
       final iceServers = IceConfigService().getIceServers();
-      print('[P2P] Using ICE servers: ${iceServers['iceServers']?.length ?? 0} servers');
+      debugPrint('[P2P] Using ICE servers: ${iceServers['iceServers']?.length ?? 0} servers');
       
       _webrtcService = WebRTCFileService(iceServers: iceServers);
-      print('[P2P] WebRTCFileService created with dynamic ICE servers');
+      debugPrint('[P2P] WebRTCFileService created with dynamic ICE servers');
       
       // NOTE: P2PCoordinator will be created after Socket.IO connects
       // (in _initP2PCoordinator(), called after login)
-      print('[P2P] Basic services created, P2PCoordinator will be initialized after Socket connects');
+      debugPrint('[P2P] Basic services created, P2PCoordinator will be initialized after Socket connects');
       
       // Initialize storage asynchronously
       _fileStorage!.initialize().then((_) {
-        print('[P2P] Storage initialized successfully');
+        debugPrint('[P2P] Storage initialized successfully');
         if (mounted) {
           setState(() {
             _servicesReady = true;
           });
-          print('[P2P] Services marked as ready');
+          debugPrint('[P2P] Services marked as ready');
         }
       }).catchError((e) {
-        print('[P2P] Storage initialization error: $e');
+        debugPrint('[P2P] Storage initialization error: $e');
         // Mark as ready anyway to avoid infinite loading
         if (mounted) {
           setState(() {
@@ -228,8 +228,8 @@ class _MyAppState extends State<MyApp> {
         }
       });
     } catch (e) {
-      print('[P2P] Service initialization error: $e');
-      print('[P2P] Stack trace: ${StackTrace.current}');
+      debugPrint('[P2P] Service initialization error: $e');
+      debugPrint('[P2P] Stack trace: ${StackTrace.current}');
       // Mark as ready anyway
       if (mounted) {
         setState(() {
@@ -242,20 +242,20 @@ class _MyAppState extends State<MyApp> {
   /// Initialize P2PCoordinator after Socket.IO is connected
   void _initP2PCoordinator() async {
     if (_p2pCoordinator != null) {
-      print('[P2P] P2PCoordinator already initialized');
+      debugPrint('[P2P] P2PCoordinator already initialized');
       return;
     }
     
-    print('[P2P] Initializing P2PCoordinator with Socket.IO connection...');
+    debugPrint('[P2P] Initializing P2PCoordinator with Socket.IO connection...');
     try {
       final socketService = SocketService();
       if (socketService.socket == null || !socketService.isConnected) {
-        print('[P2P] WARNING: Socket not connected yet, deferring P2PCoordinator initialization');
+        debugPrint('[P2P] WARNING: Socket not connected yet, deferring P2PCoordinator initialization');
         return;
       }
       
       final socketFileClient = SocketFileClient(socket: socketService.socket!);
-      print('[P2P] SocketFileClient created');
+      debugPrint('[P2P] SocketFileClient created');
       
       _p2pCoordinator = P2PCoordinator(
         webrtcService: _webrtcService!,
@@ -266,37 +266,37 @@ class _MyAppState extends State<MyApp> {
         socketClient: socketFileClient,
         chunkingService: ChunkingService(),
       );
-      print('[P2P] ✓ P2PCoordinator initialized successfully');
+      debugPrint('[P2P] ✓ P2PCoordinator initialized successfully');
       
       // VideoConferenceService is initialized via Provider in build()
       // No separate initialization needed - it will be created with SocketService injection
-      print('[VideoConference] VideoConferenceService will be initialized via Provider');
+      debugPrint('[VideoConference] VideoConferenceService will be initialized via Provider');
       
       // Trigger rebuild to add P2PCoordinator to provider tree
       if (mounted) {
         setState(() {});
-        print('[P2P] ✓ Provider tree updated with P2PCoordinator');
+        debugPrint('[P2P] ✓ Provider tree updated with P2PCoordinator');
       }
       
     } catch (e, stackTrace) {
-      print('[P2P] ERROR initializing P2PCoordinator: $e');
-      print('[P2P] Stack trace: $stackTrace');
+      debugPrint('[P2P] ERROR initializing P2PCoordinator: $e');
+      debugPrint('[P2P] Stack trace: $stackTrace');
     }
   }
   
   /// Re-announce files from local storage after login
   void _reannounceLocalFiles() async {
     try {
-      print('[REANNOUNCE] Starting file re-announcement after login...');
+      debugPrint('[REANNOUNCE] Starting file re-announcement after login...');
       
       final socketService = SocketService();
       if (socketService.socket == null || !socketService.isConnected) {
-        print('[REANNOUNCE] Socket not connected, skipping re-announcement');
+        debugPrint('[REANNOUNCE] Socket not connected, skipping re-announcement');
         return;
       }
       
       if (_fileStorage == null) {
-        print('[REANNOUNCE] Storage not initialized, skipping re-announcement');
+        debugPrint('[REANNOUNCE] Storage not initialized, skipping re-announcement');
         return;
       }
       
@@ -309,16 +309,16 @@ class _MyAppState extends State<MyApp> {
       final result = await reannounceService.reannounceAllFiles();
       
       if (result.reannounced > 0) {
-        print('[REANNOUNCE] ✓ Successfully re-announced ${result.reannounced} files');
+        debugPrint('[REANNOUNCE] ✓ Successfully re-announced ${result.reannounced} files');
       }
       
       if (result.failed > 0) {
-        print('[REANNOUNCE] ⚠ Failed to re-announce ${result.failed} files');
+        debugPrint('[REANNOUNCE] ⚠ Failed to re-announce ${result.failed} files');
       }
       
     } catch (e, stackTrace) {
-      print('[REANNOUNCE] ERROR: $e');
-      print('[REANNOUNCE] Stack trace: $stackTrace');
+      debugPrint('[REANNOUNCE] ERROR: $e');
+      debugPrint('[REANNOUNCE] Stack trace: $stackTrace');
     }
   }
 
@@ -403,7 +403,7 @@ class _MyAppState extends State<MyApp> {
           LogoutService.instance.autoLogout(null);
         }
       } catch (e) {
-        print('[MAIN] Error in unauthorized handler: $e');
+        debugPrint('[MAIN] Error in unauthorized handler: $e');
         // Fallback: call without context
         LogoutService.instance.autoLogout(null);
       }
@@ -418,13 +418,13 @@ class _MyAppState extends State<MyApp> {
           LogoutService.instance.autoLogout(null);
         }
       } catch (e) {
-        print('[MAIN] Error in socket unauthorized handler: $e');
+        debugPrint('[MAIN] Error in socket unauthorized handler: $e');
         // Fallback: call without context
         LogoutService.instance.autoLogout(null);
       }
     });
     
-    print('[MAIN] ✓ Unauthorized handlers initialized');
+    debugPrint('[MAIN] ✓ Unauthorized handlers initialized');
 
     // Use ShellRoute for native, flat routes for web
     final List<RouteBase> routes = kIsWeb
@@ -437,7 +437,7 @@ class _MyAppState extends State<MyApp> {
               path: '/magic-link',
               builder: (context, state) {
                 final extra = state.extra;
-                print('Navigated to /magic-link with extra: $extra, kIsWeb: $kIsWeb, clientId: ${widget.clientId}, extra is String: ${extra is String}');
+                debugPrint('Navigated to /magic-link with extra: $extra, kIsWeb: $kIsWeb, clientId: ${widget.clientId}, extra is String: ${extra is String}');
                 return const MagicLinkWebPage();
               },
             ),
@@ -470,7 +470,7 @@ class _MyAppState extends State<MyApp> {
                   serverUrl = extra['serverUrl'] ?? '';
                   wait = extra['wait'] ?? 0;
                 }
-                print('Navigating to OtpWebPage with email: $email, serverUrl: $serverUrl, wait: $wait');
+                debugPrint('Navigating to OtpWebPage with email: $email, serverUrl: $serverUrl, wait: $wait');
                 if (email.isEmpty || serverUrl.isEmpty) {
                   // Optionally show an error page or message
                   return Scaffold(body: Center(child: Text('Missing email or serverUrl')));
@@ -602,9 +602,9 @@ class _MyAppState extends State<MyApp> {
                   path: '/magic-link',
                   builder: (context, state) {
                     final extra = state.extra;
-                    print('Navigated to /magic-link with extra: $extra, kIsWeb: $kIsWeb, clientId: ${widget.clientId}, extra is String: ${extra is String}');
+                    debugPrint('Navigated to /magic-link with extra: $extra, kIsWeb: $kIsWeb, clientId: ${widget.clientId}, extra is String: ${extra is String}');
                     if (extra is String && extra.isNotEmpty) {
-                      print("Rendering MagicLinkWebPageWithServer, clientId: ${widget.clientId}");
+                      debugPrint("Rendering MagicLinkWebPageWithServer, clientId: ${widget.clientId}");
                       return MagicLinkWebPageWithServer(serverUrl: extra, clientId: widget.clientId);
                     }
                     return const MagicLinkWebPage();
@@ -665,7 +665,7 @@ class _MyAppState extends State<MyApp> {
               await roleProvider.loadUserRoles();
             }
           } catch (e) {
-            print('Error loading user roles: $e');
+            debugPrint('Error loading user roles: $e');
           }
           
           // ========================================
@@ -687,46 +687,46 @@ class _MyAppState extends State<MyApp> {
               try {
                 final needsSetup = await SignalSetupService.instance.needsSetup();
                 if (needsSetup) {
-                  print('[MAIN] Signal keys need setup, redirecting to /signal-setup');
+                  debugPrint('[MAIN] Signal keys need setup, redirecting to /signal-setup');
                   return '/signal-setup';
                 }
                 
                 // Keys exist - run consolidated initialization
-                print('[MAIN] ========================================');
-                print('[MAIN] Starting post-login initialization...');
-                print('[MAIN] ========================================');
+                debugPrint('[MAIN] ========================================');
+                debugPrint('[MAIN] Starting post-login initialization...');
+                debugPrint('[MAIN] ========================================');
                 
                 final unreadProvider = context.read<UnreadMessagesProvider>();
                 await SignalSetupService.instance.initializeAfterLogin(
                   unreadProvider: unreadProvider,
                   onProgress: (step, current, total) {
-                    print('[MAIN] [$current/$total] $step');
+                    debugPrint('[MAIN] [$current/$total] $step');
                   },
                 );
                 
-                print('[MAIN] ========================================');
-                print('[MAIN] ✅ Post-login initialization complete');
-                print('[MAIN] ========================================');
+                debugPrint('[MAIN] ========================================');
+                debugPrint('[MAIN] ✅ Post-login initialization complete');
+                debugPrint('[MAIN] ========================================');
                 
               } catch (e) {
-                print('[MAIN] ⚠ Error during initialization: $e');
+                debugPrint('[MAIN] ⚠ Error during initialization: $e');
               }
             } else {
               // For other app routes (e.g. /app/channels), ensure initialization is done
               try {
                 if (!SignalSetupService.instance.isPostLoginInitComplete) {
-                  print('[MAIN] Running initialization for app route: $location');
+                  debugPrint('[MAIN] Running initialization for app route: $location');
                   
                   final unreadProvider = context.read<UnreadMessagesProvider>();
                   await SignalSetupService.instance.initializeAfterLogin(
                     unreadProvider: unreadProvider,
                     onProgress: (step, current, total) {
-                      print('[MAIN] [$current/$total] $step');
+                      debugPrint('[MAIN] [$current/$total] $step');
                     },
                   );
                 }
               } catch (e) {
-                print('[MAIN] ⚠ Error initializing for app route: $e');
+                debugPrint('[MAIN] ⚠ Error initializing for app route: $e');
               }
             }
           }
@@ -742,14 +742,14 @@ class _MyAppState extends State<MyApp> {
             final roleProvider = context.read<RoleProvider>();
             roleProvider.clearRoles();
           } catch (e) {
-            print('Error clearing roles: $e');
+            debugPrint('Error clearing roles: $e');
           }
         }
         // ...existing redirect logic...
-        print("kIsWeb: $kIsWeb");
-        print("loggedIn: $loggedIn");
-        print("location: $location");
-        print("fromParam: $fromParam");
+        debugPrint("kIsWeb: $kIsWeb");
+        debugPrint("loggedIn: $loggedIn");
+        debugPrint("location: $location");
+        debugPrint("fromParam: $fromParam");
         if (kIsWeb && !loggedIn && location == '/login') {
           return null;
         }
@@ -799,3 +799,4 @@ class _MyAppState extends State<MyApp> {
     );
   }
 }
+

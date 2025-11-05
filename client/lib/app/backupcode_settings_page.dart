@@ -44,7 +44,7 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
         }
       }
     } catch (e) {
-      print('Error fetching backup codes: $e');
+      debugPrint('Error fetching backup codes: $e');
       setState(() {
         _status = 'Error loading backup codes';
       });
@@ -237,3 +237,4 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
     super.dispose();
   }
 }
+

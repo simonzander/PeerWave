@@ -132,3 +132,4 @@ class FileMessage {
     return 'FileMessage(fileId: $fileId, fileName: $fileName, size: $fileSizeFormatted)';
   }
 }
+

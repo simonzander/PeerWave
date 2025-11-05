@@ -393,3 +393,4 @@ class SliverAdaptiveAppBar extends StatelessWidget {
     );
   }
 }
+

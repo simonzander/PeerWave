@@ -55,7 +55,7 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
         }
       }
     } catch (e) {
-      print('[SIGNAL SETUP SCREEN] Error during setup: $e');
+      debugPrint('[SIGNAL SETUP SCREEN] Error during setup: $e');
       if (mounted) {
         setState(() {
           _statusText = 'Setup failed. Please try again.';
@@ -189,3 +189,4 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
     );
   }
 }
+

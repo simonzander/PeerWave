@@ -248,3 +248,4 @@ class FileMessageWidget extends StatelessWidget {
     );
   }
 }
+

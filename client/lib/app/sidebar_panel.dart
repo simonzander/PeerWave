@@ -67,7 +67,7 @@ class _SidebarPanelState extends State<SidebarPanel> {
     }
   } catch (e) {
     // Handle error or timeout
-    print('Error fetching channels: $e');
+    debugPrint('Error fetching channels: $e');
   }
 }
 
@@ -391,7 +391,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
       }
     } catch (e) {
       setState(() => isLoadingRoles = false);
-      print('Error loading roles: $e');
+      debugPrint('Error loading roles: $e');
     }
   }
 
@@ -533,7 +533,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
         Navigator.of(context).pop();
       }
     } catch (e) {
-      print('Error creating channel: $e');
+      debugPrint('Error creating channel: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error creating channel: $e')),
       );
@@ -829,3 +829,4 @@ class _ChannelsListWidgetState extends State<_ChannelsListWidget> {
     );
   }
 }
+

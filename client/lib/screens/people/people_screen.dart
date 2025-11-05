@@ -76,7 +76,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
       // If it's JSArray or other type, return empty string
       return '';
     } catch (e) {
-      print('[PEOPLE_SCREEN] Error extracting picture: $e');
+      debugPrint('[PEOPLE_SCREEN] Error extracting picture: $e');
       return '';
     }
   }
@@ -114,12 +114,12 @@ class _PeopleScreenState extends State<PeopleScreen> {
     setState(() => _isLoadingRecent = true);
     
     try {
-      print('[PEOPLE_SCREEN] Loading recent conversation users...');
+      debugPrint('[PEOPLE_SCREEN] Loading recent conversation users...');
       
       // Alternative approach: Get directly from RecentConversationsService
       // This uses SharedPreferences that might be populated elsewhere
       final recentConvs = await RecentConversationsService.getRecentConversations();
-      print('[PEOPLE_SCREEN] RecentConversationsService returned ${recentConvs.length} conversations');
+      debugPrint('[PEOPLE_SCREEN] RecentConversationsService returned ${recentConvs.length} conversations');
       
       final userMap = <String, Map<String, dynamic>>{};
       
@@ -153,17 +153,17 @@ class _PeopleScreenState extends State<PeopleScreen> {
         }
       }
       
-      print('[PEOPLE_SCREEN] Processed ${userMap.length} users from RecentConversationsService');
+      debugPrint('[PEOPLE_SCREEN] Processed ${userMap.length} users from RecentConversationsService');
       
       // Fallback: If no recent conversations in SharedPreferences,
       // try to get from ActivitiesService (which queries IndexedDB)
       if (userMap.isEmpty) {
-        print('[PEOPLE_SCREEN] Falling back to ActivitiesService...');
+        debugPrint('[PEOPLE_SCREEN] Falling back to ActivitiesService...');
         final conversations = await ActivitiesService.getRecentDirectConversations(
           limit: 10,
         );
         
-        print('[PEOPLE_SCREEN] ActivitiesService found ${conversations.length} conversations');
+        debugPrint('[PEOPLE_SCREEN] ActivitiesService found ${conversations.length} conversations');
         
         for (final conv in conversations) {
           final userId = conv['userId'] as String?;
@@ -189,7 +189,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
             .toList();
         
         if (userIdsNeedingNames.isNotEmpty) {
-          print('[PEOPLE_SCREEN] Fetching display names for ${userIdsNeedingNames.length} users from API...');
+          debugPrint('[PEOPLE_SCREEN] Fetching display names for ${userIdsNeedingNames.length} users from API...');
           try {
             ApiService.init();
             final resp = await ApiService.post(
@@ -207,10 +207,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
                   userMap[userId]!['picture'] = _extractPictureData(user['picture']);
                 }
               }
-              print('[PEOPLE_SCREEN] Updated ${users.length} display names from API');
+              debugPrint('[PEOPLE_SCREEN] Updated ${users.length} display names from API');
             }
           } catch (e) {
-            print('[PEOPLE_SCREEN] Error fetching display names from API: $e');
+            debugPrint('[PEOPLE_SCREEN] Error fetching display names from API: $e');
           }
         }
       }
@@ -220,11 +220,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
         _isLoadingRecent = false;
       });
       
-      print('[PEOPLE_SCREEN] Loaded ${_recentConversationUsers.length} recent users');
-      print('[PEOPLE_SCREEN] Users: $_recentConversationUsers');
+      debugPrint('[PEOPLE_SCREEN] Loaded ${_recentConversationUsers.length} recent users');
+      debugPrint('[PEOPLE_SCREEN] Users: $_recentConversationUsers');
     } catch (e, stackTrace) {
-      print('[PEOPLE_SCREEN] Error loading recent users: $e');
-      print('[PEOPLE_SCREEN] Stack trace: $stackTrace');
+      debugPrint('[PEOPLE_SCREEN] Error loading recent users: $e');
+      debugPrint('[PEOPLE_SCREEN] Stack trace: $stackTrace');
       setState(() => _isLoadingRecent = false);
     }
   }
@@ -243,7 +243,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
         _randomUsers.clear();
       }
       
-      print('[PEOPLE_SCREEN] Loading random users (offset: $_randomUsersOffset)...');
+      debugPrint('[PEOPLE_SCREEN] Loading random users (offset: $_randomUsersOffset)...');
       
       // Get all users
       ApiService.init();
@@ -262,12 +262,12 @@ class _PeopleScreenState extends State<PeopleScreen> {
               .toList();
           
           if (userUuids.isNotEmpty) {
-            print('[PEOPLE_SCREEN] Loading profiles for ${userUuids.length} discover users...');
+            debugPrint('[PEOPLE_SCREEN] Loading profiles for ${userUuids.length} discover users...');
             await UserProfileService.instance.loadProfiles(userUuids);
-            print('[PEOPLE_SCREEN] ✓ Profiles loaded');
+            debugPrint('[PEOPLE_SCREEN] ✓ Profiles loaded');
           }
         } catch (e) {
-          print('[PEOPLE_SCREEN] ⚠ Failed to load profiles (server may be unavailable): $e');
+          debugPrint('[PEOPLE_SCREEN] ⚠ Failed to load profiles (server may be unavailable): $e');
           // Continue anyway - UI will show fallback names
         }
         
@@ -317,10 +317,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
           _isLoadingRandom = false;
         });
         
-        print('[PEOPLE_SCREEN] Loaded ${newUsers.length} random users (total: ${_randomUsers.length})');
+        debugPrint('[PEOPLE_SCREEN] Loaded ${newUsers.length} random users (total: ${_randomUsers.length})');
       }
     } catch (e) {
-      print('[PEOPLE_SCREEN] Error loading random users: $e');
+      debugPrint('[PEOPLE_SCREEN] Error loading random users: $e');
       setState(() => _isLoadingRandom = false);
     }
   }
@@ -335,7 +335,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     });
     
     try {
-      print('[PEOPLE_SCREEN] Searching for: $query');
+      debugPrint('[PEOPLE_SCREEN] Searching for: $query');
       
       ApiService.init();
       final resp = await ApiService.get('${widget.host}/people/list');
@@ -353,12 +353,12 @@ class _PeopleScreenState extends State<PeopleScreen> {
               .toList();
           
           if (userUuids.isNotEmpty) {
-            print('[PEOPLE_SCREEN] Loading profiles for ${userUuids.length} search result users...');
+            debugPrint('[PEOPLE_SCREEN] Loading profiles for ${userUuids.length} search result users...');
             await UserProfileService.instance.loadProfiles(userUuids);
-            print('[PEOPLE_SCREEN] ✓ Profiles loaded');
+            debugPrint('[PEOPLE_SCREEN] ✓ Profiles loaded');
           }
         } catch (e) {
-          print('[PEOPLE_SCREEN] ⚠ Failed to load profiles (server may be unavailable): $e');
+          debugPrint('[PEOPLE_SCREEN] ⚠ Failed to load profiles (server may be unavailable): $e');
           // Continue anyway - UI will show fallback names
         }
         
@@ -393,10 +393,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
           _isSearching = false;
         });
         
-        print('[PEOPLE_SCREEN] Found ${filtered.length} results');
+        debugPrint('[PEOPLE_SCREEN] Found ${filtered.length} results');
       }
     } catch (e) {
-      print('[PEOPLE_SCREEN] Search error: $e');
+      debugPrint('[PEOPLE_SCREEN] Search error: $e');
       if (!mounted) return;
       
       setState(() => _isSearching = false);
@@ -752,3 +752,4 @@ class _UserCard extends StatelessWidget {
     );
   }
 }
+

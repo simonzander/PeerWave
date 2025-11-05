@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:idb_shim/idb_browser.dart';
 import 'dart:convert';
@@ -83,9 +83,9 @@ class SentGroupItemsStore {
         timestamp: timestamp,
         type: type,
       );
-      print('[SENT GROUP ITEMS] ✓ Stored in SQLite: $itemId');
+      debugPrint('[SENT GROUP ITEMS] ✓ Stored in SQLite: $itemId');
     } catch (e) {
-      print('[SENT GROUP ITEMS] ⚠ SQLite failed, using fallback: $e');
+      debugPrint('[SENT GROUP ITEMS] ⚠ SQLite failed, using fallback: $e');
     }
     
     // Also store in old storage (dual write for safety)
@@ -143,7 +143,7 @@ class SentGroupItemsStore {
       final sentMessages = messages.where((msg) => msg['direction'] == 'sent').toList();
       
       if (sentMessages.isNotEmpty) {
-        print('[SENT GROUP ITEMS] ✓ Loaded ${sentMessages.length} messages from SQLite');
+        debugPrint('[SENT GROUP ITEMS] ✓ Loaded ${sentMessages.length} messages from SQLite');
         
         // Convert SQLite format to expected format
         return sentMessages.map((msg) => {
@@ -159,7 +159,7 @@ class SentGroupItemsStore {
         }).toList();
       }
     } catch (e) {
-      print('[SENT GROUP ITEMS] ⚠ SQLite failed, using fallback: $e');
+      debugPrint('[SENT GROUP ITEMS] ⚠ SQLite failed, using fallback: $e');
     }
     
     // Fallback to old storage
@@ -187,7 +187,7 @@ class SentGroupItemsStore {
               final item = jsonDecode(value);
               items.add(item);
             } catch (e) {
-              print('[SentGroupItemsStore] Error decoding item: $e');
+              debugPrint('[SentGroupItemsStore] Error decoding item: $e');
             }
           }
         }
@@ -206,7 +206,7 @@ class SentGroupItemsStore {
                 final item = jsonDecode(value);
                 items.add(item);
               } catch (e) {
-                print('[SentGroupItemsStore] Error decoding item: $e');
+                debugPrint('[SentGroupItemsStore] Error decoding item: $e');
               }
             }
           }
@@ -214,7 +214,7 @@ class SentGroupItemsStore {
       }
     }
 
-    print('[SENT GROUP ITEMS] ✓ Loaded ${items.length} messages from fallback storage');
+    debugPrint('[SENT GROUP ITEMS] ✓ Loaded ${items.length} messages from fallback storage');
     return items;
   }
 
@@ -241,7 +241,7 @@ class SentGroupItemsStore {
           item['status'] = status;
           await store.put(jsonEncode(item), key);
         } catch (e) {
-          print('[SentGroupItemsStore] Error updating status: $e');
+          debugPrint('[SentGroupItemsStore] Error updating status: $e');
         }
       }
       await txn.completed;
@@ -254,7 +254,7 @@ class SentGroupItemsStore {
           item['status'] = status;
           await storage.write(key: key, value: jsonEncode(item));
         } catch (e) {
-          print('[SentGroupItemsStore] Error updating status: $e');
+          debugPrint('[SentGroupItemsStore] Error updating status: $e');
         }
       }
     }
@@ -289,7 +289,7 @@ class SentGroupItemsStore {
           if (totalCount != null) item['totalCount'] = totalCount;
           await store.put(jsonEncode(item), key);
         } catch (e) {
-          print('[SentGroupItemsStore] Error updating counts: $e');
+          debugPrint('[SentGroupItemsStore] Error updating counts: $e');
         }
       }
       await txn.completed;
@@ -304,7 +304,7 @@ class SentGroupItemsStore {
           if (totalCount != null) item['totalCount'] = totalCount;
           await storage.write(key: key, value: jsonEncode(item));
         } catch (e) {
-          print('[SentGroupItemsStore] Error updating counts: $e');
+          debugPrint('[SentGroupItemsStore] Error updating counts: $e');
         }
       }
     }
@@ -431,3 +431,4 @@ class SentGroupItemsStore {
     return channels;
   }
 }
+

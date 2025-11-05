@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
@@ -18,7 +19,7 @@ class OfflineMessageQueue {
   Future<void> enqueue(QueuedMessage message) async {
     _queue.add(message);
     await _saveQueue();
-    print('[OFFLINE QUEUE] Message queued: ${message.itemId} (${message.type})');
+    debugPrint('[OFFLINE QUEUE] Message queued: ${message.itemId} (${message.type})');
   }
 
   /// Load the queue from persistent storage
@@ -31,10 +32,10 @@ class OfflineMessageQueue {
         final List<dynamic> queueList = jsonDecode(queueJson);
         _queue.clear();
         _queue.addAll(queueList.map((item) => QueuedMessage.fromJson(item)));
-        print('[OFFLINE QUEUE] Loaded ${_queue.length} queued messages');
+        debugPrint('[OFFLINE QUEUE] Loaded ${_queue.length} queued messages');
       }
     } catch (e) {
-      print('[OFFLINE QUEUE] Error loading queue: $e');
+      debugPrint('[OFFLINE QUEUE] Error loading queue: $e');
     }
   }
 
@@ -45,7 +46,7 @@ class OfflineMessageQueue {
       final queueJson = jsonEncode(_queue.map((m) => m.toJson()).toList());
       await prefs.setString(_queueKey, queueJson);
     } catch (e) {
-      print('[OFFLINE QUEUE] Error saving queue: $e');
+      debugPrint('[OFFLINE QUEUE] Error saving queue: $e');
     }
   }
 
@@ -59,17 +60,17 @@ class OfflineMessageQueue {
     void Function(int processed, int total)? onProgress,
   }) async {
     if (_isProcessing) {
-      print('[OFFLINE QUEUE] Already processing queue');
+      debugPrint('[OFFLINE QUEUE] Already processing queue');
       return;
     }
 
     if (_queue.isEmpty) {
-      print('[OFFLINE QUEUE] Queue is empty');
+      debugPrint('[OFFLINE QUEUE] Queue is empty');
       return;
     }
 
     _isProcessing = true;
-    print('[OFFLINE QUEUE] Processing ${_queue.length} queued messages...');
+    debugPrint('[OFFLINE QUEUE] Processing ${_queue.length} queued messages...');
 
     int processed = 0;
     final List<QueuedMessage> failedMessages = [];
@@ -79,20 +80,20 @@ class OfflineMessageQueue {
 
     for (final message in messagesToProcess) {
       try {
-        print('[OFFLINE QUEUE] Sending queued message ${message.itemId}...');
+        debugPrint('[OFFLINE QUEUE] Sending queued message ${message.itemId}...');
         final success = await sendFunction(message);
         
         if (success) {
           _queue.remove(message);
           processed++;
-          print('[OFFLINE QUEUE] ✓ Message sent successfully: ${message.itemId}');
+          debugPrint('[OFFLINE QUEUE] ✓ Message sent successfully: ${message.itemId}');
         } else {
           failedMessages.add(message);
-          print('[OFFLINE QUEUE] ✗ Message send failed: ${message.itemId}');
+          debugPrint('[OFFLINE QUEUE] ✗ Message send failed: ${message.itemId}');
         }
       } catch (e) {
         failedMessages.add(message);
-        print('[OFFLINE QUEUE] ✗ Error sending message ${message.itemId}: $e');
+        debugPrint('[OFFLINE QUEUE] ✗ Error sending message ${message.itemId}: $e');
       }
 
       onProgress?.call(processed, messagesToProcess.length);
@@ -101,7 +102,7 @@ class OfflineMessageQueue {
     await _saveQueue();
     _isProcessing = false;
 
-    print('[OFFLINE QUEUE] Processing complete: $processed/${messagesToProcess.length} sent, ${failedMessages.length} failed');
+    debugPrint('[OFFLINE QUEUE] Processing complete: $processed/${messagesToProcess.length} sent, ${failedMessages.length} failed');
   }
 
   /// Get the current queue size
@@ -114,14 +115,14 @@ class OfflineMessageQueue {
   Future<void> clearQueue() async {
     _queue.clear();
     await _saveQueue();
-    print('[OFFLINE QUEUE] Queue cleared');
+    debugPrint('[OFFLINE QUEUE] Queue cleared');
   }
 
   /// Remove a specific message from queue
   Future<void> removeMessage(String itemId) async {
     _queue.removeWhere((m) => m.itemId == itemId);
     await _saveQueue();
-    print('[OFFLINE QUEUE] Message removed: $itemId');
+    debugPrint('[OFFLINE QUEUE] Message removed: $itemId');
   }
 }
 
@@ -181,3 +182,4 @@ class QueuedMessage {
     );
   }
 }
+

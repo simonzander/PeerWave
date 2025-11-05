@@ -38,10 +38,10 @@ class PermanentSessionStore extends SessionStore {
 
   @override
   Future<bool> containsSession(SignalProtocolAddress address) async {
-    print('[PermanentSessionStore] containsSession: address = $address');
+    debugPrint('[PermanentSessionStore] containsSession: address = $address');
     try {
       // Debug: print address info and types
-      print('[PermanentSessionStore] containsSession: address.getName() = \'${address.getName()}\', address.getDeviceId() = ${address.getDeviceId()} (type: \'${address.getDeviceId().runtimeType}\')');
+      debugPrint('[PermanentSessionStore] containsSession: address.getName() = \'${address.getName()}\', address.getDeviceId() = ${address.getDeviceId()} (type: \'${address.getDeviceId().runtimeType}\')');
       if (kIsWeb) {
         final IdbFactory idbFactory = idbFactoryBrowser;
         final db = await idbFactory.open(_storeName, version: 1,
@@ -54,21 +54,21 @@ class PermanentSessionStore extends SessionStore {
         var txn = db.transaction(_storeName, 'readonly');
         var store = txn.objectStore(_storeName);
         var key = _sessionKey(address);
-        print('[PermanentSessionStore] containsSession: session key = $key');
+        debugPrint('[PermanentSessionStore] containsSession: session key = $key');
         var value = await store.getObject(key);
         await txn.completed;
-        print('[PermanentSessionStore] containsSession: value = $value');
+        debugPrint('[PermanentSessionStore] containsSession: value = $value');
         return value != null;
       } else {
         final storage = FlutterSecureStorage();
         var key = _sessionKey(address);
-        print('[PermanentSessionStore] containsSession: session key = $key');
+        debugPrint('[PermanentSessionStore] containsSession: session key = $key');
         var value = await storage.read(key: key);
-        print('[PermanentSessionStore] containsSession: value = $value');
+        debugPrint('[PermanentSessionStore] containsSession: value = $value');
         return value != null;
       }
     } catch (e, st) {
-      print('[PermanentSessionStore][ERROR] containsSession exception: $e\n$st');
+      debugPrint('[PermanentSessionStore][ERROR] containsSession exception: $e\n$st');
       rethrow;
     }
   }
@@ -245,3 +245,4 @@ class PermanentSessionStore extends SessionStore {
     }
   }
 }
+

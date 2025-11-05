@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'permanent_sent_messages_store.dart';
 import 'permanent_decrypted_messages_store.dart';
@@ -26,7 +27,7 @@ class MessageCleanupService {
 
   /// Delete messages older than specified days
   Future<void> cleanupOldMessages(int days) async {
-    print('[CLEANUP] Starting message cleanup for messages older than $days days');
+    debugPrint('[CLEANUP] Starting message cleanup for messages older than $days days');
     
     final cutoffDate = DateTime.now().subtract(Duration(days: days));
     final cutoffTimestamp = cutoffDate.toIso8601String();
@@ -47,7 +48,7 @@ class MessageCleanupService {
     // 4. Cleanup received group messages
     await _cleanupDecryptedGroupMessages(cutoffTimestamp);
     
-    print('[CLEANUP] Cleanup completed');
+    debugPrint('[CLEANUP] Cleanup completed');
   }
 
   Future<void> _cleanupSqliteMessages(String cutoffTimestamp) async {
@@ -60,7 +61,7 @@ class MessageCleanupService {
       );
       
       if (tables.isEmpty) {
-        print('[CLEANUP] SQLite messages table does not exist yet, skipping SQLite cleanup');
+        debugPrint('[CLEANUP] SQLite messages table does not exist yet, skipping SQLite cleanup');
         return;
       }
       
@@ -71,7 +72,7 @@ class MessageCleanupService {
         whereArgs: [cutoffTimestamp],
       );
       
-      print('[CLEANUP] Deleted $result old messages from SQLite database');
+      debugPrint('[CLEANUP] Deleted $result old messages from SQLite database');
       
       // Cleanup conversations with no messages (only if recent_conversations exists)
       final convTables = await db.rawQuery(
@@ -94,11 +95,11 @@ class MessageCleanupService {
           );
         }
         
-        print('[CLEANUP] Cleaned up ${conversationsWithNoMessages.length} empty conversations from SQLite');
+        debugPrint('[CLEANUP] Cleaned up ${conversationsWithNoMessages.length} empty conversations from SQLite');
       }
     } catch (e, stackTrace) {
-      print('[CLEANUP] Error cleaning up SQLite messages: $e');
-      print('[CLEANUP] Stack trace: $stackTrace');
+      debugPrint('[CLEANUP] Error cleaning up SQLite messages: $e');
+      debugPrint('[CLEANUP] Stack trace: $stackTrace');
     }
   }
 
@@ -116,9 +117,9 @@ class MessageCleanupService {
         }
       }
       
-      print('[CLEANUP] Deleted $deleted old sent 1:1 messages');
+      debugPrint('[CLEANUP] Deleted $deleted old sent 1:1 messages');
     } catch (e) {
-      print('[CLEANUP] Error cleaning up sent messages: $e');
+      debugPrint('[CLEANUP] Error cleaning up sent messages: $e');
     }
   }
 
@@ -139,9 +140,9 @@ class MessageCleanupService {
         }
       }
       
-      print('[CLEANUP] Deleted $deleted old received 1:1 messages');
+      debugPrint('[CLEANUP] Deleted $deleted old received 1:1 messages');
     } catch (e) {
-      print('[CLEANUP] Error cleaning up decrypted messages: $e');
+      debugPrint('[CLEANUP] Error cleaning up decrypted messages: $e');
     }
   }
 
@@ -162,9 +163,9 @@ class MessageCleanupService {
         }
       }
       
-      print('[CLEANUP] Deleted $deleted old sent group messages');
+      debugPrint('[CLEANUP] Deleted $deleted old sent group messages');
     } catch (e) {
-      print('[CLEANUP] Error cleaning up sent group messages: $e');
+      debugPrint('[CLEANUP] Error cleaning up sent group messages: $e');
     }
   }
 
@@ -185,9 +186,10 @@ class MessageCleanupService {
         }
       }
       
-      print('[CLEANUP] Deleted $deleted old received group messages');
+      debugPrint('[CLEANUP] Deleted $deleted old received group messages');
     } catch (e) {
-      print('[CLEANUP] Error cleaning up decrypted group messages: $e');
+      debugPrint('[CLEANUP] Error cleaning up decrypted group messages: $e');
     }
   }
 }
+

@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:idb_shim/idb_browser.dart';
 
@@ -98,7 +98,7 @@ class PreferencesService {
       await txn.completed;
       db.close();
     } catch (e) {
-      print('[PreferencesService] Error saving to IndexedDB: $e');
+      debugPrint('[PreferencesService] Error saving to IndexedDB: $e');
       rethrow;
     }
   }
@@ -126,7 +126,7 @@ class PreferencesService {
 
       return value as String?;
     } catch (e) {
-      print('[PreferencesService] Error loading from IndexedDB: $e');
+      debugPrint('[PreferencesService] Error loading from IndexedDB: $e');
       return null;
     }
   }
@@ -147,7 +147,7 @@ class PreferencesService {
         await txn.completed;
         db.close();
       } catch (e) {
-        print('[PreferencesService] Error clearing IndexedDB: $e');
+        debugPrint('[PreferencesService] Error clearing IndexedDB: $e');
       }
     } else {
       final prefs = await SharedPreferences.getInstance();
@@ -156,3 +156,4 @@ class PreferencesService {
     }
   }
 }
+

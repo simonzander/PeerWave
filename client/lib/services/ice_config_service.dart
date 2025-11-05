@@ -158,3 +158,4 @@ class IceConfigService extends ChangeNotifier {
     return DateTime.now().difference(_lastLoaded!).inMinutes;
   }
 }
+

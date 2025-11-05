@@ -42,7 +42,7 @@ class FileTransferService {
     List<String>? sharedWith,
   }) async {
     try {
-      print('[FILE TRANSFER] Starting upload: $fileName (${fileBytes.length} bytes)');
+      debugPrint('[FILE TRANSFER] Starting upload: $fileName (${fileBytes.length} bytes)');
       
       // Step 1: Generate file metadata
       final fileId = _generateFileId();
@@ -50,7 +50,7 @@ class FileTransferService {
       
       // Step 2: Chunk file
       final chunks = _chunkFile(fileBytes);
-      print('[FILE TRANSFER] Created ${chunks.length} chunks');
+      debugPrint('[FILE TRANSFER] Created ${chunks.length} chunks');
       
       // Step 3: Store locally
       await _storage.saveFileMetadata({
@@ -72,7 +72,7 @@ class FileTransferService {
       }
       
       // Step 4: AUTO-ANNOUNCE
-      print('[FILE TRANSFER] Auto-announcing file: $fileId');
+      debugPrint('[FILE TRANSFER] Auto-announcing file: $fileId');
       await _socketFileClient.announceFile(
         fileId: fileId,
         mimeType: mimeType,
@@ -83,11 +83,11 @@ class FileTransferService {
         sharedWith: sharedWith,
       );
       
-      print('[FILE TRANSFER] ✓ Upload complete and announced: $fileId');
+      debugPrint('[FILE TRANSFER] ✓ Upload complete and announced: $fileId');
       return fileId;
       
     } catch (e) {
-      print('[FILE TRANSFER] Error in uploadAndAnnounceFile: $e');
+      debugPrint('[FILE TRANSFER] Error in uploadAndAnnounceFile: $e');
       rethrow;
     }
   }
@@ -99,7 +99,7 @@ class FileTransferService {
   /// Re-announce all uploaded files after login
   Future<void> reannounceUploadedFiles() async {
     try {
-      print('[FILE TRANSFER] Re-announcing uploaded files...');
+      debugPrint('[FILE TRANSFER] Re-announcing uploaded files...');
       
       // Get all files with status 'uploaded', 'seeding', 'partial', or 'downloading'
       // Also announce partial downloads so they can seed their available chunks
@@ -111,7 +111,7 @@ class FileTransferService {
         file['status'] == 'downloading'
       ).toList();
       
-      print('[FILE TRANSFER] Found ${uploadedFiles.length} files to re-announce (including partial downloads)');
+      debugPrint('[FILE TRANSFER] Found ${uploadedFiles.length} files to re-announce (including partial downloads)');
       
       for (final file in uploadedFiles) {
         final fileId = file['fileId'] as String;
@@ -121,7 +121,7 @@ class FileTransferService {
           final availableChunks = await _getAvailableChunkIndices(fileId);
           
           if (availableChunks.isEmpty) {
-            print('[FILE TRANSFER] Warning: No chunks found for $fileId, skipping');
+            debugPrint('[FILE TRANSFER] Warning: No chunks found for $fileId, skipping');
             continue;
           }
           
@@ -129,7 +129,7 @@ class FileTransferService {
           final sharedWith = (file['sharedWith'] as List?)?.cast<String>() ?? [];
           final status = file['status'] as String;
           
-          print('[FILE TRANSFER] Re-announcing: $fileId (${availableChunks.length} chunks, status: $status)');
+          debugPrint('[FILE TRANSFER] Re-announcing: $fileId (${availableChunks.length} chunks, status: $status)');
           
           await _socketFileClient.announceFile(
             fileId: fileId,
@@ -143,7 +143,7 @@ class FileTransferService {
           
           // HIGH #2: Sync state with server after re-announce
           try {
-            print('[FILE TRANSFER] HIGH #2: Syncing state with server for $fileId');
+            debugPrint('[FILE TRANSFER] HIGH #2: Syncing state with server for $fileId');
             
             // Query server for current file state
             final fileInfo = await _socketFileClient.getFileInfo(fileId);
@@ -161,9 +161,9 @@ class FileTransferService {
               'isSeeder': true, // Mark as seeder even if partial
             });
             
-            print('[FILE TRANSFER] ✓ State synced: $fileId (${availableChunks.length}/${file['chunkCount']} chunks) shared with ${serverSharedWith.length} users');
+            debugPrint('[FILE TRANSFER] ✓ State synced: $fileId (${availableChunks.length}/${file['chunkCount']} chunks) shared with ${serverSharedWith.length} users');
           } catch (e) {
-            print('[FILE TRANSFER] ⚠ Failed to sync state for $fileId: $e');
+            debugPrint('[FILE TRANSFER] ⚠ Failed to sync state for $fileId: $e');
             
             // Still update basic status even if sync fails
             // Keep original status if partial/downloading
@@ -177,14 +177,14 @@ class FileTransferService {
             });
           }
         } catch (e) {
-          print('[FILE TRANSFER] Error re-announcing $fileId: $e');
+          debugPrint('[FILE TRANSFER] Error re-announcing $fileId: $e');
         }
       }
       
-      print('[FILE TRANSFER] ✓ Re-announce complete');
+      debugPrint('[FILE TRANSFER] ✓ Re-announce complete');
       
     } catch (e) {
-      print('[FILE TRANSFER] Error re-announcing files: $e');
+      debugPrint('[FILE TRANSFER] Error re-announcing files: $e');
     }
   }
   
@@ -203,13 +203,13 @@ class FileTransferService {
     _activeDownloads[fileId] = cancelToken;
     
     try {
-      print('[FILE TRANSFER] Starting download: $fileId (partial: $allowPartial)');
+      debugPrint('[FILE TRANSFER] Starting download: $fileId (partial: $allowPartial)');
       
       // Step 1: Get file info and check quality
       final fileInfo = await _socketFileClient.getFileInfo(fileId);
       final chunkQuality = fileInfo['chunkQuality'] as int? ?? 0;
       
-      print('[FILE TRANSFER] Chunk quality: $chunkQuality%');
+      debugPrint('[FILE TRANSFER] Chunk quality: $chunkQuality%');
       
       // Step 2: Warn if incomplete
       if (chunkQuality < 100 && !allowPartial) {
@@ -218,7 +218,7 @@ class FileTransferService {
       
       // Step 2.5: Save initial metadata and announce as seeder (0 chunks)
       // This allows others to see we're downloading and potentially download from us
-      print('[FILE TRANSFER] Step 2.5: Saving initial metadata and announcing...');
+      debugPrint('[FILE TRANSFER] Step 2.5: Saving initial metadata and announcing...');
       
       try {
         await _storage.saveFileMetadata({
@@ -247,9 +247,9 @@ class FileTransferService {
           sharedWith: (fileInfo['sharedWith'] as List?)?.cast<String>(),
         );
         
-        print('[FILE TRANSFER] ✓ Announced as seeder with 0 chunks (downloading)');
+        debugPrint('[FILE TRANSFER] ✓ Announced as seeder with 0 chunks (downloading)');
       } catch (e) {
-        print('[FILE TRANSFER] Warning: Could not save metadata or announce: $e');
+        debugPrint('[FILE TRANSFER] Warning: Could not save metadata or announce: $e');
         // Continue with download anyway
       }
       
@@ -267,7 +267,7 @@ class FileTransferService {
       for (int i = 0; i < totalChunks; i++) {
         // HIGH #6: Check if download was canceled
         if (cancelToken.isCanceled) {
-          print('[FILE TRANSFER] Download canceled by user: $fileId');
+          debugPrint('[FILE TRANSFER] Download canceled by user: $fileId');
           throw DownloadCanceledException('Download canceled during chunk $i');
         }
         
@@ -275,7 +275,7 @@ class FileTransferService {
         final hasChunk = _isChunkAvailable(i, seeders);
         
         if (!hasChunk) {
-          print('[FILE TRANSFER] Chunk $i not available, skipping');
+          debugPrint('[FILE TRANSFER] Chunk $i not available, skipping');
           continue;
         }
         
@@ -290,12 +290,12 @@ class FileTransferService {
         
         if (isChunkValid) {
           verifiedChunks.add(i);
-          print('[FILE TRANSFER] ✓ Chunk $i verified');
+          debugPrint('[FILE TRANSFER] ✓ Chunk $i verified');
           
           // Only announce verified chunks for partial seeding
           await _socketFileClient.updateAvailableChunks(fileId, verifiedChunks);
         } else {
-          print('[FILE TRANSFER] ⚠️ Chunk $i failed verification - not announcing');
+          debugPrint('[FILE TRANSFER] ⚠️ Chunk $i failed verification - not announcing');
           // Don't add to verifiedChunks, so it won't be announced
         }
         
@@ -309,25 +309,25 @@ class FileTransferService {
       
       // Step 7: Verify complete file checksum if download is complete
       if (isComplete && allChunksVerified) {
-        print('[FILE TRANSFER] Step 7: Verifying complete file checksum...');
+        debugPrint('[FILE TRANSFER] Step 7: Verifying complete file checksum...');
         final isValid = await _verifyFileChecksum(fileId);
         
         if (!isValid) {
-          print('[SECURITY] ❌ File checksum verification FAILED! File corrupted or tampered.');
+          debugPrint('[SECURITY] ❌ File checksum verification FAILED! File corrupted or tampered.');
           
           // ========================================
           // SMART ERROR RECOVERY
           // ========================================
           // Instead of deleting entire file, identify and re-download only corrupted chunks
           
-          print('[FILE TRANSFER] Starting smart error recovery...');
+          debugPrint('[FILE TRANSFER] Starting smart error recovery...');
           final corruptedChunks = await _findCorruptedChunks(fileId);
           
           if (corruptedChunks.isEmpty) {
             // No corrupted chunks found, but checksum still fails
             // This means the file as a whole is corrupted (metadata issue?)
-            print('[FILE TRANSFER] ⚠️ No corrupted chunks found, but checksum fails');
-            print('[FILE TRANSFER] Deleting entire file for clean re-download');
+            debugPrint('[FILE TRANSFER] ⚠️ No corrupted chunks found, but checksum fails');
+            debugPrint('[FILE TRANSFER] Deleting entire file for clean re-download');
             await _deleteCorruptedFile(fileId);
             throw Exception('File integrity check failed - checksum mismatch (metadata corrupted)');
           }
@@ -335,8 +335,8 @@ class FileTransferService {
           // Recover by re-downloading only corrupted chunks
           await _recoverCorruptedFile(fileId, corruptedChunks);
           
-          print('[FILE TRANSFER] ✓ Corrupted chunks marked for re-download');
-          print('[FILE TRANSFER] File will automatically re-download ${corruptedChunks.length} chunks');
+          debugPrint('[FILE TRANSFER] ✓ Corrupted chunks marked for re-download');
+          debugPrint('[FILE TRANSFER] File will automatically re-download ${corruptedChunks.length} chunks');
           
           // Update metadata to downloading state (don't set seeding yet)
           await _storage.updateFileMetadata(fileId, {
@@ -350,7 +350,7 @@ class FileTransferService {
           // IMPORTANT: Still announce verified chunks!
           // ========================================
           // Even though file is corrupted, we can still seed verified chunks
-          print('[FILE TRANSFER] Announcing verified chunks during recovery...');
+          debugPrint('[FILE TRANSFER] Announcing verified chunks during recovery...');
           
           try {
             final metadata = await _storage.getFileMetadata(fileId);
@@ -365,10 +365,10 @@ class FileTransferService {
                 sharedWith: (metadata['sharedWith'] as List?)?.cast<String>(),
               );
               
-              print('[FILE TRANSFER] ✓ Announced ${verifiedChunks.length} verified chunks during recovery');
+              debugPrint('[FILE TRANSFER] ✓ Announced ${verifiedChunks.length} verified chunks during recovery');
             }
           } catch (e) {
-            print('[FILE TRANSFER] Warning: Could not announce during recovery: $e');
+            debugPrint('[FILE TRANSFER] Warning: Could not announce during recovery: $e');
           }
           
           // Don't throw - file is in recovery state
@@ -376,9 +376,9 @@ class FileTransferService {
           return;
         }
         
-        print('[FILE TRANSFER] ✓ File checksum verified - file is authentic');
+        debugPrint('[FILE TRANSFER] ✓ File checksum verified - file is authentic');
       } else if (!allChunksVerified) {
-        print('[FILE TRANSFER] ⚠️ Some chunks failed verification (${downloadedChunks.length - verifiedChunks.length} failed)');
+        debugPrint('[FILE TRANSFER] ⚠️ Some chunks failed verification (${downloadedChunks.length - verifiedChunks.length} failed)');
       }
       
       // Step 8: Update metadata with verified chunks only
@@ -395,7 +395,7 @@ class FileTransferService {
       // After download (complete OR partial), announce to server
       // so other peers can download from us
       
-      print('[FILE TRANSFER] Step 9: Announcing as seeder...');
+      debugPrint('[FILE TRANSFER] Step 9: Announcing as seeder...');
       
       try {
         final metadata = await _storage.getFileMetadata(fileId);
@@ -410,25 +410,25 @@ class FileTransferService {
             sharedWith: (metadata['sharedWith'] as List?)?.cast<String>(),
           );
           
-          print('[FILE TRANSFER] ✓ Announced as seeder with ${verifiedChunks.length}/$totalChunks verified chunks');
+          debugPrint('[FILE TRANSFER] ✓ Announced as seeder with ${verifiedChunks.length}/$totalChunks verified chunks');
         }
       } catch (e) {
-        print('[FILE TRANSFER] Warning: Could not announce as seeder: $e');
+        debugPrint('[FILE TRANSFER] Warning: Could not announce as seeder: $e');
         // Don't fail the download if announce fails
       }
       
       if (isComplete && allChunksVerified) {
-        print('[FILE TRANSFER] ✓ Download complete: $fileId');
+        debugPrint('[FILE TRANSFER] ✓ Download complete: $fileId');
       } else {
-        print('[FILE TRANSFER] ⚠ Partial download: $fileId (${verifiedChunks.length}/$totalChunks verified chunks)');
+        debugPrint('[FILE TRANSFER] ⚠ Partial download: $fileId (${verifiedChunks.length}/$totalChunks verified chunks)');
       }
       
     } catch (e) {
       if (e is DownloadCanceledException) {
-        print('[FILE TRANSFER] Download canceled: $fileId');
+        debugPrint('[FILE TRANSFER] Download canceled: $fileId');
         // Don't rethrow - this is expected
       } else {
-        print('[FILE TRANSFER] Error downloading file: $e');
+        debugPrint('[FILE TRANSFER] Error downloading file: $e');
         rethrow;
       }
     } finally {
@@ -444,14 +444,14 @@ class FileTransferService {
   /// Resume incomplete downloads after login
   Future<void> resumeIncompleteDownloads() async {
     try {
-      print('[FILE TRANSFER] Checking for incomplete downloads...');
+      debugPrint('[FILE TRANSFER] Checking for incomplete downloads...');
       
       final allFiles = await _storage.getAllFiles();
       final incompleteFiles = allFiles.where((file) => 
         file['status'] == 'downloading' || file['status'] == 'partial'
       ).toList();
       
-      print('[FILE TRANSFER] Found ${incompleteFiles.length} incomplete downloads');
+      debugPrint('[FILE TRANSFER] Found ${incompleteFiles.length} incomplete downloads');
       
       for (final file in incompleteFiles) {
         final fileId = file['fileId'] as String;
@@ -461,28 +461,28 @@ class FileTransferService {
           final chunkQuality = fileInfo['chunkQuality'] as int? ?? 0;
           
           if (chunkQuality > 0) {
-            print('[FILE TRANSFER] Resuming download: $fileId (quality: $chunkQuality%)');
+            debugPrint('[FILE TRANSFER] Resuming download: $fileId (quality: $chunkQuality%)');
             
             // Resume download in background
             unawaited(downloadFile(
               fileId: fileId,
               onProgress: (progress) {
-                print('[FILE TRANSFER] Resume progress for $fileId: ${(progress * 100).toInt()}%');
+                debugPrint('[FILE TRANSFER] Resume progress for $fileId: ${(progress * 100).toInt()}%');
               },
               allowPartial: true,
             ).catchError((e) {
-              print('[FILE TRANSFER] Error resuming $fileId: $e');
+              debugPrint('[FILE TRANSFER] Error resuming $fileId: $e');
             }));
           } else {
-            print('[FILE TRANSFER] No chunks available for $fileId, skipping');
+            debugPrint('[FILE TRANSFER] No chunks available for $fileId, skipping');
           }
         } catch (e) {
-          print('[FILE TRANSFER] File $fileId not found on server: $e');
+          debugPrint('[FILE TRANSFER] File $fileId not found on server: $e');
         }
       }
       
     } catch (e) {
-      print('[FILE TRANSFER] Error resuming downloads: $e');
+      debugPrint('[FILE TRANSFER] Error resuming downloads: $e');
     }
   }
   
@@ -498,7 +498,7 @@ class FileTransferService {
           return;
         }
         
-        print('[FILE TRANSFER] Found incomplete download for $fileId, checking for new chunks');
+        debugPrint('[FILE TRANSFER] Found incomplete download for $fileId, checking for new chunks');
         
         // Get our downloaded chunks
         final ourChunks = (metadata['downloadedChunks'] as List?)?.cast<int>() ?? [];
@@ -518,23 +518,23 @@ class FileTransferService {
         final newChunks = availableChunks.where((idx) => !ourChunks.contains(idx)).toList();
         
         if (newChunks.isNotEmpty) {
-          print('[FILE TRANSFER] Found ${newChunks.length} new chunks, auto-resuming download for $fileId');
+          debugPrint('[FILE TRANSFER] Found ${newChunks.length} new chunks, auto-resuming download for $fileId');
           
           // Resume download
           unawaited(downloadFile(
             fileId: fileId,
             onProgress: (progress) {
-              print('[FILE TRANSFER] Auto-resume progress: ${(progress * 100).toInt()}%');
+              debugPrint('[FILE TRANSFER] Auto-resume progress: ${(progress * 100).toInt()}%');
             },
             allowPartial: true,
           ).catchError((e) {
-            print('[FILE TRANSFER] Error auto-resuming: $e');
+            debugPrint('[FILE TRANSFER] Error auto-resuming: $e');
           }));
         } else {
-          print('[FILE TRANSFER] No new chunks available yet for $fileId');
+          debugPrint('[FILE TRANSFER] No new chunks available yet for $fileId');
         }
       } catch (e) {
-        print('[FILE TRANSFER] Error checking new chunks: $e');
+        debugPrint('[FILE TRANSFER] Error checking new chunks: $e');
       }
     }
     
@@ -544,7 +544,7 @@ class FileTransferService {
       final chunkQuality = data['chunkQuality'] as int? ?? 0;
       final newSharedWith = (data['sharedWith'] as List?)?.cast<String>() ?? [];
       
-      print('[FILE TRANSFER] File announced: $fileId (quality: $chunkQuality%)');
+      debugPrint('[FILE TRANSFER] File announced: $fileId (quality: $chunkQuality%)');
       
       // Merge sharedWith from announcement with local metadata
       if (newSharedWith.isNotEmpty) {
@@ -556,7 +556,7 @@ class FileTransferService {
           final mergedSharedWith = <String>{...existingSharedWith, ...newSharedWith}.toList();
           
           if (mergedSharedWith.length != existingSharedWith.length) {
-            print('[FILE TRANSFER] Merging sharedWith: ${existingSharedWith.length} -> ${mergedSharedWith.length} users');
+            debugPrint('[FILE TRANSFER] Merging sharedWith: ${existingSharedWith.length} -> ${mergedSharedWith.length} users');
             
             // Update metadata with merged sharedWith
             await _storage.saveFileMetadata({
@@ -575,7 +575,7 @@ class FileTransferService {
       final fileId = data['fileId'] as String;
       final chunkQuality = data['chunkQuality'] as int? ?? 0;
       
-      print('[FILE TRANSFER] Seeder update: $fileId (quality: $chunkQuality%)');
+      debugPrint('[FILE TRANSFER] Seeder update: $fileId (quality: $chunkQuality%)');
       await checkAndResumeDownload(fileId, chunkQuality);
     });
   }
@@ -668,13 +668,13 @@ class FileTransferService {
     String? encryptedFileKey,
   }) async {
     if (_signalService == null) {
-      print('[FILE TRANSFER] Warning: SignalService not available, cannot send share updates');
+      debugPrint('[FILE TRANSFER] Warning: SignalService not available, cannot send share updates');
       return;
     }
     
     try {
       // Step 1: Update server FIRST (critical!)
-      print('[FILE TRANSFER] Step 1/3: Updating server share...');
+      debugPrint('[FILE TRANSFER] Step 1/3: Updating server share...');
       
       final serverUpdate = await _socketFileClient.updateFileShare(
         fileId: fileId,
@@ -686,7 +686,7 @@ class FileTransferService {
         throw Exception('Server update failed: ${serverUpdate['error']}');
       }
       
-      print('[FILE TRANSFER] ✓ Server updated: ${serverUpdate['successCount']} users added');
+      debugPrint('[FILE TRANSFER] ✓ Server updated: ${serverUpdate['successCount']} users added');
       
       // Get file metadata to include checksum and current sharedWith
       final metadata = await _storage.getFileMetadata(fileId);
@@ -695,10 +695,10 @@ class FileTransferService {
       
       // Step 2: Send Signal Protocol message (encrypted notification)
       // IMPORTANT: Send to ALL seeders (not just affected users) to sync their sharedWith lists
-      print('[FILE TRANSFER] Step 2/3: Sending encrypted Signal notification...');
+      debugPrint('[FILE TRANSFER] Step 2/3: Sending encrypted Signal notification...');
       
       final allSeeders = {...currentSharedWith, ...userIds}.toList();
-      print('[FILE TRANSFER] Broadcasting to ${allSeeders.length} seeders (keeping all in sync)');
+      debugPrint('[FILE TRANSFER] Broadcasting to ${allSeeders.length} seeders (keeping all in sync)');
       
       await _signalService.sendFileShareUpdate(
         chatId: chatId,
@@ -710,10 +710,10 @@ class FileTransferService {
         encryptedFileKey: encryptedFileKey,
       );
       
-      print('[FILE TRANSFER] ✓ Signal notifications sent to all ${allSeeders.length} seeders');
+      debugPrint('[FILE TRANSFER] ✓ Signal notifications sent to all ${allSeeders.length} seeders');
       
       // Step 2.5: Send file message to chat (so it appears in conversation)
-      print('[FILE TRANSFER] Step 2.5/4: Sending file message to chat...');
+      debugPrint('[FILE TRANSFER] Step 2.5/4: Sending file message to chat...');
       
       if (chatType == 'direct' && userIds.length == 1) {
         // For direct chat: send file message to recipient
@@ -732,16 +732,16 @@ class FileTransferService {
             message: null, // Optional: could add a message like "Shared file"
           );
           
-          print('[FILE TRANSFER] ✓ File message sent to chat with $recipientUserId');
+          debugPrint('[FILE TRANSFER] ✓ File message sent to chat with $recipientUserId');
         }
       } else if (chatType == 'group') {
         // For group chat: send file message to channel
-        print('[FILE TRANSFER] Preparing to send file message to group chat...');
-        print('[FILE TRANSFER] - channelId: $chatId');
-        print('[FILE TRANSFER] - metadata: ${metadata != null ? "present" : "null"}');
+        debugPrint('[FILE TRANSFER] Preparing to send file message to group chat...');
+        debugPrint('[FILE TRANSFER] - channelId: $chatId');
+        debugPrint('[FILE TRANSFER] - metadata: ${metadata != null ? "present" : "null"}');
         
         if (metadata != null) {
-          print('[FILE TRANSFER] Calling sendFileGroupItem...');
+          debugPrint('[FILE TRANSFER] Calling sendFileGroupItem...');
           await _signalService.sendFileGroupItem(
             channelId: chatId,
             fileId: fileId,
@@ -754,14 +754,14 @@ class FileTransferService {
             message: null, // Optional: could add a message
           );
           
-          print('[FILE TRANSFER] ✓ File message sent to group chat $chatId');
+          debugPrint('[FILE TRANSFER] ✓ File message sent to group chat $chatId');
         } else {
-          print('[FILE TRANSFER] ⚠️ Metadata is null, skipping group message');
+          debugPrint('[FILE TRANSFER] ⚠️ Metadata is null, skipping group message');
         }
       }
       
       // Step 3: Update local metadata
-      print('[FILE TRANSFER] Step 3/4: Updating local metadata...');
+      debugPrint('[FILE TRANSFER] Step 3/4: Updating local metadata...');
       
       if (metadata != null) {
         final currentSharedWith = (metadata['sharedWith'] as List?)?.cast<String>() ?? [];
@@ -774,7 +774,7 @@ class FileTransferService {
       
       // Step 4: Re-announce file with updated sharedWith list
       // This ensures server's FileRegistry has the current sharedWith state
-      print('[FILE TRANSFER] Step 4/4: Re-announcing file with updated share list...');
+      debugPrint('[FILE TRANSFER] Step 4/4: Re-announcing file with updated share list...');
       
       try {
         if (metadata != null) {
@@ -791,17 +791,17 @@ class FileTransferService {
             sharedWith: updatedSharedWith, // ← Updated sharedWith list
           );
           
-          print('[FILE TRANSFER] ✓ File re-announced with ${updatedSharedWith.length} users in sharedWith');
+          debugPrint('[FILE TRANSFER] ✓ File re-announced with ${updatedSharedWith.length} users in sharedWith');
         }
       } catch (e) {
-        print('[FILE TRANSFER] Warning: Could not re-announce file: $e');
+        debugPrint('[FILE TRANSFER] Warning: Could not re-announce file: $e');
         // Don't fail the share operation if re-announce fails
         // File is already shared via server and Signal
       }
       
-      print('[FILE TRANSFER] ✓ Added ${userIds.length} users to share: $fileId');
+      debugPrint('[FILE TRANSFER] ✓ Added ${userIds.length} users to share: $fileId');
     } catch (e) {
-      print('[FILE TRANSFER] Error adding users to share: $e');
+      debugPrint('[FILE TRANSFER] Error adding users to share: $e');
       
       // TODO: Implement rollback if Signal message fails
       // For now, server update is kept even if Signal fails
@@ -818,13 +818,13 @@ class FileTransferService {
     required List<String> userIds,
   }) async {
     if (_signalService == null) {
-      print('[FILE TRANSFER] Warning: SignalService not available, cannot send share updates');
+      debugPrint('[FILE TRANSFER] Warning: SignalService not available, cannot send share updates');
       return;
     }
     
     try {
       // Step 1: Update server FIRST
-      print('[FILE TRANSFER] Step 1/3: Updating server share...');
+      debugPrint('[FILE TRANSFER] Step 1/3: Updating server share...');
       
       final serverUpdate = await _socketFileClient.updateFileShare(
         fileId: fileId,
@@ -836,7 +836,7 @@ class FileTransferService {
         throw Exception('Server update failed: ${serverUpdate['error']}');
       }
       
-      print('[FILE TRANSFER] ✓ Server updated: ${serverUpdate['successCount']} users revoked');
+      debugPrint('[FILE TRANSFER] ✓ Server updated: ${serverUpdate['successCount']} users revoked');
       
       // Get file metadata to include checksum and current sharedWith
       final metadata = await _storage.getFileMetadata(fileId);
@@ -845,11 +845,11 @@ class FileTransferService {
       
       // Step 2: Send Signal Protocol message
       // IMPORTANT: Send to remaining seeders (after revoke) to sync their sharedWith lists
-      print('[FILE TRANSFER] Step 2/3: Sending encrypted Signal notification...');
+      debugPrint('[FILE TRANSFER] Step 2/3: Sending encrypted Signal notification...');
       
       final remainingSeeders = currentSharedWith.where((id) => !userIds.contains(id)).toList();
       final allRecipients = [...remainingSeeders, ...userIds]; // Include revoked users for notification
-      print('[FILE TRANSFER] Broadcasting to ${allRecipients.length} users (revoked + remaining seeders)');
+      debugPrint('[FILE TRANSFER] Broadcasting to ${allRecipients.length} users (revoked + remaining seeders)');
       
       await _signalService.sendFileShareUpdate(
         chatId: chatId,
@@ -860,10 +860,10 @@ class FileTransferService {
         checksum: checksum, // ← Include checksum for verification
       );
       
-      print('[FILE TRANSFER] ✓ Signal notifications sent to ${allRecipients.length} users');
+      debugPrint('[FILE TRANSFER] ✓ Signal notifications sent to ${allRecipients.length} users');
       
       // Step 3: Update local metadata
-      print('[FILE TRANSFER] Step 3/3: Updating local metadata...');
+      debugPrint('[FILE TRANSFER] Step 3/3: Updating local metadata...');
       
       if (metadata != null) {
         final currentSharedWith = (metadata['sharedWith'] as List?)?.cast<String>() ?? [];
@@ -876,7 +876,7 @@ class FileTransferService {
       
       // Step 4: Re-announce file with updated sharedWith list
       // This ensures server's FileRegistry has the current sharedWith state
-      print('[FILE TRANSFER] Step 4/4: Re-announcing file with updated share list...');
+      debugPrint('[FILE TRANSFER] Step 4/4: Re-announcing file with updated share list...');
       
       try {
         if (metadata != null) {
@@ -893,17 +893,17 @@ class FileTransferService {
             sharedWith: remainingSeeders.isNotEmpty ? remainingSeeders : null, // ← Updated sharedWith list
           );
           
-          print('[FILE TRANSFER] ✓ File re-announced with ${remainingSeeders.length} users in sharedWith');
+          debugPrint('[FILE TRANSFER] ✓ File re-announced with ${remainingSeeders.length} users in sharedWith');
         }
       } catch (e) {
-        print('[FILE TRANSFER] Warning: Could not re-announce file: $e');
+        debugPrint('[FILE TRANSFER] Warning: Could not re-announce file: $e');
         // Don't fail the revoke operation if re-announce fails
         // File access is already revoked via server and Signal
       }
       
-      print('[FILE TRANSFER] ✓ Revoked ${userIds.length} users from share: $fileId');
+      debugPrint('[FILE TRANSFER] ✓ Revoked ${userIds.length} users from share: $fileId');
     } catch (e) {
-      print('[FILE TRANSFER] Error revoking users from share: $e');
+      debugPrint('[FILE TRANSFER] Error revoking users from share: $e');
       rethrow;
     }
   }
@@ -921,7 +921,7 @@ class FileTransferService {
     required String chatType,
   }) async {
     try {
-      print('[FILE TRANSFER] Self-revoking from file: $fileId');
+      debugPrint('[FILE TRANSFER] Self-revoking from file: $fileId');
       
       // Get current user ID (from session/auth)
       // Note: You'll need to get this from your auth service
@@ -940,10 +940,10 @@ class FileTransferService {
         userIds: [currentUserId],
       );
       
-      print('[FILE TRANSFER] ✓ Successfully removed self from share');
+      debugPrint('[FILE TRANSFER] ✓ Successfully removed self from share');
       
     } catch (e) {
-      print('[FILE TRANSFER] Error removing self from share: $e');
+      debugPrint('[FILE TRANSFER] Error removing self from share: $e');
       rethrow;
     }
   }
@@ -996,11 +996,11 @@ class FileTransferService {
         return sharedWith.cast<String>().toList();
       }
       
-      print('[FILE TRANSFER] Warning: Unexpected sharedWith type: ${sharedWith.runtimeType}');
+      debugPrint('[FILE TRANSFER] Warning: Unexpected sharedWith type: ${sharedWith.runtimeType}');
       return null;
       
     } catch (e) {
-      print('[FILE TRANSFER] Error getting server sharedWith: $e');
+      debugPrint('[FILE TRANSFER] Error getting server sharedWith: $e');
       return null;
     }
   }
@@ -1017,13 +1017,13 @@ class FileTransferService {
       // Get local file metadata
       final metadata = await _storage.getFileMetadata(fileId);
       if (metadata == null) {
-        print('[SECURITY] ❌ No metadata found for $fileId');
+        debugPrint('[SECURITY] ❌ No metadata found for $fileId');
         return false;
       }
       
       final expectedChecksum = metadata['checksum'] as String?;
       if (expectedChecksum == null) {
-        print('[SECURITY] ⚠️ No checksum in metadata for $fileId');
+        debugPrint('[SECURITY] ⚠️ No checksum in metadata for $fileId');
         return false;
       }
       
@@ -1034,7 +1034,7 @@ class FileTransferService {
       for (int i = 0; i < chunkCount; i++) {
         final chunk = await _storage.getChunk(fileId, i);
         if (chunk == null) {
-          print('[SECURITY] ❌ Missing chunk $i for $fileId');
+          debugPrint('[SECURITY] ❌ Missing chunk $i for $fileId');
           return false;
         }
         chunks.add(chunk);
@@ -1056,19 +1056,19 @@ class FileTransferService {
       final isValid = actualChecksum == expectedChecksum;
       
       if (isValid) {
-        print('[SECURITY] ✅ Checksum valid for $fileId');
-        print('[SECURITY]    Expected: ${expectedChecksum.substring(0, 16)}...');
-        print('[SECURITY]    Actual:   ${actualChecksum.substring(0, 16)}...');
+        debugPrint('[SECURITY] ✅ Checksum valid for $fileId');
+        debugPrint('[SECURITY]    Expected: ${expectedChecksum.substring(0, 16)}...');
+        debugPrint('[SECURITY]    Actual:   ${actualChecksum.substring(0, 16)}...');
       } else {
-        print('[SECURITY] ❌ Checksum mismatch for $fileId');
-        print('[SECURITY]    Expected: $expectedChecksum');
-        print('[SECURITY]    Actual:   $actualChecksum');
+        debugPrint('[SECURITY] ❌ Checksum mismatch for $fileId');
+        debugPrint('[SECURITY]    Expected: $expectedChecksum');
+        debugPrint('[SECURITY]    Actual:   $actualChecksum');
       }
       
       return isValid;
       
     } catch (e) {
-      print('[SECURITY] Error verifying checksum: $e');
+      debugPrint('[SECURITY] Error verifying checksum: $e');
       return false;
     }
   }
@@ -1078,14 +1078,14 @@ class FileTransferService {
   /// This is called when receiving a share notification
   Future<bool> verifyChecksumBeforeDownload(String fileId, String expectedChecksum) async {
     try {
-      print('[SECURITY] Verifying checksum before download...');
+      debugPrint('[SECURITY] Verifying checksum before download...');
       
       // Get file info from server
       final fileInfo = await _socketFileClient.getFileInfo(fileId);
       final serverChecksum = fileInfo['checksum'] as String?;
       
       if (serverChecksum == null) {
-        print('[SECURITY] ⚠️ No checksum from server for $fileId');
+        debugPrint('[SECURITY] ⚠️ No checksum from server for $fileId');
         return false;
       }
       
@@ -1093,20 +1093,20 @@ class FileTransferService {
       final isValid = serverChecksum == expectedChecksum;
       
       if (isValid) {
-        print('[SECURITY] ✅ Checksum matches server');
-        print('[SECURITY]    Expected: ${expectedChecksum.substring(0, 16)}...');
-        print('[SECURITY]    Server:   ${serverChecksum.substring(0, 16)}...');
+        debugPrint('[SECURITY] ✅ Checksum matches server');
+        debugPrint('[SECURITY]    Expected: ${expectedChecksum.substring(0, 16)}...');
+        debugPrint('[SECURITY]    Server:   ${serverChecksum.substring(0, 16)}...');
       } else {
-        print('[SECURITY] ❌ Checksum mismatch!');
-        print('[SECURITY]    From Signal: $expectedChecksum');
-        print('[SECURITY]    From Server: $serverChecksum');
-        print('[SECURITY]    ⚠️ File may be compromised - download blocked!');
+        debugPrint('[SECURITY] ❌ Checksum mismatch!');
+        debugPrint('[SECURITY]    From Signal: $expectedChecksum');
+        debugPrint('[SECURITY]    From Server: $serverChecksum');
+        debugPrint('[SECURITY]    ⚠️ File may be compromised - download blocked!');
       }
       
       return isValid;
       
     } catch (e) {
-      print('[SECURITY] Error verifying checksum: $e');
+      debugPrint('[SECURITY] Error verifying checksum: $e');
       return false;
     }
   }
@@ -1120,14 +1120,14 @@ class FileTransferService {
       final chunkMetadata = await _storage.getChunkMetadata(fileId, chunkIndex);
       
       if (chunk == null || chunkMetadata == null) {
-        print('[FILE TRANSFER] Chunk $chunkIndex missing');
+        debugPrint('[FILE TRANSFER] Chunk $chunkIndex missing');
         return false;
       }
       
       // Get expected chunk hash
       final expectedHash = chunkMetadata['chunkHash'] as String?;
       if (expectedHash == null) {
-        print('[FILE TRANSFER] Chunk $chunkIndex has no hash metadata');
+        debugPrint('[FILE TRANSFER] Chunk $chunkIndex has no hash metadata');
         // If no hash in metadata, we can't verify - assume valid
         return true;
       }
@@ -1136,16 +1136,16 @@ class FileTransferService {
       final actualHash = sha256.convert(chunk).toString();
       
       if (actualHash != expectedHash) {
-        print('[FILE TRANSFER] ❌ Chunk $chunkIndex hash mismatch');
-        print('[FILE TRANSFER]    Expected: ${expectedHash.substring(0, 16)}...');
-        print('[FILE TRANSFER]    Actual:   ${actualHash.substring(0, 16)}...');
+        debugPrint('[FILE TRANSFER] ❌ Chunk $chunkIndex hash mismatch');
+        debugPrint('[FILE TRANSFER]    Expected: ${expectedHash.substring(0, 16)}...');
+        debugPrint('[FILE TRANSFER]    Actual:   ${actualHash.substring(0, 16)}...');
         return false;
       }
       
       return true;
       
     } catch (e) {
-      print('[FILE TRANSFER] Error verifying chunk hash: $e');
+      debugPrint('[FILE TRANSFER] Error verifying chunk hash: $e');
       return false;
     }
   }
@@ -1155,11 +1155,11 @@ class FileTransferService {
   /// Returns list of chunk indices that are corrupted
   Future<List<int>> _findCorruptedChunks(String fileId) async {
     try {
-      print('[FILE TRANSFER] Analyzing chunks for corruption...');
+      debugPrint('[FILE TRANSFER] Analyzing chunks for corruption...');
       
       final metadata = await _storage.getFileMetadata(fileId);
       if (metadata == null) {
-        print('[FILE TRANSFER] No metadata found');
+        debugPrint('[FILE TRANSFER] No metadata found');
         return [];
       }
       
@@ -1171,7 +1171,7 @@ class FileTransferService {
         final chunkMetadata = await _storage.getChunkMetadata(fileId, i);
         
         if (chunk == null || chunkMetadata == null) {
-          print('[FILE TRANSFER] Chunk $i missing');
+          debugPrint('[FILE TRANSFER] Chunk $i missing');
           corruptedChunks.add(i);
           continue;
         }
@@ -1179,7 +1179,7 @@ class FileTransferService {
         // Get expected chunk hash
         final expectedHash = chunkMetadata['chunkHash'] as String?;
         if (expectedHash == null) {
-          print('[FILE TRANSFER] Chunk $i has no hash metadata');
+          debugPrint('[FILE TRANSFER] Chunk $i has no hash metadata');
           continue; // Can't verify without hash
         }
         
@@ -1187,16 +1187,16 @@ class FileTransferService {
         final actualHash = sha256.convert(chunk).toString();
         
         if (actualHash != expectedHash) {
-          print('[FILE TRANSFER] ❌ Chunk $i corrupted (hash mismatch)');
+          debugPrint('[FILE TRANSFER] ❌ Chunk $i corrupted (hash mismatch)');
           corruptedChunks.add(i);
         }
       }
       
-      print('[FILE TRANSFER] Found ${corruptedChunks.length} corrupted chunks: $corruptedChunks');
+      debugPrint('[FILE TRANSFER] Found ${corruptedChunks.length} corrupted chunks: $corruptedChunks');
       return corruptedChunks;
       
     } catch (e) {
-      print('[FILE TRANSFER] Error finding corrupted chunks: $e');
+      debugPrint('[FILE TRANSFER] Error finding corrupted chunks: $e');
       return [];
     }
   }
@@ -1204,13 +1204,13 @@ class FileTransferService {
   /// Smart error recovery - only delete and re-download corrupted chunks
   Future<void> _recoverCorruptedFile(String fileId, List<int> corruptedChunks) async {
     try {
-      print('[FILE TRANSFER] Starting smart recovery for $fileId');
-      print('[FILE TRANSFER] Re-downloading ${corruptedChunks.length} corrupted chunks...');
+      debugPrint('[FILE TRANSFER] Starting smart recovery for $fileId');
+      debugPrint('[FILE TRANSFER] Re-downloading ${corruptedChunks.length} corrupted chunks...');
       
       // Delete only corrupted chunks
       for (final chunkIndex in corruptedChunks) {
         await _storage.deleteChunk(fileId, chunkIndex);
-        print('[FILE TRANSFER] Deleted corrupted chunk $chunkIndex');
+        debugPrint('[FILE TRANSFER] Deleted corrupted chunk $chunkIndex');
       }
       
       // Update metadata to trigger re-download
@@ -1229,11 +1229,11 @@ class FileTransferService {
           'lastRecoveryAttempt': DateTime.now().millisecondsSinceEpoch,
         });
         
-        print('[FILE TRANSFER] ✓ Metadata updated, ready for re-download');
+        debugPrint('[FILE TRANSFER] ✓ Metadata updated, ready for re-download');
       }
       
     } catch (e) {
-      print('[FILE TRANSFER] Error during recovery: $e');
+      debugPrint('[FILE TRANSFER] Error during recovery: $e');
       rethrow;
     }
   }
@@ -1242,15 +1242,15 @@ class FileTransferService {
   /// Only used when recovery is not possible
   Future<void> _deleteCorruptedFile(String fileId) async {
     try {
-      print('[FILE TRANSFER] Deleting corrupted file: $fileId');
+      debugPrint('[FILE TRANSFER] Deleting corrupted file: $fileId');
       
       // Delete file using storage interface (handles chunks + metadata)
       await _storage.deleteFile(fileId);
       
-      print('[FILE TRANSFER] ✓ Corrupted file deleted');
+      debugPrint('[FILE TRANSFER] ✓ Corrupted file deleted');
       
     } catch (e) {
-      print('[FILE TRANSFER] Error deleting corrupted file: $e');
+      debugPrint('[FILE TRANSFER] Error deleting corrupted file: $e');
     }
   }
   
@@ -1262,7 +1262,7 @@ class FileTransferService {
   Future<void> cancelDownload(String fileId) async {
     final cancelToken = _activeDownloads[fileId];
     if (cancelToken != null) {
-      print('[FILE TRANSFER] Canceling download: $fileId');
+      debugPrint('[FILE TRANSFER] Canceling download: $fileId');
       cancelToken.cancel();
       _activeDownloads.remove(fileId);
       
@@ -1273,21 +1273,21 @@ class FileTransferService {
           'canceledAt': DateTime.now().millisecondsSinceEpoch,
         });
       } catch (e) {
-        print('[FILE TRANSFER] Error updating canceled status: $e');
+        debugPrint('[FILE TRANSFER] Error updating canceled status: $e');
       }
     } else {
-      print('[FILE TRANSFER] No active download found for: $fileId');
+      debugPrint('[FILE TRANSFER] No active download found for: $fileId');
     }
   }
   
   /// Delete file and all chunks
   Future<void> deleteFile(String fileId) async {
     try {
-      print('[FILE TRANSFER] Deleting file: $fileId');
+      debugPrint('[FILE TRANSFER] Deleting file: $fileId');
       await _storage.deleteFile(fileId);
-      print('[FILE TRANSFER] ✓ File deleted: $fileId');
+      debugPrint('[FILE TRANSFER] ✓ File deleted: $fileId');
     } catch (e) {
-      print('[FILE TRANSFER] Error deleting file: $e');
+      debugPrint('[FILE TRANSFER] Error deleting file: $e');
       rethrow;
     }
   }
@@ -1317,3 +1317,4 @@ class DownloadCanceledException implements Exception {
 void unawaited(Future<void> future) {
   // Intentionally empty - just to suppress warnings
 }
+

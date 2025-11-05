@@ -26,7 +26,7 @@ class NotificationProvider with ChangeNotifier {
   }
 
   void _handleNotification(MessageNotification notification) {
-    print('[NOTIFICATION_PROVIDER] Received notification: ${notification.type}');
+    debugPrint('[NOTIFICATION_PROVIDER] Received notification: ${notification.type}');
 
     switch (notification.type) {
       case MessageType.direct:
@@ -38,7 +38,7 @@ class NotificationProvider with ChangeNotifier {
       case MessageType.fileShareUpdate:
         // File share updates are handled by FileTransferService
         // No need to create in-app notification here
-        print('[NOTIFICATION_PROVIDER] File share update notification ignored (handled by FileTransferService)');
+        debugPrint('[NOTIFICATION_PROVIDER] File share update notification ignored (handled by FileTransferService)');
         break;
       case MessageType.deliveryReceipt:
       case MessageType.groupDeliveryReceipt:
@@ -66,10 +66,10 @@ class NotificationProvider with ChangeNotifier {
 
     // Update recent conversations (async, don't await)
     RecentConversationsService.updateTimestamp(key).catchError((e) {
-      print('[NOTIFICATION_PROVIDER] Error updating recent conversation: $e');
+      debugPrint('[NOTIFICATION_PROVIDER] Error updating recent conversation: $e');
     });
 
-    print('[NOTIFICATION_PROVIDER] 1:1 message from ${notification.senderId}, unread: ${_unreadCounts[key]}');
+    debugPrint('[NOTIFICATION_PROVIDER] 1:1 message from ${notification.senderId}, unread: ${_unreadCounts[key]}');
     notifyListeners();
   }
 
@@ -89,7 +89,7 @@ class NotificationProvider with ChangeNotifier {
     // Update last message time
     _lastMessageTimes[key] = DateTime.parse(notification.timestamp);
 
-    print('[NOTIFICATION_PROVIDER] Group message in ${notification.channelId}, unread: ${_unreadCounts[key]}');
+    debugPrint('[NOTIFICATION_PROVIDER] Group message in ${notification.channelId}, unread: ${_unreadCounts[key]}');
     notifyListeners();
   }
 
@@ -97,7 +97,7 @@ class NotificationProvider with ChangeNotifier {
   void markAsRead(String key) {
     if (_unreadCounts.containsKey(key)) {
       _unreadCounts[key] = 0;
-      print('[NOTIFICATION_PROVIDER] Marked $key as read');
+      debugPrint('[NOTIFICATION_PROVIDER] Marked $key as read');
       notifyListeners();
     }
   }
@@ -132,3 +132,4 @@ class NotificationProvider with ChangeNotifier {
     }).toList();
   }
 }
+

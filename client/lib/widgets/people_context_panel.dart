@@ -273,3 +273,4 @@ class PeopleContextPanel extends StatelessWidget {
     );
   }
 }
+

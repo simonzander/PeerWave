@@ -64,7 +64,7 @@ class _ActivitiesViewState extends State<ActivitiesView> {
         _loading = false;
       });
     } catch (e) {
-      print('[ACTIVITIES_VIEW] Error loading activities: $e');
+      debugPrint('[ACTIVITIES_VIEW] Error loading activities: $e');
       if (!mounted) return;
       
       setState(() {
@@ -105,7 +105,7 @@ class _ActivitiesViewState extends State<ActivitiesView> {
         _hasMoreConversations = newConversations.length == _conversationsPerPage;
       });
     } catch (e) {
-      print('[ACTIVITIES_VIEW] Error loading more conversations: $e');
+      debugPrint('[ACTIVITIES_VIEW] Error loading more conversations: $e');
     }
   }
 
@@ -138,7 +138,7 @@ class _ActivitiesViewState extends State<ActivitiesView> {
           }
         }
       } catch (e) {
-        print('[ACTIVITIES_VIEW] Error batch fetching user info: $e');
+        debugPrint('[ACTIVITIES_VIEW] Error batch fetching user info: $e');
         // Fallback: cache missing users with UUID as displayName
         for (final userId in userIds) {
           _userInfo[userId] = {
@@ -179,7 +179,7 @@ class _ActivitiesViewState extends State<ActivitiesView> {
           }
         }
       } catch (e) {
-        print('[ACTIVITIES_VIEW] Error batch fetching channel info: $e');
+        debugPrint('[ACTIVITIES_VIEW] Error batch fetching channel info: $e');
         // Fallback: cache missing channels with UUID as name
         for (final channelId in channelIds) {
           _channelInfo[channelId] = {
@@ -259,7 +259,7 @@ class _ActivitiesViewState extends State<ActivitiesView> {
           });
         }
       } catch (e) {
-        print('[ACTIVITIES_VIEW] Error batch fetching sender names: $e');
+        debugPrint('[ACTIVITIES_VIEW] Error batch fetching sender names: $e');
       }
     }
   }
@@ -585,3 +585,4 @@ class _ActivitiesViewState extends State<ActivitiesView> {
     }
   }
 }
+

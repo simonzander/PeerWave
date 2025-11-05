@@ -13,7 +13,7 @@ class PermanentPreKeyStore extends PreKeyStore {
   /// Store multiple prekeys at once and emit them in a single call.
   Future<void> storePreKeys(List<PreKeyRecord> preKeys) async {
     if (preKeys.isEmpty) return;
-    print("Storing ${preKeys.length} pre keys in batch");
+    debugPrint("Storing ${preKeys.length} pre keys in batch");
     // Prepare for emit
     final preKeyPayload = preKeys.map((k) => {
       'id': k.id,
@@ -48,7 +48,7 @@ class PermanentPreKeyStore extends PreKeyStore {
   Future<void> checkPreKeys() async {
     final allKeys = await _getAllPreKeyIds();
     if (allKeys.length < 20) {
-      print("[PREKEY STORE] Not enough pre keys (${allKeys.length}/110), generating more");
+      debugPrint("[PREKEY STORE] Not enough pre keys (${allKeys.length}/110), generating more");
       var lastId = allKeys.isNotEmpty ? allKeys.reduce((a, b) => a > b ? a : b) : -1;
       if (lastId == 9007199254740991) {
         lastId = -1; // Reset to -1 so we start from 0 again
@@ -56,17 +56,17 @@ class PermanentPreKeyStore extends PreKeyStore {
       
       // Calculate how many keys we need to reach 110 total
       final neededKeys = 110 - allKeys.length;
-      print("[PREKEY STORE] Need to generate $neededKeys more keys (current: ${allKeys.length}, target: 110)");
+      debugPrint("[PREKEY STORE] Need to generate $neededKeys more keys (current: ${allKeys.length}, target: 110)");
       
       // generatePreKeys is INCLUSIVE: generatePreKeys(a, b) generates (b - a + 1) keys
       // To generate exactly `neededKeys`, we do: generatePreKeys(lastId + 1, lastId + neededKeys)
       final startId = lastId + 1;
       final endId = lastId + neededKeys;
-      print("[PREKEY STORE] Generating keys from $startId to $endId ($neededKeys keys)");
+      debugPrint("[PREKEY STORE] Generating keys from $startId to $endId ($neededKeys keys)");
       
       var newPreKeys = generatePreKeys(startId, endId);
       await storePreKeys(newPreKeys);
-      print("[PREKEY STORE] ✓ Generated and stored ${newPreKeys.length} new pre keys");
+      debugPrint("[PREKEY STORE] ✓ Generated and stored ${newPreKeys.length} new pre keys");
     }
   }
 
@@ -77,7 +77,7 @@ class PermanentPreKeyStore extends PreKeyStore {
     // Old buggy code: if (localPreKeys.length >= 20) return;
     // This prevented detection of server/client desync!
     
-    print('[PREKEY STORE] Querying server for PreKey sync check...');
+    debugPrint('[PREKEY STORE] Querying server for PreKey sync check...');
     SocketService().emit("getPreKeys", null);
   }
 
@@ -120,15 +120,15 @@ class PermanentPreKeyStore extends PreKeyStore {
   PermanentPreKeyStore() {
     // Listener for server PreKey query response
     SocketService().registerListener("getPreKeysResponse", (data) async {
-      print('[PREKEY STORE] Server has ${data.length} PreKeys');
+      debugPrint('[PREKEY STORE] Server has ${data.length} PreKeys');
       final localPreKeys = await _getAllPreKeyIds();
-      print('[PREKEY STORE] Local has ${localPreKeys.length} PreKeys');
+      debugPrint('[PREKEY STORE] Local has ${localPreKeys.length} PreKeys');
       
       // CRITICAL FIX: Detect server/client desync
       // Case 1: Server has 0 PreKeys, but we have local PreKeys → Upload all
       if (data.isEmpty && localPreKeys.isNotEmpty) {
-        print('[PREKEY STORE] ⚠️  SYNC ISSUE: Server has 0 PreKeys, but local has ${localPreKeys.length}!');
-        print('[PREKEY STORE] Uploading all local PreKeys to server...');
+        debugPrint('[PREKEY STORE] ⚠️  SYNC ISSUE: Server has 0 PreKeys, but local has ${localPreKeys.length}!');
+        debugPrint('[PREKEY STORE] Uploading all local PreKeys to server...');
         final allLocalKeys = await getAllPreKeys();
         await storePreKeys(allLocalKeys);
         return;
@@ -136,28 +136,28 @@ class PermanentPreKeyStore extends PreKeyStore {
       
       // Case 2: Server has 0 PreKeys and local also empty → Generate new
       if (data.isEmpty) {
-        print('[PREKEY STORE] No PreKeys found anywhere, generating 110 new ones');
+        debugPrint('[PREKEY STORE] No PreKeys found anywhere, generating 110 new ones');
         // generatePreKeys is INCLUSIVE: generatePreKeys(0, 109) generates 110 keys (0-109)
         var newPreKeys = generatePreKeys(0, 109);
-        print('[PREKEY STORE] Generated ${newPreKeys.length} pre keys (IDs 0-109)');
+        debugPrint('[PREKEY STORE] Generated ${newPreKeys.length} pre keys (IDs 0-109)');
         await storePreKeys(newPreKeys);
         return;
       }
       
       // Case 3: Server has < 20 PreKeys (low threshold)
       if (data.length < 20) {
-        print('[PREKEY STORE] Server only has ${data.length} PreKeys (threshold: 20)');
+        debugPrint('[PREKEY STORE] Server only has ${data.length} PreKeys (threshold: 20)');
         
         // Sub-case: Local has enough → Upload to server
         if (localPreKeys.length >= 20) {
-          print('[PREKEY STORE] Local has enough (${localPreKeys.length}), uploading to server');
+          debugPrint('[PREKEY STORE] Local has enough (${localPreKeys.length}), uploading to server');
           final allLocalKeys = await getAllPreKeys();
           await storePreKeys(allLocalKeys);
           return;
         }
         
         // Sub-case: Both low → Generate more
-        print('[PREKEY STORE] Both server and local are low, generating more');
+        debugPrint('[PREKEY STORE] Both server and local are low, generating more');
         var lastId = data.isNotEmpty
             ? data.map((e) => e['prekey_id']).reduce((a, b) => a > b ? a : b)
             : -1; // Start from -1 so first key will be 0
@@ -168,33 +168,33 @@ class PermanentPreKeyStore extends PreKeyStore {
         // Calculate how many keys needed to reach 110
         final currentCount = data.length;
         final neededKeys = 110 - currentCount;
-        print('[PREKEY STORE] Need $neededKeys more keys (current: $currentCount, target: 110)');
+        debugPrint('[PREKEY STORE] Need $neededKeys more keys (current: $currentCount, target: 110)');
         
         // generatePreKeys is INCLUSIVE: to generate neededKeys, use (lastId + 1) to (lastId + neededKeys)
         final startId = lastId + 1;
         final endId = lastId + neededKeys;
-        print('[PREKEY STORE] Generating keys from $startId to $endId');
+        debugPrint('[PREKEY STORE] Generating keys from $startId to $endId');
         
         var newPreKeys = generatePreKeys(startId, endId);
-        print('[PREKEY STORE] Generated ${newPreKeys.length} pre keys');
+        debugPrint('[PREKEY STORE] Generated ${newPreKeys.length} pre keys');
         await storePreKeys(newPreKeys);
         return;
       }
       
       // Case 4: Server has >= 20 PreKeys → All good
-      print('[PREKEY STORE] ✅ Server has sufficient PreKeys (${data.length})');
+      debugPrint('[PREKEY STORE] ✅ Server has sufficient PreKeys (${data.length})');
     });
     
     // NEW: Listener for PreKey sync response after storePreKeys
     SocketService().registerListener("storePreKeysResponse", (response) async {
       if (response['success'] == true) {
         final List<dynamic> serverPreKeyIds = response['serverPreKeyIds'] ?? [];
-        print('[PREKEY STORE] 🔄 Sync verification: Server has ${serverPreKeyIds.length} PreKey IDs');
+        debugPrint('[PREKEY STORE] 🔄 Sync verification: Server has ${serverPreKeyIds.length} PreKey IDs');
         
         // Perform sync cleanup
         await _syncWithServerIds(serverPreKeyIds.cast<int>());
       } else {
-        print('[PREKEY STORE] ❌ PreKey upload failed: ${response['error']}');
+        debugPrint('[PREKEY STORE] ❌ PreKey upload failed: ${response['error']}');
       }
     });
     
@@ -205,33 +205,33 @@ class PermanentPreKeyStore extends PreKeyStore {
   /// Deletes local PreKeys that don't exist on server
   Future<void> _syncWithServerIds(List<int> serverIds) async {
     final localIds = await _getAllPreKeyIds();
-    print('[PREKEY STORE] 🔍 Comparing local (${localIds.length}) with server (${serverIds.length})');
+    debugPrint('[PREKEY STORE] 🔍 Comparing local (${localIds.length}) with server (${serverIds.length})');
     
     // Find local PreKeys that are NOT on server
     final orphanedIds = localIds.where((id) => !serverIds.contains(id)).toList();
     
     if (orphanedIds.isNotEmpty) {
-      print('[PREKEY STORE] ⚠️  Found ${orphanedIds.length} orphaned local PreKeys: $orphanedIds');
-      print('[PREKEY STORE] 🗑️  Deleting orphaned PreKeys from local storage...');
+      debugPrint('[PREKEY STORE] ⚠️  Found ${orphanedIds.length} orphaned local PreKeys: $orphanedIds');
+      debugPrint('[PREKEY STORE] 🗑️  Deleting orphaned PreKeys from local storage...');
       
       for (final id in orphanedIds) {
         try {
           // CRITICAL: sendToServer=false prevents double-deletion on server
           await removePreKey(id, sendToServer: false);
-          print('[PREKEY STORE] ✅ Deleted orphaned PreKey $id (local only)');
+          debugPrint('[PREKEY STORE] ✅ Deleted orphaned PreKey $id (local only)');
         } catch (e) {
-          print('[PREKEY STORE] ❌ Failed to delete PreKey $id: $e');
+          debugPrint('[PREKEY STORE] ❌ Failed to delete PreKey $id: $e');
         }
       }
       
-      print('[PREKEY STORE] ✅ Sync cleanup complete - removed ${orphanedIds.length} orphaned PreKeys');
+      debugPrint('[PREKEY STORE] ✅ Sync cleanup complete - removed ${orphanedIds.length} orphaned PreKeys');
     } else {
-      print('[PREKEY STORE] ✅ Perfect sync - all local PreKeys exist on server');
+      debugPrint('[PREKEY STORE] ✅ Perfect sync - all local PreKeys exist on server');
     }
     
     // Verify final state
     final finalLocalIds = await _getAllPreKeyIds();
-    print('[PREKEY STORE] 📊 Final state: Local=${finalLocalIds.length}, Server=${serverIds.length}');
+    debugPrint('[PREKEY STORE] 📊 Final state: Local=${finalLocalIds.length}, Server=${serverIds.length}');
   }
 
   String _preKey(int preKeyId) => '$_keyPrefix$preKeyId';
@@ -324,7 +324,7 @@ class PermanentPreKeyStore extends PreKeyStore {
 
   @override
   Future<void> storePreKey(int preKeyId, PreKeyRecord record, {bool sendToServer = true}) async {
-    print("Storing pre key: $preKeyId");
+    debugPrint("Storing pre key: $preKeyId");
     if (sendToServer) {
       SocketService().emit("storePreKey", {
         'id': preKeyId,
@@ -362,3 +362,4 @@ class PermanentPreKeyStore extends PreKeyStore {
     }
   }
 }
+

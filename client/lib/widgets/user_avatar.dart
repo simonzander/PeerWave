@@ -58,7 +58,7 @@ class UserAvatar extends StatelessWidget {
           imageProvider = NetworkImage(effectivePicture);
         }
       } catch (e) {
-        print('[UserAvatar] Error parsing picture: $e');
+        debugPrint('[UserAvatar] Error parsing picture: $e');
       }
     }
     
@@ -254,7 +254,7 @@ class SquareUserAvatar extends StatelessWidget {
           imageProvider = NetworkImage(effectivePicture);
         }
       } catch (e) {
-        print('[SquareUserAvatar] Error parsing picture: $e');
+        debugPrint('[SquareUserAvatar] Error parsing picture: $e');
       }
     }
     
@@ -337,3 +337,4 @@ class SquareUserAvatar extends StatelessWidget {
     return colors[hash.abs() % colors.length];
   }
 }
+

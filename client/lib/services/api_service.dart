@@ -25,10 +25,10 @@ class UnauthorizedInterceptor extends Interceptor {
       // Only trigger auto-logout if user is logged in
       // This prevents triggering on initial session check when user visits site
       if (AuthService.isLoggedIn) {
-        print('[API] ⚠️  401 Unauthorized detected - triggering auto-logout');
+        debugPrint('[API] ⚠️  401 Unauthorized detected - triggering auto-logout');
         _globalUnauthorizedCallback?.call();
       } else {
-        print('[API] 401 Unauthorized - user not logged in yet, ignoring');
+        debugPrint('[API] 401 Unauthorized - user not logged in yet, ignoring');
       }
     }
     super.onResponse(response, handler);
@@ -39,10 +39,10 @@ class UnauthorizedInterceptor extends Interceptor {
     if (err.response?.statusCode == 401) {
       // Only trigger auto-logout if user is logged in
       if (AuthService.isLoggedIn) {
-        print('[API] ⚠️  401 Unauthorized detected in error - triggering auto-logout');
+        debugPrint('[API] ⚠️  401 Unauthorized detected in error - triggering auto-logout');
         _globalUnauthorizedCallback?.call();
       } else {
-        print('[API] 401 Unauthorized error - user not logged in yet, ignoring');
+        debugPrint('[API] 401 Unauthorized error - user not logged in yet, ignoring');
       }
     }
     super.onError(err, handler);
@@ -73,11 +73,11 @@ class RetryInterceptor extends Interceptor {
 
     // Check if we should retry
     if (_shouldRetry(err) && retryCount < maxRetries) {
-      print('[API RETRY] Attempt ${retryCount + 1}/$maxRetries for ${err.requestOptions.path}');
+      debugPrint('[API RETRY] Attempt ${retryCount + 1}/$maxRetries for ${err.requestOptions.path}');
       
       // Get delay from Retry-After header or use default
       final delay = _getRetryDelay(err, retryCount);
-      print('[API RETRY] Waiting ${delay.inSeconds}s before retry...');
+      debugPrint('[API RETRY] Waiting ${delay.inSeconds}s before retry...');
       
       await Future.delayed(delay);
 
@@ -86,7 +86,7 @@ class RetryInterceptor extends Interceptor {
       options.extra['retryCount'] = retryCount + 1;
 
       try {
-        print('[API RETRY] Retrying request to ${options.path}');
+        debugPrint('[API RETRY] Retrying request to ${options.path}');
         final response = await dio.fetch(options);
         return handler.resolve(response);
       } catch (e) {
@@ -103,7 +103,7 @@ class RetryInterceptor extends Interceptor {
   bool _shouldRetry(DioException err) {
     // Retry on 503 Service Unavailable (database busy)
     if (err.response?.statusCode == 503) {
-      print('[API RETRY] Database busy (503), will retry');
+      debugPrint('[API RETRY] Database busy (503), will retry');
       return true;
     }
 
@@ -111,13 +111,13 @@ class RetryInterceptor extends Interceptor {
     if (err.type == DioExceptionType.connectionTimeout ||
         err.type == DioExceptionType.sendTimeout ||
         err.type == DioExceptionType.receiveTimeout) {
-      print('[API RETRY] Network timeout, will retry');
+      debugPrint('[API RETRY] Network timeout, will retry');
       return true;
     }
 
     // Retry on connection error
     if (err.type == DioExceptionType.connectionError) {
-      print('[API RETRY] Connection error, will retry');
+      debugPrint('[API RETRY] Connection error, will retry');
       return true;
     }
 
@@ -130,7 +130,7 @@ class RetryInterceptor extends Interceptor {
     if (retryAfter != null) {
       final seconds = int.tryParse(retryAfter);
       if (seconds != null) {
-        print('[API RETRY] Using Retry-After header: ${seconds}s');
+        debugPrint('[API RETRY] Using Retry-After header: ${seconds}s');
         return Duration(seconds: seconds);
       }
     }
@@ -194,3 +194,4 @@ class ApiService {
     return dio.delete(url, data: data, options: options);
   }
 }
+

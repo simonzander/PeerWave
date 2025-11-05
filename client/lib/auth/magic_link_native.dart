@@ -17,7 +17,7 @@ class MagicLinkWebPageWithServer extends StatefulWidget {
 class _MagicLinkWebPageWithServerState extends State<MagicLinkWebPageWithServer> {
   @override
   Widget build(BuildContext context) {
-    print('[MagicLinkWebPageWithServer] clientId: ${widget.clientId}');
+    debugPrint('[MagicLinkWebPageWithServer] clientId: ${widget.clientId}');
     return MagicLinkWebPageWithInjectedServer(serverUrl: widget.serverUrl, clientId: widget.clientId);
   }
 }
@@ -35,7 +35,7 @@ class MagicLinkWebPageWithInjectedServer extends StatefulWidget {
 class _MagicLinkWebPageWithInjectedServerState extends State<MagicLinkWebPageWithInjectedServer> {
   @override
   Widget build(BuildContext context) {
-    print('[MagicLinkWebPageWithInjectedServer] clientId: ${widget.clientId}');
+    debugPrint('[MagicLinkWebPageWithInjectedServer] clientId: ${widget.clientId}');
     return MagicLinkWebPageWithServerUrl(serverUrl: widget.serverUrl, clientId: widget.clientId);
   }
 }
@@ -55,7 +55,7 @@ class _MagicLinkWebPageWithServerUrlState extends _MagicLinkWebPageState {
   @override
   void initState() {
     super.initState();
-    print('[MagicLinkWebPageWithServerUrl] clientId: ${(widget as MagicLinkWebPageWithServerUrl).clientId}');
+    debugPrint('[MagicLinkWebPageWithServerUrl] clientId: ${(widget as MagicLinkWebPageWithServerUrl).clientId}');
     serverController.text = (widget as MagicLinkWebPageWithServerUrl).serverUrl;
   }
 }
@@ -85,14 +85,14 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
   @override
   void initState() {
     super.initState();
-    print('[MagicLinkWebPage] clientId: ${widget.clientId}');
+    debugPrint('[MagicLinkWebPage] clientId: ${widget.clientId}');
   }
 
   Future<void> _evaluateMagicKey() async {
     final magicKey = magicKeyController.text.trim();
     final serverUrl = serverController.text.trim();
     final clientId = widget.clientId; // Use the passed clientId
-    print('[MagicLinkWebPageState:_evaluateMagicKey] clientId: $clientId');
+    debugPrint('[MagicLinkWebPageState:_evaluateMagicKey] clientId: $clientId');
     if (magicKey.isEmpty || serverUrl.isEmpty) {
       setState(() {
         _status = 'Please enter both magic key and server URL.';
@@ -117,14 +117,13 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
       return;
     }
     try {
-      print('[try block] clientId: $clientId');
+      debugPrint('[try block] clientId: $clientId');
       final keyHex = magicKey.substring(0, 64); // First 64 chars = 32 bytes key
       final serverHexInfo = magicKey.substring(64); // Rest = hostname in hex
-      print('Server Hex Info: $serverHexInfo'); // Debug output
+      debugPrint('Server Hex Info: $serverHexInfo'); // Debug output
       final decodedServerInfo = hexToString(serverHexInfo);
-      print('Decoded Server Info: $decodedServerInfo'); // Debug output
+      debugPrint('Decoded Server Info: $decodedServerInfo'); // Debug output
       final Map<String, dynamic> jsonData = jsonDecode(decodedServerInfo);
-      print(jsonData); // Debug output
       final String hostname = serverUrl ?? (jsonData['serverUrl'] ?? '');
       final String mail = jsonData['mail'] ?? '';
       if (hostname.isEmpty) {
@@ -139,10 +138,10 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'key': keyHex, 'clientid': clientId}),
       );
-      print('Request URL: $url');
-      print('Status: ${resp.statusCode}');
-      print('Headers: ${resp.headers}');
-      print('Body: ${resp.body}');
+      debugPrint('Request URL: $url');
+      debugPrint('Status: ${resp.statusCode}');
+      debugPrint('Headers: ${resp.headers}');
+      debugPrint('Body: ${resp.body}');
       if (resp.statusCode == 200) {
         await AuthService().saveHostMailList(hostname, mail); // <-- Add host to persistent list
         setState(() {

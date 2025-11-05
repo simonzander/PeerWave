@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/role.dart';
@@ -263,15 +264,15 @@ class RoleApiService {
       final members = data['members'] as List<dynamic>;
       
       // Debug output
-      print('[DEBUG] Channel members response: ${response.body}');
+      debugPrint('[DEBUG] Channel members response: ${response.body}');
       
       return members
           .map((e) {
             try {
               return ChannelMember.fromJson(e as Map<String, dynamic>);
             } catch (error) {
-              print('[ERROR] Failed to parse member: $e');
-              print('[ERROR] Error: $error');
+              debugPrint('[ERROR] Failed to parse member: $e');
+              debugPrint('[ERROR] Error: $error');
               rethrow;
             }
           })
@@ -311,3 +312,4 @@ class RoleApiService {
     }
   }
 }
+
