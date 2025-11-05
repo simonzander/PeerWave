@@ -1,6 +1,8 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../web_config.dart';
 import 'signal_service.dart';
+// Import auth service conditionally
+import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
 
 /// Callback for handling socket unauthorized events
 typedef SocketUnauthorizedCallback = void Function();
@@ -71,14 +73,24 @@ class SocketService {
       });
       // Listen for unauthorized/authentication errors
       _socket!.on('unauthorized', (_) {
-        print('[SOCKET SERVICE] ⚠️  Unauthorized - triggering auto-logout');
-        _socketUnauthorizedCallback?.call();
+        // Only trigger auto-logout if user is logged in
+        if (AuthService.isLoggedIn) {
+          print('[SOCKET SERVICE] ⚠️  Unauthorized - triggering auto-logout');
+          _socketUnauthorizedCallback?.call();
+        } else {
+          print('[SOCKET SERVICE] Unauthorized - user not logged in yet, ignoring');
+        }
       });
       _socket!.on('error', (data) {
         print('[SOCKET SERVICE] Socket error: $data');
         if (data is Map && (data['message']?.toString().contains('unauthorized') ?? false)) {
-          print('[SOCKET SERVICE] ⚠️  Unauthorized error - triggering auto-logout');
-          _socketUnauthorizedCallback?.call();
+          // Only trigger auto-logout if user is logged in
+          if (AuthService.isLoggedIn) {
+            print('[SOCKET SERVICE] ⚠️  Unauthorized error - triggering auto-logout');
+            _socketUnauthorizedCallback?.call();
+          } else {
+            print('[SOCKET SERVICE] Unauthorized error - user not logged in yet, ignoring');
+          }
         }
       });
       // Register all listeners

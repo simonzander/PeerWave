@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 import 'socket_service.dart';
 import 'signal_setup_service.dart';
 import 'user_profile_service.dart';
 import 'api_service.dart';
 import '../web_config.dart';
-import '../providers/role_provider.dart';
-import '../providers/unread_messages_provider.dart';
 // Import auth service conditionally
 import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
 
@@ -19,6 +16,10 @@ class LogoutService {
   LogoutService._internal();
 
   bool _isLoggingOut = false;
+  bool _logoutComplete = false;
+
+  /// Check if logout was just completed (for redirect handler)
+  bool get isLogoutComplete => _logoutComplete;
 
   /// Perform logout with full cleanup
   /// 
@@ -26,13 +27,14 @@ class LogoutService {
   /// - When user clicks logout button
   /// - When 401 Unauthorized is received
   /// - When session expires
-  Future<void> logout(BuildContext context, {bool showMessage = true}) async {
+  Future<void> logout(BuildContext? context, {bool showMessage = true}) async {
     if (_isLoggingOut) {
       print('[LOGOUT] Already logging out, skipping duplicate call');
       return;
     }
 
     _isLoggingOut = true;
+    _logoutComplete = false;
 
     try {
       print('[LOGOUT] ========================================');
@@ -53,29 +55,10 @@ class LogoutService {
       print('[LOGOUT] Clearing user profiles...');
       UserProfileService.instance.clearCache();
 
-      // 4. Clear roles
-      if (context.mounted) {
-        try {
-          final roleProvider = context.read<RoleProvider>();
-          print('[LOGOUT] Clearing roles...');
-          roleProvider.clearRoles();
-        } catch (e) {
-          print('[LOGOUT] Error clearing roles: $e');
-        }
-      }
+      // Note: Roles and unread messages will be cleared by redirect handler
+      // when AuthService.isLoggedIn becomes false
 
-      // 5. Clear unread messages
-      if (context.mounted) {
-        try {
-          final unreadProvider = context.read<UnreadMessagesProvider>();
-          print('[LOGOUT] Clearing unread messages...');
-          unreadProvider.resetAll();
-        } catch (e) {
-          print('[LOGOUT] Error clearing unread messages: $e');
-        }
-      }
-
-      // 6. Call server logout endpoint
+      // 4. Call server logout endpoint FIRST
       try {
         print('[LOGOUT] Calling server logout endpoint...');
         final apiServer = await loadWebApiServer();
@@ -91,28 +74,52 @@ class LogoutService {
         print('[LOGOUT] ⚠ Server logout failed (may already be logged out): $e');
       }
 
-      // 7. Clear local auth state
+      // 5. Clear local auth state
       print('[LOGOUT] Clearing local auth state...');
       AuthService.isLoggedIn = false;
+      _logoutComplete = true;
 
       print('[LOGOUT] ========================================');
       print('[LOGOUT] ✅ Logout complete');
       print('[LOGOUT] ========================================');
 
-      // 8. Show message if requested
-      if (showMessage && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Logged out successfully'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+      // 6. Show message if requested (BEFORE navigation)
+      final validContext = context;
+      if (showMessage && validContext != null && validContext.mounted) {
+        try {
+          ScaffoldMessenger.of(validContext).showSnackBar(
+            const SnackBar(
+              content: Text('Logged out successfully'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        } catch (e) {
+          print('[LOGOUT] ⚠ Could not show logout message (ScaffoldMessenger not available): $e');
+        }
       }
 
-      // 9. Navigate to login screen
-      if (context.mounted) {
-        print('[LOGOUT] Navigating to login screen...');
-        GoRouter.of(context).go('/login');
+      // 7. Navigate to login screen LAST
+      // Use a small delay to ensure the state is fully updated
+      await Future.delayed(const Duration(milliseconds: 50));
+      if (validContext != null && validContext.mounted) {
+        try {
+          print('[LOGOUT] Navigating to login screen...');
+          validContext.go('/login');
+          print('[LOGOUT] ✓ Navigation to /login triggered');
+        } catch (e) {
+          print('[LOGOUT] ⚠ Could not navigate (GoRouter not available): $e');
+          // If navigation fails, the redirect handler in main.dart will catch it
+          print('[LOGOUT] Redirect handler will handle navigation to /login');
+        }
+        
+        // Reset logout complete flag after navigation
+        await Future.delayed(const Duration(milliseconds: 500));
+        _logoutComplete = false;
+      } else {
+        print('[LOGOUT] No valid context for navigation - redirect handler will handle it');
+        // Reset logout complete flag
+        await Future.delayed(const Duration(milliseconds: 500));
+        _logoutComplete = false;
       }
     } finally {
       _isLoggingOut = false;
@@ -121,19 +128,41 @@ class LogoutService {
 
   /// Auto-logout on 401 Unauthorized
   /// This is called from interceptors when server returns 401
-  Future<void> autoLogout(BuildContext context) async {
+  Future<void> autoLogout(BuildContext? context) async {
     print('[LOGOUT] ⚠️  401 Unauthorized detected - auto-logout');
     
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Session expired. Please login again.'),
-          duration: Duration(seconds: 3),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    }
-    
+    // Perform logout first (without showing success message)
     await logout(context, showMessage: false);
+    
+    // Then show persistent snackbar with login link
+    final validContext = context;
+    if (validContext != null && validContext.mounted) {
+      try {
+        ScaffoldMessenger.of(validContext).showSnackBar(
+          SnackBar(
+            content: const Text('Session expired. Please login again.'),
+            duration: const Duration(seconds: 10),
+            backgroundColor: Colors.orange,
+            action: SnackBarAction(
+              label: 'Login',
+              textColor: Colors.white,
+              onPressed: () {
+                if (validContext.mounted) {
+                  try {
+                    GoRouter.of(validContext).go('/login');
+                  } catch (e) {
+                    print('[LOGOUT] Could not navigate to login: $e');
+                  }
+                }
+              },
+            ),
+          ),
+        );
+      } catch (e) {
+        print('[LOGOUT] ⚠ Could not show session expired message (ScaffoldMessenger not available): $e');
+      }
+    } else {
+      print('[LOGOUT] No valid context - session expired, redirect handler will navigate to /login');
+    }
   }
 }

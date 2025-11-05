@@ -395,14 +395,32 @@ class _MyAppState extends State<MyApp> {
   Widget _buildMaterialApp() {
     // Initialize 401 Unauthorized handlers (one-time setup)
     setGlobalUnauthorizedHandler(() {
-      if (mounted) {
-        LogoutService.instance.autoLogout(context);
+      try {
+        if (mounted) {
+          LogoutService.instance.autoLogout(context);
+        } else {
+          // Context not available, call without context
+          LogoutService.instance.autoLogout(null);
+        }
+      } catch (e) {
+        print('[MAIN] Error in unauthorized handler: $e');
+        // Fallback: call without context
+        LogoutService.instance.autoLogout(null);
       }
     });
     
     setSocketUnauthorizedHandler(() {
-      if (mounted) {
-        LogoutService.instance.autoLogout(context);
+      try {
+        if (mounted) {
+          LogoutService.instance.autoLogout(context);
+        } else {
+          // Context not available, call without context
+          LogoutService.instance.autoLogout(null);
+        }
+      } catch (e) {
+        print('[MAIN] Error in socket unauthorized handler: $e');
+        // Fallback: call without context
+        LogoutService.instance.autoLogout(null);
       }
     });
     
@@ -621,7 +639,10 @@ class _MyAppState extends State<MyApp> {
     final GoRouter router = GoRouter(
       routes: routes,
       redirect: (context, state) async {
-        await AuthService.checkSession();
+        // Skip session check if logout just completed
+        if (!LogoutService.instance.isLogoutComplete) {
+          await AuthService.checkSession();
+        }
         final loggedIn = AuthService.isLoggedIn;
         final location = state.matchedLocation;
         final uri = Uri.parse(state.uri.toString());

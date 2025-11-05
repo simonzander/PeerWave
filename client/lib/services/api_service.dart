@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+// Import auth service conditionally
+import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
 
 /// Callback for handling 401 Unauthorized responses
 typedef UnauthorizedCallback = void Function();
@@ -15,12 +17,19 @@ void setGlobalUnauthorizedHandler(UnauthorizedCallback callback) {
 }
 
 /// Interceptor for handling 401 Unauthorized responses
+/// Only triggers auto-logout if user is already logged in
 class UnauthorizedInterceptor extends Interceptor {
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
     if (response.statusCode == 401) {
-      print('[API] ⚠️  401 Unauthorized detected - triggering auto-logout');
-      _globalUnauthorizedCallback?.call();
+      // Only trigger auto-logout if user is logged in
+      // This prevents triggering on initial session check when user visits site
+      if (AuthService.isLoggedIn) {
+        print('[API] ⚠️  401 Unauthorized detected - triggering auto-logout');
+        _globalUnauthorizedCallback?.call();
+      } else {
+        print('[API] 401 Unauthorized - user not logged in yet, ignoring');
+      }
     }
     super.onResponse(response, handler);
   }
@@ -28,8 +37,13 @@ class UnauthorizedInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
     if (err.response?.statusCode == 401) {
-      print('[API] ⚠️  401 Unauthorized detected in error - triggering auto-logout');
-      _globalUnauthorizedCallback?.call();
+      // Only trigger auto-logout if user is logged in
+      if (AuthService.isLoggedIn) {
+        print('[API] ⚠️  401 Unauthorized detected in error - triggering auto-logout');
+        _globalUnauthorizedCallback?.call();
+      } else {
+        print('[API] 401 Unauthorized error - user not logged in yet, ignoring');
+      }
     }
     super.onError(err, handler);
   }
