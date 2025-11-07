@@ -579,86 +579,104 @@ class SignalService {
     await Future.delayed(const Duration(milliseconds: 50));
 
     // Step 3: Generate PreKeys in batches (110 keys, 10 per batch)
-    var existingPreKeys = await preKeyStore.getAllPreKeys();
+    // 🔧 OPTIMIZED: Only get IDs (no decryption needed for validation)
+    var existingPreKeyIds = await preKeyStore.getAllPreKeyIds();
     
     // 🔧 CLEANUP: Remove ALL PreKeys if corrupted (>110 keys OR any ID >= 110)
-    final hasExcessKeys = existingPreKeys.length > 110;
-    final hasInvalidIds = existingPreKeys.any((k) => k.id >= 110);
+    final hasExcessKeys = existingPreKeyIds.length > 110;
+    final hasInvalidIds = existingPreKeyIds.any((id) => id >= 110);
     
     if (hasExcessKeys || hasInvalidIds) {
       if (hasExcessKeys) {
-        debugPrint('[SIGNAL INIT] ⚠️ Found ${existingPreKeys.length} PreKeys (expected max 110)');
+        debugPrint('[SIGNAL INIT] ⚠️ Found ${existingPreKeyIds.length} PreKeys (expected max 110)');
       }
       if (hasInvalidIds) {
-        final invalidIds = existingPreKeys.where((k) => k.id >= 110).map((k) => k.id).toList();
+        final invalidIds = existingPreKeyIds.where((id) => id >= 110).toList();
         debugPrint('[SIGNAL INIT] ⚠️ Found invalid PreKey IDs (>= 110): $invalidIds');
       }
       
       debugPrint('[SIGNAL INIT] 🔧 Deleting ALL PreKeys and regenerating fresh set (IDs 0-109)...');
       
       // Delete ALL existing PreKeys
-      for (final key in existingPreKeys) {
-        await preKeyStore.removePreKey(key.id, sendToServer: true);
+      for (final id in existingPreKeyIds) {
+        await preKeyStore.removePreKey(id, sendToServer: true);
       }
       
-      existingPreKeys = [];
+      existingPreKeyIds = [];
       debugPrint('[SIGNAL INIT] ✓ Cleanup complete, will generate fresh 110 PreKeys');
     }
     
-    final neededPreKeys = 110 - existingPreKeys.length;
+    final neededPreKeys = 110 - existingPreKeyIds.length;
     
     if (neededPreKeys > 0) {
       debugPrint('[SIGNAL INIT] Generating $neededPreKeys pre keys (IDs must be 0-109)');
       
       // Find missing IDs in range 0-109
-      final existingIds = existingPreKeys.map((k) => k.id).toSet();
+      final existingIds = existingPreKeyIds.toSet();
       final missingIds = List.generate(110, (i) => i).where((id) => !existingIds.contains(id)).toList();
       
       if (missingIds.length != neededPreKeys) {
         debugPrint('[SIGNAL INIT] ⚠️ Mismatch: need $neededPreKeys keys but found ${missingIds.length} missing IDs');
         // This shouldn't happen, but if it does, regenerate everything
-        for (final key in existingPreKeys) {
-          await preKeyStore.removePreKey(key.id, sendToServer: true);
+        for (final id in existingPreKeyIds) {
+          await preKeyStore.removePreKey(id, sendToServer: true);
         }
-        existingPreKeys = [];
+        existingPreKeyIds = [];
         missingIds.clear();
         missingIds.addAll(List.generate(110, (i) => i));
       }
       
-      // Generate keys for missing IDs in batches
-      const int batchSize = 10;
-      final int totalBatches = (missingIds.length / batchSize).ceil();
+      // 🚀 OPTIMIZED: Generate keys using contiguous range batching
+      // This analyzes missing IDs and batches contiguous ranges for speed
+      final contiguousRanges = _findContiguousRanges(missingIds);
       int keysGeneratedInSession = 0;
       
-      for (int batch = 0; batch < totalBatches; batch++) {
-        final int batchStart = batch * batchSize;
-        final int batchEnd = ((batch + 1) * batchSize).clamp(0, missingIds.length);
-        final batchIds = missingIds.sublist(batchStart, batchEnd);
-        
-        // Generate keys for this batch of IDs
-        for (final id in batchIds) {
-          // Generate single PreKey with specific ID
-          final preKeys = generatePreKeys(id, id); // Single key generation
-          if (preKeys.isNotEmpty) {
-            await preKeyStore.storePreKey(id, preKeys.first);
+      debugPrint('[SIGNAL INIT] Found ${contiguousRanges.length} range(s) to generate');
+      
+      for (final range in contiguousRanges) {
+        if (range.length > 1) {
+          // BATCH GENERATION: Multiple contiguous IDs (FAST!)
+          final start = range.first;
+          final end = range.last;
+          debugPrint('[SIGNAL INIT] Batch generating PreKeys $start-$end (${range.length} keys)');
+          
+          final preKeys = generatePreKeys(start, end);
+          for (final preKey in preKeys) {
+            await preKeyStore.storePreKey(preKey.id, preKey);
             keysGeneratedInSession++;
             
             // Update progress every 5 keys
             if (keysGeneratedInSession % 5 == 0 || keysGeneratedInSession == missingIds.length) {
-              final totalKeysNow = existingPreKeys.length + keysGeneratedInSession;
+              final totalKeysNow = existingPreKeyIds.length + keysGeneratedInSession;
+              updateProgress('Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...', currentStep + keysGeneratedInSession);
+            }
+          }
+          
+          // Small delay between batches
+          await Future.delayed(const Duration(milliseconds: 50));
+        } else {
+          // SINGLE GENERATION: Isolated gap (unavoidable)
+          final id = range.first;
+          debugPrint('[SIGNAL INIT] Single generating PreKey $id');
+          
+          final preKeys = generatePreKeys(id, id);
+          if (preKeys.isNotEmpty) {
+            await preKeyStore.storePreKey(id, preKeys.first);
+            keysGeneratedInSession++;
+            
+            // Update progress
+            if (keysGeneratedInSession % 5 == 0 || keysGeneratedInSession == missingIds.length) {
+              final totalKeysNow = existingPreKeyIds.length + keysGeneratedInSession;
               updateProgress('Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...', currentStep + keysGeneratedInSession);
             }
           }
         }
-        
-        // Small delay between batches to prevent UI freeze
-        await Future.delayed(const Duration(milliseconds: 100));
       }
       
       // Update currentStep by total keys generated
       currentStep += missingIds.length;
     } else {
-      debugPrint('[SIGNAL INIT] Pre keys already sufficient (${existingPreKeys.length}/110)');
+      debugPrint('[SIGNAL INIT] Pre keys already sufficient (${existingPreKeyIds.length}/110)');
       // Skip to end
       currentStep = totalSteps;
       updateProgress('Pre keys already ready', currentStep);
@@ -670,7 +688,14 @@ class SignalService {
     // Final progress update
     updateProgress('Signal Protocol ready', totalSteps);
 
-    // Check status with server
+    // 🚀 CRITICAL: Notify server that client is ready to receive events
+    // This must be called AFTER:
+    // 1. All PreKeys generated and uploaded
+    // 2. All socket listeners registered
+    SocketService().notifyClientReady();
+    debugPrint('[SIGNAL INIT] ✓ Server notified: Client ready for events');
+
+    // Check status with server (server will only respond if client is ready)
     SocketService().emit("signalStatus", null);
 
     _isInitialized = true;
@@ -817,13 +842,13 @@ class SignalService {
     final int preKeysCount = (status is Map && status['preKeys'] is int) ? status['preKeys'] : 0;
     debugPrint('[SIGNAL SERVICE] Server has $preKeysCount PreKeys');
     
-    // ALWAYS load local PreKeys to check for sync issues
-    final localPreKeys = await preKeyStore.getAllPreKeys();
-    debugPrint('[SIGNAL SERVICE] Local has ${localPreKeys.length} PreKeys');
+    // 🔧 OPTIMIZED: Only get IDs first (no decryption for count check)
+    final localPreKeyIds = await preKeyStore.getAllPreKeyIds();
+    debugPrint('[SIGNAL SERVICE] Local has ${localPreKeyIds.length} PreKeys');
     
     if (preKeysCount < 20) {
       // Server critically low
-      if (localPreKeys.isEmpty) {
+      if (localPreKeyIds.isEmpty) {
         // No local PreKeys AND server has none → This shouldn't happen after initWithProgress()
         debugPrint('[SIGNAL SERVICE] ⚠️ CRITICAL: No local PreKeys found! Keys should have been generated during initialization.');
         debugPrint('[SIGNAL SERVICE] This indicates initWithProgress() was skipped or failed.');
@@ -831,17 +856,21 @@ class SignalService {
         return;
       } else if (preKeysCount == 0) {
         // Server has 0 but we have local → CRITICAL sync issue!
-        debugPrint('[SIGNAL SERVICE] ⚠️ CRITICAL: Server has 0 PreKeys but local has ${localPreKeys.length}!');
+        debugPrint('[SIGNAL SERVICE] ⚠️ CRITICAL: Server has 0 PreKeys but local has ${localPreKeyIds.length}!');
         debugPrint('[SIGNAL SERVICE] Re-uploading ALL local PreKeys to server...');
+        // NOW load full PreKeys (with decryption) only when needed for upload
+        final localPreKeys = await preKeyStore.getAllPreKeys();
         final preKeysPayload = localPreKeys.map((pk) => {
           'id': pk.id,
           'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
         }).toList();
         SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
-      } else if (localPreKeys.length > preKeysCount + 10) {
+      } else if (localPreKeyIds.length > preKeysCount + 10) {
         // Server significantly behind local (>10 difference) → Re-sync
-        debugPrint('[SIGNAL SERVICE] ⚠️ Sync gap detected: Server has $preKeysCount, local has ${localPreKeys.length}');
-        debugPrint('[SIGNAL SERVICE] Uploading ${localPreKeys.length} local PreKeys to server...');
+        debugPrint('[SIGNAL SERVICE] ⚠️ Sync gap detected: Server has $preKeysCount, local has ${localPreKeyIds.length}');
+        debugPrint('[SIGNAL SERVICE] Uploading ${localPreKeyIds.length} local PreKeys to server...');
+        // NOW load full PreKeys (with decryption) only when needed for upload
+        final localPreKeys = await preKeyStore.getAllPreKeys();
         final preKeysPayload = localPreKeys.map((pk) => {
           'id': pk.id,
           'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
@@ -849,19 +878,23 @@ class SignalService {
         SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
       } else {
         // Server has some but < 20 → Upload what we have
-        debugPrint('[SIGNAL SERVICE] Server needs more PreKeys, uploading ${localPreKeys.length} local keys');
+        debugPrint('[SIGNAL SERVICE] Server needs more PreKeys, uploading ${localPreKeyIds.length} local keys');
+        // NOW load full PreKeys (with decryption) only when needed for upload
+        final localPreKeys = await preKeyStore.getAllPreKeys();
         final preKeysPayload = localPreKeys.map((pk) => {
           'id': pk.id,
           'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
         }).toList();
         SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
       }
-    } else if (localPreKeys.length > preKeysCount) {
+    } else if (localPreKeyIds.length > preKeysCount) {
       // NEW: Server has enough (>= 20), but local has MORE
       // This happens when PreKeys are generated locally but not uploaded yet
       // Find the PreKeys that exist locally but not on server
-      debugPrint('[SIGNAL SERVICE] 🔄 Local has ${localPreKeys.length - preKeysCount} more PreKeys than server');
+      debugPrint('[SIGNAL SERVICE] 🔄 Local has ${localPreKeyIds.length - preKeysCount} more PreKeys than server');
       debugPrint('[SIGNAL SERVICE] Uploading ALL local PreKeys to ensure server sync...');
+      // NOW load full PreKeys (with decryption) only when needed for upload
+      final localPreKeys = await preKeyStore.getAllPreKeys();
       final preKeysPayload = localPreKeys.map((pk) => {
         'id': pk.id,
         'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
@@ -1839,8 +1872,9 @@ Future<String> decryptItem({
       debugPrint('[SIGNAL SERVICE] Removing used PreKey $preKeyId after session establishment');
       await preKeyStore.removePreKey(preKeyId);
       
-      // Check if we need to generate more PreKeys locally
-      await preKeyStore.checkPreKeys();
+      // 🚀 OPTIMIZED: Async regeneration (non-blocking)
+      // Generate the consumed PreKey in the background
+      _regeneratePreKeyAsync(preKeyId);
       
       // CRITICAL: Trigger server sync check after PreKey deletion
       // This ensures server stays in sync with local PreKey count
@@ -2951,6 +2985,51 @@ Future<String> decryptItem({
   /// Load received/decrypted group items for a channel
   Future<List<Map<String, dynamic>>> loadReceivedGroupItems(String channelId) async {
     return await decryptedGroupItemsStore.getChannelItems(channelId);
+  }
+  
+  // ===== HELPER METHODS =====
+  
+  /// Find contiguous ranges in a list of IDs for batch generation optimization
+  /// 
+  /// Example: [5, 23, 24, 25, 26, 89, 105] 
+  ///       → [[5], [23,24,25,26], [89], [105]]
+  List<List<int>> _findContiguousRanges(List<int> ids) {
+    if (ids.isEmpty) return [];
+    
+    final sortedIds = List<int>.from(ids)..sort();
+    final ranges = <List<int>>[];
+    var currentRange = <int>[sortedIds[0]];
+    
+    for (int i = 1; i < sortedIds.length; i++) {
+      if (sortedIds[i] == currentRange.last + 1) {
+        // Contiguous - add to current range
+        currentRange.add(sortedIds[i]);
+      } else {
+        // Gap found - save current range, start new one
+        ranges.add(currentRange);
+        currentRange = [sortedIds[i]];
+      }
+    }
+    ranges.add(currentRange); // Add last range
+    
+    return ranges;
+  }
+  
+  /// Asynchronously regenerate a single PreKey after consumption
+  /// This runs in the background and doesn't block message processing
+  Future<void> _regeneratePreKeyAsync(int preKeyId) async {
+    try {
+      debugPrint('[SIGNAL SERVICE] Async regenerating PreKey $preKeyId...');
+      
+      final preKeys = generatePreKeys(preKeyId, preKeyId);
+      if (preKeys.isNotEmpty) {
+        await preKeyStore.storePreKey(preKeyId, preKeys.first);
+        debugPrint('[SIGNAL SERVICE] ✓ PreKey $preKeyId regenerated and uploaded async');
+      }
+    } catch (e) {
+      debugPrint('[SIGNAL SERVICE] ✗ Failed to regenerate PreKey $preKeyId: $e');
+      // Don't rethrow - this is background work
+    }
   }
 }
 

@@ -59,6 +59,34 @@ function isValidUUID(uuid) {
   return uuidRegex.test(uuid);
 }
 
+// 🚀 Helper function to safely emit to a device (only if client is ready)
+function safeEmitToDevice(io, userId, deviceId, event, data) {
+  const deviceKey = `${userId}:${deviceId}`;
+  const socketId = deviceSockets.get(deviceKey);
+  
+  if (!socketId) {
+    console.log(`[SAFE_EMIT] Device ${deviceKey} not connected`);
+    return false;
+  }
+  
+  const targetSocket = io.sockets.sockets.get(socketId);
+  if (!targetSocket) {
+    console.log(`[SAFE_EMIT] Socket ${socketId} not found`);
+    return false;
+  }
+  
+  if (!targetSocket.clientReady) {
+    console.log(`[SAFE_EMIT] ⚠️ Client ${deviceKey} not ready yet, queuing/dropping event: ${event}`);
+    // TODO: Optionally queue the event for later delivery
+    return false;
+  }
+  
+  // Client is ready, safe to emit
+  targetSocket.emit(event, data);
+  console.log(`[SAFE_EMIT] ✓ Event '${event}' sent to ${deviceKey}`);
+  return true;
+}
+
 // Configure session middleware
 
 const sessionMiddleware = session({
@@ -220,6 +248,9 @@ function updateParticipantKeyStatus(channelId, socketId, hasKey) {
 io.sockets.on("error", e => console.log(e));
 io.sockets.on("connection", socket => {
 
+  // 🔒 Track client ready state (prevents sending events before client is initialized)
+  socket.clientReady = false;
+
   socket.on("authenticate", () => {
     // Here you would normally check the clientid and mail against your database
     try {
@@ -248,6 +279,17 @@ io.sockets.on("connection", socket => {
       console.error('Error during authentication:', error);
       socket.emit("authenticated", { authenticated: false });
     }
+  });
+
+  // 🚀 NEW: Client ready notification
+  // Client signals that PreKeys are generated and listeners are registered
+  socket.on("clientReady", (data) => {
+    console.log("[SIGNAL SERVER] Client ready notification received:", data);
+    socket.clientReady = true;
+    console.log(`[SIGNAL SERVER] Socket ${socket.id} marked as ready for events`);
+    
+    // Optionally send any pending messages that were queued
+    // (if you implement a pending message queue)
   });
 
   // Setup mediasoup signaling routes
@@ -638,7 +680,7 @@ io.sockets.on("connection", socket => {
         // (regardless of whether recipient is online)
         const senderSocketId = deviceSockets.get(`${senderUserId}:${senderDeviceId}`);
         if (senderSocketId) {
-          io.to(senderSocketId).emit("deliveryReceipt", {
+          safeEmitToDevice(io, senderUserId, senderDeviceId, "deliveryReceipt", {
             itemId: itemId,
             recipientUserId: recipientUserId,
             recipientDeviceId: recipientDeviceId,
@@ -656,8 +698,8 @@ io.sockets.on("connection", socket => {
         console.log(`[SIGNAL SERVER] Is self-message: ${isSelfMessage}`);
         console.log(`[SIGNAL SERVER] cipherType`, cipherType);
         if (targetSocketId) {
-          // Send 1:1 message to target device (NO channel field - direct messages only)
-          io.to(targetSocketId).emit("receiveItem", {
+          // 🚀 Use safe emit (only if client ready)
+          safeEmitToDevice(io, recipientUserId, recipientDeviceId, "receiveItem", {
             sender: senderUserId,
             senderDeviceId: senderDeviceId,
             recipient: recipientUserId,
@@ -778,7 +820,7 @@ io.sockets.on("connection", socket => {
         if (senderItem) {
           const senderSocketId = deviceSockets.get(`${senderItem.sender}:${senderItem.deviceSender}`);
           if (senderSocketId) {
-            io.to(senderSocketId).emit("groupMessageReadReceipt", {
+            safeEmitToDevice(io, senderItem.sender, senderItem.deviceSender, "groupMessageReadReceipt", {
               itemId: itemId,
               groupId: groupId,
               readBy: readerUserId,
@@ -915,7 +957,7 @@ io.sockets.on("connection", socket => {
 
         const targetSocketId = deviceSockets.get(`${client.owner}:${client.device_id}`);
         if (targetSocketId) {
-          io.to(targetSocketId).emit('receiveSenderKeyDistribution', payload);
+          safeEmitToDevice(io, client.owner, client.device_id, 'receiveSenderKeyDistribution', payload);
           deliveredCount++;
         }
       }
@@ -1197,16 +1239,20 @@ io.sockets.on("connection", socket => {
       
       // Send targeted notification to each authorized user
       targetSockets.forEach(targetSocket => {
-        targetSocket.emit("fileAnnounced", {
-          fileId,
-          userId,
-          deviceId,
-          mimeType,
-          fileSize,
-          seederCount: fileInfo.seederCount,
-          chunkQuality,
-          sharedWith: sharedUsers
-        });
+        const targetUserId = targetSocket.handshake.session?.uuid;
+        const targetDeviceId = targetSocket.handshake.session?.deviceId;
+        if (targetUserId && targetDeviceId) {
+          safeEmitToDevice(io, targetUserId, targetDeviceId, "fileAnnounced", {
+            fileId,
+            userId,
+            deviceId,
+            mimeType,
+            fileSize,
+            seederCount: fileInfo.seederCount,
+            chunkQuality,
+            sharedWith: sharedUsers
+          });
+        }
       });
 
     } catch (error) {
@@ -1246,10 +1292,14 @@ io.sockets.on("connection", socket => {
           );
         
         targetSockets.forEach(targetSocket => {
-          targetSocket.emit("fileSeederUpdate", {
-            fileId,
-            seederCount: fileInfo.seederCount
-          });
+          const targetUserId = targetSocket.handshake.session?.uuid;
+          const targetDeviceId = targetSocket.handshake.session?.deviceId;
+          if (targetUserId && targetDeviceId) {
+            safeEmitToDevice(io, targetUserId, targetDeviceId, "fileSeederUpdate", {
+              fileId,
+              seederCount: fileInfo.seederCount
+            });
+          }
         });
       }
 
@@ -1296,11 +1346,15 @@ io.sockets.on("connection", socket => {
           );
         
         targetSockets.forEach(targetSocket => {
-          targetSocket.emit("fileSeederUpdate", {
-            fileId,
-            seederCount: fileInfo.seederCount,
-            chunkQuality
-          });
+          const targetUserId = targetSocket.handshake.session?.uuid;
+          const targetDeviceId = targetSocket.handshake.session?.deviceId;
+          if (targetUserId && targetDeviceId) {
+            safeEmitToDevice(io, targetUserId, targetDeviceId, "fileSeederUpdate", {
+              fileId,
+              seederCount: fileInfo.seederCount,
+              chunkQuality
+            });
+          }
         });
         
         console.log(`[P2P FILE] Notified ${targetSockets.length} users about chunk update (quality: ${chunkQuality}%)`);
@@ -1495,11 +1549,15 @@ io.sockets.on("connection", socket => {
           .filter(s => s.handshake.session?.uuid === targetUserId);
         
         targetSockets.forEach(targetSocket => {
-          targetSocket.emit("fileSharedWithYou", {
-            fileId,
-            fromUserId: userId,
-            fileInfo
-          });
+          const targetUserId = targetSocket.handshake.session?.uuid;
+          const targetDeviceId = targetSocket.handshake.session?.deviceId;
+          if (targetUserId && targetDeviceId) {
+            safeEmitToDevice(io, targetUserId, targetDeviceId, "fileSharedWithYou", {
+              fileId,
+              fromUserId: userId,
+              fileInfo
+            });
+          }
         });
       }
 
@@ -1643,17 +1701,20 @@ io.sockets.on("connection", socket => {
           .filter(s => s.handshake.session?.uuid === targetUserId);
         
         targetSockets.forEach(targetSocket => {
-          if (action === 'add') {
-            targetSocket.emit("fileSharedWithYou", {
-              fileId,
-              fromUserId: userId,
-              fileInfo: updatedFileInfo
-            });
-          } else {
-            targetSocket.emit("fileAccessRevoked", {
-              fileId,
-              byUserId: userId
-            });
+          const targetDeviceId = targetSocket.handshake.session?.deviceId;
+          if (targetDeviceId) {
+            if (action === 'add') {
+              safeEmitToDevice(io, targetUserId, targetDeviceId, "fileSharedWithYou", {
+                fileId,
+                fromUserId: userId,
+                fileInfo: updatedFileInfo
+              });
+            } else {
+              safeEmitToDevice(io, targetUserId, targetDeviceId, "fileAccessRevoked", {
+                fileId,
+                byUserId: userId
+              });
+            }
           }
         });
       });
@@ -1695,10 +1756,13 @@ io.sockets.on("connection", socket => {
         .filter(s => s.handshake.session?.uuid === targetUserId);
       
       targetSockets.forEach(targetSocket => {
-        targetSocket.emit("fileUnsharedFromYou", {
-          fileId,
-          fromUserId: userId
-        });
+        const targetDeviceId = targetSocket.handshake.session?.deviceId;
+        if (targetDeviceId) {
+          safeEmitToDevice(io, targetUserId, targetDeviceId, "fileUnsharedFromYou", {
+            fileId,
+            fromUserId: userId
+          });
+        }
       });
 
     } catch (error) {
@@ -1751,7 +1815,7 @@ io.sockets.on("connection", socket => {
         if (targetSocketId) {
           const fromUserId = socket.handshake.session.uuid;
           const fromDeviceId = socket.handshake.session.deviceId;
-          io.to(targetSocketId).emit("file:webrtc-offer", {
+          safeEmitToDevice(io, targetUserId, targetDeviceId, "file:webrtc-offer", {
             fromUserId,
             fromDeviceId,
             fileId,
@@ -1770,12 +1834,15 @@ io.sockets.on("connection", socket => {
           const fromUserId = socket.handshake.session.uuid;
           const fromDeviceId = socket.handshake.session.deviceId;
           targetSockets.forEach(targetSocket => {
-            targetSocket.emit("file:webrtc-offer", {
-              fromUserId,
-              fromDeviceId,
-              fileId,
-              offer
-            });
+            const targetDeviceId = targetSocket.handshake.session?.deviceId;
+            if (targetDeviceId) {
+              safeEmitToDevice(io, targetUserId, targetDeviceId, "file:webrtc-offer", {
+                fromUserId,
+                fromDeviceId,
+                fileId,
+                offer
+              });
+            }
           });
           console.log(`[P2P WEBRTC] ✓ Offer broadcast to ${targetSockets.length} device(s) of user ${targetUserId}`);
         } else {
@@ -1802,7 +1869,7 @@ io.sockets.on("connection", socket => {
         if (targetSocketId) {
           const fromUserId = socket.handshake.session.uuid;
           const fromDeviceId = socket.handshake.session.deviceId;
-          io.to(targetSocketId).emit("file:webrtc-answer", {
+          safeEmitToDevice(io, targetUserId, targetDeviceId, "file:webrtc-answer", {
             fromUserId,
             fromDeviceId,
             fileId,
@@ -1821,12 +1888,15 @@ io.sockets.on("connection", socket => {
           const fromUserId = socket.handshake.session.uuid;
           const fromDeviceId = socket.handshake.session.deviceId;
           targetSockets.forEach(targetSocket => {
-            targetSocket.emit("file:webrtc-answer", {
-              fromUserId,
-              fromDeviceId,
-              fileId,
-              answer
-            });
+            const targetDeviceId = targetSocket.handshake.session?.deviceId;
+            if (targetDeviceId) {
+              safeEmitToDevice(io, targetUserId, targetDeviceId, "file:webrtc-answer", {
+                fromUserId,
+                fromDeviceId,
+                fileId,
+                answer
+              });
+            }
           });
           console.log(`[P2P WEBRTC] Answer broadcast to ${targetSockets.length} devices`);
         } else {
@@ -1853,7 +1923,7 @@ io.sockets.on("connection", socket => {
         if (targetSocketId) {
           const fromUserId = socket.handshake.session.uuid;
           const fromDeviceId = socket.handshake.session.deviceId;
-          io.to(targetSocketId).emit("file:webrtc-ice", {
+          safeEmitToDevice(io, targetUserId, targetDeviceId, "file:webrtc-ice", {
             fromUserId,
             fromDeviceId,
             fileId,
@@ -1871,12 +1941,15 @@ io.sockets.on("connection", socket => {
           const fromUserId = socket.handshake.session.uuid;
           const fromDeviceId = socket.handshake.session.deviceId;
           targetSockets.forEach(targetSocket => {
-            targetSocket.emit("file:webrtc-ice", {
-              fromUserId,
-              fromDeviceId,
-              fileId,
-              candidate
-            });
+            const targetDeviceId = targetSocket.handshake.session?.deviceId;
+            if (targetDeviceId) {
+              safeEmitToDevice(io, targetUserId, targetDeviceId, "file:webrtc-ice", {
+                fromUserId,
+                fromDeviceId,
+                fileId,
+                candidate
+              });
+            }
           });
         } else {
           console.warn(`[P2P WEBRTC] Target user ${targetUserId} not found online`);
@@ -1908,10 +1981,13 @@ io.sockets.on("connection", socket => {
       
       if (targetSockets.length > 0) {
         targetSockets.forEach(targetSocket => {
-          targetSocket.emit("file:key-request", {
-            fromUserId: requesterId,
-            fileId: fileId
-          });
+          const targetDeviceId = targetSocket.handshake.session?.deviceId;
+          if (targetDeviceId) {
+            safeEmitToDevice(io, targetUserId, targetDeviceId, "file:key-request", {
+              fromUserId: requesterId,
+              fileId: fileId
+            });
+          }
         });
         console.log(`[P2P KEY] Key request relayed to ${targetUserId}`);
       } else {
@@ -1949,12 +2025,15 @@ io.sockets.on("connection", socket => {
       
       if (targetSockets.length > 0) {
         targetSockets.forEach(targetSocket => {
-          targetSocket.emit("file:key-response", {
-            fromUserId: seederId,
-            fileId: fileId,
-            key: key,
-            error: error
-          });
+          const targetDeviceId = targetSocket.handshake.session?.deviceId;
+          if (targetDeviceId) {
+            safeEmitToDevice(io, targetUserId, targetDeviceId, "file:key-response", {
+              fromUserId: seederId,
+              fileId: fileId,
+              key: key,
+              error: error
+            });
+          }
         });
         console.log(`[P2P KEY] Key response relayed to ${targetUserId}`);
       } else {
@@ -1987,11 +2066,14 @@ io.sockets.on("connection", socket => {
       
       if (targetSockets.length > 0) {
         targetSockets.forEach(targetSocket => {
-          targetSocket.emit("video:key-request", {
-            fromUserId: requesterId,
-            channelId: channelId,
-            signalMessage: signalMessage
-          });
+          const targetDeviceId = targetSocket.handshake.session?.deviceId;
+          if (targetDeviceId) {
+            safeEmitToDevice(io, targetUserId, targetDeviceId, "video:key-request", {
+              fromUserId: requesterId,
+              channelId: channelId,
+              signalMessage: signalMessage
+            });
+          }
         });
         console.log(`[VIDEO E2EE] Key request relayed to ${targetUserId}`);
       } else {
@@ -2030,12 +2112,15 @@ io.sockets.on("connection", socket => {
       
       if (targetSockets.length > 0) {
         targetSockets.forEach(targetSocket => {
-          targetSocket.emit("video:key-response", {
-            fromUserId: senderId,
-            channelId: channelId,
-            signalMessage: signalMessage,
-            error: error
-          });
+          const targetDeviceId = targetSocket.handshake.session?.deviceId;
+          if (targetDeviceId) {
+            safeEmitToDevice(io, targetUserId, targetDeviceId, "video:key-response", {
+              fromUserId: senderId,
+              channelId: channelId,
+              signalMessage: signalMessage,
+              error: error
+            });
+          }
         });
         console.log(`[VIDEO E2EE] Key response relayed to ${targetUserId}`);
       } else {
@@ -2359,7 +2444,7 @@ io.sockets.on("connection", socket => {
       for (const client of memberClients) {
         const targetSocketId = deviceSockets.get(`${client.owner}:${client.device_id}`);
         if (targetSocketId) {
-          io.to(targetSocketId).emit("groupItem", {
+          safeEmitToDevice(io, client.owner, client.device_id, "groupItem", {
             itemId: itemId,
             channel: channelId,
             sender: userId,
@@ -2512,7 +2597,7 @@ io.sockets.on("connection", socket => {
       // Notify the sender about read status
       const senderSocketId = deviceSockets.get(`${groupItem.sender}:${groupItem.senderDevice}`);
       if (senderSocketId) {
-        io.to(senderSocketId).emit("groupItemReadUpdate", {
+        safeEmitToDevice(io, groupItem.sender, groupItem.senderDevice, "groupItemReadUpdate", {
           itemId: itemId,
           readBy: userId,
           readByDevice: deviceId,

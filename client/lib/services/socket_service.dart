@@ -24,9 +24,13 @@ class SocketService {
   IO.Socket? _socket;
   final Map<String, List<void Function(dynamic)>> _listeners = {};
   bool _connecting = false;
-
+  bool _listenersRegistered = false; // 🔒 Track listener registration state
+  
   // Public getter for socket (needed by SocketFileClient)
   IO.Socket? get socket => _socket;
+  
+  /// Check if listeners are registered and client is ready
+  bool get isReady => _listenersRegistered && (_socket?.connected ?? false);
   
   Future<void> connect() async {
     if (_socket != null && _socket!.connected) return;
@@ -63,6 +67,7 @@ class SocketService {
       });
       _socket!.on('disconnect', (_) {
         debugPrint('[SOCKET SERVICE] Socket disconnected');
+        resetReadyState(); // Reset ready state on disconnect
       });
       _socket!.on('reconnect', (_) {
         debugPrint('[SOCKET SERVICE] Socket reconnected');
@@ -110,6 +115,7 @@ class SocketService {
   }
 
   void disconnect() {
+    resetReadyState(); // Reset ready state before disconnect
     _socket?.disconnect();
     _socket = null;
   }
@@ -122,6 +128,26 @@ class SocketService {
         _socket!.on(event, callback);
       }
     }
+  }
+  
+  /// Notify server that all listeners are registered and client is ready
+  /// Call this AFTER all PreKeys are generated and listeners registered
+  void notifyClientReady() {
+    if (_socket?.connected ?? false) {
+      _listenersRegistered = true;
+      debugPrint('[SOCKET SERVICE] 🚀 Client ready - notifying server');
+      _socket!.emit('clientReady', {
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+    } else {
+      debugPrint('[SOCKET SERVICE] ⚠️ Cannot notify ready - socket not connected');
+    }
+  }
+  
+  /// Reset ready state (called on disconnect or logout)
+  void resetReadyState() {
+    _listenersRegistered = false;
+    debugPrint('[SOCKET SERVICE] Ready state reset');
   }
 
   void unregisterListener(String event, Function(dynamic) callback) {

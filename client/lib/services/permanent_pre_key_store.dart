@@ -30,6 +30,11 @@ class PermanentPreKeyStore extends PreKeyStore {
     }
   }
 
+  /// Get all PreKey IDs without decrypting (fast for validation/gap analysis)
+  Future<List<int>> getAllPreKeyIds() async {
+    return await _getAllPreKeyIds();
+  }
+
   /// Returns all locally stored PreKeyRecords.
   Future<List<PreKeyRecord>> getAllPreKeys() async {
     final ids = await _getAllPreKeyIds();
@@ -58,7 +63,7 @@ class PermanentPreKeyStore extends PreKeyStore {
       
       final allKeyIds = await _getAllPreKeyIds();
       
-      // 🔧 FIX: Use gap-filling logic instead of incrementing from lastId
+      // � OPTIMIZED: Use gap-filling with contiguous range batching
       if (allKeyIds.length < 20) {
         debugPrint("[PREKEY STORE] Not enough pre keys (${allKeyIds.length}/110), generating more");
         
@@ -75,24 +80,59 @@ class PermanentPreKeyStore extends PreKeyStore {
           debugPrint("[PREKEY STORE] ⚠️ Mismatch detected! This should not happen.");
         }
         
-        // Generate keys for missing IDs
-        final keysToGenerate = missingIds.take(neededKeys).toList();
-        debugPrint("[PREKEY STORE] Generating PreKeys for IDs: ${keysToGenerate.take(10).toList()}${keysToGenerate.length > 10 ? '...' : ''}");
+        // Find contiguous ranges for batch generation
+        final contiguousRanges = _findContiguousRanges(missingIds.take(neededKeys).toList());
+        debugPrint("[PREKEY STORE] Found ${contiguousRanges.length} range(s) to generate");
         
         final newPreKeys = <PreKeyRecord>[];
-        for (final id in keysToGenerate) {
-          final keys = generatePreKeys(id, id); // Generate single key with specific ID
-          if (keys.isNotEmpty) {
-            newPreKeys.add(keys.first);
+        for (final range in contiguousRanges) {
+          if (range.length > 1) {
+            // BATCH GENERATION: Multiple contiguous IDs (FAST!)
+            final start = range.first;
+            final end = range.last;
+            debugPrint("[PREKEY STORE] Batch generating PreKeys $start-$end (${range.length} keys)");
+            final keys = generatePreKeys(start, end);
+            newPreKeys.addAll(keys);
+          } else {
+            // SINGLE GENERATION: Isolated gap
+            final id = range.first;
+            debugPrint("[PREKEY STORE] Single generating PreKey $id");
+            final keys = generatePreKeys(id, id);
+            if (keys.isNotEmpty) {
+              newPreKeys.add(keys.first);
+            }
           }
         }
         
         await storePreKeys(newPreKeys);
-        debugPrint("[PREKEY STORE] ✓ Generated and stored ${newPreKeys.length} new pre keys (filling gaps)");
+        debugPrint("[PREKEY STORE] ✓ Generated and stored ${newPreKeys.length} new pre keys (filling gaps with batching)");
       }
     } finally {
       _isCheckingPreKeys = false;
     }
+  }
+  
+  /// Helper: Find contiguous ranges in a list of IDs for batch generation
+  List<List<int>> _findContiguousRanges(List<int> ids) {
+    if (ids.isEmpty) return [];
+    
+    final sortedIds = List<int>.from(ids)..sort();
+    final ranges = <List<int>>[];
+    var currentRange = <int>[sortedIds[0]];
+    
+    for (int i = 1; i < sortedIds.length; i++) {
+      if (sortedIds[i] == currentRange.last + 1) {
+        // Contiguous - add to current range
+        currentRange.add(sortedIds[i]);
+      } else {
+        // Gap found - save current range, start new one
+        ranges.add(currentRange);
+        currentRange = [sortedIds[i]];
+      }
+    }
+    ranges.add(currentRange); // Add last range
+    
+    return ranges;
   }
 
   /* LEGACY REMOTE LOAD - COMMENTED OUT FOR DEBUGGING
