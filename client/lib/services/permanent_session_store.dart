@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:idb_shim/idb_browser.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
+import 'device_scoped_storage_service.dart';
 
 /// A persistent session store for Signal sessions.
 /// Uses IndexedDB on web and FlutterSecureStorage on native.
@@ -40,23 +41,13 @@ class PermanentSessionStore extends SessionStore {
   Future<bool> containsSession(SignalProtocolAddress address) async {
     debugPrint('[PermanentSessionStore] containsSession: address = $address');
     try {
-      // Debug: print address info and types
       debugPrint('[PermanentSessionStore] containsSession: address.getName() = \'${address.getName()}\', address.getDeviceId() = ${address.getDeviceId()} (type: \'${address.getDeviceId().runtimeType}\')');
       if (kIsWeb) {
-        final IdbFactory idbFactory = idbFactoryBrowser;
-        final db = await idbFactory.open(_storeName, version: 1,
-            onUpgradeNeeded: (VersionChangeEvent event) {
-          Database db = event.database;
-          if (!db.objectStoreNames.contains(_storeName)) {
-            db.createObjectStore(_storeName, autoIncrement: false);
-          }
-        });
-        var txn = db.transaction(_storeName, 'readonly');
-        var store = txn.objectStore(_storeName);
+        // Use encrypted device-scoped storage
+        final storage = DeviceScopedStorageService.instance;
         var key = _sessionKey(address);
         debugPrint('[PermanentSessionStore] containsSession: session key = $key');
-        var value = await store.getObject(key);
-        await txn.completed;
+        var value = await storage.getDecrypted(_storeName, _storeName, key);
         debugPrint('[PermanentSessionStore] containsSession: value = $value');
         return value != null;
       } else {
@@ -76,23 +67,15 @@ class PermanentSessionStore extends SessionStore {
   @override
   Future<void> deleteAllSessions(String name) async {
   if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      var keys = await store.getAllKeys();
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      final keys = await storage.getAllKeys(_storeName, _storeName);
+      
       for (var key in keys) {
-        if (key is String && key.startsWith(_keyPrefix + name + '_')) {
-          await store.delete(key);
+        if (key.startsWith(_keyPrefix + name + '_')) {
+          await storage.deleteEncrypted(_storeName, _storeName, key);
         }
       }
-      await txn.completed;
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'session_keys');
@@ -113,19 +96,10 @@ class PermanentSessionStore extends SessionStore {
   Future<void> deleteSession(SignalProtocolAddress address) async {
   final sessionKey = _sessionKey(address);
   if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      await store.delete(_sessionKey(address));
-      await txn.completed;
-    } else {
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      await storage.deleteEncrypted(_storeName, _storeName, sessionKey);
+    } else{
       final storage = FlutterSecureStorage();
       await storage.delete(key: sessionKey);
       // Remove from tracked session keys
@@ -143,19 +117,12 @@ class PermanentSessionStore extends SessionStore {
   Future<List<int>> getSubDeviceSessions(String name) async {
     final deviceIds = <int>[];
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readonly');
-      var store = txn.objectStore(_storeName);
-      var keys = await store.getAllKeys();
+      // 🔒 Use encrypted storage
+      final storage = DeviceScopedStorageService.instance;
+      var keys = await storage.getAllKeys(_storeName, _storeName);
+      
       for (var key in keys) {
-        if (key is String && key.startsWith(_keyPrefix + name + '_')) {
+        if (key.startsWith(_keyPrefix + name + '_')) {
           var deviceIdStr = key.substring((_keyPrefix + name + '_').length);
           var deviceId = int.tryParse(deviceIdStr);
           if (deviceId != null && deviceId != 1) {
@@ -163,7 +130,6 @@ class PermanentSessionStore extends SessionStore {
           }
         }
       }
-      await txn.completed;
     } else {
       // Not supported in FlutterSecureStorage without key tracking
     }
@@ -175,22 +141,12 @@ class PermanentSessionStore extends SessionStore {
     try {
       if (await containsSession(address)) {
         if (kIsWeb) {
-          final IdbFactory idbFactory = idbFactoryBrowser;
-          final db = await idbFactory.open(_storeName, version: 1,
-              onUpgradeNeeded: (VersionChangeEvent event) {
-            Database db = event.database;
-            if (!db.objectStoreNames.contains(_storeName)) {
-              db.createObjectStore(_storeName, autoIncrement: false);
-            }
-          });
-          var txn = db.transaction(_storeName, 'readonly');
-          var store = txn.objectStore(_storeName);
-          var value = await store.getObject(_sessionKey(address));
-          await txn.completed;
-          if (value is String) {
+          // Use encrypted device-scoped storage
+          final storage = DeviceScopedStorageService.instance;
+          var value = await storage.getDecrypted(_storeName, _storeName, _sessionKey(address));
+          
+          if (value != null) {
             return SessionRecord.fromSerialized(base64Decode(value));
-          } else if (value is Uint8List) {
-            return SessionRecord.fromSerialized(value);
           } else {
             return SessionRecord();
           }
@@ -217,18 +173,9 @@ class PermanentSessionStore extends SessionStore {
     final serialized = record.serialize();
   final sessionKey = _sessionKey(address);
   if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      await store.put(base64Encode(serialized), _sessionKey(address));
-      await txn.completed;
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      await storage.putEncrypted(_storeName, _storeName, sessionKey, base64Encode(serialized));
     } else {
       final storage = FlutterSecureStorage();
       await storage.write(key: sessionKey, value: base64Encode(serialized));

@@ -20,6 +20,8 @@ import 'storage/sqlite_message_store.dart';
 import 'storage/sqlite_recent_conversations_store.dart';
 import 'storage/database_helper.dart';
 import 'user_profile_service.dart';
+import 'device_identity_service.dart';
+import 'web/webauthn_crypto_service.dart';
 
 /*class SocketPreKeyStore extends InMemoryPreKeyStore {
 
@@ -136,13 +138,19 @@ class SignalService {
 
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
+  
+  /// 🔒 Guard to prevent store re-creation (which would re-register Socket listeners)
+  bool _storesCreated = false;
+  
+  /// 🔒 Guard to prevent duplicate Socket.IO listener registrations
+  bool _listenersRegistered = false;
 
   final Map<String, List<Function(dynamic)>> _itemTypeCallbacks = {};
   final Map<String, List<Function(String)>> _deliveryCallbacks = {};
   final Map<String, List<Function(Map<String, dynamic>)>> _readCallbacks = {};
-  PermanentIdentityKeyStore identityStore = PermanentIdentityKeyStore();
+  late PermanentIdentityKeyStore identityStore;
   late PermanentSessionStore sessionStore;
-  PermanentPreKeyStore preKeyStore = PermanentPreKeyStore();
+  late PermanentPreKeyStore preKeyStore;
   late PermanentSignedPreKeyStore signedPreKeyStore;
   late PermanentSentMessagesStore sentMessagesStore;
   late PermanentDecryptedMessagesStore decryptedMessagesStore;
@@ -407,16 +415,27 @@ class SignalService {
 
 
   Future<void> init() async {
-  identityStore = PermanentIdentityKeyStore();
-  sessionStore = await PermanentSessionStore.create();
-  preKeyStore = PermanentPreKeyStore();
-  final identityKeyPair = await identityStore.getIdentityKeyPair();
-  signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
-  sentMessagesStore = await PermanentSentMessagesStore.create();
-  decryptedMessagesStore = await PermanentDecryptedMessagesStore.create();
-  senderKeyStore = await PermanentSenderKeyStore.create();
-    decryptedGroupItemsStore = await DecryptedGroupItemsStore.getInstance();
-    sentGroupItemsStore = await SentGroupItemsStore.getInstance();
+    debugPrint('[SIGNAL INIT] 🔍 init() called');
+    debugPrint('[SIGNAL INIT] Current state: _isInitialized=$_isInitialized, _storesCreated=$_storesCreated, _listenersRegistered=$_listenersRegistered');
+    
+    // Initialize stores (create only if not already created)
+    if (!_storesCreated) {
+      debugPrint('[SIGNAL INIT] Creating stores for the first time...');
+      identityStore = PermanentIdentityKeyStore();
+      sessionStore = await PermanentSessionStore.create();
+      preKeyStore = PermanentPreKeyStore();
+      final identityKeyPair = await identityStore.getIdentityKeyPair();
+      signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
+      sentMessagesStore = await PermanentSentMessagesStore.create();
+      decryptedMessagesStore = await PermanentDecryptedMessagesStore.create();
+      senderKeyStore = await PermanentSenderKeyStore.create();
+      decryptedGroupItemsStore = await DecryptedGroupItemsStore.getInstance();
+      sentGroupItemsStore = await SentGroupItemsStore.getInstance();
+      _storesCreated = true;
+      debugPrint('[SIGNAL INIT] ✅ Stores created');
+    } else {
+      debugPrint('[SIGNAL INIT] ℹ️  Stores already exist, reusing...');
+    }
 
     await _registerSocketListeners();
 
@@ -434,19 +453,27 @@ class SignalService {
   /// Initialize stores and listeners without generating keys
   /// Used when keys already exist (after successful setup or on returning user)
   Future<void> initStoresAndListeners() async {
-    debugPrint('[SIGNAL SERVICE] Initializing stores and listeners (keys already exist)...');
+    debugPrint('[SIGNAL SERVICE] 🔍 initStoresAndListeners() called');
+    debugPrint('[SIGNAL SERVICE] Current state: _isInitialized=$_isInitialized, _storesCreated=$_storesCreated, _listenersRegistered=$_listenersRegistered');
     
-    // Initialize all stores
-    identityStore = PermanentIdentityKeyStore();
-    sessionStore = await PermanentSessionStore.create();
-    preKeyStore = PermanentPreKeyStore();
-    final identityKeyPair = await identityStore.getIdentityKeyPair();
-    signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
-    sentMessagesStore = await PermanentSentMessagesStore.create();
-    decryptedMessagesStore = await PermanentDecryptedMessagesStore.create();
-    senderKeyStore = await PermanentSenderKeyStore.create();
-    decryptedGroupItemsStore = await DecryptedGroupItemsStore.getInstance();
-    sentGroupItemsStore = await SentGroupItemsStore.getInstance();
+    // Initialize stores (create only if not already created)
+    if (!_storesCreated) {
+      debugPrint('[SIGNAL SERVICE] Creating stores for the first time...');
+      identityStore = PermanentIdentityKeyStore();
+      sessionStore = await PermanentSessionStore.create();
+      preKeyStore = PermanentPreKeyStore();
+      final identityKeyPair = await identityStore.getIdentityKeyPair();
+      signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
+      sentMessagesStore = await PermanentSentMessagesStore.create();
+      decryptedMessagesStore = await PermanentDecryptedMessagesStore.create();
+      senderKeyStore = await PermanentSenderKeyStore.create();
+      decryptedGroupItemsStore = await DecryptedGroupItemsStore.getInstance();
+      sentGroupItemsStore = await SentGroupItemsStore.getInstance();
+      _storesCreated = true;
+      debugPrint('[SIGNAL INIT] ✅ Stores created');
+    } else {
+      debugPrint('[SIGNAL INIT] ℹ️  Stores already exist, reusing...');
+    }
 
     // Register socket listeners
     await _registerSocketListeners();
@@ -467,6 +494,16 @@ class SignalService {
   /// - total: Total steps (112: 1 KeyPair + 1 SignedPreKey + 110 PreKeys)
   /// - percentage: Progress percentage (0-100)
   Future<void> initWithProgress(Function(String statusText, int current, int total, double percentage) onProgress) async {
+    debugPrint('[SIGNAL INIT] 🔍 initWithProgress() called');
+    debugPrint('[SIGNAL INIT] Current state: _isInitialized=$_isInitialized, _storesCreated=$_storesCreated, _listenersRegistered=$_listenersRegistered');
+    
+    // Prevent multiple concurrent initializations
+    if (_isInitialized) {
+      debugPrint('[SIGNAL INIT] Already initialized, skipping...');
+      onProgress('Signal Protocol ready', 112, 112, 100.0);
+      return;
+    }
+    
     const int totalSteps = 112; // 1 KeyPair + 1 SignedPreKey + 110 PreKeys
     int currentStep = 0;
 
@@ -476,15 +513,42 @@ class SignalService {
       onProgress(status, step, totalSteps, percentage);
     }
 
-    // Initialize stores first
-    identityStore = PermanentIdentityKeyStore();
-    sessionStore = await PermanentSessionStore.create();
-    preKeyStore = PermanentPreKeyStore();
-    sentMessagesStore = await PermanentSentMessagesStore.create();
-    decryptedMessagesStore = await PermanentDecryptedMessagesStore.create();
-    senderKeyStore = await PermanentSenderKeyStore.create();
-    decryptedGroupItemsStore = await DecryptedGroupItemsStore.getInstance();
-    sentGroupItemsStore = await SentGroupItemsStore.getInstance();
+    // 🔒 CRITICAL: Check if device identity is initialized (required for encryption)
+    if (DeviceIdentityService.instance.deviceId.isEmpty) {
+      // Try to restore from SessionStorage first
+      debugPrint('[SIGNAL INIT] Device identity not in memory, checking SessionStorage...');
+      if (!DeviceIdentityService.instance.tryRestoreFromSession()) {
+        throw Exception('Device identity not initialized. Please log in first.');
+      }
+      debugPrint('[SIGNAL INIT] Device identity restored from SessionStorage');
+    }
+
+    // 🔑 CRITICAL: Check if encryption key exists in SessionStorage
+    final deviceId = DeviceIdentityService.instance.deviceId;
+    final encryptionKey = WebAuthnCryptoService.instance.getKeyFromSession(deviceId);
+    if (encryptionKey == null) {
+      throw Exception('Encryption key not found. Please log in again to re-authenticate with WebAuthn.');
+    }
+    debugPrint('[SIGNAL INIT] ✓ Encryption key verified');
+
+    // Initialize stores (create only if not already created)
+    // Since stores are declared as `late`, they can only be safely accessed after creation
+    // We must avoid re-creating stores as this would re-register Socket listeners
+    if (!_storesCreated) {
+      debugPrint('[SIGNAL INIT] Creating stores for the first time...');
+      identityStore = PermanentIdentityKeyStore();
+      sessionStore = await PermanentSessionStore.create();
+      preKeyStore = PermanentPreKeyStore();
+      sentMessagesStore = await PermanentSentMessagesStore.create();
+      decryptedMessagesStore = await PermanentDecryptedMessagesStore.create();
+      senderKeyStore = await PermanentSenderKeyStore.create();
+      decryptedGroupItemsStore = await DecryptedGroupItemsStore.getInstance();
+      sentGroupItemsStore = await SentGroupItemsStore.getInstance();
+      _storesCreated = true;
+      debugPrint('[SIGNAL INIT] ✅ Stores created for the first time');
+    } else {
+      debugPrint('[SIGNAL INIT] ℹ️  Stores already exist, reusing...');
+    }
 
     // Step 1: Generate Identity Key Pair (if needed)
     updateProgress('Generating identity key pair...', currentStep);
@@ -515,40 +579,84 @@ class SignalService {
     await Future.delayed(const Duration(milliseconds: 50));
 
     // Step 3: Generate PreKeys in batches (110 keys, 10 per batch)
-    final existingPreKeys = await preKeyStore.getAllPreKeys();
+    var existingPreKeys = await preKeyStore.getAllPreKeys();
+    
+    // 🔧 CLEANUP: Remove ALL PreKeys if corrupted (>110 keys OR any ID >= 110)
+    final hasExcessKeys = existingPreKeys.length > 110;
+    final hasInvalidIds = existingPreKeys.any((k) => k.id >= 110);
+    
+    if (hasExcessKeys || hasInvalidIds) {
+      if (hasExcessKeys) {
+        debugPrint('[SIGNAL INIT] ⚠️ Found ${existingPreKeys.length} PreKeys (expected max 110)');
+      }
+      if (hasInvalidIds) {
+        final invalidIds = existingPreKeys.where((k) => k.id >= 110).map((k) => k.id).toList();
+        debugPrint('[SIGNAL INIT] ⚠️ Found invalid PreKey IDs (>= 110): $invalidIds');
+      }
+      
+      debugPrint('[SIGNAL INIT] 🔧 Deleting ALL PreKeys and regenerating fresh set (IDs 0-109)...');
+      
+      // Delete ALL existing PreKeys
+      for (final key in existingPreKeys) {
+        await preKeyStore.removePreKey(key.id, sendToServer: true);
+      }
+      
+      existingPreKeys = [];
+      debugPrint('[SIGNAL INIT] ✓ Cleanup complete, will generate fresh 110 PreKeys');
+    }
+    
     final neededPreKeys = 110 - existingPreKeys.length;
     
     if (neededPreKeys > 0) {
-      debugPrint('[SIGNAL INIT] Generating $neededPreKeys pre keys');
-      final startId = existingPreKeys.isNotEmpty 
-          ? existingPreKeys.map((k) => k.id).reduce((a, b) => a > b ? a : b) + 1 
-          : 0;
+      debugPrint('[SIGNAL INIT] Generating $neededPreKeys pre keys (IDs must be 0-109)');
       
+      // Find missing IDs in range 0-109
+      final existingIds = existingPreKeys.map((k) => k.id).toSet();
+      final missingIds = List.generate(110, (i) => i).where((id) => !existingIds.contains(id)).toList();
+      
+      if (missingIds.length != neededPreKeys) {
+        debugPrint('[SIGNAL INIT] ⚠️ Mismatch: need $neededPreKeys keys but found ${missingIds.length} missing IDs');
+        // This shouldn't happen, but if it does, regenerate everything
+        for (final key in existingPreKeys) {
+          await preKeyStore.removePreKey(key.id, sendToServer: true);
+        }
+        existingPreKeys = [];
+        missingIds.clear();
+        missingIds.addAll(List.generate(110, (i) => i));
+      }
+      
+      // Generate keys for missing IDs in batches
       const int batchSize = 10;
-      final int totalBatches = (neededPreKeys / batchSize).ceil();
+      final int totalBatches = (missingIds.length / batchSize).ceil();
+      int keysGeneratedInSession = 0;
       
       for (int batch = 0; batch < totalBatches; batch++) {
-        final int batchStart = startId + (batch * batchSize);
-        final int batchEnd = (batchStart + batchSize).clamp(0, startId + neededPreKeys);
-        final int keysInBatch = batchEnd - batchStart;
+        final int batchStart = batch * batchSize;
+        final int batchEnd = ((batch + 1) * batchSize).clamp(0, missingIds.length);
+        final batchIds = missingIds.sublist(batchStart, batchEnd);
         
-        updateProgress('Generating pre keys ${existingPreKeys.length + (batch * batchSize) + 1}-${existingPreKeys.length + (batch * batchSize) + keysInBatch} of 110...', currentStep);
-        
-        final preKeys = generatePreKeys(batchStart, batchEnd - 1);
-        for (final preKey in preKeys) {
-          await preKeyStore.storePreKey(preKey.id, preKey);
-          currentStep++;
-          
-          // Update progress every 5 keys or on last key
-          if (currentStep % 5 == 0 || currentStep == totalSteps) {
-            final keysGenerated = currentStep - 2; // Subtract KeyPair and SignedPreKey
-            updateProgress('Generating pre keys $keysGenerated of 110...', currentStep);
+        // Generate keys for this batch of IDs
+        for (final id in batchIds) {
+          // Generate single PreKey with specific ID
+          final preKeys = generatePreKeys(id, id); // Single key generation
+          if (preKeys.isNotEmpty) {
+            await preKeyStore.storePreKey(id, preKeys.first);
+            keysGeneratedInSession++;
+            
+            // Update progress every 5 keys
+            if (keysGeneratedInSession % 5 == 0 || keysGeneratedInSession == missingIds.length) {
+              final totalKeysNow = existingPreKeys.length + keysGeneratedInSession;
+              updateProgress('Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...', currentStep + keysGeneratedInSession);
+            }
           }
         }
         
         // Small delay between batches to prevent UI freeze
         await Future.delayed(const Duration(milliseconds: 100));
       }
+      
+      // Update currentStep by total keys generated
+      currentStep += missingIds.length;
     } else {
       debugPrint('[SIGNAL INIT] Pre keys already sufficient (${existingPreKeys.length}/110)');
       // Skip to end
@@ -571,6 +679,14 @@ class SignalService {
 
   /// Register all Socket.IO listeners (extracted for reuse)
   Future<void> _registerSocketListeners() async {
+    // 🔒 Prevent duplicate listener registrations
+    if (_listenersRegistered) {
+      debugPrint('[SIGNAL SERVICE] Socket listeners already registered, skipping...');
+      return;
+    }
+    
+    debugPrint('[SIGNAL SERVICE] Registering Socket.IO listeners...');
+    
     // Setup offline queue processing on reconnect
     SocketService().registerListener("connect", (_) {
       debugPrint('[SIGNAL SERVICE] Socket reconnected, processing offline queue...');
@@ -666,6 +782,9 @@ class SignalService {
         debugPrint('[SIGNAL_SERVICE] Error processing sender key distribution: $e');
       }
     });
+    
+    _listenersRegistered = true;
+    debugPrint('[SIGNAL SERVICE] ✅ Socket.IO listeners registered');
   }
 
   Future<void> _ensureSignalKeysPresent(status) async {
@@ -675,6 +794,12 @@ class SignalService {
     // Check if user is authenticated
     if (status is Map && status['error'] != null) {
       debugPrint('[SIGNAL SERVICE] ERROR: ${status['error']} - Cannot upload Signal keys without authentication');
+      return;
+    }
+    
+    // Guard: Only run after initialization is complete
+    if (!_isInitialized) {
+      debugPrint('[SIGNAL SERVICE] ⚠️ Not initialized yet, skipping key sync check');
       return;
     }
     
@@ -688,7 +813,7 @@ class SignalService {
         'registrationId': registrationId.toString(),
       });
     }
-    // 2. PreKeys - Enhanced sync check
+    // 2. PreKeys - Sync check ONLY (no generation - that's done in initWithProgress)
     final int preKeysCount = (status is Map && status['preKeys'] is int) ? status['preKeys'] : 0;
     debugPrint('[SIGNAL SERVICE] Server has $preKeysCount PreKeys');
     
@@ -699,13 +824,14 @@ class SignalService {
     if (preKeysCount < 20) {
       // Server critically low
       if (localPreKeys.isEmpty) {
-        // No local PreKeys → Generate new ones
-        debugPrint('[SIGNAL SERVICE] ⚠️  No local PreKeys found, generating 110 new ones');
-        final newPreKeys = generatePreKeys(0, 110);
-        await preKeyStore.storePreKeys(newPreKeys);
+        // No local PreKeys AND server has none → This shouldn't happen after initWithProgress()
+        debugPrint('[SIGNAL SERVICE] ⚠️ CRITICAL: No local PreKeys found! Keys should have been generated during initialization.');
+        debugPrint('[SIGNAL SERVICE] This indicates initWithProgress() was skipped or failed.');
+        // Don't generate here - initialization should handle this
+        return;
       } else if (preKeysCount == 0) {
         // Server has 0 but we have local → CRITICAL sync issue!
-        debugPrint('[SIGNAL SERVICE] ⚠️  CRITICAL: Server has 0 PreKeys but local has ${localPreKeys.length}!');
+        debugPrint('[SIGNAL SERVICE] ⚠️ CRITICAL: Server has 0 PreKeys but local has ${localPreKeys.length}!');
         debugPrint('[SIGNAL SERVICE] Re-uploading ALL local PreKeys to server...');
         final preKeysPayload = localPreKeys.map((pk) => {
           'id': pk.id,
@@ -714,7 +840,7 @@ class SignalService {
         SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
       } else if (localPreKeys.length > preKeysCount + 10) {
         // Server significantly behind local (>10 difference) → Re-sync
-        debugPrint('[SIGNAL SERVICE] ⚠️  Sync gap detected: Server has $preKeysCount, local has ${localPreKeys.length}');
+        debugPrint('[SIGNAL SERVICE] ⚠️ Sync gap detected: Server has $preKeysCount, local has ${localPreKeys.length}');
         debugPrint('[SIGNAL SERVICE] Uploading ${localPreKeys.length} local PreKeys to server...');
         final preKeysPayload = localPreKeys.map((pk) => {
           'id': pk.id,
@@ -809,6 +935,16 @@ class SignalService {
   /// Unregister read receipt callbacks
   void clearReadCallbacks() {
     _readCallbacks.remove('default');
+  }
+  
+  /// Reset service state on logout
+  /// Allows fresh initialization on next login
+  void resetOnLogout() {
+    debugPrint('[SIGNAL SERVICE] Resetting state on logout...');
+    _isInitialized = false;
+    _storesCreated = false;
+    _listenersRegistered = false;
+    debugPrint('[SIGNAL SERVICE] ✓ State reset complete');
   }
 
   /// Unregister a callback for a specific item type

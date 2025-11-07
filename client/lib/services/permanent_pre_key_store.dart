@@ -1,15 +1,16 @@
 import 'socket_service.dart';
-import 'package:collection/collection.dart';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:idb_shim/idb_browser.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+// import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // ❌ LEGACY - Not used anymore
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
+import 'device_scoped_storage_service.dart';
 
 /// A persistent pre-key store for Signal pre-keys.
 /// Uses IndexedDB on web and FlutterSecureStorage on native.
 class PermanentPreKeyStore extends PreKeyStore {
+  /// 🔒 Guard to prevent concurrent checkPreKeys() calls
+  bool _isCheckingPreKeys = false;
+  
   /// Store multiple prekeys at once and emit them in a single call.
   Future<void> storePreKeys(List<PreKeyRecord> preKeys) async {
     if (preKeys.isEmpty) return;
@@ -46,30 +47,55 @@ class PermanentPreKeyStore extends PreKeyStore {
 
   /// Checks if enough prekeys are available, generates and stores more if needed.
   Future<void> checkPreKeys() async {
-    final allKeys = await _getAllPreKeyIds();
-    if (allKeys.length < 20) {
-      debugPrint("[PREKEY STORE] Not enough pre keys (${allKeys.length}/110), generating more");
-      var lastId = allKeys.isNotEmpty ? allKeys.reduce((a, b) => a > b ? a : b) : -1;
-      if (lastId == 9007199254740991) {
-        lastId = -1; // Reset to -1 so we start from 0 again
+    // 🔒 Prevent concurrent calls (race condition protection)
+    if (_isCheckingPreKeys) {
+      debugPrint("[PREKEY STORE] checkPreKeys already running, skipping...");
+      return;
+    }
+    
+    try {
+      _isCheckingPreKeys = true;
+      
+      final allKeyIds = await _getAllPreKeyIds();
+      
+      // 🔧 FIX: Use gap-filling logic instead of incrementing from lastId
+      if (allKeyIds.length < 20) {
+        debugPrint("[PREKEY STORE] Not enough pre keys (${allKeyIds.length}/110), generating more");
+        
+        // Find missing IDs in range 0-109
+        final existingIds = allKeyIds.toSet();
+        final missingIds = List.generate(110, (i) => i)
+            .where((id) => !existingIds.contains(id))
+            .toList();
+        
+        final neededKeys = 110 - allKeyIds.length;
+        debugPrint("[PREKEY STORE] Need to generate $neededKeys keys, found ${missingIds.length} missing IDs in range 0-109");
+        
+        if (missingIds.length != neededKeys) {
+          debugPrint("[PREKEY STORE] ⚠️ Mismatch detected! This should not happen.");
+        }
+        
+        // Generate keys for missing IDs
+        final keysToGenerate = missingIds.take(neededKeys).toList();
+        debugPrint("[PREKEY STORE] Generating PreKeys for IDs: ${keysToGenerate.take(10).toList()}${keysToGenerate.length > 10 ? '...' : ''}");
+        
+        final newPreKeys = <PreKeyRecord>[];
+        for (final id in keysToGenerate) {
+          final keys = generatePreKeys(id, id); // Generate single key with specific ID
+          if (keys.isNotEmpty) {
+            newPreKeys.add(keys.first);
+          }
+        }
+        
+        await storePreKeys(newPreKeys);
+        debugPrint("[PREKEY STORE] ✓ Generated and stored ${newPreKeys.length} new pre keys (filling gaps)");
       }
-      
-      // Calculate how many keys we need to reach 110 total
-      final neededKeys = 110 - allKeys.length;
-      debugPrint("[PREKEY STORE] Need to generate $neededKeys more keys (current: ${allKeys.length}, target: 110)");
-      
-      // generatePreKeys is INCLUSIVE: generatePreKeys(a, b) generates (b - a + 1) keys
-      // To generate exactly `neededKeys`, we do: generatePreKeys(lastId + 1, lastId + neededKeys)
-      final startId = lastId + 1;
-      final endId = lastId + neededKeys;
-      debugPrint("[PREKEY STORE] Generating keys from $startId to $endId ($neededKeys keys)");
-      
-      var newPreKeys = generatePreKeys(startId, endId);
-      await storePreKeys(newPreKeys);
-      debugPrint("[PREKEY STORE] ✓ Generated and stored ${newPreKeys.length} new pre keys");
+    } finally {
+      _isCheckingPreKeys = false;
     }
   }
 
+  /* LEGACY REMOTE LOAD - COMMENTED OUT FOR DEBUGGING
   /// Loads prekeys from remote server and stores them locally.
   /// IMPORTANT: Always queries server to detect sync issues (e.g. server has 0, local has 43)
   Future<void> loadRemotePreKeys() async {
@@ -80,26 +106,30 @@ class PermanentPreKeyStore extends PreKeyStore {
     debugPrint('[PREKEY STORE] Querying server for PreKey sync check...');
     SocketService().emit("getPreKeys", null);
   }
+  */ // END LEGACY REMOTE LOAD
 
   /// Helper: Get all prekey IDs (for both web and native)
   Future<List<int>> _getAllPreKeyIds() async {
+    // ✅ ONLY encrypted device-scoped storage (Web + Native)
+    final storage = DeviceScopedStorageService.instance;
+    final keys = await storage.getAllKeys(_storeName, _storeName);
+    
+    return keys
+        .where((k) => k.startsWith(_keyPrefix))
+        .map((k) => int.tryParse(k.replaceFirst(_keyPrefix, '')))
+        .whereType<int>()
+        .toList();
+    
+    /* LEGACY NATIVE STORAGE - DISABLED
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readonly');
-      var store = txn.objectStore(_storeName);
-      var keys = await store.getAllKeys();
-      await txn.completed;
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      final keys = await storage.getAllKeys(_storeName, _storeName);
+      
       return keys
-          .whereType<String>()
+          .where((k) => k.startsWith(_keyPrefix))
           .map((k) => int.tryParse(k.replaceFirst(_keyPrefix, '')))
-          .whereNotNull()
+          .whereType<int>()
           .toList();
     } else {
       final storage = FlutterSecureStorage();
@@ -108,16 +138,25 @@ class PermanentPreKeyStore extends PreKeyStore {
         List<String> keys = List<String>.from(jsonDecode(keysJson));
         return keys
             .map((k) => int.tryParse(k.replaceFirst(_keyPrefix, '')))
-            .whereNotNull()
+            .whereType<int>()
             .toList();
       }
       return [];
     }
+    */
   }
+  
   final String _storeName = 'peerwaveSignalPreKeys';
   final String _keyPrefix = 'prekey_';
 
   PermanentPreKeyStore() {
+    debugPrint('[PREKEY STORE] 🔧 Constructor called - LEGACY AUTO-GENERATION DISABLED FOR DEBUGGING');
+    
+    // 🚫 TEMPORARILY DISABLED: Legacy auto-generation logic
+    // This constructor automatically generated PreKeys based on server sync
+    // We're disabling it to isolate the current setup issue
+    
+    /* LEGACY CODE - COMMENTED OUT FOR DEBUGGING
     // Listener for server PreKey query response
     SocketService().registerListener("getPreKeysResponse", (data) async {
       debugPrint('[PREKEY STORE] Server has ${data.length} PreKeys');
@@ -199,8 +238,11 @@ class PermanentPreKeyStore extends PreKeyStore {
     });
     
     loadRemotePreKeys();
+    */ 
+    // END LEGACY CODE
   }
   
+  /* LEGACY SYNC METHOD - COMMENTED OUT FOR DEBUGGING
   /// Synchronize local PreKeys with server IDs
   /// Deletes local PreKeys that don't exist on server
   Future<void> _syncWithServerIds(List<int> serverIds) async {
@@ -233,52 +275,52 @@ class PermanentPreKeyStore extends PreKeyStore {
     final finalLocalIds = await _getAllPreKeyIds();
     debugPrint('[PREKEY STORE] 📊 Final state: Local=${finalLocalIds.length}, Server=${serverIds.length}');
   }
+  */ // END LEGACY SYNC METHOD
 
   String _preKey(int preKeyId) => '$_keyPrefix$preKeyId';
 
   @override
   Future<bool> containsPreKey(int preKeyId) async {
+    // ✅ ONLY encrypted device-scoped storage (Web + Native)
+    final storage = DeviceScopedStorageService.instance;
+    final value = await storage.getDecrypted(_storeName, _storeName, _preKey(preKeyId));
+    return value != null;
+    
+    /* LEGACY NATIVE STORAGE - DISABLED
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readonly');
-      var store = txn.objectStore(_storeName);
-      var value = await store.getObject(_preKey(preKeyId));
-      await txn.completed;
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      final value = await storage.getDecrypted(_storeName, _storeName, _preKey(preKeyId));
       return value != null;
     } else {
       final storage = FlutterSecureStorage();
       var value = await storage.read(key: _preKey(preKeyId));
       return value != null;
     }
+    */
   }
 
   @override
   Future<PreKeyRecord> loadPreKey(int preKeyId) async {
     if (await containsPreKey(preKeyId)) {
+      // ✅ ONLY encrypted device-scoped storage (Web + Native)
+      final storage = DeviceScopedStorageService.instance;
+      final value = await storage.getDecrypted(_storeName, _storeName, _preKey(preKeyId));
+      
+      if (value != null) {
+        return PreKeyRecord.fromBuffer(base64Decode(value));
+      } else {
+        throw Exception('Invalid prekey data');
+      }
+      
+      /* LEGACY NATIVE STORAGE - DISABLED
       if (kIsWeb) {
-        final IdbFactory idbFactory = idbFactoryBrowser;
-        final db = await idbFactory.open(_storeName, version: 1,
-            onUpgradeNeeded: (VersionChangeEvent event) {
-          Database db = event.database;
-          if (!db.objectStoreNames.contains(_storeName)) {
-            db.createObjectStore(_storeName, autoIncrement: false);
-          }
-        });
-        var txn = db.transaction(_storeName, 'readonly');
-        var store = txn.objectStore(_storeName);
-        var value = await store.getObject(_preKey(preKeyId));
-        await txn.completed;
-        if (value is String) {
+        // Use encrypted device-scoped storage
+        final storage = DeviceScopedStorageService.instance;
+        final value = await storage.getDecrypted(_storeName, _storeName, _preKey(preKeyId));
+        
+        if (value != null) {
           return PreKeyRecord.fromBuffer(base64Decode(value));
-        } else if (value is Uint8List) {
-          return PreKeyRecord.fromBuffer(value);
         } else {
           throw Exception('Invalid prekey data');
         }
@@ -291,6 +333,7 @@ class PermanentPreKeyStore extends PreKeyStore {
           throw Exception('No such prekeyrecord! - $preKeyId');
         }
       }
+      */
     } else {
       throw Exception('No such prekeyrecord! - $preKeyId');
     }
@@ -298,23 +341,20 @@ class PermanentPreKeyStore extends PreKeyStore {
 
   @override
   Future<void> removePreKey(int preKeyId, {bool sendToServer = true}) async {
+    // ✅ ONLY encrypted device-scoped storage (Web + Native)
+    final storage = DeviceScopedStorageService.instance;
+    await storage.deleteEncrypted(_storeName, _storeName, _preKey(preKeyId));
+    
+    /* LEGACY NATIVE STORAGE - DISABLED
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      await store.delete(_preKey(preKeyId));
-      await txn.completed;
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      await storage.deleteEncrypted(_storeName, _storeName, _preKey(preKeyId));
     } else {
       final storage = FlutterSecureStorage();
       await storage.delete(key: _preKey(preKeyId));
     }
+    */
     
     // Only send to server if requested (skip during sync cleanup)
     if (sendToServer) {
@@ -332,19 +372,16 @@ class PermanentPreKeyStore extends PreKeyStore {
       });
     }
     final serialized = record.serialize();
+    
+    // ✅ ONLY encrypted device-scoped storage (Web + Native)
+    final storage = DeviceScopedStorageService.instance;
+    await storage.putEncrypted(_storeName, _storeName, _preKey(preKeyId), base64Encode(serialized));
+    
+    /* LEGACY NATIVE STORAGE - DISABLED
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      await store.put(base64Encode(serialized), _preKey(preKeyId));
-      await txn.completed;
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      await storage.putEncrypted(_storeName, _storeName, _preKey(preKeyId), base64Encode(serialized));
     } else {
       final storage = FlutterSecureStorage();
       await storage.write(key: _preKey(preKeyId), value: base64Encode(serialized));
@@ -360,6 +397,7 @@ class PermanentPreKeyStore extends PreKeyStore {
         await storage.write(key: 'prekey_keys', value: jsonEncode(keys));
       }
     }
+    */
   }
 }
 

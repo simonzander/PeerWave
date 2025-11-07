@@ -56,6 +56,21 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
       }
     } catch (e) {
       debugPrint('[SIGNAL SETUP SCREEN] Error during setup: $e');
+      
+      // Check if it's an authentication error
+      final errorMessage = e.toString();
+      if (errorMessage.contains('Device identity not initialized') ||
+          errorMessage.contains('Encryption key not found') ||
+          errorMessage.contains('Please log in')) {
+        // Redirect to login
+        if (mounted) {
+          debugPrint('[SIGNAL SETUP SCREEN] Authentication required, redirecting to login...');
+          GoRouter.of(context).go('/login');
+        }
+        return;
+      }
+      
+      // Other errors - show retry dialog
       if (mounted) {
         setState(() {
           _statusText = 'Setup failed. Please try again.';
@@ -79,10 +94,10 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
               TextButton(
                 onPressed: () {
                   Navigator.of(context).pop();
-                  // Go to app anyway (risky but allows recovery)
-                  GoRouter.of(context).go('/app');
+                  // Go to login
+                  GoRouter.of(context).go('/login');
                 },
-                child: const Text('Skip'),
+                child: const Text('Re-Login'),
               ),
             ],
           ),

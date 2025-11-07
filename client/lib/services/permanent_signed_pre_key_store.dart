@@ -1,9 +1,9 @@
 import 'socket_service.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:idb_shim/idb_browser.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
+import 'device_scoped_storage_service.dart';
 
 /// Wrapper for a signed pre-key and its metadata.
 class StoredSignedPreKey {
@@ -20,19 +20,11 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
   Future<StoredSignedPreKey?> loadStoredSignedPreKey(int signedPreKeyId) async {
     if (await containsSignedPreKey(signedPreKeyId)) {
       if (kIsWeb) {
-        final IdbFactory idbFactory = idbFactoryBrowser;
-        final db = await idbFactory.open(_storeName, version: 1,
-            onUpgradeNeeded: (VersionChangeEvent event) {
-          Database db = event.database;
-          if (!db.objectStoreNames.contains(_storeName)) {
-            db.createObjectStore(_storeName, autoIncrement: false);
-          }
-        });
-        var txn = db.transaction(_storeName, 'readonly');
-        var store = txn.objectStore(_storeName);
-        var value = await store.getObject(_signedPreKey(signedPreKeyId));
-        var metaValue = await store.getObject(_signedPreKeyMeta(signedPreKeyId));
-        await txn.completed;
+        // 🔒 Use encrypted storage
+        final storage = DeviceScopedStorageService.instance;
+        final value = await storage.getDecrypted(_storeName, _storeName, _signedPreKey(signedPreKeyId));
+        final metaValue = await storage.getDecrypted(_storeName, _storeName, _signedPreKeyMeta(signedPreKeyId));
+        
         SignedPreKeyRecord? record;
         if (value is String) {
           record = SignedPreKeyRecord.fromSerialized(base64Decode(value));
@@ -76,21 +68,14 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
   Future<List<StoredSignedPreKey>> loadAllStoredSignedPreKeys() async {
     final results = <StoredSignedPreKey>[];
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readonly');
-      var store = txn.objectStore(_storeName);
-      var keys = await store.getAllKeys();
+      // 🔒 Use encrypted storage
+      final storage = DeviceScopedStorageService.instance;
+      var keys = await storage.getAllKeys(_storeName, _storeName);
+      
       for (var key in keys) {
-        if (key is String && key.startsWith(_keyPrefix) && !key.endsWith('_meta')) {
-          var value = await store.getObject(key);
-          var metaValue = await store.getObject(key + '_meta');
+        if (key.startsWith(_keyPrefix) && !key.endsWith('_meta')) {
+          var value = await storage.getDecrypted(_storeName, _storeName, key);
+          var metaValue = await storage.getDecrypted(_storeName, _storeName, key + '_meta');
           SignedPreKeyRecord? record;
           if (value is String) {
             record = SignedPreKeyRecord.fromSerialized(base64Decode(value));
@@ -107,7 +92,6 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
           if (record != null) results.add(StoredSignedPreKey(record: record, createdAt: createdAt));
         }
       }
-      await txn.completed;
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'signedprekey_keys');
@@ -225,19 +209,10 @@ final IdentityKeyPair identityKeyPair;
   final createdAt = DateTime.now().toIso8601String();
   final meta = jsonEncode({'createdAt': createdAt});
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      await store.put(base64Encode(serialized), _signedPreKey(signedPreKeyId));
-      await store.put(meta, _signedPreKeyMeta(signedPreKeyId));
-      await txn.completed;
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      await storage.putEncrypted(_storeName, _storeName, _signedPreKey(signedPreKeyId), base64Encode(serialized));
+      await storage.putEncrypted(_storeName, _storeName, _signedPreKeyMeta(signedPreKeyId), meta);
     } else {
       final storage = FlutterSecureStorage();
       await storage.write(key: _signedPreKey(signedPreKeyId), value: base64Encode(serialized));
@@ -259,18 +234,9 @@ final IdentityKeyPair identityKeyPair;
   @override
   Future<bool> containsSignedPreKey(int signedPreKeyId) async {
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readonly');
-      var store = txn.objectStore(_storeName);
-      var value = await store.getObject(_signedPreKey(signedPreKeyId));
-      await txn.completed;
+      // 🔒 Use encrypted storage
+      final storage = DeviceScopedStorageService.instance;
+      var value = await storage.getDecrypted(_storeName, _storeName, _signedPreKey(signedPreKeyId));
       return value != null;
     } else {
       final storage = FlutterSecureStorage();
@@ -286,19 +252,10 @@ final IdentityKeyPair identityKeyPair;
       'id': signedPreKeyId,
     });
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      await store.delete(_signedPreKey(signedPreKeyId));
-      await store.delete(_signedPreKeyMeta(signedPreKeyId));
-      await txn.completed;
+      // 🔒 Use encrypted storage
+      final storage = DeviceScopedStorageService.instance;
+      await storage.deleteEncrypted(_storeName, _storeName, _signedPreKey(signedPreKeyId));
+      await storage.deleteEncrypted(_storeName, _storeName, _signedPreKeyMeta(signedPreKeyId));
     } else {
       final storage = FlutterSecureStorage();
       await storage.delete(key: _signedPreKey(signedPreKeyId));

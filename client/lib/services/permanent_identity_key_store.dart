@@ -6,6 +6,8 @@ import 'package:idb_shim/idb_browser.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'package:collection/collection.dart';
+import 'device_scoped_storage_service.dart';
+import 'web/encrypted_storage_wrapper.dart';
 
 /// A persistent identity key store for Signal identities.
 /// Uses IndexedDB on web and FlutterSecureStorage on native.
@@ -13,6 +15,7 @@ import 'package:collection/collection.dart';
 class PermanentIdentityKeyStore extends IdentityKeyStore {
   final String _storeName = 'peerwaveSignalIdentityKeys';
   final String _keyPrefix = 'identity_';
+  final EncryptedStorageWrapper _encryption = EncryptedStorageWrapper();
   IdentityKeyPair? identityKeyPair;
   int? localRegistrationId;
 
@@ -28,25 +31,14 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
   @override
   Future<IdentityKey?> getIdentity(SignalProtocolAddress address) async {
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 1,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readonly');
-      var store = txn.objectStore(_storeName);
-      var value = await store.getObject(_identityKey(address));
-      await txn.completed;
-      if (value is String) {
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      final value = await storage.getDecrypted(_storeName, _storeName, _identityKey(address));
+      
+      if (value != null) {
         return IdentityKey.fromBytes(base64Decode(value), 0);
-      } else if (value is List<int>) {
-        return IdentityKey.fromBytes(Uint8List.fromList(value), 0);
-      } else {
-        return null;
       }
+      return null;
     } else {
       final storage = FlutterSecureStorage();
       var value = await storage.read(key: _identityKey(address));
@@ -89,21 +81,76 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
 
   bool createdNew = false;
   if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final storeName = 'peerwaveSignal';
-      final db = await idbFactory.open('peerwaveSignal', version: 1, onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(storeName)) {
-          db.createObjectStore(storeName, autoIncrement: true);
+      // 🔒 Use encrypted storage for identity key pair
+      final storage = DeviceScopedStorageService.instance;
+      final encryptedData = await storage.getDecrypted(
+        'peerwaveSignal',
+        'identityKeyPair',
+        'identityKeyPair',
+      );
+      
+      if (encryptedData != null && encryptedData is Map) {
+        publicKeyBase64 = encryptedData['publicKey'] as String?;
+        privateKeyBase64 = encryptedData['privateKey'] as String?;
+        var regIdObj = encryptedData['registrationId'];
+        registrationId = regIdObj?.toString();
+        debugPrint('[IDENTITY] ✓ Loaded encrypted IdentityKeyPair from device-scoped storage');
+      }
+
+      // 🔄 MIGRATION: Check legacy store if not found in device-scoped storage
+      if (publicKeyBase64 == null || privateKeyBase64 == null || registrationId == null) {
+        debugPrint('[IDENTITY] Checking legacy store for migration...');
+        try {
+          final IdbFactory idbFactory = idbFactoryBrowser;
+          final legacyDb = await idbFactory.open('peerwaveSignal', version: 1, onUpgradeNeeded: (event) {
+            if (!event.database.objectStoreNames.contains('peerwaveSignal')) {
+              event.database.createObjectStore('peerwaveSignal', autoIncrement: true);
+            }
+          });
+          final txn = legacyDb.transaction('peerwaveSignal', 'readonly');
+          final legacyStore = txn.objectStore('peerwaveSignal');
+          
+          final legacyEnvelope = await legacyStore.getObject('identityKeyPair');
+          await txn.completed;
+          
+          if (legacyEnvelope != null && legacyEnvelope is Map<String, dynamic>) {
+            debugPrint('[IDENTITY] 🔄 Found encrypted data in legacy store - decrypting...');
+            final decrypted = await _encryption.decryptFromStorage(legacyEnvelope);
+            
+            if (decrypted is Map) {
+              publicKeyBase64 = decrypted['publicKey'] as String?;
+              privateKeyBase64 = decrypted['privateKey'] as String?;
+              registrationId = decrypted['registrationId']?.toString();
+              
+              if (publicKeyBase64 != null && privateKeyBase64 != null && registrationId != null) {
+                debugPrint('[IDENTITY] ✓ Decrypted legacy data - migrating to device-scoped storage...');
+                
+                // Store in NEW device-scoped database
+                await storage.putEncrypted(
+                  'peerwaveSignal',
+                  'identityKeyPair',
+                  'identityKeyPair',
+                  {
+                    'publicKey': publicKeyBase64,
+                    'privateKey': privateKeyBase64,
+                    'registrationId': registrationId,
+                  },
+                );
+                
+                // Delete legacy data
+                final deleteTxn = legacyDb.transaction('peerwaveSignal', 'readwrite');
+                final deleteStore = deleteTxn.objectStore('peerwaveSignal');
+                await deleteStore.delete('identityKeyPair');
+                await deleteTxn.completed;
+                
+                debugPrint('[IDENTITY] ✅ Migration complete - legacy data moved and deleted');
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('[IDENTITY] Legacy migration failed: $e');
         }
-      });
-      var txn = db.transaction(storeName, "readonly");
-      var store = txn.objectStore(storeName);
-      publicKeyBase64 = await store.getObject("publicKey") as String?;
-      privateKeyBase64 = await store.getObject("privateKey") as String?;
-      var regIdObj = await store.getObject("registrationId");
-      registrationId = regIdObj?.toString();
-      await txn.completed;
+      }
 
       if (publicKeyBase64 == null || privateKeyBase64 == null || registrationId == null) {
         debugPrint('[IDENTITY] ⚠️  CRITICAL: IdentityKeyPair missing - generating NEW keys!');
@@ -116,12 +163,18 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
           publicKeyBase64 = generated['publicKey'];
           privateKeyBase64 = generated['privateKey'];
           registrationId = generated['registrationId'];
-          txn = db.transaction(storeName, "readwrite");
-          store = txn.objectStore(storeName);
-          store.put(publicKeyBase64 ?? '', "publicKey");
-          store.put(privateKeyBase64 ?? '', "privateKey");
-          store.put(registrationId ?? '', "registrationId");
-          await txn.completed;
+          
+          // 🔒 Store encrypted identity key pair
+          await storage.putEncrypted(
+            'peerwaveSignal',
+            'identityKeyPair',
+            'identityKeyPair',
+            {
+              'publicKey': publicKeyBase64,
+              'privateKey': privateKeyBase64,
+              'registrationId': registrationId,
+            },
+          );
           createdNew = true;
         } finally {
           // 🔓 RELEASE LOCK: Even if error occurs
@@ -374,18 +427,9 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
     if (existing == null || !const ListEquality().equals(existing.serialize(), identityKey.serialize())) {
       final encoded = base64Encode(identityKey.serialize());
       if (kIsWeb) {
-        final IdbFactory idbFactory = idbFactoryBrowser;
-        final db = await idbFactory.open(_storeName, version: 1,
-            onUpgradeNeeded: (VersionChangeEvent event) {
-          Database db = event.database;
-          if (!db.objectStoreNames.contains(_storeName)) {
-            db.createObjectStore(_storeName, autoIncrement: false);
-          }
-        });
-        var txn = db.transaction(_storeName, 'readwrite');
-        var store = txn.objectStore(_storeName);
-        await store.put(encoded, _identityKey(address));
-        await txn.completed;
+        // Use encrypted device-scoped storage
+        final storage = DeviceScopedStorageService.instance;
+        await storage.putEncrypted(_storeName, _storeName, _identityKey(address), encoded);
       } else {
         final storage = FlutterSecureStorage();
         await storage.write(key: _identityKey(address), value: encoded);

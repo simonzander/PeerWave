@@ -15,6 +15,7 @@ import 'package:dio/dio.dart';
 import '../services/api_service.dart';
 import '../services/clientid_web.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/webauthn_service.dart';
 
 @JS('webauthnLogin')
 external JSPromise webauthnLoginJs(String serverUrl, String email, String clientId);
@@ -22,6 +23,8 @@ external JSPromise webauthnLoginJs(String serverUrl, String email, String client
 external set _onWebAuthnSuccess(AuthCallback callback);
 @JS('onWebAuthnAbort')
 external set _onWebAuthnAbort(AbortCallback callback);
+@JS('onWebAuthnSignature')
+external set _onWebAuthnSignature(SignatureCallback callback);
 @JS('window.localStorage.setItem')
 external void localStorageSetItem(String key, String value);
 @JS('window.localStorage.getItem')
@@ -32,6 +35,8 @@ external String? localStorageGetItem(String key);
 extension type AuthCallback(JSFunction _) {}
 @JS()
 extension type AbortCallback(JSFunction _) {}
+@JS()
+extension type SignatureCallback(JSFunction _) {}
 
 void setupWebAuthnCallback(void Function(int) callback) {
   _onWebAuthnSuccess = AuthCallback((int status) {
@@ -45,9 +50,15 @@ void setupWebAuthnAbortCallback(void Function(String) callback) {
   }.toJS);
 }
 
+void setupWebAuthnSignatureCallback(void Function(String, String) callback) {
+  _onWebAuthnSignature = SignatureCallback((String credentialId, String signature) {
+    callback(credentialId, signature);
+  }.toJS);
+}
+
 class AuthLayout extends StatefulWidget {
-  final String clientId;
-  const AuthLayout({super.key, required this.clientId});
+  final String? clientId;  // Optional - will be fetched/created after login
+  const AuthLayout({super.key, this.clientId});
 
   @override
   State<AuthLayout> createState() => _AuthLayoutState();
@@ -64,12 +75,9 @@ class _AuthLayoutState extends State<AuthLayout> {
   @override
   void initState() {
     super.initState();
-    // Persist clientId for JS (webauthnLogin in index.html will read it)
-    if (widget.clientId.isNotEmpty) {
-      try {
-        localStorageSetItem('clientId', widget.clientId);
-      } catch (_) {}
-    }
+    // NOTE: clientId is no longer persisted here - it's managed after login
+    // The clientId will be fetched/created after WebAuthn authentication
+    // and stored paired with the user's email address
     final storedEmail = localStorageGetItem('email');
   if (storedEmail != null &&storedEmail.isNotEmpty) {
     _lastEmail = storedEmail;
@@ -108,13 +116,7 @@ class _AuthLayoutState extends State<AuthLayout> {
         }
       }
     });
-    Future<void> sendClientIdToServer(String host) async {
-      final clientId = await ClientIdService.getClientId();
-      debugPrint('Sending clientId to server: $clientId');
-      ApiService.init();
-      final dio = ApiService.dio;
-      await dio.post('$host/client/addweb', data: {'clientId': clientId});
-    }
+    
     // Setup JS callback for WebAuthn abort using dart:js_interop
     setupWebAuthnAbortCallback((error) {
       debugPrint('WebAuthn aborted: $error');
@@ -122,6 +124,18 @@ class _AuthLayoutState extends State<AuthLayout> {
         _loginStatus = 'WebAuthn aborted: $error';
       });
     });
+    
+    // Setup JS callback for WebAuthn signature capture
+    setupWebAuthnSignatureCallback((credentialId, signature) async {
+      debugPrint('[AUTH] WebAuthn signature captured');
+      try {
+        await WebAuthnService.instance.captureWebAuthnResponse(credentialId, signature);
+        debugPrint('[AUTH] ✓ WebAuthn signature stored for encryption');
+      } catch (e) {
+        debugPrint('[AUTH] ✗ Failed to capture WebAuthn signature: $e');
+      }
+    });
+    
     // Setup JS callback for WebAuthn success using dart:js_interop
     setupWebAuthnCallback((status) async {
       debugPrint('STATUS: $status');
@@ -129,14 +143,29 @@ class _AuthLayoutState extends State<AuthLayout> {
         setState(() {
           _loginStatus = 'Login successful! Status: $status';
         });
+        
+        // Fetch/create client ID for this email (locally, no API call)
+        final email = _lastEmail ?? '';
+        final clientId = await ClientIdService.getClientIdForEmail(email);
+        debugPrint('[AUTH] Client ID for $email: $clientId');
+        
+        // Initialize device encryption with WebAuthn signature
+        try {
+          debugPrint('[AUTH] Initializing device encryption...');
+          await WebAuthnService.instance.initializeDeviceEncryption(email, clientId);
+          debugPrint('[AUTH] ✓ Device encryption initialized');
+        } catch (e) {
+          debugPrint('[AUTH] ✗ Failed to initialize device encryption: $e');
+          setState(() {
+            _loginStatus = 'Login successful, but encryption setup failed: $e';
+          });
+        }
+        
         final uri = Uri.base;
         final fromParam = uri.queryParameters['from'];
-        final apiServer = await loadWebApiServer();
-        String urlString = apiServer ?? '';
-        if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
-          urlString = 'https://$urlString';
-        }
-        sendClientIdToServer(urlString);
+        
+        // Navigate to /app - PostLoginInitService will handle the rest
+        debugPrint('[AUTH] ✓ Navigating to /app (initialization will continue there)');
         if (fromParam == 'magic-link') {
           context.go('/magic-link');
         } else {
@@ -159,7 +188,7 @@ class _AuthLayoutState extends State<AuthLayout> {
         if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
           urlString = 'https://$urlString';
         }
-        sendClientIdToServer(urlString);
+        // Client ID already stored locally during login
         context.go('/app/settings/backupcode/list');
       } else {
         setState(() {
@@ -355,11 +384,13 @@ class _AuthLayoutState extends State<AuthLayout> {
                       if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
                         urlString = 'https://$urlString';
                       }
-                      // Ensure clientId is available to JS prior to auth
-                      if (widget.clientId.isNotEmpty) {
-                        try { localStorageSetItem('clientId', widget.clientId); } catch (_) {}
-                      }
-                      await webauthnLogin(urlString, email, widget.clientId);
+                      
+                      // Fetch/create client ID for this email (locally, no API call)
+                      final clientId = await ClientIdService.getClientIdForEmail(email);
+                      debugPrint('[AUTH] Using client ID: $clientId for email: $email');
+                      
+                      // ClientId is passed directly to WebAuthn JS function (no localStorage needed)
+                      await webauthnLogin(urlString, email, clientId);
                     } catch (e) {
                       debugPrint('WebAuthn JS call failed: $e');
                     }

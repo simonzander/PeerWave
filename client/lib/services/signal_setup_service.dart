@@ -4,7 +4,10 @@ import 'signal_service.dart';
 import 'user_profile_service.dart';
 import '../providers/unread_messages_provider.dart';
 import 'message_listener_service.dart';
+import 'message_cleanup_service.dart';
 import 'storage/database_helper.dart';
+import 'device_identity_service.dart';
+import 'web/webauthn_crypto_service.dart';
 
 /// Service to check if Signal Protocol keys are properly set up
 /// and handle post-login initialization
@@ -45,7 +48,7 @@ class SignalSetupService {
     debugPrint('[SIGNAL SETUP] Starting new initialization...');
 
     try {
-      final totalSteps = 6;
+      final totalSteps = 7; // Updated from 6 to 7
       var currentStep = 0;
 
       // Step 1: Initialize Database (if not already done)
@@ -59,7 +62,18 @@ class SignalSetupService {
         debugPrint('[SIGNAL SETUP] ⚠ Database initialization error (may already be initialized): $e');
       }
 
-      // Step 2: Load user profiles (smart loading)
+      // Step 2: Initialize Message Cleanup Service (Auto-Delete)
+      currentStep++;
+      onProgress?.call('Initializing cleanup service...', currentStep, totalSteps);
+      debugPrint('[SIGNAL SETUP] [$currentStep/$totalSteps] Initializing Message Cleanup Service...');
+      try {
+        await MessageCleanupService.instance.init();
+        debugPrint('[SIGNAL SETUP] ✓ Message Cleanup Service initialized');
+      } catch (e) {
+        debugPrint('[SIGNAL SETUP] ⚠ Failed to initialize Message Cleanup Service: $e');
+      }
+
+      // Step 3: Load user profiles (smart loading)
       currentStep++;
       onProgress?.call('Loading user profiles...', currentStep, totalSteps);
       debugPrint('[SIGNAL SETUP] [$currentStep/$totalSteps] Loading user profiles...');
@@ -76,7 +90,7 @@ class SignalSetupService {
         // Don't block initialization on profile loading failure
       }
 
-      // Step 3: Load unread message counts
+      // Step 4: Load unread message counts
       currentStep++;
       onProgress?.call('Loading unread messages...', currentStep, totalSteps);
       debugPrint('[SIGNAL SETUP] [$currentStep/$totalSteps] Loading unread message counts...');
@@ -87,7 +101,7 @@ class SignalSetupService {
         debugPrint('[SIGNAL SETUP] ⚠ Error loading unread message counts: $e');
       }
 
-      // Step 4: Connect UnreadMessagesProvider to SignalService
+      // Step 5: Connect UnreadMessagesProvider to SignalService
       currentStep++;
       onProgress?.call('Connecting services...', currentStep, totalSteps);
       debugPrint('[SIGNAL SETUP] [$currentStep/$totalSteps] Connecting UnreadMessagesProvider...');
@@ -169,6 +183,35 @@ class SignalSetupService {
     };
 
     try {
+      // 🔒 CRITICAL: Check if device identity is initialized first
+      if (!DeviceIdentityService.instance.isInitialized) {
+        debugPrint('[SIGNAL SETUP] Device identity not initialized - attempting restore...');
+        if (!DeviceIdentityService.instance.tryRestoreFromSession()) {
+          debugPrint('[SIGNAL SETUP] Cannot check keys without device identity');
+          result['needsSetup'] = true;
+          missingKeys['deviceIdentity'] = 'Device identity not initialized - login required';
+          return result;
+        }
+      }
+
+      // 🔑 Check if encryption key exists
+      final deviceId = DeviceIdentityService.instance.deviceId;
+      final encryptionKey = WebAuthnCryptoService.instance.getKeyFromSession(deviceId);
+      if (encryptionKey == null) {
+        debugPrint('[SIGNAL SETUP] Encryption key not found in session');
+        result['needsSetup'] = true;
+        missingKeys['encryptionKey'] = 'Encryption key not found - re-authentication required';
+        return result;
+      }
+
+      // Check if SignalService is initialized (stores are ready)
+      if (!SignalService.instance.isInitialized) {
+        debugPrint('[SIGNAL SETUP] SignalService not initialized yet');
+        result['needsSetup'] = true;
+        missingKeys['signalService'] = 'Signal service not initialized';
+        return result;
+      }
+
       // Check Identity Key Pair
       try {
         await SignalService.instance.identityStore.getIdentityKeyPair();
@@ -237,10 +280,20 @@ class SignalSetupService {
 
   /// Cleanup on logout - reset initialization state
   void cleanupOnLogout() {
+    // 🔒 GUARD: Only cleanup if we were actually initialized
+    // Don't run cleanup on login page or when user was never logged in
+    if (!_postLoginInitComplete && !SignalService.instance.isInitialized) {
+      debugPrint('[SIGNAL SETUP] ℹ️  Skipping cleanup - services were never initialized');
+      return;
+    }
+    
     debugPrint('[SIGNAL SETUP] Cleaning up on logout...');
     
     // Dispose message listeners
     MessageListenerService.instance.dispose();
+    
+    // Reset SignalService state
+    SignalService.instance.resetOnLogout();
     
     // Reset initialization flags
     _postLoginInitComplete = false;

@@ -104,6 +104,15 @@
                 return;
             }
 
+            // Capture WebAuthn signature for encryption key derivation
+            const credentialId = base64UrlEncode(assertion.rawId);
+            const signature = base64UrlEncode(assertion.response.signature);
+            
+            // Pass to Dart for encryption key derivation
+            if (window.onWebAuthnSignature) {
+                window.onWebAuthnSignature(credentialId, signature);
+            }
+
             // test
             console.log('base64UrlDecode input:', assertion.rawId, typeof assertion.rawId);
             const rawId = base64UrlEncode(assertion.rawId)

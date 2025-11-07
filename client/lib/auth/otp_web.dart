@@ -10,9 +10,9 @@ class OtpWebPage extends StatefulWidget {
   final String email;
   final String serverUrl;
   final int? wait;
-  final String clientId;
+  final String? clientId;  // Optional - fetched/created after login
 
-  const OtpWebPage({Key? key, required this.email, required this.serverUrl, required this.clientId, this.wait}) : super(key: key);
+  const OtpWebPage({Key? key, required this.email, required this.serverUrl, this.clientId, this.wait}) : super(key: key);
 
   @override
   State<OtpWebPage> createState() => _OtpWebPageState();

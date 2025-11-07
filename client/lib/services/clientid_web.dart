@@ -1,40 +1,84 @@
 import 'package:uuid/uuid.dart';
 import 'package:idb_shim/idb_browser.dart';
+import 'package:flutter/foundation.dart';
 
+/// Service for managing client IDs paired with email addresses
+/// 
+/// Each email can have multiple client IDs (one per device/browser)
+/// Client IDs are stored locally in IndexedDB
 class ClientIdService {
-  static const _key = 'clientId';
-  static final IdbFactory idbFactory = idbFactoryBrowser;
-  static final _storage = 'peerwaveStorage';
-  static final _dbName = 'peerwave';
+  static const _storeName = 'emailClientIds';
+  static const _dbName = 'peerwave_clientids';
   static final int _dbVersion = 1;
-  static String? _clientId;
+  static final IdbFactory idbFactory = idbFactoryBrowser;
+  
+  /// Get or create a client ID for the given email
+  /// 
+  /// This creates a LOCAL client ID without any server API call.
+  /// The email->clientId mapping is stored in IndexedDB.
+  static Future<String> getClientIdForEmail(String email) async {
+    debugPrint('[CLIENT_ID] Getting client ID for email: $email');
+    
+    final db = await idbFactory.open(
+      _dbName,
+      version: _dbVersion,
+      onUpgradeNeeded: (VersionChangeEvent event) {
+        Database db = event.database;
+        // Create object store with email as key
+        if (!db.objectStoreNames.contains(_storeName)) {
+          db.createObjectStore(_storeName);
+        }
+      },
+    );
 
-  static Future<String> getClientId() async {
-    if (_clientId != null) return _clientId!;
-
-    final db = await idbFactory.open(_dbName, version: _dbVersion, onUpgradeNeeded: (VersionChangeEvent event) {
-      Database db = event.database;
-      // create the store
-      db.createObjectStore(_storage, autoIncrement: true);
-    });
-
-    var txn = db.transaction(_storage, "readonly");
-    var store = txn.objectStore(_storage);
-    var clientIdFromDb = await store.getObject(_key);
+    // Try to get existing client ID for this email
+    var txn = db.transaction(_storeName, "readonly");
+    var store = txn.objectStore(_storeName);
+    var existingClientId = await store.getObject(email);
     await txn.completed;
-    if (clientIdFromDb != null) {
-      _clientId = clientIdFromDb as String;
-      return _clientId!;
-    } else {
-      // Generate new UUID and persist
-      final uuid = Uuid().v4();
-      txn = db.transaction(_storage, "readwrite");
-      store = txn.objectStore(_storage);
-      store.put(uuid, _key);
-      await txn.completed;
-      _clientId = uuid;
-      return _clientId!;
+    
+    if (existingClientId != null) {
+      final clientId = existingClientId as String;
+      debugPrint('[CLIENT_ID] Found existing client ID: $clientId');
+      db.close();
+      return clientId;
     }
+    
+    // Generate new client ID for this email
+    final newClientId = const Uuid().v4();
+    debugPrint('[CLIENT_ID] Generated new client ID: $newClientId');
+    
+    // Store email->clientId mapping
+    txn = db.transaction(_storeName, "readwrite");
+    store = txn.objectStore(_storeName);
+    await store.put(newClientId, email);
+    await txn.completed;
+    
+    db.close();
+    return newClientId;
+  }
+  
+  /// Clear client ID for a specific email
+  static Future<void> clearClientIdForEmail(String email) async {
+    debugPrint('[CLIENT_ID] Clearing client ID for email: $email');
+    
+    final db = await idbFactory.open(_dbName, version: _dbVersion);
+    final txn = db.transaction(_storeName, "readwrite");
+    final store = txn.objectStore(_storeName);
+    await store.delete(email);
+    await txn.completed;
+    db.close();
+  }
+  
+  /// Clear all client IDs (for debugging/testing)
+  static Future<void> clearAll() async {
+    debugPrint('[CLIENT_ID] Clearing all client IDs');
+    
+    final db = await idbFactory.open(_dbName, version: _dbVersion);
+    final txn = db.transaction(_storeName, "readwrite");
+    final store = txn.objectStore(_storeName);
+    await store.clear();
+    await txn.completed;
+    db.close();
   }
 }
-

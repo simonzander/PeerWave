@@ -5,6 +5,9 @@ import 'signal_setup_service.dart';
 import 'user_profile_service.dart';
 import 'api_service.dart';
 import '../web_config.dart';
+import 'webauthn_service.dart';
+import 'device_identity_service.dart';
+import 'web/webauthn_crypto_service.dart';
 // Import auth service conditionally
 import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
 
@@ -55,10 +58,31 @@ class LogoutService {
       debugPrint('[LOGOUT] Clearing user profiles...');
       UserProfileService.instance.clearCache();
 
+      // 4. Clear WebAuthn encryption data
+      debugPrint('[LOGOUT] Clearing WebAuthn encryption data...');
+      try {
+        // Clear encryption key from SessionStorage
+        final deviceId = DeviceIdentityService.instance.deviceId;
+        if (deviceId.isNotEmpty) {
+          WebAuthnCryptoService.instance.clearKeyFromSession(deviceId);
+          debugPrint('[LOGOUT] ✓ Encryption key cleared from SessionStorage');
+        }
+        
+        // Clear device identity
+        DeviceIdentityService.instance.clearDeviceIdentity();
+        debugPrint('[LOGOUT] ✓ Device identity cleared');
+        
+        // Clear WebAuthn response data
+        WebAuthnService.instance.clearWebAuthnData();
+        debugPrint('[LOGOUT] ✓ WebAuthn data cleared');
+      } catch (e) {
+        debugPrint('[LOGOUT] ⚠ Error clearing encryption data: $e');
+      }
+
       // Note: Roles and unread messages will be cleared by redirect handler
       // when AuthService.isLoggedIn becomes false
 
-      // 4. Call server logout endpoint FIRST
+      // 5. Call server logout endpoint FIRST
       try {
         debugPrint('[LOGOUT] Calling server logout endpoint...');
         final apiServer = await loadWebApiServer();
@@ -74,7 +98,7 @@ class LogoutService {
         debugPrint('[LOGOUT] ⚠ Server logout failed (may already be logged out): $e');
       }
 
-      // 5. Clear local auth state
+      // 6. Clear local auth state
       debugPrint('[LOGOUT] Clearing local auth state...');
       AuthService.isLoggedIn = false;
       _logoutComplete = true;
@@ -83,7 +107,7 @@ class LogoutService {
       debugPrint('[LOGOUT] ✅ Logout complete');
       debugPrint('[LOGOUT] ========================================');
 
-      // 6. Show message if requested (BEFORE navigation)
+      // 7. Show message if requested (BEFORE navigation)
       final validContext = context;
       if (showMessage && validContext != null && validContext.mounted) {
         try {
@@ -98,7 +122,7 @@ class LogoutService {
         }
       }
 
-      // 7. Navigate to login screen LAST
+      // 8. Navigate to login screen LAST
       // Use a small delay to ensure the state is fully updated
       await Future.delayed(const Duration(milliseconds: 50));
       if (validContext != null && validContext.mounted) {
