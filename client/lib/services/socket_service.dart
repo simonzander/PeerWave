@@ -56,6 +56,17 @@ class SocketService {
       });
       _socket!.on('authenticated', (data) {
         debugPrint('[SOCKET SERVICE] Authentication response: $data');
+        // Check if authentication failed
+        if (data is Map && data['authenticated'] == false) {
+          // Only trigger auto-logout if user is logged in
+          if (AuthService.isLoggedIn) {
+            debugPrint('[SOCKET SERVICE] ⚠️  Authentication failed - triggering auto-logout');
+            _socketUnauthorizedCallback?.call();
+          } else {
+            debugPrint('[SOCKET SERVICE] Authentication failed - user not logged in yet, ignoring');
+          }
+          return;
+        }
         // Store user info in SignalService for device filtering
         if (data is Map && data['authenticated'] == true && data['uuid'] != null && data['deviceId'] != null) {
           // Parse deviceId as int (server sends String)

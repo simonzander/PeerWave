@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'dart:html' as html show window;
 import 'package:go_router/go_router.dart';
 import 'socket_service.dart';
 import 'signal_setup_service.dart';
@@ -125,22 +127,57 @@ class LogoutService {
       // 8. Navigate to login screen LAST
       // Use a small delay to ensure the state is fully updated
       await Future.delayed(const Duration(milliseconds: 50));
+      
+      // After logout, we need to navigate to login
+      // This is tricky because the context might not have GoRouter available
+      // The strategy is:
+      // 1. Try to use context.go if available
+      // 2. If that fails, just set a flag and let redirect handler catch it on next navigation
+      // 3. The redirect handler will see isLoggedIn = false and redirect to /login
+      
       if (validContext != null && validContext.mounted) {
         try {
-          debugPrint('[LOGOUT] Navigating to login screen...');
-          validContext.go('/login');
-          debugPrint('[LOGOUT] ✓ Navigation to /login triggered');
+          debugPrint('[LOGOUT] Attempting navigation to login screen...');
+          
+          // Try to get GoRouter and navigate
+          try {
+            final router = GoRouter.of(validContext);
+            
+            // Refresh the router to trigger redirect logic with new isLoggedIn state
+            router.refresh();
+            debugPrint('[LOGOUT] ✓ Router refreshed');
+            
+            // Then navigate to login after a brief delay
+            await Future.delayed(const Duration(milliseconds: 100));
+            router.go('/login');
+            debugPrint('[LOGOUT] ✓ Navigation to /login triggered');
+          } catch (routerError) {
+            // GoRouter not available in this context
+            // This happens when logout is called from unauthorized handlers
+            // before the router is fully initialized
+            debugPrint('[LOGOUT] ⚠ GoRouter not in context (expected during initialization)');
+            
+            // Force a page reload to trigger redirect
+            // In web, we can reload the page which will check auth state
+            if (kIsWeb) {
+              debugPrint('[LOGOUT] 🔄 Reloading page to trigger auth check...');
+              // Use a small delay to ensure cleanup is complete
+              await Future.delayed(const Duration(milliseconds: 200));
+              html.window.location.reload();
+            } else {
+              // On native, redirect handler will catch it
+              debugPrint('[LOGOUT] Waiting for redirect handler to catch navigation');
+            }
+          }
         } catch (e) {
-          debugPrint('[LOGOUT] ⚠ Could not navigate (GoRouter not available): $e');
-          // If navigation fails, the redirect handler in main.dart will catch it
-          debugPrint('[LOGOUT] Redirect handler will handle navigation to /login');
+          debugPrint('[LOGOUT] ⚠ Navigation error: $e');
         }
         
         // Reset logout complete flag after navigation
         await Future.delayed(const Duration(milliseconds: 500));
         _logoutComplete = false;
       } else {
-        debugPrint('[LOGOUT] No valid context for navigation - redirect handler will handle it');
+        debugPrint('[LOGOUT] No valid context - relying on redirect handler');
         // Reset logout complete flag
         await Future.delayed(const Duration(milliseconds: 500));
         _logoutComplete = false;

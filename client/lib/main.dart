@@ -128,6 +128,12 @@ class _MyAppState extends State<MyApp> {
   
   // Post-login initialization guard - prevent re-initialization on every navigation
   bool _postLoginInitComplete = false;
+  
+  // Global navigator key for accessing router from anywhere
+  static final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
+  
+  // Expose navigator key getter for logout service
+  static GlobalKey<NavigatorState> get rootNavigatorKey => _rootNavigatorKey;
 
   @override
   void initState() {
@@ -471,6 +477,7 @@ class _MyAppState extends State<MyApp> {
 
     debugPrint('[MAIN] 🏗️ Creating GoRouter...');
     final GoRouter router = GoRouter(
+      navigatorKey: _rootNavigatorKey,
       initialLocation: '/login',
       routes: routes,
       redirect: (context, state) async {
@@ -554,6 +561,11 @@ class _MyAppState extends State<MyApp> {
                     
                     _postLoginInitComplete = true;
                     
+                    // Trigger rebuild to update providers with initialized services
+                    if (mounted) {
+                      setState(() {});
+                    }
+                    
                     debugPrint('[MAIN] ========================================');
                     debugPrint('[MAIN] ✅ Post-login initialization complete');
                     debugPrint('[MAIN] ========================================');
@@ -594,6 +606,11 @@ class _MyAppState extends State<MyApp> {
                   );
                   
                   _postLoginInitComplete = true;
+                  
+                  // Trigger rebuild to update providers with initialized services
+                  if (mounted) {
+                    setState(() {});
+                  }
                 } catch (e) {
                   debugPrint('[MAIN] ⚠ Error initializing for app route: $e');
                 }

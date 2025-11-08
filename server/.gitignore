@@ -141,3 +141,5 @@ cert/ca-cert.pem
 cert/license.crt
 cert/README.md
 QUICKSTART-LICENSE.md
+
+web/*

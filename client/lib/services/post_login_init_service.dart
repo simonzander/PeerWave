@@ -239,6 +239,7 @@ class PostLoginInitService {
       debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing P2P base services...');
       
       _fileStorage = IndexedDBStorage();
+      await _fileStorage!.initialize();
       _encryptionService = EncryptionService();
       _chunkingService = ChunkingService();
       debugPrint('[POST_LOGIN_INIT] ✓ P2P base services ready');

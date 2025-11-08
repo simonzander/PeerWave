@@ -63,7 +63,11 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   
   FileStorageInterface _getStorage() {
     if (_storage == null) {
-      _storage = Provider.of<FileStorageInterface>(context, listen: false);
+      final storage = Provider.of<FileStorageInterface?>(context, listen: false);
+      if (storage == null) {
+        throw Exception('FileStorageInterface not initialized. Please login first.');
+      }
+      _storage = storage;
     }
     return _storage!;
   }
@@ -75,8 +79,11 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   
   @override
   Widget build(BuildContext context) {
-    // Load files on first build
-    if (!_hasLoadedOnce && !_isLoading) {
+    // Listen to storage changes so widget rebuilds when storage becomes available
+    final storageAvailable = Provider.of<FileStorageInterface?>(context, listen: true) != null;
+    
+    // Load files when storage becomes available
+    if (!_hasLoadedOnce && !_isLoading && storageAvailable) {
       _hasLoadedOnce = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _loadLocalFiles();
@@ -104,18 +111,20 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _getFilteredFiles().isEmpty
-                    ? _buildEmptyState()
-                    : RefreshIndicator(
-                        onRefresh: _loadLocalFiles,
-                        child: ListView.builder(
-                          itemCount: _getFilteredFiles().length,
-                          padding: const EdgeInsets.all(16),
-                          itemBuilder: (context, index) {
-                            return _buildFileCard(_getFilteredFiles()[index]);
-                          },
-                        ),
-                      ),
+                : !storageAvailable
+                    ? _buildStorageNotInitializedState()
+                    : _getFilteredFiles().isEmpty
+                        ? _buildEmptyState()
+                        : RefreshIndicator(
+                            onRefresh: _loadLocalFiles,
+                            child: ListView.builder(
+                              itemCount: _getFilteredFiles().length,
+                              padding: const EdgeInsets.all(16),
+                              itemBuilder: (context, index) {
+                                return _buildFileCard(_getFilteredFiles()[index]);
+                              },
+                            ),
+                          ),
           ),
         ],
       ),
@@ -168,6 +177,39 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                   color: colorScheme.onSurfaceVariant,
                 ),
           ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildStorageNotInitializedState() {
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.hourglass_empty,
+            size: 64,
+            color: colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'File storage initializing...',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: colorScheme.onSurface,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Please wait a moment',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 24),
+          const CircularProgressIndicator(),
         ],
       ),
     );
@@ -694,6 +736,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   }
   
   Future<void> _loadLocalFiles() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     
     try {
@@ -709,12 +752,14 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
       // For now, use mock data
       _seedingStats = {};
       
+      if (!mounted) return;
       setState(() {
         _localFiles = files;
         _isLoading = false;
       });
     } catch (e) {
       _showError('Failed to load files: $e');
+      if (!mounted) return;
       setState(() => _isLoading = false);
     }
   }
@@ -912,6 +957,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   }
   
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -921,6 +967,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   }
   
   void _showSuccess(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
