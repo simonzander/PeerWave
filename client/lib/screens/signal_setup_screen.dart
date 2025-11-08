@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/signal_service.dart';
+import '../services/logout_service.dart';
+import '../services/device_identity_service.dart';
+import '../services/device_scoped_storage_service.dart';
 
 /// Screen displayed during Signal Protocol key generation
 /// Shows PeerWave logo, progress bar, and status text
@@ -79,25 +82,78 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
         // Show error dialog
         showDialog(
           context: context,
+          barrierDismissible: false,
           builder: (context) => AlertDialog(
             title: const Text('Setup Failed'),
-            content: Text('Failed to initialize Signal Protocol: $e'),
+            content: Text('Failed to initialize Signal Protocol:\n\n$e\n\nYou can delete local encrypted data and start fresh, or logout and try again.'),
             actions: [
               TextButton(
-                onPressed: () {
+                onPressed: () async {
                   Navigator.of(context).pop();
-                  // Retry setup
-                  _startSignalSetup();
+                  
+                  // Show confirmation dialog for data deletion
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Delete Local Data?'),
+                      content: const Text(
+                        'This will delete all locally encrypted Signal Protocol data for this device.\n\n'
+                        'You will need to log in again and re-initialize encryption.\n\n'
+                        'Are you sure?'
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('Cancel'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Theme.of(context).colorScheme.error,
+                          ),
+                          child: const Text('Delete & Logout'),
+                        ),
+                      ],
+                    ),
+                  );
+                  
+                  if (confirmed == true && mounted) {
+                    try {
+                      // Get device ID to delete account-specific data
+                      final deviceId = DeviceIdentityService.instance.deviceId;
+                      debugPrint('[SIGNAL SETUP] Deleting local data for device: $deviceId');
+                      
+                      // Delete all device-specific databases
+                      await DeviceScopedStorageService.instance.deleteAllDeviceDatabases();
+                      debugPrint('[SIGNAL SETUP] ✓ Deleted all device-specific databases');
+                      
+                      // Logout and redirect
+                      if (mounted) {
+                        await LogoutService.instance.logout(context);
+                      }
+                    } catch (e) {
+                      debugPrint('[SIGNAL SETUP] Error deleting local data: $e');
+                      // Still logout even if deletion fails
+                      if (mounted) {
+                        await LogoutService.instance.logout(context);
+                      }
+                    }
+                  }
                 },
-                child: const Text('Retry'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                ),
+                child: const Text('Delete Local Data'),
               ),
               TextButton(
-                onPressed: () {
+                onPressed: () async {
                   Navigator.of(context).pop();
-                  // Go to login
-                  GoRouter.of(context).go('/login');
+                  // Logout and redirect to login
+                  if (mounted) {
+                    await LogoutService.instance.logout(context);
+                  }
                 },
-                child: const Text('Re-Login'),
+                child: const Text('Logout'),
               ),
             ],
           ),

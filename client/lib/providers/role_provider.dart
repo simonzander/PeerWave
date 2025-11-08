@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import '../models/user_roles.dart';
 import '../models/role.dart';
 import '../services/role_api_service.dart';
@@ -61,7 +62,7 @@ class RoleProvider with ChangeNotifier {
   Future<void> loadUserRoles() async {
     _isLoading = true;
     _errorMessage = null;
-    notifyListeners();
+    _safeNotifyListeners();
 
     try {
       _userRoles = await _apiService.getUserRoles();
@@ -81,6 +82,19 @@ class RoleProvider with ChangeNotifier {
       debugPrint('Error loading user roles: $e');
     } finally {
       _isLoading = false;
+      _safeNotifyListeners();
+    }
+  }
+
+  /// Safely notify listeners - avoids calling during build phase
+  void _safeNotifyListeners() {
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      // We're in build phase, schedule notification for after build
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
+    } else {
+      // Safe to notify immediately
       notifyListeners();
     }
   }
@@ -94,7 +108,7 @@ class RoleProvider with ChangeNotifier {
   void clearRoles() {
     _userRoles = null;
     _errorMessage = null;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// Gets all roles filtered by scope
