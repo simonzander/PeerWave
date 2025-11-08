@@ -633,6 +633,10 @@ class SignalService {
       
       debugPrint('[SIGNAL INIT] Found ${contiguousRanges.length} range(s) to generate');
       
+      // 🚀 BATCH UPLOAD: Process ranges in batches of 20 keys for HTTP upload
+      const int uploadBatchSize = 20;
+      List<PreKeyRecord> uploadBatch = [];
+      
       for (final range in contiguousRanges) {
         if (range.length > 1) {
           // BATCH GENERATION: Multiple contiguous IDs (FAST!)
@@ -641,18 +645,35 @@ class SignalService {
           debugPrint('[SIGNAL INIT] Batch generating PreKeys $start-$end (${range.length} keys)');
           
           final preKeys = generatePreKeys(start, end);
+          
+          // Add to upload batch
           for (final preKey in preKeys) {
-            await preKeyStore.storePreKey(preKey.id, preKey);
-            keysGeneratedInSession++;
+            uploadBatch.add(preKey);
             
-            // Update progress every 5 keys
-            if (keysGeneratedInSession % 5 == 0 || keysGeneratedInSession == missingIds.length) {
-              final totalKeysNow = existingPreKeyIds.length + keysGeneratedInSession;
-              updateProgress('Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...', currentStep + keysGeneratedInSession);
+            // Upload batch when it reaches uploadBatchSize or this is the last key
+            if (uploadBatch.length >= uploadBatchSize || 
+                keysGeneratedInSession + uploadBatch.length >= missingIds.length) {
+              
+              final success = await preKeyStore.storePreKeysBatch(uploadBatch);
+              
+              if (success) {
+                keysGeneratedInSession += uploadBatch.length;
+                
+                // Update progress based on batch size
+                final totalKeysNow = existingPreKeyIds.length + keysGeneratedInSession;
+                updateProgress(
+                  'Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...',
+                  currentStep + keysGeneratedInSession
+                );
+              } else {
+                debugPrint('[SIGNAL INIT] ⚠️ Batch upload failed, will retry on next initialization');
+              }
+              
+              uploadBatch.clear();
             }
           }
           
-          // Small delay between batches
+          // Small delay between ranges
           await Future.delayed(const Duration(milliseconds: 50));
         } else {
           // SINGLE GENERATION: Isolated gap (unavoidable)
@@ -661,15 +682,47 @@ class SignalService {
           
           final preKeys = generatePreKeys(id, id);
           if (preKeys.isNotEmpty) {
-            await preKeyStore.storePreKey(id, preKeys.first);
-            keysGeneratedInSession++;
+            uploadBatch.add(preKeys.first);
             
-            // Update progress
-            if (keysGeneratedInSession % 5 == 0 || keysGeneratedInSession == missingIds.length) {
-              final totalKeysNow = existingPreKeyIds.length + keysGeneratedInSession;
-              updateProgress('Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...', currentStep + keysGeneratedInSession);
+            // Upload batch when it reaches uploadBatchSize or this is the last key
+            if (uploadBatch.length >= uploadBatchSize || 
+                keysGeneratedInSession + uploadBatch.length >= missingIds.length) {
+              
+              final success = await preKeyStore.storePreKeysBatch(uploadBatch);
+              
+              if (success) {
+                keysGeneratedInSession += uploadBatch.length;
+                
+                // Update progress based on batch size
+                final totalKeysNow = existingPreKeyIds.length + keysGeneratedInSession;
+                updateProgress(
+                  'Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...',
+                  currentStep + keysGeneratedInSession
+                );
+              } else {
+                debugPrint('[SIGNAL INIT] ⚠️ Batch upload failed, will retry on next initialization');
+              }
+              
+              uploadBatch.clear();
             }
           }
+        }
+      }
+      
+      // Upload any remaining keys in the batch
+      if (uploadBatch.isNotEmpty) {
+        final success = await preKeyStore.storePreKeysBatch(uploadBatch);
+        
+        if (success) {
+          keysGeneratedInSession += uploadBatch.length;
+          
+          final totalKeysNow = existingPreKeyIds.length + keysGeneratedInSession;
+          updateProgress(
+            'Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...',
+            currentStep + keysGeneratedInSession
+          );
+        } else {
+          debugPrint('[SIGNAL INIT] ⚠️ Final batch upload failed, will retry on next initialization');
         }
       }
       
@@ -694,7 +747,7 @@ class SignalService {
     // 2. All socket listeners registered
     SocketService().notifyClientReady();
     debugPrint('[SIGNAL INIT] ✓ Server notified: Client ready for events');
-
+    
     // Check status with server (server will only respond if client is ready)
     SocketService().emit("signalStatus", null);
 
@@ -840,11 +893,15 @@ class SignalService {
     }
     // 2. PreKeys - Sync check ONLY (no generation - that's done in initWithProgress)
     final int preKeysCount = (status is Map && status['preKeys'] is int) ? status['preKeys'] : 0;
-    debugPrint('[SIGNAL SERVICE] Server has $preKeysCount PreKeys');
+    debugPrint('[SIGNAL SERVICE] ========================================');
+    debugPrint('[SIGNAL SERVICE] PreKey Sync Check:');
+    debugPrint('[SIGNAL SERVICE]   Server count: $preKeysCount');
     
     // 🔧 OPTIMIZED: Only get IDs first (no decryption for count check)
     final localPreKeyIds = await preKeyStore.getAllPreKeyIds();
-    debugPrint('[SIGNAL SERVICE] Local has ${localPreKeyIds.length} PreKeys');
+    debugPrint('[SIGNAL SERVICE]   Local count:  ${localPreKeyIds.length}');
+    debugPrint('[SIGNAL SERVICE]   Difference:   ${localPreKeyIds.length - preKeysCount}');
+    debugPrint('[SIGNAL SERVICE] ========================================');
     
     if (preKeysCount < 20) {
       // Server critically low
@@ -889,17 +946,24 @@ class SignalService {
       }
     } else if (localPreKeyIds.length > preKeysCount) {
       // NEW: Server has enough (>= 20), but local has MORE
-      // This happens when PreKeys are generated locally but not uploaded yet
-      // Find the PreKeys that exist locally but not on server
-      debugPrint('[SIGNAL SERVICE] 🔄 Local has ${localPreKeyIds.length - preKeysCount} more PreKeys than server');
-      debugPrint('[SIGNAL SERVICE] Uploading ALL local PreKeys to ensure server sync...');
-      // NOW load full PreKeys (with decryption) only when needed for upload
-      final localPreKeys = await preKeyStore.getAllPreKeys();
-      final preKeysPayload = localPreKeys.map((pk) => {
-        'id': pk.id,
-        'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
-      }).toList();
-      SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
+      // Only re-upload if difference is significant (>5 keys) to avoid unnecessary work
+      final difference = localPreKeyIds.length - preKeysCount;
+      
+      if (difference > 5) {
+        // Significant difference - upload all keys
+        debugPrint('[SIGNAL SERVICE] 🔄 Local has $difference more PreKeys than server (significant)');
+        debugPrint('[SIGNAL SERVICE] Uploading ALL local PreKeys to ensure server sync...');
+        // NOW load full PreKeys (with decryption) only when needed for upload
+        final localPreKeys = await preKeyStore.getAllPreKeys();
+        final preKeysPayload = localPreKeys.map((pk) => {
+          'id': pk.id,
+          'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
+        }).toList();
+        SocketService().emit("storePreKeys", { 'preKeys': preKeysPayload });
+      } else {
+        // Small difference - server will request missing keys when needed
+        debugPrint('[SIGNAL SERVICE] ℹ️ Local has $difference more PreKeys than server (minor difference, will sync on demand)');
+      }
     } else {
       debugPrint('[SIGNAL SERVICE] ✅ Server has sufficient PreKeys ($preKeysCount >= 20) and is in sync');
     }

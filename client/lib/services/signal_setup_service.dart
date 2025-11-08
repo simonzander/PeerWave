@@ -232,8 +232,9 @@ class SignalSetupService {
 
       // Check PreKeys count
       try {
-        final preKeys = await SignalService.instance.preKeyStore.getAllPreKeys();
-        result['preKeysCount'] = preKeys.length;
+        // 🔧 OPTIMIZED: Only get IDs (no decryption for count check)
+        final preKeyIds = await SignalService.instance.preKeyStore.getAllPreKeyIds();
+        result['preKeysCount'] = preKeyIds.length;
       } catch (e) {
         debugPrint('[SIGNAL SETUP] Error getting pre keys count: $e');
         result['preKeysCount'] = 0;

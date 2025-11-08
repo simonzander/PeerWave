@@ -374,6 +374,107 @@ clientRoutes.post("/channels/:channelId/group-messages", async (req, res) => {
     }
 });
 
+// Batch store PreKeys via HTTP POST (for progressive initialization)
+clientRoutes.post("/signal/prekeys/batch", async (req, res) => {
+    const sessionUuid = req.session.uuid;
+    const sessionDeviceId = req.session.deviceId;
+    
+    if (!sessionUuid || !sessionDeviceId) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        const { preKeys } = req.body;
+        
+        if (!Array.isArray(preKeys) || preKeys.length === 0) {
+            return res.status(400).json({ 
+                status: "error", 
+                message: "Invalid request: preKeys must be a non-empty array" 
+            });
+        }
+        
+        // Validate preKeys format
+        for (const pk of preKeys) {
+            if (typeof pk.id !== 'number' || !pk.data) {
+                return res.status(400).json({ 
+                    status: "error", 
+                    message: "Invalid preKey format: each preKey must have 'id' (number) and 'data' (string)" 
+                });
+            }
+        }
+        
+        // Find client record
+        const client = await Client.findOne({
+            where: { owner: sessionUuid, device_id: sessionDeviceId }
+        });
+        
+        if (!client) {
+            return res.status(404).json({ 
+                status: "error", 
+                message: "Client device not found" 
+            });
+        }
+        
+        // Prepare batch insert data
+        const preKeyRecords = preKeys.map(pk => ({
+            owner: sessionUuid,
+            client: client.clientid,
+            prekey_id: pk.id,
+            prekey_data: pk.data  // Note: field name is prekey_data in the model
+        }));
+        
+        // Batch insert with write queue - with timeout to prevent HTTP timeout
+        const WRITE_TIMEOUT_MS = 5000; // 5 second timeout for HTTP response
+        
+        const writePromise = writeQueue.enqueue(
+            () => SignalPreKey.bulkCreate(preKeyRecords, {
+                updateOnDuplicate: ['prekey_data', 'updatedAt'] // Update prekey_data and timestamp if prekey_id already exists
+            }),
+            `storePreKeysBatch-${preKeys.length}`
+        );
+        
+        const timeoutPromise = new Promise((resolve) => {
+            setTimeout(() => resolve({ timeout: true }), WRITE_TIMEOUT_MS);
+        });
+        
+        // Race between write completion and timeout
+        const result = await Promise.race([writePromise, timeoutPromise]);
+        
+        if (result && result.timeout) {
+            // Write is queued but not completed within timeout
+            console.log(`[SIGNAL PREKEYS BATCH] User ${sessionUuid} device ${sessionDeviceId} - write queued (${preKeys.length} PreKeys)`);
+            
+            // Let the write continue in background (don't await)
+            writePromise.then(() => {
+                console.log(`[SIGNAL PREKEYS BATCH] ✓ Background write completed: ${preKeys.length} PreKeys for ${sessionUuid}`);
+            }).catch(err => {
+                console.error(`[SIGNAL PREKEYS BATCH] ✗ Background write failed for ${sessionUuid}:`, err);
+            });
+            
+            res.status(202).json({ 
+                status: "accepted", 
+                stored: preKeys.length,
+                message: `${preKeys.length} PreKeys queued for processing`
+            });
+        } else {
+            // Write completed quickly
+            console.log(`[SIGNAL PREKEYS BATCH] User ${sessionUuid} device ${sessionDeviceId} stored ${preKeys.length} PreKeys`);
+            
+            res.status(200).json({ 
+                status: "success", 
+                stored: preKeys.length,
+                message: `${preKeys.length} PreKeys stored successfully`
+            });
+        }
+    } catch (error) {
+        console.error('[SIGNAL PREKEYS BATCH] Error storing PreKeys:', error);
+        res.status(500).json({ 
+            status: "error", 
+            message: "Internal server error" 
+        });
+    }
+});
+
 clientRoutes.get("/signal/prekey_bundle/:userId", async (req, res) => {
     const { userId } = req.params;
     const sessionUuid = req.session.uuid;

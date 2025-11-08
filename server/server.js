@@ -599,6 +599,7 @@ io.sockets.on("connection", socket => {
         const preKeysCount = await SignalPreKey.count({
           where: { owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId }
         });
+        console.log(`[SIGNAL SERVER] signalStatus: User ${socket.handshake.session.uuid} has ${preKeysCount} PreKeys on server`);
 
         // SignedPreKey: latest
         const signedPreKey = await SignalSignedPreKey.findOne({

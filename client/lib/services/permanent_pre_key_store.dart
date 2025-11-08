@@ -4,12 +4,67 @@ import 'package:flutter/foundation.dart';
 // import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // ❌ LEGACY - Not used anymore
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'device_scoped_storage_service.dart';
+import 'api_service.dart';
 
 /// A persistent pre-key store for Signal pre-keys.
 /// Uses IndexedDB on web and FlutterSecureStorage on native.
 class PermanentPreKeyStore extends PreKeyStore {
   /// 🔒 Guard to prevent concurrent checkPreKeys() calls
   bool _isCheckingPreKeys = false;
+  
+  /// Store multiple prekeys at once via HTTP POST (batch upload)
+  /// Returns true if successful, false otherwise
+  Future<bool> storePreKeysBatch(List<PreKeyRecord> preKeys) async {
+    if (preKeys.isEmpty) return true;
+    
+    debugPrint("[PREKEY STORE] Storing ${preKeys.length} PreKeys via HTTP batch upload");
+    
+    try {
+      // Prepare payload
+      final preKeyPayload = preKeys.map((k) => {
+        'id': k.id,
+        'data': base64Encode(k.getKeyPair().publicKey.serialize()),
+      }).toList();
+      
+      // Send via HTTP POST
+      final response = await ApiService.post(
+        '/signal/prekeys/batch',
+        data: { 'preKeys': preKeyPayload }
+      );
+      
+      if (response.statusCode == 200) {
+        debugPrint("[PREKEY STORE] ✓ Batch upload successful: ${preKeys.length} keys stored on server");
+        
+        // Store locally after successful server upload
+        for (final record in preKeys) {
+          await storePreKey(record.id, record, sendToServer: false);
+        }
+        
+        return true;
+      } else if (response.statusCode == 202) {
+        // 202 Accepted: Write is queued but not yet completed on server
+        debugPrint("[PREKEY STORE] ⏳ Batch upload accepted (processing in background): ${preKeys.length} keys");
+        
+        // Store locally immediately (client-side storage is fast)
+        for (final record in preKeys) {
+          await storePreKey(record.id, record, sendToServer: false);
+        }
+        
+        // Add a short delay to allow server background write to complete
+        // This prevents immediately checking status before write finishes
+        debugPrint("[PREKEY STORE] Waiting 2s for background processing to complete...");
+        await Future.delayed(const Duration(seconds: 2));
+        
+        return true; // Consider this a success - write will complete in background
+      } else {
+        debugPrint("[PREKEY STORE] ✗ Batch upload failed with status ${response.statusCode}");
+        return false;
+      }
+    } catch (e) {
+      debugPrint("[PREKEY STORE] ✗ Batch upload error: $e");
+      return false;
+    }
+  }
   
   /// Store multiple prekeys at once and emit them in a single call.
   Future<void> storePreKeys(List<PreKeyRecord> preKeys) async {
