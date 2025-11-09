@@ -3,15 +3,36 @@ import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart';
+import '../device_identity_service.dart';
+import 'database_encryption_service.dart';
 
-/// Central database helper for PeerWave
-/// Handles both native (file-based SQLite) and web (IndexedDB-backed SQLite)
+/// Central database helper for PeerWave with device-scoped storage
+/// 
+/// Database naming: peerwave_{deviceId}.db
+/// - Device isolation: Each device has its own database
+/// - Application-layer encryption: Sensitive columns encrypted
+/// - Handles both native (file-based SQLite) and web (IndexedDB-backed SQLite)
 class DatabaseHelper {
   static Database? _database;
   static bool _factoryInitialized = false;
   static bool _initializing = false;
-  static const String _databaseName = 'peerwave.db'; // .db extension for native, stripped by web
-  static const int _databaseVersion = 1;
+  static const String _databaseBaseName = 'peerwave'; // Base name without .db extension
+  static const int _databaseVersion = 2; // Bumped for encrypted columns
+  
+  static final DeviceIdentityService _deviceIdentity = DeviceIdentityService.instance;
+  static final DatabaseEncryptionService _encryption = DatabaseEncryptionService.instance;
+  
+  /// Get device-scoped database name
+  static String get _databaseName {
+    if (!_deviceIdentity.isInitialized) {
+      throw Exception('[DATABASE] Device identity not initialized');
+    }
+    
+    final deviceId = _deviceIdentity.deviceId;
+    final dbName = '${_databaseBaseName}_$deviceId.db';
+    debugPrint('[DATABASE] Device-scoped DB name: $dbName');
+    return dbName;
+  }
 
   /// Get the singleton database instance
   static Future<Database> get database async {
@@ -35,9 +56,11 @@ class DatabaseHelper {
     
     _initializing = true;
     try {
-      debugPrint('[DATABASE] Starting database initialization...');
+      debugPrint('[DATABASE] ========================================');
+      debugPrint('[DATABASE] Starting device-scoped database initialization');
+      debugPrint('[DATABASE] ========================================');
       _database = await _initDatabase();
-      debugPrint('[DATABASE] Database initialization successful');
+      debugPrint('[DATABASE] ✓ Database initialization successful');
       return _database!;
     } finally {
       _initializing = false;
@@ -129,14 +152,17 @@ class DatabaseHelper {
   /// Create database tables
   static Future<void> _onCreate(Database db, int version) async {
     debugPrint('[DATABASE] Creating database schema version $version...');
+    debugPrint('[DATABASE] Using application-layer encryption for sensitive columns');
     
     // =============================================
     // MESSAGES TABLE (1:1 and Group Messages)
     // =============================================
+    // message: BLOB (encrypted message content)
+    // Other fields: Plain (for indexing/searching)
     await db.execute('''
       CREATE TABLE messages (
         item_id TEXT PRIMARY KEY,
-        message TEXT NOT NULL,
+        message BLOB NOT NULL,
         sender TEXT NOT NULL,
         sender_device_id INTEGER,
         channel_id TEXT,
@@ -148,7 +174,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // Indexes for fast queries
+    // Indexes for fast queries (only on non-encrypted columns)
     await db.execute('CREATE INDEX idx_messages_sender ON messages(sender)');
     await db.execute('CREATE INDEX idx_messages_channel ON messages(channel_id)');
     await db.execute('CREATE INDEX idx_messages_timestamp ON messages(timestamp DESC)');
@@ -156,7 +182,7 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_messages_direction ON messages(direction)');
     await db.execute('CREATE INDEX idx_messages_conversation ON messages(sender, channel_id, timestamp DESC)');
     
-    debugPrint('[DATABASE] ✓ Created messages table with indexes');
+    debugPrint('[DATABASE] ✓ Created messages table with encrypted message column');
 
     // =============================================
     // RECENT CONVERSATIONS TABLE
@@ -180,10 +206,10 @@ class DatabaseHelper {
     debugPrint('[DATABASE] ✓ Created recent_conversations table');
 
     // =============================================
-    // SIGNAL PROTOCOL TABLES
+    // SIGNAL PROTOCOL TABLES (encrypted BLOB columns)
     // =============================================
     
-    // Sessions
+    // Sessions - record is encrypted
     await db.execute('''
       CREATE TABLE signal_sessions (
         address TEXT PRIMARY KEY,
@@ -192,7 +218,7 @@ class DatabaseHelper {
       )
     ''');
     
-    // Identity Keys
+    // Identity Keys - identity_key is encrypted
     await db.execute('''
       CREATE TABLE signal_identity_keys (
         address TEXT PRIMARY KEY,
@@ -202,7 +228,7 @@ class DatabaseHelper {
       )
     ''');
     
-    // Pre Keys
+    // Pre Keys - record is encrypted
     await db.execute('''
       CREATE TABLE signal_pre_keys (
         pre_key_id INTEGER PRIMARY KEY,
@@ -211,7 +237,7 @@ class DatabaseHelper {
       )
     ''');
     
-    // Signed Pre Keys
+    // Signed Pre Keys - record is encrypted
     await db.execute('''
       CREATE TABLE signal_signed_pre_keys (
         signed_pre_key_id INTEGER PRIMARY KEY,
@@ -221,7 +247,7 @@ class DatabaseHelper {
       )
     ''');
     
-    // Sender Keys (for group encryption)
+    // Sender Keys (for group encryption) - record is encrypted
     await db.execute('''
       CREATE TABLE sender_keys (
         sender_key_id TEXT PRIMARY KEY,

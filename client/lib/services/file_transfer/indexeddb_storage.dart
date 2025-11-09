@@ -2,10 +2,18 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:idb_shim/idb_browser.dart';
 import 'storage_interface.dart';
+import '../device_identity_service.dart';
+import '../web/encrypted_storage_wrapper.dart';
 
-/// IndexedDB implementation for Web platform
+/// IndexedDB implementation for Web platform with device-scoped storage
+/// 
+/// Database naming: PeerWaveFiles_{deviceId}
+/// - Device isolation: Each device has its own database
+/// - Encrypted file keys: Keys encrypted with WebAuthn-derived key
+/// - Chunks: Already encrypted (no change)
+/// - Metadata: Plain (ok for metadata)
 class IndexedDBStorage implements FileStorageInterface {
-  static const String DB_NAME = 'PeerWaveFiles';
+  static const String DB_BASE_NAME = 'PeerWaveFiles';
   static const int DB_VERSION = 1;
   
   static const String STORE_FILES = 'files';
@@ -14,14 +22,41 @@ class IndexedDBStorage implements FileStorageInterface {
   
   Database? _db;
   final IdbFactory _idbFactory = idbFactoryBrowser;
+  final DeviceIdentityService _deviceIdentity = DeviceIdentityService.instance;
+  final EncryptedStorageWrapper _encryption = EncryptedStorageWrapper();
+  
+  String? _deviceScopedDbName;
+  
+  /// Get device-scoped database name
+  String get _dbName {
+    if (_deviceScopedDbName != null) {
+      return _deviceScopedDbName!;
+    }
+    
+    if (!_deviceIdentity.isInitialized) {
+      throw Exception('[FILE_STORAGE] Device identity not initialized');
+    }
+    
+    final deviceId = _deviceIdentity.deviceId;
+    _deviceScopedDbName = '${DB_BASE_NAME}_$deviceId';
+    debugPrint('[FILE_STORAGE] Device-scoped DB name: $_deviceScopedDbName');
+    return _deviceScopedDbName!;
+  }
   
   @override
   Future<void> initialize() async {
+    debugPrint('[FILE_STORAGE] ========================================');
+    debugPrint('[FILE_STORAGE] Initializing device-scoped file storage');
+    debugPrint('[FILE_STORAGE] ========================================');
+    
+    // Open device-scoped database
     _db = await _idbFactory.open(
-      DB_NAME,
+      _dbName,
       version: DB_VERSION,
       onUpgradeNeeded: (VersionChangeEvent event) {
         final db = event.database;
+        
+        debugPrint('[FILE_STORAGE] Creating database schema v${event.newVersion}');
         
         // Files ObjectStore
         if (!db.objectStoreNames.contains(STORE_FILES)) {
@@ -29,6 +64,7 @@ class IndexedDBStorage implements FileStorageInterface {
           filesStore.createIndex('status', 'status', unique: false);
           filesStore.createIndex('createdAt', 'createdAt', unique: false);
           filesStore.createIndex('isSeeder', 'isSeeder', unique: false);
+          debugPrint('[FILE_STORAGE] ✓ Created files store');
         }
         
         // Chunks ObjectStore (composite key: fileId + chunkIndex)
@@ -36,14 +72,18 @@ class IndexedDBStorage implements FileStorageInterface {
           final chunksStore = db.createObjectStore(STORE_CHUNKS, autoIncrement: true);
           chunksStore.createIndex('fileId', 'fileId', unique: false);
           chunksStore.createIndex('fileId_chunkIndex', ['fileId', 'chunkIndex'], unique: true);
+          debugPrint('[FILE_STORAGE] ✓ Created chunks store');
         }
         
-        // File Keys ObjectStore
+        // File Keys ObjectStore (stores encrypted keys)
         if (!db.objectStoreNames.contains(STORE_FILE_KEYS)) {
           db.createObjectStore(STORE_FILE_KEYS, keyPath: 'fileId');
+          debugPrint('[FILE_STORAGE] ✓ Created fileKeys store (encrypted)');
         }
       },
     );
+    
+    debugPrint('[FILE_STORAGE] ✓ Device-scoped file storage initialized');
   }
   
   @override
@@ -248,62 +288,79 @@ class IndexedDBStorage implements FileStorageInterface {
   // FILE KEYS
   // ============================================
   
+  // ============================================
+  // FILE KEYS (ENCRYPTED STORAGE)
+  // ============================================
+  
   @override
   Future<void> saveFileKey(String fileId, Uint8List key) async {
-    debugPrint('[STORAGE DEBUG] saveFileKey($fileId):');
-    debugPrint('  Input key type: ${key.runtimeType}');
-    debugPrint('  Input key length: ${key.length} bytes');
+    debugPrint('[FILE_STORAGE] Saving encrypted file key for $fileId');
+    debugPrint('[FILE_STORAGE]   Key length: ${key.length} bytes');
     
-    final tx = _db!.transaction(STORE_FILE_KEYS, idbModeReadWrite);
-    final store = tx.objectStore(STORE_FILE_KEYS);
-    
-    // Convert Uint8List to List<int> for IndexedDB storage
-    // IndexedDB doesn't preserve Uint8List type correctly
-    final keyList = key.toList();
-    
-    debugPrint('  Storing as List<int> with ${keyList.length} elements');
-    
-    await store.put({
-      'fileId': fileId,
-      'key': keyList,  // Store as List<int>
-      'keyLength': key.length,  // Store original length for validation
-      'timestamp': DateTime.now().toIso8601String(),
-    });
-    
-    await tx.completed;
-    debugPrint('  ✓ Saved successfully');
+    try {
+      // Encrypt the file key using WebAuthn-derived encryption
+      final encryptedKeyEnvelope = await _encryption.encryptForStorage(key);
+      
+      final tx = _db!.transaction(STORE_FILE_KEYS, idbModeReadWrite);
+      final store = tx.objectStore(STORE_FILE_KEYS);
+      
+      await store.put({
+        'fileId': fileId,
+        'encryptedKey': encryptedKeyEnvelope, // {iv, encryptedData, version}
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+      
+      await tx.completed;
+      debugPrint('[FILE_STORAGE] ✓ File key encrypted and saved');
+    } catch (e) {
+      debugPrint('[FILE_STORAGE] ✗ Failed to encrypt file key: $e');
+      rethrow;
+    }
   }
   
   @override
   Future<Uint8List?> getFileKey(String fileId) async {
-    final tx = _db!.transaction(STORE_FILE_KEYS, idbModeReadOnly);
-    final store = tx.objectStore(STORE_FILE_KEYS);
+    debugPrint('[FILE_STORAGE] Retrieving encrypted file key for $fileId');
     
-    final result = await store.getObject(fileId);
-    if (result == null) return null;
-    
-    final data = result as Map<String, dynamic>;
-    
-    // Convert List<int> back to Uint8List
-    final keyData = data['key'];
-    
-    debugPrint('[STORAGE DEBUG] getFileKey($fileId):');
-    debugPrint('  Raw keyData type: ${keyData.runtimeType}');
-    debugPrint('  Raw keyData length: ${keyData is List ? keyData.length : "N/A"}');
-    
-    if (keyData is Uint8List) {
-      // Already Uint8List (shouldn't happen but handle it)
-      debugPrint('  Returning as Uint8List: ${keyData.length} bytes');
-      return keyData;
-    } else if (keyData is List) {
-      // Convert List<int> to Uint8List
-      final converted = Uint8List.fromList(keyData.cast<int>());
-      debugPrint('  Converted to Uint8List: ${converted.length} bytes');
-      return converted;
+    try {
+      final tx = _db!.transaction(STORE_FILE_KEYS, idbModeReadOnly);
+      final store = tx.objectStore(STORE_FILE_KEYS);
+      
+      final result = await store.getObject(fileId);
+      await tx.completed;
+      
+      if (result == null) {
+        debugPrint('[FILE_STORAGE] ✗ No file key found for $fileId');
+        return null;
+      }
+      
+      final data = result as Map<String, dynamic>;
+      final encryptedKeyEnvelope = data['encryptedKey'];
+      
+      if (encryptedKeyEnvelope == null) {
+        debugPrint('[FILE_STORAGE] ✗ No encrypted key data found');
+        return null;
+      }
+      
+      // Decrypt the encrypted key
+      final decryptedKey = await _encryption.decryptFromStorage(encryptedKeyEnvelope as Map<String, dynamic>);
+      
+      // Convert back to Uint8List
+      if (decryptedKey is Uint8List) {
+        debugPrint('[FILE_STORAGE] ✓ File key decrypted: ${decryptedKey.length} bytes');
+        return decryptedKey;
+      } else if (decryptedKey is List) {
+        final bytes = Uint8List.fromList(decryptedKey.cast<int>());
+        debugPrint('[FILE_STORAGE] ✓ File key decrypted: ${bytes.length} bytes');
+        return bytes;
+      }
+      
+      debugPrint('[FILE_STORAGE] ✗ Invalid decrypted key type: ${decryptedKey.runtimeType}');
+      return null;
+    } catch (e) {
+      debugPrint('[FILE_STORAGE] ✗ Failed to decrypt file key: $e');
+      rethrow;
     }
-    
-    debugPrint('  ERROR: Invalid key data type');
-    return null;
   }
   
   @override
