@@ -10,8 +10,6 @@ import 'permanent_session_store.dart';
 import 'permanent_pre_key_store.dart';
 import 'permanent_signed_pre_key_store.dart';
 import 'permanent_identity_key_store.dart';
-import 'permanent_sent_messages_store.dart';
-import 'permanent_decrypted_messages_store.dart';
 import 'sender_key_store.dart';
 import 'decrypted_group_items_store.dart';
 import 'sent_group_items_store.dart';
@@ -152,8 +150,6 @@ class SignalService {
   late PermanentSessionStore sessionStore;
   late PermanentPreKeyStore preKeyStore;
   late PermanentSignedPreKeyStore signedPreKeyStore;
-  late PermanentSentMessagesStore sentMessagesStore;
-  late PermanentDecryptedMessagesStore decryptedMessagesStore;
   late PermanentSenderKeyStore senderKeyStore;
   late DecryptedGroupItemsStore decryptedGroupItemsStore;
   late SentGroupItemsStore sentGroupItemsStore;
@@ -426,8 +422,6 @@ class SignalService {
       preKeyStore = PermanentPreKeyStore();
       final identityKeyPair = await identityStore.getIdentityKeyPair();
       signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
-      sentMessagesStore = await PermanentSentMessagesStore.create();
-      decryptedMessagesStore = await PermanentDecryptedMessagesStore.create();
       senderKeyStore = await PermanentSenderKeyStore.create();
       decryptedGroupItemsStore = await DecryptedGroupItemsStore.getInstance();
       sentGroupItemsStore = await SentGroupItemsStore.getInstance();
@@ -464,8 +458,6 @@ class SignalService {
       preKeyStore = PermanentPreKeyStore();
       final identityKeyPair = await identityStore.getIdentityKeyPair();
       signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
-      sentMessagesStore = await PermanentSentMessagesStore.create();
-      decryptedMessagesStore = await PermanentDecryptedMessagesStore.create();
       senderKeyStore = await PermanentSenderKeyStore.create();
       decryptedGroupItemsStore = await DecryptedGroupItemsStore.getInstance();
       sentGroupItemsStore = await SentGroupItemsStore.getInstance();
@@ -539,8 +531,6 @@ class SignalService {
       identityStore = PermanentIdentityKeyStore();
       sessionStore = await PermanentSessionStore.create();
       preKeyStore = PermanentPreKeyStore();
-      sentMessagesStore = await PermanentSentMessagesStore.create();
-      decryptedMessagesStore = await PermanentDecryptedMessagesStore.create();
       senderKeyStore = await PermanentSenderKeyStore.create();
       decryptedGroupItemsStore = await DecryptedGroupItemsStore.getInstance();
       sentGroupItemsStore = await SentGroupItemsStore.getInstance();
@@ -1072,16 +1062,17 @@ class SignalService {
             'timestamp': msg['timestamp'],
             'recipientId': recipientUserId,
             'type': msg['type'],
+            'status': msg['status'], // Include status
           })
           .toList();
     } catch (e) {
-      debugPrint('[SIGNAL_SERVICE] Error loading sent messages from SQLite, falling back to old store: $e');
-      return await sentMessagesStore.loadSentMessages(recipientUserId);
+      debugPrint('[SIGNAL_SERVICE] ✗ Error loading sent messages from SQLite: $e');
+      return [];
     }
   }
   
   /// Load all sent messages from local storage
-  /// MIGRATED: Now uses SQLite for better performance
+  /// Uses SQLite for better performance
   Future<List<Map<String, dynamic>>> loadAllSentMessages() async {
     try {
       final db = await DatabaseHelper.database;
@@ -1099,10 +1090,11 @@ class SignalService {
         'timestamp': msg['timestamp'],
         'recipientId': msg['sender'], // sender field stores recipient for sent messages
         'type': msg['type'],
+        'status': msg['status'], // Include status
       }).toList();
     } catch (e) {
-      debugPrint('[SIGNAL_SERVICE] Error loading all sent messages from SQLite, falling back to old store: $e');
-      return await sentMessagesStore.loadAllSentMessages();
+      debugPrint('[SIGNAL_SERVICE] ✗ Error loading all sent messages from SQLite: $e');
+      return [];
     }
   }
 
@@ -1120,12 +1112,17 @@ class SignalService {
     
     // Check if we already decrypted this message (prevents DuplicateMessageException)
     if (itemId != null) {
-      final cached = await decryptedMessagesStore.getDecryptedMessage(itemId);
-      if (cached != null) {
-        debugPrint("[SIGNAL SERVICE] ✓ Using cached decrypted message for itemId: $itemId (message: ${cached.substring(0, cached.length > 50 ? 50 : cached.length)}...)");
-        return cached;
-      } else {
-        debugPrint("[SIGNAL SERVICE] Cache miss for itemId: $itemId - will decrypt");
+      try {
+        final messageStore = await SqliteMessageStore.getInstance();
+        final cached = await messageStore.getMessage(itemId);
+        if (cached != null) {
+          debugPrint("[SIGNAL SERVICE] ✓ Using cached decrypted message from SQLite for itemId: $itemId");
+          return cached['message'] as String;
+        } else {
+          debugPrint("[SIGNAL SERVICE] Cache miss for itemId: $itemId - will decrypt");
+        }
+      } catch (e) {
+        debugPrint("[SIGNAL SERVICE] ⚠️ Error checking cache: $e");
       }
     } else {
       debugPrint("[SIGNAL SERVICE] No itemId provided - cannot use cache");
@@ -1141,21 +1138,17 @@ class SignalService {
         cipherType: cipherType,
       );
       
-      // Cache the decrypted message to prevent re-decryption
+      // Cache the decrypted message to prevent re-decryption in SQLite
       // IMPORTANT: Only cache 1:1 messages (no channelId)
-      // Group messages use DecryptedGroupItemsStore instead
-      if (itemId != null && message.isNotEmpty && data['channel'] == null) {
-        // Store in old store for backward compatibility (temporary)
-        await decryptedMessagesStore.storeDecryptedMessage(
-          itemId: itemId,
-          message: message,
-          sender: sender,
-          senderDeviceId: senderDeviceId,
-          timestamp: data['timestamp'] ?? data['createdAt'] ?? DateTime.now().toIso8601String(),
-          type: data['type'],
-        );
-        
-        // ALSO store in new SQLite database for performance
+      // ❌ SYSTEM MESSAGES: Don't cache read_receipt, delivery_receipt, or other system messages
+      final messageType = data['type'] as String?;
+      final isSystemMessage = messageType == 'read_receipt' || 
+                              messageType == 'delivery_receipt' ||
+                              messageType == 'senderKeyRequest' ||
+                              messageType == 'fileKeyRequest';
+      
+      if (itemId != null && message.isNotEmpty && data['channel'] == null && !isSystemMessage) {
+        // Store in SQLite database
         try {
           final messageStore = await SqliteMessageStore.getInstance();
           final messageTimestamp = data['timestamp'] ?? data['createdAt'] ?? DateTime.now().toIso8601String();
@@ -1196,6 +1189,8 @@ class SignalService {
         } catch (e) {
           debugPrint("[SIGNAL SERVICE] ✗ Failed to cache in SQLite: $e");
         }
+      } else if (isSystemMessage) {
+        debugPrint("[SIGNAL SERVICE] ⚠ Skipping cache for system message type: $messageType");
       } else if (data['channel'] != null) {
         debugPrint("[SIGNAL SERVICE] ⚠ Skipping cache for group message (use DecryptedGroupItemsStore)");
       }
@@ -1277,9 +1272,9 @@ class SignalService {
     // Delete from server
     deleteItemFromServer(itemId);
     
-    // ✅ Also delete from local storage (1:1 messages)
-    await decryptedMessagesStore.deleteDecryptedMessage(itemId);
-    debugPrint("[SIGNAL SERVICE] ✓ System message processed and cleaned up: type=$type, itemId=$itemId");
+    // System messages should never be in SQLite (filtered by storage layer)
+    // No local cleanup needed
+    debugPrint("[SIGNAL SERVICE] ✓ System message processed: type=$type, itemId=$itemId");
     
     // Don't trigger regular callbacks for system messages
     return;
@@ -1309,8 +1304,14 @@ void deleteItemFromServer(String itemId) {
 
 void deleteItem(String itemId) async {
   debugPrint("[SIGNAL SERVICE] Deleting item locally with itemId: $itemId");
-  await decryptedMessagesStore.deleteDecryptedMessage(itemId);
-  await sentMessagesStore.deleteSentMessage(itemId);
+  
+  // Delete from SQLite
+  try {
+    final messageStore = await SqliteMessageStore.getInstance();
+    await messageStore.deleteMessage(itemId);
+  } catch (e) {
+    debugPrint("[SIGNAL SERVICE] ⚠️ Failed to delete from SQLite: $e");
+  }
 }
 
 void deleteGroupItemFromServer(String itemId) async {
@@ -1328,8 +1329,13 @@ void deleteGroupItem(String itemId, String channelId) async {
     final itemId = data['itemId'];
     debugPrint('[SIGNAL SERVICE] Delivery receipt received for itemId: $itemId');
     
-    // Update local store
-    await sentMessagesStore.markAsDelivered(itemId);
+    // Update SQLite store
+    try {
+      final messageStore = await SqliteMessageStore.getInstance();
+      await messageStore.markAsDelivered(itemId);
+    } catch (e) {
+      debugPrint('[SIGNAL SERVICE] ⚠️ Failed to update delivery status in SQLite: $e');
+    }
     
     // Trigger callbacks
     if (_deliveryCallbacks.containsKey('default')) {
@@ -1361,8 +1367,13 @@ void deleteGroupItem(String itemId, String channelId) async {
       final readByUserId = item['sender']; // The user who sent the read receipt
       debugPrint('[SIGNAL_SERVICE] Processing read receipt for itemId: $itemId, readByDeviceId: $readByDeviceId, readByUserId: $readByUserId');
       
-      // Update local store
-      await sentMessagesStore.markAsRead(itemId);
+      // Update SQLite store
+      try {
+        final messageStore = await SqliteMessageStore.getInstance();
+        await messageStore.markAsRead(itemId);
+      } catch (e) {
+        debugPrint('[SIGNAL_SERVICE] ⚠️ Failed to update read status in SQLite: $e');
+      }
       
       // Trigger callbacks with itemId, deviceId, and userId
       if (_readCallbacks.containsKey('default')) {
@@ -1689,16 +1700,7 @@ void deleteGroupItem(String itemId, String channelId) async {
     final shouldStore = !SKIP_STORAGE_TYPES.contains(type) && (type == 'message' || type == 'file');
     
     if (shouldStore) {
-      // Store in old store for backward compatibility (temporary)
-      await sentMessagesStore.storeSentMessage(
-        recipientUserId: recipientUserId,
-        itemId: messageItemId,
-        message: payloadString,
-        timestamp: timestamp,
-        type: type,  // Include message type
-      );
-      
-      // ALSO store in new SQLite database for performance
+      // Store in SQLite database with status
       try {
         final messageStore = await SqliteMessageStore.getInstance();
         await messageStore.storeSentMessage(
@@ -1707,6 +1709,7 @@ void deleteGroupItem(String itemId, String channelId) async {
           message: payloadString,
           timestamp: timestamp,
           type: type,
+          status: 'sent', // Initial status
         );
         
         // Update recent conversations list
@@ -1716,7 +1719,7 @@ void deleteGroupItem(String itemId, String channelId) async {
           displayName: recipientUserId, // Will be enriched by UI layer
         );
         
-        debugPrint('[SIGNAL SERVICE] Step 0a: Stored sent $type in SQLite storage');
+        debugPrint('[SIGNAL SERVICE] ✓ Stored sent $type in SQLite with status=sent');
       } catch (e) {
         debugPrint('[SIGNAL SERVICE] ✗ Failed to store in SQLite: $e');
       }

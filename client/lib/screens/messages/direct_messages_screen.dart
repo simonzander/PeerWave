@@ -120,37 +120,62 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
   void _setupReceiptListeners() {
     // Listen for delivery receipts
-    SignalService.instance.onDeliveryReceipt((itemId) {
+    SignalService.instance.onDeliveryReceipt((itemId) async {
       if (!mounted) return;
       
-      SignalService.instance.sentMessagesStore.markAsDelivered(itemId);
+      debugPrint('[DM_SCREEN] Delivery receipt received for itemId: $itemId');
+      
+      // Update status in SQLite
+      try {
+        final messageStore = await SqliteMessageStore.getInstance();
+        await messageStore.markAsDelivered(itemId);
+      } catch (e) {
+        debugPrint('[DM_SCREEN] ⚠️ Error updating status in SQLite: $e');
+      }
       
       setState(() {
         final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
         if (msgIndex != -1) {
+          debugPrint('[DM_SCREEN] ✓ Updated message status to delivered: $itemId');
           _messages[msgIndex]['status'] = 'delivered';
+        } else {
+          debugPrint('[DM_SCREEN] ⚠ Message not found in list for delivery receipt: $itemId');
         }
       });
     });
 
     // Listen for read receipts
-    SignalService.instance.onReadReceipt((receiptInfo) {
+    SignalService.instance.onReadReceipt((receiptInfo) async {
       final itemId = receiptInfo['itemId'] as String;
       final readByDeviceId = receiptInfo['readByDeviceId'] as int?;
       final readByUserId = receiptInfo['readByUserId'] as String?;
 
       if (!mounted) return;
 
+      debugPrint('[DM_SCREEN] Read receipt received for itemId: $itemId from user: $readByUserId, device: $readByDeviceId');
+
+      // Update status in SQLite
+      try {
+        final messageStore = await SqliteMessageStore.getInstance();
+        await messageStore.markAsRead(itemId);
+      } catch (e) {
+        debugPrint('[DM_SCREEN] ⚠️ Error updating status in SQLite: $e');
+      }
+
       setState(() {
         final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
         if (msgIndex != -1) {
+          debugPrint('[DM_SCREEN] ✓ Updated message status to read: $itemId');
           _messages[msgIndex]['status'] = 'read';
 
+          // Delete message from server after read confirmation
           if (readByDeviceId != null && readByUserId != null) {
             _deleteMessageFromServer(itemId, receiverDeviceId: readByDeviceId, receiverUserId: readByUserId);
           } else {
             _deleteMessageFromServer(itemId);
           }
+        } else {
+          debugPrint('[DM_SCREEN] ⚠ Message not found in list for read receipt: $itemId');
         }
       });
     });
@@ -227,7 +252,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           'payload': item['payload'] ?? item['message'], // Add payload field for file messages
           'time': item['timestamp'] ?? DateTime.now().toIso8601String(),
           'isLocalSent': isLocalSent,
-          'status': item['status'] ?? 'sending',
+          // Status logic: 
+          // - Local sent messages keep their status (sending/sent/delivered/read)
+          // - Received messages have no status indicator
+          'status': isLocalSent ? (item['status'] ?? 'sending') : null,
           'type': itemType, // Preserve message type (message or file)
         };
         _messages.add(msg);
@@ -251,6 +279,15 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
   Future<void> _sendReadReceipt(String itemId, String sender, int senderDeviceId) async {
     try {
+      // Check if we already sent a read receipt for this message
+      final messageStore = await SqliteMessageStore.getInstance();
+      final alreadySent = await messageStore.hasReadReceiptBeenSent(itemId);
+      
+      if (alreadySent) {
+        debugPrint('[DM_SCREEN] Read receipt already sent for itemId: $itemId, skipping');
+        return;
+      }
+      
       final myDeviceId = SignalService.instance.currentDeviceId;
 
       await SignalService.instance.sendItem(
@@ -261,6 +298,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           'readByDeviceId': myDeviceId,
         }),
       );
+      
+      // Mark that we sent the read receipt
+      await messageStore.markReadReceiptSent(itemId);
+      debugPrint('[DM_SCREEN] ✓ Read receipt sent and marked for itemId: $itemId');
       
       // Mark this conversation as read in the unread provider
       try {
@@ -312,50 +353,37 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     try {
       ApiService.init();
 
-      // MIGRATED: Load sent messages from SQLite for better performance
-      List<Map<String, dynamic>> sentMessages;
-      try {
-        final messageStore = await SqliteMessageStore.getInstance();
-        final messages = await messageStore.getMessagesFromConversation(
-          widget.recipientUuid,
-          types: DISPLAYABLE_MESSAGE_TYPES.toList(),
-        );
-        sentMessages = messages
-            .where((msg) => msg['direction'] == 'sent')
-            .map((msg) => {
-              'itemId': msg['item_id'],
-              'message': msg['message'],
-              'timestamp': msg['timestamp'],
-              'type': msg['type'],
-            })
-            .toList();
-      } catch (sqliteError) {
-        debugPrint('[DM_SCREEN] SQLite error, falling back to old storage: $sqliteError');
-        sentMessages = await SignalService.instance.loadSentMessages(widget.recipientUuid);
-      }
-
-      // MIGRATED: Load received messages from SQLite
-      List<Map<String, dynamic>> receivedMessages;
-      try {
-        final messageStore = await SqliteMessageStore.getInstance();
-        final messages = await messageStore.getMessagesFromConversation(
-          widget.recipientUuid,
-          types: DISPLAYABLE_MESSAGE_TYPES.toList(),
-        );
-        receivedMessages = messages
-            .where((msg) => msg['direction'] == 'received')
-            .map((msg) => {
-              'itemId': msg['item_id'],
-              'message': msg['message'],
-              'timestamp': msg['timestamp'],
-              'sender': msg['sender'],
-              'type': msg['type'],
-            })
-            .toList();
-      } catch (sqliteError) {
-        debugPrint('[DM_SCREEN] SQLite error, falling back to old storage: $sqliteError');
-        receivedMessages = await SignalService.instance.decryptedMessagesStore.getMessagesFromSender(widget.recipientUuid);
-      }
+      // Load messages from SQLite (both sent and received)
+      final messageStore = await SqliteMessageStore.getInstance();
+      final allMessages = await messageStore.getMessagesFromConversation(
+        widget.recipientUuid,
+        types: DISPLAYABLE_MESSAGE_TYPES.toList(), // ✅ Whitelist: Only load message & file types
+      );
+      
+      // Separate into sent and received
+      final sentMessages = allMessages
+          .where((msg) => msg['direction'] == 'sent')
+          .map((msg) => {
+            'itemId': msg['itemId'],
+            'message': msg['message'],
+            'timestamp': msg['timestamp'],
+            'type': msg['type'],
+            'status': msg['status'] ?? 'sent', // Use status from SQLite
+          })
+          .toList();
+      
+      final receivedMessages = allMessages
+          .where((msg) => msg['direction'] == 'received')
+          .map((msg) => {
+            'itemId': msg['itemId'],
+            'message': msg['message'],
+            'timestamp': msg['timestamp'],
+            'sender': msg['sender'],
+            'type': msg['type'],
+          })
+          .toList();
+      
+      debugPrint('[DM_SCREEN] Loaded ${sentMessages.length} sent + ${receivedMessages.length} received messages from SQLite');
 
       // Load new messages from server
       final resp = await ApiService.get('${widget.host}/direct/messages/${widget.recipientUuid}');
@@ -404,7 +432,14 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                 final msgIndex = _messages.indexWhere((m) => m['itemId'] == referencedItemId);
                 if (msgIndex != -1) {
                   _messages[msgIndex]['status'] = 'read';
-                  await SignalService.instance.sentMessagesStore.markAsRead(referencedItemId);
+                  
+                  // Update status in SQLite
+                  try {
+                    final messageStore = await SqliteMessageStore.getInstance();
+                    await messageStore.markAsRead(referencedItemId);
+                  } catch (e) {
+                    debugPrint('[DM_SCREEN] ⚠️ Error updating read status in SQLite: $e');
+                  }
 
                   if (readByDeviceId != null && readByUserId != null) {
                     await _deleteMessageFromServer(
@@ -685,6 +720,15 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         payload: text,
         itemId: itemId,
       );
+      
+      // ✅ Update status to 'sent' after successful send
+      setState(() {
+        final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
+        if (msgIndex != -1) {
+          _messages[msgIndex]['status'] = 'sent';
+          debugPrint('[DM_SCREEN] ✓ Message sent successfully: $itemId');
+        }
+      });
     } catch (e) {
       setState(() {
         final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);

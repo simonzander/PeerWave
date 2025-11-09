@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'user_avatar.dart';
-import '../services/signal_service.dart';
 import '../services/api_service.dart';
 import '../services/storage/sqlite_message_store.dart';
 import '../services/storage/sqlite_recent_conversations_store.dart';
@@ -78,7 +77,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
       // Displayable message types whitelist (same as ActivitiesService)
       const displayableTypes = {'message', 'file'};
       
-      // MIGRATED: Use SQLite for better performance
+      // Use SQLite for recent conversations
       try {
         final messageStore = await SqliteMessageStore.getInstance();
         final conversationsStore = await SqliteRecentConversationsStore.getInstance();
@@ -120,61 +119,8 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
           });
         }
       } catch (sqliteError) {
-        debugPrint('[DESKTOP_NAV] SQLite error, falling back to old storage: $sqliteError');
-        
-        // FALLBACK: Use old storage method
-        final userIdsSet = <String>{};
-        
-        final receivedSenders = await SignalService.instance.decryptedMessagesStore.getAllUniqueSenders();
-        userIdsSet.addAll(receivedSenders);
-        
-        final allSentMessages = await SignalService.instance.sentMessagesStore.loadAllSentMessages();
-        for (final msg in allSentMessages) {
-          final recipientId = msg['recipientId'] as String?;
-          if (recipientId != null) {
-            userIdsSet.add(recipientId);
-          }
-        }
-        
-        // Get last message for each conversation
-        for (final userId in userIdsSet) {
-          // Get received messages from this user
-          final receivedMessages = await SignalService.instance.decryptedMessagesStore.getMessagesFromSender(userId);
-        
-          // Get sent messages to this user
-          final sentMessages = await SignalService.instance.loadSentMessages(userId);
-          
-          // Combine messages (filter by displayable types only)
-          final allMessages = <Map<String, dynamic>>[
-            ...receivedMessages.where((msg) => displayableTypes.contains(msg['type'] ?? 'message')),
-            ...sentMessages.where((msg) => displayableTypes.contains(msg['type'] ?? 'message')).map((msg) => {
-              'itemId': msg['itemId'],
-              'message': msg['message'],
-              'timestamp': msg['timestamp'],
-              'sender': 'self',
-              'type': msg['type'] ?? 'message',
-            }),
-          ];
-          
-          if (allMessages.isEmpty) continue;
-          
-          // Sort by timestamp (newest first)
-          allMessages.sort((a, b) {
-            final timeA = DateTime.tryParse(a['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final timeB = DateTime.tryParse(b['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-            return timeB.compareTo(timeA);
-          });
-          
-          final lastMessageTime = allMessages.isNotEmpty
-              ? DateTime.tryParse(allMessages.first['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0)
-              : DateTime.fromMillisecondsSinceEpoch(0);
-          
-          conversations.add({
-            'uuid': userId,
-            'displayName': userId, // Will be enriched with actual name from API
-            'lastMessageTime': lastMessageTime,
-          });
-        }
+        debugPrint('[DESKTOP_NAV] ✗ SQLite error loading conversations: $sqliteError');
+        // No fallback - SQLite is required
       }
       
       // Sort by last message time

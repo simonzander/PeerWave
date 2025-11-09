@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:html' as html;
 import '../services/api_service.dart';
+import '../services/auth_service_web.dart' if (dart.library.io) '../services/auth_service_native.dart';
 import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
 
@@ -117,9 +118,27 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
       );
 
       if (resp.statusCode == 200 || resp.statusCode == 201) {
-        // Registration complete, navigate to app
+        // Registration complete - log out the user and redirect to login
+        // The user needs to log in properly after registration
+        
+        // Clear client-side authentication state
+        AuthService.isLoggedIn = false;
+        
         if (mounted) {
-          GoRouter.of(context).go('/app');
+          // Show success message
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Registration complete! Please log in to continue.'),
+              duration: Duration(seconds: 3),
+              backgroundColor: Colors.green,
+            ),
+          );
+          
+          // Wait a moment for the user to see the message
+          await Future.delayed(const Duration(seconds: 1));
+          
+          // Navigate to login page
+          GoRouter.of(context).go('/login');
         }
       } else {
         // Server might return error if atName is taken

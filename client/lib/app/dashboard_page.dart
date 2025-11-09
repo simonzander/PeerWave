@@ -338,7 +338,15 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  void _onDirectMessageTap(String uuid, String displayName) {
+  void _onDirectMessageTap(String uuid, String displayName) async {
+    // Ensure profile is loaded before opening conversation
+    try {
+      await UserProfileService.instance.ensureProfileLoaded(uuid);
+    } catch (e) {
+      debugPrint('[DASHBOARD] Warning: Could not load profile for $uuid: $e');
+      // Continue anyway - will use fallback display
+    }
+    
     setState(() {
       _activeDirectMessageUuid = uuid;
       _activeDirectMessageDisplayName = displayName;

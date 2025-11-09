@@ -31,7 +31,32 @@ class SqliteMessageStore {
       throw Exception('[SQLITE_MESSAGE_STORE] Database tables not ready!');
     }
     
+    // Clean up legacy system messages that were stored before filtering was added
+    await _cleanupLegacySystemMessages();
+    
     debugPrint('[SQLITE_MESSAGE_STORE] Initialized - Database ready with encryption');
+  }
+
+  /// Remove system messages from database (one-time cleanup)
+  /// These messages were stored before the isSystemMessage filter was added
+  Future<void> _cleanupLegacySystemMessages() async {
+    try {
+      final db = await DatabaseHelper.database;
+      
+      // Delete read receipts, delivery receipts, and key request messages
+      final deletedCount = await db.delete(
+        'messages',
+        where: 'type IN (?, ?, ?, ?)',
+        whereArgs: ['read_receipt', 'delivery_receipt', 'senderKeyRequest', 'fileKeyRequest'],
+      );
+      
+      if (deletedCount > 0) {
+        debugPrint('[SQLITE_MESSAGE_STORE] 🧹 Cleaned up $deletedCount legacy system messages');
+      }
+    } catch (e) {
+      debugPrint('[SQLITE_MESSAGE_STORE] ⚠️ Error cleaning up system messages: $e');
+      // Non-critical, don't throw
+    }
   }
 
   /// Check if a message exists
@@ -102,6 +127,7 @@ class SqliteMessageStore {
     String? channelId,
     required String timestamp,
     required String type,
+    String status = 'sent', // Default status for sent messages
   }) async {
     final db = await DatabaseHelper.database;
     
@@ -119,12 +145,13 @@ class SqliteMessageStore {
         'timestamp': timestamp,
         'type': type,
         'direction': 'sent',
+        'status': status, // Store message status
         'decrypted_at': DateTime.now().toIso8601String(),
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     
-    debugPrint('[SQLITE_MESSAGE_STORE] Stored sent message: $itemId (type: $type, recipient: $recipientId, channel: $channelId) [ENCRYPTED]');
+    debugPrint('[SQLITE_MESSAGE_STORE] Stored sent message: $itemId (type: $type, status: $status, recipient: $recipientId, channel: $channelId) [ENCRYPTED]');
   }
 
   /// Get all messages from a 1:1 conversation (both directions)
@@ -302,6 +329,66 @@ class SqliteMessageStore {
     debugPrint('[SQLITE_MESSAGE_STORE] Deleted message: $itemId');
   }
 
+  /// Update message status (for sent messages)
+  Future<void> updateMessageStatus(String itemId, String status) async {
+    final db = await DatabaseHelper.database;
+    
+    final count = await db.update(
+      'messages',
+      {'status': status},
+      where: 'item_id = ? AND direction = ?',
+      whereArgs: [itemId, 'sent'],
+    );
+    
+    if (count > 0) {
+      debugPrint('[SQLITE_MESSAGE_STORE] Updated message status: $itemId → $status');
+    } else {
+      debugPrint('[SQLITE_MESSAGE_STORE] ⚠️ Message not found for status update: $itemId');
+    }
+  }
+
+  /// Mark message as delivered
+  Future<void> markAsDelivered(String itemId) async {
+    await updateMessageStatus(itemId, 'delivered');
+  }
+
+  /// Mark message as read
+  Future<void> markAsRead(String itemId) async {
+    await updateMessageStatus(itemId, 'read');
+  }
+
+  /// Mark that a read receipt has been sent for this message
+  /// Prevents sending duplicate read receipts on page reload
+  Future<void> markReadReceiptSent(String itemId) async {
+    final db = await DatabaseHelper.database;
+    
+    await db.update(
+      'messages',
+      {'read_receipt_sent': 1},
+      where: 'item_id = ?',
+      whereArgs: [itemId],
+    );
+    
+    debugPrint('[SQLITE_MESSAGE_STORE] Marked read receipt sent for itemId: $itemId');
+  }
+
+  /// Check if read receipt was already sent for this message
+  Future<bool> hasReadReceiptBeenSent(String itemId) async {
+    final db = await DatabaseHelper.database;
+    
+    final result = await db.query(
+      'messages',
+      columns: ['read_receipt_sent'],
+      where: 'item_id = ?',
+      whereArgs: [itemId],
+    );
+    
+    if (result.isEmpty) return false;
+    
+    final flag = result.first['read_receipt_sent'];
+    return flag == 1 || flag == true;
+  }
+
   /// Delete all messages from a conversation
   Future<void> deleteConversation(String userId) async {
     final db = await DatabaseHelper.database;
@@ -368,6 +455,7 @@ class SqliteMessageStore {
     
     return {
       'itemId': row['item_id'],
+      'item_id': row['item_id'], // Keep snake_case for compatibility
       'message': decryptedMessage, // Decrypted string
       'sender': row['sender'],
       'senderDeviceId': row['sender_device_id'],
@@ -375,6 +463,7 @@ class SqliteMessageStore {
       'timestamp': row['timestamp'],
       'type': row['type'],
       'direction': row['direction'],
+      'status': row['status'], // Include status for sent messages
       'decryptedAt': row['decrypted_at'],
     };
   }

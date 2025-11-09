@@ -525,7 +525,13 @@ class _MyAppState extends State<MyApp> {
                   // Check if it's an auth issue (device identity or encryption key missing)
                   if (missingKeys.containsKey('deviceIdentity') || 
                       missingKeys.containsKey('encryptionKey')) {
-                    debugPrint('[MAIN] Authentication required, redirecting to /login');
+                    debugPrint('[MAIN] Authentication keys missing (IndexedDB deleted?) - logging out...');
+                    
+                    // Logout to clear server session and avoid redirect loop
+                    // This happens when IndexedDB is deleted but server session still exists
+                    await LogoutService.instance.logout(null, showMessage: false);
+                    
+                    debugPrint('[MAIN] Logout complete, redirecting to /login');
                     return '/login';
                   }
                   

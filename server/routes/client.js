@@ -577,7 +577,16 @@ clientRoutes.get("/people/profiles", async (req, res) => {
             where: { uuid: uuids }
         });
         
-        res.status(200).json({ profiles: users });
+        // Convert picture BLOB to base64 string
+        const profiles = users.map(user => {
+            const userData = user.toJSON();
+            if (userData.picture && Buffer.isBuffer(userData.picture)) {
+                userData.picture = `data:image/png;base64,${userData.picture.toString('base64')}`;
+            }
+            return userData;
+        });
+        
+        res.status(200).json({ profiles });
     } catch (error) {
         console.error('Error fetching user profiles:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
@@ -597,7 +606,17 @@ clientRoutes.post("/client/people/info", async (req, res) => {
             attributes: ['uuid', 'displayName', 'picture', 'atName'],
             where: { uuid: userIds } // Include only the specified user IDs
         });
-        res.status(200).json(users);
+        
+        // Convert picture BLOB to base64 string
+        const usersData = users.map(user => {
+            const userData = user.toJSON();
+            if (userData.picture && Buffer.isBuffer(userData.picture)) {
+                userData.picture = `data:image/png;base64,${userData.picture.toString('base64')}`;
+            }
+            return userData;
+        });
+        
+        res.status(200).json(usersData);
     } catch (error) {
         console.error('Error fetching users:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
@@ -1335,9 +1354,18 @@ clientRoutes.post("/client/profile/setup",
 
         console.log(`[PROFILE SETUP] User ${userUuid} completed profile setup with displayName: ${displayName}`);
 
+        // Clear the registration session - user must log in properly after registration
+        req.session.destroy((err) => {
+            if (err) {
+                console.error('[PROFILE SETUP] Error destroying session:', err);
+            } else {
+                console.log('[PROFILE SETUP] Registration session cleared - user must log in');
+            }
+        });
+
         res.status(200).json({ 
             status: "ok", 
-            message: "Profile setup complete",
+            message: "Profile setup complete. Please log in to continue.",
             user: {
                 uuid: user.uuid,
                 email: user.email,

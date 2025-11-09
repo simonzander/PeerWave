@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../services/signal_service.dart';
 import '../../services/api_service.dart';
 import '../../services/storage/sqlite_message_store.dart';
 import '../../services/storage/sqlite_recent_conversations_store.dart';
@@ -96,63 +95,8 @@ class _MessagesListViewState extends State<MessagesListView> {
           });
         }
       } catch (sqliteError) {
-        debugPrint('[MESSAGES_LIST] SQLite error, falling back to old storage: $sqliteError');
-        
-        // FALLBACK: Use old storage method
-        final userIdsSet = <String>{};
-        
-        final receivedSenders = await SignalService.instance.decryptedMessagesStore.getAllUniqueSenders();
-        userIdsSet.addAll(receivedSenders);
-        
-        final allSentMessages = await SignalService.instance.sentMessagesStore.loadAllSentMessages();
-        for (final msg in allSentMessages) {
-          final recipientId = msg['recipientId'] as String?;
-          if (recipientId != null) {
-            userIdsSet.add(recipientId);
-          }
-        }
-        
-        for (final userId in userIdsSet) {
-          final receivedMessages = await SignalService.instance.decryptedMessagesStore.getMessagesFromSender(userId);
-        
-          // Get sent messages to this user
-          final sentMessages = await SignalService.instance.loadSentMessages(userId);
-          
-          // Combine and convert sent messages to same format
-          final allMessages = <Map<String, dynamic>>[
-            ...receivedMessages,
-            ...sentMessages.map((msg) => {
-              'itemId': msg['itemId'],
-              'message': msg['message'],
-              'timestamp': msg['timestamp'],
-              'sender': 'self',
-              'type': msg['type'] ?? 'message',
-            }),
-          ];
-          
-          if (allMessages.isEmpty) continue;
-          
-          // Sort by timestamp (newest first)
-          allMessages.sort((a, b) {
-            final timeA = DateTime.tryParse(a['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final timeB = DateTime.tryParse(b['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-            return timeB.compareTo(timeA);
-          });
-          
-          // Get last message
-          final lastMessages = allMessages.take(1).toList();
-          final lastMessageTime = allMessages.isNotEmpty
-              ? DateTime.tryParse(allMessages.first['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0)
-              : DateTime.fromMillisecondsSinceEpoch(0);
-          
-          conversations.add({
-            'userId': userId,
-            'displayName': userId, // Will be enriched with actual name
-            'lastMessages': lastMessages,
-            'lastMessageTime': lastMessageTime.toIso8601String(),
-            'messageCount': allMessages.length,
-          });
-        }
+        debugPrint('[MESSAGES_LIST] ✗ SQLite error loading conversations: $sqliteError');
+        // No fallback - SQLite is required
       }
       
       // Sort by last message time

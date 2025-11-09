@@ -132,6 +132,9 @@ class MessageList extends StatelessWidget {
           height: 14,
           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey),
         );
+      case 'sent':
+        // Sent to server, waiting for delivery confirmation
+        return const Icon(Icons.check, size: 16, color: Colors.grey);
       case 'delivered':
         return const Icon(Icons.check, size: 16, color: Colors.grey);
       case 'read':

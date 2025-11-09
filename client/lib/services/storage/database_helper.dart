@@ -17,7 +17,7 @@ class DatabaseHelper {
   static bool _factoryInitialized = false;
   static bool _initializing = false;
   static const String _databaseBaseName = 'peerwave'; // Base name without .db extension
-  static const int _databaseVersion = 2; // Bumped for encrypted columns
+  static const int _databaseVersion = 4; // Version 4: Add read_receipt_sent flag for received messages
   
   static final DeviceIdentityService _deviceIdentity = DeviceIdentityService.instance;
   static final DatabaseEncryptionService _encryption = DatabaseEncryptionService.instance;
@@ -169,6 +169,8 @@ class DatabaseHelper {
         timestamp TEXT NOT NULL,
         type TEXT NOT NULL,
         direction TEXT NOT NULL CHECK(direction IN ('received', 'sent')),
+        status TEXT,
+        read_receipt_sent INTEGER DEFAULT 0,
         decrypted_at TEXT NOT NULL,
         created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
       )
@@ -265,11 +267,23 @@ class DatabaseHelper {
   static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     debugPrint('[DATABASE] Upgrading database from version $oldVersion to $newVersion...');
     
-    // Add migration logic here when needed
-    // Example:
-    // if (oldVersion < 2) {
-    //   await db.execute('ALTER TABLE messages ADD COLUMN read_status INTEGER DEFAULT 0');
-    // }
+    // Version 2 → 3: Add status column for sent messages
+    if (oldVersion < 3) {
+      debugPrint('[DATABASE] Applying migration: Add status column to messages table');
+      await db.execute('''
+        ALTER TABLE messages ADD COLUMN status TEXT DEFAULT NULL
+      ''');
+      debugPrint('[DATABASE] ✓ Added status column (for tracking sent/delivered/read status)');
+    }
+    
+    // Version 3 → 4: Add read_receipt_sent flag for received messages
+    if (oldVersion < 4) {
+      debugPrint('[DATABASE] Applying migration: Add read_receipt_sent column to messages table');
+      await db.execute('''
+        ALTER TABLE messages ADD COLUMN read_receipt_sent INTEGER DEFAULT 0
+      ''');
+      debugPrint('[DATABASE] ✓ Added read_receipt_sent column (prevents duplicate read receipts)');
+    }
   }
 
   /// Close the database
@@ -325,6 +339,49 @@ class DatabaseHelper {
     
     _factoryInitialized = false;
     debugPrint('[DATABASE] Database deletion complete');
+  }
+
+  /// Delete all old databases (including non-device-scoped ones)
+  /// Use this during development to clean up old data
+  static Future<void> deleteAllDatabases() async {
+    await close();
+    
+    if (kIsWeb) {
+      debugPrint('[DATABASE] Deleting all web databases...');
+      // Delete current device-scoped database
+      await databaseFactoryFfiWeb.deleteDatabase(_databaseName);
+      
+      // Delete old non-scoped database if it exists
+      try {
+        await databaseFactoryFfiWeb.deleteDatabase('peerwave.db');
+        debugPrint('[DATABASE] ✓ Deleted old non-scoped database');
+      } catch (e) {
+        debugPrint('[DATABASE] Old database not found (OK)');
+      }
+      
+      debugPrint('[DATABASE] All web databases deleted');
+    } else {
+      debugPrint('[DATABASE] Deleting all native databases...');
+      final directory = await getApplicationDocumentsDirectory();
+      
+      // Delete current database
+      final path = join(directory.path, _databaseName);
+      await databaseFactory.deleteDatabase(path);
+      
+      // Delete old non-scoped database if it exists
+      try {
+        final oldPath = join(directory.path, 'peerwave.db');
+        await databaseFactory.deleteDatabase(oldPath);
+        debugPrint('[DATABASE] ✓ Deleted old non-scoped database');
+      } catch (e) {
+        debugPrint('[DATABASE] Old database not found (OK)');
+      }
+      
+      debugPrint('[DATABASE] All native databases deleted');
+    }
+    
+    _factoryInitialized = false;
+    debugPrint('[DATABASE] All database deletion complete');
   }
 
   /// Reset database (delete and recreate)

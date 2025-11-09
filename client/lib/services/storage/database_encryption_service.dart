@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint;
 import '../web/encrypted_storage_wrapper.dart';
@@ -19,7 +20,7 @@ class DatabaseEncryptionService {
   
   /// Encrypt a field value for storage in database
   /// 
-  /// Returns BLOB-compatible bytes: [iv(12) | encryptedData | authTag(16)]
+  /// Returns BLOB-compatible bytes: [version(1) | iv(12) | encryptedData]
   Future<Uint8List> encryptField(dynamic value) async {
     debugPrint('[DB_ENCRYPTION] Encrypting field...');
     
@@ -28,13 +29,14 @@ class DatabaseEncryptionService {
       final envelope = await _encryption.encryptForStorage(value);
       
       // Extract components from envelope
-      final iv = envelope['iv'] as List<dynamic>;
-      final encryptedData = envelope['encryptedData'] as List<dynamic>;
+      // Note: 'iv' and 'data' are base64-encoded strings from WebAuthnCryptoService
+      final ivBase64 = envelope['iv'] as String;
+      final dataBase64 = envelope['data'] as String;
       final version = envelope['version'] as int;
       
-      // Convert to Uint8List
-      final ivBytes = Uint8List.fromList(iv.cast<int>());
-      final encryptedBytes = Uint8List.fromList(encryptedData.cast<int>());
+      // Decode from base64
+      final ivBytes = base64Decode(ivBase64);
+      final encryptedBytes = base64Decode(dataBase64);
       
       // Concatenate: [version(1) | iv(12) | encryptedData]
       final combined = Uint8List(1 + ivBytes.length + encryptedBytes.length);
@@ -80,11 +82,12 @@ class DatabaseEncryptionService {
       final iv = bytes.sublist(1, 13); // 12 bytes
       final encryptedData = bytes.sublist(13);
       
-      // Reconstruct envelope for decryption
+      // Reconstruct envelope for decryption (base64-encoded for compatibility)
       final envelope = {
         'version': version,
-        'iv': iv.toList(),
-        'encryptedData': encryptedData.toList(),
+        'deviceId': null, // Not used in this flow
+        'iv': base64Encode(iv),
+        'data': base64Encode(encryptedData),
       };
       
       // Decrypt using WebAuthn-derived key

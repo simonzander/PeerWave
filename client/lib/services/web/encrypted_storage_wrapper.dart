@@ -47,9 +47,11 @@ class EncryptedStorageWrapper {
   /// Decrypt data when reading
   /// 
   /// Verifies device ownership and decrypts the data using the session key.
+  /// For SQLite BLOB format, deviceId verification is skipped (device isolation handled by database name).
   Future<dynamic> decryptFromStorage(Map<String, dynamic> envelope) async {
-    // Verify device ownership
-    if (envelope['deviceId'] != _deviceIdentity.deviceId) {
+    // Verify device ownership (skip if deviceId is null - SQLite BLOB format)
+    final envelopeDeviceId = envelope['deviceId'];
+    if (envelopeDeviceId != null && envelopeDeviceId != _deviceIdentity.deviceId) {
       throw Exception('Data belongs to different device');
     }
     
