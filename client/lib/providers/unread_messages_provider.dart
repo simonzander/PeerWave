@@ -1,9 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:idb_shim/idb_browser.dart';
+import '../services/device_scoped_storage_service.dart';
 
 /// Provider for managing unread message counts across channels and direct messages
+/// Uses device-scoped storage on web for per-device unread tracking
 /// 
 /// This provider tracks unread message counts for:
 /// - Channel messages (group chats)
@@ -271,62 +272,37 @@ class UnreadMessagesProvider extends ChangeNotifier {
   }
   
   // ============================================================================
-  // INDEXEDDB HELPERS (Web)
+  // DEVICE-SCOPED STORAGE HELPERS (Web)
   // ============================================================================
   
   static const String _dbName = 'peerwave_unread_badges';
   static const String _storeName = 'counts';
-  static const int _dbVersion = 1;
   
-  /// Save to IndexedDB (Web only)
+  /// Save to device-scoped storage (Web only)
   Future<void> _saveToIndexedDB(String key, String value) async {
     try {
-      final idbFactory = getIdbFactory()!;
-      final db = await idbFactory.open(
-        _dbName,
-        version: _dbVersion,
-        onUpgradeNeeded: (event) {
-          final db = event.database;
-          if (!db.objectStoreNames.contains(_storeName)) {
-            db.createObjectStore(_storeName);
-          }
-        },
-      );
-
-      final txn = db.transaction(_storeName, idbModeReadWrite);
-      final store = txn.objectStore(_storeName);
-      await store.put(value, key);
-      await txn.completed;
-      db.close();
+      if (!kIsWeb) return;
+      
+      final storage = DeviceScopedStorageService.instance;
+      await storage.putEncrypted(_dbName, _storeName, key, value);
+      
+      debugPrint('[UnreadProvider] ✓ Saved to device-scoped storage: $key');
     } catch (e) {
-      debugPrint('[UnreadProvider] Error saving to IndexedDB: $e');
+      debugPrint('[UnreadProvider] Error saving to storage: $e');
     }
   }
   
-  /// Load from IndexedDB (Web only)
+  /// Load from device-scoped storage (Web only)
   Future<String?> _loadFromIndexedDB(String key) async {
     try {
-      final idbFactory = getIdbFactory()!;
-      final db = await idbFactory.open(
-        _dbName,
-        version: _dbVersion,
-        onUpgradeNeeded: (event) {
-          final db = event.database;
-          if (!db.objectStoreNames.contains(_storeName)) {
-            db.createObjectStore(_storeName);
-          }
-        },
-      );
-
-      final txn = db.transaction(_storeName, idbModeReadOnly);
-      final store = txn.objectStore(_storeName);
-      final value = await store.getObject(key);
-      await txn.completed;
-      db.close();
-
+      if (!kIsWeb) return null;
+      
+      final storage = DeviceScopedStorageService.instance;
+      final value = await storage.getDecrypted(_dbName, _storeName, key);
+      
       return value as String?;
     } catch (e) {
-      debugPrint('[UnreadProvider] Error loading from IndexedDB: $e');
+      debugPrint('[UnreadProvider] Error loading from storage: $e');
       return null;
     }
   }

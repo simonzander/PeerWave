@@ -1,12 +1,15 @@
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:sqflite/sqflite.dart';
 import 'database_helper.dart';
+import 'database_encryption_service.dart';
 
 /// SQLite-based message store for both 1:1 and group messages
 /// Replaces PermanentDecryptedMessagesStore and DecryptedGroupItemsStore
 /// Provides fast queries with proper indexing
+/// Messages are encrypted at rest using WebAuthn-derived keys
 class SqliteMessageStore {
   static SqliteMessageStore? _instance;
+  final DatabaseEncryptionService _encryption = DatabaseEncryptionService.instance;
   
   SqliteMessageStore._();
   
@@ -28,7 +31,7 @@ class SqliteMessageStore {
       throw Exception('[SQLITE_MESSAGE_STORE] Database tables not ready!');
     }
     
-    debugPrint('[SQLITE_MESSAGE_STORE] Initialized - Database ready');
+    debugPrint('[SQLITE_MESSAGE_STORE] Initialized - Database ready with encryption');
   }
 
   /// Check if a message exists
@@ -54,7 +57,7 @@ class SqliteMessageStore {
     );
     
     if (result.isEmpty) return null;
-    return _convertFromDb(result.first);
+    return await _convertFromDb(result.first);
   }
 
   /// Store a received message (1:1 or group)
@@ -69,11 +72,14 @@ class SqliteMessageStore {
   }) async {
     final db = await DatabaseHelper.database;
     
+    // Encrypt the message content
+    final encryptedMessage = await _encryption.encryptString(message);
+    
     await db.insert(
       'messages',
       {
         'item_id': itemId,
-        'message': message,
+        'message': encryptedMessage, // BLOB - encrypted
         'sender': sender,
         'sender_device_id': senderDeviceId,
         'channel_id': channelId,
@@ -85,7 +91,7 @@ class SqliteMessageStore {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     
-    debugPrint('[SQLITE_MESSAGE_STORE] Stored received message: $itemId (type: $type, sender: $sender, channel: $channelId)');
+    debugPrint('[SQLITE_MESSAGE_STORE] Stored received message: $itemId (type: $type, sender: $sender, channel: $channelId) [ENCRYPTED]');
   }
 
   /// Store a sent message (1:1 or group)
@@ -99,11 +105,14 @@ class SqliteMessageStore {
   }) async {
     final db = await DatabaseHelper.database;
     
+    // Encrypt the message content
+    final encryptedMessage = await _encryption.encryptString(message);
+    
     await db.insert(
       'messages',
       {
         'item_id': itemId,
-        'message': message,
+        'message': encryptedMessage, // BLOB - encrypted
         'sender': recipientId, // Store recipient as sender for query consistency
         'sender_device_id': null,
         'channel_id': channelId,
@@ -115,7 +124,7 @@ class SqliteMessageStore {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     
-    debugPrint('[SQLITE_MESSAGE_STORE] Stored sent message: $itemId (type: $type, recipient: $recipientId, channel: $channelId)');
+    debugPrint('[SQLITE_MESSAGE_STORE] Stored sent message: $itemId (type: $type, recipient: $recipientId, channel: $channelId) [ENCRYPTED]');
   }
 
   /// Get all messages from a 1:1 conversation (both directions)
@@ -145,7 +154,12 @@ class SqliteMessageStore {
       offset: offset,
     );
     
-    return result.map(_convertFromDb).toList();
+    // Decrypt all messages
+    final decryptedMessages = <Map<String, dynamic>>[];
+    for (final row in result) {
+      decryptedMessages.add(await _convertFromDb(row));
+    }
+    return decryptedMessages;
   }
 
   /// Get all messages from a group/channel
@@ -175,7 +189,12 @@ class SqliteMessageStore {
       offset: offset,
     );
     
-    return result.map(_convertFromDb).toList();
+    // Decrypt all messages
+    final decryptedMessages = <Map<String, dynamic>>[];
+    for (final row in result) {
+      decryptedMessages.add(await _convertFromDb(row));
+    }
+    return decryptedMessages;
   }
 
   /// Get all unique conversation partners (1:1 only)
@@ -225,7 +244,7 @@ class SqliteMessageStore {
     );
     
     if (result.isEmpty) return null;
-    return _convertFromDb(result.first);
+    return await _convertFromDb(result.first);
   }
 
   /// Get last message from a channel
@@ -241,7 +260,7 @@ class SqliteMessageStore {
     );
     
     if (result.isEmpty) return null;
-    return _convertFromDb(result.first);
+    return await _convertFromDb(result.first);
   }
 
   /// Count messages in a conversation
@@ -342,10 +361,14 @@ class SqliteMessageStore {
   }
 
   /// Convert database row to app format
-  Map<String, dynamic> _convertFromDb(Map<String, dynamic> row) {
+  Future<Map<String, dynamic>> _convertFromDb(Map<String, dynamic> row) async {
+    // Decrypt the message content (stored as BLOB)
+    final encryptedMessage = row['message'];
+    final decryptedMessage = await _encryption.decryptString(encryptedMessage);
+    
     return {
       'itemId': row['item_id'],
-      'message': row['message'],
+      'message': decryptedMessage, // Decrypted string
       'sender': row['sender'],
       'senderDeviceId': row['sender_device_id'],
       'channelId': row['channel_id'],

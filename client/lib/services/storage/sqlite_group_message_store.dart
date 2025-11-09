@@ -1,11 +1,14 @@
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:sqflite/sqflite.dart';
 import 'database_helper.dart';
+import 'database_encryption_service.dart';
 
 /// SQLite-based store for group messages
 /// Uses the same messages table but with channel_id set
+/// Message content is encrypted using DatabaseEncryptionService
 class SqliteGroupMessageStore {
   static SqliteGroupMessageStore? _instance;
+  static final DatabaseEncryptionService _encryption = DatabaseEncryptionService.instance;
 
   SqliteGroupMessageStore._();
 
@@ -37,11 +40,14 @@ class SqliteGroupMessageStore {
     try {
       final db = await DatabaseHelper.database;
       
+      // Encrypt the message content before storage
+      final encryptedMessage = await _encryption.encryptString(message);
+      
       await db.insert(
         'messages',
         {
           'item_id': itemId,
-          'message': message,
+          'message': encryptedMessage, // Stored as encrypted BLOB
           'sender': sender,
           'sender_device_id': senderDevice,
           'channel_id': channelId,
@@ -54,7 +60,7 @@ class SqliteGroupMessageStore {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
       
-      debugPrint('[GROUP STORE] ✓ Stored group message $itemId in channel $channelId');
+      debugPrint('[GROUP STORE] ✓ Stored encrypted group message $itemId in channel $channelId');
     } catch (e, stackTrace) {
       debugPrint('[GROUP STORE] ✗ Error storing group message: $e');
       debugPrint('[GROUP STORE] Stack trace: $stackTrace');
@@ -73,11 +79,14 @@ class SqliteGroupMessageStore {
     try {
       final db = await DatabaseHelper.database;
       
+      // Encrypt the message content before storage
+      final encryptedMessage = await _encryption.encryptString(message);
+      
       await db.insert(
         'messages',
         {
           'item_id': itemId,
-          'message': message,
+          'message': encryptedMessage, // Stored as encrypted BLOB
           'sender': 'me', // Sender for sent messages
           'sender_device_id': null,
           'channel_id': channelId,
@@ -90,7 +99,7 @@ class SqliteGroupMessageStore {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
       
-      debugPrint('[GROUP STORE] ✓ Stored sent group message $itemId in channel $channelId');
+      debugPrint('[GROUP STORE] ✓ Stored encrypted sent group message $itemId in channel $channelId');
     } catch (e, stackTrace) {
       debugPrint('[GROUP STORE] ✗ Error storing sent group message: $e');
       debugPrint('[GROUP STORE] Stack trace: $stackTrace');
@@ -110,8 +119,23 @@ class SqliteGroupMessageStore {
         orderBy: 'timestamp DESC',
       );
       
-      debugPrint('[GROUP STORE] ✓ Retrieved ${results.length} messages for channel $channelId');
-      return results;
+      // Decrypt message content for each result
+      final decryptedResults = <Map<String, dynamic>>[];
+      for (var row in results) {
+        final decryptedRow = Map<String, dynamic>.from(row);
+        if (row['message'] != null) {
+          try {
+            decryptedRow['message'] = await _encryption.decryptString(row['message']);
+          } catch (e) {
+            debugPrint('[GROUP STORE] ⚠ Failed to decrypt message ${row['item_id']}: $e');
+            decryptedRow['message'] = '[Decryption failed]';
+          }
+        }
+        decryptedResults.add(decryptedRow);
+      }
+      
+      debugPrint('[GROUP STORE] ✓ Retrieved and decrypted ${decryptedResults.length} messages for channel $channelId');
+      return decryptedResults;
     } catch (e, stackTrace) {
       debugPrint('[GROUP STORE] ✗ Error getting channel messages: $e');
       debugPrint('[GROUP STORE] Stack trace: $stackTrace');
@@ -136,7 +160,19 @@ class SqliteGroupMessageStore {
         return null;
       }
       
-      return results.first;
+      // Decrypt message content
+      final row = results.first;
+      final decryptedRow = Map<String, dynamic>.from(row);
+      if (row['message'] != null) {
+        try {
+          decryptedRow['message'] = await _encryption.decryptString(row['message']);
+        } catch (e) {
+          debugPrint('[GROUP STORE] ⚠ Failed to decrypt message $itemId: $e');
+          decryptedRow['message'] = '[Decryption failed]';
+        }
+      }
+      
+      return decryptedRow;
     } catch (e, stackTrace) {
       debugPrint('[GROUP STORE] ✗ Error getting group item: $e');
       debugPrint('[GROUP STORE] Stack trace: $stackTrace');
@@ -184,8 +220,23 @@ class SqliteGroupMessageStore {
         orderBy: 'timestamp DESC',
       );
       
-      debugPrint('[GROUP STORE] ✓ Retrieved ${results.length} messages of type $type');
-      return results;
+      // Decrypt message content for each result
+      final decryptedResults = <Map<String, dynamic>>[];
+      for (var row in results) {
+        final decryptedRow = Map<String, dynamic>.from(row);
+        if (row['message'] != null) {
+          try {
+            decryptedRow['message'] = await _encryption.decryptString(row['message']);
+          } catch (e) {
+            debugPrint('[GROUP STORE] ⚠ Failed to decrypt message ${row['item_id']}: $e');
+            decryptedRow['message'] = '[Decryption failed]';
+          }
+        }
+        decryptedResults.add(decryptedRow);
+      }
+      
+      debugPrint('[GROUP STORE] ✓ Retrieved and decrypted ${decryptedResults.length} messages of type $type');
+      return decryptedResults;
     } catch (e, stackTrace) {
       debugPrint('[GROUP STORE] ✗ Error getting messages by type: $e');
       debugPrint('[GROUP STORE] Stack trace: $stackTrace');
@@ -208,8 +259,23 @@ class SqliteGroupMessageStore {
         orderBy: 'timestamp DESC',
       );
       
-      debugPrint('[GROUP STORE] ✓ Retrieved ${results.length} messages from $sender');
-      return results;
+      // Decrypt message content for each result
+      final decryptedResults = <Map<String, dynamic>>[];
+      for (var row in results) {
+        final decryptedRow = Map<String, dynamic>.from(row);
+        if (row['message'] != null) {
+          try {
+            decryptedRow['message'] = await _encryption.decryptString(row['message']);
+          } catch (e) {
+            debugPrint('[GROUP STORE] ⚠ Failed to decrypt message ${row['item_id']}: $e');
+            decryptedRow['message'] = '[Decryption failed]';
+          }
+        }
+        decryptedResults.add(decryptedRow);
+      }
+      
+      debugPrint('[GROUP STORE] ✓ Retrieved and decrypted ${decryptedResults.length} messages from $sender');
+      return decryptedResults;
     } catch (e, stackTrace) {
       debugPrint('[GROUP STORE] ✗ Error getting messages by sender: $e');
       debugPrint('[GROUP STORE] Stack trace: $stackTrace');
@@ -297,7 +363,19 @@ class SqliteGroupMessageStore {
         return null;
       }
       
-      return results.first;
+      // Decrypt message content
+      final row = results.first;
+      final decryptedRow = Map<String, dynamic>.from(row);
+      if (row['message'] != null) {
+        try {
+          decryptedRow['message'] = await _encryption.decryptString(row['message']);
+        } catch (e) {
+          debugPrint('[GROUP STORE] ⚠ Failed to decrypt last message: $e');
+          decryptedRow['message'] = '[Decryption failed]';
+        }
+      }
+      
+      return decryptedRow;
     } catch (e, stackTrace) {
       debugPrint('[GROUP STORE] ✗ Error getting last message: $e');
       debugPrint('[GROUP STORE] Stack trace: $stackTrace');

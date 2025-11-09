@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:idb_shim/idb_browser.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'device_scoped_storage_service.dart';
 
 /// A persistent store for locally sent 1:1 messages ONLY.
-/// Uses IndexedDB on web and FlutterSecureStorage on native.
+/// Uses DeviceScopedStorageService for device-scoped encrypted storage on web.
+/// Uses FlutterSecureStorage on native.
 /// This allows the sending device to see its own messages after refresh,
 /// without storing unencrypted messages on the server.
 /// 
@@ -18,38 +19,9 @@ class PermanentSentMessagesStore {
   static Future<PermanentSentMessagesStore> create() async {
     final store = PermanentSentMessagesStore();
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      await idbFactory.open(store._storeName, version: 2, onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        ObjectStore objectStore;
-        
-        // Create or get the object store
-        if (!db.objectStoreNames.contains(store._storeName)) {
-          objectStore = db.createObjectStore(store._storeName, autoIncrement: false);
-        } else {
-          objectStore = event.transaction.objectStore(store._storeName);
-        }
-        
-        // Add indexes for faster queries (v2)
-        if (event.oldVersion < 2) {
-          // Index by recipientUserId for filtering messages to specific users
-          if (!objectStore.indexNames.contains('recipientUserId')) {
-            objectStore.createIndex('recipientUserId', 'recipientUserId', unique: false);
-          }
-          // Index by timestamp for sorting
-          if (!objectStore.indexNames.contains('timestamp')) {
-            objectStore.createIndex('timestamp', 'timestamp', unique: false);
-          }
-          // Index by status for filtering by delivery status
-          if (!objectStore.indexNames.contains('status')) {
-            objectStore.createIndex('status', 'status', unique: false);
-          }
-          // Index by type for filtering message types
-          if (!objectStore.indexNames.contains('type')) {
-            objectStore.createIndex('type', 'type', unique: false);
-          }
-        }
-      });
+      // Device-scoped storage will be initialized automatically
+      // No need to manually open IndexedDB
+      debugPrint('[SENT_MESSAGES_STORE] Using device-scoped encrypted storage');
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'sent_message_keys');
@@ -89,18 +61,9 @@ class PermanentSentMessagesStore {
     });
 
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      await store.put(data, key);
-      await txn.completed;
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      await storage.putEncrypted(_storeName, _storeName, key, data);
     } else {
       final storage = FlutterSecureStorage();
       await storage.write(key: key, value: data);
@@ -123,22 +86,14 @@ class PermanentSentMessagesStore {
     final prefix = '$_keyPrefix$recipientUserId';
 
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readonly');
-      var store = txn.objectStore(_storeName);
-      var keys = await store.getAllKeys();
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      final keys = await storage.getAllKeys(_storeName, _storeName);
       
       for (var key in keys) {
-        if (key is String && key.startsWith(prefix)) {
-          var value = await store.getObject(key);
-          if (value is String) {
+        if (key.startsWith(prefix)) {
+          var value = await storage.getDecrypted(_storeName, _storeName, key);
+          if (value != null) {
             try {
               final msg = jsonDecode(value);
               messages.add(msg);
@@ -148,7 +103,6 @@ class PermanentSentMessagesStore {
           }
         }
       }
-      await txn.completed;
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'sent_message_keys');
@@ -185,22 +139,14 @@ class PermanentSentMessagesStore {
     final messages = <Map<String, dynamic>>[];
 
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readonly');
-      var store = txn.objectStore(_storeName);
-      var keys = await store.getAllKeys();
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      final keys = await storage.getAllKeys(_storeName, _storeName);
       
       for (var key in keys) {
-        if (key is String && key.startsWith(_keyPrefix)) {
-          var value = await store.getObject(key);
-          if (value is String) {
+        if (key.startsWith(_keyPrefix)) {
+          var value = await storage.getDecrypted(_storeName, _storeName, key);
+          if (value != null) {
             try {
               final msg = jsonDecode(value);
               messages.add(msg);
@@ -210,7 +156,6 @@ class PermanentSentMessagesStore {
           }
         }
       }
-      await txn.completed;
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'sent_message_keys');
@@ -253,32 +198,22 @@ class PermanentSentMessagesStore {
     }
 
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      var keys = await store.getAllKeys();
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      final keys = await storage.getAllKeys(_storeName, _storeName);
+      
       for (var key in keys) {
-        if (key is String) {
-          if (recipientUserId != null) {
-            if (key == keyPattern) {
-              await store.delete(key);
-            }
-          } else {
-            // Wildcard match: $_keyPrefix*_$itemId
-            if (key.startsWith(_keyPrefix) && key.endsWith('_$itemId')) {
-              await store.delete(key);
-            }
+        if (recipientUserId != null) {
+          if (key == keyPattern) {
+            await storage.deleteEncrypted(_storeName, _storeName, key);
+          }
+        } else {
+          // Wildcard match: $_keyPrefix*_$itemId
+          if (key.startsWith(_keyPrefix) && key.endsWith('_$itemId')) {
+            await storage.deleteEncrypted(_storeName, _storeName, key);
           }
         }
       }
-      await txn.completed;
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'sent_message_keys');
@@ -306,24 +241,15 @@ class PermanentSentMessagesStore {
     final prefix = '$_keyPrefix$recipientUserId';
 
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      var keys = await store.getAllKeys();
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      final keys = await storage.getAllKeys(_storeName, _storeName);
       
       for (var key in keys) {
-        if (key is String && key.startsWith(prefix)) {
-          await store.delete(key);
+        if (key.startsWith(prefix)) {
+          await storage.deleteEncrypted(_storeName, _storeName, key);
         }
       }
-      await txn.completed;
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'sent_message_keys');
@@ -352,28 +278,20 @@ class PermanentSentMessagesStore {
   /// Internal method to update message status
   Future<void> _updateMessageStatus(String itemId, String status, {String? deliveredAt, String? readAt}) async {
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      var keys = await store.getAllKeys();
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      final keys = await storage.getAllKeys(_storeName, _storeName);
       
       for (var key in keys) {
-        if (key is String && key.contains('_$itemId')) {
-          var value = await store.getObject(key);
-          if (value is String) {
+        if (key.contains('_$itemId')) {
+          var value = await storage.getDecrypted(_storeName, _storeName, key);
+          if (value != null) {
             try {
               final msg = jsonDecode(value);
               msg['status'] = status;
               if (deliveredAt != null) msg['deliveredAt'] = deliveredAt;
               if (readAt != null) msg['readAt'] = readAt;
-              await store.put(jsonEncode(msg), key);
+              await storage.putEncrypted(_storeName, _storeName, key, jsonEncode(msg));
               break;
             } catch (e) {
               debugPrint('[SentMessagesStore] Error updating status: $e');
@@ -381,7 +299,6 @@ class PermanentSentMessagesStore {
           }
         }
       }
-      await txn.completed;
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'sent_message_keys');
@@ -411,18 +328,13 @@ class PermanentSentMessagesStore {
   /// Clear all sent messages
   Future<void> clearAll() async {
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      await store.clear();
-      await txn.completed;
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      final keys = await storage.getAllKeys(_storeName, _storeName);
+      
+      for (var key in keys) {
+        await storage.deleteEncrypted(_storeName, _storeName, key);
+      }
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'sent_message_keys');

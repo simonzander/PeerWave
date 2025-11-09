@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:idb_shim/idb_browser.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'device_scoped_storage_service.dart';
@@ -15,15 +14,11 @@ class PermanentSessionStore extends SessionStore {
 
   static Future<PermanentSessionStore> create() async {
     final store = PermanentSessionStore();
-    if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      await idbFactory.open(store._storeName, version: 1, onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(store._storeName)) {
-          db.createObjectStore(store._storeName, autoIncrement: false);
-        }
-      });
-    } else {
+    
+    // Device-scoped database will be created automatically by DeviceScopedStorageService
+    // on first putEncrypted() call. No need to pre-create the database.
+    
+    if (!kIsWeb) {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'session_keys');
       if (keysJson == null) {

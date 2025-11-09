@@ -1,11 +1,12 @@
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:idb_shim/idb_browser.dart';
 import 'dart:convert';
 import 'storage/sqlite_group_message_store.dart';
+import 'device_scoped_storage_service.dart';
 
 /// Store for decrypted group items (messages, reactions, etc.)
-/// Now uses SQLite for better performance, with fallback to old storage
+/// Uses DeviceScopedStorageService for device-scoped encrypted storage on web.
+/// Uses SQLite for better performance, with fallback to old storage
 class DecryptedGroupItemsStore {
   static const String _storeName = 'decryptedGroupItems';
   static const String _keyPrefix = 'group_item_';
@@ -16,53 +17,8 @@ class DecryptedGroupItemsStore {
   static Future<DecryptedGroupItemsStore> getInstance() async {
     if (_instance != null) return _instance!;
     
-    final store = DecryptedGroupItemsStore._();
-    
-    if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        ObjectStore objectStore;
-        
-        // Create or get the object store
-        if (!db.objectStoreNames.contains(_storeName)) {
-          objectStore = db.createObjectStore(_storeName, autoIncrement: false);
-        } else {
-          objectStore = event.transaction.objectStore(_storeName);
-        }
-        
-        // Add indexes for faster queries (v2)
-        if (event.oldVersion < 2) {
-          // Index by channelId for filtering items from specific channels
-          if (!objectStore.indexNames.contains('channelId')) {
-            objectStore.createIndex('channelId', 'channelId', unique: false);
-          }
-          // Index by sender for filtering messages from specific users
-          if (!objectStore.indexNames.contains('sender')) {
-            objectStore.createIndex('sender', 'sender', unique: false);
-          }
-          // Index by timestamp for sorting
-          if (!objectStore.indexNames.contains('timestamp')) {
-            objectStore.createIndex('timestamp', 'timestamp', unique: false);
-          }
-          // Index by type for filtering message types
-          if (!objectStore.indexNames.contains('type')) {
-            objectStore.createIndex('type', 'type', unique: false);
-          }
-        }
-      });
-    } else {
-      // Initialize secure storage for mobile
-      final storage = FlutterSecureStorage();
-      final keys = await storage.read(key: 'group_item_keys');
-      if (keys == null) {
-        await storage.write(key: 'group_item_keys', value: jsonEncode([]));
-      }
-    }
-    
-    _instance = store;
-    return store;
+    _instance = DecryptedGroupItemsStore._();
+    return _instance!;
   }
 
   /// Store a decrypted group item
@@ -106,18 +62,9 @@ class DecryptedGroupItemsStore {
     });
 
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      await store.put(data, key);
-      await txn.completed;
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      await storage.putEncrypted(_storeName, _storeName, key, data);
     } else {
       final storage = FlutterSecureStorage();
       await storage.write(key: key, value: data);
@@ -166,22 +113,14 @@ class DecryptedGroupItemsStore {
     final prefix = '$_keyPrefix$channelId';
 
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readonly');
-      var store = txn.objectStore(_storeName);
-      var keys = await store.getAllKeys();
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      final keys = await storage.getAllKeys(_storeName, _storeName);
       
       for (var key in keys) {
-        if (key is String && key.startsWith(prefix)) {
-          var value = await store.getObject(key);
-          if (value is String) {
+        if (key.startsWith(prefix)) {
+          var value = await storage.getDecrypted(_storeName, _storeName, key);
+          if (value != null) {
             try {
               final item = jsonDecode(value);
               items.add(item);
@@ -191,7 +130,6 @@ class DecryptedGroupItemsStore {
           }
         }
       }
-      await txn.completed;
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'group_item_keys');
@@ -222,18 +160,9 @@ class DecryptedGroupItemsStore {
     final key = '$_keyPrefix${channelId}_$itemId';
 
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readonly');
-      var store = txn.objectStore(_storeName);
-      var value = await store.getObject(key);
-      await txn.completed;
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      var value = await storage.getDecrypted(_storeName, _storeName, key);
       return value != null;
     } else {
       final storage = FlutterSecureStorage();
@@ -247,18 +176,9 @@ class DecryptedGroupItemsStore {
     final key = '$_keyPrefix${channelId}_$itemId';
 
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      await store.delete(key);
-      await txn.completed;
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      await storage.deleteEncrypted(_storeName, _storeName, key);
     } else {
       final storage = FlutterSecureStorage();
       await storage.delete(key: key);
@@ -278,24 +198,15 @@ class DecryptedGroupItemsStore {
     final prefix = '$_keyPrefix$channelId';
 
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      var keys = await store.getAllKeys();
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      final keys = await storage.getAllKeys(_storeName, _storeName);
       
       for (var key in keys) {
-        if (key is String && key.startsWith(prefix)) {
-          await store.delete(key);
+        if (key.startsWith(prefix)) {
+          await storage.deleteEncrypted(_storeName, _storeName, key);
         }
       }
-      await txn.completed;
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'group_item_keys');
@@ -319,18 +230,13 @@ class DecryptedGroupItemsStore {
   /// Clear all stored group items
   Future<void> clearAll() async {
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readwrite');
-      var store = txn.objectStore(_storeName);
-      await store.clear();
-      await txn.completed;
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      final keys = await storage.getAllKeys(_storeName, _storeName);
+      
+      for (var key in keys) {
+        await storage.deleteEncrypted(_storeName, _storeName, key);
+      }
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'group_item_keys');
@@ -349,28 +255,19 @@ class DecryptedGroupItemsStore {
     final Set<String> channels = {};
 
     if (kIsWeb) {
-      final IdbFactory idbFactory = idbFactoryBrowser;
-      final db = await idbFactory.open(_storeName, version: 2,
-          onUpgradeNeeded: (VersionChangeEvent event) {
-        Database db = event.database;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName, autoIncrement: false);
-        }
-      });
-      var txn = db.transaction(_storeName, 'readonly');
-      var store = txn.objectStore(_storeName);
-      var index = store.index('channelId');
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      final keys = await storage.getAllKeys(_storeName, _storeName);
       
-      // Use openKeyCursor to efficiently get unique channelIds
-      var cursor = index.openKeyCursor(autoAdvance: true);
-      await for (var cursorWithValue in cursor) {
-        final channelId = cursorWithValue.key;
-        if (channelId is String) {
-          channels.add(channelId);
+      for (var key in keys) {
+        // Extract channelId from key format: group_item_{channelId}_{itemId}
+        if (key.startsWith(_keyPrefix)) {
+          final parts = key.substring(_keyPrefix.length).split('_');
+          if (parts.isNotEmpty) {
+            channels.add(parts[0]);
+          }
         }
       }
-      
-      await txn.completed;
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'group_item_keys');

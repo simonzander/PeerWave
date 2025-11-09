@@ -2,20 +2,17 @@ import 'socket_service.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:idb_shim/idb_browser.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'package:collection/collection.dart';
 import 'device_scoped_storage_service.dart';
-import 'web/encrypted_storage_wrapper.dart';
 
 /// A persistent identity key store for Signal identities.
-/// Uses IndexedDB on web and FlutterSecureStorage on native.
+/// Uses device-scoped encrypted storage on web and FlutterSecureStorage on native.
 
 class PermanentIdentityKeyStore extends IdentityKeyStore {
   final String _storeName = 'peerwaveSignalIdentityKeys';
   final String _keyPrefix = 'identity_';
-  final EncryptedStorageWrapper _encryption = EncryptedStorageWrapper();
   IdentityKeyPair? identityKeyPair;
   int? localRegistrationId;
 
@@ -97,61 +94,7 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
         debugPrint('[IDENTITY] ✓ Loaded encrypted IdentityKeyPair from device-scoped storage');
       }
 
-      // 🔄 MIGRATION: Check legacy store if not found in device-scoped storage
-      if (publicKeyBase64 == null || privateKeyBase64 == null || registrationId == null) {
-        debugPrint('[IDENTITY] Checking legacy store for migration...');
-        try {
-          final IdbFactory idbFactory = idbFactoryBrowser;
-          final legacyDb = await idbFactory.open('peerwaveSignal', version: 1, onUpgradeNeeded: (event) {
-            if (!event.database.objectStoreNames.contains('peerwaveSignal')) {
-              event.database.createObjectStore('peerwaveSignal', autoIncrement: true);
-            }
-          });
-          final txn = legacyDb.transaction('peerwaveSignal', 'readonly');
-          final legacyStore = txn.objectStore('peerwaveSignal');
-          
-          final legacyEnvelope = await legacyStore.getObject('identityKeyPair');
-          await txn.completed;
-          
-          if (legacyEnvelope != null && legacyEnvelope is Map<String, dynamic>) {
-            debugPrint('[IDENTITY] 🔄 Found encrypted data in legacy store - decrypting...');
-            final decrypted = await _encryption.decryptFromStorage(legacyEnvelope);
-            
-            if (decrypted is Map) {
-              publicKeyBase64 = decrypted['publicKey'] as String?;
-              privateKeyBase64 = decrypted['privateKey'] as String?;
-              registrationId = decrypted['registrationId']?.toString();
-              
-              if (publicKeyBase64 != null && privateKeyBase64 != null && registrationId != null) {
-                debugPrint('[IDENTITY] ✓ Decrypted legacy data - migrating to device-scoped storage...');
-                
-                // Store in NEW device-scoped database
-                await storage.putEncrypted(
-                  'peerwaveSignal',
-                  'identityKeyPair',
-                  'identityKeyPair',
-                  {
-                    'publicKey': publicKeyBase64,
-                    'privateKey': privateKeyBase64,
-                    'registrationId': registrationId,
-                  },
-                );
-                
-                // Delete legacy data
-                final deleteTxn = legacyDb.transaction('peerwaveSignal', 'readwrite');
-                final deleteStore = deleteTxn.objectStore('peerwaveSignal');
-                await deleteStore.delete('identityKeyPair');
-                await deleteTxn.completed;
-                
-                debugPrint('[IDENTITY] ✅ Migration complete - legacy data moved and deleted');
-              }
-            }
-          }
-        } catch (e) {
-          debugPrint('[IDENTITY] Legacy migration failed: $e');
-        }
-      }
-
+      // Generate new identity key pair if not found
       if (publicKeyBase64 == null || privateKeyBase64 == null || registrationId == null) {
         debugPrint('[IDENTITY] ⚠️  CRITICAL: IdentityKeyPair missing - generating NEW keys!');
         debugPrint('[IDENTITY] This will invalidate all existing encrypted sessions.');
@@ -271,15 +214,14 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
       debugPrint('[IDENTITY_CLEANUP] Deleting local PreKeys...');
       if (kIsWeb) {
         try {
-          final IdbFactory idbFactory = idbFactoryBrowser;
-          final db = await idbFactory.open('peerwaveSignalPreKeys', version: 1);
-          final txn = db.transaction('peerwaveSignalPreKeys', 'readwrite');
-          final store = txn.objectStore('peerwaveSignalPreKeys');
-          await store.clear();
-          await txn.completed;
-          debugPrint('[IDENTITY_CLEANUP] ✓ Local PreKeys deleted (IndexedDB)');
+          final storage = DeviceScopedStorageService.instance;
+          final keys = await storage.getAllKeys('peerwaveSignalPreKeys', 'peerwaveSignalPreKeys');
+          for (final key in keys) {
+            await storage.deleteEncrypted('peerwaveSignalPreKeys', 'peerwaveSignalPreKeys', key);
+          }
+          debugPrint('[IDENTITY_CLEANUP] ✓ Local PreKeys deleted from device-scoped storage');
         } catch (e) {
-          debugPrint('[IDENTITY_CLEANUP] Warning: Could not clear PreKeys from IndexedDB: $e');
+          debugPrint('[IDENTITY_CLEANUP] Warning: Could not clear PreKeys from device-scoped storage: $e');
         }
       } else {
         try {
@@ -300,15 +242,14 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
       debugPrint('[IDENTITY_CLEANUP] Deleting local SignedPreKeys...');
       if (kIsWeb) {
         try {
-          final IdbFactory idbFactory = idbFactoryBrowser;
-          final db = await idbFactory.open('peerwaveSignalSignedPreKeys', version: 1);
-          final txn = db.transaction('peerwaveSignalSignedPreKeys', 'readwrite');
-          final store = txn.objectStore('peerwaveSignalSignedPreKeys');
-          await store.clear();
-          await txn.completed;
-          debugPrint('[IDENTITY_CLEANUP] ✓ Local SignedPreKeys deleted (IndexedDB)');
+          final storage = DeviceScopedStorageService.instance;
+          final keys = await storage.getAllKeys('peerwaveSignalSignedPreKeys', 'peerwaveSignalSignedPreKeys');
+          for (final key in keys) {
+            await storage.deleteEncrypted('peerwaveSignalSignedPreKeys', 'peerwaveSignalSignedPreKeys', key);
+          }
+          debugPrint('[IDENTITY_CLEANUP] ✓ Local SignedPreKeys deleted from device-scoped storage');
         } catch (e) {
-          debugPrint('[IDENTITY_CLEANUP] Warning: Could not clear SignedPreKeys from IndexedDB: $e');
+          debugPrint('[IDENTITY_CLEANUP] Warning: Could not clear SignedPreKeys from device-scoped storage: $e');
         }
       } else {
         try {
@@ -329,15 +270,14 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
       debugPrint('[IDENTITY_CLEANUP] Deleting local Sessions...');
       if (kIsWeb) {
         try {
-          final IdbFactory idbFactory = idbFactoryBrowser;
-          final db = await idbFactory.open('peerwaveSignalSessions', version: 1);
-          final txn = db.transaction('peerwaveSignalSessions', 'readwrite');
-          final store = txn.objectStore('peerwaveSignalSessions');
-          await store.clear();
-          await txn.completed;
-          debugPrint('[IDENTITY_CLEANUP] ✓ Local Sessions deleted (IndexedDB)');
+          final storage = DeviceScopedStorageService.instance;
+          final keys = await storage.getAllKeys('peerwaveSignalSessions', 'peerwaveSignalSessions');
+          for (final key in keys) {
+            await storage.deleteEncrypted('peerwaveSignalSessions', 'peerwaveSignalSessions', key);
+          }
+          debugPrint('[IDENTITY_CLEANUP] ✓ Local Sessions deleted from device-scoped storage');
         } catch (e) {
-          debugPrint('[IDENTITY_CLEANUP] Warning: Could not clear Sessions from IndexedDB: $e');
+          debugPrint('[IDENTITY_CLEANUP] Warning: Could not clear Sessions from device-scoped storage: $e');
         }
       } else {
         try {
@@ -358,15 +298,14 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
       debugPrint('[IDENTITY_CLEANUP] Deleting local SenderKeys...');
       if (kIsWeb) {
         try {
-          final IdbFactory idbFactory = idbFactoryBrowser;
-          final db = await idbFactory.open('peerwaveSenderKeys', version: 1);
-          final txn = db.transaction('peerwaveSenderKeys', 'readwrite');
-          final store = txn.objectStore('peerwaveSenderKeys');
-          await store.clear();
-          await txn.completed;
-          debugPrint('[IDENTITY_CLEANUP] ✓ Local SenderKeys deleted (IndexedDB)');
+          final storage = DeviceScopedStorageService.instance;
+          final keys = await storage.getAllKeys('peerwaveSenderKeys', 'peerwaveSenderKeys');
+          for (final key in keys) {
+            await storage.deleteEncrypted('peerwaveSenderKeys', 'peerwaveSenderKeys', key);
+          }
+          debugPrint('[IDENTITY_CLEANUP] ✓ Local SenderKeys deleted from device-scoped storage');
         } catch (e) {
-          debugPrint('[IDENTITY_CLEANUP] Warning: Could not clear SenderKeys from IndexedDB: $e');
+          debugPrint('[IDENTITY_CLEANUP] Warning: Could not clear SenderKeys from device-scoped storage: $e');
         }
       } else {
         try {
