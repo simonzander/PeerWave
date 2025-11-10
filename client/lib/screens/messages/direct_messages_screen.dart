@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:uuid/uuid.dart';
 import '../../widgets/message_list.dart';
-import '../../widgets/message_input.dart';
+import '../../widgets/enhanced_message_input.dart';
 import '../../widgets/user_avatar.dart';
 import '../../services/signal_service.dart';
 import '../../services/socket_service.dart';
@@ -18,7 +18,7 @@ import '../../extensions/snackbar_extensions.dart';
 import '../../providers/unread_messages_provider.dart';
 
 /// Whitelist of message types that should be displayed in UI
-const Set<String> DISPLAYABLE_MESSAGE_TYPES = {'message', 'file'};
+const Set<String> DISPLAYABLE_MESSAGE_TYPES = {'message', 'file', 'image', 'voice'};
 
 /// Screen for Direct Messages (1:1 Signal chats)
 class DirectMessagesScreen extends StatefulWidget {
@@ -369,6 +369,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             'timestamp': msg['timestamp'],
             'type': msg['type'],
             'status': msg['status'] ?? 'sent', // Use status from SQLite
+            'metadata': msg['metadata'], // ✅ Preserve metadata for image/voice
           })
           .toList();
       
@@ -380,6 +381,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             'timestamp': msg['timestamp'],
             'sender': msg['sender'],
             'type': msg['type'],
+            'metadata': msg['metadata'], // ✅ Preserve metadata for image/voice
           })
           .toList();
       
@@ -505,9 +507,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           final message = sentMsg['message'] ?? '';
           if (message.toString().startsWith('{"itemId":')) continue;
 
-          // Filter out system messages (only 'message' and 'file' types allowed)
+          // Filter displayable message types
           final msgType = sentMsg['type'] ?? 'message';
-          if (msgType != 'message' && msgType != 'file') {
+          if (!DISPLAYABLE_MESSAGE_TYPES.contains(msgType)) {
             debugPrint('[DM_SCREEN] Skipping sent system message type: $msgType');
             continue;
           }
@@ -522,12 +524,13 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             'time': sentMsg['timestamp'],
             'isLocalSent': true,
             'status': sentMsg['status'] ?? 'sending',
-            'type': msgType, // Preserve message type (message or file)
+            'type': msgType, // Preserve message type
+            'metadata': sentMsg['metadata'], // ✅ Preserve metadata for image/voice
           });
         }
 
         for (var receivedMsg in receivedMessages) {
-          // Filter out system messages (only 'message' and 'file' types allowed)
+          // Filter displayable message types
           final msgType = receivedMsg['type'] ?? 'message';
           if (!DISPLAYABLE_MESSAGE_TYPES.contains(msgType)) {
             debugPrint('[DM_SCREEN] Skipping received system message type: $msgType');
@@ -544,6 +547,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             'time': receivedMsg['timestamp'] ?? receivedMsg['decryptedAt'],
             'isLocalSent': false,
             'type': msgType, // Preserve message type
+            'metadata': receivedMsg['metadata'], // ✅ Preserve metadata for image/voice
           });
         }
 
@@ -621,10 +625,31 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
   }
 
-  Future<void> _sendMessage(String text) async {
-    if (text.trim().isEmpty) return;
+  /// Enhanced message sending with support for multiple message types
+  Future<void> _sendMessageEnhanced(
+    String content, {
+    String? type,
+    Map<String, dynamic>? metadata,
+  }) async {
+    final messageType = type ?? 'message';
+    
+    if (content.trim().isEmpty) return;
 
-    // CRITICAL: Check if Signal Protocol is initialized before sending
+    // Validate size for base64 content (image, voice)
+    if (messageType == 'image' || messageType == 'voice') {
+      final sizeBytes = content.length * 0.75; // Base64 to bytes approximation
+      if (sizeBytes > 2 * 1024 * 1024) {
+        if (mounted) {
+          context.showErrorSnackBar(
+            'Content too large (max 2MB)',
+            duration: const Duration(seconds: 3),
+          );
+        }
+        return;
+      }
+    }
+
+    // Check Signal Protocol initialization
     if (_error != null && _error!.contains('Signal Protocol not initialized')) {
       if (mounted) {
         context.showErrorSnackBar(
@@ -632,101 +657,123 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           duration: const Duration(seconds: 5),
         );
       }
-      return; // ❌ BLOCK - Critical initialization error
+      return;
     }
 
-    // STEP 2: Check if recipient has available PreKeys BEFORE sending
+    // Check recipient PreKeys
     try {
       final hasPreKeys = await SignalService.instance.hasPreKeysForRecipient(
         widget.recipientUuid
       );
       
-      if (hasPreKeys == null) {
-        // API error - show warning but allow sending (failsafe)
-        if (mounted) {
-          context.showErrorSnackBar('Could not verify recipient keys. Attempting to send anyway...');
-        }
-        // Continue with sending
-      } else if (!hasPreKeys) {
-        // BLOCK: Recipient has no available PreKeys
+      if (hasPreKeys == false) {
         if (mounted) {
           context.showErrorSnackBar(
-            'Cannot send message: ${widget.recipientDisplayName} has no PreKeys available. '
-            'Please ask them to register or refresh their device.',
+            'Cannot send message: ${widget.recipientDisplayName} has no PreKeys available.',
             duration: const Duration(seconds: 5),
           );
         }
-        return; // ❌ BLOCK - Do not send message
+        return;
       }
     } catch (e) {
-      // On check error: still try to send (failsafe approach)
-      debugPrint('[DIRECT MESSAGES] PreKey check failed, attempting to send anyway: $e');
+      debugPrint('[DM] PreKey check failed: $e');
     }
 
     final itemId = Uuid().v4();
     final timestamp = DateTime.now().toIso8601String();
 
-    setState(() {
-      _messages.add({
-        'itemId': itemId,
-        'sender': SignalService.instance.currentUserId,
-        'senderDeviceId': SignalService.instance.currentDeviceId,
-        'senderDisplayName': 'You',
-        'text': text,
-        'message': text,
-        'time': timestamp,
-        'isLocalSent': true,
-        'status': 'sending',
+    // Add to UI immediately for text and displayable types
+    if (messageType == 'message' || messageType == 'image' || messageType == 'voice') {
+      setState(() {
+        _messages.add({
+          'itemId': itemId,
+          'sender': SignalService.instance.currentUserId,
+          'senderDeviceId': SignalService.instance.currentDeviceId,
+          'senderDisplayName': 'You',
+          'text': messageType == 'message' ? content : '[${messageType.toUpperCase()}]',
+          'message': content,
+          'payload': content,
+          'time': timestamp,
+          'isLocalSent': true,
+          'status': 'sending',
+          'type': messageType,
+          'metadata': metadata,
+        });
       });
-    });
+    }
 
-    // CRITICAL: Check socket connection before sending
+    // Check connection
     if (!SocketService().isConnected) {
-      // Add to offline queue
       await OfflineMessageQueue.instance.enqueue(
         QueuedMessage(
           itemId: itemId,
           type: 'direct',
-          text: text,
+          text: content,
           timestamp: timestamp,
           metadata: {
             'recipientId': widget.recipientUuid,
             'recipientName': widget.recipientDisplayName,
+            'messageType': messageType,
+            ...?metadata,
           },
         ),
       );
       
       if (mounted) {
         context.showErrorSnackBar(
-          'Not connected. Message queued and will be sent when reconnected.',
-          duration: const Duration(seconds: 5),
+          'Not connected. Message queued.',
+          duration: const Duration(seconds: 3),
         );
       }
       
-      // Update message status to pending
       setState(() {
         final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
         if (msgIndex != -1) {
           _messages[msgIndex]['status'] = 'pending';
         }
       });
-      return; // Exit but message stays in queue
+      return;
     }
 
     try {
+      // Send main message
       await SignalService.instance.sendItem(
         recipientUserId: widget.recipientUuid,
-        type: "message",
-        payload: text,
+        type: messageType,
+        payload: content,
         itemId: itemId,
+        metadata: metadata,
       );
       
-      // ✅ Update status to 'sent' after successful send
+      // Send notification messages for mentions
+      if (metadata != null && metadata['mentions'] != null) {
+        final mentions = metadata['mentions'] as List;
+        for (final mention in mentions) {
+          try {
+            await SignalService.instance.sendItem(
+              recipientUserId: mention['userId'] as String,
+              type: 'notification',
+              payload: jsonEncode({
+                'mentionedBy': SignalService.instance.currentUserId,
+                'mentionedByName': 'You',
+                'message': content,
+                'conversationId': widget.recipientUuid,
+                'conversationName': widget.recipientDisplayName,
+              }),
+            );
+            debugPrint('[DM] Sent mention notification to ${mention['userId']}');
+          } catch (e) {
+            debugPrint('[DM] Failed to send mention notification: $e');
+          }
+        }
+      }
+      
+      // Update status
       setState(() {
         final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
         if (msgIndex != -1) {
           _messages[msgIndex]['status'] = 'sent';
-          debugPrint('[DM_SCREEN] ✓ Message sent successfully: $itemId');
+          debugPrint('[DM_SCREEN] ✓ ${messageType} message sent: $itemId');
         }
       });
     } catch (e) {
@@ -737,39 +784,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         }
       });
       
-      // STEP 4: Better error messages based on error type
-      String errorMessage = 'Failed to send message';
-      Color errorColor = Colors.red;
-      
-      if (e.toString().contains('PreKeyBundle') || e.toString().contains('PreKey')) {
-        errorMessage = 'Recipient has no PreKeys. Please ask them to register or refresh.';
-        errorColor = Colors.red;
-      } else if (e.toString().contains('Failed to load PreKeyBundle')) {
-        errorMessage = 'Server error loading recipient keys. Please try again later.';
-        errorColor = Colors.orange;
-      } else if (e.toString().contains('Identity key') || e.toString().contains('identity')) {
-        errorMessage = 'Encryption keys missing. Please refresh the page.';
-        errorColor = Colors.red;
-      } else if (e.toString().contains('User not authenticated')) {
-        errorMessage = 'Session expired. Please refresh the page.';
-        errorColor = Colors.red;
-      } else if (e.toString().contains('Session') || e.toString().contains('session')) {
-        errorMessage = 'Encryption session error. Message may arrive after retry.';
-        errorColor = Colors.orange;
-      } else if (e.toString().contains('decode') || e.toString().contains('Decode') || e.toString().contains('Invalid')) {
-        errorMessage = 'Recipient has corrupted encryption keys. Ask them to re-register.';
-        errorColor = Colors.red;
-      } else if (e.toString().contains('network') || e.toString().contains('connection')) {
-        errorMessage = 'Network error. Please check your connection and retry.';
-        errorColor = Colors.orange;
-      } else {
-        errorMessage = 'Failed to send message: ${e.toString()}';
-      }
-      
       if (mounted) {
-        context.showCustomSnackBar(
-          errorMessage,
-          backgroundColor: errorColor,
+        context.showErrorSnackBar(
+          'Failed to send ${messageType}: ${e.toString()}',
           duration: const Duration(seconds: 5),
         );
       }
@@ -840,7 +857,24 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                         ],
                       ),
           ),
-          MessageInput(onSendMessage: _sendMessage),
+          EnhancedMessageInput(
+            onSendMessage: (message, {type, metadata}) {
+              _sendMessageEnhanced(message, type: type, metadata: metadata);
+            },
+            onFileShare: (itemId) {
+              // Handle P2P file share completion
+              debugPrint('[DM_SCREEN] File shared: $itemId');
+            },
+            availableUsers: [
+              {
+                'userId': widget.recipientUuid,
+                'displayName': widget.recipientDisplayName,
+                'atName': widget.recipientDisplayName.toLowerCase().replaceAll(' ', ''),
+              }
+            ],
+            isGroupChat: false,
+            recipientUserId: widget.recipientUuid, // For P2P file sharing
+          ),
         ],
       ),
     );

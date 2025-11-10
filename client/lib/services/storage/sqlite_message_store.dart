@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:sqflite/sqflite.dart';
+import 'dart:convert';
 import 'database_helper.dart';
 import 'database_encryption_service.dart';
 
@@ -94,6 +95,7 @@ class SqliteMessageStore {
     String? channelId,
     required String timestamp,
     required String type,
+    Map<String, dynamic>? metadata,
   }) async {
     final db = await DatabaseHelper.database;
     
@@ -111,6 +113,7 @@ class SqliteMessageStore {
         'timestamp': timestamp,
         'type': type,
         'direction': 'received',
+        'metadata': metadata != null ? jsonEncode(metadata) : null,
         'decrypted_at': DateTime.now().toIso8601String(),
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
@@ -128,8 +131,15 @@ class SqliteMessageStore {
     required String timestamp,
     required String type,
     String status = 'sent', // Default status for sent messages
+    Map<String, dynamic>? metadata,
   }) async {
     final db = await DatabaseHelper.database;
+    
+    // Validate message size (2MB limit)
+    final messageBytes = utf8.encode(message).length;
+    if (messageBytes > 2 * 1024 * 1024) {
+      throw Exception('Message too large (${(messageBytes / 1024 / 1024).toStringAsFixed(2)}MB, max 2MB)');
+    }
     
     // Encrypt the message content
     final encryptedMessage = await _encryption.encryptString(message);
@@ -146,6 +156,7 @@ class SqliteMessageStore {
         'type': type,
         'direction': 'sent',
         'status': status, // Store message status
+        'metadata': metadata != null ? jsonEncode(metadata) : null,
         'decrypted_at': DateTime.now().toIso8601String(),
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
@@ -453,6 +464,16 @@ class SqliteMessageStore {
     final encryptedMessage = row['message'];
     final decryptedMessage = await _encryption.decryptString(encryptedMessage);
     
+    // Parse metadata if present
+    Map<String, dynamic>? metadata;
+    if (row['metadata'] != null) {
+      try {
+        metadata = jsonDecode(row['metadata']);
+      } catch (e) {
+        debugPrint('[SQLITE_MESSAGE_STORE] Failed to parse metadata: $e');
+      }
+    }
+    
     return {
       'itemId': row['item_id'],
       'item_id': row['item_id'], // Keep snake_case for compatibility
@@ -465,6 +486,7 @@ class SqliteMessageStore {
       'direction': row['direction'],
       'status': row['status'], // Include status for sent messages
       'decryptedAt': row['decrypted_at'],
+      'metadata': metadata, // Include parsed metadata for image/voice messages
     };
   }
 }

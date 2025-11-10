@@ -17,7 +17,7 @@ class DatabaseHelper {
   static bool _factoryInitialized = false;
   static bool _initializing = false;
   static const String _databaseBaseName = 'peerwave'; // Base name without .db extension
-  static const int _databaseVersion = 4; // Version 4: Add read_receipt_sent flag for received messages
+  static const int _databaseVersion = 5; // Version 5: Add metadata column for new message types
   
   static final DeviceIdentityService _deviceIdentity = DeviceIdentityService.instance;
   static final DatabaseEncryptionService _encryption = DatabaseEncryptionService.instance;
@@ -171,6 +171,7 @@ class DatabaseHelper {
         direction TEXT NOT NULL CHECK(direction IN ('received', 'sent')),
         status TEXT,
         read_receipt_sent INTEGER DEFAULT 0,
+        metadata TEXT,
         decrypted_at TEXT NOT NULL,
         created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
       )
@@ -283,6 +284,15 @@ class DatabaseHelper {
         ALTER TABLE messages ADD COLUMN read_receipt_sent INTEGER DEFAULT 0
       ''');
       debugPrint('[DATABASE] ✓ Added read_receipt_sent column (prevents duplicate read receipts)');
+    }
+    
+    // Version 4 → 5: Add metadata column for image/voice/notification messages
+    if (oldVersion < 5) {
+      debugPrint('[DATABASE] Applying migration: Add metadata column to messages table');
+      await db.execute('''
+        ALTER TABLE messages ADD COLUMN metadata TEXT DEFAULT NULL
+      ''');
+      debugPrint('[DATABASE] ✓ Added metadata column (stores JSON metadata for image/voice/mentions)');
     }
   }
 
