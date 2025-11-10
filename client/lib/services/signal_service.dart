@@ -1219,13 +1219,31 @@ class SignalService {
   final cipherType = data['cipherType'];
   final itemId = data['itemId'];
 
+  // CRITICAL: Delete from server FIRST to prevent re-delivery on reconnect
+  // Even if decryption fails, we don't want to process the same message twice
+  deleteItemFromServer(itemId);
+
   // Use decryptItemFromData to get caching + IndexedDB storage
   // This ensures real-time messages are also persisted locally
-  final message = await decryptItemFromData(data);
+  String message;
+  try {
+    message = await decryptItemFromData(data);
+  } catch (e) {
+    debugPrint("[SIGNAL SERVICE] ✗ Decryption error: $e");
+    // If it's a DuplicateMessageException, the message was already processed
+    // Just skip it - server already deleted above
+    if (e.toString().contains('DuplicateMessageException')) {
+      debugPrint("[SIGNAL SERVICE] ⚠️ Duplicate message detected (already processed) - skipping");
+      return;
+    }
+    // For other errors, also skip
+    debugPrint("[SIGNAL SERVICE] ⚠️ Decryption failed - message already deleted from server");
+    return;
+  }
 
-  // Skip messages only if decryption failed (empty result from error handling)
+  // Skip messages only if decryption returned empty (should be rare now)
   if (message.isEmpty) {
-    debugPrint("[SIGNAL SERVICE] Skipping message - decryption failed or returned empty result");
+    debugPrint("[SIGNAL SERVICE] Skipping message - decryption returned empty");
     return;
   }
 
@@ -1267,13 +1285,9 @@ class SignalService {
     _unreadMessagesProvider!.incrementIfBadgeType(type, sender, false);
   }
   
-  // ✅ PHASE 3: Delete system messages after processing
+  // ✅ PHASE 3: System messages already deleted from server above
   if (isSystemMessage) {
-    // Delete from server
-    deleteItemFromServer(itemId);
-    
     // System messages should never be in SQLite (filtered by storage layer)
-    // No local cleanup needed
     debugPrint("[SIGNAL SERVICE] ✓ System message processed: type=$type, itemId=$itemId");
     
     // Don't trigger regular callbacks for system messages
@@ -1293,8 +1307,8 @@ class SignalService {
     }
   }
   
-  // Delete from server (only for regular messages)
-  deleteItemFromServer(itemId);
+  // Note: Message already deleted from server at the start of this function
+  debugPrint("[SIGNAL SERVICE] ✓ Message processing complete for itemId: $itemId");
 }
 
 void deleteItemFromServer(String itemId) {
@@ -1666,6 +1680,7 @@ void deleteGroupItem(String itemId, String channelId) async {
     required String type,
     required dynamic payload,
     String? itemId, // Optional: allow pre-generated itemId from UI
+    Map<String, dynamic>? metadata, // Optional metadata (for image/voice messages)
   }) async {
     // 🔒 SYNC-LOCK: Wait if identity regeneration is in progress
     await _waitForRegenerationIfNeeded();
@@ -1697,7 +1712,8 @@ void deleteGroupItem(String itemId, String channelId) async {
     // Store sent message in local storage for persistence after refresh
     // IMPORTANT: Only store actual chat messages and file messages, not system messages
     final timestamp = DateTime.now().toIso8601String();
-    final shouldStore = !SKIP_STORAGE_TYPES.contains(type) && (type == 'message' || type == 'file');
+    const STORABLE_TYPES = {'message', 'file', 'image', 'voice', 'notification'};
+    final shouldStore = !SKIP_STORAGE_TYPES.contains(type) && STORABLE_TYPES.contains(type);
     
     if (shouldStore) {
       // Store in SQLite database with status
@@ -1710,6 +1726,7 @@ void deleteGroupItem(String itemId, String channelId) async {
           timestamp: timestamp,
           type: type,
           status: 'sent', // Initial status
+          metadata: metadata,
         );
         
         // Update recent conversations list
@@ -2717,6 +2734,7 @@ Future<String> decryptItem({
     required String message,
     required String itemId,
     String type = 'message',
+    Map<String, dynamic>? metadata, // Optional metadata (for image/voice messages)
   }) async {
     try {
       if (_currentUserId == null || _currentDeviceId == null) {
@@ -2757,6 +2775,7 @@ Future<String> decryptItem({
             message: message,
             timestamp: timestamp,
             type: type,
+            metadata: metadata,
           );
           debugPrint('[SIGNAL_SERVICE] Stored group item $itemId in SQLite');
         } catch (e) {

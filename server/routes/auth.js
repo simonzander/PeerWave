@@ -692,13 +692,40 @@ authRoutes.post("/backupcode/regenerate", async(req, res) => {
 /*authRoutes.get("/login", (req, res) => {
     // Render the login form
     res.render("login");
-});/*
+});
+*/
+// POST logout route - destroys session and clears cookie
+authRoutes.post("/logout", (req, res) => {
+    const userId = req.session.uuid;
+    const deviceId = req.session.deviceId;
+    console.log(`[AUTH] Logout request from user ${userId}, device ${deviceId}`);
+    
+    req.session.destroy((err) => {
+        if (err) {
+            console.error('[AUTH] Error destroying session:', err);
+            return res.status(500).json({ success: false, error: 'Failed to destroy session' });
+        }
+        
+        // Clear the session cookie
+        res.clearCookie('connect.sid', {
+            path: '/',
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict'
+        });
+        
+        console.log(`[AUTH] ✓ Session destroyed for user ${userId}, device ${deviceId}`);
+        res.json({ success: true, message: 'Logged out successfully' });
+    });
+});
 
-// Implement logout route
+/*
+// GET logout route (legacy, commented out)
 authRoutes.get("/logout", (req, res) => {
     // Perform logout logic
     res.redirect("/");
 });
+*/
 
 // Implement delete account route
 authRoutes.post("/delete-account", (req, res) => {

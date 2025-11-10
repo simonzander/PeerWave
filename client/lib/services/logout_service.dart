@@ -77,6 +77,58 @@ class LogoutService {
         // Clear WebAuthn response data
         WebAuthnService.instance.clearWebAuthnData();
         debugPrint('[LOGOUT] ✓ WebAuthn data cleared');
+        
+        // CRITICAL: Clear ALL SessionStorage keys to prevent data leakage between users
+        if (kIsWeb) {
+          try {
+            // Clear peerwave_encryption_key_* keys
+            final storage = html.window.sessionStorage;
+            final keysToRemove = <String>[];
+            for (var i = 0; i < storage.length; i++) {
+              final key = storage.keys.elementAt(i);
+              if (key.startsWith('peerwave_encryption_key_')) {
+                keysToRemove.add(key);
+              }
+            }
+            for (var key in keysToRemove) {
+              storage.remove(key);
+              debugPrint('[LOGOUT] ✓ Removed SessionStorage key: $key');
+            }
+            
+            // Clear device_identity_* keys
+            final deviceKeys = <String>[];
+            for (var i = 0; i < storage.length; i++) {
+              final key = storage.keys.elementAt(i);
+              if (key.startsWith('device_identity_')) {
+                deviceKeys.add(key);
+              }
+            }
+            for (var key in deviceKeys) {
+              storage.remove(key);
+              debugPrint('[LOGOUT] ✓ Removed SessionStorage key: $key');
+            }
+            
+            debugPrint('[LOGOUT] ✓ All encryption keys cleared from SessionStorage');
+          } catch (e) {
+            debugPrint('[LOGOUT] ⚠ Error clearing SessionStorage: $e');
+          }
+          
+          // CRITICAL: Remove deprecated localStorage items (clientid, email)
+          try {
+            final localStorage = html.window.localStorage;
+            if (localStorage.containsKey('clientid')) {
+              localStorage.remove('clientid');
+              debugPrint('[LOGOUT] ✓ Removed deprecated localStorage key: clientid');
+            }
+            if (localStorage.containsKey('email')) {
+              localStorage.remove('email');
+              debugPrint('[LOGOUT] ✓ Removed deprecated localStorage key: email');
+            }
+            debugPrint('[LOGOUT] ✓ Cleaned up deprecated localStorage items');
+          } catch (e) {
+            debugPrint('[LOGOUT] ⚠ Error clearing localStorage: $e');
+          }
+        }
       } catch (e) {
         debugPrint('[LOGOUT] ⚠ Error clearing encryption data: $e');
       }

@@ -258,6 +258,16 @@ io.sockets.on("connection", socket => {
       console.log("[SIGNAL SERVER] Session:", socket.handshake.session);
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
         const deviceKey = `${socket.handshake.session.uuid}:${socket.handshake.session.deviceId}`;
+        
+        // Check if this device already has a socket connection (stale or duplicate)
+        const existingSocketId = deviceSockets.get(deviceKey);
+        if (existingSocketId && existingSocketId !== socket.id) {
+            console.log(`[SIGNAL SERVER] ⚠️  Replacing existing socket for ${deviceKey}`);
+            console.log(`[SIGNAL SERVER]    Old socket: ${existingSocketId}`);
+            console.log(`[SIGNAL SERVER]    New socket: ${socket.id}`);
+            console.log(`[SIGNAL SERVER]    Reason: Browser refresh or network reconnection`);
+        }
+        
         deviceSockets.set(deviceKey, socket.id);
         console.log(`[SIGNAL SERVER] Device registered: ${deviceKey} -> ${socket.id}`);
         console.log(`[SIGNAL SERVER] Total devices online: ${deviceSockets.size}`);
@@ -2639,12 +2649,18 @@ io.sockets.on("connection", socket => {
     console.log(`[SOCKET] Client disconnected: ${socket.id} (User: ${userId}, Device: ${deviceId})`);
     
     if(userId && deviceId) {
-      deviceSockets.delete(`${userId}:${deviceId}`);
+      const deviceKey = `${userId}:${deviceId}`;
+      deviceSockets.delete(deviceKey);
+      console.log(`[SOCKET] ✓ Cleaned up deviceSockets entry: ${deviceKey}`);
+      console.log(`[SOCKET] Remaining devices online: ${deviceSockets.size}`);
       
       // Clean up P2P file sharing announcements (with deviceId)
       const fileRegistry = require('./store/fileRegistry');
       fileRegistry.handleUserDisconnect(userId, deviceId);
     }
+    
+    // CRITICAL: Reset client ready state to prevent stale connections
+    socket.clientReady = false;
 
     // NEW: Cleanup video participants
     activeVideoParticipants.forEach((participants, channelId) => {

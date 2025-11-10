@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'file_message_widget.dart';
 import 'user_avatar.dart';
+import 'voice_message_player.dart';
 import '../models/file_message.dart';
 import 'dart:convert';
 
@@ -174,6 +175,7 @@ class MessageList extends StatelessWidget {
         final text = msg['payload'] ?? msg['text'] ?? msg['message'] ?? '';
         final timeStr = msg['time'] ?? '';
         final isLocalSent = msg['isLocalSent'] == true;
+        final theme = Theme.of(context);
 
         // Parse timestamp
         DateTime? msgTime;
@@ -242,7 +244,7 @@ class MessageList extends StatelessWidget {
                               sender,
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: isLocalSent ? Colors.blue[300] : Colors.white,
+                                color: isLocalSent ? theme.colorScheme.primary : Colors.white,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -271,11 +273,96 @@ class MessageList extends StatelessWidget {
     );
   }
 
-  /// Build message content based on type (text or file)
+  /// Build message content based on type (text, image, voice, or file)
   Widget _buildMessageContent(Map<String, dynamic> msg, String text) {
     final type = msg['type'] as String?;
+    final metadata = msg['metadata'];
     
-    // Check if this is a file message
+    // Image message - display base64 image
+    if (type == 'image') {
+      try {
+        final base64Image = text;
+        final imageBytes = base64Decode(base64Image);
+        
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              constraints: const BoxConstraints(maxWidth: 300, maxHeight: 400),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[700]!, width: 1),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Image.memory(
+                imageBytes,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        Icon(Icons.broken_image, size: 48, color: Colors.grey[600]),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Failed to load image',
+                          style: TextStyle(color: Colors.grey[500]),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            if (metadata != null && metadata['size'] != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                '${(metadata['size'] / 1024).toStringAsFixed(1)} KB',
+                style: TextStyle(color: Colors.grey[500], fontSize: 12),
+              ),
+            ],
+          ],
+        );
+      } catch (e) {
+        debugPrint('[MESSAGE_LIST] Failed to render image: $e');
+        return Text(
+          'Image (failed to load)',
+          style: TextStyle(color: Colors.red[300], fontStyle: FontStyle.italic),
+        );
+      }
+    }
+    
+    // Voice message - display audio player with waveform
+    if (type == 'voice') {
+      try {
+        final base64Audio = msg['message'] ?? '';
+        final duration = metadata?['duration'] ?? 0;
+        final size = metadata?['size'];
+        final isOwnMessage = msg['isLocalSent'] == true;
+        
+        if (base64Audio.isEmpty) {
+          return Text(
+            'Voice message (no audio data)',
+            style: TextStyle(color: Colors.red[300], fontStyle: FontStyle.italic),
+          );
+        }
+        
+        return VoiceMessagePlayer(
+          base64Audio: base64Audio,
+          durationSeconds: duration,
+          sizeBytes: size,
+          isOwnMessage: isOwnMessage,
+        );
+      } catch (e) {
+        debugPrint('[MESSAGE_LIST] Failed to render voice message: $e');
+        return Text(
+          'Voice message (failed to load)',
+          style: TextStyle(color: Colors.red[300], fontStyle: FontStyle.italic),
+        );
+      }
+    }
+    
+    // File message (P2P)
     if (type == 'file') {
       try {
         // Parse the file message payload
@@ -344,4 +431,5 @@ class MessageList extends StatelessWidget {
     );
   }
 }
+
 

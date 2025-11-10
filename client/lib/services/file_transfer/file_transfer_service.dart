@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:crypto/crypto.dart';
 import 'socket_file_client.dart';
 import 'storage_interface.dart';
+import 'encryption_service.dart';
 import '../signal_service.dart';
 
 /// File Transfer Service
@@ -13,6 +14,7 @@ class FileTransferService {
   final SocketFileClient _socketFileClient;
   final FileStorageInterface _storage;
   final SignalService? _signalService; // Optional for share updates
+  final EncryptionService _encryptionService;
   
   // ============================================
   // HIGH #6: DOWNLOAD CANCELLATION
@@ -23,9 +25,11 @@ class FileTransferService {
     required SocketFileClient socketFileClient,
     required FileStorageInterface storage,
     SignalService? signalService,
+    EncryptionService? encryptionService,
   })  : _socketFileClient = socketFileClient,
         _storage = storage,
-        _signalService = signalService {
+        _signalService = signalService,
+        _encryptionService = encryptionService ?? EncryptionService() {
     // Setup announce listener for auto-resume
     _setupAnnounceListener();
   }
@@ -48,11 +52,33 @@ class FileTransferService {
       final fileId = _generateFileId();
       final checksum = _calculateChecksum(fileBytes);
       
-      // Step 2: Chunk file
+      // Step 2: Generate encryption key
+      final fileKey = _encryptionService.generateKey();
+      debugPrint('[FILE TRANSFER] Generated AES-256 file key: ${fileKey.length} bytes');
+      
+      // Step 3: Chunk file
       final chunks = _chunkFile(fileBytes);
       debugPrint('[FILE TRANSFER] Created ${chunks.length} chunks');
       
-      // Step 3: Store locally
+      // Step 4: Encrypt and store chunks
+      for (int i = 0; i < chunks.length; i++) {
+        // Encrypt chunk
+        final encryptionResult = await _encryptionService.encryptChunk(
+          chunks[i],
+          fileKey,
+        );
+        
+        // Store encrypted chunk
+        await _storage.saveChunk(
+          fileId,
+          i,
+          encryptionResult.ciphertext,
+          iv: encryptionResult.iv,
+        );
+      }
+      debugPrint('[FILE TRANSFER] Encrypted and stored ${chunks.length} chunks');
+      
+      // Step 5: Save file metadata
       await _storage.saveFileMetadata({
         'fileId': fileId,
         'fileName': fileName,
@@ -67,11 +93,11 @@ class FileTransferService {
         'sharedWith': sharedWith ?? [],
       });
       
-      for (int i = 0; i < chunks.length; i++) {
-        await _storage.saveChunk(fileId, i, chunks[i]);
-      }
+      // Step 6: Save encryption key
+      await _storage.saveFileKey(fileId, fileKey);
+      debugPrint('[FILE TRANSFER] Saved file key to storage: ${fileKey.length} bytes');
       
-      // Step 4: AUTO-ANNOUNCE
+      // Step 7: AUTO-ANNOUNCE
       debugPrint('[FILE TRANSFER] Auto-announcing file: $fileId');
       await _socketFileClient.announceFile(
         fileId: fileId,
