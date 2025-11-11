@@ -14,7 +14,9 @@ class PeopleContextPanel extends StatelessWidget {
   final List<Map<String, dynamic>> recentPeople;
   final List<Map<String, dynamic>> favoritePeople;
   final Function(String uuid, String displayName) onPersonTap;
+  final VoidCallback? onLoadMore;
   final bool isLoading;
+  final bool hasMore;
 
   const PeopleContextPanel({
     super.key,
@@ -22,7 +24,9 @@ class PeopleContextPanel extends StatelessWidget {
     required this.recentPeople,
     required this.favoritePeople,
     required this.onPersonTap,
+    this.onLoadMore,
     this.isLoading = false,
+    this.hasMore = true,
   });
 
   @override
@@ -52,6 +56,11 @@ class PeopleContextPanel extends StatelessWidget {
                             person['displayName'],
                           ),
                         )),
+                        
+                        // Load more link
+                        if (hasMore && onLoadMore != null)
+                          _buildLoadMoreLink(),
+                        
                         const SizedBox(height: 12),
                       ],
                       
@@ -94,6 +103,39 @@ class PeopleContextPanel extends StatelessWidget {
     );
   }
 
+  Widget _buildLoadMoreLink() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: InkWell(
+        onTap: onLoadMore,
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Load more',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppThemeConstants.textSecondary.withOpacity(0.9),
+                  decoration: TextDecoration.underline,
+                  decorationColor: AppThemeConstants.textSecondary.withOpacity(0.4),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 10,
+                color: AppThemeConstants.textSecondary.withOpacity(0.7),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildPersonTile({
     required Map<String, dynamic> person,
     required VoidCallback onTap,
@@ -104,6 +146,8 @@ class PeopleContextPanel extends StatelessWidget {
     final picture = person['picture'] as String? ?? '';
     final isOnline = person['online'] as bool? ?? false;
     final userId = person['uuid'] as String? ?? '';
+    final lastMessage = person['lastMessage'] as String? ?? '';
+    final lastMessageTime = person['lastMessageTime'] as String? ?? '';
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -115,8 +159,9 @@ class PeopleContextPanel extends StatelessWidget {
           splashColor: const Color(0xFF252A32),
           highlightColor: const Color(0xFF1F242B),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Square avatar with online indicator
                 SizedBox(
@@ -152,12 +197,13 @@ class PeopleContextPanel extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 
-                // Name and @username in column
+                // Name, @username, and last message
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // First line: DisplayName and @username
                       Row(
                         children: [
                           Flexible(
@@ -172,6 +218,20 @@ class PeopleContextPanel extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          if (atName.isNotEmpty) ...[
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                '@$atName',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: AppThemeConstants.textSecondary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                           if (showStar) ...[
                             const SizedBox(width: 4),
                             const Icon(
@@ -182,28 +242,36 @@ class PeopleContextPanel extends StatelessWidget {
                           ],
                         ],
                       ),
-                      if (atName.isNotEmpty)
+                      
+                      // Second line: Last message
+                      if (lastMessage.isNotEmpty) ...[
+                        const SizedBox(height: 2),
                         Text(
-                          '@$atName',
+                          lastMessage,
                           style: TextStyle(
                             fontSize: 12,
-                            color: AppThemeConstants.textSecondary,
+                            color: AppThemeConstants.textSecondary.withOpacity(0.8),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                      ],
                     ],
                   ),
                 ),
                 
-                const SizedBox(width: 8),
-                
-                // Message icon
-                Icon(
-                  Icons.message_outlined,
-                  size: 18,
-                  color: AppThemeConstants.textSecondary,
-                ),
+                // Right side: Time
+                if (lastMessageTime.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Text(
+                      lastMessageTime,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppThemeConstants.textSecondary.withOpacity(0.7),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

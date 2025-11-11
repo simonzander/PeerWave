@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import '../screens/messages/direct_messages_screen.dart';
 import '../screens/messages/signal_group_chat_screen.dart';
 import '../screens/file_transfer/file_manager_screen.dart';
@@ -13,6 +14,7 @@ import '../services/api_service.dart';
 import '../services/activities_service.dart';
 import '../services/user_profile_service.dart';
 import '../services/logout_service.dart';
+import '../services/storage/sqlite_message_store.dart';
 import '../widgets/theme_widgets.dart';
 import '../widgets/adaptive/adaptive_scaffold.dart';
 import '../widgets/navigation_badge.dart';
@@ -48,7 +50,8 @@ class _DashboardPageState extends State<DashboardPage> {
   // People (for context panel)
   List<Map<String, dynamic>> _recentPeople = [];
   bool _isLoadingRecentPeople = false;
-  bool _hasLoadedRecentPeople = false;
+  int _recentPeopleLimit = 10;
+  bool _hasMoreRecentPeople = true;
   
   // Flag to track if data has been loaded
   bool _hasLoadedInitialData = false;
@@ -203,6 +206,29 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
   
+  /// Format message timestamp for display
+  String _formatMessageTime(String timestamp) {
+    try {
+      final dateTime = DateTime.parse(timestamp);
+      final now = DateTime.now();
+      final difference = now.difference(dateTime);
+      
+      if (difference.inMinutes < 1) {
+        return 'now';
+      } else if (difference.inMinutes < 60) {
+        return '${difference.inMinutes}m';
+      } else if (difference.inHours < 24) {
+        return '${difference.inHours}h';
+      } else if (difference.inDays < 7) {
+        return '${difference.inDays}d';
+      } else {
+        return DateFormat('MMM d').format(dateTime);
+      }
+    } catch (e) {
+      return '';
+    }
+  }
+  
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -248,7 +274,7 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _loadRecentPeople() async {
-    if (_isLoadingRecentPeople || _hasLoadedRecentPeople) return;
+    if (_isLoadingRecentPeople) return;
     
     setState(() {
       _isLoadingRecentPeople = true;
@@ -258,14 +284,20 @@ class _DashboardPageState extends State<DashboardPage> {
       final host = GoRouterState.of(context).extra as Map?;
       final hostUrl = host?['host'] as String? ?? '';
       
-      debugPrint('[DASHBOARD] Loading recent people...');
+      debugPrint('[DASHBOARD] Loading recent people (limit: $_recentPeopleLimit)...');
       
       // Get recent direct conversations from ActivitiesService
       final conversations = await ActivitiesService.getRecentDirectConversations(
-        limit: 10,
+        limit: _recentPeopleLimit,
       );
       
       debugPrint('[DASHBOARD] Found ${conversations.length} recent conversations');
+      
+      // Check if there might be more
+      _hasMoreRecentPeople = conversations.length >= _recentPeopleLimit;
+      
+      // Get message store for last messages
+      final messageStore = await SqliteMessageStore.getInstance();
       
       final userMap = <String, Map<String, dynamic>>{};
       
@@ -275,12 +307,52 @@ class _DashboardPageState extends State<DashboardPage> {
           // Try to get profile from UserProfileService first
           final profile = UserProfileService.instance.getProfile(userId);
           
+          // Get last message from SQLite
+          String lastMessage = '';
+          String lastMessageTime = '';
+          try {
+            final messages = await messageStore.getMessagesFromConversation(
+              userId,
+              limit: 1,
+              types: ['message', 'file', 'image', 'voice'],
+            );
+            
+            if (messages.isNotEmpty) {
+              final lastMsg = messages.first;
+              final msgType = lastMsg['type'] ?? 'message';
+              
+              // Format message preview
+              if (msgType == 'file') {
+                lastMessage = '📎 File';
+              } else if (msgType == 'image') {
+                lastMessage = '🖼️ Image';
+              } else if (msgType == 'voice') {
+                lastMessage = '🎤 Voice';
+              } else {
+                lastMessage = lastMsg['message'] ?? '';
+                if (lastMessage.length > 35) {
+                  lastMessage = '${lastMessage.substring(0, 35)}...';
+                }
+              }
+              
+              // Format timestamp
+              final timestamp = lastMsg['timestamp'];
+              if (timestamp != null) {
+                lastMessageTime = _formatMessageTime(timestamp);
+              }
+            }
+          } catch (e) {
+            debugPrint('[DASHBOARD] Error loading last message for $userId: $e');
+          }
+          
           userMap[userId] = {
             'uuid': userId,
             'displayName': profile?['displayName'] ?? conv['displayName'] ?? userId,
             'atName': profile?['atName'] ?? '',
             'picture': profile?['picture'] ?? '',
-            'online': false, // TODO: Get real online status
+            'online': false,
+            'lastMessage': lastMessage,
+            'lastMessageTime': lastMessageTime,
           };
         }
       }
@@ -322,7 +394,6 @@ class _DashboardPageState extends State<DashboardPage> {
       setState(() {
         _recentPeople = userMap.values.toList();
         _isLoadingRecentPeople = false;
-        _hasLoadedRecentPeople = true;
       });
       
       debugPrint('[DASHBOARD] Loaded ${_recentPeople.length} recent people');
@@ -336,6 +407,16 @@ class _DashboardPageState extends State<DashboardPage> {
         _isLoadingRecentPeople = false;
       });
     }
+  }
+
+  void _loadMoreRecentPeople() {
+    if (_isLoadingRecentPeople || !_hasMoreRecentPeople) return;
+    
+    setState(() {
+      _recentPeopleLimit += 10;
+    });
+    
+    _loadRecentPeople();
   }
 
   void _onDirectMessageTap(String uuid, String displayName) async {
@@ -515,6 +596,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 recentPeople: _recentPeople,
                 favoritePeople: [], // TODO: Implement favorites
                 isLoadingPeople: _isLoadingRecentPeople,
+                onLoadMorePeople: _loadMoreRecentPeople,
+                hasMorePeople: _hasMoreRecentPeople,
               ),
             
             // 3. Main View (rest of space)
@@ -864,13 +947,10 @@ class _DashboardPageState extends State<DashboardPage> {
         }
 
       case 'people':
-        final width = MediaQuery.of(context).size.width;
-        final layoutType = LayoutConfig.getLayoutType(width);
-        
         return PeopleScreen(
           host: host,
           onMessageTap: _onDirectMessageTap,
-          showRecentSection: layoutType != LayoutType.desktop, // Hide on desktop, show on mobile/tablet
+          showRecentSection: true, // Always show recent section
         );
 
       case 'files':

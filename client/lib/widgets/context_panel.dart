@@ -27,6 +27,8 @@ class ContextPanel extends StatelessWidget {
   final List<Map<String, dynamic>>? recentPeople;
   final List<Map<String, dynamic>>? favoritePeople;
   final bool isLoadingPeople;
+  final VoidCallback? onLoadMorePeople;
+  final bool hasMorePeople;
 
   const ContextPanel({
     super.key,
@@ -40,6 +42,8 @@ class ContextPanel extends StatelessWidget {
     this.recentPeople,
     this.favoritePeople,
     this.isLoadingPeople = false,
+    this.onLoadMorePeople,
+    this.hasMorePeople = false,
   });
 
   @override
@@ -74,6 +78,8 @@ class ContextPanel extends StatelessWidget {
           favoritePeople: favoritePeople ?? [],
           onPersonTap: onMessageTap ?? (uuid, displayName) {},
           isLoading: isLoadingPeople,
+          onLoadMore: onLoadMorePeople,
+          hasMore: hasMorePeople,
         );
         
       case ContextPanelType.files:

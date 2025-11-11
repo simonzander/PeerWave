@@ -21,114 +21,6 @@ import 'user_profile_service.dart';
 import 'device_identity_service.dart';
 import 'web/webauthn_crypto_service.dart';
 
-/*class SocketPreKeyStore extends InMemoryPreKeyStore {
-
-  Future<void> checkPreKeys() async {
-    if(store.length < 20) {
-      debugPrint("Not enough pre keys, generating more");
-      var lastId = store.isNotEmpty ? store.keys.reduce((a, b) => a > b ? a : b) : 0;
-      if(lastId == 9007199254740991) {
-          lastId = 0;
-      }
-      var newPreKeys = generatePreKeys(lastId + 1, lastId + 110);
-      for (var newPreKey in newPreKeys) {
-        storePreKey(newPreKey.id, newPreKey);
-      }
-    }
-  }
-
-  Future<void> loadRemotePreKeys() async {
-    SocketService().registerListener("getPreKeysResponse", (data) {
-      debugPrint(data);
-      for (var item in data) {
-          if(item['prekey_id'] != null && item['prekey_data'] != null) {
-           store[item['prekey_id']] = base64Decode(item['prekey_data']);
-          }
-      }
-      if(data.isEmpty) {
-        debugPrint("No pre keys found, generating more");
-        var newPreKeys = generatePreKeys(0, 110);
-        for (var newPreKey in newPreKeys) {
-          storePreKey(newPreKey.id, newPreKey);
-        }
-      }
-      if(data.length <= 20) {
-        debugPrint("Not enough pre keys found, generating more");
-        var lastId = data.isNotEmpty ? data.map((e) => e['prekey_id']).reduce((a, b) => a > b ? a : b) : 0;
-        if(lastId == 9007199254740991) {
-          lastId = 0;
-        }
-        var newPreKeys = generatePreKeys(lastId + 1, lastId + 110);
-        for (var newPreKey in newPreKeys) {
-          storePreKey(newPreKey.id, newPreKey);
-        }
-      }
-    });
-    SocketService().emit("getPreKeys", null);
-  }
-
-  @override
-  Future<void> storePreKey(int preKeyId, PreKeyRecord record) async {
-    debugPrint("Storing pre key: $preKeyId");
-    SocketService().emit("storePreKey", {
-      'id': preKeyId,
-      'data': base64Encode(record.serialize()),
-    });
-    store[preKeyId] = record.serialize();
-  }
-}*/
-
-/*class SocketSignedPreKeyStore extends InMemorySignedPreKeyStore {
-
-  final IdentityKeyPair identityKeyPair;
-
-  SocketSignedPreKeyStore(this.identityKeyPair);
-
-  Future<void> loadRemoteSignedPreKeys() async {
-    SocketService().registerListener("getSignedPreKeysResponse", (data) {
-      debugPrint(data);
-      for (var item in data) {
-        if(item['signed_prekey_id'] != null && item['signed_prekey_data'] != null && item['createdAt'] != null) {
-           store[item['signed_prekey_id']] = base64Decode(item['signed_prekey_data']);
-           if(DateTime.parse(item['createdAt']).millisecondsSinceEpoch < DateTime.now().millisecondsSinceEpoch - 1 * 24 * 60 * 60 * 1000) {
-             // If preSignedKey is older than 1 day, create new one
-             var newPreSignedKey = generateSignedPreKey(identityKeyPair, data.length);
-             storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
-             removeSignedPreKey(item['signed_prekey_id']);
-           }
-        }
-      }
-      if(data.isEmpty) {
-        debugPrint("No signed pre keys found, creating new one");
-        var newPreSignedKey = generateSignedPreKey(identityKeyPair, 0);
-        storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
-      }
-    });
-    SocketService().emit("getSignedPreKeys", null);
-  }
-
-  @override
-  Future<void> removeSignedPreKey(int signedPreKeyId) async {
-    debugPrint("Removing signed pre key: $signedPreKeyId");
-    SocketService().emit("removeSignedPreKey", {
-      'id': signedPreKeyId,
-    });
-    store.remove(signedPreKeyId);
-  }
-
-  @override
-  Future<void> storeSignedPreKey(
-      int signedPreKeyId, SignedPreKeyRecord record) async {
-    debugPrint("Storing signed pre key: $signedPreKeyId");
-    SocketService().emit("storeSignedPreKey", {
-      'id': signedPreKeyId,
-      'data': base64Encode(record.serialize()),
-    });
-    store[signedPreKeyId] = record.serialize();
-  }
-}*/
-
-
 class SignalService {
   static final SignalService instance = SignalService._internal();
   factory SignalService() => instance;
@@ -146,6 +38,14 @@ class SignalService {
   final Map<String, List<Function(dynamic)>> _itemTypeCallbacks = {};
   final Map<String, List<Function(String)>> _deliveryCallbacks = {};
   final Map<String, List<Function(Map<String, dynamic>)>> _readCallbacks = {};
+  
+  // NEW: Callbacks for received items (1:1 messages)
+  // Key format: "type:sender" (e.g., "message:user-uuid-123")
+  final Map<String, List<Function(Map<String, dynamic>)>> _receiveItemCallbacks = {};
+  
+  // NEW: Callbacks for received group items (group messages)
+  // Key format: "type:channel" (e.g., "message:channel-uuid-456")
+  final Map<String, List<Function(Map<String, dynamic>)>> _receiveItemChannelCallbacks = {};
   late PermanentIdentityKeyStore identityStore;
   late PermanentSessionStore sessionStore;
   late PermanentPreKeyStore preKeyStore;
@@ -437,6 +337,10 @@ class SignalService {
     await OfflineMessageQueue.instance.loadQueue();
     debugPrint('[SIGNAL SERVICE] Offline queue loaded: ${OfflineMessageQueue.instance.queueSize} messages');
 
+    // 🚀 CRITICAL: Notify server that client is ready to receive events
+    SocketService().notifyClientReady();
+    debugPrint('[SIGNAL INIT] ✓ Server notified: Client ready for events');
+
     // --- Signal status check and conditional upload ---
     SocketService().emit("signalStatus", null);
 
@@ -470,7 +374,11 @@ class SignalService {
     // Register socket listeners
     await _registerSocketListeners();
 
-    // Check status with server (may trigger key uploads if server is missing keys)
+    // 🚀 CRITICAL: Notify server that client is ready to receive events
+    SocketService().notifyClientReady();
+    debugPrint('[SIGNAL INIT] ✓ Server notified: Client ready for events');
+
+    // Check status with server (server will only respond if client is ready)
     SocketService().emit("signalStatus", null);
 
     _isInitialized = true;
@@ -789,6 +697,19 @@ class SignalService {
           callback(data);
         }
       }
+      
+      // NEW: Trigger specific receiveItemChannel callbacks (type:channel)
+      final type = data['type'];
+      final channel = data['channel'];
+      if (type != null && channel != null) {
+        final key = '$type:$channel';
+        if (_receiveItemChannelCallbacks.containsKey(key)) {
+          for (final callback in _receiveItemChannelCallbacks[key]!) {
+            callback(data);
+          }
+          debugPrint('[SIGNAL SERVICE] Triggered ${_receiveItemChannelCallbacks[key]!.length} receiveItemChannel callbacks for $key');
+        }
+      }
     });
 
     // NEW: Group Item delivery confirmation
@@ -1014,6 +935,36 @@ class SignalService {
     _readCallbacks.putIfAbsent('default', () => []).add(callback);
   }
 
+  /// NEW: Register callback for received 1:1 items (direct messages)
+  /// Callback is triggered for specific type+sender combinations
+  /// 
+  /// Usage:
+  /// ```dart
+  /// SignalService.instance.registerReceiveItem('message', senderUserId, (item) {
+  ///   print('Received message from $senderUserId: ${item['message']}');
+  /// });
+  /// ```
+  void registerReceiveItem(String type, String sender, Function(Map<String, dynamic>) callback) {
+    final key = '$type:$sender';
+    _receiveItemCallbacks.putIfAbsent(key, () => []).add(callback);
+    debugPrint('[SIGNAL SERVICE] Registered receiveItem callback for $key');
+  }
+
+  /// NEW: Register callback for received group items (group messages)
+  /// Callback is triggered for specific type+channel combinations
+  /// 
+  /// Usage:
+  /// ```dart
+  /// SignalService.instance.registerReceiveItemChannel('message', channelId, (item) {
+  ///   print('Received group message in $channelId: ${item['message']}');
+  /// });
+  /// ```
+  void registerReceiveItemChannel(String type, String channel, Function(Map<String, dynamic>) callback) {
+    final key = '$type:$channel';
+    _receiveItemChannelCallbacks.putIfAbsent(key, () => []).add(callback);
+    debugPrint('[SIGNAL SERVICE] Registered receiveItemChannel callback for $key');
+  }
+
   /// Unregister delivery receipt callbacks
   void clearDeliveryCallbacks() {
     _deliveryCallbacks.remove('default');
@@ -1022,6 +973,26 @@ class SignalService {
   /// Unregister read receipt callbacks
   void clearReadCallbacks() {
     _readCallbacks.remove('default');
+  }
+  
+  /// NEW: Unregister callback for received 1:1 items
+  void unregisterReceiveItem(String type, String sender, Function(Map<String, dynamic>) callback) {
+    final key = '$type:$sender';
+    _receiveItemCallbacks[key]?.remove(callback);
+    if (_receiveItemCallbacks[key]?.isEmpty ?? false) {
+      _receiveItemCallbacks.remove(key);
+      debugPrint('[SIGNAL SERVICE] Removed all receiveItem callbacks for $key');
+    }
+  }
+
+  /// NEW: Unregister callback for received group items
+  void unregisterReceiveItemChannel(String type, String channel, Function(Map<String, dynamic>) callback) {
+    final key = '$type:$channel';
+    _receiveItemChannelCallbacks[key]?.remove(callback);
+    if (_receiveItemChannelCallbacks[key]?.isEmpty ?? false) {
+      _receiveItemChannelCallbacks.remove(key);
+      debugPrint('[SIGNAL SERVICE] Removed all receiveItemChannel callbacks for $key');
+    }
   }
   
   /// Reset service state on logout
@@ -1304,6 +1275,17 @@ class SignalService {
   if (type != null && _itemTypeCallbacks.containsKey(type)) {
     for (final callback in _itemTypeCallbacks[type]!) {
       callback(item);
+    }
+  }
+  
+  // NEW: Trigger specific receiveItem callbacks (type:sender)
+  if (type != null && sender != null) {
+    final key = '$type:$sender';
+    if (_receiveItemCallbacks.containsKey(key)) {
+      for (final callback in _receiveItemCallbacks[key]!) {
+        callback(item);
+      }
+      debugPrint('[SIGNAL SERVICE] Triggered ${_receiveItemCallbacks[key]!.length} receiveItem callbacks for $key');
     }
   }
   

@@ -1,94 +1,73 @@
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
+import 'user_profile_service.dart';
+import 'storage/sqlite_recent_conversations_store.dart';
 
 /// Service for managing recent direct message conversations
+/// 
+/// Single Source of Truth: SqliteRecentConversationsStore
+/// - Queries SqliteRecentConversationsStore for recent conversations
+/// - Loads profile metadata from UserProfileService with await
+/// - Returns conversations sorted by last message timestamp
 class RecentConversationsService {
-  static const String _keyRecentDMs = 'recent_direct_messages';
   static const int maxRecentConversations = 20;
 
-  /// Add or update a conversation (moves to top if exists)
-  static Future<void> addOrUpdateConversation({
-    required String userId,
-    required String displayName,
-    String? picture,
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    final conversations = await getRecentConversations();
-
-    // Remove if already exists
-    conversations.removeWhere((c) => c['uuid'] == userId);
-
-    // Add at the beginning
-    conversations.insert(0, {
-      'uuid': userId,
-      'displayName': displayName,
-      if (picture != null) 'picture': picture,
-      'lastMessageAt': DateTime.now().toIso8601String(),
-    });
-
-    // Keep only the last 20
-    if (conversations.length > maxRecentConversations) {
-      conversations.removeRange(maxRecentConversations, conversations.length);
-    }
-
-    // Save to SharedPreferences
-    await prefs.setString(_keyRecentDMs, jsonEncode(conversations));
-  }
-
-  /// Get all recent conversations
+  /// Get recent conversations from SQLite database
+  /// Returns list with uuid, displayName, picture from UserProfileService
   static Future<List<Map<String, String>>> getRecentConversations() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? data = prefs.getString(_keyRecentDMs);
-
-    if (data == null || data.isEmpty) {
-      return [];
-    }
-
     try {
-      final List<dynamic> decoded = jsonDecode(data);
-      return decoded.map((item) {
+      debugPrint('[RECENT_CONVERSATIONS] Loading recent conversations from SQLite...');
+      
+      // Get conversations store
+      final conversationsStore = await SqliteRecentConversationsStore.getInstance();
+      
+      // Get recent conversations
+      final recentConvs = await conversationsStore.getRecentConversations(
+        limit: maxRecentConversations,
+      );
+      
+      debugPrint('[RECENT_CONVERSATIONS] Found ${recentConvs.length} conversations in SQLite');
+      
+      if (recentConvs.isEmpty) {
+        return [];
+      }
+      
+      // Extract user IDs
+      final userIds = recentConvs
+          .map((conv) => conv['userId'] as String?)
+          .where((id) => id != null && id.isNotEmpty)
+          .cast<String>()
+          .toList();
+      
+      // Load profiles from server with await
+      if (userIds.isNotEmpty) {
+        debugPrint('[RECENT_CONVERSATIONS] Loading profiles for ${userIds.length} users...');
+        try {
+          await UserProfileService.instance.loadProfiles(userIds);
+          debugPrint('[RECENT_CONVERSATIONS] ✓ Profiles loaded');
+        } catch (e) {
+          debugPrint('[RECENT_CONVERSATIONS] ⚠ Failed to load profiles: $e');
+          // Continue with cached data if available
+        }
+      }
+      
+      // Build result with profile data
+      final result = recentConvs.map((conv) {
+        final userId = conv['userId'] as String;
+        final profile = UserProfileService.instance.getProfile(userId);
+        
         return {
-          'uuid': item['uuid']?.toString() ?? '',
-          'displayName': item['displayName']?.toString() ?? 'Unknown',
-          if (item['picture'] != null) 'picture': item['picture']?.toString() ?? '',
-          'lastMessageAt': item['lastMessageAt']?.toString() ?? '',
+          'uuid': userId,
+          'displayName': profile?['displayName']?.toString() ?? conv['displayName']?.toString() ?? userId,
+          'picture': profile?['picture']?.toString() ?? conv['picture']?.toString() ?? '',
+          'lastMessageAt': conv['lastMessageAt']?.toString() ?? '',
         };
       }).toList();
+      
+      debugPrint('[RECENT_CONVERSATIONS] Returning ${result.length} conversations');
+      return result;
     } catch (e) {
-      debugPrint('[RECENT_CONVERSATIONS] Error parsing conversations: $e');
+      debugPrint('[RECENT_CONVERSATIONS] Error loading conversations: $e');
       return [];
-    }
-  }
-
-  /// Remove a conversation
-  static Future<void> removeConversation(String userId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final conversations = await getRecentConversations();
-
-    conversations.removeWhere((c) => c['uuid'] == userId);
-
-    await prefs.setString(_keyRecentDMs, jsonEncode(conversations));
-  }
-
-  /// Clear all conversations
-  static Future<void> clearAll() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_keyRecentDMs);
-  }
-
-  /// Update conversation timestamp (when new message arrives)
-  static Future<void> updateTimestamp(String userId) async {
-    final conversations = await getRecentConversations();
-    final index = conversations.indexWhere((c) => c['uuid'] == userId);
-
-    if (index != -1) {
-      final conversation = conversations.removeAt(index);
-      conversation['lastMessageAt'] = DateTime.now().toIso8601String();
-      conversations.insert(0, conversation);
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_keyRecentDMs, jsonEncode(conversations));
     }
   }
 }

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:intl/intl.dart';
 import '../../services/api_service.dart';
-import '../../services/activities_service.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/recent_conversations_service.dart';
+import '../../services/storage/sqlite_message_store.dart';
 import '../../widgets/user_avatar.dart';
 
 /// Modern People Screen with Grid Layout
@@ -61,6 +62,29 @@ class _PeopleScreenState extends State<PeopleScreen> {
     super.dispose();
   }
 
+  /// Format message timestamp for display
+  String _formatMessageTime(String timestamp) {
+    try {
+      final dateTime = DateTime.parse(timestamp);
+      final now = DateTime.now();
+      final difference = now.difference(dateTime);
+      
+      if (difference.inMinutes < 1) {
+        return 'Just now';
+      } else if (difference.inMinutes < 60) {
+        return '${difference.inMinutes}m';
+      } else if (difference.inHours < 24) {
+        return '${difference.inHours}h';
+      } else if (difference.inDays < 7) {
+        return '${difference.inDays}d';
+      } else {
+        return DateFormat('MMM d').format(dateTime);
+      }
+    } catch (e) {
+      return '';
+    }
+  }
+
   /// Safe picture extraction from API response
   /// Handles String, Map, JSArray, and null values
   String _extractPictureData(dynamic picture) {
@@ -116,107 +140,77 @@ class _PeopleScreenState extends State<PeopleScreen> {
     try {
       debugPrint('[PEOPLE_SCREEN] Loading recent conversation users...');
       
-      // Alternative approach: Get directly from RecentConversationsService
-      // This uses SharedPreferences that might be populated elsewhere
+      // Get recent conversations from service (SQLite + UserProfileService)
       final recentConvs = await RecentConversationsService.getRecentConversations();
       debugPrint('[PEOPLE_SCREEN] RecentConversationsService returned ${recentConvs.length} conversations');
       
-      final userMap = <String, Map<String, dynamic>>{};
+      // Get message store for fetching last messages
+      final messageStore = await SqliteMessageStore.getInstance();
+      
+      final userList = <Map<String, dynamic>>[];
       
       for (final conv in recentConvs.take(10)) {
         final userId = conv['uuid'];
         final displayName = conv['displayName'];
+        final picture = conv['picture'];
         
         if (userId != null && userId.isNotEmpty) {
-          // FIRST: Try to get full profile from UserProfileService cache
-          final profile = UserProfileService.instance.getProfile(userId);
-          
-          if (profile != null) {
-            // Use cached profile data
-            userMap[userId] = {
-              'uuid': userId,
-              'displayName': profile['displayName'] ?? userId,
-              'atName': profile['atName'] ?? '',
-              'picture': profile['picture'] ?? '',
-              'isOnline': false, // TODO: Get online status from server
-            };
-          } else {
-            // Profile not in cache, use conversation data
-            userMap[userId] = {
-              'uuid': userId,
-              'displayName': displayName ?? userId,
-              'atName': '',
-              'picture': conv['picture'] ?? '',
-              'isOnline': false,
-            };
-          }
-        }
-      }
-      
-      debugPrint('[PEOPLE_SCREEN] Processed ${userMap.length} users from RecentConversationsService');
-      
-      // Fallback: If no recent conversations in SharedPreferences,
-      // try to get from ActivitiesService (which queries IndexedDB)
-      if (userMap.isEmpty) {
-        debugPrint('[PEOPLE_SCREEN] Falling back to ActivitiesService...');
-        final conversations = await ActivitiesService.getRecentDirectConversations(
-          limit: 10,
-        );
-        
-        debugPrint('[PEOPLE_SCREEN] ActivitiesService found ${conversations.length} conversations');
-        
-        for (final conv in conversations) {
-          final userId = conv['userId'] as String?;
-          final displayName = conv['displayName'] as String?;
-          
-          if (userId != null && displayName != null) {
-            final profile = UserProfileService.instance.getProfile(userId);
-            
-            userMap[userId] = {
-              'uuid': userId,
-              'displayName': displayName,
-              'atName': profile?['atName'] ?? '',
-              'picture': profile?['picture'] ?? '',
-              'isOnline': false,
-            };
-          }
-        }
-        
-        // Batch fetch display names from API if still showing UUIDs
-        final userIdsNeedingNames = userMap.entries
-            .where((entry) => entry.value['displayName'] == entry.key) // UUID used as name
-            .map((entry) => entry.key)
-            .toList();
-        
-        if (userIdsNeedingNames.isNotEmpty) {
-          debugPrint('[PEOPLE_SCREEN] Fetching display names for ${userIdsNeedingNames.length} users from API...');
+          // Get last message from SQLite
+          String lastMessage = '';
+          String lastMessageTime = '';
           try {
-            ApiService.init();
-            final resp = await ApiService.post(
-              '${widget.host}/client/people/info',
-              data: {'userIds': userIdsNeedingNames},
+            final messages = await messageStore.getMessagesFromConversation(
+              userId,
+              limit: 1,
+              types: ['message', 'file', 'image', 'voice'],
             );
             
-            if (resp.statusCode == 200) {
-              final users = resp.data is List ? resp.data : [];
-              for (final user in users) {
-                final userId = user['uuid'] as String?;
-                if (userId != null && userMap.containsKey(userId)) {
-                  userMap[userId]!['displayName'] = user['displayName'] ?? userId;
-                  userMap[userId]!['atName'] = user['atName'] ?? '';
-                  userMap[userId]!['picture'] = _extractPictureData(user['picture']);
+            if (messages.isNotEmpty) {
+              final lastMsg = messages.first;
+              final msgType = lastMsg['type'] ?? 'message';
+              
+              // Format message preview based on type
+              if (msgType == 'file') {
+                lastMessage = '📎 File';
+              } else if (msgType == 'image') {
+                lastMessage = '🖼️ Image';
+              } else if (msgType == 'voice') {
+                lastMessage = '🎤 Voice';
+              } else {
+                lastMessage = lastMsg['message'] ?? '';
+                // Truncate long messages
+                if (lastMessage.length > 50) {
+                  lastMessage = '${lastMessage.substring(0, 50)}...';
                 }
               }
-              debugPrint('[PEOPLE_SCREEN] Updated ${users.length} display names from API');
+              
+              // Format timestamp
+              final timestamp = lastMsg['timestamp'];
+              if (timestamp != null) {
+                lastMessageTime = _formatMessageTime(timestamp);
+              }
             }
           } catch (e) {
-            debugPrint('[PEOPLE_SCREEN] Error fetching display names from API: $e');
+            debugPrint('[PEOPLE_SCREEN] Error loading last message for $userId: $e');
           }
+          
+          // Get atName from UserProfileService
+          final profile = UserProfileService.instance.getProfile(userId);
+          
+          userList.add({
+            'uuid': userId,
+            'displayName': displayName ?? userId,
+            'atName': profile?['atName'] ?? '',
+            'picture': picture ?? '',
+            'isOnline': false,
+            'lastMessage': lastMessage,
+            'lastMessageTime': lastMessageTime,
+          });
         }
       }
       
       setState(() {
-        _recentConversationUsers = userMap.values.toList();
+        _recentConversationUsers = userList;
         _isLoadingRecent = false;
       });
       
@@ -523,7 +517,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
               ),
             ),
           ),
-          _buildUserGrid(_recentConversationUsers, colorScheme),
+          _buildUserGrid(_recentConversationUsers, colorScheme, isRecentSection: true),
         ],
         
         if (_searchQuery.isEmpty && _randomUsers.isNotEmpty) ...[
@@ -540,7 +534,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
               ),
             ),
           ),
-          _buildUserGrid(_randomUsers, colorScheme),
+          _buildUserGrid(_randomUsers, colorScheme, isRecentSection: false),
         ],
         
         // Search results (when searching)
@@ -558,7 +552,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
               ),
             ),
           ),
-          _buildUserGrid(_searchResults, colorScheme),
+          _buildUserGrid(_searchResults, colorScheme, isRecentSection: false),
         ],
         
         // Load More Button (only when not searching)
@@ -594,7 +588,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     );
   }
 
-  Widget _buildUserGrid(List<Map<String, dynamic>> users, ColorScheme colorScheme) {
+  Widget _buildUserGrid(List<Map<String, dynamic>> users, ColorScheme colorScheme, {bool isRecentSection = false}) {
     return SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       sliver: SliverGrid(
@@ -610,6 +604,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
             return _UserCard(
               user: user,
               colorScheme: colorScheme,
+              isRecentSection: isRecentSection,
               onTap: () {
                 widget.onMessageTap(
                   user['uuid'] as String,
@@ -630,11 +625,13 @@ class _UserCard extends StatefulWidget {
   final Map<String, dynamic> user;
   final ColorScheme colorScheme;
   final VoidCallback onTap;
+  final bool isRecentSection;
 
   const _UserCard({
     required this.user,
     required this.colorScheme,
     required this.onTap,
+    this.isRecentSection = false,
   });
 
   @override
@@ -652,6 +649,11 @@ class _UserCardState extends State<_UserCard> {
     final userId = widget.user['uuid'] as String? ?? '';
     final pictureData = widget.user['picture'] as String?;
     final hasPicture = pictureData != null && pictureData.isNotEmpty;
+    
+    // Recent section specific data
+    final lastMessage = widget.user['lastMessage'] as String? ?? '';
+    final lastMessageTime = widget.user['lastMessageTime'] as String? ?? '';
+    final hasLastMessage = widget.isRecentSection && lastMessage.isNotEmpty;
     
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -730,6 +732,30 @@ class _UserCardState extends State<_UserCard> {
                             ),
                           ),
                         ),
+                      // Message icon (bottom right corner)
+                      Positioned(
+                        bottom: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: widget.colorScheme.primaryContainer,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.2),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            Icons.message,
+                            size: 16,
+                            color: widget.colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -758,8 +784,38 @@ class _UserCardState extends State<_UserCard> {
                         
                         const SizedBox(height: 4),
                         
-                        // @username
-                        if (atName.isNotEmpty)
+                        // Recent section: Show last message + time
+                        if (hasLastMessage) ...[
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  lastMessage,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: widget.colorScheme.onSurfaceVariant,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                              if (lastMessageTime.isNotEmpty) ...[
+                                const SizedBox(width: 4),
+                                Text(
+                                  ' • $lastMessageTime',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: widget.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ]
+                        // Discover section: Show @username
+                        else if (atName.isNotEmpty)
                           Text(
                             '@$atName',
                             style: TextStyle(

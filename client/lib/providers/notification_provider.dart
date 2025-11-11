@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import '../services/message_listener_service.dart';
-import '../services/recent_conversations_service.dart';
 
 /// Provider for managing in-app notifications (badges, toast messages, etc.)
 class NotificationProvider with ChangeNotifier {
@@ -64,10 +63,8 @@ class NotificationProvider with ChangeNotifier {
     // Update last message time
     _lastMessageTimes[key] = DateTime.parse(notification.timestamp);
 
-    // Update recent conversations (async, don't await)
-    RecentConversationsService.updateTimestamp(key).catchError((e) {
-      debugPrint('[NOTIFICATION_PROVIDER] Error updating recent conversation: $e');
-    });
+    // Note: RecentConversationsService now queries SQLite directly
+    // No need to manually update timestamps
 
     debugPrint('[NOTIFICATION_PROVIDER] 1:1 message from ${notification.senderId}, unread: ${_unreadCounts[key]}');
     notifyListeners();

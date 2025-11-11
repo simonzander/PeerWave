@@ -6,8 +6,11 @@ import '../../widgets/user_avatar.dart';
 import '../../providers/unread_messages_provider.dart';
 import '../../providers/navigation_state_provider.dart';
 import '../../widgets/animated_widgets.dart';
+import '../../widgets/people_context_panel.dart';
+import '../../services/recent_conversations_service.dart';
 import '../../theme/app_theme_constants.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 
 /// Messages List View - Shows recent 1:1 conversations
 class MessagesListView extends StatefulWidget {
@@ -33,11 +36,18 @@ class _MessagesListViewState extends State<MessagesListView> {
 
   // Cache for user info (store full objects)
   final Map<String, Map<String, dynamic>> _userCache = {};
+  
+  // Context panel state
+  List<Map<String, dynamic>> _recentPeople = [];
+  bool _isLoadingRecentPeople = false;
+  int _recentPeopleLimit = 10;
+  bool _hasMoreRecentPeople = true;
 
   @override
   void initState() {
     super.initState();
     _loadConversations();
+    _loadRecentPeople();
   }
 
   Future<void> _loadConversations() async {
@@ -177,6 +187,124 @@ class _MessagesListViewState extends State<MessagesListView> {
     }
   }
 
+  /// Load recent conversation partners for context panel
+  Future<void> _loadRecentPeople() async {
+    if (_isLoadingRecentPeople) return;
+    
+    setState(() {
+      _isLoadingRecentPeople = true;
+    });
+
+    try {
+      // Load from RecentConversationsService with SQLite + profiles
+      final allConversations = await RecentConversationsService.getRecentConversations();
+      
+      // Apply limit
+      final conversations = allConversations.take(_recentPeopleLimit).toList();
+      
+      // Load last messages from SQLite
+      final messageStore = await SqliteMessageStore.getInstance();
+      final List<Map<String, dynamic>> peopleWithMessages = [];
+      
+      for (final conv in conversations) {
+        final userId = conv['uuid'] as String;
+        
+        // Get last message
+        final messages = await messageStore.getMessagesFromConversation(
+          userId,
+          limit: 1,
+          offset: 0,
+          types: ['message', 'file', 'image', 'voice'],
+        );
+        
+        String? lastMessage;
+        String? lastMessageTime;
+        
+        if (messages.isNotEmpty) {
+          final msg = messages.first;
+          final messageText = msg['message'] as String?;
+          final messageType = msg['type'] as String?;
+          
+          // Format message preview
+          if (messageType == 'file') {
+            lastMessage = '📎 File';
+          } else if (messageType == 'image') {
+            lastMessage = '🖼️ Image';
+          } else if (messageType == 'voice') {
+            lastMessage = '🎤 Voice';
+          } else {
+            lastMessage = messageText;
+          }
+          
+          // Truncate if too long
+          if (lastMessage != null && lastMessage.length > 40) {
+            lastMessage = '${lastMessage.substring(0, 40)}...';
+          }
+          
+          // Format timestamp
+          lastMessageTime = _formatMessageTime(msg['timestamp'] as String?);
+        }
+        
+        peopleWithMessages.add({
+          'uuid': userId,
+          'displayName': conv['displayName'],
+          'username': userId, // Use userId as username fallback
+          'profilePicture': conv['picture'],
+          'lastMessage': lastMessage,
+          'lastMessageTime': lastMessageTime,
+        });
+      }
+      
+      setState(() {
+        _recentPeople = peopleWithMessages;
+        _isLoadingRecentPeople = false;
+        _hasMoreRecentPeople = allConversations.length > _recentPeopleLimit;
+      });
+      
+    } catch (e) {
+      debugPrint('[MESSAGES_LIST] Error loading recent people: $e');
+      setState(() {
+        _isLoadingRecentPeople = false;
+      });
+    }
+  }
+
+  /// Format message timestamp for context panel
+  String _formatMessageTime(String? timestamp) {
+    if (timestamp == null) return '';
+    
+    try {
+      final messageTime = DateTime.parse(timestamp);
+      final now = DateTime.now();
+      final difference = now.difference(messageTime);
+      
+      if (difference.inMinutes < 1) {
+        return 'now';
+      } else if (difference.inMinutes < 60) {
+        return '${difference.inMinutes}m';
+      } else if (difference.inHours < 24) {
+        return '${difference.inHours}h';
+      } else if (difference.inDays < 7) {
+        return '${difference.inDays}d';
+      } else {
+        return DateFormat('MMM d').format(messageTime);
+      }
+    } catch (e) {
+      return '';
+    }
+  }
+
+  /// Load more recent people (incremental)
+  Future<void> _loadMoreRecentPeople() async {
+    if (_isLoadingRecentPeople || !_hasMoreRecentPeople) return;
+    
+    setState(() {
+      _recentPeopleLimit += 10;
+    });
+    
+    await _loadRecentPeople();
+  }
+
   void _loadMore() {
     setState(() {
       _limit += 20;
@@ -191,22 +319,43 @@ class _MessagesListViewState extends State<MessagesListView> {
         title: const Text('Messages'),
         automaticallyImplyLeading: false,
       ),
-      body: _loading && _conversations.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadConversations,
-              child: _conversations.isEmpty
-                  ? _buildEmptyState()
-                  : ListView.builder(
-                      itemCount: _conversations.length + 1,
-                      itemBuilder: (context, index) {
-                        if (index == _conversations.length) {
-                          return _buildLoadMoreButton();
-                        }
-                        return _buildConversationTile(_conversations[index]);
-                      },
-                    ),
-            ),
+      body: Row(
+        children: [
+          // Left: Context Panel (Recent Conversations)
+          PeopleContextPanel(
+            host: widget.host,
+            recentPeople: _recentPeople,
+            favoritePeople: const [], // No favorites for now
+            onPersonTap: (uuid, displayName) {
+              // Navigate to conversation
+              widget.onMessageTap(uuid, displayName);
+            },
+            isLoading: _isLoadingRecentPeople,
+            onLoadMore: _loadMoreRecentPeople,
+            hasMore: _hasMoreRecentPeople,
+          ),
+          
+          // Right: Main Messages List
+          Expanded(
+            child: _loading && _conversations.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : RefreshIndicator(
+                    onRefresh: _loadConversations,
+                    child: _conversations.isEmpty
+                        ? _buildEmptyState()
+                        : ListView.builder(
+                            itemCount: _conversations.length + 1,
+                            itemBuilder: (context, index) {
+                              if (index == _conversations.length) {
+                                return _buildLoadMoreButton();
+                              }
+                              return _buildConversationTile(_conversations[index]);
+                            },
+                          ),
+                  ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: widget.onNavigateToPeople,
         tooltip: 'Start New Conversation',
