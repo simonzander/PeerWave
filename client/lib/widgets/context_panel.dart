@@ -26,6 +26,7 @@ class ContextPanel extends StatelessWidget {
   // Additional data for People panel
   final List<Map<String, dynamic>>? recentPeople;
   final List<Map<String, dynamic>>? favoritePeople;
+  final String? activeContactUuid; // Currently active contact/conversation
   final bool isLoadingPeople;
   final VoidCallback? onLoadMorePeople;
   final bool hasMorePeople;
@@ -41,6 +42,7 @@ class ContextPanel extends StatelessWidget {
     this.width = 280,
     this.recentPeople,
     this.favoritePeople,
+    this.activeContactUuid,
     this.isLoadingPeople = false,
     this.onLoadMorePeople,
     this.hasMorePeople = false,
@@ -76,6 +78,7 @@ class ContextPanel extends StatelessWidget {
           host: host,
           recentPeople: recentPeople ?? [],
           favoritePeople: favoritePeople ?? [],
+          activeContactUuid: activeContactUuid,
           onPersonTap: onMessageTap ?? (uuid, displayName) {},
           isLoading: isLoadingPeople,
           onLoadMore: onLoadMorePeople,

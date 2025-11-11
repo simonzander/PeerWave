@@ -1,0 +1,61 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'base_view.dart';
+import '../../widgets/context_panel.dart';
+import '../../screens/activities/activities_view.dart';
+
+/// Activities View Page
+/// 
+/// Shows recent activities across all communication channels
+/// No context panel - activities are the overview
+class ActivitiesViewPage extends BaseView {
+  const ActivitiesViewPage({
+    super.key,
+    required super.host,
+  });
+
+  @override
+  State<ActivitiesViewPage> createState() => _ActivitiesViewPageState();
+}
+
+class _ActivitiesViewPageState extends BaseViewState<ActivitiesViewPage> {
+  @override
+  bool get shouldShowContextPanel => false; // No context panel for activities
+  
+  @override
+  ContextPanelType get contextPanelType => ContextPanelType.none;
+  
+  @override
+  Widget buildContextPanel() {
+    // Not used - shouldShowContextPanel is false
+    return const SizedBox.shrink();
+  }
+  
+  @override
+  Widget buildMainContent() {
+    return ActivitiesView(
+      host: widget.host,
+      onDirectMessageTap: _handleDirectMessageTap,
+      onChannelTap: _handleChannelTap,
+    );
+  }
+  
+  /// Handle tap on direct message activity
+  void _handleDirectMessageTap(String uuid, String displayName) {
+    debugPrint('[ACTIVITIES_VIEW] Navigate to message: $uuid ($displayName)');
+    context.go('/app/messages/$uuid', extra: {
+      'host': widget.host,
+      'displayName': displayName,
+    });
+  }
+  
+  /// Handle tap on channel activity
+  void _handleChannelTap(String uuid, String name, String type) {
+    debugPrint('[ACTIVITIES_VIEW] Navigate to channel: $uuid ($name, type: $type)');
+    context.go('/app/channels/$uuid', extra: {
+      'host': widget.host,
+      'name': name,
+      'type': type,
+    });
+  }
+}

@@ -9,7 +9,6 @@ import '../providers/unread_messages_provider.dart';
 import '../providers/navigation_state_provider.dart';
 import 'animated_widgets.dart';
 import '../theme/app_theme_constants.dart';
-import 'package:dio/dio.dart';
 
 /// Desktop Navigation Drawer with expandable Messages and Channels sections
 /// 
@@ -669,17 +668,13 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
 
     try {
       ApiService.init();
-      final dio = ApiService.dio;
-      final resp = await dio.post(
-        '${widget.host}/client/channels',
-        data: {
-          'name': channelName,
-          'description': channelDescription,
-          'private': isPrivate,
-          'type': channelType,
-          'defaultRoleId': selectedRole!.uuid,
-        },
-        options: Options(contentType: 'application/json'),
+      final resp = await ApiService.createChannel(
+        widget.host,
+        name: channelName,
+        description: channelDescription,
+        isPrivate: isPrivate,
+        type: channelType,
+        defaultRoleId: selectedRole!.uuid,
       );
       
       if (resp.statusCode == 201) {

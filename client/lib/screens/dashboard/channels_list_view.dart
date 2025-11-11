@@ -7,7 +7,6 @@ import '../../providers/navigation_state_provider.dart';
 import '../../widgets/animated_widgets.dart';
 import '../../theme/app_theme_constants.dart';
 import 'package:provider/provider.dart';
-import 'package:dio/dio.dart';
 import 'dart:convert';
 
 /// Channels List View - Shows member channels and public non-member channels
@@ -77,7 +76,8 @@ class _ChannelsListViewState extends State<ChannelsListView> {
       
       // Get all member channels (both types)
       ApiService.init();
-      final resp = await ApiService.get('${widget.host}/client/channels?limit=100');
+      final hostUrl = ApiService.ensureHttpPrefix(widget.host);
+      final resp = await ApiService.get('$hostUrl/client/channels?limit=100');
       
       if (resp.statusCode == 200) {
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
@@ -706,17 +706,13 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
 
     try {
       ApiService.init();
-      final dio = ApiService.dio;
-      final resp = await dio.post(
-        '${widget.host}/client/channels',
-        data: {
-          'name': channelName,
-          'description': channelDescription,
-          'private': isPrivate,
-          'type': channelType,
-          'defaultRoleId': selectedRole!.uuid,
-        },
-        options: Options(contentType: 'application/json'),
+      final resp = await ApiService.createChannel(
+        widget.host,
+        name: channelName,
+        description: channelDescription,
+        isPrivate: isPrivate,
+        type: channelType,
+        defaultRoleId: selectedRole!.uuid,
       );
       
       if (resp.statusCode == 201) {
@@ -735,4 +731,3 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
     }
   }
 }
-

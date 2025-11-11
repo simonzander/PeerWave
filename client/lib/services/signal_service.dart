@@ -20,6 +20,7 @@ import 'storage/database_helper.dart';
 import 'user_profile_service.dart';
 import 'device_identity_service.dart';
 import 'web/webauthn_crypto_service.dart';
+import 'event_bus.dart';
 
 class SignalService {
   static final SignalService instance = SignalService._internal();
@@ -692,6 +693,17 @@ class SignalService {
         _unreadMessagesProvider!.incrementIfBadgeType(messageType, channelId, true);
       }
       
+      // ✅ Emit EventBus event for new group message/item (after decryption in callbacks)
+      final type = data['type'];
+      final channel = data['channel'];
+      if (type != null && channel != null) {
+        // Only emit for actual content (message, file), not system messages
+        if (type == 'message' || type == 'file') {
+          debugPrint('[SIGNAL SERVICE] → EVENT_BUS: newMessage (group) - type=$type, channel=$channel');
+          EventBus.instance.emit(AppEvent.newMessage, data);
+        }
+      }
+      
       if (_itemTypeCallbacks.containsKey('groupItem')) {
         for (final callback in _itemTypeCallbacks['groupItem']!) {
           callback(data);
@@ -699,8 +711,6 @@ class SignalService {
       }
       
       // NEW: Trigger specific receiveItemChannel callbacks (type:channel)
-      final type = data['type'];
-      final channel = data['channel'];
       if (type != null && channel != null) {
         final key = '$type:$channel';
         if (_receiveItemChannelCallbacks.containsKey(key)) {
@@ -772,8 +782,25 @@ class SignalService {
       }
     });
     
+    // Setup Event Bus forwarding for user/channel events
+    _setupEventBusForwarding();
+    
     _listenersRegistered = true;
     debugPrint('[SIGNAL SERVICE] ✅ Socket.IO listeners registered');
+  }
+  
+  /// Setup Event Bus forwarding for user and channel events
+  /// These events may come from socket or can be manually triggered
+  void _setupEventBusForwarding() {
+    debugPrint('[SIGNAL SERVICE] Setting up Event Bus forwarding...');
+    
+    // Forward user status events (if server sends them)
+    SocketService().registerListener('user:status', (data) {
+      debugPrint('[SIGNAL SERVICE] → EVENT_BUS: userStatusChanged');
+      EventBus.instance.emit(AppEvent.userStatusChanged, data);
+    });
+    
+    debugPrint('[SIGNAL SERVICE] ✓ Event Bus forwarding active');
   }
 
   Future<void> _ensureSignalKeysPresent(status) async {
@@ -1254,6 +1281,19 @@ class SignalService {
   if (!isSystemMessage && _unreadMessagesProvider != null) {
     // This is a 1:1 direct message (no channel)
     _unreadMessagesProvider!.incrementIfBadgeType(type, sender, false);
+  }
+  
+  // ✅ Emit EventBus event for new 1:1 message/item (after decryption)
+  if (!isSystemMessage) {
+    debugPrint('[SIGNAL SERVICE] → EVENT_BUS: newMessage (1:1) - type=$type, sender=$sender');
+    EventBus.instance.emit(AppEvent.newMessage, item);
+    
+    // Also emit newConversation if this is the first message from this sender
+    // (Views can check their conversation list to determine if it's truly new)
+    EventBus.instance.emit(AppEvent.newConversation, {
+      'conversationId': sender,
+      'isChannel': false,
+    });
   }
   
   // ✅ PHASE 3: System messages already deleted from server above

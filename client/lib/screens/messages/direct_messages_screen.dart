@@ -89,6 +89,16 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       _messages = []; // Clear old messages
       _messageOffset = 0;
       _hasMoreMessages = true;
+      
+      // Clear unread count for new conversation
+      try {
+        final unreadProvider = context.read<UnreadMessagesProvider>();
+        unreadProvider.markDirectMessageAsRead(widget.recipientUuid);
+        debugPrint('[DM_SCREEN] ✓ Cleared unread count for new conversation ${widget.recipientUuid}');
+      } catch (e) {
+        debugPrint('[DM_SCREEN] ⚠️ Error clearing unread count: $e');
+      }
+      
       _initialize(); // Reload
     }
   }
@@ -99,6 +109,17 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     await _loadRecentPeople(); // Load recent people for context panel
     _setupReceiveItemCallbacks(); // ✅ Register granular callbacks
     _setupReceiptListeners();
+    
+    // ✅ Clear unread count for this conversation
+    if (mounted) {
+      try {
+        final unreadProvider = context.read<UnreadMessagesProvider>();
+        unreadProvider.markDirectMessageAsRead(widget.recipientUuid);
+        debugPrint('[DM_SCREEN] ✓ Cleared unread count for ${widget.recipientUuid}');
+      } catch (e) {
+        debugPrint('[DM_SCREEN] ⚠️ Error clearing unread count: $e');
+      }
+    }
     
     // Scroll to bottom after initial load
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -457,14 +478,17 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         };
       }).toList();
       
+      // Reverse messages since DB returns DESC (newest first), but UI needs ASC (oldest first)
+      final reversedMessages = uiMessages.reversed.toList();
+      
       setState(() {
         if (loadMore) {
-          // Prepend older messages
-          _messages.insertAll(0, uiMessages);
+          // Prepend older messages (already in correct order after reversal)
+          _messages.insertAll(0, reversedMessages);
           _messageOffset += messages.length;
         } else {
           // Initial load
-          _messages = uiMessages;
+          _messages = reversedMessages;
           _messageOffset = messages.length;
         }
         _hasMoreMessages = messages.length == 20;

@@ -15,6 +15,7 @@ class PreferencesService {
   // Storage Keys
   static const String _keyThemeMode = 'theme_mode';
   static const String _keyColorSchemeId = 'color_scheme_id';
+  static const String _keyLastRoute = 'last_app_route';
   
   // IndexedDB Config (Web)
   static const String _dbName = 'peerwave_preferences';
@@ -71,6 +72,57 @@ class PreferencesService {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getString(_keyColorSchemeId) ?? 'peerwave_dark';
     }
+  }
+
+  // ============================================================================
+  // Last Route (for restoration after signal-setup)
+  // ============================================================================
+
+  /// Saves the last visited /app/* route for restoration
+  Future<void> saveLastRoute(String route) async {
+    if (kIsWeb) {
+      await _saveToIndexedDB(_keyLastRoute, route);
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyLastRoute, route);
+    }
+    debugPrint('[PreferencesService] Saved last route: $route');
+  }
+
+  /// Loads the last visited /app/* route
+  /// Returns: Last route or null if none saved
+  Future<String?> loadLastRoute() async {
+    if (kIsWeb) {
+      final value = await _loadFromIndexedDB(_keyLastRoute);
+      debugPrint('[PreferencesService] Loaded last route: $value');
+      return value;
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getString(_keyLastRoute);
+      debugPrint('[PreferencesService] Loaded last route: $value');
+      return value;
+    }
+  }
+
+  /// Clears the saved last route
+  Future<void> clearLastRoute() async {
+    if (kIsWeb) {
+      try {
+        final idbFactory = getIdbFactory()!;
+        final db = await idbFactory.open(_dbName, version: _dbVersion);
+        final txn = db.transaction(_storeName, idbModeReadWrite);
+        final store = txn.objectStore(_storeName);
+        await store.delete(_keyLastRoute);
+        await txn.completed;
+        db.close();
+      } catch (e) {
+        debugPrint('[PreferencesService] Error clearing last route from IndexedDB: $e');
+      }
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_keyLastRoute);
+    }
+    debugPrint('[PreferencesService] Cleared last route');
   }
 
   // ============================================================================
@@ -153,6 +205,7 @@ class PreferencesService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_keyThemeMode);
       await prefs.remove(_keyColorSchemeId);
+      await prefs.remove(_keyLastRoute);
     }
   }
 }

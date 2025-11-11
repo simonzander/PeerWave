@@ -13,6 +13,7 @@ class PeopleContextPanel extends StatelessWidget {
   final String host;
   final List<Map<String, dynamic>> recentPeople;
   final List<Map<String, dynamic>> favoritePeople;
+  final String? activeContactUuid; // Currently active conversation
   final Function(String uuid, String displayName) onPersonTap;
   final VoidCallback? onLoadMore;
   final bool isLoading;
@@ -23,6 +24,7 @@ class PeopleContextPanel extends StatelessWidget {
     required this.host,
     required this.recentPeople,
     required this.favoritePeople,
+    this.activeContactUuid,
     required this.onPersonTap,
     this.onLoadMore,
     this.isLoading = false,
@@ -55,6 +57,7 @@ class PeopleContextPanel extends StatelessWidget {
                             person['uuid'],
                             person['displayName'],
                           ),
+                          isActive: person['uuid'] == activeContactUuid,
                         )),
                         
                         // Load more link
@@ -74,6 +77,7 @@ class PeopleContextPanel extends StatelessWidget {
                             person['displayName'],
                           ),
                           showStar: true,
+                          isActive: person['uuid'] == activeContactUuid,
                         )),
                       ],
                       
@@ -140,6 +144,7 @@ class PeopleContextPanel extends StatelessWidget {
     required Map<String, dynamic> person,
     required VoidCallback onTap,
     bool showStar = false,
+    bool isActive = false,
   }) {
     final displayName = person['displayName'] as String? ?? 'Unknown';
     final atName = person['atName'] as String? ?? '';
@@ -148,22 +153,29 @@ class PeopleContextPanel extends StatelessWidget {
     final userId = person['uuid'] as String? ?? '';
     final lastMessage = person['lastMessage'] as String? ?? '';
     final lastMessageTime = person['lastMessageTime'] as String? ?? '';
+    final unreadCount = person['unreadCount'] as int? ?? 0;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: Material(
-        color: Colors.transparent,
+        color: isActive 
+            ? AppThemeConstants.activeChannelBackground // Highlight active conversation
+            : Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          hoverColor: const Color(0xFF1A1E24), // Lighter grey for hover
+          hoverColor: isActive 
+              ? AppThemeConstants.activeChannelBackground
+              : const Color(0xFF1A1E24), // Lighter grey for hover
           splashColor: const Color(0xFF252A32),
-          highlightColor: const Color(0xFF1F242B),
+          highlightColor: isActive
+              ? AppThemeConstants.activeChannelBackground
+              : const Color(0xFF1F242B),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Square avatar with online indicator
+                // Square avatar with online indicator and unread badge
                 SizedBox(
                   width: 48,
                   height: 48,
@@ -189,6 +201,35 @@ class PeopleContextPanel extends StatelessWidget {
                                 color: AppThemeConstants.contextPanelBackground,
                                 width: 2,
                               ),
+                            ),
+                          ),
+                        ),
+                      // Unread badge (bottom right, slightly overlapping)
+                      if (unreadCount > 0)
+                        Positioned(
+                          right: -4,
+                          bottom: -4,
+                          child: Container(
+                            constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              shape: unreadCount > 9 ? BoxShape.rectangle : BoxShape.circle,
+                              borderRadius: unreadCount > 9 ? BorderRadius.circular(10) : null,
+                              border: Border.all(
+                                color: AppThemeConstants.contextPanelBackground,
+                                width: 2,
+                              ),
+                            ),
+                            child: Text(
+                              unreadCount > 99 ? '99+' : '$unreadCount',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                height: 1.0,
+                              ),
+                              textAlign: TextAlign.center,
                             ),
                           ),
                         ),

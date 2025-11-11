@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+import 'event_bus.dart';
 // Import auth service conditionally
 import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
 
@@ -176,6 +177,15 @@ class ApiService {
     }
   }
 
+  /// Ensure host has http:// or https:// prefix
+  /// This prevents CORS errors when constructing API URLs
+  static String ensureHttpPrefix(String host) {
+    if (host.startsWith('http://') || host.startsWith('https://')) {
+      return host;
+    }
+    return 'http://$host';
+  }
+
   static Future<Response> get(String url, {Map<String, dynamic>? queryParameters, Options? options}) {
     options ??= Options();
     options = options.copyWith(contentType: 'application/json', extra: {...?options.extra, 'withCredentials': true});
@@ -193,5 +203,94 @@ class ApiService {
     options = options.copyWith(contentType: 'application/json',extra: {...?options.extra, 'withCredentials': true});
     return dio.delete(url, data: data, options: options);
   }
+  
+  // ========================================================================
+  // EVENT BUS INTEGRATION
+  // ========================================================================
+  
+  /// Emit API-related events to EventBus
+  /// Call this after successful API operations that affect app state
+  static void emitEvent(AppEvent event, dynamic data) {
+    debugPrint('[API SERVICE] → EVENT_BUS: $event');
+    EventBus.instance.emit(event, data);
+  }
+  
+  // ========================================================================
+  // CHANNEL API WRAPPERS WITH EVENT EMISSION
+  // ========================================================================
+  
+  /// Create a new channel
+  /// Automatically emits AppEvent.newChannel on success
+  static Future<Response> createChannel(
+    String host, {
+    required String name,
+    String? description,
+    bool? isPrivate,
+    String? type,
+    String? defaultRoleId,
+  }) async {
+    final response = await post(
+      '$host/client/channels',
+      data: {
+        'name': name,
+        if (description != null) 'description': description,
+        if (isPrivate != null) 'private': isPrivate,
+        if (type != null) 'type': type,
+        if (defaultRoleId != null) 'defaultRoleId': defaultRoleId,
+      },
+    );
+    
+    // Emit event on success
+    if (response.statusCode == 201) {
+      debugPrint('[API SERVICE] Channel created successfully');
+      emitEvent(AppEvent.newChannel, response.data);
+    }
+    
+    return response;
+  }
+  
+  /// Update an existing channel
+  /// Automatically emits AppEvent.channelUpdated on success
+  static Future<Response> updateChannel(
+    String host,
+    String channelId, {
+    String? name,
+    String? description,
+    bool? isPrivate,
+  }) async {
+    final response = await dio.put(
+      '$host/client/channels/$channelId',
+      data: {
+        if (name != null) 'name': name,
+        if (description != null) 'description': description,
+        if (isPrivate != null) 'private': isPrivate,
+      },
+      options: Options(
+        contentType: 'application/json',
+        extra: {'withCredentials': true},
+      ),
+    );
+    
+    // Emit event on success
+    if (response.statusCode == 200) {
+      debugPrint('[API SERVICE] Channel updated successfully');
+      emitEvent(AppEvent.channelUpdated, response.data);
+    }
+    
+    return response;
+  }
+  
+  /// Delete a channel
+  /// Automatically emits AppEvent.channelDeleted on success
+  static Future<Response> deleteChannel(String host, String channelId) async {
+    final response = await delete('$host/client/channels/$channelId');
+    
+    // Emit event on success
+    if (response.statusCode == 200 || response.statusCode == 204) {
+      debugPrint('[API SERVICE] Channel deleted successfully');
+      emitEvent(AppEvent.channelDeleted, {'channelId': channelId});
+    }
+    
+    return response;
+  }
 }
-

@@ -4,6 +4,7 @@ import '../services/signal_service.dart';
 import '../services/logout_service.dart';
 import '../services/device_identity_service.dart';
 import '../services/device_scoped_storage_service.dart';
+import '../services/preferences_service.dart';
 
 /// Screen displayed during Signal Protocol key generation
 /// Shows PeerWave logo, progress bar, and status text
@@ -54,7 +55,20 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
         await Future.delayed(const Duration(milliseconds: 500));
 
         if (mounted) {
-          GoRouter.of(context).go('/app');
+          // Try to restore last route, otherwise go to /app/activities (default view)
+          final lastRoute = await PreferencesService().loadLastRoute();
+          if (lastRoute != null && lastRoute.startsWith('/app/') && lastRoute != '/app') {
+            debugPrint('[SIGNAL SETUP] Restoring last route: $lastRoute');
+            await PreferencesService().clearLastRoute(); // Clear after using
+            GoRouter.of(context).go(lastRoute);
+          } else {
+            // No saved route or route was just /app - go to default view
+            debugPrint('[SIGNAL SETUP] No saved route, going to /app/activities (default)');
+            if (lastRoute != null) {
+              await PreferencesService().clearLastRoute(); // Clear if it was /app
+            }
+            GoRouter.of(context).go('/app/activities');
+          }
         }
       }
     } catch (e) {

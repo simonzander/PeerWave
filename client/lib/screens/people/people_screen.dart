@@ -241,7 +241,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
       
       // Get all users
       ApiService.init();
-      final resp = await ApiService.get('${widget.host}/people/list');
+      final hostUrl = ApiService.ensureHttpPrefix(widget.host);
+      final resp = await ApiService.get('$hostUrl/people/list');
       
       if (resp.statusCode == 200) {
         final List<dynamic> allUsers = resp.data is List 
@@ -332,7 +333,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
       debugPrint('[PEOPLE_SCREEN] Searching for: $query');
       
       ApiService.init();
-      final resp = await ApiService.get('${widget.host}/people/list');
+      final hostUrl = ApiService.ensureHttpPrefix(widget.host);
+      final resp = await ApiService.get('$hostUrl/people/list');
       
       if (resp.statusCode == 200) {
         final List<dynamic> allUsers = resp.data is List 

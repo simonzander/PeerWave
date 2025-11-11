@@ -14,6 +14,7 @@ import 'auth/magic_link_native.dart' show MagicLinkWebPageWithServer;
 import 'screens/signal_setup_screen.dart';
 import 'services/signal_setup_service.dart';
 import 'services/logout_service.dart';
+import 'services/preferences_service.dart';
 import 'services/api_service.dart' show setGlobalUnauthorizedHandler;
 import 'services/socket_service.dart' show setSocketUnauthorizedHandler;
 import 'app/app_layout.dart';
@@ -59,6 +60,12 @@ import 'widgets/socket_aware_widget.dart';
 import 'services/video_conference_service.dart';
 // Post-login service orchestration
 import 'services/post_login_init_service.dart';
+// View Pages (Dashboard Refactoring)
+import 'app/views/activities_view_page.dart';
+import 'app/views/messages_view_page.dart';
+import 'app/views/channels_view_page.dart';
+import 'app/views/people_view_page.dart';
+import 'app/views/files_view_page.dart';
 
 
 Future<void> main() async {
@@ -336,11 +343,129 @@ class _MyAppState extends State<MyApp> {
             ShellRoute(
               builder: (context, state, child) => AppLayout(child: child),
               routes: [
+                // ========================================
+                // Main App Route - Redirect to Activities
+                // ========================================
                 GoRoute(
                   path: '/app',
-                  builder: (context, state) => const DashboardPage(),
+                  redirect: (context, state) => '/app/activities',
                 ),
+                // ========================================
+                // Dashboard View Routes (Refactored)
+                // ========================================
+                GoRoute(
+                  path: '/app/activities',
+                  builder: (context, state) {
+                    return FutureBuilder<String?>(
+                      future: loadWebApiServer(),
+                      builder: (context, snapshot) {
+                        final host = snapshot.data ?? 'localhost:3000';
+                        return ActivitiesViewPage(host: host);
+                      },
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: '/app/messages/:id',
+                  builder: (context, state) {
+                    final contactUuid = state.pathParameters['id'];
+                    final extra = state.extra as Map<String, dynamic>?;
+                    final host = extra?['host'] as String? ?? 'localhost:3000';
+                    final displayName = extra?['displayName'] as String? ?? 'Unknown';
+                    
+                    return MessagesViewPage(
+                      host: host,
+                      initialContactUuid: contactUuid,
+                      initialDisplayName: displayName,
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: '/app/messages',
+                  builder: (context, state) {
+                    final extra = state.extra as Map<String, dynamic>?;
+                    final host = extra?['host'] as String? ?? 'localhost:3000';
+                    
+                    return MessagesViewPage(
+                      host: host,
+                      initialContactUuid: null,
+                      initialDisplayName: null,
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: '/app/messages/:uuid',
+                  builder: (context, state) {
+                    final contactUuid = state.pathParameters['uuid'];
+                    final extra = state.extra as Map<String, dynamic>?;
+                    final host = extra?['host'] as String? ?? 'localhost:3000';
+                    final displayName = extra?['displayName'] as String? ?? 'Unknown';
+                    
+                    return MessagesViewPage(
+                      host: host,
+                      initialContactUuid: contactUuid,
+                      initialDisplayName: displayName,
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: '/app/channels/:id',
+                  builder: (context, state) {
+                    final channelUuid = state.pathParameters['id'];
+                    final extra = state.extra as Map<String, dynamic>?;
+                    final host = extra?['host'] as String? ?? 'localhost:3000';
+                    final name = extra?['name'] as String? ?? 'Unknown';
+                    final type = extra?['type'] as String? ?? 'public';
+                    
+                    return ChannelsViewPage(
+                      host: host,
+                      initialChannelUuid: channelUuid,
+                      initialChannelName: name,
+                      initialChannelType: type,
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: '/app/channels',
+                  builder: (context, state) {
+                    final extra = state.extra as Map<String, dynamic>?;
+                    final host = extra?['host'] as String? ?? 'localhost:3000';
+                    
+                    return ChannelsViewPage(
+                      host: host,
+                      initialChannelUuid: null,
+                      initialChannelName: null,
+                      initialChannelType: null,
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: '/app/people',
+                  builder: (context, state) {
+                    return FutureBuilder<String?>(
+                      future: loadWebApiServer(),
+                      builder: (context, snapshot) {
+                        final host = snapshot.data ?? 'localhost:3000';
+                        return PeopleViewPage(host: host);
+                      },
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: '/app/files',
+                  builder: (context, state) {
+                    return FutureBuilder<String?>(
+                      future: loadWebApiServer(),
+                      builder: (context, snapshot) {
+                        final host = snapshot.data ?? 'localhost:3000';
+                        return FilesViewPage(host: host);
+                      },
+                    );
+                  },
+                ),
+                // ========================================
                 // P2P File Transfer routes
+                // ========================================
                 GoRoute(
                   path: '/file-transfer',
                   builder: (context, state) => const SocketAwareWidget(
@@ -515,13 +640,23 @@ class _MyAppState extends State<MyApp> {
           
           if (!isAuthFlow) {
             // Check if Signal keys need setup when navigating to main app routes
-            if (location == '/app' || location == '/') {
+            if (location == '/app' || location == '/' || location.startsWith('/app/')) {
               try {
                 final status = await SignalSetupService.instance.checkKeysStatus();
                 final needsSetup = status['needsSetup'] as bool;
                 final missingKeys = status['missingKeys'] as Map<String, dynamic>;
                 
                 if (needsSetup) {
+                  // Save current route if it's a specific /app/* route (not base routes like /app or /)
+                  // This allows restoration after signal-setup completes
+                  if (location.startsWith('/app/') && location != '/app/' && location.length > 5) {
+                    // Only save routes like /app/people, /app/messages, etc. (not /app or /)
+                    debugPrint('[MAIN] Saving current route before signal-setup: $location');
+                    await PreferencesService().saveLastRoute(location);
+                  } else {
+                    debugPrint('[MAIN] Not saving route (base route or coming from login): $location');
+                  }
+                  
                   // Check if it's an auth issue (device identity or encryption key missing)
                   if (missingKeys.containsKey('deviceIdentity') || 
                       missingKeys.containsKey('encryptionKey')) {

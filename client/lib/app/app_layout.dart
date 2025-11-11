@@ -1,25 +1,365 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dashboard_page.dart';
-import 'profile_card.dart';
-// import 'sidebar_panel.dart';
 import 'server_panel.dart';
-import '../auth/auth_layout_web.dart' if (dart.library.io) '../auth/auth_layout_native.dart';
+import '../widgets/navigation_sidebar.dart';
+import '../widgets/adaptive/adaptive_scaffold.dart';
+import '../widgets/theme_widgets.dart';
+import '../widgets/navigation_badge.dart';
+import '../services/logout_service.dart';
+import '../config/layout_config.dart';
 import 'package:go_router/go_router.dart';
 
-class AppLayout extends StatelessWidget {
+class AppLayout extends StatefulWidget {
   final Widget? child;
   const AppLayout({super.key, this.child});
 
   @override
+  State<AppLayout> createState() => _AppLayoutState();
+}
+
+class _AppLayoutState extends State<AppLayout> {
+  int _selectedIndex = 0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateSelectedIndexFromRoute();
+  }
+
+  /// Update selected index based on current route
+  void _updateSelectedIndexFromRoute() {
+    final location = GoRouterState.of(context).matchedLocation;
+    
+    int newIndex = 0;
+    
+    // Check layout type to determine index mapping
+    final width = MediaQuery.of(context).size.width;
+    final layoutType = LayoutConfig.getLayoutType(width);
+    
+    if (layoutType == LayoutType.mobile) {
+      // Mobile: 0=Activities, 1=Channels, 2=Messages, 3=Files
+      if (location.startsWith('/app/activities')) {
+        newIndex = 0;
+      } else if (location.startsWith('/app/channels')) {
+        newIndex = 1;
+      } else if (location.startsWith('/app/messages')) {
+        newIndex = 2;
+      } else if (location.startsWith('/app/files')) {
+        newIndex = 3;
+      }
+    } else {
+      // Tablet/Desktop: 0=Activities, 1=People, 2=Files, 3=Channels, 4=Messages
+      if (location.startsWith('/app/activities')) {
+        newIndex = 0;
+      } else if (location.startsWith('/app/people')) {
+        newIndex = 1;
+      } else if (location.startsWith('/app/files')) {
+        newIndex = 2;
+      } else if (location.startsWith('/app/channels')) {
+        newIndex = 3;
+      } else if (location.startsWith('/app/messages')) {
+        newIndex = 4;
+      }
+    }
+    
+    if (newIndex != _selectedIndex) {
+      setState(() {
+        _selectedIndex = newIndex;
+      });
+    }
+  }
+
+  void _onNavigationSelected(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+    
+    // Check layout type for different navigation
+    final width = MediaQuery.of(context).size.width;
+    final layoutType = LayoutConfig.getLayoutType(width);
+    
+    if (layoutType == LayoutType.mobile) {
+      // Mobile navigation: Activities, Channels, Messages, Files
+      switch (index) {
+        case 0:
+          context.go('/app/activities');
+          break;
+        case 1:
+          context.go('/app/channels');
+          break;
+        case 2:
+          context.go('/app/messages');
+          break;
+        case 3:
+          context.go('/app/files');
+          break;
+      }
+    } else {
+      // Tablet/Desktop navigation: Activities, People, Files, Channels, Messages
+      switch (index) {
+        case 0:
+          context.go('/app/activities');
+          break;
+        case 1:
+          context.go('/app/people');
+          break;
+        case 2:
+          context.go('/app/files');
+          break;
+        case 3:
+          context.go('/app/channels');
+          break;
+        case 4:
+          context.go('/app/messages');
+          break;
+      }
+    }
+  }
+
+  /// Get device-specific navigation destinations
+  List<NavigationDestination> _getNavigationDestinations(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final layoutType = LayoutConfig.getLayoutType(width);
+    
+    // Mobile: Activities, Channels, Messages, Files (4 items)
+    if (layoutType == LayoutType.mobile) {
+      return [
+        NavigationDestination(
+          icon: NavigationBadge(
+            icon: Icons.bolt,
+            type: NavigationBadgeType.activities,
+          ),
+          selectedIcon: NavigationBadge(
+            icon: Icons.bolt,
+            type: NavigationBadgeType.activities,
+            selected: true,
+          ),
+          label: 'Activity',
+        ),
+        NavigationDestination(
+          icon: NavigationBadge(
+            icon: Icons.tag_outlined,
+            type: NavigationBadgeType.channels,
+          ),
+          selectedIcon: NavigationBadge(
+            icon: Icons.tag,
+            type: NavigationBadgeType.channels,
+            selected: true,
+          ),
+          label: 'Channels',
+        ),
+        NavigationDestination(
+          icon: NavigationBadge(
+            icon: Icons.message_outlined,
+            type: NavigationBadgeType.messages,
+          ),
+          selectedIcon: NavigationBadge(
+            icon: Icons.message,
+            type: NavigationBadgeType.messages,
+            selected: true,
+          ),
+          label: 'Messages',
+        ),
+        NavigationDestination(
+          icon: NavigationBadge(
+            icon: Icons.folder_outlined,
+            type: NavigationBadgeType.files,
+          ),
+          selectedIcon: NavigationBadge(
+            icon: Icons.folder,
+            type: NavigationBadgeType.files,
+            selected: true,
+          ),
+          label: 'Files',
+        ),
+      ];
+    }
+    
+    // Tablet & Desktop: Activities, People, Files, Channels, Messages (5 items)
+    return [
+      NavigationDestination(
+        icon: NavigationBadge(
+          icon: Icons.bolt,
+          type: NavigationBadgeType.activities,
+        ),
+        selectedIcon: NavigationBadge(
+          icon: Icons.bolt,
+          type: NavigationBadgeType.activities,
+          selected: true,
+        ),
+        label: 'Activity',
+      ),
+      NavigationDestination(
+        icon: NavigationBadge(
+          icon: Icons.people_outline,
+          type: NavigationBadgeType.people,
+        ),
+        selectedIcon: NavigationBadge(
+          icon: Icons.people,
+          type: NavigationBadgeType.people,
+          selected: true,
+        ),
+        label: 'People',
+      ),
+      NavigationDestination(
+        icon: NavigationBadge(
+          icon: Icons.folder_outlined,
+          type: NavigationBadgeType.files,
+        ),
+        selectedIcon: NavigationBadge(
+          icon: Icons.folder,
+          type: NavigationBadgeType.files,
+          selected: true,
+        ),
+        label: 'Files',
+      ),
+      NavigationDestination(
+        icon: NavigationBadge(
+          icon: Icons.tag_outlined,
+          type: NavigationBadgeType.channels,
+        ),
+        selectedIcon: NavigationBadge(
+          icon: Icons.tag,
+          type: NavigationBadgeType.channels,
+          selected: true,
+        ),
+        label: 'Channels',
+      ),
+      NavigationDestination(
+        icon: NavigationBadge(
+          icon: Icons.message_outlined,
+          type: NavigationBadgeType.messages,
+        ),
+        selectedIcon: NavigationBadge(
+          icon: Icons.message,
+          type: NavigationBadgeType.messages,
+          selected: true,
+        ),
+        label: 'Messages',
+      ),
+    ];
+  }
+
+  Widget _buildMobileDrawer(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.waves,
+                  size: 48,
+                  color: colorScheme.onPrimaryContainer,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'PeerWave',
+                  style: TextStyle(
+                    color: colorScheme.onPrimaryContainer,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.people_outline),
+            title: const Text('People'),
+            onTap: () {
+              Navigator.pop(context);
+              context.go('/app/people');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.settings_outlined),
+            title: const Text('Settings'),
+            onTap: () {
+              Navigator.pop(context);
+              context.go('/app/settings');
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout),
+            title: const Text('Logout'),
+            onTap: () {
+              Navigator.pop(context);
+              LogoutService.instance.logout(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('About'),
+            onTap: () {
+              Navigator.pop(context);
+              showAboutDialog(
+                context: context,
+                applicationName: 'PeerWave',
+                applicationVersion: '1.0.0',
+                applicationLegalese: '© 2025 PeerWave',
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final bool isWeb = kIsWeb;
-  final double sidebarWidth = isWeb ? 350 : 300;
     final double serverPanelWidth = isWeb ? 0 : 80;
 
     if (isWeb) {
-      return Scaffold(
-        body: child ?? const DashboardPage(),
+      // Check layout type
+      final width = MediaQuery.of(context).size.width;
+      final layoutType = LayoutConfig.getLayoutType(width);
+      
+      if (layoutType == LayoutType.desktop || layoutType == LayoutType.tablet) {
+        // Desktop/Tablet: Navigation Sidebar + Content
+        return Scaffold(
+          body: Row(
+            children: [
+              // Navigation Sidebar (60px)
+              const NavigationSidebar(),
+              
+              // Content (Views handle their own Context Panel + Main Content)
+              Expanded(
+                child: widget.child ?? const DashboardPage(),
+              ),
+            ],
+          ),
+        );
+      }
+      
+      // Mobile: Use AdaptiveScaffold with bottom navigation
+      final destinations = _getNavigationDestinations(context);
+      
+      return AdaptiveScaffold(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: _onNavigationSelected,
+        destinations: destinations,
+        appBarTitle: 'PeerWave',
+        appBarActions: [
+          const ThemeToggleButton(),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => context.go('/app/settings'),
+            tooltip: 'Settings',
+          ),
+        ],
+        drawer: _buildMobileDrawer(context),
+        body: widget.child ?? const DashboardPage(),
       );
     } else {
       // Global Scaffold for native
@@ -31,12 +371,12 @@ class AppLayout extends StatelessWidget {
                 width: serverPanelWidth,
                 color: Colors.black,
                 child: ServerPanel(
-                  onAddServer: () => GoRouter.of(context).go('/app/login'),
+                  onAddServer: () => context.go('/app/login'),
                   scaffoldContextProvider: () => context,
                 ),
               ),
             Expanded(
-              child: child ?? const DashboardPage(),
+              child: widget.child ?? const DashboardPage(),
             ),
           ],
         ),
