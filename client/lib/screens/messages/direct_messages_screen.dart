@@ -9,13 +9,15 @@ import '../../widgets/user_avatar.dart';
 import '../../services/signal_service.dart';
 import '../../services/socket_service.dart';
 import '../../services/offline_message_queue.dart';
-import '../../services/api_service.dart';
 import '../../services/storage/sqlite_message_store.dart';
 import '../../services/file_transfer/p2p_coordinator.dart';
 import '../../services/file_transfer/socket_file_client.dart';
 import '../../models/file_message.dart';
 import '../../extensions/snackbar_extensions.dart';
 import '../../providers/unread_messages_provider.dart';
+import '../../widgets/people_context_panel.dart';
+import '../../services/recent_conversations_service.dart';
+import 'package:intl/intl.dart';
 
 /// Whitelist of message types that should be displayed in UI
 const Set<String> DISPLAYABLE_MESSAGE_TYPES = {'message', 'file', 'image', 'voice'};
@@ -45,6 +47,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   bool _hasMoreMessages = true;
   bool _loadingMore = false;
   final ScrollController _scrollController = ScrollController();
+  
+  // Context panel state
+  List<Map<String, dynamic>> _recentPeople = [];
+  bool _isLoadingRecentPeople = false;
+  int _recentPeopleLimit = 10;
+  bool _hasMoreRecentPeople = true;
 
   @override
   void initState() {
@@ -55,7 +63,18 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
-    SignalService.instance.unregisterItemCallback('message', _handleNewMessage);
+    
+    // ✅ Unregister specific callbacks for this conversation
+    for (final type in DISPLAYABLE_MESSAGE_TYPES) {
+      SignalService.instance.unregisterReceiveItem(
+        type,
+        widget.recipientUuid,
+        _handleNewMessageFromCallback,
+      );
+    }
+    
+    debugPrint('[DM_SCREEN] Unregistered all receiveItem callbacks');
+    
     SignalService.instance.clearDeliveryCallbacks();
     SignalService.instance.clearReadCallbacks();
     super.dispose();
@@ -74,40 +93,11 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
   }
 
-  /// Initialize the direct messages screen: verify Signal Protocol, then load messages
+  /// Initialize the direct messages screen
   Future<void> _initialize() async {
-    // Verify own identity keys are available
-    try {
-      await SignalService.instance.identityStore.getIdentityKeyPair();
-      debugPrint('[DIRECT_MESSAGES] Identity key pair verified');
-    } catch (e) {
-      debugPrint('[DIRECT_MESSAGES] Identity key pair check failed: $e');
-      
-      // Attempt to regenerate if missing
-      debugPrint('[DIRECT_MESSAGES] Attempting to regenerate Signal Protocol...');
-      try {
-        await SignalService.instance.init();
-        debugPrint('[DIRECT_MESSAGES] Signal Protocol regenerated successfully');
-      } catch (regenerateError) {
-        debugPrint('[DIRECT_MESSAGES] Failed to regenerate Signal Protocol: $regenerateError');
-        
-        // Show warning and set error state
-        if (mounted) {
-          context.showErrorSnackBar(
-            'Signal Protocol initialization incomplete. Cannot send messages.',
-            duration: const Duration(seconds: 5),
-          );
-        }
-        
-        setState(() {
-          _error = 'Signal Protocol not initialized';
-        });
-        // Continue loading messages (can still receive)
-      }
-    }
-    
     await _loadMessages();
-    _setupMessageListener();
+    await _loadRecentPeople(); // Load recent people for context panel
+    _setupReceiveItemCallbacks(); // ✅ Register granular callbacks
     _setupReceiptListeners();
     
     // Scroll to bottom after initial load
@@ -169,11 +159,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           _messages[msgIndex]['status'] = 'read';
 
           // Delete message from server after read confirmation
-          if (readByDeviceId != null && readByUserId != null) {
-            _deleteMessageFromServer(itemId, receiverDeviceId: readByDeviceId, receiverUserId: readByUserId);
-          } else {
-            _deleteMessageFromServer(itemId);
-          }
+          SignalService.instance.deleteItemFromServer(itemId);
         } else {
           debugPrint('[DM_SCREEN] ⚠ Message not found in list for read receipt: $itemId');
         }
@@ -181,100 +167,92 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     });
   }
 
-  void _setupMessageListener() {
-    SignalService.instance.registerItemCallback('message', _handleNewMessage);
+  /// ✅ NEW: Setup granular callbacks for this specific conversation
+  void _setupReceiveItemCallbacks() {
+    // Register callback for each displayable message type
+    for (final type in DISPLAYABLE_MESSAGE_TYPES) {
+      SignalService.instance.registerReceiveItem(
+        type,
+        widget.recipientUuid,
+        _handleNewMessageFromCallback,
+      );
+    }
+    
+    debugPrint('[DM_SCREEN] Registered receiveItem callbacks for ${DISPLAYABLE_MESSAGE_TYPES.length} types');
   }
 
-  void _handleNewMessage(dynamic item) {
-    final itemType = item['type'];
-
-    // ✅ WHITELIST: Only display allowed message types
-    if (!DISPLAYABLE_MESSAGE_TYPES.contains(itemType)) {
-      // Handle read_receipt system message
-      if (itemType == 'read_receipt') {
-        try {
-          final receiptData = jsonDecode(item['message']);
-          final referencedItemId = receiptData['itemId'];
-          final readByDeviceId = receiptData['readByDeviceId'] as int?;
-          final readByUserId = item['sender'];
-
-          setState(() {
-            final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == referencedItemId);
-            if (msgIndex != -1) {
-              _messages[msgIndex]['status'] = 'read';
-
-              if (readByDeviceId != null && readByUserId != null) {
-                _deleteMessageFromServer(
-                  referencedItemId,
-                  receiverDeviceId: readByDeviceId,
-                  receiverUserId: readByUserId
-                );
-              } else {
-                _deleteMessageFromServer(referencedItemId);
-              }
-            }
-          });
-
-          if (item['itemId'] != null) {
-            _deleteMessageFromServer(item['itemId']);
-          }
-        } catch (e) {
-          debugPrint('[DM_SCREEN] Error processing read_receipt: $e');
-        }
-      }
-      // Don't display system messages in UI
-      return;
-    }
-
-    // Check if message is relevant to this conversation
-    final sender = item['sender'];
-    final recipient = item['recipient'];
-    final isFromTarget = sender == widget.recipientUuid;
-    final isLocalSent = item['isLocalSent'] == true;
-
-    final isRelevant = isFromTarget ||
-                       (isLocalSent && recipient == widget.recipientUuid) ||
-                       (recipient == widget.recipientUuid);
-
-    if (isRelevant) {
-      setState(() {
-        final itemId = item['itemId'];
-        final exists = _messages.any((msg) => msg['itemId'] == itemId);
-        if (exists) return;
-
-        final msg = {
+  /// ✅ NEW: Handle incoming messages from SignalService callbacks
+  void _handleNewMessageFromCallback(Map<String, dynamic> item) {
+    if (!mounted) return;
+    
+    debugPrint('[DM_SCREEN] New message received via callback: ${item['itemId']}');
+    
+    // Message is already stored in SQLite by SignalService
+    // Only update UI
+    setState(() {
+      final itemId = item['itemId'];
+      final exists = _messages.any((msg) => msg['itemId'] == itemId);
+      
+      if (!exists) {
+        final isLocalSent = item['isLocalSent'] == true;
+        
+        // Add message to local list
+        _messages.add({
           'itemId': item['itemId'],
-          'sender': sender,
+          'sender': item['sender'],
           'senderDeviceId': item['senderDeviceId'],
           'senderDisplayName': isLocalSent ? 'You' : widget.recipientDisplayName,
           'text': item['message'],
           'message': item['message'],
-          'payload': item['payload'] ?? item['message'], // Add payload field for file messages
+          'payload': item['message'],
           'time': item['timestamp'] ?? DateTime.now().toIso8601String(),
           'isLocalSent': isLocalSent,
-          // Status logic: 
-          // - Local sent messages keep their status (sending/sent/delivered/read)
-          // - Received messages have no status indicator
           'status': isLocalSent ? (item['status'] ?? 'sending') : null,
-          'type': itemType, // Preserve message type (message or file)
-        };
-        _messages.add(msg);
-
+          'type': item['type'],
+          'metadata': item['metadata'],
+        });
+        
+        // Sort by time
         _messages.sort((a, b) {
           final timeA = DateTime.tryParse(a['time'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
           final timeB = DateTime.tryParse(b['time'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
           return timeA.compareTo(timeB);
         });
-      });
-
-      if (!isLocalSent && isFromTarget) {
-        // Parse senderDeviceId as int (might be String from storage/socket)
-        final senderDeviceId = item['senderDeviceId'] is int
-            ? item['senderDeviceId'] as int
-            : int.parse(item['senderDeviceId'].toString());
-        _sendReadReceipt(item['itemId'], sender, senderDeviceId);
+        
+        debugPrint('[DM_SCREEN] ✓ Message added to UI list');
+      } else {
+        // Message already in list - check if this is a status update
+        if (item['status'] != null) {
+          final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
+          if (msgIndex != -1) {
+            _messages[msgIndex]['status'] = item['status'];
+            debugPrint('[DM_SCREEN] ✓ Updated message status: ${item['status']}');
+          }
+        } else {
+          debugPrint('[DM_SCREEN] ⚠ Message already in list (duplicate prevention)');
+        }
       }
+    });
+    
+    // Send read receipt if this is a received message
+    final isLocalSent = item['isLocalSent'] == true;
+    if (!isLocalSent && item['sender'] == widget.recipientUuid) {
+      final senderDeviceId = item['senderDeviceId'] is int
+          ? item['senderDeviceId'] as int
+          : int.parse(item['senderDeviceId'].toString());
+      _sendReadReceipt(item['itemId'], item['sender'], senderDeviceId);
     }
+    
+    // Auto-scroll to new message
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   Future<void> _sendReadReceipt(String itemId, String sender, int senderDeviceId) async {
@@ -315,26 +293,122 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
   }
 
-  Future<void> _deleteMessageFromServer(String itemId, {int? receiverDeviceId, String? receiverUserId}) async {
+  /// Load recent conversation partners for context panel
+  Future<void> _loadRecentPeople() async {
+    if (_isLoadingRecentPeople) return;
+    
+    setState(() {
+      _isLoadingRecentPeople = true;
+    });
+
     try {
-      String url = '${widget.host}/items/$itemId';
-      final params = <String>[];
-
-      if (receiverDeviceId != null) {
-        params.add('deviceId=$receiverDeviceId');
+      // Load from RecentConversationsService with SQLite + profiles
+      final allConversations = await RecentConversationsService.getRecentConversations();
+      
+      // Apply limit
+      final conversations = allConversations.take(_recentPeopleLimit).toList();
+      
+      // Load last messages from SQLite
+      final messageStore = await SqliteMessageStore.getInstance();
+      final List<Map<String, dynamic>> peopleWithMessages = [];
+      
+      for (final conv in conversations) {
+        final userId = conv['uuid'] as String;
+        
+        // Get last message
+        final messages = await messageStore.getMessagesFromConversation(
+          userId,
+          limit: 1,
+          offset: 0,
+          types: ['message', 'file', 'image', 'voice'],
+        );
+        
+        String? lastMessage;
+        String? lastMessageTime;
+        
+        if (messages.isNotEmpty) {
+          final msg = messages.first;
+          final messageText = msg['message'] as String?;
+          final messageType = msg['type'] as String?;
+          
+          // Format message preview
+          if (messageType == 'file') {
+            lastMessage = '📎 File';
+          } else if (messageType == 'image') {
+            lastMessage = '🖼️ Image';
+          } else if (messageType == 'voice') {
+            lastMessage = '🎤 Voice';
+          } else {
+            lastMessage = messageText;
+          }
+          
+          // Truncate if too long
+          if (lastMessage != null && lastMessage.length > 40) {
+            lastMessage = '${lastMessage.substring(0, 40)}...';
+          }
+          
+          // Format timestamp
+          lastMessageTime = _formatMessageTime(msg['timestamp'] as String?);
+        }
+        
+        peopleWithMessages.add({
+          'uuid': userId,
+          'displayName': conv['displayName'],
+          'username': userId, // Use userId as username fallback
+          'profilePicture': conv['picture'],
+          'lastMessage': lastMessage,
+          'lastMessageTime': lastMessageTime,
+        });
       }
-      if (receiverUserId != null) {
-        params.add('receiverId=$receiverUserId');
-      }
-
-      if (params.isNotEmpty) {
-        url += '?${params.join('&')}';
-      }
-
-      await ApiService.delete(url);
+      
+      setState(() {
+        _recentPeople = peopleWithMessages;
+        _isLoadingRecentPeople = false;
+        _hasMoreRecentPeople = allConversations.length > _recentPeopleLimit;
+      });
+      
     } catch (e) {
-      debugPrint('[DM_SCREEN] Error deleting message from server: $e');
+      debugPrint('[DM_SCREEN] Error loading recent people: $e');
+      setState(() {
+        _isLoadingRecentPeople = false;
+      });
     }
+  }
+
+  /// Format message timestamp
+  String _formatMessageTime(String? timestamp) {
+    if (timestamp == null) return '';
+    
+    try {
+      final messageTime = DateTime.parse(timestamp);
+      final now = DateTime.now();
+      final difference = now.difference(messageTime);
+      
+      if (difference.inMinutes < 1) {
+        return 'now';
+      } else if (difference.inMinutes < 60) {
+        return '${difference.inMinutes}m';
+      } else if (difference.inHours < 24) {
+        return '${difference.inHours}h';
+      } else if (difference.inDays < 7) {
+        return '${difference.inDays}d';
+      } else {
+        return DateFormat('MMM d').format(messageTime);
+      }
+    } catch (e) {
+      return '';
+    }
+  }
+
+  /// Load more recent people (incremental)
+  Future<void> _loadMoreRecentPeople() async {
+    if (_isLoadingRecentPeople || !_hasMoreRecentPeople) return;
+    
+    setState(() {
+      _recentPeopleLimit += 10;
+    });
+    
+    await _loadRecentPeople();
   }
 
   Future<void> _loadMessages({bool loadMore = false}) async {
@@ -351,274 +425,61 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
 
     try {
-      ApiService.init();
-
-      // Load messages from SQLite (both sent and received)
+      // ✅ EINZIGE Datenquelle: SQLite
       final messageStore = await SqliteMessageStore.getInstance();
-      final allMessages = await messageStore.getMessagesFromConversation(
+      
+      // Load messages with pagination
+      final messages = await messageStore.getMessagesFromConversation(
         widget.recipientUuid,
-        types: DISPLAYABLE_MESSAGE_TYPES.toList(), // ✅ Whitelist: Only load message & file types
+        limit: 20,
+        offset: loadMore ? _messageOffset : 0,
+        types: DISPLAYABLE_MESSAGE_TYPES.toList(),
       );
       
-      // Separate into sent and received
-      final sentMessages = allMessages
-          .where((msg) => msg['direction'] == 'sent')
-          .map((msg) => {
-            'itemId': msg['itemId'],
-            'message': msg['message'],
-            'timestamp': msg['timestamp'],
-            'type': msg['type'],
-            'status': msg['status'] ?? 'sent', // Use status from SQLite
-            'metadata': msg['metadata'], // ✅ Preserve metadata for image/voice
-          })
-          .toList();
+      debugPrint('[DM_SCREEN] Loaded ${messages.length} messages from SQLite (offset: ${loadMore ? _messageOffset : 0})');
       
-      final receivedMessages = allMessages
-          .where((msg) => msg['direction'] == 'received')
-          .map((msg) => {
-            'itemId': msg['itemId'],
-            'message': msg['message'],
-            'timestamp': msg['timestamp'],
-            'sender': msg['sender'],
-            'type': msg['type'],
-            'metadata': msg['metadata'], // ✅ Preserve metadata for image/voice
-          })
-          .toList();
+      // Transform to UI format
+      final uiMessages = messages.map((msg) {
+        final isLocalSent = msg['direction'] == 'sent';
+        return {
+          'itemId': msg['item_id'],
+          'sender': isLocalSent ? SignalService.instance.currentUserId : msg['sender'],
+          'senderDeviceId': msg['sender_device_id'],
+          'senderDisplayName': isLocalSent ? 'You' : widget.recipientDisplayName,
+          'text': msg['message'],
+          'message': msg['message'],
+          'payload': msg['message'],
+          'time': msg['timestamp'],
+          'isLocalSent': isLocalSent,
+          'status': isLocalSent ? (msg['status'] ?? 'sent') : null,
+          'type': msg['type'],
+          'metadata': msg['metadata'],
+        };
+      }).toList();
       
-      debugPrint('[DM_SCREEN] Loaded ${sentMessages.length} sent + ${receivedMessages.length} received messages from SQLite');
-
-      // Load new messages from server
-      final resp = await ApiService.get('${widget.host}/direct/messages/${widget.recipientUuid}');
-      
-      if (resp.statusCode == 200) {
-        resp.data.sort((a, b) {
-          final timeA = DateTime.tryParse(a['timestamp'] ?? a['createdAt'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final timeB = DateTime.tryParse(b['timestamp'] ?? b['createdAt'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-          return timeA.compareTo(timeB);
-        });
-
-        final decryptedMessages = <Map<String, dynamic>>[];
-
-        for (int i = 0; i < resp.data.length; i++) {
-          final msg = resp.data[i];
-          final msgType = msg['type'];
-
-          // Skip system messages (senderKeyDistribution, senderKeyRequest)
-          if (msgType == 'senderKeyDistribution' || msgType == 'senderKeyRequest') {
-            debugPrint('[DM_SCREEN] Skipping system message type: $msgType');
-            continue;
-          }
-
-          if (msgType == 'read_receipt') {
-            try {
-              // Parse deviceSender as int (server returns String from SQLite INTEGER)
-              final deviceSender = msg['deviceSender'] is int
-                  ? msg['deviceSender'] as int
-                  : int.parse(msg['deviceSender'].toString());
-              
-              final item = {
-                'itemId': msg['itemId'],
-                'sender': msg['sender'],
-                'senderDeviceId': deviceSender,
-                'payload': msg['payload'],
-                'cipherType': msg['cipherType'],
-              };
-
-              final decrypted = await SignalService.instance.decryptItemFromData(item);
-              if (decrypted.isNotEmpty) {
-                final receiptData = jsonDecode(decrypted);
-                final referencedItemId = receiptData['itemId'];
-                final readByDeviceId = receiptData['readByDeviceId'] as int?;
-                final readByUserId = msg['sender'];
-
-                final msgIndex = _messages.indexWhere((m) => m['itemId'] == referencedItemId);
-                if (msgIndex != -1) {
-                  _messages[msgIndex]['status'] = 'read';
-                  
-                  // Update status in SQLite
-                  try {
-                    final messageStore = await SqliteMessageStore.getInstance();
-                    await messageStore.markAsRead(referencedItemId);
-                  } catch (e) {
-                    debugPrint('[DM_SCREEN] ⚠️ Error updating read status in SQLite: $e');
-                  }
-
-                  if (readByDeviceId != null && readByUserId != null) {
-                    await _deleteMessageFromServer(
-                      referencedItemId,
-                      receiverDeviceId: readByDeviceId,
-                      receiverUserId: readByUserId
-                    );
-                  }
-                }
-
-                await _deleteMessageFromServer(msg['itemId']);
-              }
-            } catch (e) {
-              debugPrint('[DM_SCREEN] Error processing read_receipt: $e');
-            }
-            continue;
-          }
-
-          // Parse deviceSender as int (server returns String from SQLite INTEGER)
-          final deviceSender = msg['deviceSender'] is int
-              ? msg['deviceSender'] as int
-              : int.parse(msg['deviceSender'].toString());
-
-          final item = {
-            'itemId': msg['itemId'],
-            'sender': msg['sender'],
-            'senderDeviceId': deviceSender,
-            'payload': msg['payload'],
-            'cipherType': msg['cipherType'],
-          };
-
-          final decrypted = await SignalService.instance.decryptItemFromData(item);
-
-          if (decrypted.isEmpty) continue;
-
-          final decryptedMsg = {
-            'itemId': msg['itemId'],
-            'sender': msg['sender'],
-            'senderDeviceId': deviceSender,
-            'text': decrypted,
-            'message': decrypted,
-            'payload': decrypted, // Add payload field for file messages
-            'time': msg['time'] ?? msg['timestamp'] ?? msg['createdAt'] ?? DateTime.now().toIso8601String(),
-            'senderDisplayName': widget.recipientDisplayName,
-            'type': msgType, // Preserve message type (message or file)
-          };
-
-          decryptedMessages.add(decryptedMsg);
-
-          if (msg['sender'] == widget.recipientUuid) {
-            // Parse deviceSender as int (IndexedDB might return String)
-            final deviceSender = msg['deviceSender'] is int
-                ? msg['deviceSender'] as int
-                : int.parse(msg['deviceSender'].toString());
-            await _sendReadReceipt(msg['itemId'], msg['sender'], deviceSender);
-          }
-        }
-
-        // Merge all messages
-        final allMessages = <Map<String, dynamic>>[];
-
-        for (var sentMsg in sentMessages) {
-          final message = sentMsg['message'] ?? '';
-          if (message.toString().startsWith('{"itemId":')) continue;
-
-          // Filter displayable message types
-          final msgType = sentMsg['type'] ?? 'message';
-          if (!DISPLAYABLE_MESSAGE_TYPES.contains(msgType)) {
-            debugPrint('[DM_SCREEN] Skipping sent system message type: $msgType');
-            continue;
-          }
-
-          allMessages.add({
-            'itemId': sentMsg['itemId'],
-            'sender': SignalService.instance.currentUserId,
-            'senderDisplayName': 'You',
-            'text': message,
-            'message': message,
-            'payload': message, // Add payload field for file messages
-            'time': sentMsg['timestamp'],
-            'isLocalSent': true,
-            'status': sentMsg['status'] ?? 'sending',
-            'type': msgType, // Preserve message type
-            'metadata': sentMsg['metadata'], // ✅ Preserve metadata for image/voice
-          });
-        }
-
-        for (var receivedMsg in receivedMessages) {
-          // Filter displayable message types
-          final msgType = receivedMsg['type'] ?? 'message';
-          if (!DISPLAYABLE_MESSAGE_TYPES.contains(msgType)) {
-            debugPrint('[DM_SCREEN] Skipping received system message type: $msgType');
-            continue;
-          }
-
-          allMessages.add({
-            'itemId': receivedMsg['itemId'],
-            'sender': receivedMsg['sender'],
-            'senderDisplayName': widget.recipientDisplayName,
-            'text': receivedMsg['message'],
-            'message': receivedMsg['message'],
-            'payload': receivedMsg['message'], // Add payload field for file messages
-            'time': receivedMsg['timestamp'] ?? receivedMsg['decryptedAt'],
-            'isLocalSent': false,
-            'type': msgType, // Preserve message type
-            'metadata': receivedMsg['metadata'], // ✅ Preserve metadata for image/voice
-          });
-        }
-
-        for (var msg in decryptedMessages) {
-          final itemId = msg['itemId'];
-          final exists = allMessages.any((m) => m['itemId'] == itemId);
-          
-          // Filter out system messages
-          final msgType = msg['type'] ?? 'message';
-          if (!DISPLAYABLE_MESSAGE_TYPES.contains(msgType)) {
-            debugPrint('[DM_SCREEN] Skipping decrypted system message type: $msgType');
-            continue;
-          }
-          
-          if (!exists) {
-            allMessages.add(msg);
-          }
-        }
-
-        allMessages.sort((a, b) {
-          final timeA = DateTime.tryParse(a['time'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final timeB = DateTime.tryParse(b['time'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-          return timeA.compareTo(timeB);
-        });
-
-        // Apply pagination: load last 20 messages, or next 20 older messages
-        final totalMessages = allMessages.length;
-        final List<Map<String, dynamic>> paginatedMessages;
-        
-        if (loadMore) {
-          // Load 20 more older messages
-          final newOffset = _messageOffset + 20;
-          final startIndex = totalMessages - newOffset - 20;
-          final endIndex = totalMessages - newOffset;
-          
-          if (startIndex < 0) {
-            // No more messages to load
-            paginatedMessages = allMessages.sublist(0, endIndex > 0 ? endIndex : 0);
-            _hasMoreMessages = false;
-          } else {
-            paginatedMessages = allMessages.sublist(startIndex, endIndex);
-          }
-          
-          // Prepend to existing messages
-          setState(() {
-            _messages.insertAll(0, paginatedMessages);
-            _messageOffset = newOffset;
-            _loadingMore = false;
-          });
-        } else {
-          // Initial load: get last 20 messages
-          final startIndex = totalMessages > 20 ? totalMessages - 20 : 0;
-          paginatedMessages = allMessages.sublist(startIndex);
-          
-          setState(() {
-            _messages = paginatedMessages;
-            _messageOffset = 20;
-            _hasMoreMessages = totalMessages > 20;
-            _loading = false;
-          });
-        }
-      } else {
-        setState(() {
-          _error = 'Failed to load messages: ${resp.statusCode}';
-          _loading = false;
-          _loadingMore = false;
-        });
-      }
-    } catch (e) {
       setState(() {
-        _error = 'Error: $e';
+        if (loadMore) {
+          // Prepend older messages
+          _messages.insertAll(0, uiMessages);
+          _messageOffset += messages.length;
+        } else {
+          // Initial load
+          _messages = uiMessages;
+          _messageOffset = messages.length;
+        }
+        _hasMoreMessages = messages.length == 20;
+        _loading = false;
+        _loadingMore = false;
+      });
+      
+      debugPrint('[DM_SCREEN] ✓ Messages loaded successfully');
+      
+    } catch (e, stackTrace) {
+      debugPrint('[DM_SCREEN] ❌ Error loading messages: $e');
+      debugPrint('[DM_SCREEN] Stack trace: $stackTrace');
+      
+      setState(() {
+        _error = 'Error loading messages: $e';
         _loading = false;
         _loadingMore = false;
       });
@@ -647,36 +508,6 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         }
         return;
       }
-    }
-
-    // Check Signal Protocol initialization
-    if (_error != null && _error!.contains('Signal Protocol not initialized')) {
-      if (mounted) {
-        context.showErrorSnackBar(
-          'Cannot send message: Signal Protocol not initialized. Please refresh the page.',
-          duration: const Duration(seconds: 5),
-        );
-      }
-      return;
-    }
-
-    // Check recipient PreKeys
-    try {
-      final hasPreKeys = await SignalService.instance.hasPreKeysForRecipient(
-        widget.recipientUuid
-      );
-      
-      if (hasPreKeys == false) {
-        if (mounted) {
-          context.showErrorSnackBar(
-            'Cannot send message: ${widget.recipientDisplayName} has no PreKeys available.',
-            duration: const Duration(seconds: 5),
-          );
-        }
-        return;
-      }
-    } catch (e) {
-      debugPrint('[DM] PreKey check failed: $e');
     }
 
     final itemId = Uuid().v4();
@@ -815,65 +646,94 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         elevation: 1,
       ),
       backgroundColor: colorScheme.surface,
-      body: Column(
+      body: Row(
         children: [
-          Expanded(
-            child: _loading
-                ? Center(
-                    child: CircularProgressIndicator(
-                      color: colorScheme.primary,
-                    ),
-                  )
-                : _error != null
-                    ? _buildErrorState()
-                    : Column(
-                        children: [
-                          if (_hasMoreMessages)
-                            Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(8.0),
-                                child: _loadingMore
-                                    ? const SizedBox(
-                                        width: 24,
-                                        height: 24,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
-                                      )
-                                    : ActionChip(
-                                        avatar: const Icon(Icons.arrow_upward, size: 18),
-                                        label: const Text('Load older messages'),
-                                        onPressed: () => _loadMessages(loadMore: true),
-                                        backgroundColor: colorScheme.surfaceContainerHighest,
-                                      ),
-                              ),
-                            ),
-                          Expanded(
-                            child: MessageList(
-                              key: ValueKey(_messages.length),
-                              messages: _messages,
-                              onFileDownload: _handleFileDownload,
-                              scrollController: _scrollController,
-                            ),
-                          ),
-                        ],
-                      ),
+          // Context panel (recent conversations) - LEFT SIDE
+          PeopleContextPanel(
+            host: widget.host,
+            recentPeople: _recentPeople,
+            favoritePeople: const [], // No favorites for now
+            onPersonTap: (uuid, displayName) {
+              // Navigate to different conversation
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (context) => DirectMessagesScreen(
+                    host: widget.host,
+                    recipientUuid: uuid,
+                    recipientDisplayName: displayName,
+                  ),
+                ),
+              );
+            },
+            isLoading: _isLoadingRecentPeople,
+            onLoadMore: _loadMoreRecentPeople,
+            hasMore: _hasMoreRecentPeople,
           ),
-          EnhancedMessageInput(
-            onSendMessage: (message, {type, metadata}) {
-              _sendMessageEnhanced(message, type: type, metadata: metadata);
-            },
-            onFileShare: (itemId) {
-              // Handle P2P file share completion
-              debugPrint('[DM_SCREEN] File shared: $itemId');
-            },
-            availableUsers: [
-              {
-                'userId': widget.recipientUuid,
-                'displayName': widget.recipientDisplayName,
-                'atName': widget.recipientDisplayName.toLowerCase().replaceAll(' ', ''),
-              }
-            ],
-            isGroupChat: false,
-            recipientUserId: widget.recipientUuid, // For P2P file sharing
+          
+          // Main chat area - RIGHT SIDE
+          Expanded(
+            child: Column(
+              children: [
+                Expanded(
+                  child: _loading
+                      ? Center(
+                          child: CircularProgressIndicator(
+                            color: colorScheme.primary,
+                          ),
+                        )
+                      : _error != null
+                          ? _buildErrorState()
+                          : Column(
+                              children: [
+                                if (_hasMoreMessages)
+                                  Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(8.0),
+                                      child: _loadingMore
+                                          ? const SizedBox(
+                                              width: 24,
+                                              height: 24,
+                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                            )
+                                          : ActionChip(
+                                              avatar: const Icon(Icons.arrow_upward, size: 18),
+                                              label: const Text('Load older messages'),
+                                              onPressed: () => _loadMessages(loadMore: true),
+                                              backgroundColor: colorScheme.surfaceContainerHighest,
+                                            ),
+                                    ),
+                                  ),
+                                Expanded(
+                                  child: MessageList(
+                                    key: ValueKey(_messages.length),
+                                    messages: _messages,
+                                    onFileDownload: _handleFileDownload,
+                                    scrollController: _scrollController,
+                                  ),
+                                ),
+                              ],
+                            ),
+                ),
+                EnhancedMessageInput(
+                  onSendMessage: (message, {type, metadata}) {
+                    _sendMessageEnhanced(message, type: type, metadata: metadata);
+                  },
+                  onFileShare: (itemId) {
+                    // Handle P2P file share completion
+                    debugPrint('[DM_SCREEN] File shared: $itemId');
+                  },
+                  availableUsers: [
+                    {
+                      'userId': widget.recipientUuid,
+                      'displayName': widget.recipientDisplayName,
+                      'atName': widget.recipientDisplayName.toLowerCase().replaceAll(' ', ''),
+                    }
+                  ],
+                  isGroupChat: false,
+                  recipientUserId: widget.recipientUuid, // For P2P file sharing
+                ),
+              ],
+            ),
           ),
         ],
       ),
