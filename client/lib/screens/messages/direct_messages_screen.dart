@@ -115,11 +115,13 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     // 🚀 Send read receipts for all unread received messages
     await _sendReadReceiptsForLoadedMessages();
     
-    // Scroll to bottom after initial load
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      }
+    // Scroll to bottom after initial load - wait for all builds to complete
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        }
+      });
     });
   }
 
@@ -251,15 +253,17 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             _sendReadReceipt(item['itemId'], item['sender'], senderDeviceId);
           }
           
-          // Auto-scroll to new message
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_scrollController.hasClients) {
-              _scrollController.animateTo(
-                _scrollController.position.maxScrollExtent,
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOut,
-              );
-            }
+          // Auto-scroll to new message - wait for multiple frames
+          SchedulerBinding.instance.addPostFrameCallback((_) {
+            SchedulerBinding.instance.addPostFrameCallback((_) {
+              if (_scrollController.hasClients && mounted) {
+                _scrollController.animateTo(
+                  _scrollController.position.maxScrollExtent,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                );
+              }
+            });
           });
         }
       });
@@ -500,6 +504,19 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           'status': 'sending',
           'type': messageType,
           'metadata': metadata,
+        });
+      });
+      
+      // Auto-scroll to new sent message - wait for multiple frames
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients && mounted) {
+            _scrollController.animateTo(
+              _scrollController.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          }
         });
       });
     }
