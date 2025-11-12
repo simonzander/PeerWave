@@ -120,10 +120,6 @@ class LogoutService {
               localStorage.remove('clientid');
               debugPrint('[LOGOUT] ✓ Removed deprecated localStorage key: clientid');
             }
-            if (localStorage.containsKey('email')) {
-              localStorage.remove('email');
-              debugPrint('[LOGOUT] ✓ Removed deprecated localStorage key: email');
-            }
             debugPrint('[LOGOUT] ✓ Cleaned up deprecated localStorage items');
           } catch (e) {
             debugPrint('[LOGOUT] ⚠ Error clearing localStorage: $e');

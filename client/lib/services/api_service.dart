@@ -229,8 +229,9 @@ class ApiService {
     String? type,
     String? defaultRoleId,
   }) async {
+    final url = ensureHttpPrefix(host);
     final response = await post(
-      '$host/client/channels',
+      '$url/client/channels',
       data: {
         'name': name,
         if (description != null) 'description': description,
@@ -258,8 +259,9 @@ class ApiService {
     String? description,
     bool? isPrivate,
   }) async {
+    final url = ensureHttpPrefix(host);
     final response = await dio.put(
-      '$host/client/channels/$channelId',
+      '$url/client/channels/$channelId',
       data: {
         if (name != null) 'name': name,
         if (description != null) 'description': description,
@@ -283,7 +285,8 @@ class ApiService {
   /// Delete a channel
   /// Automatically emits AppEvent.channelDeleted on success
   static Future<Response> deleteChannel(String host, String channelId) async {
-    final response = await delete('$host/client/channels/$channelId');
+    final url = ensureHttpPrefix(host);
+    final response = await delete('$url/client/channels/$channelId');
     
     // Emit event on success
     if (response.statusCode == 200 || response.statusCode == 204) {

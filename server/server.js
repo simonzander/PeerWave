@@ -293,13 +293,90 @@ io.sockets.on("connection", socket => {
 
   // 🚀 NEW: Client ready notification
   // Client signals that PreKeys are generated and listeners are registered
-  socket.on("clientReady", (data) => {
+  socket.on("clientReady", async (data) => {
     console.log("[SIGNAL SERVER] Client ready notification received:", data);
     socket.clientReady = true;
     console.log(`[SIGNAL SERVER] Socket ${socket.id} marked as ready for events`);
     
-    // Optionally send any pending messages that were queued
-    // (if you implement a pending message queue)
+    // ✅ Check for pending messages and notify client
+    try {
+      if (socket.handshake.session.uuid && socket.handshake.session.deviceId && socket.handshake.session.authenticated === true) {
+        const userId = socket.handshake.session.uuid;
+        const deviceId = socket.handshake.session.deviceId;
+        
+        // COUNT query (fast, even with thousands of messages)
+        const pendingCount = await Item.count({
+          where: {
+            receiver: userId,
+            deviceReceiver: deviceId
+          }
+        });
+        
+        if (pendingCount > 0) {
+          console.log(`[SIGNAL SERVER] ✉️  ${pendingCount} pending messages for ${userId}:${deviceId}`);
+          socket.emit("pendingMessagesAvailable", {
+            count: pendingCount,
+            timestamp: new Date().toISOString()
+          });
+        } else {
+          console.log(`[SIGNAL SERVER] ✓ No pending messages for ${userId}:${deviceId}`);
+        }
+      }
+    } catch (error) {
+      console.error('[SIGNAL SERVER] Error checking pending messages:', error);
+    }
+  });
+
+  // 🚀 NEW: Fetch pending messages with pagination
+  socket.on("fetchPendingMessages", async (data) => {
+    try {
+      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+        console.error('[SIGNAL SERVER] fetchPendingMessages blocked - not authenticated');
+        socket.emit("fetchPendingMessagesError", { error: 'Not authenticated' });
+        return;
+      }
+
+      const userId = socket.handshake.session.uuid;
+      const deviceId = socket.handshake.session.deviceId;
+      const { limit = 20, offset = 0 } = data;
+
+      console.log(`[SIGNAL SERVER] Fetching pending messages: userId=${userId}, deviceId=${deviceId}, limit=${limit}, offset=${offset}`);
+
+      // Fetch messages with pagination
+      const items = await Item.findAll({
+        where: {
+          receiver: userId,
+          deviceReceiver: deviceId
+        },
+        limit,
+        offset,
+        order: [['createdAt', 'ASC']] // Oldest first (chronological order)
+      });
+
+      const hasMore = items.length === limit;
+
+      console.log(`[SIGNAL SERVER] ✓ Found ${items.length} pending messages (hasMore: ${hasMore})`);
+
+      // Send response
+      socket.emit("pendingMessagesResponse", {
+        items: items.map(item => ({
+          sender: item.sender,
+          senderDeviceId: item.deviceSender,
+          recipient: item.receiver,
+          type: item.type,
+          payload: item.payload,
+          cipherType: item.cipherType,
+          itemId: item.itemId
+        })),
+        hasMore,
+        offset,
+        total: items.length
+      });
+
+    } catch (error) {
+      console.error('[SIGNAL SERVER] Error fetching pending messages:', error);
+      socket.emit("fetchPendingMessagesError", { error: error.message });
+    }
   });
 
   // Setup mediasoup signaling routes

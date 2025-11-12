@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/logout_service.dart';
 import '../theme/app_theme_constants.dart';
+import 'navigation_badge.dart';
 
 /// Navigation Sidebar for Desktop Layout
 /// 
@@ -82,7 +83,11 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
           
           // Activity Icon
           _buildIconButton(
-            icon: Icons.bolt,
+            badge: NavigationBadge(
+              icon: Icons.bolt,
+              type: NavigationBadgeType.activities,
+              selected: _selectedIndex == 0,
+            ),
             isSelected: _selectedIndex == 0,
             onTap: () => _onNavigationSelected(0),
             tooltip: 'Activity',
@@ -91,7 +96,11 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
           
           // People Icon
           _buildIconButton(
-            icon: Icons.people,
+            badge: NavigationBadge(
+              icon: Icons.people,
+              type: NavigationBadgeType.people,
+              selected: _selectedIndex == 1,
+            ),
             isSelected: _selectedIndex == 1,
             onTap: () => _onNavigationSelected(1),
             tooltip: 'People',
@@ -100,7 +109,11 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
           
           // Files Icon
           _buildIconButton(
-            icon: Icons.folder,
+            badge: NavigationBadge(
+              icon: Icons.folder,
+              type: NavigationBadgeType.files,
+              selected: _selectedIndex == 2,
+            ),
             isSelected: _selectedIndex == 2,
             onTap: () => _onNavigationSelected(2),
             tooltip: 'Files',
@@ -109,7 +122,11 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
           
           // Channels Icon
           _buildIconButton(
-            icon: Icons.tag,
+            badge: NavigationBadge(
+              icon: Icons.tag,
+              type: NavigationBadgeType.channels,
+              selected: _selectedIndex == 3,
+            ),
             isSelected: _selectedIndex == 3,
             onTap: () => _onNavigationSelected(3),
             tooltip: 'Channels',
@@ -118,7 +135,11 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
           
           // Messages Icon
           _buildIconButton(
-            icon: Icons.message,
+            badge: NavigationBadge(
+              icon: Icons.message,
+              type: NavigationBadgeType.messages,
+              selected: _selectedIndex == 4,
+            ),
             isSelected: _selectedIndex == 4,
             onTap: () => _onNavigationSelected(4),
             tooltip: 'Messages',
@@ -128,7 +149,11 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
           
           // Settings Icon at bottom
           _buildIconButton(
-            icon: Icons.settings,
+            badge: Icon(
+              Icons.settings,
+              color: AppThemeConstants.textSecondary,
+              size: 24,
+            ),
             isSelected: false,
             onTap: () => context.go('/app/settings'),
             tooltip: 'Settings',
@@ -137,7 +162,11 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
           
           // Logout Icon
           _buildIconButton(
-            icon: Icons.logout,
+            badge: Icon(
+              Icons.logout,
+              color: AppThemeConstants.textSecondary,
+              size: 24,
+            ),
             isSelected: false,
             onTap: () => LogoutService.instance.logout(context),
             tooltip: 'Logout',
@@ -150,7 +179,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
 
   /// Build icon button for sidebar
   Widget _buildIconButton({
-    required IconData icon,
+    required Widget badge,
     required bool isSelected,
     required VoidCallback onTap,
     required String tooltip,
@@ -174,13 +203,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
                 ? Border.all(color: colorScheme.primary, width: 2)
                 : null,
           ),
-          child: Icon(
-            icon,
-            color: isSelected 
-                ? colorScheme.primary
-                : AppThemeConstants.textSecondary,
-            size: 24,
-          ),
+          child: badge,
         ),
       ),
     );

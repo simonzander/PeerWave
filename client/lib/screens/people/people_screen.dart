@@ -62,29 +62,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
     super.dispose();
   }
 
-  /// Format message timestamp for display
-  String _formatMessageTime(String timestamp) {
-    try {
-      final dateTime = DateTime.parse(timestamp);
-      final now = DateTime.now();
-      final difference = now.difference(dateTime);
-      
-      if (difference.inMinutes < 1) {
-        return 'Just now';
-      } else if (difference.inMinutes < 60) {
-        return '${difference.inMinutes}m';
-      } else if (difference.inHours < 24) {
-        return '${difference.inHours}h';
-      } else if (difference.inDays < 7) {
-        return '${difference.inDays}d';
-      } else {
-        return DateFormat('MMM d').format(dateTime);
-      }
-    } catch (e) {
-      return '';
-    }
-  }
-
   /// Safe picture extraction from API response
   /// Handles String, Map, JSArray, and null values
   String _extractPictureData(dynamic picture) {
@@ -184,10 +161,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
                 }
               }
               
-              // Format timestamp
+              // Format timestamp - pass raw ISO timestamp for Timer-based formatting
               final timestamp = lastMsg['timestamp'];
               if (timestamp != null) {
-                lastMessageTime = _formatMessageTime(timestamp);
+                lastMessageTime = timestamp; // Raw ISO timestamp
               }
             }
           } catch (e) {
@@ -642,6 +619,67 @@ class _UserCard extends StatefulWidget {
 
 class _UserCardState extends State<_UserCard> {
   bool _isHovered = false;
+  Timer? _updateTimer;
+  String _formattedTime = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _updateFormattedTime();
+    // Update every minute
+    _updateTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) {
+        _updateFormattedTime();
+      }
+    });
+  }
+  
+  @override
+  void didUpdateWidget(_UserCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldTime = oldWidget.user['lastMessageTime'] as String? ?? '';
+    final newTime = widget.user['lastMessageTime'] as String? ?? '';
+    if (oldTime != newTime) {
+      _updateFormattedTime();
+    }
+  }
+  
+  @override
+  void dispose() {
+    _updateTimer?.cancel();
+    super.dispose();
+  }
+  
+  void _updateFormattedTime() {
+    final lastMessageTime = widget.user['lastMessageTime'] as String? ?? '';
+    setState(() {
+      _formattedTime = _formatRelativeTime(lastMessageTime);
+    });
+  }
+  
+  String _formatRelativeTime(String timestamp) {
+    if (timestamp.isEmpty) return '';
+    
+    try {
+      final messageTime = DateTime.parse(timestamp);
+      final now = DateTime.now();
+      final difference = now.difference(messageTime);
+      
+      if (difference.inMinutes < 1) {
+        return 'now';
+      } else if (difference.inMinutes < 60) {
+        return '${difference.inMinutes}m';
+      } else if (difference.inHours < 24) {
+        return '${difference.inHours}h';
+      } else if (difference.inDays < 7) {
+        return '${difference.inDays}d';
+      } else {
+        return DateFormat('MMM d').format(messageTime);
+      }
+    } catch (e) {
+      return '';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -654,7 +692,6 @@ class _UserCardState extends State<_UserCard> {
     
     // Recent section specific data
     final lastMessage = widget.user['lastMessage'] as String? ?? '';
-    final lastMessageTime = widget.user['lastMessageTime'] as String? ?? '';
     final hasLastMessage = widget.isRecentSection && lastMessage.isNotEmpty;
     
     return MouseRegion(
@@ -803,10 +840,10 @@ class _UserCardState extends State<_UserCard> {
                                   textAlign: TextAlign.center,
                                 ),
                               ),
-                              if (lastMessageTime.isNotEmpty) ...[
+                              if (_formattedTime.isNotEmpty) ...[
                                 const SizedBox(width: 4),
                                 Text(
-                                  ' • $lastMessageTime',
+                                  ' • $_formattedTime',
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: widget.colorScheme.onSurfaceVariant.withOpacity(0.7),

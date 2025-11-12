@@ -15,7 +15,8 @@ class ActivitiesService {
   static Future<List<Map<String, dynamic>>> getWebRTCChannelParticipants(String host) async {
     try {
       ApiService.init();
-      final resp = await ApiService.get('$host/client/channels?type=webrtc');
+      final hostUrl = ApiService.ensureHttpPrefix(host);
+      final resp = await ApiService.get('$hostUrl/client/channels?type=webrtc');
       
       if (resp.statusCode == 200) {
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
@@ -26,7 +27,7 @@ class ActivitiesService {
         for (final channel in channels) {
           // Get participants for each channel
           try {
-            final participantsResp = await ApiService.get('$host/client/channels/${channel['uuid']}/participants');
+            final participantsResp = await ApiService.get('$hostUrl/client/channels/${channel['uuid']}/participants');
             if (participantsResp.statusCode == 200) {
               final participantsData = participantsResp.data is String 
                   ? jsonDecode(participantsResp.data) 
@@ -173,7 +174,8 @@ class ActivitiesService {
     try {
       // Get list of Signal channels from API
       ApiService.init();
-      final resp = await ApiService.get('$host/client/channels?type=signal&limit=100');
+      final hostUrl = ApiService.ensureHttpPrefix(host);
+      final resp = await ApiService.get('$hostUrl/client/channels?type=signal&limit=100');
       
       if (resp.statusCode != 200) return [];
       

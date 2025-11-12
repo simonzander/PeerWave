@@ -32,6 +32,18 @@ enum AppEvent {
   
   /// Video conference state changed
   videoConferenceStateChanged,
+  
+  /// Sync started (pending messages)
+  syncStarted,
+  
+  /// Sync progress (pending messages)
+  syncProgress,
+  
+  /// Sync complete (pending messages)
+  syncComplete,
+  
+  /// Sync error (pending messages)
+  syncError,
 }
 
 /// Event Bus for decentralized communication between services and views

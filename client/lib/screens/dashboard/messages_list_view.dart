@@ -10,7 +10,6 @@ import '../../widgets/people_context_panel.dart';
 import '../../services/recent_conversations_service.dart';
 import '../../theme/app_theme_constants.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 
 /// Messages List View - Shows recent 1:1 conversations
 class MessagesListView extends StatefulWidget {
@@ -241,8 +240,8 @@ class _MessagesListViewState extends State<MessagesListView> {
             lastMessage = '${lastMessage.substring(0, 40)}...';
           }
           
-          // Format timestamp
-          lastMessageTime = _formatMessageTime(msg['timestamp'] as String?);
+          // Pass raw ISO timestamp (not formatted) so widgets can calculate relative time with Timer
+          lastMessageTime = msg['timestamp'] as String?;
         }
         
         peopleWithMessages.add({
@@ -266,31 +265,6 @@ class _MessagesListViewState extends State<MessagesListView> {
       setState(() {
         _isLoadingRecentPeople = false;
       });
-    }
-  }
-
-  /// Format message timestamp for context panel
-  String _formatMessageTime(String? timestamp) {
-    if (timestamp == null) return '';
-    
-    try {
-      final messageTime = DateTime.parse(timestamp);
-      final now = DateTime.now();
-      final difference = now.difference(messageTime);
-      
-      if (difference.inMinutes < 1) {
-        return 'now';
-      } else if (difference.inMinutes < 60) {
-        return '${difference.inMinutes}m';
-      } else if (difference.inHours < 24) {
-        return '${difference.inHours}h';
-      } else if (difference.inDays < 7) {
-        return '${difference.inDays}d';
-      } else {
-        return DateFormat('MMM d').format(messageTime);
-      }
-    } catch (e) {
-      return '';
     }
   }
 

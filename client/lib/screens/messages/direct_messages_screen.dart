@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -15,9 +16,6 @@ import '../../services/file_transfer/socket_file_client.dart';
 import '../../models/file_message.dart';
 import '../../extensions/snackbar_extensions.dart';
 import '../../providers/unread_messages_provider.dart';
-import '../../widgets/people_context_panel.dart';
-import '../../services/recent_conversations_service.dart';
-import 'package:intl/intl.dart';
 
 /// Whitelist of message types that should be displayed in UI
 const Set<String> DISPLAYABLE_MESSAGE_TYPES = {'message', 'file', 'image', 'voice'};
@@ -47,12 +45,6 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   bool _hasMoreMessages = true;
   bool _loadingMore = false;
   final ScrollController _scrollController = ScrollController();
-  
-  // Context panel state
-  List<Map<String, dynamic>> _recentPeople = [];
-  bool _isLoadingRecentPeople = false;
-  int _recentPeopleLimit = 10;
-  bool _hasMoreRecentPeople = true;
 
   @override
   void initState() {
@@ -106,7 +98,6 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   /// Initialize the direct messages screen
   Future<void> _initialize() async {
     await _loadMessages();
-    await _loadRecentPeople(); // Load recent people for context panel
     _setupReceiveItemCallbacks(); // ✅ Register granular callbacks
     _setupReceiptListeners();
     
@@ -120,6 +111,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         debugPrint('[DM_SCREEN] ⚠️ Error clearing unread count: $e');
       }
     }
+    
+    // 🚀 Send read receipts for all unread received messages
+    await _sendReadReceiptsForLoadedMessages();
     
     // Scroll to bottom after initial load
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -144,13 +138,18 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         debugPrint('[DM_SCREEN] ⚠️ Error updating status in SQLite: $e');
       }
       
-      setState(() {
-        final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
-        if (msgIndex != -1) {
-          debugPrint('[DM_SCREEN] ✓ Updated message status to delivered: $itemId');
-          _messages[msgIndex]['status'] = 'delivered';
-        } else {
-          debugPrint('[DM_SCREEN] ⚠ Message not found in list for delivery receipt: $itemId');
+      // Schedule setState for next frame to avoid layout conflicts
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
+            if (msgIndex != -1) {
+              debugPrint('[DM_SCREEN] ✓ Updated message status to delivered: $itemId');
+              _messages[msgIndex]['status'] = 'delivered';
+            } else {
+              debugPrint('[DM_SCREEN] ⚠ Message not found in list for delivery receipt: $itemId');
+            }
+          });
         }
       });
     });
@@ -173,16 +172,21 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         debugPrint('[DM_SCREEN] ⚠️ Error updating status in SQLite: $e');
       }
 
-      setState(() {
-        final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
-        if (msgIndex != -1) {
-          debugPrint('[DM_SCREEN] ✓ Updated message status to read: $itemId');
-          _messages[msgIndex]['status'] = 'read';
+      // Schedule setState for next frame to avoid layout conflicts
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
+            if (msgIndex != -1) {
+              debugPrint('[DM_SCREEN] ✓ Updated message status to read: $itemId');
+              _messages[msgIndex]['status'] = 'read';
 
-          // Delete message from server after read confirmation
-          SignalService.instance.deleteItemFromServer(itemId);
-        } else {
-          debugPrint('[DM_SCREEN] ⚠ Message not found in list for read receipt: $itemId');
+              // Delete message from server after read confirmation
+              SignalService.instance.deleteItemFromServer(itemId);
+            } else {
+              debugPrint('[DM_SCREEN] ⚠ Message not found in list for read receipt: $itemId');
+            }
+          });
         }
       });
     });
@@ -208,72 +212,75 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     
     debugPrint('[DM_SCREEN] New message received via callback: ${item['itemId']}');
     
-    // Message is already stored in SQLite by SignalService
-    // Only update UI
-    setState(() {
-      final itemId = item['itemId'];
-      final exists = _messages.any((msg) => msg['itemId'] == itemId);
+    final itemId = item['itemId'];
+    final exists = _messages.any((msg) => msg['itemId'] == itemId);
+    
+    if (!exists) {
+      // New message - append to list
+      final isLocalSent = item['isLocalSent'] == true;
       
-      if (!exists) {
-        final isLocalSent = item['isLocalSent'] == true;
-        
-        // Add message to local list
-        _messages.add({
-          'itemId': item['itemId'],
-          'sender': item['sender'],
-          'senderDeviceId': item['senderDeviceId'],
-          'senderDisplayName': isLocalSent ? 'You' : widget.recipientDisplayName,
-          'text': item['message'],
-          'message': item['message'],
-          'payload': item['message'],
-          'time': item['timestamp'] ?? DateTime.now().toIso8601String(),
-          'isLocalSent': isLocalSent,
-          'status': isLocalSent ? (item['status'] ?? 'sending') : null,
-          'type': item['type'],
-          'metadata': item['metadata'],
-        });
-        
-        // Sort by time
-        _messages.sort((a, b) {
-          final timeA = DateTime.tryParse(a['time'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final timeB = DateTime.tryParse(b['time'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-          return timeA.compareTo(timeB);
-        });
-        
-        debugPrint('[DM_SCREEN] ✓ Message added to UI list');
-      } else {
-        // Message already in list - check if this is a status update
-        if (item['status'] != null) {
-          final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
-          if (msgIndex != -1) {
-            _messages[msgIndex]['status'] = item['status'];
-            debugPrint('[DM_SCREEN] ✓ Updated message status: ${item['status']}');
+      final newMessage = {
+        'itemId': item['itemId'],
+        'sender': item['sender'],
+        'senderDeviceId': item['senderDeviceId'],
+        'senderDisplayName': isLocalSent ? 'You' : widget.recipientDisplayName,
+        'text': item['message'],
+        'message': item['message'],
+        'payload': item['message'],
+        'time': item['timestamp'] ?? DateTime.now().toIso8601String(),
+        'isLocalSent': isLocalSent,
+        'status': isLocalSent ? (item['status'] ?? 'sending') : null,
+        'type': item['type'],
+        'metadata': item['metadata'],
+      };
+      
+      // ✅ OPTIMIZED: Schedule setState for next frame to avoid layout conflicts
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _messages.add(newMessage);
+          });
+          
+          debugPrint('[DM_SCREEN] ✓ Message appended to UI list');
+          
+          // Send read receipt if this is a received message
+          if (!isLocalSent && item['sender'] == widget.recipientUuid) {
+            final senderDeviceId = item['senderDeviceId'] is int
+                ? item['senderDeviceId'] as int
+                : int.parse(item['senderDeviceId'].toString());
+            _sendReadReceipt(item['itemId'], item['sender'], senderDeviceId);
           }
-        } else {
-          debugPrint('[DM_SCREEN] ⚠ Message already in list (duplicate prevention)');
+          
+          // Auto-scroll to new message
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_scrollController.hasClients) {
+              _scrollController.animateTo(
+                _scrollController.position.maxScrollExtent,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              );
+            }
+          });
         }
+      });
+    } else {
+      // Message already exists - check if this is a status update
+      if (item['status'] != null) {
+        final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
+        if (msgIndex != -1) {
+          SchedulerBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {
+                _messages[msgIndex]['status'] = item['status'];
+              });
+              debugPrint('[DM_SCREEN] ✓ Updated message status: ${item['status']}');
+            }
+          });
+        }
+      } else {
+        debugPrint('[DM_SCREEN] ⚠ Message already in list (duplicate prevention)');
       }
-    });
-    
-    // Send read receipt if this is a received message
-    final isLocalSent = item['isLocalSent'] == true;
-    if (!isLocalSent && item['sender'] == widget.recipientUuid) {
-      final senderDeviceId = item['senderDeviceId'] is int
-          ? item['senderDeviceId'] as int
-          : int.parse(item['senderDeviceId'].toString());
-      _sendReadReceipt(item['itemId'], item['sender'], senderDeviceId);
     }
-    
-    // Auto-scroll to new message
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
   }
 
   Future<void> _sendReadReceipt(String itemId, String sender, int senderDeviceId) async {
@@ -314,122 +321,52 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
   }
 
-  /// Load recent conversation partners for context panel
-  Future<void> _loadRecentPeople() async {
-    if (_isLoadingRecentPeople) return;
-    
-    setState(() {
-      _isLoadingRecentPeople = true;
-    });
-
+  /// Send read receipts for all loaded messages that haven't been marked as read
+  Future<void> _sendReadReceiptsForLoadedMessages() async {
     try {
-      // Load from RecentConversationsService with SQLite + profiles
-      final allConversations = await RecentConversationsService.getRecentConversations();
+      debugPrint('[DM_SCREEN] 🔍 Checking loaded messages for unsent read receipts...');
       
-      // Apply limit
-      final conversations = allConversations.take(_recentPeopleLimit).toList();
+      // Filter received messages (not sent by me) from this conversation
+      final receivedMessages = _messages.where((msg) => 
+        msg['isLocalSent'] != true && 
+        msg['sender'] == widget.recipientUuid
+      ).toList();
       
-      // Load last messages from SQLite
-      final messageStore = await SqliteMessageStore.getInstance();
-      final List<Map<String, dynamic>> peopleWithMessages = [];
+      debugPrint('[DM_SCREEN] Found ${receivedMessages.length} received messages to check');
       
-      for (final conv in conversations) {
-        final userId = conv['uuid'] as String;
+      int sentCount = 0;
+      for (final msg in receivedMessages) {
+        final itemId = msg['itemId'] as String?;
+        final sender = msg['sender'] as String?;
+        final senderDeviceId = msg['senderDeviceId'];
         
-        // Get last message
-        final messages = await messageStore.getMessagesFromConversation(
-          userId,
-          limit: 1,
-          offset: 0,
-          types: ['message', 'file', 'image', 'voice'],
-        );
-        
-        String? lastMessage;
-        String? lastMessageTime;
-        
-        if (messages.isNotEmpty) {
-          final msg = messages.first;
-          final messageText = msg['message'] as String?;
-          final messageType = msg['type'] as String?;
-          
-          // Format message preview
-          if (messageType == 'file') {
-            lastMessage = '📎 File';
-          } else if (messageType == 'image') {
-            lastMessage = '🖼️ Image';
-          } else if (messageType == 'voice') {
-            lastMessage = '🎤 Voice';
-          } else {
-            lastMessage = messageText;
-          }
-          
-          // Truncate if too long
-          if (lastMessage != null && lastMessage.length > 40) {
-            lastMessage = '${lastMessage.substring(0, 40)}...';
-          }
-          
-          // Format timestamp
-          lastMessageTime = _formatMessageTime(msg['timestamp'] as String?);
+        if (itemId == null || sender == null || senderDeviceId == null) {
+          continue;
         }
         
-        peopleWithMessages.add({
-          'uuid': userId,
-          'displayName': conv['displayName'],
-          'username': userId, // Use userId as username fallback
-          'profilePicture': conv['picture'],
-          'lastMessage': lastMessage,
-          'lastMessageTime': lastMessageTime,
-        });
+        // Check if read receipt was already sent
+        final messageStore = await SqliteMessageStore.getInstance();
+        final alreadySent = await messageStore.hasReadReceiptBeenSent(itemId);
+        
+        if (!alreadySent) {
+          // Send read receipt
+          final deviceId = senderDeviceId is int
+              ? senderDeviceId
+              : int.parse(senderDeviceId.toString());
+          
+          await _sendReadReceipt(itemId, sender, deviceId);
+          sentCount++;
+        }
       }
       
-      setState(() {
-        _recentPeople = peopleWithMessages;
-        _isLoadingRecentPeople = false;
-        _hasMoreRecentPeople = allConversations.length > _recentPeopleLimit;
-      });
-      
-    } catch (e) {
-      debugPrint('[DM_SCREEN] Error loading recent people: $e');
-      setState(() {
-        _isLoadingRecentPeople = false;
-      });
-    }
-  }
-
-  /// Format message timestamp
-  String _formatMessageTime(String? timestamp) {
-    if (timestamp == null) return '';
-    
-    try {
-      final messageTime = DateTime.parse(timestamp);
-      final now = DateTime.now();
-      final difference = now.difference(messageTime);
-      
-      if (difference.inMinutes < 1) {
-        return 'now';
-      } else if (difference.inMinutes < 60) {
-        return '${difference.inMinutes}m';
-      } else if (difference.inHours < 24) {
-        return '${difference.inHours}h';
-      } else if (difference.inDays < 7) {
-        return '${difference.inDays}d';
+      if (sentCount > 0) {
+        debugPrint('[DM_SCREEN] ✓ Sent $sentCount read receipts for previously loaded messages');
       } else {
-        return DateFormat('MMM d').format(messageTime);
+        debugPrint('[DM_SCREEN] ✓ All loaded messages already marked as read');
       }
     } catch (e) {
-      return '';
+      debugPrint('[DM_SCREEN] Error sending read receipts for loaded messages: $e');
     }
-  }
-
-  /// Load more recent people (incremental)
-  Future<void> _loadMoreRecentPeople() async {
-    if (_isLoadingRecentPeople || !_hasMoreRecentPeople) return;
-    
-    setState(() {
-      _recentPeopleLimit += 10;
-    });
-    
-    await _loadRecentPeople();
   }
 
   Future<void> _loadMessages({bool loadMore = false}) async {
@@ -481,19 +418,24 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       // Reverse messages since DB returns DESC (newest first), but UI needs ASC (oldest first)
       final reversedMessages = uiMessages.reversed.toList();
       
-      setState(() {
-        if (loadMore) {
-          // Prepend older messages (already in correct order after reversal)
-          _messages.insertAll(0, reversedMessages);
-          _messageOffset += messages.length;
-        } else {
-          // Initial load
-          _messages = reversedMessages;
-          _messageOffset = messages.length;
+      // Schedule setState for next frame to avoid layout conflicts during scroll
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            if (loadMore) {
+              // Prepend older messages (already in correct order after reversal)
+              _messages.insertAll(0, reversedMessages);
+              _messageOffset += messages.length;
+            } else {
+              // Initial load
+              _messages = reversedMessages;
+              _messageOffset = messages.length;
+            }
+            _hasMoreMessages = messages.length == 20;
+            _loading = false;
+            _loadingMore = false;
+          });
         }
-        _hasMoreMessages = messages.length == 20;
-        _loading = false;
-        _loadingMore = false;
       });
       
       debugPrint('[DM_SCREEN] ✓ Messages loaded successfully');
@@ -502,10 +444,15 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       debugPrint('[DM_SCREEN] ❌ Error loading messages: $e');
       debugPrint('[DM_SCREEN] Stack trace: $stackTrace');
       
-      setState(() {
-        _error = 'Error loading messages: $e';
-        _loading = false;
-        _loadingMore = false;
+      // Schedule setState for next frame to avoid layout conflicts
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _error = 'Error loading messages: $e';
+            _loading = false;
+            _loadingMore = false;
+          });
+        }
       });
     }
   }
@@ -670,94 +617,66 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         elevation: 1,
       ),
       backgroundColor: colorScheme.surface,
-      body: Row(
+      body: Column(
         children: [
-          // Context panel (recent conversations) - LEFT SIDE
-          PeopleContextPanel(
-            host: widget.host,
-            recentPeople: _recentPeople,
-            favoritePeople: const [], // No favorites for now
-            onPersonTap: (uuid, displayName) {
-              // Navigate to different conversation
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (context) => DirectMessagesScreen(
-                    host: widget.host,
-                    recipientUuid: uuid,
-                    recipientDisplayName: displayName,
-                  ),
-                ),
-              );
-            },
-            isLoading: _isLoadingRecentPeople,
-            onLoadMore: _loadMoreRecentPeople,
-            hasMore: _hasMoreRecentPeople,
-          ),
-          
-          // Main chat area - RIGHT SIDE
           Expanded(
-            child: Column(
-              children: [
-                Expanded(
-                  child: _loading
-                      ? Center(
-                          child: CircularProgressIndicator(
-                            color: colorScheme.primary,
+            child: _loading
+                ? Center(
+                    child: CircularProgressIndicator(
+                      color: colorScheme.primary,
+                    ),
+                  )
+                : _error != null
+                    ? _buildErrorState()
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (_hasMoreMessages)
+                            Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: _loadingMore
+                                    ? const SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      )
+                                    : ActionChip(
+                                        avatar: const Icon(Icons.arrow_upward, size: 18),
+                                        label: const Text('Load older messages'),
+                                        onPressed: () => _loadMessages(loadMore: true),
+                                        backgroundColor: colorScheme.surfaceContainerHighest,
+                                      ),
+                              ),
                           ),
-                        )
-                      : _error != null
-                          ? _buildErrorState()
-                          : Column(
-                              children: [
-                                if (_hasMoreMessages)
-                                  Center(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: _loadingMore
-                                          ? const SizedBox(
-                                              width: 24,
-                                              height: 24,
-                                              child: CircularProgressIndicator(strokeWidth: 2),
-                                            )
-                                          : ActionChip(
-                                              avatar: const Icon(Icons.arrow_upward, size: 18),
-                                              label: const Text('Load older messages'),
-                                              onPressed: () => _loadMessages(loadMore: true),
-                                              backgroundColor: colorScheme.surfaceContainerHighest,
-                                            ),
-                                    ),
-                                  ),
-                                Expanded(
-                                  child: MessageList(
-                                    key: ValueKey(_messages.length),
-                                    messages: _messages,
-                                    onFileDownload: _handleFileDownload,
-                                    scrollController: _scrollController,
-                                  ),
-                                ),
-                              ],
+                          Expanded(
+                            child: MessageList(
+                              key: ValueKey(_messages.length),
+                              messages: _messages,
+                              onFileDownload: _handleFileDownload,
+                              scrollController: _scrollController,
                             ),
-                ),
-                EnhancedMessageInput(
-                  onSendMessage: (message, {type, metadata}) {
-                    _sendMessageEnhanced(message, type: type, metadata: metadata);
-                  },
-                  onFileShare: (itemId) {
-                    // Handle P2P file share completion
-                    debugPrint('[DM_SCREEN] File shared: $itemId');
-                  },
-                  availableUsers: [
-                    {
-                      'userId': widget.recipientUuid,
-                      'displayName': widget.recipientDisplayName,
-                      'atName': widget.recipientDisplayName.toLowerCase().replaceAll(' ', ''),
-                    }
-                  ],
-                  isGroupChat: false,
-                  recipientUserId: widget.recipientUuid, // For P2P file sharing
-                ),
-              ],
-            ),
+                          ),
+                        ],
+                      ),
+          ),
+          EnhancedMessageInput(
+            onSendMessage: (message, {type, metadata}) {
+              _sendMessageEnhanced(message, type: type, metadata: metadata);
+            },
+            onFileShare: (itemId) {
+              // Handle P2P file share completion
+              debugPrint('[DM_SCREEN] File shared: $itemId');
+            },
+            availableUsers: [
+              {
+                'userId': widget.recipientUuid,
+                'displayName': widget.recipientDisplayName,
+                'atName': widget.recipientDisplayName.toLowerCase().replaceAll(' ', ''),
+              }
+            ],
+            isGroupChat: false,
+            recipientUserId: widget.recipientUuid, // For P2P file sharing
           ),
         ],
       ),

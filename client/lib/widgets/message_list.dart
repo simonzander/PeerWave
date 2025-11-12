@@ -199,6 +199,7 @@ class MessageList extends StatelessWidget {
         final showDivider = _needsDateDivider(previousMsgTime, msgTime);
 
         return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Date divider
             if (showDivider)

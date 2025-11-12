@@ -1,6 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme_constants.dart';
 import '../widgets/user_avatar.dart';
+import '../providers/unread_messages_provider.dart';
 
 /// People Context Panel - Shows recent conversations and quick access
 /// 
@@ -146,16 +150,20 @@ class PeopleContextPanel extends StatelessWidget {
     bool showStar = false,
     bool isActive = false,
   }) {
-    final displayName = person['displayName'] as String? ?? 'Unknown';
-    final atName = person['atName'] as String? ?? '';
-    final picture = person['picture'] as String? ?? '';
-    final isOnline = person['online'] as bool? ?? false;
-    final userId = person['uuid'] as String? ?? '';
-    final lastMessage = person['lastMessage'] as String? ?? '';
-    final lastMessageTime = person['lastMessageTime'] as String? ?? '';
-    final unreadCount = person['unreadCount'] as int? ?? 0;
+    return Consumer<UnreadMessagesProvider>(
+      builder: (context, unreadProvider, child) {
+        final displayName = person['displayName'] as String? ?? 'Unknown';
+        final atName = person['atName'] as String? ?? '';
+        final picture = person['picture'] as String? ?? '';
+        final isOnline = person['online'] as bool? ?? false;
+        final userId = person['uuid'] as String? ?? '';
+        final lastMessage = person['lastMessage'] as String? ?? '';
+        final lastMessageTime = person['lastMessageTime'] as String? ?? '';
+        
+        // Get unread count from provider instead of static data
+        final unreadCount = unreadProvider.directMessageUnreadCounts[userId] ?? 0;
 
-    return MouseRegion(
+        return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: Material(
         color: isActive 
@@ -305,22 +313,18 @@ class PeopleContextPanel extends StatelessWidget {
                 if (lastMessageTime.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(left: 8),
-                    child: Text(
-                      lastMessageTime,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppThemeConstants.textSecondary.withOpacity(0.7),
-                      ),
-                    ),
+                    child: _RelativeTimeWidget(timestamp: lastMessageTime),
                   ),
               ],
             ),
           ),
         ),
       ),
+        );
+      },
     );
   }
-
+  
   Widget _buildEmptyState() {
     return Padding(
       padding: const EdgeInsets.all(32.0),
@@ -349,3 +353,84 @@ class PeopleContextPanel extends StatelessWidget {
   }
 }
 
+/// Widget to display relative time that auto-updates
+class _RelativeTimeWidget extends StatefulWidget {
+  final String timestamp;
+  
+  const _RelativeTimeWidget({required this.timestamp});
+  
+  @override
+  State<_RelativeTimeWidget> createState() => _RelativeTimeWidgetState();
+}
+
+class _RelativeTimeWidgetState extends State<_RelativeTimeWidget> {
+  late Timer _timer;
+  String _formattedTime = '';
+  
+  @override
+  void initState() {
+    super.initState();
+    _updateFormattedTime();
+    // Update every minute
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) {
+        _updateFormattedTime();
+      }
+    });
+  }
+  
+  @override
+  void didUpdateWidget(_RelativeTimeWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.timestamp != widget.timestamp) {
+      _updateFormattedTime();
+    }
+  }
+  
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+  
+  void _updateFormattedTime() {
+    setState(() {
+      _formattedTime = _formatRelativeTime(widget.timestamp);
+    });
+  }
+  
+  String _formatRelativeTime(String timestamp) {
+    if (timestamp.isEmpty) return '';
+    
+    try {
+      final messageTime = DateTime.parse(timestamp);
+      final now = DateTime.now();
+      final difference = now.difference(messageTime);
+      
+      if (difference.inMinutes < 1) {
+        return 'now';
+      } else if (difference.inMinutes < 60) {
+        return '${difference.inMinutes}m';
+      } else if (difference.inHours < 24) {
+        return '${difference.inHours}h';
+      } else if (difference.inDays < 7) {
+        return '${difference.inDays}d';
+      } else {
+        return DateFormat('MMM d').format(messageTime);
+      }
+    } catch (e) {
+      return '';
+    }
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      _formattedTime,
+      style: TextStyle(
+        fontSize: 11,
+        color: AppThemeConstants.textSecondary.withOpacity(0.7),
+      ),
+    );
+  }
+}

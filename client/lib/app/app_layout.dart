@@ -6,6 +6,7 @@ import '../widgets/navigation_sidebar.dart';
 import '../widgets/adaptive/adaptive_scaffold.dart';
 import '../widgets/theme_widgets.dart';
 import '../widgets/navigation_badge.dart';
+import '../widgets/sync_progress_banner.dart';
 import '../services/logout_service.dart';
 import '../config/layout_config.dart';
 import 'package:go_router/go_router.dart';
@@ -333,9 +334,19 @@ class _AppLayoutState extends State<AppLayout> {
               // Navigation Sidebar (60px)
               const NavigationSidebar(),
               
-              // Content (Views handle their own Context Panel + Main Content)
+              // Content with Sync Banner
               Expanded(
-                child: widget.child ?? const DashboardPage(),
+                child: Column(
+                  children: [
+                    // 🚀 Sync Progress Banner
+                    const SyncProgressBanner(),
+                    
+                    // Main Content (Views handle their own Context Panel + Main Content)
+                    Expanded(
+                      child: widget.child ?? const DashboardPage(),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -359,7 +370,17 @@ class _AppLayoutState extends State<AppLayout> {
           ),
         ],
         drawer: _buildMobileDrawer(context),
-        body: widget.child ?? const DashboardPage(),
+        body: Column(
+          children: [
+            // 🚀 Sync Progress Banner
+            const SyncProgressBanner(),
+            
+            // Main Content
+            Expanded(
+              child: widget.child ?? const DashboardPage(),
+            ),
+          ],
+        ),
       );
     } else {
       // Global Scaffold for native
@@ -376,7 +397,17 @@ class _AppLayoutState extends State<AppLayout> {
                 ),
               ),
             Expanded(
-              child: widget.child ?? const DashboardPage(),
+              child: Column(
+                children: [
+                  // 🚀 Sync Progress Banner
+                  const SyncProgressBanner(),
+                  
+                  // Main Content
+                  Expanded(
+                    child: widget.child ?? const DashboardPage(),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

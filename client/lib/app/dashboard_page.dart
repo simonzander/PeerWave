@@ -243,7 +243,7 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<void> _loadChannels() async {
     try {
       final host = GoRouterState.of(context).extra as Map?;
-      final hostUrl = host?['host'] as String? ?? '';
+      final hostUrl = ApiService.ensureHttpPrefix(host?['host'] as String? ?? '');
       
       debugPrint('[DASHBOARD] Loading channels from: $hostUrl/client/channels?limit=20');
       ApiService.init();

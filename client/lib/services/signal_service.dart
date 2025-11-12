@@ -206,6 +206,120 @@ class SignalService {
     debugPrint('[SIGNAL SERVICE] Offline queue processing complete');
   }
 
+  /// 🚀 Handle pending messages notification from server
+  void _handlePendingMessagesAvailable(Map<String, dynamic> data) {
+    final count = data['count'] as int;
+    final timestamp = data['timestamp'] as String?;
+    
+    debugPrint('[SIGNAL SERVICE] 📬 $count pending messages available (timestamp: $timestamp)');
+    
+    // Start background sync automatically
+    _syncPendingMessages(count);
+  }
+
+  /// 🚀 Sync pending messages from server with pagination
+  Future<void> _syncPendingMessages(int totalCount) async {
+    debugPrint('[SIGNAL SERVICE] 🔄 Starting sync of $totalCount pending messages');
+    
+    int offset = 0;
+    int synced = 0;
+    const batchSize = 20;
+    bool hasMore = true;
+    
+    // Emit sync started event
+    EventBus.instance.emit(AppEvent.syncStarted, {
+      'total': totalCount,
+    });
+    
+    while (hasMore && synced < totalCount) {
+      try {
+        debugPrint('[SIGNAL SERVICE] Requesting batch: offset=$offset, limit=$batchSize');
+        
+        // Request batch from server
+        SocketService().emit('fetchPendingMessages', {
+          'limit': batchSize,
+          'offset': offset,
+        });
+        
+        // Wait for response (we'll handle it in _handlePendingMessagesResponse)
+        // The response handler will process messages and update counters
+        
+        // For now, we need to track this sync operation
+        // We'll use a simple flag to know when a batch is complete
+        await Future.delayed(Duration(milliseconds: 500)); // Give server time to respond
+        
+        break; // Exit for now - we'll improve this with proper async handling
+        
+      } catch (e) {
+        debugPrint('[SIGNAL SERVICE] ❌ Batch sync error: $e');
+        EventBus.instance.emit(AppEvent.syncError, {
+          'error': e.toString(),
+          'synced': synced,
+          'total': totalCount,
+        });
+        break;
+      }
+    }
+  }
+
+  /// 🚀 Handle pending messages response from server
+  Future<void> _handlePendingMessagesResponse(Map<String, dynamic> data) async {
+    try {
+      final items = data['items'] as List;
+      final hasMore = data['hasMore'] as bool;
+      final offset = data['offset'] as int;
+      final batchTotal = data['total'] as int;
+      
+      debugPrint('[SIGNAL SERVICE] 📨 Received batch: ${items.length} messages, hasMore=$hasMore, offset=$offset');
+      
+      int processed = 0;
+      int failed = 0;
+      
+      // Process each message in the batch
+      for (final item in items) {
+        try {
+          await receiveItem(item);
+          processed++;
+          
+          // Emit progress event for UI
+          EventBus.instance.emit(AppEvent.syncProgress, {
+            'current': offset + processed,
+            'total': offset + batchTotal, // Approximate total
+          });
+          
+        } catch (e) {
+          debugPrint('[SIGNAL SERVICE] ⚠️ Failed to process pending message: $e');
+          failed++;
+          // Continue with next message
+        }
+      }
+      
+      debugPrint('[SIGNAL SERVICE] ✓ Batch processed: $processed succeeded, $failed failed');
+      
+      // If there are more messages, fetch next batch
+      if (hasMore) {
+        debugPrint('[SIGNAL SERVICE] Fetching next batch...');
+        await Future.delayed(Duration(milliseconds: 100)); // Rate limiting
+        
+        SocketService().emit('fetchPendingMessages', {
+          'limit': 20,
+          'offset': offset + items.length,
+        });
+      } else {
+        debugPrint('[SIGNAL SERVICE] 🎉 Sync complete!');
+        EventBus.instance.emit(AppEvent.syncComplete, {
+          'processed': processed,
+        });
+      }
+      
+    } catch (e) {
+      debugPrint('[SIGNAL SERVICE] ❌ Error handling pending messages response: $e');
+      EventBus.instance.emit(AppEvent.syncError, {
+        'error': e.toString(),
+      });
+    }
+  }
+
   Future<void> test() async {
     debugPrint("SignalService test method called");
     final AliceIdentityKeyPair = generateIdentityKeyPair();
@@ -748,6 +862,21 @@ class SignalService {
       _handleGroupMessageReadReceipt(data);
     });
 
+    // 🚀 NEW: Pending messages notification from server
+    SocketService().registerListener("pendingMessagesAvailable", (data) {
+      _handlePendingMessagesAvailable(data);
+    });
+
+    // 🚀 NEW: Pending messages response from server
+    SocketService().registerListener("pendingMessagesResponse", (data) {
+      _handlePendingMessagesResponse(data);
+    });
+
+    // 🚀 NEW: Pending messages fetch error
+    SocketService().registerListener("fetchPendingMessagesError", (data) {
+      debugPrint('[SIGNAL SERVICE] ❌ Error fetching pending messages: ${data['error']}');
+    });
+
     SocketService().registerListener("signalStatusResponse", (status) async {
       await _ensureSignalKeysPresent(status);
       
@@ -1206,7 +1335,7 @@ class SignalService {
   /// Das Backend filtert bereits und sendet nur Nachrichten, die für DIESES Gerät
   /// (deviceId) verschlüsselt wurden. Die Nachricht wird dann mit dem Session-Schlüssel
   /// dieses Geräts entschlüsselt.
-  void receiveItem(data) async {
+  Future<void> receiveItem(data) async {
   debugPrint("[SIGNAL SERVICE] ===============================================");
   debugPrint("[SIGNAL SERVICE] receiveItem called for this device");
   debugPrint("[SIGNAL SERVICE] ===============================================");
@@ -1217,25 +1346,30 @@ class SignalService {
   final cipherType = data['cipherType'];
   final itemId = data['itemId'];
 
-  // CRITICAL: Delete from server FIRST to prevent re-delivery on reconnect
-  // Even if decryption fails, we don't want to process the same message twice
-  deleteItemFromServer(itemId);
-
   // Use decryptItemFromData to get caching + IndexedDB storage
   // This ensures real-time messages are also persisted locally
   String message;
   try {
     message = await decryptItemFromData(data);
+    
+    // ✅ Delete from server AFTER successful decryption
+    deleteItemFromServer(itemId);
+    debugPrint("[SIGNAL SERVICE] ✓ Message decrypted and deleted from server: $itemId");
+    
   } catch (e) {
     debugPrint("[SIGNAL SERVICE] ✗ Decryption error: $e");
+    
     // If it's a DuplicateMessageException, the message was already processed
-    // Just skip it - server already deleted above
     if (e.toString().contains('DuplicateMessageException')) {
-      debugPrint("[SIGNAL SERVICE] ⚠️ Duplicate message detected (already processed) - skipping");
+      debugPrint("[SIGNAL SERVICE] ⚠️ Duplicate message detected (already processed)");
+      // Still delete from server to clean up
+      deleteItemFromServer(itemId);
       return;
     }
-    // For other errors, also skip
-    debugPrint("[SIGNAL SERVICE] ⚠️ Decryption failed - message already deleted from server");
+    
+    // For other errors, also delete from server to prevent stuck messages
+    debugPrint("[SIGNAL SERVICE] ⚠️ Decryption failed - deleting from server to prevent stuck message");
+    deleteItemFromServer(itemId);
     return;
   }
 
@@ -1440,10 +1574,7 @@ void deleteGroupItem(String itemId, String channelId) async {
 
   Future<List<Map<String, dynamic>>> _fetchPreKeyBundleForUserInternal(String userId) async {
     final apiServer = await loadWebApiServer();
-    String urlString = apiServer ?? '';
-    if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
-      urlString = 'https://$urlString';
-    }
+    final urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
     final response = await ApiService.get('$urlString/signal/prekey_bundle/$userId');
     debugPrint('[DEBUG] response.statusCode: \\${response.statusCode}');
     debugPrint('[DEBUG] response.data: \\${response.data}');
@@ -2441,8 +2572,10 @@ Future<String> decryptItem({
   /// Request sender key from a group member
   Future<void> requestSenderKey(String groupId, String userId, int deviceId) async {
     try {
+      final apiServer = await loadWebApiServer();
+      final urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
       await ApiService.post(
-        '/channels/$groupId/request-sender-key',
+        '$urlString/channels/$groupId/request-sender-key',
         data: {
           'requesterId': _currentUserId,
           'requesterDeviceId': _currentDeviceId,
@@ -2906,8 +3039,10 @@ Future<String> decryptItem({
       }
       
       // Load from server via REST API
+      final apiServer = await loadWebApiServer();
+      final urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
       final response = await ApiService.get(
-        '/api/sender-keys/$channelId/$userId/$deviceId'
+        '$urlString/api/sender-keys/$channelId/$userId/$deviceId'
       );
       
       if (response.statusCode == 200 && response.data['success'] == true) {
@@ -2956,7 +3091,9 @@ Future<String> decryptItem({
     try {
       debugPrint('[SIGNAL_SERVICE] Loading all sender keys for channel $channelId');
       
-      final response = await ApiService.get('/api/sender-keys/$channelId');
+      final apiServer = await loadWebApiServer();
+      final urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
+      final response = await ApiService.get('$urlString/api/sender-keys/$channelId');
       
       if (response.statusCode == 200 && response.data['success'] == true) {
         final senderKeysData = response.data['senderKeys'];
@@ -3048,8 +3185,10 @@ Future<String> decryptItem({
       final senderKeyBase64 = base64Encode(distributionMessage);
       
       // Upload to server
+      final apiServer = await loadWebApiServer();
+      final urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
       final response = await ApiService.post(
-        '/api/sender-keys/$channelId',
+        '$urlString/api/sender-keys/$channelId',
         data: {
           'senderKey': senderKeyBase64,
           'deviceId': _currentDeviceId,

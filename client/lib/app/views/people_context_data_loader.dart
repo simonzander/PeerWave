@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:intl/intl.dart';
 import '../../services/recent_conversations_service.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/storage/sqlite_message_store.dart';
@@ -60,10 +59,10 @@ class PeopleContextDataLoader {
               // Format message preview
               lastMessage = formatMessagePreview(msgType, lastMsg['message']);
               
-              // Format timestamp
+              // Pass raw ISO timestamp (not formatted) for Timer-based relative time display
               final timestamp = lastMsg['timestamp'];
               if (timestamp != null) {
-                lastMessageTime = formatMessageTime(timestamp);
+                lastMessageTime = timestamp; // Raw ISO timestamp
               }
             }
             
@@ -129,29 +128,6 @@ class PeopleContextDataLoader {
           return '${message.substring(0, 50)}...';
         }
         return message;
-    }
-  }
-
-  /// Format message timestamp for display
-  static String formatMessageTime(String timestamp) {
-    try {
-      final dateTime = DateTime.parse(timestamp);
-      final now = DateTime.now();
-      final difference = now.difference(dateTime);
-      
-      if (difference.inMinutes < 1) {
-        return 'Just now';
-      } else if (difference.inMinutes < 60) {
-        return '${difference.inMinutes}m';
-      } else if (difference.inHours < 24) {
-        return '${difference.inHours}h';
-      } else if (difference.inDays < 7) {
-        return '${difference.inDays}d';
-      } else {
-        return DateFormat('MMM d').format(dateTime);
-      }
-    } catch (e) {
-      return '';
     }
   }
 }
