@@ -4,13 +4,14 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'file_message_widget.dart';
 import 'user_avatar.dart';
+import 'user_profile_card_overlay.dart';
 import 'voice_message_player.dart';
 import '../models/file_message.dart';
 import 'dart:convert';
 
 /// Reusable widget for displaying a list of messages
 /// Works for both Direct Messages and Group Chats
-class MessageList extends StatelessWidget {
+class MessageList extends StatefulWidget {
   final List<Map<String, dynamic>> messages;
   final void Function(FileMessage)? onFileDownload;
   final ScrollController? scrollController;
@@ -21,6 +22,56 @@ class MessageList extends StatelessWidget {
     this.onFileDownload,
     this.scrollController,
   });
+
+  @override
+  State<MessageList> createState() => _MessageListState();
+}
+
+class _MessageListState extends State<MessageList> {
+  OverlayEntry? _profileCardOverlay;
+  
+  @override
+  void dispose() {
+    _profileCardOverlay?.remove();
+    super.dispose();
+  }
+  
+  void _showProfileCard(BuildContext context, Map<String, dynamic> msg, Offset mousePosition) {
+    _profileCardOverlay?.remove();
+    
+    final sender = msg['senderDisplayName'] as String? ?? 'Unknown';
+    final userId = msg['sender'] as String? ?? '';
+    
+    _profileCardOverlay = OverlayEntry(
+      builder: (context) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () {
+          _profileCardOverlay?.remove();
+          _profileCardOverlay = null;
+        },
+        child: Stack(
+          children: [
+            UserProfileCardOverlay(
+              userId: userId,
+              displayName: sender,
+              atName: null, // TODO: Load from UserProfileService if needed
+              pictureData: null, // TODO: Load from UserProfileService if needed
+              isOnline: false, // TODO: Load online status
+              lastSeen: null, // TODO: Load last seen
+              mousePosition: mousePosition,
+            ),
+          ],
+        ),
+      ),
+    );
+    
+    Overlay.of(context).insert(_profileCardOverlay!);
+  }
+  
+  void _hideProfileCard() {
+    _profileCardOverlay?.remove();
+    _profileCardOverlay = null;
+  }
 
   /// Format timestamp for display
   String _formatTime(DateTime time) {
@@ -149,7 +200,7 @@ class MessageList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (messages.isEmpty) {
+    if (widget.messages.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -166,11 +217,11 @@ class MessageList extends StatelessWidget {
     }
 
     return ListView.builder(
-      controller: scrollController,
+      controller: widget.scrollController,
       padding: const EdgeInsets.all(24),
-      itemCount: messages.length,
+      itemCount: widget.messages.length,
       itemBuilder: (context, index) {
-        final msg = messages[index];
+        final msg = widget.messages[index];
         final sender = msg['senderDisplayName'] ?? msg['sender'] ?? 'Unknown';
         final text = msg['payload'] ?? msg['text'] ?? msg['message'] ?? '';
         final timeStr = msg['time'] ?? '';
@@ -188,7 +239,7 @@ class MessageList extends StatelessWidget {
         // Check if we need date divider
         DateTime? previousMsgTime;
         if (index > 0) {
-          final prevTimeStr = messages[index - 1]['time'] ?? '';
+          final prevTimeStr = widget.messages[index - 1]['time'] ?? '';
           try {
             previousMsgTime = DateTime.parse(prevTimeStr);
           } catch (e) {
@@ -229,10 +280,16 @@ class MessageList extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  UserAvatar(
-                    userId: msg['sender'],
-                    displayName: sender,
-                    size: 40,
+                  // Avatar with hover
+                  MouseRegion(
+                    onEnter: (event) => _showProfileCard(context, msg, event.position),
+                    onExit: (_) => _hideProfileCard(),
+                    cursor: SystemMouseCursors.click,
+                    child: SquareUserAvatar(
+                      userId: msg['sender'],
+                      displayName: sender,
+                      size: 40,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -241,11 +298,17 @@ class MessageList extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Text(
-                              sender,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: isLocalSent ? theme.colorScheme.primary : Colors.white,
+                            // Username with hover
+                            MouseRegion(
+                              onEnter: (event) => _showProfileCard(context, msg, event.position),
+                              onExit: (_) => _hideProfileCard(),
+                              cursor: SystemMouseCursors.click,
+                              child: Text(
+                                sender,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: isLocalSent ? theme.colorScheme.primary : Colors.white,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -377,7 +440,7 @@ class MessageList extends StatelessWidget {
         return FileMessageWidget(
           fileMessage: fileMessage,
           isOwnMessage: isOwnMessage,
-          onDownloadWithMessage: onFileDownload ?? (fileMsg) {
+          onDownloadWithMessage: widget.onFileDownload ?? (fileMsg) {
             debugPrint('[MESSAGE_LIST] Download requested for: ${fileMsg.fileId} (no handler provided)');
           },
         );

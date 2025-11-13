@@ -144,9 +144,9 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
         width: 300,
         child: CompositedTransformFollower(
           link: _layerLink,
-          targetAnchor: Alignment.bottomLeft,
-          followerAnchor: Alignment.topLeft,
-          offset: const Offset(0, -10),
+          targetAnchor: Alignment.topLeft, // Attach to top of input
+          followerAnchor: Alignment.bottomLeft, // Place bottom of menu at top of input
+          offset: const Offset(0, -10), // 10px above input
           child: Material(
             elevation: 8,
             borderRadius: BorderRadius.circular(8),
