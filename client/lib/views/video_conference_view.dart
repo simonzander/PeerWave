@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import '../services/video_conference_service.dart';
 import '../services/message_listener_service.dart';
 import '../screens/channel/channel_members_screen.dart';
@@ -116,9 +117,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     try {
       await _service!.leaveRoom();
       
-      // Go back
+      // Navigate back to channels view
       if (mounted) {
-        Navigator.of(context).pop();
+        context.go('/app/channels');
       }
     } catch (e) {
       debugPrint('[VideoConferenceView] Leave error: $e');
