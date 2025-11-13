@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'base_view.dart';
 import '../../widgets/context_panel.dart';
 import '../../screens/messages/direct_messages_screen.dart';
+import '../../screens/messages/messages_main_content.dart';
 import '../../services/event_bus.dart';
 import '../../services/user_profile_service.dart';
 import 'people_context_data_loader.dart';
@@ -116,30 +117,17 @@ class _MessagesViewPageState extends BaseViewState<MessagesViewPage> {
       );
     }
     
-    // Otherwise show empty state
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.chat_bubble_outline,
-            size: 64,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Select a conversation',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Choose someone from the list to start messaging',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
+    // Otherwise show enriched messages main content with conversation list
+    return MessagesMainContent(
+      host: widget.host,
+      onConversationTap: (uuid, displayName) {
+        // Navigate to specific message conversation
+        debugPrint('[MESSAGES_VIEW] Navigate to: $uuid ($displayName)');
+        context.go('/app/messages/$uuid', extra: {
+          'host': widget.host,
+          'displayName': displayName,
+        });
+      },
     );
   }
   

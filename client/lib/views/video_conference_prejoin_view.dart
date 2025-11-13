@@ -87,7 +87,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
         await _requestE2EEKey();
       }
       
-      // Step 6: Start camera preview
+      // Step 6: Start camera preview with selected device
       if (_isCameraEnabled && _selectedCamera != null) {
         await _startCameraPreview();
       }
@@ -105,14 +105,41 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
     try {
       setState(() => _isLoadingDevices = true);
       
+      // Request both camera and microphone permissions simultaneously
+      debugPrint('[PreJoin] Requesting camera and microphone permissions...');
+      
+      LocalVideoTrack? tempVideoTrack;
+      LocalAudioTrack? tempAudioTrack;
+      
+      try {
+        // Create temporary tracks to trigger permission dialogs
+        final results = await Future.wait([
+          LocalVideoTrack.createCameraTrack(const CameraCaptureOptions()),
+          LocalAudioTrack.create(const AudioCaptureOptions()),
+        ]);
+        
+        tempVideoTrack = results[0] as LocalVideoTrack;
+        tempAudioTrack = results[1] as LocalAudioTrack;
+        
+        debugPrint('[PreJoin] ✅ Permissions granted');
+      } catch (e) {
+        debugPrint('[PreJoin] ⚠️ Permission denied or error: $e');
+        // Continue anyway to show available devices
+      }
+      
+      // Now enumerate devices with real labels (after permission granted)
       final devices = await Hardware.instance.enumerateDevices();
       
       _cameras = devices.where((d) => d.kind == 'videoinput').toList();
       _microphones = devices.where((d) => d.kind == 'audioinput').toList();
       
-      // Select first available devices
+      // Auto-select first available devices
       _selectedCamera = _cameras.isNotEmpty ? _cameras.first : null;
       _selectedMicrophone = _microphones.isNotEmpty ? _microphones.first : null;
+      
+      // Dispose temporary tracks
+      await tempVideoTrack?.dispose();
+      await tempAudioTrack?.dispose();
       
       setState(() => _isLoadingDevices = false);
       
@@ -377,10 +404,24 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       child: _previewTrack != null && _isCameraEnabled
           ? VideoTrackRenderer(_previewTrack!)
           : Center(
-              child: Icon(
-                Icons.videocam_off,
-                size: 64,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.videocam_off,
+                    size: 64,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _selectedCamera == null 
+                        ? 'Select a camera to preview'
+                        : 'Camera preview starting...',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
     );
@@ -431,51 +472,78 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
     return Column(
       children: [
         // Camera Selection
-        if (_cameras.isNotEmpty)
-          DropdownButtonFormField<MediaDevice>(
-            value: _selectedCamera,
-            decoration: const InputDecoration(
-              labelText: 'Camera',
-              prefixIcon: Icon(Icons.videocam),
-              border: OutlineInputBorder(),
+        DropdownButtonFormField<MediaDevice>(
+          value: _selectedCamera,
+          decoration: const InputDecoration(
+            labelText: 'Camera',
+            prefixIcon: Icon(Icons.videocam),
+            border: OutlineInputBorder(),
+            hintText: 'Select a camera...',
+          ),
+          items: [
+            // Add "None" option
+            const DropdownMenuItem<MediaDevice>(
+              value: null,
+              child: Text('No camera'),
             ),
-            items: _cameras.map((device) {
+            // Add all available cameras
+            ..._cameras.map((device) {
               return DropdownMenuItem(
                 value: device,
                 child: Text(device.label),
               );
-            }).toList(),
-            onChanged: (device) async {
-              setState(() => _selectedCamera = device);
-              // Restart preview with new camera
-              await _previewTrack?.dispose();
-              if (_isCameraEnabled) {
-                await _startCameraPreview();
-              }
-            },
-          ),
+            }),
+          ],
+          onChanged: (device) async {
+            setState(() {
+              _selectedCamera = device;
+              _isCameraEnabled = device != null;
+            });
+            
+            // Stop existing preview
+            await _previewTrack?.dispose();
+            _previewTrack = null;
+            
+            // Start preview with selected camera
+            if (device != null) {
+              debugPrint('[PreJoin] Camera selected: ${device.label}');
+              await _startCameraPreview();
+            }
+          },
+        ),
         
         const SizedBox(height: 8),
         
         // Microphone Selection
-        if (_microphones.isNotEmpty)
-          DropdownButtonFormField<MediaDevice>(
-            value: _selectedMicrophone,
-            decoration: const InputDecoration(
-              labelText: 'Microphone',
-              prefixIcon: Icon(Icons.mic),
-              border: OutlineInputBorder(),
+        DropdownButtonFormField<MediaDevice>(
+          value: _selectedMicrophone,
+          decoration: const InputDecoration(
+            labelText: 'Microphone',
+            prefixIcon: Icon(Icons.mic),
+            border: OutlineInputBorder(),
+            hintText: 'Select a microphone...',
+          ),
+          items: [
+            // Add "None" option
+            const DropdownMenuItem<MediaDevice>(
+              value: null,
+              child: Text('No microphone'),
             ),
-            items: _microphones.map((device) {
+            // Add all available microphones
+            ..._microphones.map((device) {
               return DropdownMenuItem(
                 value: device,
                 child: Text(device.label),
               );
-            }).toList(),
-            onChanged: (device) {
-              setState(() => _selectedMicrophone = device);
-            },
-          ),
+            }),
+          ],
+          onChanged: (device) {
+            setState(() => _selectedMicrophone = device);
+            if (device != null) {
+              debugPrint('[PreJoin] Microphone selected: ${device.label}');
+            }
+          },
+        ),
       ],
     );
   }
@@ -491,11 +559,25 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
     }
     
     if (_isFirstParticipant) {
-      return ListTile(
-        leading: Icon(Icons.lock, color: Theme.of(context).colorScheme.primary, size: 32),
-        title: const Text('You are the first participant'),
-        subtitle: const Text('Encryption key will be generated when you join'),
-      );
+      if (_hasE2EEKey) {
+        return ListTile(
+          leading: Icon(Icons.lock, color: Theme.of(context).colorScheme.primary, size: 32),
+          title: const Text('End-to-end encryption ready'),
+          subtitle: const Text('You are the first participant - encryption key generated'),
+        );
+      } else if (_isExchangingKey) {
+        return const ListTile(
+          leading: CircularProgressIndicator(),
+          title: Text('Generating encryption key...'),
+          subtitle: Text('You are the first participant'),
+        );
+      } else {
+        return ListTile(
+          leading: Icon(Icons.lock, color: Theme.of(context).colorScheme.primary, size: 32),
+          title: const Text('You are the first participant'),
+          subtitle: const Text('Encryption key will be generated'),
+        );
+      }
     }
     
     if (_isExchangingKey) {

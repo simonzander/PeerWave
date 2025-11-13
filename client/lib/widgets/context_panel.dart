@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../screens/dashboard/channels_list_view.dart';
 import '../screens/dashboard/messages_list_view.dart';
 import '../widgets/people_context_panel.dart';
+import '../widgets/channels_context_panel.dart';
 import '../theme/app_theme_constants.dart';
 
 /// Context Panel - Shows contextual content based on selected view
@@ -30,6 +30,15 @@ class ContextPanel extends StatelessWidget {
   final bool isLoadingPeople;
   final VoidCallback? onLoadMorePeople;
   final bool hasMorePeople;
+  
+  // Additional data for Channels panel
+  final List<Map<String, dynamic>>? liveChannels;
+  final List<Map<String, dynamic>>? recentChannels;
+  final List<Map<String, dynamic>>? favoriteChannels;
+  final String? activeChannelUuid;
+  final bool isLoadingChannels;
+  final VoidCallback? onLoadMoreChannels;
+  final bool hasMoreChannels;
 
   const ContextPanel({
     super.key,
@@ -46,6 +55,13 @@ class ContextPanel extends StatelessWidget {
     this.isLoadingPeople = false,
     this.onLoadMorePeople,
     this.hasMorePeople = false,
+    this.liveChannels,
+    this.recentChannels,
+    this.favoriteChannels,
+    this.activeChannelUuid,
+    this.isLoadingChannels = false,
+    this.onLoadMoreChannels,
+    this.hasMoreChannels = false,
   });
 
   @override
@@ -60,10 +76,17 @@ class ContextPanel extends StatelessWidget {
   Widget _buildContent() {
     switch (type) {
       case ContextPanelType.channels:
-        return ChannelsListView(
+        return ChannelsContextPanel(
           host: host,
+          liveChannels: liveChannels ?? [],
+          recentChannels: recentChannels ?? [],
+          favoriteChannels: favoriteChannels ?? [],
+          activeChannelUuid: activeChannelUuid,
           onChannelTap: onChannelTap ?? (uuid, name, type) {},
-          onCreateChannel: onCreateChannel ?? () {},
+          onCreateChannel: onCreateChannel,
+          isLoading: isLoadingChannels,
+          onLoadMore: onLoadMoreChannels,
+          hasMore: hasMoreChannels,
         );
         
       case ContextPanelType.messages:

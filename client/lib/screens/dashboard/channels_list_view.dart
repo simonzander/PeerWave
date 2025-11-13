@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../services/activities_service.dart';
 import '../../services/api_service.dart';
 import '../../models/role.dart';
@@ -28,6 +29,7 @@ class ChannelsListView extends StatefulWidget {
 
 class _ChannelsListViewState extends State<ChannelsListView> {
   bool _loading = true;
+  final TextEditingController _searchController = TextEditingController();
   
   // Live WebRTC channels (with participants)
   List<Map<String, dynamic>> _liveWebRTCChannels = [];
@@ -39,11 +41,113 @@ class _ChannelsListViewState extends State<ChannelsListView> {
   // Non-member public channels
   List<Map<String, dynamic>> _publicChannels = [];
   // int _publicChannelsLimit = 20; // TODO: Use when discover endpoint is ready
+  
+  // Filtered channels for display
+  List<Map<String, dynamic>> _filteredLiveChannels = [];
+  List<Map<String, dynamic>> _filteredSignalChannels = [];
+  List<Map<String, dynamic>> _filteredInactiveWebRTCChannels = [];
+  
+  // Search and filter state
+  String _searchQuery = '';
+  String _selectedFilter = 'all'; // 'all', 'live', 'unread', 'calls', 'text', 'meetings', 'starred'
 
   @override
   void initState() {
     super.initState();
     _loadChannels();
+    _searchController.addListener(_onSearchChanged);
+  }
+  
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+  
+  void _onSearchChanged() {
+    setState(() {
+      _searchQuery = _searchController.text.trim().toLowerCase();
+      _applyFilters();
+    });
+  }
+  
+  void _applyFilters() {
+    // Apply search to live channels
+    var filteredLive = _liveWebRTCChannels.where((channel) {
+      if (_searchQuery.isNotEmpty) {
+        final name = (channel['name'] as String? ?? '').toLowerCase();
+        final description = (channel['description'] as String? ?? '').toLowerCase();
+        if (!name.contains(_searchQuery) && !description.contains(_searchQuery)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+    
+    // Apply search to signal channels
+    var filteredSignal = _memberSignalChannels.where((channel) {
+      if (_searchQuery.isNotEmpty) {
+        final name = (channel['name'] as String? ?? '').toLowerCase();
+        final description = (channel['description'] as String? ?? '').toLowerCase();
+        if (!name.contains(_searchQuery) && !description.contains(_searchQuery)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+    
+    // Apply search to inactive WebRTC channels
+    var filteredInactive = _memberInactiveWebRTCChannels.where((channel) {
+      if (_searchQuery.isNotEmpty) {
+        final name = (channel['name'] as String? ?? '').toLowerCase();
+        final description = (channel['description'] as String? ?? '').toLowerCase();
+        if (!name.contains(_searchQuery) && !description.contains(_searchQuery)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+    
+    // Apply category filters
+    if (_selectedFilter == 'live') {
+      // Only show live channels
+      filteredSignal = [];
+      filteredInactive = [];
+    } else if (_selectedFilter == 'unread') {
+      // Filter channels with unread messages
+      final unreadProvider = context.read<UnreadMessagesProvider>();
+      filteredLive = filteredLive.where((ch) => 
+        (unreadProvider.channelUnreadCounts[ch['uuid']] ?? 0) > 0
+      ).toList();
+      filteredSignal = filteredSignal.where((ch) => 
+        (unreadProvider.channelUnreadCounts[ch['uuid']] ?? 0) > 0
+      ).toList();
+      filteredInactive = filteredInactive.where((ch) => 
+        (unreadProvider.channelUnreadCounts[ch['uuid']] ?? 0) > 0
+      ).toList();
+    } else if (_selectedFilter == 'calls') {
+      // Only WebRTC channels (live + inactive)
+      filteredSignal = [];
+    } else if (_selectedFilter == 'text') {
+      // Only Signal channels
+      filteredLive = [];
+      filteredInactive = [];
+    } else if (_selectedFilter == 'meetings') {
+      // TODO: Filter by meeting/conference type when implemented
+      // For now, show all WebRTC channels
+      filteredSignal = [];
+    } else if (_selectedFilter == 'starred') {
+      // TODO: Filter by starred/favorite channels when implemented
+      filteredLive = filteredLive.where((ch) => ch['isStarred'] == true).toList();
+      filteredSignal = filteredSignal.where((ch) => ch['isStarred'] == true).toList();
+      filteredInactive = filteredInactive.where((ch) => ch['isStarred'] == true).toList();
+    }
+    
+    setState(() {
+      _filteredLiveChannels = filteredLive;
+      _filteredSignalChannels = filteredSignal;
+      _filteredInactiveWebRTCChannels = filteredInactive;
+    });
   }
 
   Future<void> _loadChannels() async {
@@ -126,6 +230,7 @@ class _ChannelsListViewState extends State<ChannelsListView> {
         setState(() {
           _memberSignalChannels = signalChannels;
           _memberInactiveWebRTCChannels = webrtcChannels;
+          _applyFilters(); // Apply filters after loading
         });
       }
     } catch (e) {
@@ -189,56 +294,183 @@ class _ChannelsListViewState extends State<ChannelsListView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Channels'),
-        automaticallyImplyLeading: false,
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadChannels,
-              child: ListView(
-                children: [
-                  // Live WebRTC Channels (with participants)
-                  if (_liveWebRTCChannels.isNotEmpty) ...[
-                    _buildSectionHeader('Live Video Channels', Icons.videocam, Colors.red),
-                    ..._liveWebRTCChannels.map((ch) => _buildLiveWebRTCChannelTile(ch)),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // Member Signal Channels
-                  if (_memberSignalChannels.isNotEmpty) ...[
-                    _buildSectionHeader('My Channels', Icons.tag),
-                    ..._memberSignalChannels.map((ch) => _buildSignalChannelTile(ch)),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // Inactive WebRTC Channels (mixed with Signal if no live channels)
-                  if (_liveWebRTCChannels.isEmpty && _memberInactiveWebRTCChannels.isNotEmpty) ...[
-                    ..._memberInactiveWebRTCChannels.map((ch) => _buildWebRTCChannelTile(ch)),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // Empty state if no channels
-                  if (_liveWebRTCChannels.isEmpty && 
-                      _memberSignalChannels.isEmpty && 
-                      _memberInactiveWebRTCChannels.isEmpty)
-                    _buildEmptyState(),
-
-                  // Public Non-Member Channels
-                  if (_publicChannels.isNotEmpty) ...[
-                    _buildSectionHeader('Discover', Icons.explore),
-                    ..._publicChannels.map((ch) => _buildPublicChannelTile(ch)),
-                    _buildLoadMoreButton(),
-                  ],
-                ],
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
+    // Don't wrap in Scaffold - this is used as main content in BaseView
+    return Column(
+      children: [
+        // Search Bar
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            border: Border(
+              bottom: BorderSide(
+                color: colorScheme.outlineVariant,
+                width: 1,
               ),
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showCreateChannelDialog(context),
-        tooltip: 'Create Channel',
-        child: const Icon(Icons.add),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search channels...',
+                    prefixIcon: Icon(Icons.search, color: colorScheme.onSurfaceVariant),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(Icons.clear, color: colorScheme.onSurfaceVariant),
+                            onPressed: () {
+                              _searchController.clear();
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: colorScheme.surfaceVariant,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: () => _showCreateChannelDialog(context),
+                tooltip: 'Create Channel',
+              ),
+            ],
+          ),
+        ),
+        
+        // Filter Chips
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            border: Border(
+              bottom: BorderSide(
+                color: colorScheme.outlineVariant,
+                width: 1,
+              ),
+            ),
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildFilterChip(label: 'All', value: 'all', icon: Icons.inbox),
+                const SizedBox(width: 8),
+                _buildFilterChip(label: 'Live', value: 'live', icon: Icons.circle, iconColor: Colors.red),
+                const SizedBox(width: 8),
+                _buildFilterChip(label: 'Unread', value: 'unread', icon: Icons.circle, iconSize: 12),
+                const SizedBox(width: 8),
+                _buildFilterChip(label: 'Calls', value: 'calls', icon: Icons.videocam),
+                const SizedBox(width: 8),
+                _buildFilterChip(label: 'Text', value: 'text', icon: Icons.tag),
+                const SizedBox(width: 8),
+                _buildFilterChip(label: 'Meetings', value: 'meetings', icon: Icons.groups),
+                const SizedBox(width: 8),
+                _buildFilterChip(label: 'Starred', value: 'starred', icon: Icons.star),
+              ],
+            ),
+          ),
+        ),
+        
+        // Content
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                  onRefresh: _loadChannels,
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      // Live WebRTC Channels (with participants)
+                      if (_filteredLiveChannels.isNotEmpty) ...[
+                        _buildSectionHeader('Live Video Channels', Icons.videocam, Colors.red),
+                        ..._filteredLiveChannels.map((ch) => _buildLiveWebRTCChannelTile(ch)),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Member Signal Channels
+                      if (_filteredSignalChannels.isNotEmpty) ...[
+                        _buildSectionHeader('My Channels', Icons.tag),
+                        ..._filteredSignalChannels.map((ch) => _buildSignalChannelTile(ch)),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Inactive WebRTC Channels (mixed with Signal if no live channels)
+                      if (_filteredLiveChannels.isEmpty && _filteredInactiveWebRTCChannels.isNotEmpty) ...[
+                        ..._filteredInactiveWebRTCChannels.map((ch) => _buildWebRTCChannelTile(ch)),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Empty state if no channels
+                      if (_filteredLiveChannels.isEmpty && 
+                          _filteredSignalChannels.isEmpty && 
+                          _filteredInactiveWebRTCChannels.isEmpty)
+                        _buildEmptyState(),
+
+                      // Public Non-Member Channels (not filtered)
+                      if (_publicChannels.isNotEmpty) ...[
+                        _buildSectionHeader('Discover', Icons.explore),
+                        ..._publicChannels.map((ch) => _buildPublicChannelTile(ch)),
+                        _buildLoadMoreButton(),
+                      ],
+                    ],
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+  
+  Widget _buildFilterChip({
+    required String label,
+    required String value,
+    required IconData icon,
+    double? iconSize,
+    Color? iconColor,
+  }) {
+    final isSelected = _selectedFilter == value;
+    final theme = Theme.of(context);
+    
+    return FilterChip(
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: iconSize ?? 16,
+            color: isSelected 
+                ? (iconColor ?? theme.colorScheme.onSecondaryContainer)
+                : (iconColor ?? theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(width: 6),
+          Text(label),
+        ],
+      ),
+      selected: isSelected,
+      onSelected: (selected) {
+        setState(() {
+          _selectedFilter = value;
+          _applyFilters();
+        });
+      },
+      showCheckmark: false,
+      backgroundColor: theme.colorScheme.surface,
+      selectedColor: theme.colorScheme.secondaryContainer,
+      side: BorderSide(
+        color: isSelected 
+            ? theme.colorScheme.secondary 
+            : theme.colorScheme.outlineVariant,
+        width: 1,
       ),
     );
   }
@@ -323,7 +555,11 @@ class _ChannelsListViewState extends State<ChannelsListView> {
       ),
       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
       onTap: () {
-        widget.onChannelTap(uuid, name, 'webrtc');
+        context.go('/app/channels/$uuid', extra: {
+          'host': widget.host,
+          'name': name,
+          'type': 'webrtc',
+        });
       },
     );
   }
@@ -392,7 +628,11 @@ class _ChannelsListViewState extends State<ChannelsListView> {
           selected: isSelected,
           onTap: () {
             navProvider.selectChannel(uuid, 'signal');
-            widget.onChannelTap(uuid, name, 'signal');
+            context.go('/app/channels/$uuid', extra: {
+              'host': widget.host,
+              'name': name,
+              'type': 'signal',
+            });
           },
         );
       },
@@ -433,7 +673,11 @@ class _ChannelsListViewState extends State<ChannelsListView> {
       ),
       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
       onTap: () {
-        widget.onChannelTap(uuid, name, 'webrtc');
+        context.go('/app/channels/$uuid', extra: {
+          'host': widget.host,
+          'name': name,
+          'type': 'webrtc',
+        });
       },
     );
   }
@@ -463,7 +707,11 @@ class _ChannelsListViewState extends State<ChannelsListView> {
         child: ElevatedButton(
           onPressed: () {
             // TODO: Join channel API call
-            widget.onChannelTap(uuid, name, type);
+            context.go('/app/channels/$uuid', extra: {
+              'host': widget.host,
+              'name': name,
+              'type': type,
+            });
           },
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -579,9 +827,9 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
     setState(() => isLoadingRoles = true);
     try {
       ApiService.init();
-      final dio = ApiService.dio;
+      final hostUrl = ApiService.ensureHttpPrefix(widget.host);
       final scope = channelType == 'webrtc' ? 'channelWebRtc' : 'channelSignal';
-      final resp = await dio.get('${widget.host}/api/roles?scope=$scope');
+      final resp = await ApiService.get('$hostUrl/api/roles?scope=$scope');
       
       if (resp.statusCode == 200) {
         final data = resp.data;
