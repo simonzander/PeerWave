@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import 'package:go_router/go_router.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'signal_service.dart';
 import 'socket_service.dart';
@@ -46,6 +48,20 @@ class VideoConferenceService extends ChangeNotifier {
   bool _isConnected = false;
   bool _isConnecting = false;
   
+  // NEW: Persistent call state for overlay
+  bool _isInCall = false;
+  String? _channelName;
+  DateTime? _callStartTime;
+  
+  // NEW: Overlay state
+  bool _isOverlayVisible = true;
+  bool _isInFullView = false;  // Track if user is viewing full-screen (vs overlay mode)
+  double _overlayPositionX = 100;
+  double _overlayPositionY = 100;
+
+  // NEW: Navigation (router) reference
+  GoRouter? _router;
+  
   // Stream controllers
   final _participantJoinedController = StreamController<RemoteParticipant>.broadcast();
   final _participantLeftController = StreamController<RemoteParticipant>.broadcast();
@@ -59,6 +75,21 @@ class VideoConferenceService extends ChangeNotifier {
   Room? get room => _room;
   bool get isFirstParticipant => _isFirstParticipant;  // Check if this participant originated the key
   bool get hasE2EEKey => _keyTimestamp != null;  // Check if E2EE key is available (generated or received)
+  
+  // NEW: Overlay state getters
+  bool get isInCall => _isInCall;
+  String? get channelName => _channelName;
+  DateTime? get callStartTime => _callStartTime;
+  bool get isOverlayVisible => _isOverlayVisible;
+  bool get isInFullView => _isInFullView;
+  double get overlayPositionX => _overlayPositionX;
+  double get overlayPositionY => _overlayPositionY;
+  GoRouter? get router => _router;
+
+  // NEW: Allow app root to inject the GoRouter instance once
+  void attachRouter(GoRouter router) {
+    _router = router;
+  }
   
   // Streams
   Stream<RemoteParticipant> get onParticipantJoined => _participantJoinedController.stream;
@@ -530,6 +561,7 @@ class VideoConferenceService extends ChangeNotifier {
     String channelId, {
     MediaDevice? cameraDevice,      // NEW: Optional pre-selected camera
     MediaDevice? microphoneDevice,  // NEW: Optional pre-selected microphone
+    String? channelName,            // NEW: Channel name for display
   }) async {
     if (_isConnecting || _isConnected) {
       debugPrint('[VideoConf] Already connecting or connected');
@@ -539,6 +571,13 @@ class VideoConferenceService extends ChangeNotifier {
     try {
       _isConnecting = true;
       _currentChannelId = channelId;
+      
+      // NEW: Set call state
+      _isInCall = true;
+      _channelName = channelName;
+      _callStartTime = DateTime.now();
+      _isOverlayVisible = false; // Start hidden - user is in full-view
+      
       notifyListeners();
 
       debugPrint('[VideoConf] Joining room for channel: $channelId');
@@ -707,6 +746,10 @@ class VideoConferenceService extends ChangeNotifier {
 
       _isConnected = true;
       _isConnecting = false;
+      
+      // NEW: Save persistence for rejoin
+      await _savePersistence();
+      
       notifyListeners();
 
       debugPrint('[VideoConf] Successfully joined room: $_currentRoomName');
@@ -714,6 +757,12 @@ class VideoConferenceService extends ChangeNotifier {
       debugPrint('[VideoConf] Error joining room: $e');
       _isConnecting = false;
       _isConnected = false;
+      
+      // NEW: Reset call state on error
+      _isInCall = false;
+      _channelName = null;
+      _callStartTime = null;
+      
       notifyListeners();
       rethrow;
     }
@@ -868,11 +917,169 @@ class VideoConferenceService extends ChangeNotifier {
       _currentChannelId = null;
       _currentRoomName = null;
       _remoteParticipants.clear();
+      
+      // NEW: Reset overlay state
+      _isInCall = false;
+      _channelName = null;
+      _callStartTime = null;
+      _isOverlayVisible = false;
+      
+      // Clear persistence
+      await _clearPersistence();
 
       notifyListeners();
       debugPrint('[VideoConf] ✓ Left room successfully (E2EE state cleared)');
     } catch (e) {
       debugPrint('[VideoConf] Error leaving room: $e');
+    }
+  }
+  
+  /// NEW: Toggle overlay visibility
+  void toggleOverlayVisible() {
+    _isOverlayVisible = !_isOverlayVisible;
+    _savePersistence();
+    notifyListeners();
+  }
+  
+  /// NEW: Hide overlay (call continues)
+  void hideOverlay() {
+    _isOverlayVisible = false;
+    _savePersistence();
+    notifyListeners();
+  }
+  
+  /// NEW: Show overlay
+  void showOverlay() {
+    _isOverlayVisible = true;
+    _isInFullView = false;  // Exiting full-view
+    _savePersistence();
+    notifyListeners();
+  }
+  
+  /// NEW: Enter full-view mode (hides TopBar and overlay)
+  void enterFullView() {
+    _isInFullView = true;
+    _isOverlayVisible = false;  // Hide overlay when in full-view
+    _savePersistence();
+    notifyListeners();
+  }
+  
+  /// NEW: Exit full-view mode (back to overlay mode)
+  void exitFullView() {
+    _isInFullView = false;
+    _isOverlayVisible = true;  // Show overlay when exiting full-view
+    _savePersistence();
+    notifyListeners();
+  }
+
+  /// NEW: Navigate to the current channel's full-view page via GoRouter
+  void navigateToCurrentChannelFullView() {
+    if (_router == null) {
+      debugPrint('[VideoConferenceService] navigateToCurrentChannelFullView: router is null');
+      return;
+    }
+    final channelId = _currentChannelId;
+    if (channelId == null) {
+      debugPrint('[VideoConferenceService] navigateToCurrentChannelFullView: currentChannelId is null');
+      return;
+    }
+
+    debugPrint('[VideoConferenceService] Entering full-view mode BEFORE navigation');
+    // Enter full-view mode IMMEDIATELY to hide TopBar/overlay before navigation
+    enterFullView();
+    
+    debugPrint('[VideoConferenceService] Navigating to full-view for channel: $channelId');
+    _router!.go('/app/channels/$channelId', extra: {
+      'host': '',
+      'name': _channelName ?? 'Channel',
+      'type': 'webrtc',
+    });
+  }
+  
+  /// NEW: Update overlay position
+  void updateOverlayPosition(double x, double y) {
+    _overlayPositionX = x;
+    _overlayPositionY = y;
+    _savePersistence();
+    notifyListeners();
+  }
+  
+  /// NEW: Save state to LocalStorage for rejoin
+  Future<void> _savePersistence() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      if (_isInCall && _currentChannelId != null) {
+        await prefs.setBool('shouldRejoin', true);
+        await prefs.setString('lastChannelId', _currentChannelId!);
+        if (_channelName != null) {
+          await prefs.setString('lastChannelName', _channelName!);
+        }
+        if (_callStartTime != null) {
+          await prefs.setString('callStartTime', _callStartTime!.toIso8601String());
+        }
+        await prefs.setBool('overlayVisible', _isOverlayVisible);
+        await prefs.setDouble('overlayPositionX', _overlayPositionX);
+        await prefs.setDouble('overlayPositionY', _overlayPositionY);
+        
+        debugPrint('[VideoConf] ✓ State persisted to LocalStorage');
+      }
+    } catch (e) {
+      debugPrint('[VideoConf] ⚠️ Failed to save persistence: $e');
+    }
+  }
+  
+  /// NEW: Clear persistence from LocalStorage
+  Future<void> _clearPersistence() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('shouldRejoin');
+      await prefs.remove('lastChannelId');
+      await prefs.remove('lastChannelName');
+      await prefs.remove('callStartTime');
+      await prefs.remove('overlayVisible');
+      await prefs.remove('overlayPositionX');
+      await prefs.remove('overlayPositionY');
+      
+      debugPrint('[VideoConf] ✓ Persistence cleared');
+    } catch (e) {
+      debugPrint('[VideoConf] ⚠️ Failed to clear persistence: $e');
+    }
+  }
+  
+  /// NEW: Check for rejoin on app start
+  Future<void> checkForRejoin() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final shouldRejoin = prefs.getBool('shouldRejoin') ?? false;
+      final lastChannelId = prefs.getString('lastChannelId');
+      
+      if (shouldRejoin && lastChannelId != null) {
+        debugPrint('[VideoConf] 🔄 Auto-rejoin detected for channel: $lastChannelId');
+        
+        // Restore state
+        _channelName = prefs.getString('lastChannelName');
+        final callStartTimeStr = prefs.getString('callStartTime');
+        if (callStartTimeStr != null) {
+          _callStartTime = DateTime.parse(callStartTimeStr);
+        }
+        // Always show overlay after rejoin so user knows call is active
+        _isOverlayVisible = true;
+        _overlayPositionX = prefs.getDouble('overlayPositionX') ?? 100;
+        _overlayPositionY = prefs.getDouble('overlayPositionY') ?? 100;
+        
+        try {
+          // Attempt rejoin
+          await joinRoom(lastChannelId, channelName: _channelName);
+          await prefs.setBool('shouldRejoin', false);
+          debugPrint('[VideoConf] ✅ Auto-rejoin successful');
+        } catch (e) {
+          debugPrint('[VideoConf] ❌ Auto-rejoin failed: $e');
+          await _clearPersistence();
+        }
+      }
+    } catch (e) {
+      debugPrint('[VideoConf] ⚠️ checkForRejoin error: $e');
     }
   }
 

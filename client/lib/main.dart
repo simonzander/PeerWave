@@ -50,14 +50,16 @@ import 'services/file_transfer/download_manager.dart';
 import 'services/file_transfer/storage_interface.dart';
 import 'services/file_transfer/encryption_service.dart';
 import 'services/file_transfer/chunking_service.dart';
+// WebRTC Conference imports
+import 'services/video_conference_service.dart';
+import 'widgets/call_top_bar.dart';
+import 'widgets/call_overlay.dart';
 import 'screens/file_transfer/file_upload_screen.dart';
 import 'screens/file_transfer/file_manager_screen.dart';
 import 'screens/file_transfer/file_browser_screen.dart';
 import 'screens/file_transfer/downloads_screen.dart';
 import 'screens/file_transfer/file_transfer_hub.dart';
 import 'widgets/socket_aware_widget.dart';
-// Video Conference imports
-import 'services/video_conference_service.dart';
 // Post-login service orchestration
 import 'services/post_login_init_service.dart';
 // View Pages (Dashboard Refactoring)
@@ -103,7 +105,7 @@ Future<void> main() async {
   debugPrint('[INIT] ✅ Theme Provider initialized');
   
   // NOTE: Database and P2P services are initialized AFTER login
-  // See SignalSetupService.initializeAfterLogin() for post-login initialization
+  // See PostLoginInitService for post-login initialization including WebRTC rejoin
   
   runApp(MyApp(
     initialMagicKey: initialMagicKey, 
@@ -828,6 +830,10 @@ class _MyAppState extends State<MyApp> {
     );
     debugPrint('[MAIN] ✅ GoRouter created');
 
+    // Attach router to VideoConferenceService so global UI (CallTopBar / overlay)
+    // can navigate without relying on a BuildContext that has GoRouter
+    VideoConferenceService.instance.attachRouter(router);
+
     return Consumer<ThemeProvider>(
       builder: (context, themeProvider, child) {
         debugPrint('[MAIN] 🎨 Building MaterialApp with theme: ${themeProvider.themeMode}');
@@ -837,6 +843,19 @@ class _MyAppState extends State<MyApp> {
           darkTheme: themeProvider.darkTheme,
           themeMode: themeProvider.themeMode,
           routerConfig: router,
+          builder: (context, child) {
+            return Stack(
+              children: [
+                Column(
+                  children: [
+                    const CallTopBar(),
+                    Expanded(child: child!),
+                  ],
+                ),
+                const CallOverlay(),
+              ],
+            );
+          },
         );
       },
     );

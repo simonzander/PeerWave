@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/activities_service.dart';
 import '../../services/api_service.dart';
+import '../../services/video_conference_service.dart';
 import '../../models/role.dart';
 import '../../providers/unread_messages_provider.dart';
 import '../../providers/navigation_state_provider.dart';
@@ -555,6 +556,11 @@ class _ChannelsListViewState extends State<ChannelsListView> {
       ),
       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
       onTap: () {
+        // Enter full-view mode immediately before navigation to prevent overlay/TopBar showing
+        final videoService = VideoConferenceService.instance;
+        if (videoService.isInCall) {
+          videoService.enterFullView();
+        }
         context.go('/app/channels/$uuid', extra: {
           'host': widget.host,
           'name': name,
@@ -673,6 +679,11 @@ class _ChannelsListViewState extends State<ChannelsListView> {
       ),
       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
       onTap: () {
+        // Enter full-view mode immediately before navigation to prevent overlay/TopBar showing
+        final videoService = VideoConferenceService.instance;
+        if (videoService.isInCall) {
+          videoService.enterFullView();
+        }
         context.go('/app/channels/$uuid', extra: {
           'host': widget.host,
           'name': name,

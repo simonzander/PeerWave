@@ -49,6 +49,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    
     // Get service from Provider
     if (_service == null) {
       try {
@@ -59,9 +60,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         MessageListenerService.instance.registerVideoConferenceService(_service!);
         debugPrint('[VideoConferenceView] Registered VideoConferenceService with MessageListener');
         
-        // Schedule join for after build completes
+        // Schedule join for after build completes (only if not already in call)
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
+          if (mounted && !(_service?.isInCall ?? false)) {
             _joinChannel();
           }
         });
@@ -77,6 +78,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         });
       }
     }
+    
+    // Full-view mode is already set by navigateToCurrentChannelFullView() before navigation
+    // So we don't need to call enterFullView() here anymore
   }
   
   Future<void> _joinChannel() async {
@@ -93,6 +97,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       // Join LiveKit room with pre-selected devices from PreJoin
       await _service!.joinRoom(
         widget.channelId,
+        channelName: widget.channelName,             // Pass channel name for overlay
         cameraDevice: widget.selectedCamera,        // Pass selected camera
         microphoneDevice: widget.selectedMicrophone, // Pass selected microphone
       );
@@ -101,6 +106,11 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       
       setState(() => _isJoining = false);
       debugPrint('[VideoConferenceView] Successfully joined channel');
+      
+      // Ensure we're in full-view mode after joining (not overlay mode)
+      _service!.enterFullView();
+      
+      // Stay in full-view mode - overlay will show when user navigates away
       
     } catch (e) {
       debugPrint('[VideoConferenceView] Join error: $e');
@@ -128,6 +138,14 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   
   @override
   void dispose() {
+    // Exit full-view mode when navigating away (back to overlay mode)
+    if (_service != null && _service!.isInCall) {
+      debugPrint('[VideoConferenceView] Exiting full-view, returning to overlay mode');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _service?.exitFullView();
+      });
+    }
+    
     // Unregister from MessageListenerService
     MessageListenerService.instance.unregisterVideoConferenceService();
     debugPrint('[VideoConferenceView] Unregistered VideoConferenceService from MessageListener');

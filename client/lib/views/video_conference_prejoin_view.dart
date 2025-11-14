@@ -59,6 +59,14 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
   /// Initialize PreJoin flow
   Future<void> _initializePreJoin() async {
     try {
+      // Step 0: Check if already in a different channel - if so, leave it first
+      final videoService = VideoConferenceService.instance;
+      if (videoService.isInCall && videoService.currentChannelId != widget.channelId) {
+        debugPrint('[PreJoin] Already in a different channel (${videoService.currentChannelId}), leaving it first...');
+        await videoService.leaveRoom();
+        debugPrint('[PreJoin] Left previous channel, proceeding with prejoin for ${widget.channelId}');
+      }
+      
       // Step 1: Ensure Signal Service is initialized (should already be initialized by app startup)
       if (!SignalService.instance.isInitialized) {
         debugPrint('[PreJoin] ⚠️ Signal Service not initialized! This should not happen.');

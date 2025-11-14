@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:provider/provider.dart';
 import 'base_view.dart';
 import '../../widgets/context_panel.dart';
 import '../../screens/dashboard/channels_list_view.dart';
@@ -7,6 +8,7 @@ import '../../screens/messages/signal_group_chat_screen.dart';
 import '../../views/video_conference_prejoin_view.dart';
 import '../../views/video_conference_view.dart';
 import '../../services/event_bus.dart';
+import '../../services/video_conference_service.dart';
 
 /// Channels View Page
 /// 
@@ -133,14 +135,18 @@ class _ChannelsViewPageState extends BaseViewState<ChannelsViewPage> {
           channelName: widget.initialChannelName ?? 'Channel',
         );
       } else if (widget.initialChannelType == 'webrtc') {
-        // Show WebRTC video conference
-        if (_videoConferenceConfig != null) {
-          // Show actual video conference view
+        // Check if already in this channel - if so, show full view directly
+        final videoService = Provider.of<VideoConferenceService>(context, listen: false);
+        final alreadyInThisChannel = videoService.isInCall && 
+                                     videoService.currentChannelId == widget.initialChannelUuid;
+        
+        if (alreadyInThisChannel || _videoConferenceConfig != null) {
+          // Show actual video conference view (already joined or joining)
           return VideoConferenceView(
-            channelId: _videoConferenceConfig!['channelId'],
-            channelName: _videoConferenceConfig!['channelName'],
-            selectedCamera: _videoConferenceConfig!['selectedCamera'],
-            selectedMicrophone: _videoConferenceConfig!['selectedMicrophone'],
+            channelId: _videoConferenceConfig?['channelId'] ?? widget.initialChannelUuid!,
+            channelName: _videoConferenceConfig?['channelName'] ?? widget.initialChannelName ?? 'Channel',
+            selectedCamera: _videoConferenceConfig?['selectedCamera'],
+            selectedMicrophone: _videoConferenceConfig?['selectedMicrophone'],
           );
         } else {
           // Show prejoin view first

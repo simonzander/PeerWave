@@ -20,6 +20,8 @@ import 'file_transfer/p2p_coordinator.dart';
 import 'file_transfer/file_reannounce_service.dart';
 import 'file_transfer/socket_file_client.dart';
 import 'file_transfer/indexeddb_storage.dart' if (dart.library.io) 'file_transfer/native_storage.dart';
+// Video conference imports
+import 'video_conference_service.dart';
 
 /// Orchestrates all post-login service initialization in the correct order
 /// 
@@ -84,7 +86,7 @@ class PostLoginInitService {
     debugPrint('[POST_LOGIN_INIT] ========================================');
     
     try {
-      final totalSteps = 14;
+      final totalSteps = 15;
       var currentStep = 0;
       
       // ========================================
@@ -330,6 +332,22 @@ class PostLoginInitService {
           debugPrint('[POST_LOGIN_INIT]   ✓ E2EE service ready (lazy)');
         }),
       ]);
+      
+      // ========================================
+      // FINAL STEP: Check for active call to rejoin
+      // ========================================
+      currentStep++;
+      onProgress?.call('Checking for active calls...', currentStep, totalSteps);
+      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Checking for active WebRTC call to rejoin...');
+      
+      try {
+        final videoConferenceService = VideoConferenceService.instance;
+        await videoConferenceService.checkForRejoin();
+        debugPrint('[POST_LOGIN_INIT]   ✓ WebRTC rejoin check complete');
+      } catch (e) {
+        debugPrint('[POST_LOGIN_INIT]   ⚠️ WebRTC rejoin check failed: $e');
+        // Don't fail initialization if rejoin fails
+      }
       
       _isInitialized = true;
       debugPrint('[POST_LOGIN_INIT] ========================================');
