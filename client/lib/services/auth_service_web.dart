@@ -1,8 +1,5 @@
 
-import 'package:flutter/foundation.dart';
 import 'dart:js_interop';
-import 'dart:js_interop_unsafe';
-import 'package:js/js_util.dart' as js_util;
 import 'package:js/js.dart';
 import '../web_config.dart';
 import '../services/api_service.dart';

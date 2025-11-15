@@ -3,7 +3,6 @@ import 'package:go_router/go_router.dart';
 import '../services/auth_service_native.dart';
 import '../services/clientid_native.dart';
 import '../services/api_service.dart';
-import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
@@ -337,20 +336,20 @@ class _ServerIcon extends StatelessWidget {
                     await AuthService().removeMailFromHost(server.host);
                     final parentState = context.findAncestorStateOfType<_ServerPanelState>();
                     if (parentState != null) {
-                      parentState.setState(() {
-                        final idx = parentState.servers.indexWhere((s) => s.host == server.host);
-                        if (idx != -1) {
-                          final s = parentState.servers[idx];
-                          parentState.servers[idx] = _ServerMeta(
-                            host: s.host,
-                            mail: s.mail,
-                            name: s.name,
-                            hasServerError: s.hasServerError,
-                            hasAuthError: true,
-                            missedNotifications: s.missedNotifications,
-                          );
-                        }
-                      });
+                      final idx = parentState.servers.indexWhere((s) => s.host == server.host);
+                      if (idx != -1) {
+                        final s = parentState.servers[idx];
+                        parentState.servers[idx] = _ServerMeta(
+                          host: s.host,
+                          mail: s.mail,
+                          name: s.name,
+                          hasServerError: s.hasServerError,
+                          hasAuthError: true,
+                          missedNotifications: s.missedNotifications,
+                          socket: s.socket,
+                        );
+                      }
+                      parentState._loadServers(); // Trigger rebuild
                     }
                     //GoRouter.of(context).go('/login');
                   }

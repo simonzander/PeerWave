@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
 import '../../services/storage/sqlite_message_store.dart';
 import '../../services/storage/sqlite_recent_conversations_store.dart';
+import '../../services/starred_conversations_service.dart';
 import '../../widgets/user_avatar.dart';
 import '../../providers/unread_messages_provider.dart';
 import '../../providers/navigation_state_provider.dart';
@@ -45,8 +46,16 @@ class _MessagesListViewState extends State<MessagesListView> {
   @override
   void initState() {
     super.initState();
+    _initializeStarredService();
     _loadConversations();
     _loadRecentPeople();
+  }
+  
+  Future<void> _initializeStarredService() async {
+    await StarredConversationsService.instance.initialize();
+    if (mounted) {
+      setState(() {}); // Refresh UI after starred service loads
+    }
   }
 
   Future<void> _loadConversations() async {
@@ -285,6 +294,17 @@ class _MessagesListViewState extends State<MessagesListView> {
     });
     _loadConversations();
   }
+  
+  void _toggleStar(String userId) async {
+    // Toggle in local encrypted database
+    final success = await StarredConversationsService.instance.toggleStar(userId);
+    
+    if (success && mounted) {
+      setState(() {
+        // Trigger rebuild to update star icon
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -299,7 +319,7 @@ class _MessagesListViewState extends State<MessagesListView> {
           PeopleContextPanel(
             host: widget.host,
             recentPeople: _recentPeople,
-            favoritePeople: const [], // No favorites for now
+            starredPeople: const [], // No favorites for now
             onPersonTap: (uuid, displayName) {
               // Navigate to conversation
               widget.onMessageTap(uuid, displayName);
@@ -380,6 +400,9 @@ class _MessagesListViewState extends State<MessagesListView> {
         : 'No messages';
     final lastMessageTime = conv['lastMessageTime'] as String? ?? '';
     final userId = conv['userId'] as String;
+    
+    // Check if conversation is starred
+    final isStarred = StarredConversationsService.instance.isStarred(userId);
 
     return Consumer2<UnreadMessagesProvider, NavigationStateProvider>(
       builder: (context, unreadProvider, navProvider, _) {
@@ -432,7 +455,25 @@ class _MessagesListViewState extends State<MessagesListView> {
               ),
             ],
           ),
-          trailing: AnimatedBadge(count: unreadCount, isSmall: true),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (unreadCount > 0) AnimatedBadge(count: unreadCount, isSmall: true),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: Icon(
+                  isStarred ? Icons.star : Icons.star_border,
+                  color: isStarred ? Colors.amber : Colors.grey,
+                  size: 20,
+                ),
+                onPressed: () => _toggleStar(userId),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.arrow_forward_ios, size: 16),
+            ],
+          ),
           selected: isSelected,
           onTap: () {
             navProvider.selectDirectMessage(userId);

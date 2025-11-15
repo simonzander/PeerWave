@@ -36,6 +36,7 @@ class PeopleViewPage extends BaseView {
 class _PeopleViewPageState extends BaseViewState<PeopleViewPage> {
   // Context Panel Data
   List<Map<String, dynamic>> _recentPeople = [];
+  List<Map<String, dynamic>> _starredPeople = [];
   bool _isLoadingContextPanel = false;
   static const int _contextPanelLimit = 10;
   
@@ -94,7 +95,7 @@ class _PeopleViewPageState extends BaseViewState<PeopleViewPage> {
       type: ContextPanelType.people,
       host: widget.host,
       recentPeople: _recentPeople,
-      favoritePeople: const [], // TODO: Implement favorites in Phase 2+
+      starredPeople: _starredPeople,
       onMessageTap: _handlePersonTap,
       isLoadingPeople: _isLoadingContextPanel,
       onLoadMorePeople: _loadMoreRecentPeople,
@@ -132,9 +133,15 @@ class _PeopleViewPageState extends BaseViewState<PeopleViewPage> {
         unreadProvider: unreadProvider,
       );
       
+      // Load starred people separately
+      final starredList = await PeopleContextDataLoader.loadStarredPeople(
+        unreadProvider: unreadProvider,
+      );
+      
       if (mounted) {
         setState(() {
           _recentPeople = peopleList;
+          _starredPeople = starredList;
           _isLoadingContextPanel = false;
         });
       }

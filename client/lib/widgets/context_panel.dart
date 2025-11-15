@@ -25,20 +25,16 @@ class ContextPanel extends StatelessWidget {
   
   // Additional data for People panel
   final List<Map<String, dynamic>>? recentPeople;
-  final List<Map<String, dynamic>>? favoritePeople;
+  final List<Map<String, dynamic>>? starredPeople;
   final String? activeContactUuid; // Currently active contact/conversation
   final bool isLoadingPeople;
   final VoidCallback? onLoadMorePeople;
   final bool hasMorePeople;
   
   // Additional data for Channels panel
-  final List<Map<String, dynamic>>? liveChannels;
-  final List<Map<String, dynamic>>? recentChannels;
-  final List<Map<String, dynamic>>? favoriteChannels;
+  final List<Map<String, dynamic>>? allChannels; // All member/owner channels
   final String? activeChannelUuid;
   final bool isLoadingChannels;
-  final VoidCallback? onLoadMoreChannels;
-  final bool hasMoreChannels;
 
   const ContextPanel({
     super.key,
@@ -50,18 +46,14 @@ class ContextPanel extends StatelessWidget {
     this.onCreateChannel,
     this.width = 280,
     this.recentPeople,
-    this.favoritePeople,
+    this.starredPeople,
     this.activeContactUuid,
     this.isLoadingPeople = false,
     this.onLoadMorePeople,
     this.hasMorePeople = false,
-    this.liveChannels,
-    this.recentChannels,
-    this.favoriteChannels,
+    this.allChannels,
     this.activeChannelUuid,
     this.isLoadingChannels = false,
-    this.onLoadMoreChannels,
-    this.hasMoreChannels = false,
   });
 
   @override
@@ -78,15 +70,11 @@ class ContextPanel extends StatelessWidget {
       case ContextPanelType.channels:
         return ChannelsContextPanel(
           host: host,
-          liveChannels: liveChannels ?? [],
-          recentChannels: recentChannels ?? [],
-          favoriteChannels: favoriteChannels ?? [],
+          allChannels: allChannels ?? [],
           activeChannelUuid: activeChannelUuid,
           onChannelTap: onChannelTap ?? (uuid, name, type) {},
           onCreateChannel: onCreateChannel,
           isLoading: isLoadingChannels,
-          onLoadMore: onLoadMoreChannels,
-          hasMore: hasMoreChannels,
         );
         
       case ContextPanelType.messages:
@@ -100,7 +88,7 @@ class ContextPanel extends StatelessWidget {
         return PeopleContextPanel(
           host: host,
           recentPeople: recentPeople ?? [],
-          favoritePeople: favoritePeople ?? [],
+          starredPeople: starredPeople ?? [],
           activeContactUuid: activeContactUuid,
           onPersonTap: onMessageTap ?? (uuid, displayName) {},
           isLoading: isLoadingPeople,

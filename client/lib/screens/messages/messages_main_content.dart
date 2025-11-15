@@ -6,6 +6,7 @@ import '../../providers/unread_messages_provider.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/storage/sqlite_message_store.dart';
 import '../../services/recent_conversations_service.dart';
+import '../../services/starred_conversations_service.dart';
 import 'dart:async';
 
 /// Messages Main Content - Shows conversation list with enhanced UI
@@ -40,8 +41,16 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
   @override
   void initState() {
     super.initState();
+    _initializeStarredService();
     _loadConversations();
     _searchController.addListener(_onSearchChanged);
+  }
+  
+  Future<void> _initializeStarredService() async {
+    await StarredConversationsService.instance.initialize();
+    if (mounted) {
+      setState(() {}); // Refresh UI after starred service loads
+    }
   }
 
   @override
@@ -160,7 +169,7 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
             'lastMessage': lastMessage,
             'lastMessageTime': lastMessageTime,
             'unreadCount': unreadProvider.directMessageUnreadCounts[userId] ?? 0,
-            'isStarred': false, // TODO: Implement starred/favorite conversations
+            'isStarred': StarredConversationsService.instance.isStarred(userId),
           });
         }
       }
@@ -492,6 +501,23 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
                       ],
                     ),
                   ),
+                  
+                  // Star icon button
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: Icon(
+                      StarredConversationsService.instance.isStarred(userId) 
+                          ? Icons.star 
+                          : Icons.star_border,
+                      color: StarredConversationsService.instance.isStarred(userId) 
+                          ? Colors.amber 
+                          : Colors.grey,
+                      size: 24,
+                    ),
+                    onPressed: () => _toggleStar(userId),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
                 ],
               ),
             ),
@@ -499,6 +525,15 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
         );
       },
     );
+  }
+  
+  void _toggleStar(String userId) async {
+    final success = await StarredConversationsService.instance.toggleStar(userId);
+    if (success && mounted) {
+      setState(() {
+        // Trigger rebuild to update star icon
+      });
+    }
   }
 
   Widget _buildEmptyState() {

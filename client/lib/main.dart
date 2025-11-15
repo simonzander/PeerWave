@@ -140,9 +140,6 @@ class _MyAppState extends State<MyApp> {
   
   // Global navigator key for accessing router from anywhere
   static final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
-  
-  // Expose navigator key getter for logout service
-  static GlobalKey<NavigatorState> get rootNavigatorKey => _rootNavigatorKey;
 
   @override
   void initState() {

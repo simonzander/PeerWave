@@ -161,7 +161,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final fileSize = file['fileSize'] as int? ?? 0;
     final mimeType = file['mimeType'] as String? ?? 'application/octet-stream';
     final seederCount = file['seederCount'] as int? ?? 0;
-    final fileId = file['fileId'] as String? ?? 'unknown';
     
     return Card(
       margin: const EdgeInsets.only(bottom: 12),

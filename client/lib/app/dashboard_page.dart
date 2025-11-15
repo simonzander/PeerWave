@@ -594,7 +594,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 },
                 onCreateChannel: _loadChannels,
                 recentPeople: _recentPeople,
-                favoritePeople: [], // TODO: Implement favorites
+                starredPeople: [], // TODO: Implement favorites
                 isLoadingPeople: _isLoadingRecentPeople,
                 onLoadMorePeople: _loadMoreRecentPeople,
                 hasMorePeople: _hasMoreRecentPeople,

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../../services/recent_conversations_service.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/storage/sqlite_message_store.dart';
+import '../../services/starred_conversations_service.dart';
 import '../../providers/unread_messages_provider.dart';
 
 /// Shared utility for loading People context panel data
@@ -86,16 +87,23 @@ class PeopleContextDataLoader {
             'lastMessage': lastMessage,
             'lastMessageTime': lastMessageTime,
             'unreadCount': unreadCount, // Add unread count for badge
+            'isStarred': StarredConversationsService.instance.isStarred(userId),
           });
         }
       }
       
-      // Sort people list: unread messages first, then by last message time
+      // Sort people list: starred first, then unread messages, then by last message time
       peopleList.sort((a, b) {
+        final aStarred = a['isStarred'] as bool? ?? false;
+        final bStarred = b['isStarred'] as bool? ?? false;
         final aUnread = a['unreadCount'] as int? ?? 0;
         final bUnread = b['unreadCount'] as int? ?? 0;
         
-        // Users with unread messages come first
+        // Starred users come first
+        if (aStarred && !bStarred) return -1;
+        if (!aStarred && bStarred) return 1;
+        
+        // Then users with unread messages
         if (aUnread > 0 && bUnread == 0) return -1;
         if (aUnread == 0 && bUnread > 0) return 1;
         
@@ -107,6 +115,88 @@ class PeopleContextDataLoader {
       return peopleList;
     } catch (e, stackTrace) {
       debugPrint('[CONTEXT_DATA_LOADER] Error loading data: $e');
+      debugPrint('[CONTEXT_DATA_LOADER] Stack trace: $stackTrace');
+      return [];
+    }
+  }
+  
+  /// Load only starred conversations for context panel
+  static Future<List<Map<String, dynamic>>> loadStarredPeople({
+    UnreadMessagesProvider? unreadProvider,
+  }) async {
+    try {
+      debugPrint('[CONTEXT_DATA_LOADER] Loading starred conversations...');
+      
+      // Get starred conversation IDs
+      final starredIds = StarredConversationsService.instance.getStarredConversations();
+      if (starredIds.isEmpty) {
+        return [];
+      }
+      
+      // Get all recent conversations
+      final allConvs = await RecentConversationsService.getRecentConversations();
+      
+      // Filter to only starred ones
+      final starredConvs = allConvs.where((conv) => 
+        starredIds.contains(conv['uuid'])
+      ).toList();
+      
+      // Get message store for last messages
+      final messageStore = await SqliteMessageStore.getInstance();
+      
+      final peopleList = <Map<String, dynamic>>[];
+      
+      for (final conv in starredConvs) {
+        final userId = conv['uuid'];
+        final displayName = conv['displayName'];
+        final picture = conv['picture'];
+        
+        if (userId != null && userId.isNotEmpty) {
+          String lastMessage = '';
+          String lastMessageTime = '';
+          int unreadCount = 0;
+          
+          try {
+            final messages = await messageStore.getMessagesFromConversation(
+              userId,
+              limit: 1,
+              types: ['message', 'file', 'image', 'voice'],
+            );
+            
+            if (messages.isNotEmpty) {
+              final lastMsg = messages.first;
+              final msgType = lastMsg['type'] ?? 'message';
+              lastMessage = formatMessagePreview(msgType, lastMsg['message']);
+              lastMessageTime = lastMsg['timestamp'];
+            }
+            
+            if (unreadProvider != null) {
+              unreadCount = unreadProvider.getDirectMessageUnreadCount(userId);
+            }
+          } catch (e) {
+            debugPrint('[CONTEXT_DATA_LOADER] Error loading starred conversation $userId: $e');
+          }
+          
+          final profile = UserProfileService.instance.getProfile(userId);
+          
+          peopleList.add({
+            'uuid': userId,
+            'displayName': displayName ?? userId,
+            'atName': profile?['atName'] ?? '',
+            'picture': picture ?? '',
+            'online': false,
+            'lastMessage': lastMessage,
+            'lastMessageTime': lastMessageTime,
+            'unreadCount': unreadCount,
+            'isStarred': true,
+          });
+        }
+      }
+      
+      debugPrint('[CONTEXT_DATA_LOADER] Loaded ${peopleList.length} starred people');
+      return peopleList;
+    } catch (e, stackTrace) {
+      debugPrint('[CONTEXT_DATA_LOADER] Error loading starred data: $e');
       debugPrint('[CONTEXT_DATA_LOADER] Stack trace: $stackTrace');
       return [];
     }

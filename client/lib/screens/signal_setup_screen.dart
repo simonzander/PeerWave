@@ -18,8 +18,6 @@ class SignalSetupScreen extends StatefulWidget {
 class _SignalSetupScreenState extends State<SignalSetupScreen> {
   String _statusText = 'Initializing Signal Protocol...';
   double _progress = 0.0;
-  int _currentStep = 0;
-  int _totalSteps = 112;
   bool _isComplete = false;
 
   @override
@@ -35,8 +33,6 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
           if (mounted) {
             setState(() {
               _statusText = statusText;
-              _currentStep = current;
-              _totalSteps = total;
               _progress = percentage / 100.0;
             });
           }

@@ -4,7 +4,6 @@ import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart';
 import '../device_identity_service.dart';
-import 'database_encryption_service.dart';
 
 /// Central database helper for PeerWave with device-scoped storage
 /// 
@@ -17,10 +16,9 @@ class DatabaseHelper {
   static bool _factoryInitialized = false;
   static bool _initializing = false;
   static const String _databaseBaseName = 'peerwave'; // Base name without .db extension
-  static const int _databaseVersion = 5; // Version 5: Add metadata column for new message types
+  static const int _databaseVersion = 6; // Version 6: Add starred_channels table
   
   static final DeviceIdentityService _deviceIdentity = DeviceIdentityService.instance;
-  static final DatabaseEncryptionService _encryption = DatabaseEncryptionService.instance;
   
   /// Get device-scoped database name
   static String get _databaseName {
@@ -261,6 +259,22 @@ class DatabaseHelper {
     
     debugPrint('[DATABASE] ✓ Created Signal protocol tables');
 
+    // =============================================
+    // STARRED CHANNELS TABLE (client-side only)
+    // =============================================
+    // Stores which channels are starred by this device's user
+    // Server has no knowledge of starred channels
+    await db.execute('''
+      CREATE TABLE starred_channels (
+        channel_uuid TEXT PRIMARY KEY,
+        starred_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+      )
+    ''');
+    
+    await db.execute('CREATE INDEX idx_starred_channels_timestamp ON starred_channels(starred_at DESC)');
+    
+    debugPrint('[DATABASE] ✓ Created starred_channels table');
+
     debugPrint('[DATABASE] Database schema created successfully!');
   }
 
@@ -293,6 +307,19 @@ class DatabaseHelper {
         ALTER TABLE messages ADD COLUMN metadata TEXT DEFAULT NULL
       ''');
       debugPrint('[DATABASE] ✓ Added metadata column (stores JSON metadata for image/voice/mentions)');
+    }
+    
+    // Version 5 → 6: Add starred_channels table
+    if (oldVersion < 6) {
+      debugPrint('[DATABASE] Applying migration: Add starred_channels table');
+      await db.execute('''
+        CREATE TABLE starred_channels (
+          channel_uuid TEXT PRIMARY KEY,
+          starred_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+        )
+      ''');
+      await db.execute('CREATE INDEX idx_starred_channels_timestamp ON starred_channels(starred_at DESC)');
+      debugPrint('[DATABASE] ✓ Added starred_channels table (client-side starred state)');
     }
   }
 

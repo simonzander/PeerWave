@@ -305,6 +305,31 @@ class AppThemeConstants {
   // HELPER METHODS
   // ============================================================================
   
+  /// Creates a squared icon container (replaces CircleAvatar for consistent design)
+  /// Use this for channel icons, group icons, etc. to match squared profile pictures
+  static Widget squaredIconContainer({
+    required IconData icon,
+    required Color backgroundColor,
+    required Color iconColor,
+    double size = 40.0,
+    double? iconSize,
+    double? borderRadius,
+  }) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(borderRadius ?? radiusSmall), // Default 8px like avatars
+      ),
+      child: Icon(
+        icon,
+        color: iconColor,
+        size: iconSize ?? (size * 0.5), // Icon is 50% of container size
+      ),
+    );
+  }
+  
   /// Erstellt AnimatedContainer mit Standard-Settings
   static Widget animatedContainer({
     required Widget child,

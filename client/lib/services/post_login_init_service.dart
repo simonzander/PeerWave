@@ -7,6 +7,7 @@ import 'user_profile_service.dart';
 import 'message_cleanup_service.dart';
 import 'message_listener_service.dart';
 import 'recent_conversations_service.dart';
+import 'starred_channels_service.dart';
 import '../providers/unread_messages_provider.dart';
 import '../providers/role_provider.dart';
 import 'storage/database_helper.dart';
@@ -121,6 +122,12 @@ class PostLoginInitService {
       debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing database...');
       await DatabaseHelper.database;
       debugPrint('[POST_LOGIN_INIT] ✓ Database initialized');
+      
+      // Step 3.5: Initialize Starred Channels Service (uses database)
+      onProgress?.call('Loading preferences...', currentStep, totalSteps);
+      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing starred channels...');
+      await StarredChannelsService.instance.initialize();
+      debugPrint('[POST_LOGIN_INIT] ✓ Starred channels initialized');
       
       // Step 4: Initialize Signal Protocol stores
       currentStep++;

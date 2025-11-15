@@ -16,7 +16,7 @@ import '../providers/unread_messages_provider.dart';
 class PeopleContextPanel extends StatelessWidget {
   final String host;
   final List<Map<String, dynamic>> recentPeople;
-  final List<Map<String, dynamic>> favoritePeople;
+  final List<Map<String, dynamic>> starredPeople; // Starred conversations
   final String? activeContactUuid; // Currently active conversation
   final Function(String uuid, String displayName) onPersonTap;
   final VoidCallback? onLoadMore;
@@ -27,7 +27,7 @@ class PeopleContextPanel extends StatelessWidget {
     super.key,
     required this.host,
     required this.recentPeople,
-    required this.favoritePeople,
+    this.starredPeople = const [],
     this.activeContactUuid,
     required this.onPersonTap,
     this.onLoadMore,
@@ -37,6 +37,24 @@ class PeopleContextPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Get starred UUIDs for filtering
+    final starredUuids = starredPeople.map((p) => p['uuid'] as String).toSet();
+    
+    // Split recent people into unread and regular recent
+    final unreadPeople = recentPeople.where((person) {
+      final uuid = person['uuid'] as String;
+      final unreadCount = person['unreadCount'] as int? ?? 0;
+      // Only show in unread if not starred and has unread messages
+      return !starredUuids.contains(uuid) && unreadCount > 0;
+    }).toList();
+    
+    final regularRecentPeople = recentPeople.where((person) {
+      final uuid = person['uuid'] as String;
+      final unreadCount = person['unreadCount'] as int? ?? 0;
+      // Only show in recent if not starred and no unread messages
+      return !starredUuids.contains(uuid) && unreadCount == 0;
+    }).toList();
+    
     return Container(
       color: AppThemeConstants.contextPanelBackground,
       child: Column(
@@ -52,10 +70,39 @@ class PeopleContextPanel extends StatelessWidget {
                 : ListView(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     children: [
-                      // Recent Conversations
-                      if (recentPeople.isNotEmpty) ...[
+                      // Starred Conversations (only show if there are starred chats)
+                      if (starredPeople.isNotEmpty) ...[
+                        _buildSectionHeader('Starred'),
+                        ...starredPeople.map((person) => _buildPersonTile(
+                          person: person,
+                          onTap: () => onPersonTap(
+                            person['uuid'],
+                            person['displayName'],
+                          ),
+                          showStar: true,
+                          isActive: person['uuid'] == activeContactUuid,
+                        )),
+                        const SizedBox(height: 12),
+                      ],
+                      
+                      // Unread Conversations (not starred)
+                      if (unreadPeople.isNotEmpty) ...[
+                        _buildSectionHeader('Unread'),
+                        ...unreadPeople.map((person) => _buildPersonTile(
+                          person: person,
+                          onTap: () => onPersonTap(
+                            person['uuid'],
+                            person['displayName'],
+                          ),
+                          isActive: person['uuid'] == activeContactUuid,
+                        )),
+                        const SizedBox(height: 12),
+                      ],
+                      
+                      // Recent Conversations (not starred, no unread)
+                      if (regularRecentPeople.isNotEmpty) ...[
                         _buildSectionHeader('Recent'),
-                        ...recentPeople.map((person) => _buildPersonTile(
+                        ...regularRecentPeople.map((person) => _buildPersonTile(
                           person: person,
                           onTap: () => onPersonTap(
                             person['uuid'],
@@ -71,22 +118,8 @@ class PeopleContextPanel extends StatelessWidget {
                         const SizedBox(height: 12),
                       ],
                       
-                      // Favorites
-                      if (favoritePeople.isNotEmpty) ...[
-                        _buildSectionHeader('Favorites'),
-                        ...favoritePeople.map((person) => _buildPersonTile(
-                          person: person,
-                          onTap: () => onPersonTap(
-                            person['uuid'],
-                            person['displayName'],
-                          ),
-                          showStar: true,
-                          isActive: person['uuid'] == activeContactUuid,
-                        )),
-                      ],
-                      
                       // Empty state
-                      if (recentPeople.isEmpty && favoritePeople.isEmpty)
+                      if (recentPeople.isEmpty && starredPeople.isEmpty)
                         _buildEmptyState(),
                     ],
                   ),

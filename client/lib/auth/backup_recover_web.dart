@@ -1,12 +1,9 @@
 
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:web/web.dart' as web;
-import 'package:js/js.dart';
-import 'package:js/js_util.dart' as js_util;
 import '../services/api_service.dart';
 import '../web_config.dart';
 import 'dart:async';
@@ -49,16 +46,12 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
       });
       if (resp.statusCode == 200) {
         setState(() {
-          _status = 'Backup code accepted! ';
           GoRouter.of(context).go('/app/settings/webauthn');
-          _loading = false;
         });
       } else if (resp.statusCode == 429) {
         final waitTime = resp.data['message'];
         setState(() {
-          _status = 'Too many attempts. Please wait $waitTime seconds.';
           _waitTime = waitTime is int ? waitTime : int.tryParse(waitTime.toString());
-          _loading = false;
         });
         _waitTimer?.cancel();
         if (_waitTime != null && _waitTime! > 0) {
@@ -76,18 +69,13 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
           });
         }
       } else {
-        setState(() {
-          _status = 'Invalid backup code. Please try again.';
-          _loading = false;
-        });
+        // Invalid backup code - no action needed, user can try again
       }
     } catch (e) {
       debugPrint('Error fetching backup codes: $e');
     }
   }
   final TextEditingController serverController = TextEditingController();
-  String? _status;
-  bool _loading = false;
 
   @override
   void dispose() {

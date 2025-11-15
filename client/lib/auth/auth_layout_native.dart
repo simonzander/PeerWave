@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:async';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
@@ -10,7 +8,6 @@ import 'package:go_router/go_router.dart';
 //import '../web_config.dart';
 import 'webauthn_js_stub.dart';
 import '../extensions/snackbar_extensions.dart';
-import 'magic_link_native.dart';
 import '../services/api_service.dart';
 
 

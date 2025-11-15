@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import '../../services/activities_service.dart';
 import '../../services/api_service.dart';
 import '../../services/video_conference_service.dart';
+import '../../services/starred_channels_service.dart';
+import '../../services/signal_service.dart';
 import '../../models/role.dart';
 import '../../providers/unread_messages_provider.dart';
 import '../../providers/navigation_state_provider.dart';
@@ -11,7 +13,7 @@ import '../../theme/app_theme_constants.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 
-/// Channels List View - Shows member channels and public non-member channels
+/// Channels List View - Shows all channels with smart categorization
 class ChannelsListView extends StatefulWidget {
   final String host;
   final Function(String uuid, String name, String type) onChannelTap;
@@ -28,39 +30,53 @@ class ChannelsListView extends StatefulWidget {
   State<ChannelsListView> createState() => _ChannelsListViewState();
 }
 
-class _ChannelsListViewState extends State<ChannelsListView> {
+class _ChannelsListViewState extends State<ChannelsListView> with TickerProviderStateMixin {
   bool _loading = true;
   final TextEditingController _searchController = TextEditingController();
   
-  // Live WebRTC channels (with participants)
-  List<Map<String, dynamic>> _liveWebRTCChannels = [];
+  // All channels (unified from API)
+  List<Map<String, dynamic>> _allChannels = [];
   
-  // Member channels (Signal + inactive WebRTC)
-  List<Map<String, dynamic>> _memberSignalChannels = [];
-  List<Map<String, dynamic>> _memberInactiveWebRTCChannels = [];
-  
-  // Non-member public channels
-  List<Map<String, dynamic>> _publicChannels = [];
-  // int _publicChannelsLimit = 20; // TODO: Use when discover endpoint is ready
-  
-  // Filtered channels for display
-  List<Map<String, dynamic>> _filteredLiveChannels = [];
-  List<Map<String, dynamic>> _filteredSignalChannels = [];
-  List<Map<String, dynamic>> _filteredInactiveWebRTCChannels = [];
+  // Discover (public non-member/non-owner channels)
+  List<Map<String, dynamic>> _discoverChannels = [];
+  int _discoverOffset = 0;
+  final int _discoverLimit = 10;
+  bool _hasMoreDiscover = true;
+  bool _loadingMoreDiscover = false;
   
   // Search and filter state
   String _searchQuery = '';
-  String _selectedFilter = 'all'; // 'all', 'live', 'unread', 'calls', 'text', 'meetings', 'starred'
+  String _selectedFilter = 'all';
+  
+  // Animation controller for live indicator
+  late AnimationController _liveAnimationController;
+  late Animation<double> _liveAnimation;
 
   @override
   void initState() {
     super.initState();
+    _liveAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat(reverse: true);
+    _liveAnimation = Tween<double>(begin: 0.3, end: 1.0).animate(
+      CurvedAnimation(parent: _liveAnimationController, curve: Curves.easeInOut),
+    );
+    _initializeStarredService();
     _loadChannels();
     _searchController.addListener(_onSearchChanged);
   }
   
+  Future<void> _initializeStarredService() async {
+    await StarredChannelsService.instance.initialize();
+    if (mounted) {
+      setState(() {}); // Refresh UI after starred service loads
+    }
+  }
+  
   @override
   void dispose() {
+    _liveAnimationController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -68,229 +84,282 @@ class _ChannelsListViewState extends State<ChannelsListView> {
   void _onSearchChanged() {
     setState(() {
       _searchQuery = _searchController.text.trim().toLowerCase();
-      _applyFilters();
     });
   }
   
-  void _applyFilters() {
-    // Apply search to live channels
-    var filteredLive = _liveWebRTCChannels.where((channel) {
-      if (_searchQuery.isNotEmpty) {
-        final name = (channel['name'] as String? ?? '').toLowerCase();
-        final description = (channel['description'] as String? ?? '').toLowerCase();
-        if (!name.contains(_searchQuery) && !description.contains(_searchQuery)) {
-          return false;
-        }
-      }
-      return true;
-    }).toList();
-    
-    // Apply search to signal channels
-    var filteredSignal = _memberSignalChannels.where((channel) {
-      if (_searchQuery.isNotEmpty) {
-        final name = (channel['name'] as String? ?? '').toLowerCase();
-        final description = (channel['description'] as String? ?? '').toLowerCase();
-        if (!name.contains(_searchQuery) && !description.contains(_searchQuery)) {
-          return false;
-        }
-      }
-      return true;
-    }).toList();
-    
-    // Apply search to inactive WebRTC channels
-    var filteredInactive = _memberInactiveWebRTCChannels.where((channel) {
-      if (_searchQuery.isNotEmpty) {
-        final name = (channel['name'] as String? ?? '').toLowerCase();
-        final description = (channel['description'] as String? ?? '').toLowerCase();
-        if (!name.contains(_searchQuery) && !description.contains(_searchQuery)) {
-          return false;
-        }
-      }
-      return true;
-    }).toList();
-    
-    // Apply category filters
-    if (_selectedFilter == 'live') {
-      // Only show live channels
-      filteredSignal = [];
-      filteredInactive = [];
-    } else if (_selectedFilter == 'unread') {
-      // Filter channels with unread messages
-      final unreadProvider = context.read<UnreadMessagesProvider>();
-      filteredLive = filteredLive.where((ch) => 
-        (unreadProvider.channelUnreadCounts[ch['uuid']] ?? 0) > 0
-      ).toList();
-      filteredSignal = filteredSignal.where((ch) => 
-        (unreadProvider.channelUnreadCounts[ch['uuid']] ?? 0) > 0
-      ).toList();
-      filteredInactive = filteredInactive.where((ch) => 
-        (unreadProvider.channelUnreadCounts[ch['uuid']] ?? 0) > 0
-      ).toList();
-    } else if (_selectedFilter == 'calls') {
-      // Only WebRTC channels (live + inactive)
-      filteredSignal = [];
-    } else if (_selectedFilter == 'text') {
-      // Only Signal channels
-      filteredLive = [];
-      filteredInactive = [];
-    } else if (_selectedFilter == 'meetings') {
-      // TODO: Filter by meeting/conference type when implemented
-      // For now, show all WebRTC channels
-      filteredSignal = [];
-    } else if (_selectedFilter == 'starred') {
-      // TODO: Filter by starred/favorite channels when implemented
-      filteredLive = filteredLive.where((ch) => ch['isStarred'] == true).toList();
-      filteredSignal = filteredSignal.where((ch) => ch['isStarred'] == true).toList();
-      filteredInactive = filteredInactive.where((ch) => ch['isStarred'] == true).toList();
-    }
-    
-    setState(() {
-      _filteredLiveChannels = filteredLive;
-      _filteredSignalChannels = filteredSignal;
-      _filteredInactiveWebRTCChannels = filteredInactive;
-    });
-  }
-
   Future<void> _loadChannels() async {
-    setState(() {
-      _loading = true;
-    });
+    setState(() => _loading = true);
 
     try {
-      // Load all channels where user is member
-      await _loadMemberChannels();
-      
-      // Load public non-member channels
-      await _loadPublicChannels();
-
-      setState(() {
-        _loading = false;
-      });
+      await _loadAllChannels();
+      await _loadDiscoverChannels(reset: true);
+      setState(() => _loading = false);
     } catch (e) {
       debugPrint('[CHANNELS_LIST] Error loading channels: $e');
-      setState(() {
-        _loading = false;
-      });
+      setState(() => _loading = false);
     }
   }
 
-  Future<void> _loadMemberChannels() async {
+  Future<void> _loadAllChannels() async {
     try {
-      // Get WebRTC channels with participants
+      // Get WebRTC channels with live participants
       final webrtcWithParticipants = await ActivitiesService.getWebRTCChannelParticipants(widget.host);
       
-      // Get all member channels (both types)
+      // Get all member/owner channels
       ApiService.init();
       final hostUrl = ApiService.ensureHttpPrefix(widget.host);
-      final resp = await ApiService.get('$hostUrl/client/channels?limit=100');
+      final resp = await ApiService.get('$hostUrl/client/channels?limit=1000');
+      
+      debugPrint('[CHANNELS_LIST] API Response status: ${resp.statusCode}');
       
       if (resp.statusCode == 200) {
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
-        final allChannels = (data['channels'] as List<dynamic>? ?? []);
+        debugPrint('[CHANNELS_LIST] API Response data type: ${data.runtimeType}');
+        debugPrint('[CHANNELS_LIST] API Response keys: ${data is Map ? data.keys.toList() : "not a map"}');
         
-        // Separate channels by type
-        final webrtcChannels = <Map<String, dynamic>>[];
-        final signalChannels = <Map<String, dynamic>>[];
+        final channels = (data['channels'] as List<dynamic>? ?? []);
         
-        for (final channel in allChannels) {
-          final channelMap = channel as Map<String, dynamic>;
-          final type = channelMap['type'] as String?;
+        debugPrint('[CHANNELS_LIST] Loaded ${channels.length} channels from API');
+        
+        // Get current user ID to determine ownership
+        final currentUserId = SignalService.instance.currentUserId;
+        
+        _allChannels = channels.map((ch) {
+          final channelMap = Map<String, dynamic>.from(ch as Map);
+          channelMap['isMember'] = true; // These are all member/owner channels
+          // Determine ownership by comparing channel owner with current user
+          channelMap['isOwner'] = (currentUserId != null && channelMap['owner'] == currentUserId);
           
-          if (type == 'webrtc') {
-            // Check if this WebRTC channel has live participants
-            final hasParticipants = webrtcWithParticipants.any((ch) => 
-              ch['uuid'] == channelMap['uuid'] && 
-              (ch['participants'] as List?)?.isNotEmpty == true
+          // Get starred state from local encrypted database (server has no knowledge)
+          try {
+            channelMap['isStarred'] = StarredChannelsService.instance.isStarred(
+              channelMap['uuid'] as String? ?? ''
             );
-            
-            if (hasParticipants) {
-              // Add participant count
-              final participantsData = webrtcWithParticipants.firstWhere(
-                (ch) => ch['uuid'] == channelMap['uuid']
-              );
-              channelMap['participants'] = participantsData['participants'];
-              _liveWebRTCChannels.add(channelMap);
-            } else {
-              webrtcChannels.add(channelMap);
-            }
-          } else if (type == 'signal') {
-            signalChannels.add(channelMap);
+          } catch (e) {
+            debugPrint('[CHANNELS_LIST] Error checking starred state: $e');
+            channelMap['isStarred'] = false;
           }
-        }
+          
+          // Add live participant data for WebRTC channels
+          if (channelMap['type'] == 'webrtc') {
+            final liveData = webrtcWithParticipants.firstWhere(
+              (ch) => ch['uuid'] == channelMap['uuid'],
+              orElse: () => <String, dynamic>{},
+            );
+            if (liveData.isNotEmpty && (liveData['participants'] as List?)?.isNotEmpty == true) {
+              channelMap['participants'] = liveData['participants'];
+            }
+          }
+          
+          return channelMap;
+        }).toList();
         
-        // Get last message for Signal channels
-        await _enrichSignalChannelsWithLastMessage(signalChannels);
-        
-        // Sort Signal channels by last message time
-        signalChannels.sort((a, b) {
-          final timeA = DateTime.tryParse(a['lastMessageTime'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final timeB = DateTime.tryParse(b['lastMessageTime'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-          return timeB.compareTo(timeA);
-        });
-        
-        setState(() {
-          _memberSignalChannels = signalChannels;
-          _memberInactiveWebRTCChannels = webrtcChannels;
-          _applyFilters(); // Apply filters after loading
-        });
+        // Enrich Signal channels with last message
+        await _enrichSignalChannelsWithLastMessage();
+      } else {
+        debugPrint('[CHANNELS_LIST] API Error: ${resp.statusCode} - ${resp.data}');
       }
     } catch (e) {
       debugPrint('[CHANNELS_LIST] Error loading member channels: $e');
     }
   }
 
-  Future<void> _enrichSignalChannelsWithLastMessage(List<Map<String, dynamic>> channels) async {
-    for (final channel in channels) {
-      try {
-        final conversations = await ActivitiesService.getRecentGroupConversations(
-          widget.host,
-          limit: 1,
-        );
-        
-        final channelConv = conversations.firstWhere(
-          (conv) => conv['channelId'] == channel['uuid'],
+  Future<void> _enrichSignalChannelsWithLastMessage() async {
+    try {
+      final conversations = await ActivitiesService.getRecentGroupConversations(
+        widget.host,
+        limit: 100,
+      );
+      
+      for (final channel in _allChannels.where((ch) => ch['type'] == 'signal')) {
+        final conv = conversations.firstWhere(
+          (c) => c['channelId'] == channel['uuid'],
           orElse: () => <String, dynamic>{},
         );
         
-        if (channelConv.isNotEmpty) {
-          final lastMessages = (channelConv['lastMessages'] as List?) ?? [];
+        if (conv.isNotEmpty) {
+          final lastMessages = (conv['lastMessages'] as List?) ?? [];
           channel['lastMessage'] = lastMessages.isNotEmpty
               ? (lastMessages.first['message'] as String? ?? '')
               : '';
-          channel['lastMessageTime'] = channelConv['lastMessageTime'] ?? '';
+          channel['lastMessageTime'] = conv['lastMessageTime'] ?? '';
         } else {
           channel['lastMessage'] = '';
           channel['lastMessageTime'] = '';
         }
-      } catch (e) {
-        channel['lastMessage'] = '';
-        channel['lastMessageTime'] = '';
+      }
+    } catch (e) {
+      debugPrint('[CHANNELS_LIST] Error enriching signal channels: $e');
+    }
+  }
+
+  Future<void> _loadDiscoverChannels({bool reset = false}) async {
+    if (reset) {
+      _discoverOffset = 0;
+      _hasMoreDiscover = true;
+      _discoverChannels = [];
+    }
+    
+    if (!_hasMoreDiscover || _loadingMoreDiscover) return;
+    
+    setState(() => _loadingMoreDiscover = true);
+    
+    try {
+      ApiService.init();
+      final hostUrl = ApiService.ensureHttpPrefix(widget.host);
+      final resp = await ApiService.get(
+        '$hostUrl/client/channels/discover?limit=$_discoverLimit&offset=$_discoverOffset'
+      );
+      
+      if (resp.statusCode == 200) {
+        final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
+        final channels = (data['channels'] as List<dynamic>? ?? []);
+        
+        final newChannels = channels.map((ch) {
+          final channelMap = Map<String, dynamic>.from(ch as Map);
+          channelMap['isMember'] = false;
+          channelMap['isOwner'] = false;
+          return channelMap;
+        }).toList();
+        
+        setState(() {
+          if (reset) {
+            _discoverChannels = newChannels;
+          } else {
+            _discoverChannels.addAll(newChannels);
+          }
+          _discoverOffset += newChannels.length;
+          _hasMoreDiscover = newChannels.length >= _discoverLimit;
+          _loadingMoreDiscover = false;
+        });
+      } else {
+        setState(() {
+          _loadingMoreDiscover = false;
+          _hasMoreDiscover = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[CHANNELS_LIST] Error loading discover channels: $e');
+      setState(() {
+        _loadingMoreDiscover = false;
+        _hasMoreDiscover = false;
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> _getFilteredChannels() {
+    final unreadProvider = context.read<UnreadMessagesProvider>();
+    
+    // Apply search filter first
+    var channels = _searchQuery.isEmpty 
+        ? _allChannels 
+        : _allChannels.where((ch) {
+            final name = (ch['name'] as String? ?? '').toLowerCase();
+            final description = (ch['description'] as String? ?? '').toLowerCase();
+            return name.contains(_searchQuery) || description.contains(_searchQuery);
+          }).toList();
+    
+    // Apply chip filter
+    switch (_selectedFilter) {
+      case 'live':
+        return channels.where((ch) => 
+          ch['type'] == 'webrtc' && (ch['participants'] as List?)?.isNotEmpty == true
+        ).toList();
+      
+      case 'unread':
+        return channels.where((ch) => 
+          (unreadProvider.channelUnreadCounts[ch['uuid']] ?? 0) > 0
+        ).toList();
+      
+      case 'calls':
+        return channels.where((ch) => ch['type'] == 'webrtc').toList();
+      
+      case 'text':
+        return channels.where((ch) => ch['type'] == 'signal').toList();
+      
+      case 'starred':
+        return channels.where((ch) => ch['isStarred'] == true).toList();
+      
+      case 'discover':
+        // Return discover channels with search applied
+        return _searchQuery.isEmpty
+            ? _discoverChannels
+            : _discoverChannels.where((ch) {
+                final name = (ch['name'] as String? ?? '').toLowerCase();
+                final description = (ch['description'] as String? ?? '').toLowerCase();
+                return name.contains(_searchQuery) || description.contains(_searchQuery);
+              }).toList();
+      
+      case 'all':
+      default:
+        return channels;
+    }
+  }
+
+  Map<String, List<Map<String, dynamic>>> _getCategorizedChannelsForAll() {
+    final unreadProvider = context.read<UnreadMessagesProvider>();
+    final allFiltered = _getFilteredChannels();
+    final displayedIds = <String>{};
+    
+    // 1. Starred channels
+    final starred = allFiltered.where((ch) => ch['isStarred'] == true).toList();
+    displayedIds.addAll(starred.map((ch) => ch['uuid'] as String));
+    
+    // 2. Live WebRTC channels
+    final live = allFiltered.where((ch) => 
+      ch['type'] == 'webrtc' && 
+      (ch['participants'] as List?)?.isNotEmpty == true &&
+      !displayedIds.contains(ch['uuid'])
+    ).toList();
+    displayedIds.addAll(live.map((ch) => ch['uuid'] as String));
+    
+    // 3. Signal channels with unread messages (sorted by latest message)
+    final unread = allFiltered.where((ch) => 
+      ch['type'] == 'signal' &&
+      (unreadProvider.channelUnreadCounts[ch['uuid']] ?? 0) > 0 &&
+      !displayedIds.contains(ch['uuid'])
+    ).toList();
+    unread.sort((a, b) {
+      final timeA = DateTime.tryParse(a['lastMessageTime'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final timeB = DateTime.tryParse(b['lastMessageTime'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return timeB.compareTo(timeA);
+    });
+    displayedIds.addAll(unread.map((ch) => ch['uuid'] as String));
+    
+    // 4. Other member/owner channels not yet displayed
+    final other = allFiltered.where((ch) => !displayedIds.contains(ch['uuid'])).toList();
+    
+    // 5. Discover channels (public non-member)
+    final discover = _searchQuery.isEmpty
+        ? _discoverChannels.take(10).toList()
+        : _discoverChannels.where((ch) {
+            final name = (ch['name'] as String? ?? '').toLowerCase();
+            final description = (ch['description'] as String? ?? '').toLowerCase();
+            return name.contains(_searchQuery) || description.contains(_searchQuery);
+          }).take(10).toList();
+    
+    return {
+      'starred': starred,
+      'live': live,
+      'unread': unread,
+      'other': other,
+      'discover': discover,
+    };
+  }
+
+  void _toggleStar(String channelId) async {
+    final channel = _allChannels.firstWhere((ch) => ch['uuid'] == channelId, orElse: () => <String, dynamic>{});
+    if (channel.isNotEmpty) {
+      // Toggle in local encrypted database
+      final success = await StarredChannelsService.instance.toggleStar(channelId);
+      
+      if (success && mounted) {
+        setState(() {
+          // Update local state for immediate UI feedback
+          channel['isStarred'] = StarredChannelsService.instance.isStarred(channelId);
+        });
       }
     }
-  }
-
-  Future<void> _loadPublicChannels() async {
-    try {
-      // TODO: Backend should provide endpoint for non-member public channels
-      // For now, this would need a new endpoint like /client/channels/discover
-      // that returns public channels where user is NOT a member
-      
-      // Placeholder - in production this would be:
-      // final resp = await ApiService.get('${widget.host}/client/channels/discover?limit=$_publicChannelsLimit');
-      
-      setState(() {
-        _publicChannels = [];
-      });
-    } catch (e) {
-      debugPrint('[CHANNELS_LIST] Error loading public channels: $e');
-    }
-  }
-
-  void _loadMorePublicChannels() {
-    // setState(() {
-    //   _publicChannelsLimit += 20;
-    // });
-    _loadPublicChannels();
   }
 
   @override
@@ -298,7 +367,6 @@ class _ChannelsListViewState extends State<ChannelsListView> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     
-    // Don't wrap in Scaffold - this is used as main content in BaseView
     return Column(
       children: [
         // Search Bar
@@ -307,10 +375,7 @@ class _ChannelsListViewState extends State<ChannelsListView> {
           decoration: BoxDecoration(
             color: colorScheme.surface,
             border: Border(
-              bottom: BorderSide(
-                color: colorScheme.outlineVariant,
-                width: 1,
-              ),
+              bottom: BorderSide(color: colorScheme.outlineVariant, width: 1),
             ),
           ),
           child: Row(
@@ -324,9 +389,7 @@ class _ChannelsListViewState extends State<ChannelsListView> {
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
                             icon: Icon(Icons.clear, color: colorScheme.onSurfaceVariant),
-                            onPressed: () {
-                              _searchController.clear();
-                            },
+                            onPressed: () => _searchController.clear(),
                           )
                         : null,
                     filled: true,
@@ -355,10 +418,7 @@ class _ChannelsListViewState extends State<ChannelsListView> {
           decoration: BoxDecoration(
             color: colorScheme.surface,
             border: Border(
-              bottom: BorderSide(
-                color: colorScheme.outlineVariant,
-                width: 1,
-              ),
+              bottom: BorderSide(color: colorScheme.outlineVariant, width: 1),
             ),
           ),
           child: SingleChildScrollView(
@@ -375,9 +435,9 @@ class _ChannelsListViewState extends State<ChannelsListView> {
                 const SizedBox(width: 8),
                 _buildFilterChip(label: 'Text', value: 'text', icon: Icons.tag),
                 const SizedBox(width: 8),
-                _buildFilterChip(label: 'Meetings', value: 'meetings', icon: Icons.groups),
-                const SizedBox(width: 8),
                 _buildFilterChip(label: 'Starred', value: 'starred', icon: Icons.star),
+                const SizedBox(width: 8),
+                _buildFilterChip(label: 'Discover', value: 'discover', icon: Icons.explore),
               ],
             ),
           ),
@@ -389,49 +449,376 @@ class _ChannelsListViewState extends State<ChannelsListView> {
               ? const Center(child: CircularProgressIndicator())
               : RefreshIndicator(
                   onRefresh: _loadChannels,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      // Live WebRTC Channels (with participants)
-                      if (_filteredLiveChannels.isNotEmpty) ...[
-                        _buildSectionHeader('Live Video Channels', Icons.videocam, Colors.red),
-                        ..._filteredLiveChannels.map((ch) => _buildLiveWebRTCChannelTile(ch)),
-                        const SizedBox(height: 16),
-                      ],
-
-                      // Member Signal Channels
-                      if (_filteredSignalChannels.isNotEmpty) ...[
-                        _buildSectionHeader('My Channels', Icons.tag),
-                        ..._filteredSignalChannels.map((ch) => _buildSignalChannelTile(ch)),
-                        const SizedBox(height: 16),
-                      ],
-
-                      // Inactive WebRTC Channels (mixed with Signal if no live channels)
-                      if (_filteredLiveChannels.isEmpty && _filteredInactiveWebRTCChannels.isNotEmpty) ...[
-                        ..._filteredInactiveWebRTCChannels.map((ch) => _buildWebRTCChannelTile(ch)),
-                        const SizedBox(height: 16),
-                      ],
-
-                      // Empty state if no channels
-                      if (_filteredLiveChannels.isEmpty && 
-                          _filteredSignalChannels.isEmpty && 
-                          _filteredInactiveWebRTCChannels.isEmpty)
-                        _buildEmptyState(),
-
-                      // Public Non-Member Channels (not filtered)
-                      if (_publicChannels.isNotEmpty) ...[
-                        _buildSectionHeader('Discover', Icons.explore),
-                        ..._publicChannels.map((ch) => _buildPublicChannelTile(ch)),
-                        _buildLoadMoreButton(),
-                      ],
-                    ],
-                  ),
+                  child: _buildChannelsList(),
                 ),
         ),
       ],
     );
   }
-  
+
+  Widget _buildChannelsList() {
+    if (_selectedFilter == 'all') {
+      return _buildAllView();
+    } else if (_selectedFilter == 'discover') {
+      return _buildDiscoverView();
+    } else {
+      return _buildFilteredView();
+    }
+  }
+
+  Widget _buildAllView() {
+    final categorized = _getCategorizedChannelsForAll();
+    
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Starred Section
+        if (categorized['starred']!.isNotEmpty) ...[
+          _buildSectionHeader('Starred', Icons.star),
+          ...categorized['starred']!.map((ch) => _buildChannelTile(ch)),
+          const SizedBox(height: 16),
+        ],
+        
+        // Live Section
+        if (categorized['live']!.isNotEmpty) ...[
+          _buildSectionHeader('Live', Icons.videocam),
+          ...categorized['live']!.map((ch) => _buildChannelTile(ch)),
+          const SizedBox(height: 16),
+        ],
+        
+        // Unread Messages Section
+        if (categorized['unread']!.isNotEmpty) ...[
+          _buildSectionHeader('Unread Messages', Icons.message),
+          ...categorized['unread']!.map((ch) => _buildChannelTile(ch)),
+          const SizedBox(height: 16),
+        ],
+        
+        // Other Channels Section
+        if (categorized['other']!.isNotEmpty) ...[
+          _buildSectionHeader('My Channels', Icons.topic),
+          ...categorized['other']!.map((ch) => _buildChannelTile(ch)),
+          const SizedBox(height: 16),
+        ],
+        
+        // Discover Section
+        if (categorized['discover']!.isNotEmpty) ...[
+          _buildSectionHeader('Discover', Icons.explore),
+          ...categorized['discover']!.map((ch) => _buildDiscoverChannelTile(ch)),
+        ],
+        
+        // Empty state
+        if (categorized.values.every((list) => list.isEmpty))
+          _buildEmptyState('No channels found', _searchQuery.isNotEmpty 
+              ? 'Try a different search term' 
+              : 'Tap + to create a channel'),
+      ],
+    );
+  }
+
+  Widget _buildDiscoverView() {
+    final channels = _getFilteredChannels();
+    
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (channels.isEmpty && !_loadingMoreDiscover)
+          _buildEmptyState('No public channels available', 'Check back later for new channels'),
+        
+        ...channels.map((ch) => _buildDiscoverChannelTile(ch)),
+        
+        if (_hasMoreDiscover && !_loadingMoreDiscover)
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Center(
+              child: ElevatedButton.icon(
+                onPressed: () => _loadDiscoverChannels(),
+                icon: const Icon(Icons.expand_more),
+                label: const Text('Load More'),
+              ),
+            ),
+          ),
+        
+        if (_loadingMoreDiscover)
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildFilteredView() {
+    final channels = _getFilteredChannels();
+    
+    String emptyTitle = 'No channels';
+    String emptyMessage = '';
+    
+    switch (_selectedFilter) {
+      case 'live':
+        emptyTitle = 'No live channels';
+        emptyMessage = 'Join a video channel to see it here';
+        break;
+      case 'unread':
+        emptyTitle = 'No unread messages';
+        emptyMessage = 'You\'re all caught up!';
+        break;
+      case 'calls':
+        emptyTitle = 'No video channels';
+        emptyMessage = 'Create a video channel to get started';
+        break;
+      case 'text':
+        emptyTitle = 'No text channels';
+        emptyMessage = 'Create a text channel to get started';
+        break;
+      case 'starred':
+        emptyTitle = 'No starred channels';
+        emptyMessage = 'Star your favorite channels to see them here';
+        break;
+    }
+    
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (channels.isEmpty)
+          _buildEmptyState(emptyTitle, emptyMessage)
+        else
+          ...channels.map((ch) => _buildChannelTile(ch)),
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader(String title, IconData icon, [Color? color]) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8, bottom: 8, top: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color ?? Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: color ?? Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChannelTile(Map<String, dynamic> channel) {
+    final unreadProvider = context.read<UnreadMessagesProvider>();
+    final navProvider = context.read<NavigationStateProvider>();
+    
+    final name = channel['name'] as String? ?? 'Unknown Channel';
+    final uuid = channel['uuid'] as String;
+    final type = channel['type'] as String? ?? 'signal';
+    final isPrivate = channel['private'] as bool? ?? false;
+    final isStarred = channel['isStarred'] as bool? ?? false;
+    final isLive = type == 'webrtc' && (channel['participants'] as List?)?.isNotEmpty == true;
+    final unreadCount = unreadProvider.getChannelUnreadCount(uuid);
+    final isSelected = navProvider.isChannelSelected(uuid);
+    final hasUnread = unreadCount > 0;
+    
+    // Squared icon container (consistent with squared avatars)
+    Widget leading = isLive
+        ? FadeTransition(
+            opacity: _liveAnimation,
+            child: AppThemeConstants.squaredIconContainer(
+              icon: Icons.videocam,
+              backgroundColor: Colors.red.withOpacity(0.2),
+              iconColor: Colors.red,
+              size: 40,
+            ),
+          )
+        : AppThemeConstants.squaredIconContainer(
+            icon: isPrivate ? Icons.lock : (type == 'webrtc' ? Icons.videocam : Icons.tag),
+            backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+            iconColor: Theme.of(context).colorScheme.onSecondaryContainer,
+            size: 40,
+          );
+    
+    if (isLive) {
+      leading = Stack(
+        children: [
+          leading,
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.circle, size: 8, color: Colors.white),
+            ),
+          ),
+        ],
+      );
+    }
+    
+    return AnimatedSelectionTile(
+      leading: leading,
+      title: Text(
+        type == 'signal' ? '# $name' : name,
+        style: TextStyle(
+          fontWeight: hasUnread ? FontWeight.bold : FontWeight.w500,
+          color: hasUnread ? Theme.of(context).colorScheme.primary : AppThemeConstants.textPrimary,
+        ),
+      ),
+      subtitle: _buildChannelSubtitle(channel),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (hasUnread) AnimatedBadge(count: unreadCount, isSmall: true),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: Icon(
+              isStarred ? Icons.star : Icons.star_border,
+              color: isStarred ? Colors.amber : Colors.grey,
+              size: 20,
+            ),
+            onPressed: () => _toggleStar(uuid),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.arrow_forward_ios, size: 16),
+        ],
+      ),
+      selected: isSelected,
+      onTap: () {
+        if (type == 'signal') {
+          navProvider.selectChannel(uuid, 'signal');
+        }
+        
+        // Enter full-view mode for WebRTC
+        final videoService = VideoConferenceService.instance;
+        if (type == 'webrtc' && videoService.isInCall) {
+          videoService.enterFullView();
+        }
+        
+        context.go('/app/channels/$uuid', extra: {
+          'host': widget.host,
+          'name': name,
+          'type': type,
+        });
+      },
+    );
+  }
+
+  Widget _buildChannelSubtitle(Map<String, dynamic> channel) {
+    final type = channel['type'] as String?;
+    final description = channel['description'] as String? ?? '';
+    
+    if (type == 'webrtc') {
+      final participants = (channel['participants'] as List?) ?? [];
+      final isLive = participants.isNotEmpty;
+      
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (description.isNotEmpty)
+            Text(
+              description,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          Text(
+            isLive 
+                ? '${participants.length} ${participants.length == 1 ? 'participant' : 'participants'} • LIVE'
+                : 'Video channel • No active participants',
+            style: TextStyle(
+              color: isLive ? Colors.red : Colors.grey[600],
+              fontSize: 12,
+            ),
+          ),
+        ],
+      );
+    } else {
+      // Signal channel
+      final lastMessage = channel['lastMessage'] as String? ?? 'No messages';
+      final lastMessageTime = channel['lastMessageTime'] as String? ?? '';
+      
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (description.isNotEmpty)
+            Text(
+              description,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: AppThemeConstants.fontSizeCaption,
+                color: AppThemeConstants.textSecondary,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          Text(
+            lastMessage.length > 50 ? '${lastMessage.substring(0, 50)}...' : lastMessage,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: AppThemeConstants.fontSizeCaption,
+              color: AppThemeConstants.textSecondary,
+            ),
+          ),
+          Text(
+            _formatTime(lastMessageTime),
+            style: const TextStyle(
+              fontSize: 10,
+              color: AppThemeConstants.textSecondary,
+            ),
+          ),
+        ],
+      );
+    }
+  }
+
+  Widget _buildDiscoverChannelTile(Map<String, dynamic> channel) {
+    final name = channel['name'] as String? ?? 'Unknown Channel';
+    final uuid = channel['uuid'] as String;
+    final description = channel['description'] as String? ?? '';
+    final type = channel['type'] as String? ?? 'signal';
+
+    return ListTile(
+      leading: AppThemeConstants.squaredIconContainer(
+        icon: type == 'webrtc' ? Icons.videocam : Icons.explore,
+        backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+        iconColor: Theme.of(context).colorScheme.onTertiaryContainer,
+        size: 40,
+      ),
+      title: Text(name),
+      subtitle: Text(
+        description.isNotEmpty ? description : 'Public channel',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: SizedBox(
+        width: 80,
+        child: ElevatedButton(
+          onPressed: () {
+            // TODO: Join channel API call
+            context.go('/app/channels/$uuid', extra: {
+              'host': widget.host,
+              'name': name,
+              'type': type,
+            });
+          },
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          ),
+          child: const Text('Join', style: TextStyle(fontSize: 12)),
+        ),
+      ),
+    );
+  }
+
   Widget _buildFilterChip({
     required String label,
     required String value,
@@ -461,7 +848,6 @@ class _ChannelsListViewState extends State<ChannelsListView> {
       onSelected: (selected) {
         setState(() {
           _selectedFilter = value;
-          _applyFilters();
         });
       },
       showCheckmark: false,
@@ -476,278 +862,17 @@ class _ChannelsListViewState extends State<ChannelsListView> {
     );
   }
 
-  void _showCreateChannelDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => _CreateChannelDialog(
-        host: widget.host,
-        onChannelCreated: (channelName) {
-          // Reload channels after creation
-          _loadChannels();
-        },
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title, IconData icon, [Color? color]) {
-    return ContextPanelHeader(
-      title: title,
-      padding: EdgeInsets.fromLTRB(
-        AppThemeConstants.spacingSm,
-        AppThemeConstants.spacingMd,
-        AppThemeConstants.spacingSm,
-        AppThemeConstants.spacingXs,
-      ),
-    );
-  }
-
-  Widget _buildLiveWebRTCChannelTile(Map<String, dynamic> channel) {
-    final name = channel['name'] as String? ?? 'Unknown Channel';
-    final uuid = channel['uuid'] as String;
-    final description = channel['description'] as String? ?? '';
-    final participants = (channel['participants'] as List?) ?? [];
-    final participantCount = participants.length;
-
-    return ListTile(
-      leading: Stack(
-        children: [
-          CircleAvatar(
-            backgroundColor: Colors.red.withOpacity(0.2),
-            child: const Icon(Icons.videocam, color: Colors.red),
-          ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: const BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.circle,
-                size: 8,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
-      title: Text(
-        name,
-        style: const TextStyle(fontWeight: FontWeight.bold),
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (description.isNotEmpty)
-            Text(
-              description,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          Text(
-            '$participantCount ${participantCount == 1 ? 'participant' : 'participants'} • LIVE',
-            style: const TextStyle(color: Colors.red),
-          ),
-        ],
-      ),
-      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-      onTap: () {
-        // Enter full-view mode immediately before navigation to prevent overlay/TopBar showing
-        final videoService = VideoConferenceService.instance;
-        if (videoService.isInCall) {
-          videoService.enterFullView();
-        }
-        context.go('/app/channels/$uuid', extra: {
-          'host': widget.host,
-          'name': name,
-          'type': 'webrtc',
-        });
-      },
-    );
-  }
-
-  Widget _buildSignalChannelTile(Map<String, dynamic> channel) {
-    final name = channel['name'] as String? ?? 'Unknown Channel';
-    final uuid = channel['uuid'] as String;
-    final description = channel['description'] as String? ?? '';
-    final lastMessage = channel['lastMessage'] as String? ?? 'No messages';
-    final lastMessageTime = channel['lastMessageTime'] as String? ?? '';
-    final isPrivate = channel['private'] as bool? ?? false;
-
-    return Consumer2<UnreadMessagesProvider, NavigationStateProvider>(
-      builder: (context, unreadProvider, navProvider, _) {
-        final unreadCount = unreadProvider.getChannelUnreadCount(uuid);
-        final isSelected = navProvider.isChannelSelected(uuid);
-        
-        return AnimatedSelectionTile(
-          leading: Icon(
-            isPrivate ? Icons.lock : AppThemeConstants.iconChannels,
-            size: AppThemeConstants.iconSizeSmall,
-          ),
-          title: Text(
-            '# $name',
-            style: const TextStyle(
-              fontWeight: FontWeight.w500,
-              color: AppThemeConstants.textPrimary,
-            ),
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (description.isNotEmpty)
-                Text(
-                  description,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: AppThemeConstants.fontSizeCaption,
-                    color: AppThemeConstants.textSecondary,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              Text(
-                lastMessage.length > 50
-                    ? '${lastMessage.substring(0, 50)}...'
-                    : lastMessage,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: AppThemeConstants.fontSizeCaption,
-                  color: AppThemeConstants.textSecondary,
-                ),
-              ),
-              Text(
-                _formatTime(lastMessageTime),
-                style: const TextStyle(
-                  fontSize: 10,
-                  color: AppThemeConstants.textSecondary,
-                ),
-              ),
-            ],
-          ),
-          trailing: AnimatedBadge(count: unreadCount, isSmall: true),
-          selected: isSelected,
-          onTap: () {
-            navProvider.selectChannel(uuid, 'signal');
-            context.go('/app/channels/$uuid', extra: {
-              'host': widget.host,
-              'name': name,
-              'type': 'signal',
-            });
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildWebRTCChannelTile(Map<String, dynamic> channel) {
-    final name = channel['name'] as String? ?? 'Unknown Channel';
-    final uuid = channel['uuid'] as String;
-    final description = channel['description'] as String? ?? '';
-    final isPrivate = channel['private'] as bool? ?? false;
-
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-        child: Icon(
-          isPrivate ? Icons.lock : Icons.videocam,
-          color: Theme.of(context).colorScheme.onSecondaryContainer,
-        ),
-      ),
-      title: Text(
-        name,
-        style: const TextStyle(fontWeight: FontWeight.bold),
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (description.isNotEmpty)
-            Text(
-              description,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          const Text('Video channel • No active participants'),
-        ],
-      ),
-      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-      onTap: () {
-        // Enter full-view mode immediately before navigation to prevent overlay/TopBar showing
-        final videoService = VideoConferenceService.instance;
-        if (videoService.isInCall) {
-          videoService.enterFullView();
-        }
-        context.go('/app/channels/$uuid', extra: {
-          'host': widget.host,
-          'name': name,
-          'type': 'webrtc',
-        });
-      },
-    );
-  }
-
-  Widget _buildPublicChannelTile(Map<String, dynamic> channel) {
-    final name = channel['name'] as String? ?? 'Unknown Channel';
-    final uuid = channel['uuid'] as String;
-    final description = channel['description'] as String? ?? '';
-    final type = channel['type'] as String? ?? 'signal';
-
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
-        child: Icon(
-          type == 'webrtc' ? Icons.videocam : Icons.explore,
-          color: Theme.of(context).colorScheme.onTertiaryContainer,
-        ),
-      ),
-      title: Text(name),
-      subtitle: Text(
-        description.isNotEmpty ? description : 'Public channel',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: SizedBox(
-        width: 80,
-        child: ElevatedButton(
-          onPressed: () {
-            // TODO: Join channel API call
-            context.go('/app/channels/$uuid', extra: {
-              'host': widget.host,
-              'name': name,
-              'type': type,
-            });
-          },
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          ),
-          child: const Text('Join', style: TextStyle(fontSize: 12)),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(String title, String message) {
     return Padding(
       padding: const EdgeInsets.all(32.0),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.tag,
-              size: 80,
-              color: Colors.grey[400],
-            ),
+            Icon(Icons.inbox_outlined, size: 80, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
-              'No channels yet',
+              title,
               style: TextStyle(
                 fontSize: 18,
                 color: Colors.grey[600],
@@ -756,26 +881,11 @@ class _ChannelsListViewState extends State<ChannelsListView> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Tap + to create a channel',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[500],
-              ),
+              message,
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+              textAlign: TextAlign.center,
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoadMoreButton() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Center(
-        child: ElevatedButton.icon(
-          onPressed: _loadMorePublicChannels,
-          icon: const Icon(Icons.expand_more),
-          label: const Text('Load More'),
         ),
       ),
     );
@@ -787,20 +897,24 @@ class _ChannelsListViewState extends State<ChannelsListView> {
       final now = DateTime.now();
       final diff = now.difference(time);
 
-      if (diff.inMinutes < 1) {
-        return 'Now';
-      } else if (diff.inMinutes < 60) {
-        return '${diff.inMinutes}m';
-      } else if (diff.inHours < 24) {
-        return '${diff.inHours}h';
-      } else if (diff.inDays < 7) {
-        return '${diff.inDays}d';
-      } else {
-        return '${time.day}/${time.month}';
-      }
+      if (diff.inMinutes < 1) return 'Now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+      if (diff.inHours < 24) return '${diff.inHours}h';
+      if (diff.inDays < 7) return '${diff.inDays}d';
+      return '${time.day}/${time.month}';
     } catch (e) {
       return '';
     }
+  }
+
+  void _showCreateChannelDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => _CreateChannelDialog(
+        host: widget.host,
+        onChannelCreated: (channelName) => _loadChannels(),
+      ),
+    );
   }
 }
 
@@ -823,7 +937,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
   String channelName = '';
   String channelDescription = '';
   bool isPrivate = false;
-  String channelType = 'webrtc'; // 'webrtc' or 'signal'
+  String channelType = 'webrtc';
   List<Role> availableRoles = [];
   Role? selectedRole;
   bool isLoadingRoles = false;
@@ -884,9 +998,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
               children: [
                 Checkbox(
                   value: isPrivate,
-                  onChanged: (value) {
-                    setState(() => isPrivate = value ?? false);
-                  },
+                  onChanged: (value) => setState(() => isPrivate = value ?? false),
                 ),
                 const Text('Private'),
               ],
@@ -903,7 +1015,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
                     onChanged: (value) {
                       setState(() {
                         channelType = value!;
-                        _loadRoles(); // Reload roles for new scope
+                        _loadRoles();
                       });
                     },
                   ),
@@ -916,7 +1028,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
                     onChanged: (value) {
                       setState(() {
                         channelType = value!;
-                        _loadRoles(); // Reload roles for new scope
+                        _loadRoles();
                       });
                     },
                   ),
@@ -940,9 +1052,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
                     child: Text(role.name),
                   );
                 }).toList(),
-                onChanged: (value) {
-                  setState(() => selectedRole = value);
-                },
+                onChanged: (value) => setState(() => selectedRole = value),
               ),
           ],
         ),
@@ -976,9 +1086,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
       
       if (resp.statusCode == 201) {
         widget.onChannelCreated(channelName);
-        if (context.mounted) {
-          Navigator.of(context).pop();
-        }
+        if (context.mounted) Navigator.of(context).pop();
       }
     } catch (e) {
       debugPrint('Error creating channel: $e');

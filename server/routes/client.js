@@ -771,6 +771,68 @@ clientRoutes.post("/client/channels", async(req, res) => {
     }
 });
 
+// Get discoverable channels (public channels user isn't part of)
+clientRoutes.get("/client/channels/discover", async(req, res) => {
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = parseInt(req.query.offset) || 0;
+    
+    if(req.session.authenticated !== true || !req.session.uuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        const userUuid = req.session.uuid;
+        const { ChannelMembers } = require('../db/model');
+        
+        // Find channels where user is owner
+        const ownedChannelIds = await Channel.findAll({
+            where: { owner: userUuid },
+            attributes: ['uuid']
+        });
+        
+        // Find channels where user is member
+        const memberChannelIds = await ChannelMembers.findAll({
+            where: { userId: userUuid },
+            attributes: ['channelId']
+        });
+        
+        // Combine owned and member channel IDs to exclude
+        const excludeChannelUuids = [
+            ...ownedChannelIds.map(c => c.uuid),
+            ...memberChannelIds.map(cm => cm.channelId)
+        ];
+        
+        // Find public channels user isn't part of
+        const discoverChannels = await Channel.findAll({
+            where: {
+                private: false,
+                uuid: { [Op.notIn]: excludeChannelUuids.length > 0 ? excludeChannelUuids : [''] }
+            },
+            order: [['createdAt', 'DESC']],
+            limit: limit,
+            offset: offset
+        });
+        
+        // Count total discoverable channels
+        const totalCount = await Channel.count({
+            where: {
+                private: false,
+                uuid: { [Op.notIn]: excludeChannelUuids.length > 0 ? excludeChannelUuids : [''] }
+            }
+        });
+        
+        res.status(200).json({ 
+            status: "success", 
+            channels: discoverChannels,
+            total: totalCount,
+            hasMore: offset + discoverChannels.length < totalCount
+        });
+    } catch (error) {
+        console.error('Error fetching discover channels:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
 // Get channel participants (current LiveKit room participants)
 clientRoutes.get("/client/channels/:channelUuid/participants", async(req, res) => {
     const { channelUuid } = req.params;

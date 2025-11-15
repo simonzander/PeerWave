@@ -36,6 +36,7 @@ class _MessagesViewPageState extends BaseViewState<MessagesViewPage> {
   
   // Context Panel Data (shared with People view)
   List<Map<String, dynamic>> _recentPeople = [];
+  List<Map<String, dynamic>> _starredPeople = [];
   bool _isLoadingContextPanel = false;
   static const int _contextPanelLimit = 10;
   
@@ -90,7 +91,7 @@ class _MessagesViewPageState extends BaseViewState<MessagesViewPage> {
       type: ContextPanelType.people,
       host: widget.host,
       recentPeople: _recentPeople,
-      favoritePeople: const [], // TODO: Implement favorites
+      starredPeople: _starredPeople,
       activeContactUuid: widget.initialContactUuid, // Highlight active conversation
       onMessageTap: (uuid, displayName) {
         // Navigate to specific message conversation
@@ -152,6 +153,11 @@ class _MessagesViewPageState extends BaseViewState<MessagesViewPage> {
         unreadProvider: unreadProvider,
       );
       
+      // Load starred people separately
+      final starredList = await PeopleContextDataLoader.loadStarredPeople(
+        unreadProvider: unreadProvider,
+      );
+      
       // If we have an active contact that's not in the list, add it at the top
       if (widget.initialContactUuid != null && widget.initialDisplayName != null) {
         final activeContactExists = peopleList.any((p) => p['uuid'] == widget.initialContactUuid);
@@ -180,6 +186,7 @@ class _MessagesViewPageState extends BaseViewState<MessagesViewPage> {
       if (mounted) {
         setState(() {
           _recentPeople = peopleList;
+          _starredPeople = starredList;
           _isLoadingContextPanel = false;
         });
       }

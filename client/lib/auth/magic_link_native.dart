@@ -153,7 +153,7 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
       } else if (resp.statusCode == 307) {
         // Replace http:// with https:// in serverUrl if present
         String? secureServerUrl = hostname;
-        if (secureServerUrl != null && secureServerUrl.startsWith('http://')) {
+        if (secureServerUrl.startsWith('http://')) {
           secureServerUrl = secureServerUrl.replaceFirst('http://', 'https://');
         }
         await _evaluateMagicKeyCore(magicKey, clientId, secureServerUrl, redirectCount + 1);

@@ -1,7 +1,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
-import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../providers/role_provider.dart';
