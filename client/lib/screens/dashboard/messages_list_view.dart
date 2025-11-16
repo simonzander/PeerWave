@@ -409,13 +409,51 @@ class _MessagesListViewState extends State<MessagesListView> {
         final unreadCount = unreadProvider.getDirectMessageUnreadCount(userId);
         final isSelected = navProvider.isDirectMessageSelected(userId);
         
+        // Create avatar with badge if unread
+        Widget avatarWidget = UserAvatar(
+          userId: userId,
+          displayName: displayName,
+          pictureData: picture,
+          size: 40,
+        );
+        
+        if (unreadCount > 0) {
+          avatarWidget = SizedBox(
+            width: 40,
+            height: 40,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                avatarWidget,
+                Positioned(
+                  right: -4,
+                  top: -4,
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                    child: Text(
+                      unreadCount > 99 ? '99+' : '$unreadCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        height: 1.0,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        
         return AnimatedSelectionTile(
-          leading: UserAvatar(
-            userId: userId,
-            displayName: displayName,
-            pictureData: picture,
-            size: 40,
-          ),
+          leading: avatarWidget,
           title: Text(
             displayName,
             style: const TextStyle(
@@ -458,8 +496,6 @@ class _MessagesListViewState extends State<MessagesListView> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (unreadCount > 0) AnimatedBadge(count: unreadCount, isSmall: true),
-              const SizedBox(width: 8),
               IconButton(
                 icon: Icon(
                   isStarred ? Icons.star : Icons.star_border,

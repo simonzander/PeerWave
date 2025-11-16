@@ -659,6 +659,42 @@ class _ChannelsListViewState extends State<ChannelsListView> with TickerProvider
       );
     }
     
+    // Add unread badge to icon if present
+    if (hasUnread) {
+      leading = SizedBox(
+        width: 40,
+        height: 40,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            leading,
+            Positioned(
+              right: -4,
+              bottom: -4,
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: Text(
+                  unreadCount > 99 ? '99+' : '$unreadCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    height: 1.0,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
     return AnimatedSelectionTile(
       leading: leading,
       title: Text(
@@ -672,8 +708,6 @@ class _ChannelsListViewState extends State<ChannelsListView> with TickerProvider
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (hasUnread) AnimatedBadge(count: unreadCount, isSmall: true),
-          const SizedBox(width: 8),
           IconButton(
             icon: Icon(
               isStarred ? Icons.star : Icons.star_border,

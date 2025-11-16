@@ -1,12 +1,22 @@
 import 'package:flutter/material.dart';
 import 'base_view.dart';
 import '../../widgets/context_panel.dart';
+import '../../screens/file_transfer/file_manager_screen.dart';
 
 /// Files View Page
 /// 
-/// Shows all files shared across channels and direct messages
-/// No context panel - files view is self-contained
-/// TODO: Implement FilesView widget (currently placeholder)
+/// Shows file manager with local files and sharing capabilities
+/// 
+/// Structure:
+/// - Desktop: Context Panel (FilesContextPanel) + Main Content (FileManagerScreen)
+/// - Tablet: Main Content only (FileManagerScreen)
+/// - Mobile: Main Content only (FileManagerScreen)
+/// 
+/// Features:
+/// - File upload and management
+/// - P2P file sharing
+/// - Seeding status
+/// - File filtering
 class FilesViewPage extends BaseView {
   const FilesViewPage({
     super.key,
@@ -19,43 +29,18 @@ class FilesViewPage extends BaseView {
 
 class _FilesViewPageState extends BaseViewState<FilesViewPage> {
   @override
-  bool get shouldShowContextPanel => false; // No context panel for files
-  
-  @override
-  ContextPanelType get contextPanelType => ContextPanelType.none;
+  ContextPanelType get contextPanelType => ContextPanelType.files;
   
   @override
   Widget buildContextPanel() {
-    // Not used - shouldShowContextPanel is false
-    return const SizedBox.shrink();
+    return ContextPanel(
+      type: ContextPanelType.files,
+      host: widget.host,
+    );
   }
   
   @override
   Widget buildMainContent() {
-    // Placeholder - FilesView needs to be implemented
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.insert_drive_file_outlined,
-            size: 64,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Files View',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'File management view - to be implemented',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
+    return const FileManagerScreen();
   }
 }

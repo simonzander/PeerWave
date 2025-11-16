@@ -43,6 +43,8 @@ import 'web_config.dart';
 import 'theme/theme_provider.dart';
 // Unread Messages Provider
 import 'providers/unread_messages_provider.dart';
+// File Transfer Stats Provider
+import 'providers/file_transfer_stats_provider.dart';
 // P2P File Transfer imports
 import 'services/file_transfer/webrtc_service.dart';
 import 'services/file_transfer/p2p_coordinator.dart';
@@ -207,6 +209,10 @@ class _MyAppState extends State<MyApp> {
         ),
         ChangeNotifierProvider(
           create: (context) => NotificationProvider(),
+        ),
+        // File Transfer Stats Provider
+        ChangeNotifierProvider(
+          create: (context) => FileTransferStatsProvider(),
         ),
         // Video Conference provider (requires SocketService)
         ChangeNotifierProvider(
@@ -689,11 +695,13 @@ class _MyAppState extends State<MyApp> {
                     
                     final unreadProvider = context.read<UnreadMessagesProvider>();
                     final roleProvider = context.read<RoleProvider>();
+                    final statsProvider = context.read<FileTransferStatsProvider>();
                     
                     await PostLoginInitService.instance.initialize(
                       serverUrl: serverUrl,
                       unreadProvider: unreadProvider,
                       roleProvider: roleProvider,
+                      statsProvider: statsProvider,
                       onProgress: (step, current, total) {
                         debugPrint('[MAIN] [$current/$total] $step');
                       },
@@ -735,11 +743,13 @@ class _MyAppState extends State<MyApp> {
                   
                   final unreadProvider = context.read<UnreadMessagesProvider>();
                   final roleProvider = context.read<RoleProvider>();
+                  final statsProvider = context.read<FileTransferStatsProvider>();
                   
                   await PostLoginInitService.instance.initialize(
                     serverUrl: serverUrl,
                     unreadProvider: unreadProvider,
                     roleProvider: roleProvider,
+                    statsProvider: statsProvider,
                     onProgress: (step, current, total) {
                       debugPrint('[MAIN] [$current/$total] $step');
                     },

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../screens/dashboard/messages_list_view.dart';
 import '../widgets/people_context_panel.dart';
 import '../widgets/channels_context_panel.dart';
+import '../widgets/files_context_panel.dart';
 import '../theme/app_theme_constants.dart';
 
 /// Context Panel - Shows contextual content based on selected view
@@ -97,47 +98,11 @@ class ContextPanel extends StatelessWidget {
         );
         
       case ContextPanelType.files:
-        return _buildFilesPlaceholder();
+        return const FilesContextPanel();
         
       case ContextPanelType.none:
         return const SizedBox.shrink();
     }
-  }
-
-  Widget _buildFilesPlaceholder() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.folder_outlined,
-              size: 64,
-              color: AppThemeConstants.textSecondary,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Recent Files',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppThemeConstants.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Coming soon',
-              style: TextStyle(
-                fontSize: 14,
-                color: AppThemeConstants.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 

@@ -34,6 +34,7 @@ services:
     volumes:
       - ./server/db:/usr/src/app/db
       - ./server/cert:/usr/src/app/cert:ro
+      - ./server/web:/usr/src/app/web:ro
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - PORT=${PORT:-3000}

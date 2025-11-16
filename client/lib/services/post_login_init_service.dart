@@ -10,6 +10,7 @@ import 'recent_conversations_service.dart';
 import 'starred_channels_service.dart';
 import '../providers/unread_messages_provider.dart';
 import '../providers/role_provider.dart';
+import '../providers/file_transfer_stats_provider.dart';
 import 'storage/database_helper.dart';
 // P2P imports
 import 'file_transfer/storage_interface.dart';
@@ -69,6 +70,7 @@ class PostLoginInitService {
     required String serverUrl,
     required UnreadMessagesProvider unreadProvider,
     required RoleProvider roleProvider,
+    FileTransferStatsProvider? statsProvider,
     Function(String step, int current, int total)? onProgress,
   }) async {
     if (_isInitialized) {
@@ -289,6 +291,7 @@ class PostLoginInitService {
           signalService: SignalService.instance,
           socketClient: socketFileClient,
           chunkingService: _chunkingService!,
+          statsProvider: statsProvider,
         );
         debugPrint('[POST_LOGIN_INIT] ✓ P2P coordinator ready');
       } else {

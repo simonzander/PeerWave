@@ -14,7 +14,9 @@ import '../../services/file_transfer/file_transfer_service.dart';
 import '../../services/socket_service.dart';
 import '../../services/signal_service.dart';
 import '../../services/api_service.dart';
+import '../../services/user_profile_service.dart';
 import '../../providers/role_provider.dart';
+import '../../providers/file_transfer_stats_provider.dart';
 import '../../web_config.dart';
 import '../../widgets/file_size_error_dialog.dart';
 
@@ -90,49 +92,45 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
       });
     }
     
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('File Manager'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadLocalFiles,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Filter bar
-          _buildFilterBar(),
-          const Divider(height: 1),
-          
-          // File list
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : !storageAvailable
-                    ? _buildStorageNotInitializedState()
-                    : _getFilteredFiles().isEmpty
-                        ? _buildEmptyState()
-                        : RefreshIndicator(
-                            onRefresh: _loadLocalFiles,
-                            child: ListView.builder(
-                              itemCount: _getFilteredFiles().length,
-                              padding: const EdgeInsets.all(16),
-                              itemBuilder: (context, index) {
-                                return _buildFileCard(_getFilteredFiles()[index]);
-                              },
-                            ),
+    return Column(
+      children: [
+        // Filter bar
+        _buildFilterBar(),
+        const Divider(height: 1),
+        
+        // File list
+        Expanded(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : !storageAvailable
+                  ? _buildStorageNotInitializedState()
+                  : _getFilteredFiles().isEmpty
+                      ? _buildEmptyState()
+                      : RefreshIndicator(
+                          onRefresh: _loadLocalFiles,
+                          child: ListView.builder(
+                            itemCount: _getFilteredFiles().length,
+                            padding: const EdgeInsets.all(16),
+                            itemBuilder: (context, index) {
+                              return _buildFileCard(_getFilteredFiles()[index]);
+                            },
                           ),
+                        ),
+        ),
+        
+        // Floating action button container
+        Align(
+          alignment: Alignment.bottomRight,
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: FloatingActionButton.extended(
+              onPressed: _addFile,
+              icon: const Icon(Icons.add),
+              label: const Text('Add File'),
+            ),
           ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addFile,
-        icon: const Icon(Icons.add),
-        label: const Text('Add File'),
-      ),
+        ),
+      ],
     );
   }
   
@@ -327,6 +325,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     final status = file['status'] as String? ?? 'unknown';
     final chunkCount = file['chunkCount'] as int? ?? 0;
     final progress = file['progress'] as double?;
+    final sharedWith = (file['sharedWith'] as List?)?.cast<String>() ?? [];
     
     // downloadedChunks can be either List<int> or int, handle both cases
     final downloadedChunksRaw = file['downloadedChunks'];
@@ -339,16 +338,23 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     
     final seedingStats = _seedingStats[fileId];
     final downloaderCount = seedingStats?['downloaders'] ?? 0;
-    final transferRate = seedingStats?['transferRate'] ?? 0.0;
+    // transferRate removed - now using real-time stats from FileTransferStatsProvider
     
     // Check if file is downloading and also seeding partial chunks
     final isPartialSeeder = status == 'downloading' && downloadedChunksCount > 0 && isSeeder;
     
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
+    return Consumer<FileTransferStatsProvider>(
+      builder: (context, stats, child) {
+        // Get per-file transfer statistics
+        final fileStats = stats.getFileStats(fileId);
+        final uploadSpeed = fileStats?.uploadSpeed ?? 0.0;
+        final downloadSpeed = fileStats?.downloadSpeed ?? 0.0;
+        
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header row with icon, name, and actions
@@ -468,18 +474,31 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
               runSpacing: 8,
               children: [
                 _buildStatusBadge(status, isSeeder),
-                _buildChunksBadge(chunkCount, downloadedChunksCount, status == 'downloading'),
+                // Always show chunk progress
+                _buildChunksBadge(chunkCount, downloadedChunksCount),
                 if (isPartialSeeder)
                   _buildPartialSeedingBadge(downloadedChunksCount, chunkCount),
                 if (isSeeder && downloaderCount > 0)
                   _buildDownloadersBadge(downloaderCount),
-                if (isSeeder && transferRate > 0)
-                  _buildTransferRateBadge(transferRate),
+                if (uploadSpeed > 0)
+                  _buildSpeedBadge(uploadSpeed, isUpload: true),
+                if (downloadSpeed > 0)
+                  _buildSpeedBadge(downloadSpeed, isUpload: false),
+                if (sharedWith.isNotEmpty)
+                  _buildSharedWithBadge(sharedWith.length),
               ],
             ),
+            
+            // Shared with section
+            if (sharedWith.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _buildSharedWithSection(sharedWith),
+            ],
           ],
         ),
       ),
+        );
+      },
     );
   }
   
@@ -532,10 +551,10 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
       color = colorScheme.secondary;
       icon = Icons.cloud_download;
       label = 'Downloading';
-    } else if (status == 'complete') {
-      color = colorScheme.onSurfaceVariant;
+    } else if (status == 'complete' || status == 'completed') {
+      color = Colors.green;
       icon = Icons.check_circle;
-      label = 'Complete';
+      label = 'Downloaded';
     } else {
       color = colorScheme.onSurfaceVariant;
       icon = Icons.info;
@@ -562,9 +581,10 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     );
   }
   
-  Widget _buildChunksBadge(int chunkCount, [int? downloadedChunks, bool isDownloading = false]) {
+  Widget _buildChunksBadge(int chunkCount, [int? downloadedChunks]) {
     String text;
-    if (isDownloading && downloadedChunks != null) {
+    // Always show chunk progress if downloadedChunks is provided
+    if (downloadedChunks != null) {
       text = '$downloadedChunks/$chunkCount chunks';
     } else {
       text = '$chunkCount chunks';
@@ -627,22 +647,154 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     );
   }
   
-  Widget _buildTransferRateBadge(double rate) {
+  Widget _buildSpeedBadge(double bytesPerSecond, {required bool isUpload}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = isUpload ? colorScheme.tertiary : colorScheme.primary;
+    final icon = isUpload ? Icons.arrow_upward : Icons.arrow_downward;
+    
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.green.withOpacity(0.1),
+        color: color.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            _formatTransferRate(bytesPerSecond),
+            style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildSharedWithBadge(int count) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.purple.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.speed, size: 14, color: Colors.green),
+          const Icon(Icons.people, size: 14, color: Colors.purple),
           const SizedBox(width: 4),
           Text(
-            '${_formatTransferRate(rate)}/s',
-            style: const TextStyle(fontSize: 12, color: Colors.green),
+            'Shared with $count',
+            style: const TextStyle(fontSize: 12, color: Colors.purple),
           ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildSharedWithSection(List<String> sharedWith) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final userProfileService = UserProfileService.instance;
+    
+    // Load profiles if not cached
+    for (final userId in sharedWith) {
+      if (!userProfileService.isProfileCached(userId)) {
+        userProfileService.loadProfiles([userId]);
+      }
+    }
+    
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.share,
+                size: 16,
+                color: colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Shared with',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: sharedWith.take(5).map((userId) {
+              final displayName = userProfileService.getDisplayName(userId);
+              final picture = userProfileService.getPicture(userId);
+              
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Avatar
+                    CircleAvatar(
+                      radius: 10,
+                      backgroundColor: colorScheme.primary,
+                      backgroundImage: picture != null
+                          ? (picture.startsWith('data:') || picture.startsWith('http')
+                              ? NetworkImage(picture)
+                              : null)
+                          : null,
+                      child: picture == null
+                          ? Icon(
+                              Icons.person,
+                              size: 12,
+                              color: colorScheme.onPrimary,
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 6),
+                    // Display name or UUID prefix
+                    Text(
+                      displayName ?? userId.substring(0, 8),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+          if (sharedWith.length > 5)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '+${sharedWith.length - 5} more',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
         ],
       ),
     );

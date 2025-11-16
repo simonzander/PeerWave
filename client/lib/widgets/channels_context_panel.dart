@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme_constants.dart';
+import '../widgets/animated_widgets.dart';
 import '../providers/unread_messages_provider.dart';
 
 /// Channels Context Panel - Shows categorized channels
@@ -247,35 +248,11 @@ class ChannelsContextPanel extends StatelessWidget {
                                 : AppThemeConstants.textSecondary),
                         size: 48,
                       ),
-                      // Unread badge (bottom right, overlapping like in people panel)
-                      if (unreadCount > 0)
-                        Positioned(
-                          right: -4,
-                          bottom: -4,
-                          child: Container(
-                            constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              shape: unreadCount > 9 ? BoxShape.rectangle : BoxShape.circle,
-                              borderRadius: unreadCount > 9 ? BorderRadius.circular(10) : null,
-                              border: Border.all(
-                                color: AppThemeConstants.contextPanelBackground,
-                                width: 2,
-                              ),
-                            ),
-                            child: Text(
-                              unreadCount > 99 ? '99+' : '$unreadCount',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                height: 1.0,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ),
+                      // Unread badge (bottom right, squared red badge)
+                      UnreadBadgeOverlay(
+                        count: unreadCount,
+                        borderColor: AppThemeConstants.contextPanelBackground,
+                      ),
                     ],
                   ),
                 ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../../widgets/user_avatar.dart';
+import '../../widgets/animated_widgets.dart';
 import '../../providers/unread_messages_provider.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/storage/sqlite_message_store.dart';
@@ -477,22 +478,9 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
                               ),
                               if (currentUnreadCount > 0) ...[
                                 const SizedBox(width: 8),
-                                Container(
-                                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    currentUnreadCount > 99 ? '99+' : '$currentUnreadCount',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
+                                AnimatedBadge(
+                                  count: currentUnreadCount,
+                                  isSmall: false,
                                 ),
                               ],
                             ],

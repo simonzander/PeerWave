@@ -84,6 +84,7 @@ class _AnimatedSelectionTileState extends State<AnimatedSelectionTile> {
 }
 
 /// Animiertes Badge mit Appear/Disappear Effect
+/// Always uses squared/rounded rectangle style for consistency
 class AnimatedBadge extends StatelessWidget {
   final int count;
   final bool isSmall;
@@ -100,7 +101,6 @@ class AnimatedBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final show = count > 0;
 
     // Return empty SizedBox if count is 0 to avoid layout issues
@@ -118,28 +118,75 @@ class AnimatedBadge extends StatelessWidget {
         curve: AppThemeConstants.fadeCurve,
         child: Container(
           padding: EdgeInsets.symmetric(
-            horizontal: isSmall ? 4 : AppThemeConstants.spacingXs,
+            horizontal: isSmall ? 6 : AppThemeConstants.spacingXs,
             vertical: isSmall ? 2 : 4,
           ),
           decoration: BoxDecoration(
-            color: backgroundColor ?? colorScheme.error,
-            borderRadius: BorderRadius.circular(AppThemeConstants.radiusSmall), // 8px
+            color: backgroundColor ?? Theme.of(context).colorScheme.error,
+            borderRadius: BorderRadius.circular(isSmall ? 6 : AppThemeConstants.radiusSmall),
           ),
           constraints: BoxConstraints(
-            minWidth: isSmall ? 16 : 20,
-            minHeight: isSmall ? 16 : 20,
+            minWidth: isSmall ? 20 : 24,
+            minHeight: isSmall ? 20 : 24,
           ),
           child: Center(
             child: Text(
               count > 99 ? '99+' : count.toString(),
               style: TextStyle(
-                color: textColor ?? colorScheme.onError,
+                color: textColor ?? Colors.white,
                 fontSize: isSmall ? 10 : AppThemeConstants.fontSizeCaption,
                 fontWeight: FontWeight.bold,
                 height: 1.0,
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Unread Badge Overlay - Positioned in bottom right corner of avatars/icons
+/// Consistent squared red badge for all unread counts
+class UnreadBadgeOverlay extends StatelessWidget {
+  final int count;
+  final Color? borderColor;
+
+  const UnreadBadgeOverlay({
+    super.key,
+    required this.count,
+    this.borderColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (count <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    return Positioned(
+      right: -2,
+      bottom: -2,
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.red,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: borderColor ?? AppThemeConstants.contextPanelBackground,
+            width: 2,
+          ),
+        ),
+        child: Text(
+          count > 99 ? '99+' : '$count',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            height: 1.0,
+          ),
+          textAlign: TextAlign.center,
         ),
       ),
     );

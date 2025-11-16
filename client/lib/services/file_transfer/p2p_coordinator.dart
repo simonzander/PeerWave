@@ -12,6 +12,7 @@ import 'socket_file_client.dart';
 import '../signal_service.dart';
 import 'chunking_service.dart';
 import '../../models/seeder_info.dart';
+import '../../providers/file_transfer_stats_provider.dart';
 // Web-only imports for browser download
 import 'dart:html' as html show AnchorElement, Blob, Url, document;
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -38,6 +39,7 @@ class P2PCoordinator extends ChangeNotifier {
   final SignalService signalService;
   final SocketFileClient socketClient;
   final ChunkingService chunkingService;
+  final FileTransferStatsProvider? statsProvider;
   
   // Active connections per file: fileId -> Set<peerId>
   final Map<String, Set<String>> _fileConnections = {};
@@ -109,6 +111,7 @@ class P2PCoordinator extends ChangeNotifier {
     required this.signalService,
     required this.socketClient,
     required this.chunkingService,
+    this.statsProvider,
   }) {
     _setupWebRTCCallbacks();
     _setupSignalCallbacks();
@@ -1033,6 +1036,22 @@ class P2PCoordinator extends ChangeNotifier {
       
       debugPrint('[P2P SEEDER] ✓ Chunk $chunkIndex sent successfully');
       
+      // Track upload stats
+      if (statsProvider != null) {
+        final metadata = await storage.getFileMetadata(fileId);
+        final fileName = metadata?['fileName'] as String? ?? 'Unknown';
+        final fileSize = metadata?['fileSize'] as int? ?? 0;
+        final chunkCount = await storage.getChunkCount(fileId);
+        final sentChunks = (_seederChunksSent[peerId]?[fileId]?.length ?? 0) + 1;
+        statsProvider!.recordUpload(
+          fileId: fileId,
+          fileName: fileName,
+          peerId: peerId,
+          bytesTransferred: sentChunks * (fileSize / chunkCount).round(),
+          totalBytes: fileSize,
+        );
+      }
+      
       // Track sent chunks for cleanup detection
       _seederChunksSent.putIfAbsent(peerId, () => {});
       _seederChunksSent[peerId]!.putIfAbsent(fileId, () => {});
@@ -1400,6 +1419,17 @@ class P2PCoordinator extends ChangeNotifier {
         task.downloadedBytes += actualEncryptedChunk.length;
         
         debugPrint('[P2P] Download progress: ${task.downloadedChunks}/${task.chunkCount} chunks');
+        
+        // Track download stats
+        if (statsProvider != null) {
+          statsProvider!.recordDownload(
+            fileId: fileId,
+            fileName: task.fileName,
+            peerId: peerId,
+            bytesTransferred: task.downloadedBytes,
+            totalBytes: task.fileSize,
+          );
+        }
         
         // Check if all chunks received
         if (task.downloadedChunks >= task.chunkCount) {

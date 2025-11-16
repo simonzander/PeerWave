@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/unread_messages_provider.dart';
+import '../providers/file_transfer_stats_provider.dart';
 
 /// Badge widget for navigation items showing notification counts
 /// 
@@ -33,15 +34,117 @@ class NavigationBadge extends StatelessWidget {
       builder: (context, notificationProvider, unreadProvider, _) {
         final count = _getCountForType(notificationProvider, unreadProvider, type);
         
+        // Special handling for files icon - show transfer indicators
+        if (type == NavigationBadgeType.files) {
+          return Consumer<FileTransferStatsProvider>(
+            builder: (context, stats, child) {
+              return Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Icon(icon),
+                  
+                  // Transfer indicators
+                  if (stats.isUploading || stats.isDownloading)
+                    Positioned(
+                      right: -8,
+                      bottom: -8,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                          if (stats.isUploading)
+                              Icon(
+                                Icons.arrow_upward,
+                                size: 10,
+                                color: Theme.of(context).colorScheme.tertiary,
+                              ),
+                          if (stats.isDownloading)
+                              Icon(
+                                Icons.arrow_downward,
+                                size: 10,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  
+                  // Unread count badge (if any)
+                  if (count > 0)
+                    Positioned(
+                      right: -8,
+                      top: -8,
+                      child: Container(
+                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          count > 99 ? '99+' : '$count',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            height: 1.0,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          );
+        }
+        
+        // Default badge behavior for other types
         if (count == 0) {
           return Icon(icon);
         }
 
-        return Badge(
-          label: Text(count > 99 ? '99+' : count.toString()),
-          backgroundColor: Theme.of(context).colorScheme.error,
-          textColor: Theme.of(context).colorScheme.onError,
-          child: Icon(icon),
+        // Use Stack to position badge in bottom-right corner without increasing icon size
+        return Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Icon(icon),
+            Positioned(
+              right: -8,
+              bottom: -8,
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  count > 99 ? '99+' : '$count',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    height: 1.0,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ],
         );
       },
     );
