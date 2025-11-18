@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:html' as html;
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -42,6 +43,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   Map<String, Map<String, dynamic>> _seedingStats = {}; // fileId -> {downloaders, transferRate}
   bool _isLoading = false;
   bool _hasLoadedOnce = false;
+  Timer? _refreshTimer;
   
   // Filter state
   FileFilter _currentFilter = FileFilter.all;
@@ -50,6 +52,12 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   void initState() {
     super.initState();
     // Load files on first build
+    // Start periodic refresh to update chunk counts as files download
+    _refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (_hasLoadedOnce && !_isLoading) {
+        _updateChunkCounts();
+      }
+    });
   }
   
   SocketFileClient _getSocketClient() {
@@ -76,6 +84,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     super.dispose();
   }
   
@@ -895,6 +904,23 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
       final storage = _getStorage();
       final files = await storage.getAllFiles();
       
+      // Enrich files with actual chunk counts
+      final enrichedFiles = <Map<String, dynamic>>[];
+      for (final file in files) {
+        final fileId = file['fileId'] as String?;
+        if (fileId != null) {
+          final availableChunks = await storage.getAvailableChunks(fileId);
+          final enrichedFile = {
+            ...file,
+            'downloadedChunks': availableChunks.length, // Add actual downloaded chunk count
+            'availableChunksList': availableChunks, // Keep the list for later use
+          };
+          enrichedFiles.add(enrichedFile);
+        } else {
+          enrichedFiles.add(file);
+        }
+      }
+      
       // ========================================
       // NOTE: Checksum verification is now handled by FileTransferService
       // after download completion. No need to verify here.
@@ -906,13 +932,57 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
       
       if (!mounted) return;
       setState(() {
-        _localFiles = files;
+        _localFiles = enrichedFiles;
         _isLoading = false;
       });
     } catch (e) {
       _showError('Failed to load files: $e');
       if (!mounted) return;
       setState(() => _isLoading = false);
+    }
+  }
+  
+  /// Update chunk counts without full reload - prevents flickering
+  Future<void> _updateChunkCounts() async {
+    if (!mounted) return;
+    
+    try {
+      final storage = _getStorage();
+      bool hasUpdates = false;
+      
+      // Update chunk counts for each file in place
+      for (int i = 0; i < _localFiles.length; i++) {
+        final file = _localFiles[i];
+        final fileId = file['fileId'] as String?;
+        
+        if (fileId != null) {
+          final availableChunks = await storage.getAvailableChunks(fileId);
+          final newChunkCount = availableChunks.length;
+          final currentChunkCount = file['downloadedChunks'] is List 
+              ? (file['downloadedChunks'] as List).length 
+              : (file['downloadedChunks'] as int? ?? 0);
+          
+          // Only update if chunk count changed
+          if (newChunkCount != currentChunkCount) {
+            _localFiles[i] = {
+              ...file,
+              'downloadedChunks': newChunkCount,
+              'availableChunksList': availableChunks,
+            };
+            hasUpdates = true;
+          }
+        }
+      }
+      
+      // Only trigger rebuild if there were actual changes
+      if (hasUpdates && mounted) {
+        setState(() {
+          // Trigger rebuild with updated chunk counts
+        });
+      }
+    } catch (e) {
+      // Silently fail - don't disrupt user experience
+      debugPrint('[UPDATE_CHUNKS] Failed to update chunk counts: $e');
     }
   }
   

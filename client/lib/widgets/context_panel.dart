@@ -3,6 +3,7 @@ import '../screens/dashboard/messages_list_view.dart';
 import '../widgets/people_context_panel.dart';
 import '../widgets/channels_context_panel.dart';
 import '../widgets/files_context_panel.dart';
+import '../widgets/activities_context_panel.dart';
 import '../theme/app_theme_constants.dart';
 
 /// Context Panel - Shows contextual content based on selected view
@@ -22,6 +23,7 @@ class ContextPanel extends StatelessWidget {
   final Function(String uuid, String displayName)? onMessageTap;
   final VoidCallback? onNavigateToPeople;
   final VoidCallback? onCreateChannel;
+  final Function(String type, Map<String, dynamic> data)? onNotificationTap;
   final double width;
   
   // Additional data for People panel
@@ -45,6 +47,7 @@ class ContextPanel extends StatelessWidget {
     this.onMessageTap,
     this.onNavigateToPeople,
     this.onCreateChannel,
+    this.onNotificationTap,
     this.width = 280,
     this.recentPeople,
     this.starredPeople,
@@ -100,6 +103,12 @@ class ContextPanel extends StatelessWidget {
       case ContextPanelType.files:
         return const FilesContextPanel();
         
+      case ContextPanelType.activities:
+        return ActivitiesContextPanel(
+          host: host,
+          onNotificationTap: onNotificationTap,
+        );
+        
       case ContextPanelType.none:
         return const SizedBox.shrink();
     }
@@ -122,5 +131,8 @@ enum ContextPanelType {
   
   /// Shows list of recent files
   files,
+  
+  /// Shows notification feed for activities
+  activities,
 }
 

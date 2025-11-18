@@ -248,7 +248,7 @@ class _ChannelsListViewState extends State<ChannelsListView> with TickerProvider
   }
 
   List<Map<String, dynamic>> _getFilteredChannels() {
-    final unreadProvider = context.read<UnreadMessagesProvider>();
+    final unreadProvider = context.watch<UnreadMessagesProvider>();
     
     // Apply search filter first
     var channels = _searchQuery.isEmpty 
@@ -297,7 +297,7 @@ class _ChannelsListViewState extends State<ChannelsListView> with TickerProvider
   }
 
   Map<String, List<Map<String, dynamic>>> _getCategorizedChannelsForAll() {
-    final unreadProvider = context.read<UnreadMessagesProvider>();
+    final unreadProvider = context.watch<UnreadMessagesProvider>();
     final allFiltered = _getFilteredChannels();
     final displayedIds = <String>{};
     
@@ -608,7 +608,7 @@ class _ChannelsListViewState extends State<ChannelsListView> with TickerProvider
   }
 
   Widget _buildChannelTile(Map<String, dynamic> channel) {
-    final unreadProvider = context.read<UnreadMessagesProvider>();
+    final unreadProvider = context.watch<UnreadMessagesProvider>();
     final navProvider = context.read<NavigationStateProvider>();
     
     final name = channel['name'] as String? ?? 'Unknown Channel';
@@ -836,14 +836,7 @@ class _ChannelsListViewState extends State<ChannelsListView> with TickerProvider
       trailing: SizedBox(
         width: 80,
         child: ElevatedButton(
-          onPressed: () {
-            // TODO: Join channel API call
-            context.go('/app/channels/$uuid', extra: {
-              'host': widget.host,
-              'name': name,
-              'type': type,
-            });
-          },
+          onPressed: () => _joinChannel(uuid, name, type),
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           ),
@@ -851,6 +844,54 @@ class _ChannelsListViewState extends State<ChannelsListView> with TickerProvider
         ),
       ),
     );
+  }
+  
+  Future<void> _joinChannel(String channelId, String channelName, String channelType) async {
+    try {
+      final resp = await ApiService.joinChannel(widget.host, channelId);
+      
+      if (resp.statusCode == 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Joined $channelName successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+        
+        // Reload channels to update the list
+        await _loadChannels();
+        
+        // Navigate to the newly joined channel
+        if (mounted) {
+          context.go('/app/channels/$channelId', extra: {
+            'host': widget.host,
+            'name': channelName,
+            'type': channelType,
+          });
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to join channel: ${resp.data['message'] ?? 'Unknown error'}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[CHANNELS_LIST] Error joining channel: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error joining channel: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildFilterChip({

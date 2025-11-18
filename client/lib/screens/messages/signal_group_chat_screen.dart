@@ -14,6 +14,7 @@ import '../../services/offline_message_queue.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/file_transfer/p2p_coordinator.dart';
 import '../../services/file_transfer/socket_file_client.dart';
+import '../../services/storage/sqlite_group_message_store.dart';
 import '../../models/role.dart';
 import '../../models/file_message.dart';
 import '../../extensions/snackbar_extensions.dart';
@@ -393,12 +394,28 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
   }
 
   /// Send read receipt for a specific message (NEW API)
-  void _sendReadReceiptForMessage(String itemId) {
+  Future<void> _sendReadReceiptForMessage(String itemId) async {
     try {
+      // Check if we already sent a read receipt for this message
+      final groupStore = await SqliteGroupMessageStore.getInstance();
+      final alreadySent = await groupStore.hasReadReceiptBeenSent(itemId);
+      
+      if (alreadySent) {
+        debugPrint('[SIGNAL_GROUP] Read receipt already sent for itemId: $itemId, skipping');
+        return;
+      }
+      
       // NEW: Use markGroupItemAsRead from SignalService
       SignalService.instance.markGroupItemAsRead(itemId);
       _pendingReadReceipts.remove(itemId);
       debugPrint('[SIGNAL_GROUP] Sent read receipt for item: $itemId');
+      
+      // Mark that we sent the read receipt in local storage
+      await groupStore.markReadReceiptSent(itemId);
+      
+      // Mark message as read in local storage
+      await groupStore.markAsRead(itemId);
+      debugPrint('[SIGNAL_GROUP] ✓ Marked message as read in local storage: $itemId');
       
       // Mark this channel as read in the unread provider
       try {
@@ -413,14 +430,14 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
   }
 
   /// Send read receipts for all pending messages (when screen becomes visible)
-  void _sendPendingReadReceipts() {
+  Future<void> _sendPendingReadReceipts() async {
     if (_pendingReadReceipts.isEmpty) return;
     
     debugPrint('[SIGNAL_GROUP] Sending ${_pendingReadReceipts.length} pending read receipts');
     final receiptsToSend = List<String>.from(_pendingReadReceipts);
     
     for (final itemId in receiptsToSend) {
-      _sendReadReceiptForMessage(itemId);
+      await _sendReadReceiptForMessage(itemId);
     }
   }
 

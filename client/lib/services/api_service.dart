@@ -296,4 +296,19 @@ class ApiService {
     
     return response;
   }
+  
+  /// Join a public channel
+  /// Automatically emits AppEvent.channelJoined on success
+  static Future<Response> joinChannel(String host, String channelId) async {
+    final url = ensureHttpPrefix(host);
+    final response = await post('$url/client/channels/$channelId/join');
+    
+    // Emit event on success
+    if (response.statusCode == 200) {
+      debugPrint('[API SERVICE] Channel joined successfully');
+      emitEvent(AppEvent.channelJoined, response.data);
+    }
+    
+    return response;
+  }
 }

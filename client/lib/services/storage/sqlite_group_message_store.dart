@@ -382,5 +382,69 @@ class SqliteGroupMessageStore {
       return null;
     }
   }
+
+  /// Mark that a read receipt has been sent for this message
+  /// Prevents sending duplicate read receipts on page reload
+  Future<void> markReadReceiptSent(String itemId) async {
+    try {
+      final db = await DatabaseHelper.database;
+      
+      await db.update(
+        'messages',
+        {'read_receipt_sent': 1},
+        where: 'item_id = ?',
+        whereArgs: [itemId],
+      );
+      
+      debugPrint('[GROUP STORE] ✓ Marked read receipt sent for itemId: $itemId');
+    } catch (e, stackTrace) {
+      debugPrint('[GROUP STORE] ✗ Error marking read receipt sent: $e');
+      debugPrint('[GROUP STORE] Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Check if read receipt was already sent for this message
+  Future<bool> hasReadReceiptBeenSent(String itemId) async {
+    try {
+      final db = await DatabaseHelper.database;
+      
+      final result = await db.query(
+        'messages',
+        columns: ['read_receipt_sent'],
+        where: 'item_id = ?',
+        whereArgs: [itemId],
+      );
+      
+      if (result.isEmpty) return false;
+      
+      final flag = result.first['read_receipt_sent'];
+      return flag == 1 || flag == true;
+    } catch (e, stackTrace) {
+      debugPrint('[GROUP STORE] ✗ Error checking read receipt: $e');
+      debugPrint('[GROUP STORE] Stack trace: $stackTrace');
+      return false;
+    }
+  }
+
+  /// Mark message as read (updates status field)
+  Future<void> markAsRead(String itemId) async {
+    try {
+      final db = await DatabaseHelper.database;
+      
+      await db.update(
+        'messages',
+        {'status': 'read'},
+        where: 'item_id = ?',
+        whereArgs: [itemId],
+      );
+      
+      debugPrint('[GROUP STORE] ✓ Marked message as read: $itemId');
+    } catch (e, stackTrace) {
+      debugPrint('[GROUP STORE] ✗ Error marking message as read: $e');
+      debugPrint('[GROUP STORE] Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
 }
 

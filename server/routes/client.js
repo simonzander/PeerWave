@@ -771,6 +771,70 @@ clientRoutes.post("/client/channels", async(req, res) => {
     }
 });
 
+// POST /client/channels/:channelId/join - Join a public channel
+clientRoutes.post("/client/channels/:channelId/join", async(req, res) => {
+    const { channelId } = req.params;
+    
+    if(req.session.authenticated !== true || !req.session.uuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        const userId = req.session.uuid;
+        const { ChannelMembers, UserRoleChannel, Role } = require('../db/model');
+        
+        // Find the channel
+        const channel = await Channel.findOne({ where: { uuid: channelId } });
+        if (!channel) {
+            return res.status(404).json({ status: "error", message: "Channel not found" });
+        }
+        
+        // Verify channel is public
+        if (channel.private) {
+            return res.status(403).json({ status: "error", message: "Cannot join private channel" });
+        }
+        
+        // Check if user is already a member
+        const existingMember = await ChannelMembers.findOne({
+            where: { userId, channelId }
+        });
+        
+        if (existingMember) {
+            return res.status(400).json({ status: "error", message: "Already a member of this channel" });
+        }
+        
+        // Check if user is the owner
+        if (channel.owner === userId) {
+            return res.status(400).json({ status: "error", message: "You are the owner of this channel" });
+        }
+        
+        // Add user to channel
+        await ChannelMembers.create({
+            userId,
+            channelId,
+            permission: 'member'
+        });
+        
+        // Assign default role if channel has one
+        if (channel.defaultRoleId) {
+            await UserRoleChannel.create({
+                userId,
+                roleId: channel.defaultRoleId,
+                channelId
+            });
+        }
+        
+        res.status(200).json({ 
+            status: "success", 
+            message: "Successfully joined channel",
+            channel: channel
+        });
+    } catch (error) {
+        console.error('Error joining channel:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
 // Get discoverable channels (public channels user isn't part of)
 clientRoutes.get("/client/channels/discover", async(req, res) => {
     const limit = parseInt(req.query.limit) || 10;

@@ -93,6 +93,35 @@
 			"problemMatcher": []
 		},
 		{
+			"label": "Flutter: Build Windows",
+			"type": "shell",
+			"command": "flutter build windows --release",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			},
+			"options": {
+				"cwd": "${workspaceFolder}/client"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "Flutter: Run Windows",
+			"type": "shell",
+			"command": "flutter run -d windows",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			},
+			"options": {
+				"cwd": "${workspaceFolder}/client"
+			},
+			"problemMatcher": [],
+			"isBackground": true
+		},
+		{
 			"label": "Flutter: Rebuild",
 			"type": "shell",
 			"command": ".\\rebuild-flutter.ps1",
