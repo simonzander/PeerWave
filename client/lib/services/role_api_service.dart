@@ -311,5 +311,74 @@ class RoleApiService {
       throw Exception('Failed to check permission: ${response.body}');
     }
   }
+
+  /// Leave a channel
+  Future<void> leaveChannel(String channelId) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/channels/$channelId/leave'),
+      headers: {'Content-Type': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      debugPrint('[RoleApiService] Successfully left channel');
+    } else if (response.statusCode == 401) {
+      throw Exception('Unauthorized: Please log in');
+    } else if (response.statusCode == 403) {
+      final error = json.decode(response.body);
+      throw Exception(error['error'] ?? 'Forbidden: Cannot leave this channel');
+    } else if (response.statusCode == 404) {
+      throw Exception('Channel not found');
+    } else {
+      final error = json.decode(response.body);
+      throw Exception(error['error'] ?? 'Failed to leave channel');
+    }
+  }
+
+  /// Kick a user from a channel
+  Future<void> kickUserFromChannel({
+    required String channelId,
+    required String userId,
+  }) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/api/channels/$channelId/members/$userId'),
+      headers: {'Content-Type': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      debugPrint('[RoleApiService] Successfully kicked user from channel');
+    } else if (response.statusCode == 401) {
+      throw Exception('Unauthorized: Please log in');
+    } else if (response.statusCode == 403) {
+      final error = json.decode(response.body);
+      throw Exception(error['error'] ?? 'Forbidden: Cannot kick users from this channel');
+    } else if (response.statusCode == 404) {
+      throw Exception('Channel or user not found');
+    } else {
+      final error = json.decode(response.body);
+      throw Exception(error['error'] ?? 'Failed to kick user from channel');
+    }
+  }
+
+  /// Delete a channel (owner only)
+  Future<void> deleteChannel(String channelId) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/api/channels/$channelId'),
+      headers: {'Content-Type': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      debugPrint('[RoleApiService] Successfully deleted channel');
+    } else if (response.statusCode == 401) {
+      throw Exception('Unauthorized: Please log in');
+    } else if (response.statusCode == 403) {
+      throw Exception('Forbidden: Only the channel owner can delete the channel');
+    } else if (response.statusCode == 404) {
+      throw Exception('Channel not found');
+    } else {
+      final error = json.decode(response.body);
+      throw Exception(error['error'] ?? 'Failed to delete channel');
+    }
+  }
 }
+
 

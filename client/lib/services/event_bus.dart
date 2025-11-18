@@ -18,6 +18,12 @@ enum AppEvent {
   /// Channel joined
   channelJoined,
   
+  /// Channel left
+  channelLeft,
+  
+  /// User kicked from channel
+  userKicked,
+  
   /// User status changed (online, offline, typing, etc.)
   userStatusChanged,
   

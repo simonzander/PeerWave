@@ -331,6 +331,128 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
     );
   }
 
+  Future<void> _showLeaveChannelDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Leave Channel'),
+        content: Text(
+          'Are you sure you want to leave ${widget.channelName}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      try {
+        final roleProvider = Provider.of<RoleProvider>(context, listen: false);
+        await roleProvider.leaveChannel(widget.channelId);
+        if (mounted) {
+          _showSuccess('Left channel successfully');
+          Navigator.of(context).pop(); // Go back to previous screen
+        }
+      } catch (e) {
+        if (mounted) {
+          _showError(e.toString());
+        }
+      }
+    }
+  }
+
+  Future<void> _showDeleteChannelDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Channel'),
+        content: Text(
+          'Are you sure you want to delete ${widget.channelName}? This action cannot be undone and will remove all members and data.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      try {
+        final roleProvider = Provider.of<RoleProvider>(context, listen: false);
+        await roleProvider.deleteChannel(widget.channelId);
+        if (mounted) {
+          _showSuccess('Channel deleted successfully');
+          Navigator.of(context).pop(); // Go back to previous screen
+        }
+      } catch (e) {
+        if (mounted) {
+          _showError(e.toString());
+        }
+      }
+    }
+  }
+
+  Future<void> _showKickUserDialog(ChannelMember member) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove User'),
+        content: Text(
+          'Remove ${member.name} from ${widget.channelName}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      try {
+        final roleProvider = Provider.of<RoleProvider>(context, listen: false);
+        await roleProvider.kickUserFromChannel(
+          channelId: widget.channelId,
+          userId: member.userId,
+        );
+        _showSuccess('User removed from channel');
+        _loadData();
+      } catch (e) {
+        _showError(e.toString());
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final roleProvider = Provider.of<RoleProvider>(context);
@@ -350,8 +472,16 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
         roleProvider.isChannelOwner(widget.channelId) ||
         roleProvider.hasChannelPermission(widget.channelId, 'user.add');
     
+    final canKickUsers = roleProvider.isAdmin ||
+        roleProvider.isChannelOwner(widget.channelId) ||
+        roleProvider.hasChannelPermission(widget.channelId, 'user.kick');
+    
+    final isOwner = roleProvider.isChannelOwner(widget.channelId);
+    
     debugPrint('[ChannelMembers] canManageRoles: $canManageRoles');
     debugPrint('[ChannelMembers] canAddUsers: $canAddUsers');
+    debugPrint('[ChannelMembers] canKickUsers: $canKickUsers');
+    debugPrint('[ChannelMembers] isOwner: $isOwner');
 
     return Scaffold(
       appBar: AppBar(
@@ -362,6 +492,19 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
               icon: const Icon(Icons.person_add),
               onPressed: _showAddUserDialog,
               tooltip: 'Add User',
+            ),
+          if (!isOwner)
+            IconButton(
+              icon: const Icon(Icons.exit_to_app),
+              onPressed: _showLeaveChannelDialog,
+              tooltip: 'Leave Channel',
+            ),
+          if (isOwner)
+            IconButton(
+              icon: const Icon(Icons.delete),
+              onPressed: _showDeleteChannelDialog,
+              tooltip: 'Delete Channel',
+              color: Colors.red,
             ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -422,13 +565,24 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                                   : Colors.grey,
                         ),
                       ),
-                      trailing: canManageRoles
-                          ? IconButton(
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (canManageRoles)
+                            IconButton(
                               icon: const Icon(Icons.add_circle),
                               onPressed: () => _showAssignRoleDialog(member),
                               tooltip: 'Assign Role',
-                            )
-                          : null,
+                            ),
+                          if (canKickUsers && !member.isOwner)
+                            IconButton(
+                              icon: const Icon(Icons.person_remove),
+                              onPressed: () => _showKickUserDialog(member),
+                              tooltip: 'Remove from Channel',
+                              color: Colors.red,
+                            ),
+                        ],
+                      ),
                       children: [
                         if (member.roles.isEmpty)
                           const Padding(

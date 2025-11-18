@@ -719,6 +719,142 @@ roleRoutes.get('/channels/:channelId/available-users', requireAuth, async (req, 
     }
 });
 
+// POST /api/channels/:channelId/leave - Leave a channel
+roleRoutes.post('/channels/:channelId/leave', requireAuth, async (req, res) => {
+    try {
+        const { channelId } = req.params;
+        const userId = req.session.uuid;
+        
+        // Verify channel exists
+        const channel = await Channel.findByPk(channelId);
+        if (!channel) {
+            return res.status(404).json({ error: 'Channel not found' });
+        }
+        
+        // Check if user is the channel owner
+        if (channel.owner === userId) {
+            return res.status(403).json({ error: 'Channel owner cannot leave the channel. Transfer ownership or delete the channel instead.' });
+        }
+        
+        // Check if user is a member
+        const membership = await ChannelMembers.findOne({
+            where: { userId, channelId }
+        });
+        
+        if (!membership) {
+            return res.status(400).json({ error: 'You are not a member of this channel' });
+        }
+        
+        // Remove user from channel
+        await membership.destroy();
+        
+        // Remove all channel role assignments
+        await UserRoleChannel.destroy({
+            where: { userId, channelId }
+        });
+        
+        res.json({ 
+            success: true,
+            message: 'Successfully left the channel' 
+        });
+    } catch (error) {
+        console.error('Error leaving channel:', error);
+        res.status(500).json({ error: 'Failed to leave channel' });
+    }
+});
+
+// DELETE /api/channels/:channelId/members/:userId - Kick user from channel
+roleRoutes.delete('/channels/:channelId/members/:userId', requireAuth, async (req, res) => {
+    try {
+        const { channelId, userId } = req.params;
+        const requesterId = req.session.uuid;
+        
+        // Verify channel exists
+        const channel = await Channel.findByPk(channelId);
+        if (!channel) {
+            return res.status(404).json({ error: 'Channel not found' });
+        }
+        
+        // Check if requester is the channel owner or has user.kick permission
+        const isOwner = channel.owner === requesterId;
+        const hasKickPermission = await hasChannelPermission(requesterId, channelId, 'user.kick');
+        
+        if (!isOwner && !hasKickPermission) {
+            return res.status(403).json({ error: 'Forbidden: You do not have permission to remove members from this channel' });
+        }
+        
+        // Prevent kicking the channel owner
+        if (userId === channel.owner) {
+            return res.status(400).json({ error: 'Cannot kick the channel owner' });
+        }
+        
+        // Check if user is a member
+        const membership = await ChannelMembers.findOne({
+            where: { userId, channelId }
+        });
+        
+        if (!membership) {
+            return res.status(400).json({ error: 'User is not a member of this channel' });
+        }
+        
+        // Remove user from channel
+        await membership.destroy();
+        
+        // Remove all channel role assignments
+        await UserRoleChannel.destroy({
+            where: { userId, channelId }
+        });
+        
+        res.json({ 
+            success: true,
+            message: 'User removed from channel successfully' 
+        });
+    } catch (error) {
+        console.error('Error removing user from channel:', error);
+        res.status(500).json({ error: 'Failed to remove user from channel' });
+    }
+});
+
+// DELETE /api/channels/:channelId - Delete a channel
+roleRoutes.delete('/channels/:channelId', requireAuth, async (req, res) => {
+    try {
+        const { channelId } = req.params;
+        const userId = req.session.uuid;
+        
+        // Verify channel exists
+        const channel = await Channel.findByPk(channelId);
+        if (!channel) {
+            return res.status(404).json({ error: 'Channel not found' });
+        }
+        
+        // Only the channel owner can delete the channel
+        if (channel.owner !== userId) {
+            return res.status(403).json({ error: 'Forbidden: Only the channel owner can delete the channel' });
+        }
+        
+        // Delete all channel memberships
+        await ChannelMembers.destroy({
+            where: { channelId }
+        });
+        
+        // Delete all channel role assignments
+        await UserRoleChannel.destroy({
+            where: { channelId }
+        });
+        
+        // Delete the channel itself
+        await channel.destroy();
+        
+        res.json({ 
+            success: true,
+            message: 'Channel deleted successfully' 
+        });
+    } catch (error) {
+        console.error('Error deleting channel:', error);
+        res.status(500).json({ error: 'Failed to delete channel' });
+    }
+});
+
 // POST /api/user/check-permission - Check if user has specific permission
 roleRoutes.post('/user/check-permission', requireAuth, async (req, res) => {
     try {

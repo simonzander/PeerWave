@@ -282,16 +282,46 @@ class ApiService {
     return response;
   }
   
-  /// Delete a channel
+  /// Delete a channel (owner only)
   /// Automatically emits AppEvent.channelDeleted on success
   static Future<Response> deleteChannel(String host, String channelId) async {
     final url = ensureHttpPrefix(host);
-    final response = await delete('$url/client/channels/$channelId');
+    final response = await delete('$url/api/channels/$channelId');
     
     // Emit event on success
     if (response.statusCode == 200 || response.statusCode == 204) {
       debugPrint('[API SERVICE] Channel deleted successfully');
       emitEvent(AppEvent.channelDeleted, {'channelId': channelId});
+    }
+    
+    return response;
+  }
+  
+  /// Leave a channel
+  /// Automatically emits AppEvent.channelLeft on success
+  static Future<Response> leaveChannel(String host, String channelId) async {
+    final url = ensureHttpPrefix(host);
+    final response = await post('$url/api/channels/$channelId/leave');
+    
+    // Emit event on success
+    if (response.statusCode == 200) {
+      debugPrint('[API SERVICE] Left channel successfully');
+      emitEvent(AppEvent.channelLeft, {'channelId': channelId});
+    }
+    
+    return response;
+  }
+  
+  /// Kick a user from a channel (requires owner or user.kick permission)
+  /// Automatically emits AppEvent.userKicked on success
+  static Future<Response> kickUserFromChannel(String host, String channelId, String userId) async {
+    final url = ensureHttpPrefix(host);
+    final response = await delete('$url/api/channels/$channelId/members/$userId');
+    
+    // Emit event on success
+    if (response.statusCode == 200) {
+      debugPrint('[API SERVICE] User kicked from channel successfully');
+      emitEvent(AppEvent.userKicked, {'channelId': channelId, 'userId': userId});
     }
     
     return response;
@@ -312,3 +342,4 @@ class ApiService {
     return response;
   }
 }
+

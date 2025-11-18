@@ -268,5 +268,43 @@ class RoleProvider with ChangeNotifier {
       return false;
     }
   }
+
+  /// Leave a channel
+  Future<void> leaveChannel(String channelId) async {
+    try {
+      await _apiService.leaveChannel(channelId);
+      // Reload user roles to reflect the change
+      await loadUserRoles();
+    } catch (e) {
+      debugPrint('Error leaving channel: $e');
+      rethrow;
+    }
+  }
+
+  /// Kick a user from a channel
+  Future<void> kickUserFromChannel({
+    required String channelId,
+    required String userId,
+  }) async {
+    try {
+      await _apiService.kickUserFromChannel(channelId: channelId, userId: userId);
+    } catch (e) {
+      debugPrint('Error kicking user from channel: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete a channel (owner only)
+  Future<void> deleteChannel(String channelId) async {
+    try {
+      await _apiService.deleteChannel(channelId);
+      // Reload user roles to reflect the change
+      await loadUserRoles();
+    } catch (e) {
+      debugPrint('Error deleting channel: $e');
+      rethrow;
+    }
+  }
 }
+
 
