@@ -39,8 +39,8 @@ bower_components
 build/Release
 
 # Dependency directories
-node_modules/
-jspm_packages/
+server/node_modules/
+server/jspm_packages/
 
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
@@ -129,17 +129,82 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
-# db
-db/*.sqlite*
-config/config.js
-scripts
+# Server database
+server/db/*.sqlite*
+server/config/config.js
+server/scripts
 
 # License System - SECURITY CRITICAL
 # NEVER commit the private CA key!
-cert/ca-key.pem
-cert/ca-cert.pem
-cert/license.crt
-cert/README.md
+server/cert/ca-key.pem
+server/cert/ca-cert.pem
+server/cert/license.crt
+server/cert/README.md
 QUICKSTART-LICENSE.md
 
-web/*
+# Server web build
+server/web/*
+
+# Miscellaneous
+*.class
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+client/.dart_tool/
+client/.flutter-plugins
+client/.flutter-plugins-dependencies
+client/.pub-cache/
+client/.pub/
+client/build/
+
+# Symbolication related
+client/app.*.symbols
+
+# Obfuscation related
+client/app.*.map.json
+
+# Android Studio will place build artifacts here
+client/android/app/debug
+client/android/app/profile
+client/android/app/release
+
+# Docker
+docker-build.log
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# OS specific
+Thumbs.db
+Desktop.ini
+
+# Certificates (keep structure, not actual certs)
+livekit-certs/*.pem
+livekit-certs/*.key
+livekit-certs/*.crt
+!livekit-certs/.gitkeep

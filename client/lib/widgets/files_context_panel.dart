@@ -11,78 +11,75 @@ class FilesContextPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     
-    return Container(
-      color: colorScheme.surfaceContainerHighest,
-      child: Consumer<FileTransferStatsProvider>(
-        builder: (context, stats, child) {
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Title
+    return Consumer<FileTransferStatsProvider>(
+      builder: (context, stats, child) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Title
+              Text(
+                'Transfer Statistics',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              
+              // Active Transfers Summary
+              _buildSummaryCard(context, stats),
+              const SizedBox(height: 16),
+              
+              // Upload Speed Section
+              _buildSpeedSection(
+                context,
+                title: 'Upload Speed',
+                speed: stats.totalUploadSpeed,
+                icon: Icons.arrow_upward,
+                color: colorScheme.error, // Use error/warning color for uploads
+              ),
+              const SizedBox(height: 8),
+              _buildSpeedGraph(
+                context,
+                stats.speedHistory,
+                isUpload: true,
+              ),
+              const SizedBox(height: 16),
+              
+              // Download Speed Section
+              _buildSpeedSection(
+                context,
+                title: 'Download Speed',
+                speed: stats.totalDownloadSpeed,
+                icon: Icons.arrow_downward,
+                color: colorScheme.primary,
+              ),
+              const SizedBox(height: 8),
+              _buildSpeedGraph(
+                context,
+                stats.speedHistory,
+                isUpload: false,
+              ),
+              const SizedBox(height: 16),
+              
+              // Recent Activity
+              if (stats.activeTransfers.isNotEmpty) ...[
                 Text(
-                  'Transfer Statistics',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  'Active Transfers',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 12),
-                
-                // Active Transfers Summary
-                _buildSummaryCard(context, stats),
-                const SizedBox(height: 16),
-                
-                // Upload Speed Section
-                _buildSpeedSection(
-                  context,
-                  title: 'Upload Speed',
-                  speed: stats.totalUploadSpeed,
-                  icon: Icons.arrow_upward,
-                  color: colorScheme.tertiary,
-                ),
                 const SizedBox(height: 8),
-                _buildSpeedGraph(
-                  context,
-                  stats.speedHistory,
-                  isUpload: true,
-                ),
-                const SizedBox(height: 16),
-                
-                // Download Speed Section
-                _buildSpeedSection(
-                  context,
-                  title: 'Download Speed',
-                  speed: stats.totalDownloadSpeed,
-                  icon: Icons.arrow_downward,
-                  color: colorScheme.primary,
-                ),
-                const SizedBox(height: 8),
-                _buildSpeedGraph(
-                  context,
-                  stats.speedHistory,
-                  isUpload: false,
-                ),
-                const SizedBox(height: 16),
-                
-                // Recent Activity
-                if (stats.activeTransfers.isNotEmpty) ...[
-                  Text(
-                    'Active Transfers',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ...stats.activeTransfers.take(10).map(
-                    (transfer) => _buildTransferItem(context, transfer),
-                  ).toList(),
-                ],
+                ...stats.activeTransfers.take(10).map(
+                  (transfer) => _buildTransferItem(context, transfer),
+                ).toList(),
               ],
-            ),
-          );
-        },
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
   
@@ -100,7 +97,7 @@ class FilesContextPanel extends StatelessWidget {
               icon: Icons.upload,
               label: 'Uploads',
               value: stats.activeUploads.length.toString(),
-              color: colorScheme.tertiary,
+              color: colorScheme.error, // Use error/warning color for uploads
             ),
             Container(
               width: 1,
@@ -181,7 +178,7 @@ class FilesContextPanel extends StatelessWidget {
     required bool isUpload,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    final color = isUpload ? colorScheme.tertiary : colorScheme.primary;
+    final color = isUpload ? colorScheme.error : colorScheme.primary; // Use error/warning for uploads
     
     if (history.isEmpty) {
       return Container(

@@ -25,6 +25,7 @@ class ContextPanel extends StatelessWidget {
   final VoidCallback? onCreateChannel;
   final Function(String type, Map<String, dynamic> data)? onNotificationTap;
   final double width;
+  final bool useFullWidth; // For activities on tablet/mobile
   
   // Additional data for People panel
   final List<Map<String, dynamic>>? recentPeople;
@@ -49,6 +50,7 @@ class ContextPanel extends StatelessWidget {
     this.onCreateChannel,
     this.onNotificationTap,
     this.width = 280,
+    this.useFullWidth = false,
     this.recentPeople,
     this.starredPeople,
     this.activeContactUuid,
@@ -63,7 +65,7 @@ class ContextPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: width,
+      width: useFullWidth ? double.infinity : width,
       color: AppThemeConstants.contextPanelBackground,
       child: _buildContent(),
     );

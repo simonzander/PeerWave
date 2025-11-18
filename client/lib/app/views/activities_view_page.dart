@@ -27,10 +27,15 @@ class _ActivitiesViewPageState extends BaseViewState<ActivitiesViewPage> {
   
   @override
   Widget buildContextPanel() {
+    // Check if we're on mobile/tablet for full-width display
+    final width = MediaQuery.of(context).size.width;
+    final isMobileOrTablet = width < 1024;
+    
     return ContextPanel(
       type: ContextPanelType.activities,
       host: widget.host,
       onNotificationTap: _handleNotificationTap,
+      useFullWidth: isMobileOrTablet, // Use full width on mobile/tablet
     );
   }
   
