@@ -9,7 +9,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { AccessToken } = require('livekit-server-sdk');
+const livekitWrapper = require('../lib/livekit-wrapper');
 
 // Import models from db/model
 const { Channel, ChannelMembers } = require('../db/model');
@@ -28,6 +28,9 @@ const { Channel, ChannelMembers } = require('../db/model');
  */
 router.post('/token', async (req, res) => {
   try {
+    // Load LiveKit SDK dynamically
+    const AccessToken = await livekitWrapper.getAccessToken();
+    
     // Check if user is authenticated
     // Support both session.userinfo (REST API) and session.uuid (Socket.IO)
     const session = req.session;
@@ -154,8 +157,19 @@ router.post('/token', async (req, res) => {
  * Uses LiveKit's embedded TURN server with JWT authentication
  * Replaces Coturn for P2P file transfer and direct messages
  */
+/**
+ * Get LiveKit ICE Servers for P2P connections
+ * GET /api/livekit/ice-config
+ * 
+ * Returns ICE server configuration for P2P WebRTC connections
+ * Uses LiveKit's embedded TURN server with JWT authentication
+ * Replaces Coturn for P2P file transfer and direct messages
+ */
 router.get('/ice-config', async (req, res) => {
   try {
+    // Load LiveKit SDK dynamically
+    const AccessToken = await livekitWrapper.getAccessToken();
+    
     // Check if user is authenticated
     const session = req.session;
     

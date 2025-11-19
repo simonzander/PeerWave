@@ -9,6 +9,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_webrtc
   gtk
   livekit_client
+  local_notifier
   record_linux
   url_launcher_linux
 )

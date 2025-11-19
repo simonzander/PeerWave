@@ -113,6 +113,12 @@ app.use(sessionMiddleware);
   app.use('/api/sender-keys', senderKeyRoutes);
   app.use('/api/livekit', livekitRoutes);
 
+  // Run HMAC auth database migration
+  const { migrate: migrateHmacAuth } = require('./migrations/add_hmac_auth');
+  migrateHmacAuth().catch(err => {
+    console.error('Failed to run HMAC auth migration:', err);
+  });
+
   // License info endpoint
   app.get('/api/license-info', async (req, res) => {
     const license = await licenseValidator.validate();
@@ -251,11 +257,107 @@ io.sockets.on("connection", socket => {
   // 🔒 Track client ready state (prevents sending events before client is initialized)
   socket.clientReady = false;
 
-  socket.on("authenticate", () => {
-    // Here you would normally check the clientid and mail against your database
+  socket.on("authenticate", async (authData) => {
+    // Support both cookie-based (web) and HMAC-based (native) authentication
     try {
       console.log("[SIGNAL SERVER] authenticate event received");
+      
+      // Check if HMAC authentication headers are present (native client)
+      if (authData && typeof authData === 'object' && authData['X-Client-ID'] && authData['X-Signature']) {
+        console.log("[SIGNAL SERVER] Native client detected, using HMAC auth");
+        
+        const clientId = authData['X-Client-ID'];
+        const timestamp = parseInt(authData['X-Timestamp']);
+        const nonce = authData['X-Nonce'];
+        const signature = authData['X-Signature'];
+        
+        // Verify timestamp (±5 minutes)
+        const now = Date.now();
+        const maxDiff = 5 * 60 * 1000;
+        if (Math.abs(now - timestamp) > maxDiff) {
+          console.log("[SIGNAL SERVER] HMAC auth failed: timestamp expired");
+          return socket.emit("authenticated", { authenticated: false, error: 'timestamp_expired' });
+        }
+        
+        // Check nonce
+        const { sequelize } = require('./db/model');
+        const [nonceCheck] = await sequelize.query(
+          'SELECT 1 FROM nonce_cache WHERE nonce = ?',
+          { replacements: [nonce] }
+        );
+        
+        if (nonceCheck && nonceCheck.length > 0) {
+          console.log("[SIGNAL SERVER] HMAC auth failed: duplicate nonce");
+          return socket.emit("authenticated", { authenticated: false, error: 'duplicate_nonce' });
+        }
+        
+        await sequelize.query(
+          'INSERT INTO nonce_cache (nonce, created_at) VALUES (?, datetime("now"))',
+          { replacements: [nonce] }
+        );
+        
+        // Get session
+        const [sessions] = await sequelize.query(
+          'SELECT session_secret, user_id, expires_at FROM client_sessions WHERE client_id = ?',
+          { replacements: [clientId] }
+        );
+        
+        if (!sessions || sessions.length === 0) {
+          console.log("[SIGNAL SERVER] HMAC auth failed: no session");
+          return socket.emit("authenticated", { authenticated: false, error: 'no_session' });
+        }
+        
+        const session = sessions[0];
+        
+        // Verify signature
+        const crypto = require('crypto');
+        const message = `${clientId}:${timestamp}:${nonce}:/socket.io/auth:`;
+        const expectedSignature = crypto
+          .createHmac('sha256', session.session_secret)
+          .update(message)
+          .digest('hex');
+        
+        if (signature !== expectedSignature) {
+          console.log("[SIGNAL SERVER] HMAC auth failed: invalid signature");
+          return socket.emit("authenticated", { authenticated: false, error: 'invalid_signature' });
+        }
+        
+        // Get client info
+        const { Client } = require('./db/model');
+        const client = await Client.findOne({ where: { clientid: clientId } });
+        
+        if (!client) {
+          console.log("[SIGNAL SERVER] HMAC auth failed: client not found");
+          return socket.emit("authenticated", { authenticated: false, error: 'client_not_found' });
+        }
+        
+        // Authentication successful for native client
+        const deviceKey = `${session.user_id}:${client.device_id}`;
+        const existingSocketId = deviceSockets.get(deviceKey);
+        if (existingSocketId && existingSocketId !== socket.id) {
+          console.log(`[SIGNAL SERVER] ⚠️  Replacing existing socket for ${deviceKey} (native)`);
+        }
+        
+        deviceSockets.set(deviceKey, socket.id);
+        socket.data.userId = session.user_id;
+        socket.data.deviceId = client.device_id;
+        socket.data.clientId = clientId;
+        socket.data.sessionAuth = true;
+        
+        console.log(`[SIGNAL SERVER] ✓ Native client authenticated: ${deviceKey}`);
+        
+        return socket.emit("authenticated", { 
+          authenticated: true,
+          uuid: session.user_id,
+          deviceId: client.device_id,
+          clientId: clientId
+        });
+      }
+      
+      // Fall back to cookie-based authentication (web client)
+      console.log("[SIGNAL SERVER] Web client detected, using cookie auth");
       console.log("[SIGNAL SERVER] Session:", socket.handshake.session);
+      
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
         const deviceKey = `${socket.handshake.session.uuid}:${socket.handshake.session.deviceId}`;
         
@@ -3121,4 +3223,17 @@ process.on('SIGINT', async () => {
   }
 });
 
-server.listen(port, () => console.log(`Server is running on port ${port}`));
+server.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+  
+  // Start HMAC session auth cleanup jobs
+  const { cleanupNonces, cleanupSessions } = require('./middleware/sessionAuth');
+  
+  // Clean up old nonces every 10 minutes
+  setInterval(cleanupNonces, 10 * 60 * 1000);
+  console.log('✓ HMAC nonce cleanup job started (every 10 minutes)');
+  
+  // Clean up expired sessions every hour
+  setInterval(cleanupSessions, 60 * 60 * 1000);
+  console.log('✓ HMAC session cleanup job started (every hour)');
+});

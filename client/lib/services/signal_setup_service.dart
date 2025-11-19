@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'signal_service.dart';
 import 'user_profile_service.dart';
 import '../providers/unread_messages_provider.dart';
@@ -8,6 +9,7 @@ import 'message_cleanup_service.dart';
 import 'storage/database_helper.dart';
 import 'device_identity_service.dart';
 import 'web/webauthn_crypto_service.dart';
+import 'native_crypto_service.dart';
 
 /// Service to check if Signal Protocol keys are properly set up
 /// and handle post-login initialization
@@ -186,7 +188,7 @@ class SignalSetupService {
       // 🔒 CRITICAL: Check if device identity is initialized first
       if (!DeviceIdentityService.instance.isInitialized) {
         debugPrint('[SIGNAL SETUP] Device identity not initialized - attempting restore...');
-        if (!DeviceIdentityService.instance.tryRestoreFromSession()) {
+        if (!await DeviceIdentityService.instance.tryRestoreFromSession()) {
           debugPrint('[SIGNAL SETUP] Cannot check keys without device identity');
           result['needsSetup'] = true;
           missingKeys['deviceIdentity'] = 'Device identity not initialized - login required';
@@ -196,9 +198,18 @@ class SignalSetupService {
 
       // 🔑 Check if encryption key exists
       final deviceId = DeviceIdentityService.instance.deviceId;
-      final encryptionKey = WebAuthnCryptoService.instance.getKeyFromSession(deviceId);
+      Uint8List? encryptionKey;
+      
+      if (kIsWeb) {
+        // Web: Use WebAuthn encryption key from SessionStorage
+        encryptionKey = WebAuthnCryptoService.instance.getKeyFromSession(deviceId);
+      } else {
+        // Native: Use secure storage encryption key
+        encryptionKey = await NativeCryptoService.instance.getKey(deviceId);
+      }
+      
       if (encryptionKey == null) {
-        debugPrint('[SIGNAL SETUP] Encryption key not found in session');
+        debugPrint('[SIGNAL SETUP] Encryption key not found in ${kIsWeb ? 'session' : 'secure storage'}');
         result['needsSetup'] = true;
         missingKeys['encryptionKey'] = 'Encryption key not found - re-authentication required';
         return result;

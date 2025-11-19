@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:go_router/go_router.dart';
 import 'package:js/js.dart';
 import 'package:js/js_util.dart';
@@ -14,8 +15,15 @@ external String localStorageGetItem(String key);
 external Object _webauthnRegister(String serverUrl, String email);
 
 Future<bool> webauthnRegister(String serverUrl, String email) async {
-  final result = await promiseToFuture(_webauthnRegister(serverUrl, email));
-  return result == true;
+  if (!kIsWeb) {
+    throw UnsupportedError('WebAuthn is only supported on web platform');
+  }
+  try {
+    final result = await promiseToFuture(_webauthnRegister(serverUrl, email));
+    return result == true;
+  } catch (e) {
+    return false;
+  }
 }
 
 class RegisterWebauthnPage extends StatefulWidget {

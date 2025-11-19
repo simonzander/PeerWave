@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'dart:convert';
-import 'dart:html' as html;
+import 'package:universal_html/html.dart' as html;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';

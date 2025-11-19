@@ -4,7 +4,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pointycastle/export.dart';
-import 'dart:html' as html show window;
+import 'package:universal_html/html.dart' as html show window;
 
 /// WebAuthn-based encryption key derivation and storage service
 /// 

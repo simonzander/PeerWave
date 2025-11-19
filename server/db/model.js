@@ -659,6 +659,58 @@ const OTP = temporaryStorage.define('OTP', {
     }
 });
 
+// Client Sessions table for HMAC authentication (native clients)
+const ClientSession = sequelize.define('ClientSession', {
+    client_id: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        primaryKey: true
+    },
+    session_secret: {
+        type: DataTypes.STRING(255),
+        allowNull: false
+    },
+    user_id: {
+        type: DataTypes.STRING,
+        allowNull: false
+    },
+    expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    device_info: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    last_used: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW
+    }
+}, {
+    tableName: 'client_sessions',
+    timestamps: true,
+    createdAt: 'created_at',
+    updatedAt: false
+});
+
+// Nonce cache table for replay attack prevention
+const NonceCache = sequelize.define('NonceCache', {
+    nonce: {
+        type: DataTypes.STRING(255),
+        allowNull: false,
+        primaryKey: true
+    },
+    created_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW
+    }
+}, {
+    tableName: 'nonce_cache',
+    timestamps: false
+});
+
 // Basic associations
 User.hasMany(Client, { foreignKey: 'owner' });
 User.hasMany(SignalPreKey, { foreignKey: 'owner' });
@@ -871,5 +923,8 @@ module.exports = {
     ChannelMembers,
     Role,
     UserRole,
-    UserRoleChannel
+    UserRoleChannel,
+    ClientSession,
+    NonceCache,
+    sequelize
 };

@@ -21,7 +21,7 @@ import 'file_transfer/webrtc_service.dart';
 import 'file_transfer/p2p_coordinator.dart';
 import 'file_transfer/file_reannounce_service.dart';
 import 'file_transfer/socket_file_client.dart';
-import 'file_transfer/indexeddb_storage.dart' if (dart.library.io) 'file_transfer/native_storage.dart';
+import 'file_transfer/storage_factory_web.dart' if (dart.library.io) 'file_transfer/storage_factory_native.dart';
 // Video conference imports
 import 'video_conference_service.dart';
 
@@ -249,7 +249,7 @@ class PostLoginInitService {
       onProgress?.call('Initializing P2P services...', currentStep, totalSteps);
       debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing P2P base services...');
       
-      _fileStorage = IndexedDBStorage();
+      _fileStorage = createFileStorage();
       await _fileStorage!.initialize();
       _encryptionService = EncryptionService();
       _chunkingService = ChunkingService();

@@ -1,5 +1,5 @@
 import 'package:socket_io_client/socket_io_client.dart';
-import 'package:uni_links/uni_links.dart';
+import 'package:app_links/app_links.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -8,11 +8,12 @@ import 'package:provider/provider.dart';
 import 'auth/auth_layout_web.dart' if (dart.library.io) 'auth/auth_layout_native.dart';
 import 'auth/magic_link_web.dart' if (dart.library.io) 'auth/magic_link_native.dart';
 import 'auth/otp_web.dart';
-import 'auth/register_webauthn_page.dart';
+import 'auth/register_webauthn_page.dart' if (dart.library.io) 'auth/register_webauthn_page_native.dart';
 import 'auth/register_profile_page.dart';
 import 'auth/magic_link_native.dart' show MagicLinkWebPageWithServer;
 import 'screens/signal_setup_screen.dart';
 import 'services/signal_setup_service.dart';
+import 'services/device_identity_service.dart';
 import 'services/logout_service.dart';
 import 'services/preferences_service.dart';
 import 'services/api_service.dart' show setGlobalUnauthorizedHandler;
@@ -20,16 +21,15 @@ import 'services/socket_service.dart' show setSocketUnauthorizedHandler;
 import 'app/app_layout.dart';
 import 'app/dashboard_page.dart';
 import 'app/settings_sidebar.dart';
-import 'app/credentials_page.dart';
 import 'app/profile_page.dart';
 import 'app/settings/general_settings_page.dart';
 import 'app/webauthn_web.dart' if (dart.library.io) 'app/webauthn_stub.dart';
-import 'app/backupcode_web.dart' if (dart.library.io) 'app/backupcode_stub.dart';
-import 'app/backupcode_settings_page.dart';
+import 'app/backupcode_web.dart' if (dart.library.io) 'app/backupcode_web_native.dart';
+import 'app/backupcode_settings_page.dart' if (dart.library.io) 'app/backupcode_settings_page_native.dart';
 // Use conditional import for 'services/auth_service.dart'
 import 'services/auth_service_web.dart' if (dart.library.io) 'services/auth_service_native.dart';
 import 'services/api_service.dart';
-import 'auth/backup_recover_web.dart' if (dart.library.io) 'auth/backup_recover_stub.dart';
+import 'auth/backup_recover_web.dart' if (dart.library.io) 'auth/backup_recover_web_native.dart';
 import 'services/socket_service.dart';
 // Role management imports
 import 'providers/role_provider.dart';
@@ -70,6 +70,11 @@ import 'app/views/messages_view_page.dart';
 import 'app/views/channels_view_page.dart';
 import 'app/views/people_view_page.dart';
 import 'app/views/files_view_page.dart';
+// Native server selection
+import 'screens/server_selection_screen.dart';
+import 'services/server_config_web.dart' if (dart.library.io) 'services/server_config_native.dart';
+import 'services/clientid_native.dart' if (dart.library.js) 'services/clientid_web_stub.dart';
+import 'services/session_auth_service.dart';
 
 
 Future<void> main() async {
@@ -81,10 +86,15 @@ Future<void> main() async {
   // Client ID is now fetched from server after WebAuthn authentication
   // based on the user's email (1:1 mapping email -> clientId)
 
+  // Initialize server config service for native (multi-server support)
   if (!kIsWeb) {
+    await ServerConfigService.init();
+    debugPrint('[INIT] ✅ ServerConfigService initialized');
+    
     // Listen for initial link (when app is started via deep link)
     try {
-      final initialUri = await getInitialUri();
+      final appLinks = AppLinks();
+      final initialUri = await appLinks.getInitialLink();
       if (initialUri != null && initialUri.scheme == 'peerwave') {
         initialMagicKey = initialUri.queryParameters['magicKey'];
       }
@@ -136,12 +146,19 @@ class _MyAppState extends State<MyApp> {
   StreamSubscription? _sub;
   String? _magicKey;
   String? _clientId; // Client ID is fetched/created after login
+  late final AppLinks _appLinks;
   
   // Post-login initialization guard - prevent re-initialization on every navigation
   bool _postLoginInitComplete = false;
   
   // Global navigator key for accessing router from anywhere
   static final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
+  
+  // Public accessor for navigator key
+  static GlobalKey<NavigatorState> get rootNavigatorKey => _rootNavigatorKey;
+  
+  // Router instance - created once and reused
+  GoRouter? _router;
 
   @override
   void initState() {
@@ -151,8 +168,9 @@ class _MyAppState extends State<MyApp> {
     // See router redirect logic -> _initServices() is called after successful WebAuthn login
     
     if (!kIsWeb) {
-      _sub = uriLinkStream.listen((Uri? uri) {
-        if (uri != null && uri.scheme == 'peerwave') {
+      _appLinks = AppLinks();
+      _sub = _appLinks.uriLinkStream.listen((Uri uri) {
+        if (uri.scheme == 'peerwave') {
           final magicKey = uri.queryParameters['magicKey'];
           if (magicKey != null) {
             setState(() {
@@ -246,37 +264,54 @@ class _MyAppState extends State<MyApp> {
   Widget _buildMaterialApp() {
     // Initialize 401 Unauthorized handlers (one-time setup)
     setGlobalUnauthorizedHandler(() {
-      try {
-        if (mounted) {
-          LogoutService.instance.autoLogout(context);
-        } else {
-          // Context not available, call without context
-          LogoutService.instance.autoLogout(null);
-        }
-      } catch (e) {
-        debugPrint('[MAIN] Error in unauthorized handler: $e');
-        // Fallback: call without context
-        LogoutService.instance.autoLogout(null);
-      }
+      // Use navigator key for navigation instead of context
+      LogoutService.instance.autoLogoutWithNavigatorKey(_rootNavigatorKey);
     });
     
     setSocketUnauthorizedHandler(() {
-      try {
-        if (mounted) {
-          LogoutService.instance.autoLogout(context);
-        } else {
-          // Context not available, call without context
-          LogoutService.instance.autoLogout(null);
-        }
-      } catch (e) {
-        debugPrint('[MAIN] Error in socket unauthorized handler: $e');
-        // Fallback: call without context
-        LogoutService.instance.autoLogout(null);
-      }
+      // Use navigator key for navigation instead of context
+      LogoutService.instance.autoLogoutWithNavigatorKey(_rootNavigatorKey);
     });
     
     debugPrint('[MAIN] ✓ Unauthorized handlers initialized');
 
+    // Create router only once
+    _router ??= _createRouter();
+
+    return _buildRouterWidget();
+  }
+
+  Widget _buildRouterWidget() {
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        debugPrint('[MAIN] 🎨 Building MaterialApp with theme: ${themeProvider.themeMode}');
+        return MaterialApp.router(
+          debugShowCheckedModeBanner: false,
+          theme: themeProvider.lightTheme,
+          darkTheme: themeProvider.darkTheme,
+          themeMode: themeProvider.themeMode,
+          routerConfig: _router!,
+          builder: (context, child) {
+            return Stack(
+              children: [
+                Column(
+                  children: [
+                    const CallTopBar(),
+                    Expanded(child: child ?? const SizedBox()),
+                  ],
+                ),
+                const CallOverlay(),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  GoRouter _createRouter() {
+    debugPrint('[MAIN] 🏗️ Creating GoRouter...');
+    
     // Use ShellRoute for native, flat routes for web
     final List<RouteBase> routes = kIsWeb
         ? [
@@ -305,6 +340,16 @@ class _MyAppState extends State<MyApp> {
               pageBuilder: (context, state) {
                 return MaterialPage(
                   child: AuthLayout(clientId: _clientId),
+                );
+              },
+            ),
+            GoRoute(
+              path: '/server-selection',
+              pageBuilder: (context, state) {
+                final extra = state.extra as Map<String, dynamic>?;
+                final isAddingServer = extra?['isAddingServer'] as bool? ?? false;
+                return MaterialPage(
+                  child: ServerSelectionScreen(isAddingServer: isAddingServer),
                 );
               },
             ),
@@ -508,7 +553,7 @@ class _MyAppState extends State<MyApp> {
                   routes: [
                     GoRoute(
                       path: '/app/settings',
-                      builder: (context, state) => const CredentialsPage(),
+                      redirect: (context, state) => '/app/settings/general',
                     ),
                     GoRoute(
                       path: '/app/settings/webauthn',
@@ -560,6 +605,23 @@ class _MyAppState extends State<MyApp> {
             ),
           ]
         : [
+            // Server selection route (outside ShellRoute - no AppLayout wrapper)
+            GoRoute(
+              path: '/server-selection',
+              pageBuilder: (context, state) {
+                final extra = state.extra as Map<String, dynamic>?;
+                final isAddingServer = extra?['isAddingServer'] as bool? ?? false;
+                return MaterialPage(
+                  fullscreenDialog: true,
+                  child: ServerSelectionScreen(isAddingServer: isAddingServer),
+                );
+              },
+            ),
+            // Signal setup route (outside ShellRoute)
+            GoRoute(
+              path: '/signal-setup',
+              builder: (context, state) => const SignalSetupScreen(),
+            ),
             ShellRoute(
               builder: (context, state, child) => AppLayout(child: child),
               routes: [
@@ -598,9 +660,129 @@ class _MyAppState extends State<MyApp> {
                 ),
                 GoRoute(
                   path: '/app',
-                  builder: (context, state) => const SizedBox.shrink(), // AppLayout already wraps child
+                  builder: (context, state) => const SizedBox.shrink(),
                 ),
-                // Add more child routes here as needed
+                // View routes
+                GoRoute(
+                  path: '/app/channels',
+                  builder: (context, state) {
+                    final server = ServerConfigService.getActiveServer();
+                    return ChannelsViewPage(host: server?.serverUrl ?? 'localhost:3000');
+                  },
+                ),
+                GoRoute(
+                  path: '/app/messages',
+                  builder: (context, state) {
+                    final server = ServerConfigService.getActiveServer();
+                    return MessagesViewPage(host: server?.serverUrl ?? 'localhost:3000');
+                  },
+                ),
+                GoRoute(
+                  path: '/app/activities',
+                  builder: (context, state) {
+                    final server = ServerConfigService.getActiveServer();
+                    return ActivitiesViewPage(host: server?.serverUrl ?? 'localhost:3000');
+                  },
+                ),
+                GoRoute(
+                  path: '/app/people',
+                  builder: (context, state) {
+                    final server = ServerConfigService.getActiveServer();
+                    return PeopleViewPage(host: server?.serverUrl ?? 'localhost:3000');
+                  },
+                ),
+                GoRoute(
+                  path: '/app/files',
+                  builder: (context, state) {
+                    final server = ServerConfigService.getActiveServer();
+                    return FilesViewPage(host: server?.serverUrl ?? 'localhost:3000');
+                  },
+                ),
+                // P2P File Transfer routes
+                GoRoute(
+                  path: '/file-transfer',
+                  builder: (context, state) => const SocketAwareWidget(
+                    featureName: 'File Transfer Hub',
+                    child: FileTransferHub(),
+                  ),
+                ),
+                GoRoute(
+                  path: '/file-upload',
+                  builder: (context, state) => const SocketAwareWidget(
+                    featureName: 'File Upload',
+                    child: FileUploadScreen(),
+                  ),
+                ),
+                GoRoute(
+                  path: '/file-manager',
+                  builder: (context, state) => const SocketAwareWidget(
+                    featureName: 'File Manager',
+                    child: FileManagerScreen(),
+                  ),
+                ),
+                GoRoute(
+                  path: '/file-browser',
+                  builder: (context, state) => const SocketAwareWidget(
+                    featureName: 'File Browser',
+                    child: FileBrowserScreen(),
+                  ),
+                ),
+                GoRoute(
+                  path: '/downloads',
+                  builder: (context, state) => const DownloadsScreen(),
+                ),
+                // Settings routes
+                ShellRoute(
+                  builder: (context, state, child) => SettingsSidebar(child: child),
+                  routes: [
+                    GoRoute(
+                      path: '/app/settings',
+                      redirect: (context, state) => '/app/settings/general',
+                    ),
+                    GoRoute(
+                      path: '/app/settings/webauthn',
+                      builder: (context, state) => const WebauthnPage(),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/backupcode/list',
+                      builder: (context, state) => const BackupCodeSettingsPage(),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/general',
+                      builder: (context, state) => const GeneralSettingsPage(),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/profile',
+                      builder: (context, state) => const ProfilePage(),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/notifications',
+                      builder: (context, state) => Center(child: Text('Notification Settings')),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/roles',
+                      builder: (context, state) => const RoleManagementScreen(),
+                      redirect: (context, state) {
+                        final roleProvider = context.read<RoleProvider>();
+                        if (!roleProvider.isAdmin) {
+                          return '/app/settings';
+                        }
+                        return null;
+                      },
+                    ),
+                    GoRoute(
+                      path: '/app/settings/users',
+                      builder: (context, state) => const UserManagementScreen(),
+                      redirect: (context, state) {
+                        final roleProvider = context.read<RoleProvider>();
+                        if (!roleProvider.hasServerPermission('user.manage')) {
+                          return '/app/settings';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                ),
               ],
             ),
           ];
@@ -614,12 +796,22 @@ class _MyAppState extends State<MyApp> {
         final location = state.matchedLocation;
         debugPrint('[ROUTER] 🔀 Redirect called for location: $location');
         
+        // Native: Check if server selection is needed (no servers configured)
+        if (!kIsWeb && location != '/server-selection') {
+          if (!ServerConfigService.hasServers()) {
+            debugPrint('[ROUTER] 📱 Native: No servers configured, redirecting to server selection');
+            return '/server-selection';
+          }
+        }
+        
         // Only check session on initial load (when going to root or login page)
-        // Also check when navigating to /app after login
+        // Also check when navigating to /app after login or after server-selection
         // Don't check session on every navigation - that's too expensive
         final shouldCheckSession = !LogoutService.instance.isLogoutComplete && 
-                                   !_postLoginInitComplete &&
-                                   (location == '/' || location == '/login' || location == '/app');
+                                   (location == '/' || 
+                                    location == '/login' || 
+                                    location == '/app' ||
+                                    (location.startsWith('/app/') && !_postLoginInitComplete));
         
         if (shouldCheckSession) {
           debugPrint('[ROUTER] 🔍 Checking session (initial load or post-login)...');
@@ -629,6 +821,33 @@ class _MyAppState extends State<MyApp> {
         
         final loggedIn = AuthService.isLoggedIn;
         debugPrint('[ROUTER] 🔐 Login status: $loggedIn, Location: $location');
+        
+        // Restore device identity from storage if not already initialized
+        // This is required for database and Signal Protocol operations
+        if (loggedIn && !DeviceIdentityService.instance.isInitialized) {
+          debugPrint('[ROUTER] 🔄 Restoring device identity from storage...');
+          final restored = await DeviceIdentityService.instance.tryRestoreFromSession();
+          if (restored) {
+            debugPrint('[ROUTER] ✅ Device identity restored');
+          } else {
+            // Device identity is required for database and Signal Protocol
+            // If missing, this is an old session from before device identity was implemented
+            // Force re-authentication with new magic key to initialize device identity
+            debugPrint('[ROUTER] ⚠️ Device identity not found - old session detected');
+            debugPrint('[ROUTER] 🔄 Clearing HMAC session and forcing re-authentication...');
+            
+            if (!kIsWeb) {
+              // Clear HMAC session for native
+              final clientId = await ClientIdService.getClientId();
+              await SessionAuthService().clearSession(clientId);
+              AuthService.isLoggedIn = false;
+              
+              // Redirect to server-selection to re-authenticate
+              debugPrint('[ROUTER] ↩️ Redirecting to server-selection for re-authentication');
+              return '/server-selection';
+            }
+          }
+        }
         
         final uri = Uri.parse(state.uri.toString());
         final fromParam = uri.queryParameters['from'];
@@ -663,8 +882,9 @@ class _MyAppState extends State<MyApp> {
                   }
                   
                   // Check if it's an auth issue (device identity or encryption key missing)
-                  if (missingKeys.containsKey('deviceIdentity') || 
-                      missingKeys.containsKey('encryptionKey')) {
+                  // Only for web - native uses HMAC and doesn't have device identity
+                  if (kIsWeb && (missingKeys.containsKey('deviceIdentity') || 
+                      missingKeys.containsKey('encryptionKey'))) {
                     debugPrint('[MAIN] Authentication keys missing (IndexedDB deleted?) - logging out...');
                     
                     // Logout to clear server session and avoid redirect loop
@@ -817,6 +1037,9 @@ class _MyAppState extends State<MyApp> {
         if (kIsWeb && location == '/signal-setup') {
           return null;
         }
+        if (!kIsWeb && location == '/signal-setup') {
+          return null;
+        }
         if(kIsWeb && loggedIn && location == '/magic-link') {
           return null;
         }
@@ -828,44 +1051,27 @@ class _MyAppState extends State<MyApp> {
         }
         // Allow registration flow even when not logged in
         if (kIsWeb && !loggedIn && !location.startsWith('/register/')) {
-          debugPrint('[ROUTER] ⚠️ Not logged in, redirecting to /login');
+          debugPrint('[ROUTER] ⚠️ Web: Not logged in, redirecting to /login');
           return '/login';
         }
+        
+        // Native: If not logged in and not on auth flow, redirect to server-selection
+        if (!kIsWeb && !loggedIn && location != '/server-selection') {
+          debugPrint('[ROUTER] ⚠️ Native: Not logged in, redirecting to server-selection for re-authentication');
+          return '/server-selection';
+        }
+        
         // Otherwise, allow navigation
         return null;
       },
     );
+    
     debugPrint('[MAIN] ✅ GoRouter created');
-
-    // Attach router to VideoConferenceService so global UI (CallTopBar / overlay)
-    // can navigate without relying on a BuildContext that has GoRouter
+    
+    // Attach router to VideoConferenceService
     VideoConferenceService.instance.attachRouter(router);
-
-    return Consumer<ThemeProvider>(
-      builder: (context, themeProvider, child) {
-        debugPrint('[MAIN] 🎨 Building MaterialApp with theme: ${themeProvider.themeMode}');
-        return MaterialApp.router(
-          debugShowCheckedModeBanner: false,
-          theme: themeProvider.lightTheme,
-          darkTheme: themeProvider.darkTheme,
-          themeMode: themeProvider.themeMode,
-          routerConfig: router,
-          builder: (context, child) {
-            return Stack(
-              children: [
-                Column(
-                  children: [
-                    const CallTopBar(),
-                    Expanded(child: child!),
-                  ],
-                ),
-                const CallOverlay(),
-              ],
-            );
-          },
-        );
-      },
-    );
+    
+    return router;
   }
 }
 

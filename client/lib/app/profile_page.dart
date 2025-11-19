@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'dart:html' as html;
+import 'package:universal_html/html.dart' as html;
 import '../services/api_service.dart';
 import '../web_config.dart';
 import '../extensions/snackbar_extensions.dart';

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
-import 'dart:html' as html show window;
+import 'package:universal_html/html.dart' as html show window;
 import 'package:go_router/go_router.dart';
 import 'socket_service.dart';
 import 'signal_setup_service.dart';
@@ -10,6 +10,9 @@ import '../web_config.dart';
 import 'webauthn_service.dart';
 import 'device_identity_service.dart';
 import 'web/webauthn_crypto_service.dart';
+import 'native_crypto_service.dart';
+import 'session_auth_service.dart';
+import 'clientid_native.dart';
 // Import auth service conditionally
 import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
 
@@ -60,18 +63,31 @@ class LogoutService {
       debugPrint('[LOGOUT] Clearing user profiles...');
       UserProfileService.instance.clearCache();
 
-      // 4. Clear WebAuthn encryption data
-      debugPrint('[LOGOUT] Clearing WebAuthn encryption data...');
-      try {
-        // Clear encryption key from SessionStorage
-        final deviceId = DeviceIdentityService.instance.deviceId;
+      // 4. For NATIVE: Clear HMAC session (but keep database)
+      if (!kIsWeb) {
+        try {
+          debugPrint('[LOGOUT] Clearing HMAC session for native client...');
+          final clientId = await ClientIdService.getClientId();
+          await SessionAuthService().clearSession(clientId);
+          debugPrint('[LOGOUT] ✓ HMAC session cleared (database preserved)');
+        } catch (e) {
+          debugPrint('[LOGOUT] ⚠ Error clearing HMAC session: $e');
+        }
+      }
+
+      // 5. Clear encryption data (platform-specific)
+      if (kIsWeb) {
+        debugPrint('[LOGOUT] Clearing WebAuthn encryption data...');
+        try {
+          // Clear encryption key from SessionStorage
+          final deviceId = DeviceIdentityService.instance.deviceId;
         if (deviceId.isNotEmpty) {
           WebAuthnCryptoService.instance.clearKeyFromSession(deviceId);
           debugPrint('[LOGOUT] ✓ Encryption key cleared from SessionStorage');
         }
         
         // Clear device identity
-        DeviceIdentityService.instance.clearDeviceIdentity();
+        await DeviceIdentityService.instance.clearDeviceIdentity();
         debugPrint('[LOGOUT] ✓ Device identity cleared');
         
         // Clear WebAuthn response data
@@ -125,8 +141,25 @@ class LogoutService {
             debugPrint('[LOGOUT] ⚠ Error clearing localStorage: $e');
           }
         }
-      } catch (e) {
-        debugPrint('[LOGOUT] ⚠ Error clearing encryption data: $e');
+        } catch (e) {
+          debugPrint('[LOGOUT] ⚠ Error clearing encryption data: $e');
+        }
+      } else {
+        // Native: Clear encryption key and device identity from secure storage
+        debugPrint('[LOGOUT] Clearing native encryption data...');
+        try {
+          final deviceId = DeviceIdentityService.instance.deviceId;
+          if (deviceId.isNotEmpty) {
+            await NativeCryptoService.instance.clearKey(deviceId);
+            debugPrint('[LOGOUT] ✓ Encryption key cleared from secure storage');
+          }
+          
+          // Clear device identity
+          await DeviceIdentityService.instance.clearDeviceIdentity();
+          debugPrint('[LOGOUT] ✓ Device identity cleared');
+        } catch (e) {
+          debugPrint('[LOGOUT] ⚠ Error clearing native encryption data: $e');
+        }
       }
 
       // Note: Roles and unread messages will be cleared by redirect handler
@@ -235,43 +268,126 @@ class LogoutService {
     }
   }
 
+  /// Auto-logout using navigator key (for interceptors that don't have valid context)
+  Future<void> autoLogoutWithNavigatorKey(GlobalKey<NavigatorState> navigatorKey) async {
+    debugPrint('[LOGOUT] 🔴 Auto-logout triggered - 401 Unauthorized (using navigator key)');
+    debugPrint('[LOGOUT] Platform: ${kIsWeb ? "Web" : "Native"}');
+    
+    // Perform logout first (without showing success message)
+    await logout(null, showMessage: false);
+    
+    // Get context from navigator key
+    final context = navigatorKey.currentContext;
+    debugPrint('[LOGOUT] Navigator context available: ${context != null}');
+    
+    if (context != null && context.mounted) {
+      try {
+        if (!kIsWeb) {
+          // Native: Go to server selection for re-authentication
+          debugPrint('[LOGOUT] Native: Redirecting to server selection for re-authentication');
+          
+          // Navigate to server-selection (works for both re-auth and adding new servers)
+          GoRouter.of(context).go('/server-selection');
+          
+          // Show message after navigation
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Session expired. Please scan a new magic key to re-authenticate.'),
+                  duration: Duration(seconds: 5),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+          });
+        } else {
+          // Web: Show login link
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Session expired. Please login again.'),
+              duration: const Duration(seconds: 10),
+              backgroundColor: Colors.orange,
+              action: SnackBarAction(
+                label: 'Login',
+                textColor: Colors.white,
+                onPressed: () {
+                  if (context.mounted) {
+                    try {
+                      GoRouter.of(context).go('/login');
+                    } catch (e) {
+                      debugPrint('[LOGOUT] Could not navigate to login: $e');
+                    }
+                  }
+                },
+              ),
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint('[LOGOUT] ⚠️ Could not show session expired message: $e');
+      }
+    } else {
+      debugPrint('[LOGOUT] ⚠️ No valid context available from navigator key');
+    }
+  }
+
   /// Auto-logout on 401 Unauthorized
   /// This is called from interceptors when server returns 401
   Future<void> autoLogout(BuildContext? context) async {
-    debugPrint('[LOGOUT] ⚠️  401 Unauthorized detected - auto-logout');
+    debugPrint('[LOGOUT] 🔴 Auto-logout triggered - 401 Unauthorized');
+    debugPrint('[LOGOUT] Context provided: ${context != null}');
+    debugPrint('[LOGOUT] Context mounted: ${context?.mounted}');
+    debugPrint('[LOGOUT] Platform: ${kIsWeb ? "Web" : "Native"}');
     
     // Perform logout first (without showing success message)
     await logout(context, showMessage: false);
     
-    // Then show persistent snackbar with login link
+    // For native: Navigate to server selection (they can re-auth with magic key)
+    // For web: Navigate to login
     final validContext = context;
     if (validContext != null && validContext.mounted) {
       try {
-        ScaffoldMessenger.of(validContext).showSnackBar(
-          SnackBar(
-            content: const Text('Session expired. Please login again.'),
-            duration: const Duration(seconds: 10),
-            backgroundColor: Colors.orange,
-            action: SnackBarAction(
-              label: 'Login',
-              textColor: Colors.white,
-              onPressed: () {
-                if (validContext.mounted) {
-                  try {
-                    GoRouter.of(validContext).go('/login');
-                  } catch (e) {
-                    debugPrint('[LOGOUT] Could not navigate to login: $e');
-                  }
-                }
-              },
+        if (!kIsWeb) {
+          // Native: Go to server selection where they can scan magic key
+          debugPrint('[LOGOUT] Native: Redirecting to server selection for re-authentication');
+          ScaffoldMessenger.of(validContext).showSnackBar(
+            const SnackBar(
+              content: Text('Session expired. Please scan a new magic key to re-authenticate.'),
+              duration: Duration(seconds: 5),
+              backgroundColor: Colors.orange,
             ),
-          ),
-        );
+          );
+          await Future.delayed(const Duration(milliseconds: 100));
+          GoRouter.of(validContext).go('/server-selection');
+        } else {
+          // Web: Show login link
+          ScaffoldMessenger.of(validContext).showSnackBar(
+            SnackBar(
+              content: const Text('Session expired. Please login again.'),
+              duration: const Duration(seconds: 10),
+              backgroundColor: Colors.orange,
+              action: SnackBarAction(
+                label: 'Login',
+                textColor: Colors.white,
+                onPressed: () {
+                  if (validContext.mounted) {
+                    try {
+                      GoRouter.of(validContext).go('/login');
+                    } catch (e) {
+                      debugPrint('[LOGOUT] Could not navigate to login: $e');
+                    }
+                  }
+                },
+              ),
+            ),
+          );
+        }
       } catch (e) {
-        debugPrint('[LOGOUT] ⚠ Could not show session expired message (ScaffoldMessenger not available): $e');
+        debugPrint('[LOGOUT] ⚠ Could not show session expired message: $e');
       }
     } else {
-      debugPrint('[LOGOUT] No valid context - session expired, redirect handler will navigate to /login');
+      debugPrint('[LOGOUT] No valid context - session expired, redirect handler will navigate');
     }
   }
 }

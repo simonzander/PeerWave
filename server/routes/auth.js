@@ -1096,16 +1096,41 @@ authRoutes.get("/webauthn/check", (req, res) => {
 authRoutes.get("/magic/generate", (req, res) => {
     
     if (req.session.authenticated && req.session.email && req.session.uuid) {
-        // Perform magic link generation logic
-        const key = crypto.randomBytes(32).toString('hex');
-        const serverHexInfo = Buffer.from(JSON.stringify({ serverUrl: `${req.protocol}://${req.get('host')}`, mail: req.session.email })).toString('hex');
-        magicLinks[key] = { email: req.session.email, uuid: req.session.uuid, expires: Date.now() + 15 * 60 * 1000 }; // 15 min expiry
-        res.json({ magicKey: `${key + serverHexInfo}`  });
+        // Generate magic key with new format: {serverUrl}:{randomHash}:{timestamp}:{hmacSignature}
+        // Use hostname and explicit port to ensure port is included
+        const host = req.get('host') || 'localhost:3000';
+        const serverUrl = `${req.protocol}://${host}`;
+        const randomHash = crypto.randomBytes(32).toString('hex');
+        const timestamp = Date.now();
+        const expiresAt = timestamp + 5 * 60 * 1000; // 5 min expiry
+        
+        console.log(`[Magic Key] Generating key with serverUrl: ${serverUrl}`);
+        
+        // Create HMAC signature using session secret
+        const dataToSign = `${serverUrl}:${randomHash}:${timestamp}`;
+        const hmac = crypto.createHmac('sha256', config.session.secret);
+        hmac.update(dataToSign);
+        const signature = hmac.digest('hex');
+        
+        // Construct magic key in hex format
+        const magicKey = `${serverUrl}:${randomHash}:${timestamp}:${signature}`;
+        
+        // Store in temporary store (one-time use)
+        magicLinks[randomHash] = { 
+            email: req.session.email, 
+            uuid: req.session.uuid, 
+            expires: expiresAt,
+            used: false  // Flag for one-time use
+        };
+        
+        // Cleanup expired keys
         Object.keys(magicLinks).forEach(key => {
             if (magicLinks[key].expires < Date.now()) {
                 delete magicLinks[key];
             }
         });
+        
+        res.json({ magicKey: magicKey, expiresAt: expiresAt });
     } else {
         res.status(401).json({authenticated: false});
     }

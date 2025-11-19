@@ -2,9 +2,13 @@ import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+import 'dart:convert';
 import 'event_bus.dart';
 // Import auth service conditionally
 import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
+import 'session_auth_service.dart';
+import 'server_config_web.dart' if (dart.library.io) 'server_config_native.dart';
+import 'clientid_native.dart' if (dart.library.js) 'clientid_web_stub.dart';
 
 /// Callback for handling 401 Unauthorized responses
 typedef UnauthorizedCallback = void Function();
@@ -23,10 +27,13 @@ class UnauthorizedInterceptor extends Interceptor {
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
     if (response.statusCode == 401) {
-      // Only trigger auto-logout if user is logged in
-      // This prevents triggering on initial session check when user visits site
-      if (AuthService.isLoggedIn) {
+      // For native: If SessionAuth was attempted (we see the error message), trigger logout
+      // For web: Only trigger if already logged in
+      // The key insight: if SessionAuth tried to authenticate but got 401, session is invalid
+      debugPrint('[API] 401 detected - isLoggedIn: ${AuthService.isLoggedIn}, isWeb: $kIsWeb');
+      if (AuthService.isLoggedIn || !kIsWeb) {
         debugPrint('[API] ⚠️  401 Unauthorized detected - triggering auto-logout');
+        debugPrint('[API] Callback exists: ${_globalUnauthorizedCallback != null}');
         _globalUnauthorizedCallback?.call();
       } else {
         debugPrint('[API] 401 Unauthorized - user not logged in yet, ignoring');
@@ -38,15 +45,60 @@ class UnauthorizedInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
     if (err.response?.statusCode == 401) {
-      // Only trigger auto-logout if user is logged in
-      if (AuthService.isLoggedIn) {
+      // For native: Always trigger auto-logout on 401
+      // For web: Only trigger if already logged in
+      debugPrint('[API] 401 error detected - isLoggedIn: ${AuthService.isLoggedIn}, isWeb: $kIsWeb');
+      if (AuthService.isLoggedIn || !kIsWeb) {
         debugPrint('[API] ⚠️  401 Unauthorized detected in error - triggering auto-logout');
+        debugPrint('[API] Callback exists: ${_globalUnauthorizedCallback != null}');
         _globalUnauthorizedCallback?.call();
       } else {
         debugPrint('[API] 401 Unauthorized error - user not logged in yet, ignoring');
       }
     }
     super.onError(err, handler);
+  }
+}
+
+/// Interceptor for adding HMAC authentication headers to native client requests
+class SessionAuthInterceptor extends Interceptor {
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
+    // Only add auth headers for native platforms
+    if (!kIsWeb) {
+      try {
+        // Get active server
+        final activeServer = ServerConfigService.getActiveServer();
+        
+        if (activeServer != null) {
+          // Get client ID from device
+          final clientId = await ClientIdService.getClientId();
+          
+          // Check if we have a session
+          final hasSession = await SessionAuthService().hasSession(clientId);
+          
+          if (hasSession) {
+            // Generate auth headers
+            final authHeaders = await SessionAuthService().generateAuthHeaders(
+              clientId: clientId,
+              requestPath: options.path,
+              requestBody: options.data != null ? json.encode(options.data) : null,
+            );
+            
+            // Add headers to request
+            options.headers.addAll(authHeaders);
+            debugPrint('[SessionAuth] Added auth headers for request: ${options.path}');
+          } else {
+            debugPrint('[SessionAuth] No session found for client: $clientId');
+          }
+        }
+      } catch (e) {
+        debugPrint('[SessionAuth] Error adding auth headers: $e');
+        // Continue with request even if auth fails
+      }
+    }
+    
+    super.onRequest(options, handler);
   }
 }
 
@@ -157,7 +209,10 @@ class ApiService {
         dio.interceptors.add(CookieManager(cookieJar));
       }
       
-      // Add 401 Unauthorized interceptor (should be first)
+      // Add SessionAuth interceptor first (before auth checks)
+      dio.interceptors.add(SessionAuthInterceptor());
+      
+      // Add 401 Unauthorized interceptor (should be after auth headers added)
       dio.interceptors.add(UnauthorizedInterceptor());
       
       // Add custom retry interceptor for handling 503 (database busy) and network errors

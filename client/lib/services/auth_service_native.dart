@@ -1,6 +1,9 @@
 
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'session_auth_service.dart';
+import 'clientid_native.dart';
 // Only for web:
 // ignore: avoid_web_libraries_in_flutter
 
@@ -66,9 +69,25 @@ Future<List<Map<String, String>>> getHostMailList() async {
   }*/
 
   static Future<bool> checkSession() async {
-    // Ensure a bool is always returned
-    isLoggedIn = false;
-    return false;
+    try {
+      // For native, check if we have an HMAC session
+      final clientId = await ClientIdService.getClientId();
+      final hasSession = await SessionAuthService().hasSession(clientId);
+      
+      if (hasSession) {
+        debugPrint('[AuthService] Native client has HMAC session');
+        isLoggedIn = true;
+        return true;
+      } else {
+        debugPrint('[AuthService] Native client has no HMAC session');
+        isLoggedIn = false;
+        return false;
+      }
+    } catch (e) {
+      debugPrint('[AuthService] Error checking session: $e');
+      isLoggedIn = false;
+      return false;
+    }
   }
 }
 

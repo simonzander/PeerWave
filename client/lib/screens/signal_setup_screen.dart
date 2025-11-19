@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/signal_service.dart';
@@ -75,10 +76,15 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
       if (errorMessage.contains('Device identity not initialized') ||
           errorMessage.contains('Encryption key not found') ||
           errorMessage.contains('Please log in')) {
-        // Redirect to login
+        // Redirect to appropriate auth page
         if (mounted) {
-          debugPrint('[SIGNAL SETUP SCREEN] Authentication required, redirecting to login...');
-          GoRouter.of(context).go('/login');
+          if (kIsWeb) {
+            debugPrint('[SIGNAL SETUP SCREEN] Authentication required, redirecting to login...');
+            GoRouter.of(context).go('/login');
+          } else {
+            debugPrint('[SIGNAL SETUP SCREEN] Authentication required, redirecting to server-selection...');
+            GoRouter.of(context).go('/server-selection');
+          }
         }
         return;
       }

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart';
 import '../device_identity_service.dart';
@@ -120,7 +121,15 @@ class DatabaseHelper {
         debugPrint('[DATABASE] ✓ Web database initialization complete');
         return db;
       } else {
-        // Native: Use file system
+        // Native: Use file system with sqflite_common_ffi
+        if (!_factoryInitialized) {
+          debugPrint('[DATABASE] Initializing native database factory (sqflite_common_ffi)...');
+          sqfliteFfiInit();
+          databaseFactory = databaseFactoryFfi;
+          _factoryInitialized = true;
+          debugPrint('[DATABASE] ✓ Native database factory initialized');
+        }
+        
         debugPrint('[DATABASE] Initializing native database...');
         final directory = await getApplicationDocumentsDirectory();
         final path = join(directory.path, _databaseName);

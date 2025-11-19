@@ -14,7 +14,7 @@ import 'chunking_service.dart';
 import '../../models/seeder_info.dart';
 import '../../providers/file_transfer_stats_provider.dart';
 // Web-only imports for browser download
-import 'dart:html' as html show AnchorElement, Blob, Url, document;
+import 'package:universal_html/html.dart' as html show AnchorElement, Blob, Url, document;
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// Download phase tracking for graceful completion

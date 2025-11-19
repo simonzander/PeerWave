@@ -530,12 +530,12 @@ class SignalService {
 
     // 🔒 CRITICAL: Check if device identity is initialized (required for encryption)
     if (DeviceIdentityService.instance.deviceId.isEmpty) {
-      // Try to restore from SessionStorage first
-      debugPrint('[SIGNAL INIT] Device identity not in memory, checking SessionStorage...');
-      if (!DeviceIdentityService.instance.tryRestoreFromSession()) {
+      // Try to restore from storage first
+      debugPrint('[SIGNAL INIT] Device identity not in memory, checking storage...');
+      if (!await DeviceIdentityService.instance.tryRestoreFromSession()) {
         throw Exception('Device identity not initialized. Please log in first.');
       }
-      debugPrint('[SIGNAL INIT] Device identity restored from SessionStorage');
+      debugPrint('[SIGNAL INIT] Device identity restored from storage');
     }
 
     // 🔑 CRITICAL: Check if encryption key exists in SessionStorage

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dashboard_page.dart';
-import 'server_panel.dart';
 import '../widgets/navigation_sidebar.dart';
 import '../widgets/adaptive/adaptive_scaffold.dart';
 import '../widgets/theme_widgets.dart';
 import '../widgets/navigation_badge.dart';
 import '../widgets/sync_progress_banner.dart';
+import '../widgets/server_panel.dart';
 import '../services/logout_service.dart';
 import '../config/layout_config.dart';
 import 'package:go_router/go_router.dart';
@@ -319,7 +319,6 @@ class _AppLayoutState extends State<AppLayout> {
   @override
   Widget build(BuildContext context) {
     final bool isWeb = kIsWeb;
-    final double serverPanelWidth = isWeb ? 0 : 80;
 
     if (isWeb) {
       // Check layout type
@@ -383,31 +382,64 @@ class _AppLayoutState extends State<AppLayout> {
         ),
       );
     } else {
-      // Global Scaffold for native
-      return Scaffold(
-        body: Row(
-          children: [
-            if (serverPanelWidth > 0)
-              Container(
-                width: serverPanelWidth,
-                color: Colors.black,
-                child: ServerPanel(
-                  onAddServer: () => context.go('/app/login'),
-                  scaffoldContextProvider: () => context,
+      // Native Desktop: Server Panel (far left) + Navigation Sidebar + Content
+      final width = MediaQuery.of(context).size.width;
+      final layoutType = LayoutConfig.getLayoutType(width);
+      
+      if (layoutType == LayoutType.desktop || layoutType == LayoutType.tablet) {
+        return Scaffold(
+          body: Row(
+            children: [
+              // Server Panel (far left, 72px)
+              const ServerPanel(),
+              
+              // Navigation Sidebar (60px)
+              const NavigationSidebar(),
+              
+              // Content with Sync Banner
+              Expanded(
+                child: Column(
+                  children: [
+                    // 🚀 Sync Progress Banner
+                    const SyncProgressBanner(),
+                    
+                    // Main Content (Views handle their own Context Panel + Main Content)
+                    Expanded(
+                      child: widget.child ?? const DashboardPage(),
+                    ),
+                  ],
                 ),
               ),
+            ],
+          ),
+        );
+      }
+      
+      // Mobile native - use AdaptiveScaffold with bottom navigation
+      final destinations = _getNavigationDestinations(context);
+      
+      return AdaptiveScaffold(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: _onNavigationSelected,
+        destinations: destinations,
+        appBarTitle: 'PeerWave',
+        appBarActions: [
+          const ThemeToggleButton(),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => context.go('/app/settings'),
+            tooltip: 'Settings',
+          ),
+        ],
+        drawer: _buildMobileDrawer(context),
+        body: Column(
+          children: [
+            // 🚀 Sync Progress Banner
+            const SyncProgressBanner(),
+            
+            // Main Content
             Expanded(
-              child: Column(
-                children: [
-                  // 🚀 Sync Progress Banner
-                  const SyncProgressBanner(),
-                  
-                  // Main Content
-                  Expanded(
-                    child: widget.child ?? const DashboardPage(),
-                  ),
-                ],
-              ),
+              child: widget.child ?? const DashboardPage(),
             ),
           ],
         ),

@@ -8,13 +8,14 @@ const crypto = require('crypto');
 const session = require('express-session');
 const cors = require('cors');
 const magicLinks = require('../store/magicLinksStore');
-const { User, Channel, Thread, SignalSignedPreKey, SignalPreKey, Client, Item, Role, ChannelMembers } = require('../db/model');
+const { User, Channel, Thread, SignalSignedPreKey, SignalPreKey, Client, Item, Role, ChannelMembers, sequelize } = require('../db/model');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
 const { hasServerPermission } = require('../db/roleHelpers');
 const { buildIceServerConfig } = require('../lib/turnCredentials');
-const { RoomServiceClient } = require('livekit-server-sdk');
+const livekitWrapper = require('../lib/livekit-wrapper');
+const { verifySessionAuth, verifyAuthEither } = require('../middleware/sessionAuth');
 
 async function getLocationFromIp(ip) {
     const response = await fetch(`https://ipapi.co/${ip}/json/`);
@@ -933,7 +934,8 @@ clientRoutes.get("/client/channels/:channelUuid/participants", async(req, res) =
         const apiSecret = process.env.LIVEKIT_API_SECRET || 'secret';
         const livekitUrl = process.env.LIVEKIT_URL || 'ws://localhost:7880';
         
-        // Initialize LiveKit RoomServiceClient
+        // Initialize LiveKit RoomServiceClient (dynamically loaded)
+        const RoomServiceClient = await livekitWrapper.getRoomServiceClient();
         const roomService = new RoomServiceClient(livekitUrl, apiKey, apiSecret);
         
         // Get current participants from LiveKit room
@@ -1011,60 +1013,160 @@ clientRoutes.get("/client/channels/:channelUuid/participants", async(req, res) =
 
 clientRoutes.post("/magic/verify", async (req, res) => {
     const { key, clientid } = req.body;
-    console.log("Verifying magic link with key:", key, "and client ID:", clientid);
+    console.log("Verifying magic link with key format, client ID:", clientid);
+    console.log("Received key:", key);
+    
     if(!key || !clientid) {
         return res.status(400).json({ status: "failed", message: "Missing key or client ID" });
     }
-    const entry = magicLinks[key];
-    if (entry && entry.expires > Date.now()) {
-        // Valid magic link
-        req.session.authenticated = true;
-        req.session.email = entry.email;
-        req.session.uuid = entry.uuid;
-        const userAgent = req.headers['user-agent'] || '';
-        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-        const location = await getLocationFromIp(ip);
-        const locationString = location
-                ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
-                : "Location not found";
-        const maxDevice = await Client.max('device_id', { where: { owner: entry.uuid } });
-        const [client] = await writeQueue.enqueue(
-            () => Client.findOrCreate({
-                where: { owner: entry.uuid, clientid: clientid },
-                defaults: { owner: entry.uuid, clientid: clientid, ip: ip, browser: userAgent, location: locationString, device_id: maxDevice ? maxDevice + 1 : 1 }
-            }),
-            'clientFindOrCreateMagicLink'
-        );
-        req.session.clientId = client.clientid;
-        req.session.deviceId = client.device_id;
-        
-        // Set user as active on magic link verification
+    
+    // Parse new magic key format: {serverUrl}:{randomHash}:{timestamp}:{hmacSignature}
+    const parts = key.split(':');
+    console.log("Key parts:", parts);
+    
+    if (parts.length < 4) {
+        return res.status(400).json({ status: "failed", message: "Invalid magic key format" });
+    }
+    
+    // Extract components (handle URLs with port)
+    const protocol = parts[0]; // http or https
+    const hostPart = parts[1].replace(/^\/\//, ''); // Remove leading //
+    
+    // Check if next part is a port number
+    let serverUrl = `${protocol}://${hostPart}`;
+    let nextIndex = 2;
+    
+    // If parts[2] is a number and looks like a port (< 65536), include it
+    const possiblePort = parseInt(parts[2]);
+    if (!isNaN(possiblePort) && possiblePort > 0 && possiblePort < 65536) {
+        serverUrl = `${protocol}://${hostPart}:${parts[2]}`;
+        nextIndex = 3;
+    }
+    
+    // Extract randomHash, timestamp, signature
+    const randomHash = parts[nextIndex];
+    const timestamp = parseInt(parts[nextIndex + 1]);
+    const providedSignature = parts.slice(nextIndex + 2).join(':'); // In case signature contains :
+    
+    console.log("Parsed - serverUrl:", serverUrl, "randomHash:", randomHash, "timestamp:", timestamp);
+    
+    // Verify HMAC signature
+    const config = require('../config/config');
+    const crypto = require('crypto');
+    const dataToSign = `${serverUrl}:${randomHash}:${timestamp}`;
+    const hmac = crypto.createHmac('sha256', config.session.secret);
+    hmac.update(dataToSign);
+    const expectedSignature = hmac.digest('hex');
+    
+    console.log("Expected signature:", expectedSignature);
+    console.log("Provided signature:", providedSignature);
+    
+    if (providedSignature !== expectedSignature) {
+        return res.status(400).json({ status: "failed", message: "Invalid magic key signature" });
+    }
+    
+    // Check if key exists and not expired
+    const entry = magicLinks[randomHash];
+    if (!entry) {
+        return res.status(400).json({ status: "failed", message: "Invalid or expired magic link" });
+    }
+    
+    // Check expiration
+    if (entry.expires < Date.now()) {
+        delete magicLinks[randomHash];
+        return res.status(400).json({ status: "failed", message: "Magic link has expired" });
+    }
+    
+    // Check one-time use
+    if (entry.used) {
+        return res.status(400).json({ status: "failed", message: "Magic link has already been used" });
+    }
+    
+    // Mark as used (one-time use)
+    entry.used = true;
+    
+    // Valid magic link - proceed with authentication
+    req.session.authenticated = true;
+    req.session.email = entry.email;
+    req.session.uuid = entry.uuid;
+    const userAgent = req.headers['user-agent'] || '';
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const location = await getLocationFromIp(ip);
+    const locationString = location
+            ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
+            : "Location not found";
+    const maxDevice = await Client.max('device_id', { where: { owner: entry.uuid } });
+    const [client] = await writeQueue.enqueue(
+        () => Client.findOrCreate({
+            where: { owner: entry.uuid, clientid: clientid },
+            defaults: { owner: entry.uuid, clientid: clientid, ip: ip, browser: userAgent, location: locationString, device_id: maxDevice ? maxDevice + 1 : 1 }
+        }),
+        'clientFindOrCreateMagicLink'
+    );
+    req.session.clientId = client.clientid;
+    req.session.deviceId = client.device_id;
+    
+    // Set user as active on magic link verification
+    await writeQueue.enqueue(
+        () => User.update(
+            { active: true },
+            { where: { uuid: entry.uuid } }
+        ),
+        'setUserActiveOnMagicLink'
+    );
+    
+    // Auto-assign admin role if user is verified and email is in config.admin
+    const user = await User.findOne({ where: { uuid: entry.uuid } });
+    if (user && user.verified && config.admin && config.admin.includes(entry.email)) {
+        await autoAssignRoles(entry.email, entry.uuid);
+    }
+    
+    // Delete used magic link
+    delete magicLinks[randomHash];
+    
+    // Generate session secret for native clients (HMAC authentication)
+    const sessionSecret = crypto.randomBytes(32).toString('base64url');
+    
+    // Store session in database
+    try {
         await writeQueue.enqueue(
-            () => User.update(
-                { active: true },
-                { where: { uuid: entry.uuid } }
+            () => sequelize.query(
+                `INSERT OR REPLACE INTO client_sessions 
+                 (client_id, session_secret, user_id, device_info, expires_at, last_used, created_at)
+                 VALUES (?, ?, ?, ?, datetime('now', '+30 days'), datetime('now'), datetime('now'))`,
+                { 
+                    replacements: [
+                        clientid, 
+                        sessionSecret, 
+                        entry.uuid, 
+                        JSON.stringify({ userAgent, ip, location: locationString })
+                    ] 
+                }
             ),
-            'setUserActiveOnMagicLink'
+            'createClientSession'
         );
-        
-        // Auto-assign admin role if user is verified and email is in config.admin
-        const user = await User.findOne({ where: { uuid: entry.uuid } });
-        if (user && user.verified && config.admin && config.admin.includes(entry.email)) {
-            await autoAssignRoles(entry.email, entry.uuid);
+        console.log(`[MagicKey] Session created for client: ${clientid}`);
+    } catch (sessionErr) {
+        console.error('[MagicKey] Error creating session:', sessionErr);
+        // Continue anyway - web clients don't need sessions
+    }
+    
+    // Persist session immediately so Socket.IO can read it
+    return req.session.save(err => {
+        if (err) {
+            console.error('Session save error (magic/verify):', err);
+            return res.status(500).json({ status: "error", message: "Session save error" });
         }
         
-        // Persist session immediately so Socket.IO can read it
-        return req.session.save(err => {
-            if (err) {
-                console.error('Session save error (magic/verify):', err);
-                return res.status(500).json({ status: "error", message: "Session save error" });
-            }
-            res.status(200).json({ status: "ok", message: "Magic link verified" });
+        // Return session secret for native clients
+        res.status(200).json({ 
+            status: "ok", 
+            message: "Magic link verified",
+            sessionSecret: sessionSecret,  // Native clients will use this for HMAC auth
+            userId: entry.uuid,
+            email: entry.email  // For device identity initialization
         });
-    } else {
-        // Invalid or expired magic link
-        res.status(400).json({ status: "failed", message: "Invalid or expired magic link" });
-    }
+    });
 });
 
 clientRoutes.post("/client/login", async (req, res) => {
@@ -1640,6 +1742,23 @@ clientRoutes.post("/client/profile/update",
         });
     } catch (error) {
         console.error('Error updating profile:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// Test endpoint to verify HMAC authentication (for debugging)
+clientRoutes.get("/client/auth/test", verifyAuthEither, async (req, res) => {
+    try {
+        const authMethod = req.sessionAuth ? 'HMAC' : 'Cookie';
+        res.status(200).json({
+            status: "ok",
+            message: "Authentication successful",
+            authMethod: authMethod,
+            userId: req.userId,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('[AUTH TEST] Error:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });

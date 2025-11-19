@@ -43,7 +43,6 @@ dependencies:
   js: ^0.6.7
   uuid: ^4.0.0
   flutter_secure_storage: ^9.0.0
-  uni_links: ^0.5.1
   shared_preferences: ^2.0.6
   socket_io_client: ^3.1.2
   dio: ^5.9.0
@@ -77,6 +76,11 @@ dependencies:
   just_audio: ^0.9.40
   audio_waveforms: ^1.1.0
   fl_chart: ^0.69.2
+  # Native client dependencies
+  qr_flutter: ^4.1.0  # QR code generation for web (magic key display)
+  mobile_scanner: ^6.0.2  # QR code scanning for native (optional)
+  local_notifier: ^0.1.6  # Desktop notifications for native
+  universal_html: ^2.3.0
 
 dev_dependencies:
   flutter_test:
@@ -129,3 +133,6 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+dependency_overrides:
+  record_linux: ^1.2.1  # Fix Windows build issue
