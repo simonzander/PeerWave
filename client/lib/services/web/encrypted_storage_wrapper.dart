@@ -2,15 +2,27 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'webauthn_crypto_service.dart';
+import '../native_crypto_service.dart';
 import '../device_identity_service.dart';
 
 /// Transparent encryption/decryption wrapper for IndexedDB storage
 /// 
 /// This wrapper automatically encrypts data before storing and decrypts
-/// data when reading, using keys derived from WebAuthn signatures.
+/// data when reading, using keys derived from WebAuthn signatures (web)
+/// or secure storage (native).
 class EncryptedStorageWrapper {
-  final WebAuthnCryptoService _crypto = WebAuthnCryptoService.instance;
+  final WebAuthnCryptoService _webCrypto = WebAuthnCryptoService.instance;
+  final NativeCryptoService _nativeCrypto = NativeCryptoService.instance;
   final DeviceIdentityService _deviceIdentity = DeviceIdentityService.instance;
+  
+  /// Get encryption key (platform-specific)
+  Future<Uint8List?> _getKey() async {
+    if (kIsWeb) {
+      return _webCrypto.getKeyFromSession(_deviceIdentity.deviceId);
+    } else {
+      return await _nativeCrypto.getKey(_deviceIdentity.deviceId);
+    }
+  }
   
   /// Encrypt data before storing
   /// 
@@ -21,8 +33,8 @@ class EncryptedStorageWrapper {
   /// - data: Encrypted data (base64)
   /// - timestamp: When the data was encrypted
   Future<Map<String, dynamic>> encryptForStorage(dynamic value) async {
-    // Get encryption key from session
-    final key = _crypto.getKeyFromSession(_deviceIdentity.deviceId);
+    // Get encryption key (platform-specific)
+    final key = await _getKey();
     if (key == null) {
       throw Exception('No encryption key available. Please re-authenticate.');
     }
@@ -31,8 +43,8 @@ class EncryptedStorageWrapper {
     final plaintext = jsonEncode(value);
     final plaintextBytes = utf8.encode(plaintext);
     
-    // Encrypt
-    final encrypted = await _crypto.encrypt(Uint8List.fromList(plaintextBytes), key);
+    // Encrypt (use web crypto service - works for both platforms)
+    final encrypted = await _webCrypto.encrypt(Uint8List.fromList(plaintextBytes), key);
     
     // Create envelope with metadata
     return {
@@ -55,14 +67,14 @@ class EncryptedStorageWrapper {
       throw Exception('Data belongs to different device');
     }
     
-    // Get encryption key
-    final key = _crypto.getKeyFromSession(_deviceIdentity.deviceId);
+    // Get encryption key (platform-specific)
+    final key = await _getKey();
     if (key == null) {
       throw Exception('No encryption key available. Please re-authenticate.');
     }
     
-    // Decrypt
-    final decryptedBytes = await _crypto.decrypt(
+    // Decrypt (use web crypto service - works for both platforms)
+    final decryptedBytes = await _webCrypto.decrypt(
       envelope['iv'] as String,
       envelope['data'] as String,
       key,

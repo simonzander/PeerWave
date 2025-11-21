@@ -257,6 +257,12 @@ io.sockets.on("connection", socket => {
   // 🔒 Track client ready state (prevents sending events before client is initialized)
   socket.clientReady = false;
 
+  // Helper function to get userId from either native (HMAC) or web (session) auth
+  const getUserId = () => socket.data.userId || socket.handshake.session.uuid;
+  const getDeviceId = () => socket.data.deviceId || socket.handshake.session.deviceId;
+  const getClientId = () => socket.data.clientId || socket.handshake.session.clientId;
+  const isAuthenticated = () => socket.data.sessionAuth || socket.handshake.session.authenticated === true;
+
   socket.on("authenticate", async (authData) => {
     // Support both cookie-based (web) and HMAC-based (native) authentication
     try {
@@ -2331,14 +2337,16 @@ io.sockets.on("connection", socket => {
    */
   socket.on("video:check-participants", async (data) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      // Support both native (socket.data.userId) and web (socket.handshake.session.uuid) clients
+      const userId = socket.data.userId || socket.handshake.session.uuid;
+      
+      if (!userId) {
         console.error('[VIDEO PARTICIPANTS] Check blocked - not authenticated');
         socket.emit("video:participants-info", { error: "Not authenticated" });
         return;
       }
 
       const { channelId } = data;
-      const userId = socket.handshake.session.uuid;
 
       if (!channelId) {
         console.error('[VIDEO PARTICIPANTS] Missing channelId');

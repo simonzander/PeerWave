@@ -1,4 +1,4 @@
-import 'socket_service.dart';
+import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';

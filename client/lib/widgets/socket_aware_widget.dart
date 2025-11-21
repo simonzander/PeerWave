@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/socket_service.dart';
+import '../services/socket_service.dart' if (dart.library.io) '../services/socket_service_native.dart';
 
 /// Wrapper widget that ensures Socket.IO connection before showing child
 class SocketAwareWidget extends StatefulWidget {

@@ -75,6 +75,7 @@ import 'screens/server_selection_screen.dart';
 import 'services/server_config_web.dart' if (dart.library.io) 'services/server_config_native.dart';
 import 'services/clientid_native.dart' if (dart.library.js) 'services/clientid_web_stub.dart';
 import 'services/session_auth_service.dart';
+import 'debug_storage.dart';
 
 
 Future<void> main() async {
@@ -90,6 +91,13 @@ Future<void> main() async {
   if (!kIsWeb) {
     await ServerConfigService.init();
     debugPrint('[INIT] ✅ ServerConfigService initialized');
+    
+    // DEBUG: Inspect secure storage contents
+    try {
+      await DebugStorage.printAllStoredKeys();
+    } catch (e) {
+      debugPrint('[INIT] ❌ Debug storage inspection failed: $e');
+    }
     
     // Listen for initial link (when app is started via deep link)
     try {
@@ -605,29 +613,29 @@ class _MyAppState extends State<MyApp> {
             ),
           ]
         : [
-            // Server selection route (outside ShellRoute - no AppLayout wrapper)
-            GoRoute(
-              path: '/server-selection',
-              pageBuilder: (context, state) {
-                final extra = state.extra as Map<String, dynamic>?;
-                final isAddingServer = extra?['isAddingServer'] as bool? ?? false;
-                return MaterialPage(
-                  fullscreenDialog: true,
-                  child: ServerSelectionScreen(isAddingServer: isAddingServer),
-                );
-              },
-            ),
-            // Signal setup route (outside ShellRoute)
-            GoRoute(
-              path: '/signal-setup',
-              builder: (context, state) => const SignalSetupScreen(),
-            ),
             ShellRoute(
               builder: (context, state, child) => AppLayout(child: child),
               routes: [
                 GoRoute(
                   path: '/',
                   redirect: (context, state) => '/app',
+                ),
+                // Server selection route (inside ShellRoute - shows server navbar)
+                GoRoute(
+                  path: '/server-selection',
+                  pageBuilder: (context, state) {
+                    final extra = state.extra as Map<String, dynamic>?;
+                    final isAddingServer = extra?['isAddingServer'] as bool? ?? false;
+                    return MaterialPage(
+                      fullscreenDialog: true,
+                      child: ServerSelectionScreen(isAddingServer: isAddingServer),
+                    );
+                  },
+                ),
+                // Signal setup route (inside ShellRoute for native - shows server navbar)
+                GoRoute(
+                  path: '/signal-setup',
+                  builder: (context, state) => const SignalSetupScreen(),
                 ),
                 GoRoute(
                   path: '/magic-link',
@@ -664,17 +672,66 @@ class _MyAppState extends State<MyApp> {
                 ),
                 // View routes
                 GoRoute(
+                  path: '/app/channels/:id',
+                  builder: (context, state) {
+                    final channelUuid = state.pathParameters['id'];
+                    final extra = state.extra as Map<String, dynamic>?;
+                    final server = ServerConfigService.getActiveServer();
+                    final host = extra?['host'] as String? ?? server?.serverUrl ?? 'localhost:3000';
+                    final name = extra?['name'] as String? ?? 'Unknown';
+                    final type = extra?['type'] as String? ?? 'public';
+                    
+                    return ChannelsViewPage(
+                      host: host,
+                      initialChannelUuid: channelUuid,
+                      initialChannelName: name,
+                      initialChannelType: type,
+                    );
+                  },
+                ),
+                GoRoute(
                   path: '/app/channels',
                   builder: (context, state) {
                     final server = ServerConfigService.getActiveServer();
-                    return ChannelsViewPage(host: server?.serverUrl ?? 'localhost:3000');
+                    final extra = state.extra as Map<String, dynamic>?;
+                    final host = extra?['host'] as String? ?? server?.serverUrl ?? 'localhost:3000';
+                    
+                    return ChannelsViewPage(
+                      host: host,
+                      initialChannelUuid: null,
+                      initialChannelName: null,
+                      initialChannelType: null,
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: '/app/messages/:id',
+                  builder: (context, state) {
+                    final contactUuid = state.pathParameters['id'];
+                    final extra = state.extra as Map<String, dynamic>?;
+                    final server = ServerConfigService.getActiveServer();
+                    final host = extra?['host'] as String? ?? server?.serverUrl ?? 'localhost:3000';
+                    final displayName = extra?['displayName'] as String? ?? 'Unknown';
+                    
+                    return MessagesViewPage(
+                      host: host,
+                      initialContactUuid: contactUuid,
+                      initialDisplayName: displayName,
+                    );
                   },
                 ),
                 GoRoute(
                   path: '/app/messages',
                   builder: (context, state) {
                     final server = ServerConfigService.getActiveServer();
-                    return MessagesViewPage(host: server?.serverUrl ?? 'localhost:3000');
+                    final extra = state.extra as Map<String, dynamic>?;
+                    final host = extra?['host'] as String? ?? server?.serverUrl ?? 'localhost:3000';
+                    
+                    return MessagesViewPage(
+                      host: host,
+                      initialContactUuid: null,
+                      initialDisplayName: null,
+                    );
                   },
                 ),
                 GoRoute(
@@ -852,6 +909,13 @@ class _MyAppState extends State<MyApp> {
         final uri = Uri.parse(state.uri.toString());
         final fromParam = uri.queryParameters['from'];
         if(loggedIn) {
+          debugPrint('[ROUTER] ========================================');
+          debugPrint('[ROUTER] 🔐 User is logged in - checking post-login initialization');
+          debugPrint('[ROUTER] Current location: $location');
+          debugPrint('[ROUTER] _postLoginInitComplete: $_postLoginInitComplete');
+          debugPrint('[ROUTER] PostLoginInitService.isInitialized: ${PostLoginInitService.instance.isInitialized}');
+          debugPrint('[ROUTER] ========================================');
+          
           // ========================================
           // POST-LOGIN SERVICE INITIALIZATION (ONCE)
           // ========================================
@@ -862,13 +926,19 @@ class _MyAppState extends State<MyApp> {
               || location.startsWith('/register/')
               || location == '/signal-setup';
           
+          debugPrint('[ROUTER] isAuthFlow: $isAuthFlow');
+          
           if (!isAuthFlow) {
+            debugPrint('[ROUTER] Not an auth flow - checking Signal keys status...');
             // Check if Signal keys need setup when navigating to main app routes
             if (location == '/app' || location == '/' || location.startsWith('/app/')) {
+              debugPrint('[ROUTER] App route detected - checking keys status...');
               try {
                 final status = await SignalSetupService.instance.checkKeysStatus();
                 final needsSetup = status['needsSetup'] as bool;
                 final missingKeys = status['missingKeys'] as Map<String, dynamic>;
+                
+                debugPrint('[ROUTER] Keys status: needsSetup=$needsSetup, missingKeys=$missingKeys');
                 
                 if (needsSetup) {
                   // Save current route if it's a specific /app/* route (not base routes like /app or /)
@@ -1016,10 +1086,16 @@ class _MyAppState extends State<MyApp> {
         debugPrint("location: $location");
         debugPrint("fromParam: $fromParam");
         
-        // If logged in and at /login, redirect to /app
-        if (kIsWeb && loggedIn && location == '/login') {
-          debugPrint('[ROUTER] ✅ Logged in at /login, redirecting to /app');
-          return '/app';
+        // If logged in and at /login, redirect appropriately
+        if (loggedIn && location == '/login') {
+          if (kIsWeb) {
+            debugPrint('[ROUTER] ✅ Web: Logged in at /login, redirecting to /app');
+            return '/app';
+          } else {
+            // Native: Redirect to /app which will trigger signal setup check
+            debugPrint('[ROUTER] ✅ Native: Logged in at /login, redirecting to /app for signal check');
+            return '/app';
+          }
         }
         
         if (kIsWeb && !loggedIn && location == '/login') {

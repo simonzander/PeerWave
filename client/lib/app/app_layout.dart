@@ -319,6 +319,13 @@ class _AppLayoutState extends State<AppLayout> {
   @override
   Widget build(BuildContext context) {
     final bool isWeb = kIsWeb;
+    final location = GoRouterState.of(context).matchedLocation;
+    
+    // Hide navigation sidebar on signal-setup, login, and server-selection screens
+    // But keep server panel visible on native
+    final shouldShowNavigation = !location.startsWith('/signal-setup') && 
+                                 location != '/login' &&
+                                 location != '/server-selection';
 
     if (isWeb) {
       // Check layout type
@@ -390,11 +397,12 @@ class _AppLayoutState extends State<AppLayout> {
         return Scaffold(
           body: Row(
             children: [
-              // Server Panel (far left, 72px)
+              // Server Panel (far left, 72px) - Always visible on native
               const ServerPanel(),
               
-              // Navigation Sidebar (60px)
-              const NavigationSidebar(),
+              // Navigation Sidebar (60px) - Hidden on signal-setup/login
+              if (shouldShowNavigation)
+                const NavigationSidebar(),
               
               // Content with Sync Banner
               Expanded(

@@ -1,4 +1,4 @@
-import 'socket_service.dart';
+import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';

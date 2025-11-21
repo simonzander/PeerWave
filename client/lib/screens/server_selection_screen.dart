@@ -108,7 +108,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
         final email = data['email'] as String? ?? 'native@device';
         // Generate synthetic credential ID: hash(clientId + serverUrl)
         final syntheticCredId = '${clientId}_${serverUrl.hashCode}'.replaceAll('-', '');
-        DeviceIdentityService.instance.setDeviceIdentity(email, syntheticCredId, clientId);
+        await DeviceIdentityService.instance.setDeviceIdentity(email, syntheticCredId, clientId);
         print('[ServerSelection] ✓ Device identity initialized');
         
         // Generate and store encryption key for native client

@@ -1,6 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
+import 'clientid_native.dart';
+import 'session_auth_service.dart';
 
 /// Configuration for a single server connection
 class ServerConfig {
@@ -110,7 +115,24 @@ class ServerConfigService {
   static Future<void> init() async {
     await _loadServers();
     await _loadActiveServerId();
+    await _cleanupStaleServers(); // Remove servers without valid sessions
     print('[ServerConfig] Initialized with ${_servers.length} servers');
+  }
+
+  /// Remove servers that don't have valid HMAC sessions
+  static Future<void> _cleanupStaleServers() async {
+    if (_servers.isEmpty) return;
+
+    final clientId = await ClientIdService.getClientId();
+    final hasSession = await SessionAuthService().hasSession(clientId);
+
+    if (!hasSession && _servers.isNotEmpty) {
+      print('[ServerConfig] No valid session found - clearing all servers');
+      _servers.clear();
+      await _saveServers();
+      _activeServerId = null;
+      await _storage.delete(key: _storageKeyActiveServer);
+    }
   }
 
   /// Load servers from secure storage
@@ -252,6 +274,94 @@ class ServerConfigService {
 
     print('[ServerConfig] Removed server: $serverId');
     return true;
+  }
+
+  /// Delete server and all associated data (SQLite databases, secure storage)
+  static Future<bool> deleteServerWithData(String serverId) async {
+    final server = _servers.firstWhere(
+      (s) => s.id == serverId,
+      orElse: () => ServerConfig(
+        id: '',
+        serverUrl: '',
+        serverHash: '',
+        credentials: '',
+        lastActive: DateTime.now(),
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    if (server.id.isEmpty) {
+      print('[ServerConfig] Server not found: $serverId');
+      return false;
+    }
+
+    print('[ServerConfig] Deleting server and all data: ${server.getDisplayName()} ($serverId)');
+
+    try {
+      // 1. Delete SQLite databases for this server's device
+      // Note: For native, we can't easily determine which databases belong to which server
+      // because device ID is based on email+credentialId+clientId (shared across servers)
+      // So we'll just delete databases if this is the ONLY server being deleted
+      final documentsDir = await getApplicationDocumentsDirectory();
+      final directory = Directory(documentsDir.path);
+      
+      // Check if this is the last server
+      final isLastServer = _servers.length == 1;
+      
+      if (isLastServer && await directory.exists()) {
+        print('[ServerConfig] This is the last server - deleting all SQLite databases');
+        final files = await directory.list().toList();
+        // Look for peerwave_*.db files
+        for (final file in files) {
+          final fileName = path.basename(file.path);
+          if (fileName.startsWith('peerwave_') && fileName.endsWith('.db')) {
+            try {
+              await file.delete();
+              print('[ServerConfig] Deleted database: ${file.path}');
+            } catch (e) {
+              print('[ServerConfig] Error deleting database ${file.path}: $e');
+            }
+          }
+        }
+        
+        // 2. Delete secure storage keys (only if last server)
+        print('[ServerConfig] Deleting all secure storage keys');
+        final allKeys = await _storage.readAll();
+        final keysToDelete = [
+          'session_secret_',
+          'session_metadata_',
+          'peerwave_encryption_key_',
+          'device_identity',
+          'server_list',
+          'active_server_id',
+        ];
+        
+        for (final entry in allKeys.entries) {
+          final key = entry.key;
+          
+          // Check if key should be deleted
+          if (keysToDelete.any((prefix) => key.contains(prefix) || key == prefix)) {
+            try {
+              await _storage.delete(key: key);
+              print('[ServerConfig] Deleted secure storage key: $key');
+            } catch (e) {
+              print('[ServerConfig] Error deleting key $key: $e');
+            }
+          }
+        }
+      } else {
+        print('[ServerConfig] Multiple servers exist - keeping shared data (device identity, encryption keys)');
+      }
+
+      // 3. Remove server from config list
+      await removeServer(serverId);
+
+      print('[ServerConfig] ✓ Server and all associated data deleted: $serverId');
+      return true;
+    } catch (e) {
+      print('[ServerConfig] Error deleting server data: $e');
+      rethrow;
+    }
   }
 
   /// Get all servers

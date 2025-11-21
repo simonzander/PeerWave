@@ -77,12 +77,13 @@ clientRoutes.get("/client/meta", (req, res) => {
     res.json(response);
 });
 
-clientRoutes.get("/direct/messages/:userId", async (req, res) => {
+clientRoutes.get("/direct/messages/:userId", verifyAuthEither, async (req, res) => {
     const { userId } = req.params;
-    // session.deviceId and session.uuid must be set
+    // Support both web (session-based) and native (HMAC) authentication
+    const sessionUuid = req.userId || req.session.uuid;
     const sessionDeviceId = req.session.deviceId;
-    const sessionUuid = req.session.uuid;
-    if (!sessionDeviceId || !sessionUuid) {
+    
+    if (!sessionUuid || !sessionDeviceId) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
     try {
@@ -128,9 +129,9 @@ clientRoutes.get("/direct/messages/:userId", async (req, res) => {
 });
 
 // GET all devices of channel members (for group message encryption)
-clientRoutes.get("/channels/:channelId/member-devices", async (req, res) => {
+clientRoutes.get("/channels/:channelId/member-devices", verifyAuthEither, async (req, res) => {
     const { channelId } = req.params;
-    const sessionUuid = req.session.uuid;
+    const sessionUuid = req.userId || req.session.uuid;
     
     if (!sessionUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
@@ -183,10 +184,10 @@ clientRoutes.get("/channels/:channelId/member-devices", async (req, res) => {
 });
 
 // GET Signal Group Messages for a channel
-clientRoutes.get("/channels/:channelId/messages", async (req, res) => {
+clientRoutes.get("/channels/:channelId/messages", verifyAuthEither, async (req, res) => {
     const { channelId } = req.params;
+    const sessionUuid = req.userId || req.session.uuid;
     const sessionDeviceId = req.session.deviceId;
-    const sessionUuid = req.session.uuid;
     
     if (!sessionDeviceId || !sessionUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
@@ -234,9 +235,9 @@ clientRoutes.get("/channels/:channelId/messages", async (req, res) => {
 });
 
 // GET all channel messages for all channels the user is a member of
-clientRoutes.get("/channels/messages/all", async (req, res) => {
+clientRoutes.get("/channels/messages/all", verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
     const sessionDeviceId = req.session.deviceId;
-    const sessionUuid = req.session.uuid;
     
     if (!sessionDeviceId || !sessionUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
@@ -293,10 +294,10 @@ clientRoutes.get("/channels/messages/all", async (req, res) => {
 });
 
 // POST Signal Group Message (Sender Key encryption)
-clientRoutes.post("/channels/:channelId/group-messages", async (req, res) => {
+clientRoutes.post("/channels/:channelId/group-messages", verifyAuthEither, async (req, res) => {
     const { channelId } = req.params;
     const { itemId, ciphertext, senderId, senderDeviceId, timestamp } = req.body;
-    const sessionUuid = req.session.uuid;
+    const sessionUuid = req.userId || req.session.uuid;
     const sessionDeviceId = req.session.deviceId;
     
     if (!sessionUuid || !sessionDeviceId) {
@@ -376,11 +377,12 @@ clientRoutes.post("/channels/:channelId/group-messages", async (req, res) => {
 });
 
 // Batch store PreKeys via HTTP POST (for progressive initialization)
-clientRoutes.post("/signal/prekeys/batch", async (req, res) => {
-    const sessionUuid = req.session.uuid;
+clientRoutes.post("/signal/prekeys/batch", verifyAuthEither, async (req, res) => {
+    // Support both web (session-based) and native (HMAC) authentication
+    const sessionUuid = req.userId || req.session.uuid;
     const sessionDeviceId = req.session.deviceId;
     
-    if (!sessionUuid || !sessionDeviceId) {
+    if (!sessionUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
     
@@ -405,11 +407,15 @@ clientRoutes.post("/signal/prekeys/batch", async (req, res) => {
         }
         
         // Find client record
-        const client = await Client.findOne({
-            where: { owner: sessionUuid, device_id: sessionDeviceId }
-        });
+        // For native clients, use clientId from auth headers; for web, use session deviceId
+        const clientQuery = req.sessionAuth && req.clientId 
+            ? { owner: sessionUuid, clientid: req.clientId }
+            : { owner: sessionUuid, device_id: sessionDeviceId };
+        
+        const client = await Client.findOne({ where: clientQuery });
         
         if (!client) {
+            console.log(`[SIGNAL PREKEYS BATCH] Client not found with query:`, clientQuery);
             return res.status(404).json({ 
                 status: "error", 
                 message: "Client device not found" 
@@ -476,9 +482,9 @@ clientRoutes.post("/signal/prekeys/batch", async (req, res) => {
     }
 });
 
-clientRoutes.get("/signal/prekey_bundle/:userId", async (req, res) => {
+clientRoutes.get("/signal/prekey_bundle/:userId", verifyAuthEither, async (req, res) => {
     const { userId } = req.params;
-    const sessionUuid = req.session.uuid;
+    const sessionUuid = req.userId || req.session.uuid;
     try {
         // Helper to get random element
         function getRandom(arr) {
@@ -541,8 +547,9 @@ clientRoutes.get("/signal/prekey_bundle/:userId", async (req, res) => {
     }
 });
 
-clientRoutes.get("/people/list", async (req, res) => {
-    if(req.session.authenticated !== true || !req.session.uuid) {
+clientRoutes.get("/people/list", verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
+    if (!sessionUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
     try {
@@ -558,8 +565,9 @@ clientRoutes.get("/people/list", async (req, res) => {
 });
 
 // Batch load profiles by UUIDs (GET endpoint for smart loading)
-clientRoutes.get("/people/profiles", async (req, res) => {
-    if(req.session.authenticated !== true || !req.session.uuid) {
+clientRoutes.get("/people/profiles", verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
+    if (!sessionUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
     try {
@@ -594,8 +602,9 @@ clientRoutes.get("/people/profiles", async (req, res) => {
     }
 });
 
-clientRoutes.post("/client/people/info", async (req, res) => {
-    if(req.session.authenticated !== true || !req.session.uuid) {
+clientRoutes.post("/client/people/info", verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
+    if (!sessionUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
     try {
@@ -624,8 +633,9 @@ clientRoutes.post("/client/people/info", async (req, res) => {
     }
 });
 
-clientRoutes.post("/client/channels/info", async (req, res) => {
-    if(req.session.authenticated !== true || !req.session.uuid) {
+clientRoutes.post("/client/channels/info", verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
+    if (!sessionUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
 
@@ -647,16 +657,16 @@ clientRoutes.post("/client/channels/info", async (req, res) => {
     }
 });
 
-clientRoutes.get("/client/channels", async(req, res) => {
+clientRoutes.get("/client/channels", verifyAuthEither, async(req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const typeFilter = req.query.type; // 'webrtc', 'signal', or undefined for all
     
-    if(req.session.authenticated !== true || !req.session.uuid) {
+    const userUuid = req.userId || req.session.uuid;
+    if (!userUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
     
     try {
-        const userUuid = req.session.uuid;
         const { ChannelMembers } = require('../db/model');
         
         // Build where clause for type filter
@@ -708,14 +718,15 @@ clientRoutes.get("/client/channels", async(req, res) => {
     }
 });
 
-clientRoutes.post("/client/channels", async(req, res) => {
+clientRoutes.post("/client/channels", verifyAuthEither, async(req, res) => {
     const { name, description, private, type, defaultRoleId } = req.body;
-    if(req.session.authenticated !== true || !req.session.uuid) {
+    const userUuid = req.userId || req.session.uuid;
+    if (!userUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
     
     // Check if user has channel.create permission
-    const hasPermission = await hasServerPermission(req.session.uuid, 'channel.create');
+    const hasPermission = await hasServerPermission(userUuid, 'channel.create');
     if (!hasPermission) {
         return res.status(403).json({ status: "error", message: "Insufficient permissions to create channels" });
     }
@@ -744,7 +755,7 @@ clientRoutes.post("/client/channels", async(req, res) => {
             }
         }
         
-        const user = await User.findOne({ where: { uuid: req.session.uuid } });
+        const user = await User.findOne({ where: { uuid: userUuid } });
         if (user) {
             const channel = await writeQueue.enqueue(
                 () => Channel.create({ 
@@ -752,7 +763,7 @@ clientRoutes.post("/client/channels", async(req, res) => {
                     description: description, 
                     private: private || false, 
                     type: channelType,
-                    owner: req.session.uuid,
+                    owner: userUuid,
                     defaultRoleId: defaultRoleId || null
                 }),
                 'createChannelByClient'
@@ -773,15 +784,15 @@ clientRoutes.post("/client/channels", async(req, res) => {
 });
 
 // POST /client/channels/:channelId/join - Join a public channel
-clientRoutes.post("/client/channels/:channelId/join", async(req, res) => {
+clientRoutes.post("/client/channels/:channelId/join", verifyAuthEither, async(req, res) => {
     const { channelId } = req.params;
     
-    if(req.session.authenticated !== true || !req.session.uuid) {
+    const userId = req.userId || req.session.uuid;
+    if (!userId) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
     
     try {
-        const userId = req.session.uuid;
         const { ChannelMembers, UserRoleChannel, Role } = require('../db/model');
         
         // Find the channel
@@ -837,16 +848,16 @@ clientRoutes.post("/client/channels/:channelId/join", async(req, res) => {
 });
 
 // Get discoverable channels (public channels user isn't part of)
-clientRoutes.get("/client/channels/discover", async(req, res) => {
+clientRoutes.get("/client/channels/discover", verifyAuthEither, async(req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const offset = parseInt(req.query.offset) || 0;
     
-    if(req.session.authenticated !== true || !req.session.uuid) {
+    const userUuid = req.userId || req.session.uuid;
+    if (!userUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
     
     try {
-        const userUuid = req.session.uuid;
         const { ChannelMembers } = require('../db/model');
         
         // Find channels where user is owner
@@ -899,15 +910,15 @@ clientRoutes.get("/client/channels/discover", async(req, res) => {
 });
 
 // Get channel participants (current LiveKit room participants)
-clientRoutes.get("/client/channels/:channelUuid/participants", async(req, res) => {
+clientRoutes.get("/client/channels/:channelUuid/participants", verifyAuthEither, async(req, res) => {
     const { channelUuid } = req.params;
     
-    if(req.session.authenticated !== true || !req.session.uuid) {
+    const userUuid = req.userId || req.session.uuid;
+    if (!userUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
     
     try {
-        const userUuid = req.session.uuid;
         const { ChannelMembers } = require('../db/model');
         
         // Find the channel
@@ -1445,9 +1456,10 @@ clientRoutes.post("/usersettings", async (req, res) => {
 });
 
 // Delete item (cleanup after read receipt)
-clientRoutes.delete("/items/:itemId", async (req, res) => {
+clientRoutes.delete("/items/:itemId", verifyAuthEither, async (req, res) => {
     try {
-        if (!req.session.authenticated || !req.session.uuid) {
+        const sessionUuid = req.userId || req.session.uuid;
+        if (!sessionUuid) {
             return res.status(401).json({ status: "failed", message: "Not authenticated" });
         }
         
@@ -1607,9 +1619,9 @@ clientRoutes.post("/client/profile/setup",
 });
 
 // Get current user profile
-clientRoutes.get("/client/profile", async (req, res) => {
+clientRoutes.get("/client/profile", verifyAuthEither, async (req, res) => {
     try {
-        const userUuid = req.session.uuid;
+        const userUuid = req.userId || req.session.uuid;
 
         if (!userUuid) {
             return res.status(401).json({ status: "error", message: "Not authenticated" });
@@ -1641,11 +1653,12 @@ clientRoutes.get("/client/profile", async (req, res) => {
 
 // Update user profile
 clientRoutes.post("/client/profile/update",
+    verifyAuthEither,
     bodyParser.json({ limit: '2mb' }),
     async (req, res) => {
     try {
         const { displayName, atName, picture } = req.body;
-        const userUuid = req.session.uuid;
+        const userUuid = req.userId || req.session.uuid;
 
         if (!userUuid) {
             return res.status(401).json({ status: "error", message: "Not authenticated" });

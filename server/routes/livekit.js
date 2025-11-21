@@ -10,6 +10,7 @@
 const express = require('express');
 const router = express.Router();
 const livekitWrapper = require('../lib/livekit-wrapper');
+const { verifyAuthEither } = require('../middleware/sessionAuth');
 
 // Import models from db/model
 const { Channel, ChannelMembers } = require('../db/model');
@@ -26,23 +27,19 @@ const { Channel, ChannelMembers } = require('../db/model');
  * - url: LiveKit server URL
  * - roomName: Room identifier
  */
-router.post('/token', async (req, res) => {
+router.post('/token', verifyAuthEither, async (req, res) => {
   try {
     // Load LiveKit SDK dynamically
     const AccessToken = await livekitWrapper.getAccessToken();
     
-    // Check if user is authenticated
-    // Support both session.userinfo (REST API) and session.uuid (Socket.IO)
-    const session = req.session;
+    // verifyAuthEither middleware sets req.userId for both native and web clients
+    const userId = req.userId;
+    const username = req.username || req.session?.userinfo?.username || req.session?.email || 'Unknown';
     
-    if (!session || (!session.userinfo && !session.uuid)) {
-      console.log('[LiveKit] Unauthorized - No session found');
+    if (!userId) {
+      console.log('[LiveKit] Unauthorized - No user ID found');
       return res.status(401).json({ error: 'Not authenticated' });
     }
-
-    // Get user info from either format
-    const userId = session.userinfo?.id || session.uuid;
-    const username = session.userinfo?.username || session.email || 'Unknown';
 
     const { channelId } = req.body;
 

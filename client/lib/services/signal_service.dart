@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'api_service.dart';
 import '../web_config.dart';
-import 'socket_service.dart';
+import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'offline_message_queue.dart';
 import 'package:uuid/uuid.dart';
 import 'permanent_session_store.dart';
@@ -20,6 +20,7 @@ import 'storage/database_helper.dart';
 import 'user_profile_service.dart';
 import 'device_identity_service.dart';
 import 'web/webauthn_crypto_service.dart';
+import 'native_crypto_service.dart';
 import 'event_bus.dart';
 
 class SignalService {
@@ -538,13 +539,22 @@ class SignalService {
       debugPrint('[SIGNAL INIT] Device identity restored from storage');
     }
 
-    // 🔑 CRITICAL: Check if encryption key exists in SessionStorage
+    // 🔑 CRITICAL: Check if encryption key exists (platform-specific)
     final deviceId = DeviceIdentityService.instance.deviceId;
-    final encryptionKey = WebAuthnCryptoService.instance.getKeyFromSession(deviceId);
-    if (encryptionKey == null) {
-      throw Exception('Encryption key not found. Please log in again to re-authenticate with WebAuthn.');
+    Uint8List? encryptionKey;
+    
+    if (kIsWeb) {
+      // Web: Use WebAuthn encryption key from SessionStorage
+      encryptionKey = WebAuthnCryptoService.instance.getKeyFromSession(deviceId);
+    } else {
+      // Native: Use secure storage encryption key
+      encryptionKey = await NativeCryptoService.instance.getKey(deviceId);
     }
-    debugPrint('[SIGNAL INIT] ✓ Encryption key verified');
+    
+    if (encryptionKey == null) {
+      throw Exception('Encryption key not found. Please log in again to re-authenticate.');
+    }
+    debugPrint('[SIGNAL INIT] ✓ Encryption key verified (${encryptionKey.length} bytes)');
 
     // Initialize stores (create only if not already created)
     // Since stores are declared as `late`, they can only be safely accessed after creation

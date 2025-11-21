@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:universal_html/html.dart' as html show window;
 import 'package:go_router/go_router.dart';
-import 'socket_service.dart';
+import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'signal_setup_service.dart';
 import 'user_profile_service.dart';
 import 'api_service.dart';

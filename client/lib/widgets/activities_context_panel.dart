@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import '../services/socket_service.dart';
+import '../services/socket_service.dart' if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/user_profile_service.dart';
 
 /// Activities Context Panel - Notification List

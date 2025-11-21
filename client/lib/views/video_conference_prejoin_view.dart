@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
 import '../services/video_conference_service.dart';
 import '../services/signal_service.dart';
-import '../services/socket_service.dart';
+import '../services/socket_service.dart' if (dart.library.io) '../services/socket_service_native.dart';
 import '../extensions/snackbar_extensions.dart';
 import 'dart:async';
 
@@ -59,7 +59,43 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
   /// Initialize PreJoin flow
   Future<void> _initializePreJoin() async {
     try {
-      // Step 0: Check if already in a different channel - if so, leave it first
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('[PreJoin] 🚀 INITIALIZING PREJOIN');
+      debugPrint('[PreJoin] Channel: ${widget.channelId}');
+      
+      // Step 0: Check socket connection status
+      final socketConnected = SocketService().isConnected;
+      debugPrint('[PreJoin] Socket connected: $socketConnected');
+      
+      if (!socketConnected) {
+        debugPrint('[PreJoin] ⚠️ Socket not connected! Waiting for connection...');
+        // Wait up to 5 seconds for socket to connect
+        int attempts = 0;
+        while (!SocketService().isConnected && attempts < 50) {
+          await Future.delayed(Duration(milliseconds: 100));
+          attempts++;
+        }
+        
+        if (!SocketService().isConnected) {
+          debugPrint('[PreJoin] ❌ Socket connection timeout after 5 seconds');
+          if (mounted) {
+            context.showErrorSnackBar('Not connected to server. Please check your connection.');
+          }
+          return;
+        }
+        
+        debugPrint('[PreJoin] ✓ Socket connected after ${attempts * 100}ms');
+      }
+      
+      // Check user authentication status
+      final userId = SignalService.instance.currentUserId;
+      final deviceId = SignalService.instance.currentDeviceId;
+      debugPrint('[PreJoin] User authentication status:');
+      debugPrint('[PreJoin]   - userId: $userId');
+      debugPrint('[PreJoin]   - deviceId: $deviceId');
+      debugPrint('═══════════════════════════════════════════════════════════');
+      
+      // Step 1: Check if already in a different channel - if so, leave it first
       final videoService = VideoConferenceService.instance;
       if (videoService.isInCall && videoService.currentChannelId != widget.channelId) {
         debugPrint('[PreJoin] Already in a different channel (${videoService.currentChannelId}), leaving it first...');

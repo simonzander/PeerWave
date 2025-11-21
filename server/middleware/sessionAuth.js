@@ -85,8 +85,14 @@ async function verifySessionAuth(req, res, next) {
     }
 
     // 4. Generate expected signature
-    const requestBody = req.body ? JSON.stringify(req.body) : '';
-    const message = `${clientId}:${timestamp}:${nonce}:${req.path}:${requestBody}`;
+    // For GET requests or empty bodies, use empty string (not '{}')
+    let requestBody = '';
+    if (req.body && Object.keys(req.body).length > 0) {
+        requestBody = JSON.stringify(req.body);
+    }
+    // Use full path (e.g., /api/livekit/token) not relative path (e.g., /token)
+    const fullPath = req.originalUrl.split('?')[0];
+    const message = `${clientId}:${timestamp}:${nonce}:${fullPath}:${requestBody}`;
     const expectedSignature = crypto
       .createHmac('sha256', session.session_secret)
       .update(message)

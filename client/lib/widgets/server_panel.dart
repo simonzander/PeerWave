@@ -27,6 +27,13 @@ class _ServerPanelState extends State<ServerPanel> {
     _loadServers();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reload servers when dependencies change (e.g., after navigation)
+    _loadServers();
+  }
+
   void _loadServers() {
     setState(() {
       _servers = ServerConfigService.getAllServers();
@@ -82,6 +89,16 @@ class _ServerPanelState extends State<ServerPanel> {
               onTap: () async {
                 Navigator.pop(context);
                 await _logoutFromServer(server);
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: Icon(Icons.delete_forever, color: Theme.of(context).colorScheme.error),
+              title: Text('Delete Server', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              subtitle: const Text('Remove all data'),
+              onTap: () async {
+                Navigator.pop(context);
+                await _deleteServer(server);
               },
             ),
           ],
@@ -163,6 +180,75 @@ class _ServerPanelState extends State<ServerPanel> {
     }
   }
 
+  Future<void> _deleteServer(ServerConfig server) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Server'),
+        content: Text(
+          'Are you sure you want to PERMANENTLY DELETE ${server.getDisplayName()}?\n\n'
+          '⚠️ This will remove:\n'
+          '• All messages and channels\n'
+          '• All files and media\n'
+          '• Encryption keys\n'
+          '• SQLite databases\n'
+          '• All local data\n\n'
+          'This action CANNOT be undone!',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete Permanently'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      // Show loading
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Deleting server data...')),
+        );
+      }
+
+      try {
+        await ServerConfigService.deleteServerWithData(server.id);
+        _loadServers();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Server deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+        
+        // If no servers left, go to server selection
+        if (_servers.isEmpty && mounted) {
+          context.go('/server-selection');
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting server: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -239,6 +325,7 @@ class _ServerIcon extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       onLongPress: onLongPress,
+      onSecondaryTap: onLongPress, // Right-click support for desktop
       child: Stack(
         alignment: Alignment.center,
         children: [

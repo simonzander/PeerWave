@@ -17,7 +17,7 @@ import 'dart:async';
 import '../services/file_transfer/storage_interface.dart';
 import '../services/file_transfer/file_transfer_service.dart';
 import '../services/file_transfer/socket_file_client.dart';
-import '../services/socket_service.dart';
+import '../services/socket_service.dart' if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/signal_service.dart';
 
 /// Enhanced message input with all features:

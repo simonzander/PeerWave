@@ -1,10 +1,12 @@
-import 'socket_service.dart';
+import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 // import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // ❌ LEGACY - Not used anymore
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'device_scoped_storage_service.dart';
 import 'api_service.dart';
+import '../web_config.dart';
+import 'server_config_web.dart' if (dart.library.io) 'server_config_native.dart';
 
 /// A persistent pre-key store for Signal pre-keys.
 /// Uses IndexedDB on web and FlutterSecureStorage on native.
@@ -20,6 +22,18 @@ class PermanentPreKeyStore extends PreKeyStore {
     debugPrint("[PREKEY STORE] Storing ${preKeys.length} PreKeys via HTTP batch upload");
     
     try {
+      // Get server URL (platform-specific)
+      String? serverUrl;
+      if (kIsWeb) {
+        serverUrl = await loadWebApiServer();
+      } else {
+        // Native: Get from ServerConfigService
+        final activeServer = ServerConfigService.getActiveServer();
+        serverUrl = activeServer?.serverUrl;
+      }
+      
+      final urlString = ApiService.ensureHttpPrefix(serverUrl ?? '');
+      
       // Prepare payload
       final preKeyPayload = preKeys.map((k) => {
         'id': k.id,
@@ -28,7 +42,7 @@ class PermanentPreKeyStore extends PreKeyStore {
       
       // Send via HTTP POST
       final response = await ApiService.post(
-        '/signal/prekeys/batch',
+        '$urlString/signal/prekeys/batch',
         data: { 'preKeys': preKeyPayload }
       );
       

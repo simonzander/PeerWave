@@ -30,13 +30,18 @@ class DeviceIdentityService {
   /// [email] - User's email address
   /// [credentialId] - WebAuthn credential ID (base64)
   /// [clientId] - UUID unique to this browser/device (already implemented in your codebase)
-  void setDeviceIdentity(String email, String credentialId, String clientId) {
+  /// Initialize device identity after authentication
+  /// 
+  /// [email] - User's email address
+  /// [credentialId] - WebAuthn credential ID (base64) or synthetic ID for native
+  /// [clientId] - UUID unique to this browser/device
+  Future<void> setDeviceIdentity(String email, String credentialId, String clientId) async {
     _email = email;
     _credentialId = credentialId;
     _clientId = clientId;
     _deviceId = _generateDeviceId(email, credentialId, clientId);
     
-    // 💾 Persist to storage (fire and forget for native)
+    // 💾 Persist to storage
     final data = jsonEncode({
       'email': email,
       'credentialId': credentialId,
@@ -44,12 +49,18 @@ class DeviceIdentityService {
       'deviceId': _deviceId,
     });
     
-    if (kIsWeb) {
-      html.window.sessionStorage[_storageKey] = data;
-    } else {
-      // For native, use secure storage (persists across restarts)
-      // Fire and forget - don't wait for write to complete
-      _secureStorage.write(key: _storageKey, value: data);
+    try {
+      if (kIsWeb) {
+        html.window.sessionStorage[_storageKey] = data;
+        debugPrint('[DEVICE_IDENTITY] ✓ Saved to SessionStorage');
+      } else {
+        // For native, use secure storage (persists across restarts)
+        await _secureStorage.write(key: _storageKey, value: data);
+        debugPrint('[DEVICE_IDENTITY] ✓ Saved to secure storage');
+      }
+    } catch (e) {
+      debugPrint('[DEVICE_IDENTITY] ❌ Error saving to storage: $e');
+      rethrow;
     }
     
     debugPrint('[DEVICE_IDENTITY] Device initialized');

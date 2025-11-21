@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'socket_service.dart';
+import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'signal_service.dart';
 import 'video_conference_service.dart';
 import 'user_profile_service.dart';

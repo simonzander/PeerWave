@@ -71,6 +71,16 @@ class SessionAuthInterceptor extends Interceptor {
         final activeServer = ServerConfigService.getActiveServer();
         
         if (activeServer != null) {
+          // Set base URL if not already set or if it's a relative path
+          if (!options.path.startsWith('http://') && !options.path.startsWith('https://')) {
+            final baseUrl = activeServer.serverUrl;
+            // Ensure baseUrl ends without slash and path starts with slash
+            final cleanBase = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+            final cleanPath = options.path.startsWith('/') ? options.path : '/$options.path';
+            options.path = '$cleanBase$cleanPath';
+            debugPrint('[SessionAuth] Set full URL: ${options.path}');
+          }
+          
           // Get client ID from device
           final clientId = await ClientIdService.getClientId();
           
@@ -78,16 +88,21 @@ class SessionAuthInterceptor extends Interceptor {
           final hasSession = await SessionAuthService().hasSession(clientId);
           
           if (hasSession) {
+            // Extract just the path from the full URL for signature calculation
+            // Dio's options.path contains the full URL, but server expects just the path part
+            final uri = Uri.parse(options.path);
+            final pathOnly = uri.path;
+            
             // Generate auth headers
             final authHeaders = await SessionAuthService().generateAuthHeaders(
               clientId: clientId,
-              requestPath: options.path,
+              requestPath: pathOnly,
               requestBody: options.data != null ? json.encode(options.data) : null,
             );
             
             // Add headers to request
             options.headers.addAll(authHeaders);
-            debugPrint('[SessionAuth] Added auth headers for request: ${options.path}');
+            debugPrint('[SessionAuth] Added auth headers for request: ${options.path} (path: $pathOnly)');
           } else {
             debugPrint('[SessionAuth] No session found for client: $clientId');
           }
@@ -205,11 +220,12 @@ class ApiService {
 
   static void init() {
     if (!_initialized) {
+      // Add cookie manager for native clients
       if (!kIsWeb) {
         dio.interceptors.add(CookieManager(cookieJar));
       }
       
-      // Add SessionAuth interceptor first (before auth checks)
+      // Add SessionAuth interceptor first (handles both baseUrl and auth headers for native)
       dio.interceptors.add(SessionAuthInterceptor());
       
       // Add 401 Unauthorized interceptor (should be after auth headers added)

@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'socket_service.dart';
+import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'signal_service.dart';
 import 'signal_setup_service.dart';
 import 'ice_config_service.dart';
