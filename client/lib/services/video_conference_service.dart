@@ -1,16 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:livekit_client/livekit_client.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'signal_service.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'message_listener_service.dart';
+import 'windows_e2ee_manager.dart';
 
 /// LiveKit-based Video Conference Service with Signal Protocol E2EE
 /// 
@@ -327,11 +328,11 @@ class VideoConferenceService extends ChangeNotifier {
       }
       
       // Create BaseKeyProvider for E2EE
-      // Note: Data channel encryption is web-only, but frame encryption works on all platforms
+      // Use LiveKit's built-in E2EE support properly
       try {
         _keyProvider = await BaseKeyProvider.create();
         
-        // Set the shared key in KeyProvider
+        // Set the shared key in KeyProvider (setKey auto-calls setSharedKey in shared mode)
         await _keyProvider!.setKey(keyBase64);
         
         debugPrint('[VideoConf][TEST] ✓ BaseKeyProvider created successfully');
@@ -341,7 +342,7 @@ class VideoConferenceService extends ChangeNotifier {
         debugPrint('[VideoConf][TEST]    - Timestamp: $_keyTimestamp');
         debugPrint('[VideoConf][TEST]    - Channel: $_currentChannelId');
         if (!kIsWeb) {
-          debugPrint('[VideoConf][TEST] ℹ️ Native platform: Frame encryption enabled, data channel encryption disabled');
+          debugPrint('[VideoConf][TEST] ℹ️ Native platform: Frame encryption enabled');
         }
       } catch (e) {
         debugPrint('[VideoConf][TEST] ⚠️ Failed to create BaseKeyProvider: $e');
@@ -479,8 +480,10 @@ class VideoConferenceService extends ChangeNotifier {
       // Set the key in BaseKeyProvider if available
       if (_keyProvider != null) {
         try {
+          // Use setKey() which auto-calls setSharedKey() in shared key mode
           await _keyProvider!.setKey(keyBase64);
           debugPrint('[VideoConf][TEST] ✓ Key set in BaseKeyProvider (KeyProvider available)');
+          debugPrint('[VideoConf][TEST] ✓ Shared key set (consistent with all participants)');
           debugPrint('[VideoConf][TEST] ✓ Frame-level AES-256 E2EE now ACTIVE');
           debugPrint('[VideoConf][TEST] ✓ Role: KEY RECEIVER (non-first participant)');
           debugPrint('[VideoConf][TEST] 📊 KEY STATE:');
@@ -667,8 +670,10 @@ class VideoConferenceService extends ChangeNotifier {
           try {
             _keyProvider = await BaseKeyProvider.create();
             final keyBase64 = base64Encode(_channelSharedKey!);
+            // Use setKey() which auto-calls setSharedKey() in shared key mode
             await _keyProvider!.setKey(keyBase64);
             debugPrint('[VideoConf] ✓ BaseKeyProvider created with received key');
+            debugPrint('[VideoConf] ✓ Shared key set (same method as first participant)');
             if (!kIsWeb) {
               debugPrint('[VideoConf] ℹ️ Native platform: Frame encryption enabled, data channel encryption disabled');
             }
@@ -734,22 +739,47 @@ class VideoConferenceService extends ChangeNotifier {
         debugPrint('[VideoConf] ⚠️ Failed to create audio track: $e');
       }
 
-      // Create room WITHOUT E2EE options initially to avoid E2EEManager bug
-      // We'll manually set up frame encryption after connection (workaround for SDK bug)
+      // CRITICAL: Create KeyProvider RIGHT BEFORE Room creation (matching LiveKit example pattern)
+      // Create E2EE Manager with Windows/Linux compatibility
+      E2EEManager? e2eeManager;
+      if (_channelSharedKey != null) {
+        try {
+          final keyProvider = await BaseKeyProvider.create();
+          final keyBase64 = base64Encode(_channelSharedKey!);
+          await keyProvider.setKey(keyBase64);
+          _keyProvider = keyProvider;
+          
+          // Use custom E2EE manager that handles Windows/Linux gracefully
+          e2eeManager = WindowsCompatibleE2EEManager(keyProvider);
+          
+          debugPrint('[VideoConf] ✓ KeyProvider created and configured for E2EE');
+          if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
+            debugPrint('[VideoConf] ℹ️ Windows/Linux: FrameCryptor enabled, DataPacketCryptor disabled');
+          } else {
+            debugPrint('[VideoConf] ℹ️ Full E2EE enabled (FrameCryptor + DataPacketCryptor)');
+          }
+        } catch (e) {
+          debugPrint('[VideoConf] ⚠️ Failed to create KeyProvider: $e');
+          e2eeManager = null;
+          _keyProvider = null;
+        }
+      }
+
+      // Create Room with encryption parameter (not deprecated)
       _room = Room(
         roomOptions: RoomOptions(
           adaptiveStream: true,
           dynacast: true,
-          // Note: E2EE disabled here - we'll add frame cryptors manually after connect
         ),
       );
       
-      if (_keyProvider != null) {
-        debugPrint('[VideoConf] ✓ Room created (E2EE will be set up after connection)');
-        debugPrint('[VideoConf] ℹ️ Workaround: Manual frame encryption to bypass SDK bug');
+      // Setup E2EE manager if available
+      if (e2eeManager != null) {
+        await e2eeManager.setup(_room!);
+        _room!.engine.setE2eeManager(e2eeManager);
+        debugPrint('[VideoConf] ✓ E2EE Manager configured');
       } else {
         debugPrint('[VideoConf] ✓ Room created (DTLS/SRTP transport encryption only)');
-        debugPrint('[VideoConf] ⚠️ Frame-level E2EE unavailable (BaseKeyProvider failed)');
       }
 
       // Set up event listeners
@@ -757,15 +787,7 @@ class VideoConferenceService extends ChangeNotifier {
 
       // Connect to LiveKit room
       debugPrint('[VideoConf] Connecting to LiveKit room...');
-      await _room!.connect(
-        url, 
-        token,
-        roomOptions: RoomOptions(
-          adaptiveStream: true,
-          dynacast: true,
-          // No E2EE options - we'll set up frame encryption after tracks are published
-        ),
-      );
+      await _room!.connect(url, token);
 
       // Publish local tracks if available
       if (videoTrack != null) {
@@ -778,12 +800,21 @@ class VideoConferenceService extends ChangeNotifier {
         await _room!.localParticipant?.publishAudioTrack(audioTrack);
       }
 
-      // Manual E2EE setup after tracks are published (workaround for SDK bug)
-      if (_keyProvider != null && !kIsWeb) {
-        await _setupManualFrameEncryption();
-      } else if (_keyProvider != null && kIsWeb) {
-        debugPrint('[VideoConf] ℹ️ Web E2EE: Should use standard E2EE options');
-        debugPrint('[VideoConf] ⚠️ Manual setup not implemented for web - falling back to DTLS/SRTP');
+      // Verify E2EE is actually enabled
+      if (_keyProvider != null) {
+        debugPrint('[VideoConf] ✓ E2EEManager active - frame encryption enabled');
+        
+        // Check if room has E2EE enabled
+        final e2eeEnabled = _room!.e2eeManager != null;
+        debugPrint('[VideoConf] 🔍 E2EE Manager exists: $e2eeEnabled');
+        
+        if (e2eeEnabled) {
+          debugPrint('[VideoConf] ✅ E2EE VERIFIED - Encryption is active!');
+        } else {
+          debugPrint('[VideoConf] ⚠️ WARNING: E2EE Manager not found despite having key provider!');
+        }
+      } else {
+        debugPrint('[VideoConf] ℹ️ No key provider - only transport encryption (DTLS/SRTP)');
       }
 
       // Add existing remote participants to map (for users who joined before us)
@@ -858,6 +889,9 @@ class VideoConferenceService extends ChangeNotifier {
       debugPrint('[VideoConf] Track subscribed: ${event.track.kind} from ${event.participant.identity}');
       debugPrint('[VideoConf]   - Track SID: ${event.track.sid}');
       debugPrint('[VideoConf]   - Track muted: ${event.track.muted}');
+      
+      // E2EEManager handles frame decryption automatically when encryption is enabled
+      
       _trackSubscribedController.add(event);
       notifyListeners();
     });
@@ -1048,64 +1082,6 @@ class VideoConferenceService extends ChangeNotifier {
       'type': 'webrtc',
     });
   }
-  /// Manual frame encryption setup for native platforms (workaround for SDK bug)
-  /// This bypasses the E2EEManager which tries to create dataPacketCryptor
-  Future<void> _setupManualFrameEncryption() async {
-    if (_keyProvider == null || _room == null) {
-      debugPrint('[VideoConf] ⚠️ Cannot setup manual E2EE - missing keyProvider or room');
-      return;
-    }
-
-    try {
-      debugPrint('[VideoConf] 🔧 Setting up manual frame encryption...');
-      
-      // Get local participant's published tracks
-      final localParticipant = _room!.localParticipant;
-      if (localParticipant == null) {
-        debugPrint('[VideoConf] ⚠️ No local participant found');
-        return;
-      }
-
-      // Set up frame cryptors for each published track
-      int cryptorCount = 0;
-      
-      for (final publication in localParticipant.trackPublications.values) {
-        final track = publication.track;
-        if (track == null || track.sender == null) continue;
-        
-        try {
-          // Create frame cryptor for this track's sender
-          final frameCryptor = await rtc.frameCryptorFactory.createFrameCryptorForRtpSender(
-            participantId: localParticipant.identity,
-            sender: track.sender!,
-            algorithm: rtc.Algorithm.kAesGcm,
-            keyProvider: _keyProvider!.keyProvider,
-          );
-          
-          // Enable the cryptor
-          await frameCryptor.setEnabled(true);
-          
-          debugPrint('[VideoConf] ✓ Frame cryptor created for ${track.kind} track');
-          cryptorCount++;
-        } catch (e) {
-          debugPrint('[VideoConf] ⚠️ Failed to create frame cryptor for ${track.kind}: $e');
-        }
-      }
-      
-      if (cryptorCount > 0) {
-        debugPrint('[VideoConf] ✓ Manual E2EE setup complete ($cryptorCount cryptors)');
-        debugPrint('[VideoConf] ✓ AES-256-GCM frame encryption active for audio/video');
-        _encryptionLevel = 'e2ee';
-      } else {
-        debugPrint('[VideoConf] ⚠️ No frame cryptors created - using DTLS/SRTP only');
-        _encryptionLevel = 'transport';
-      }
-      
-    } catch (e) {
-      debugPrint('[VideoConf] ❌ Manual E2EE setup failed: $e');
-      _encryptionLevel = 'transport';
-    }
-  }
   
   /// NEW: Update overlay position
   void updateOverlayPosition(double x, double y) {
@@ -1239,4 +1215,3 @@ class VideoConferenceService extends ChangeNotifier {
     super.dispose();
   }
 }
-

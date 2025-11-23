@@ -79,6 +79,15 @@ class SocketService {
               ? data['deviceId'] as int
               : int.parse(data['deviceId'].toString());
           SignalService.instance.setCurrentUserInfo(data['uuid'], deviceId);
+          
+          // 🚀 CRITICAL: Only notify server AFTER authentication succeeds
+          // This was previously called too early in initStoresAndListeners()
+          if (_listenersRegistered) {
+            debugPrint('[SOCKET SERVICE] 🚀 Authentication complete - notifying server client is ready');
+            _socket!.emit('clientReady', {
+              'timestamp': DateTime.now().toIso8601String(),
+            });
+          }
         }
       });
       _socket!.on('disconnect', (_) {
@@ -87,6 +96,7 @@ class SocketService {
       });
       _socket!.on('reconnect', (_) {
         debugPrint('[SOCKET SERVICE] Socket reconnected');
+        resetReadyState(); // Reset ready state on reconnect
         // Re-authenticate after reconnection
         _authenticateSocket();
       });
@@ -149,14 +159,17 @@ class SocketService {
   /// Notify server that all listeners are registered and client is ready
   /// Call this AFTER all PreKeys are generated and listeners registered
   void notifyClientReady() {
+    _listenersRegistered = true;
+    debugPrint('[SOCKET SERVICE] 🚀 Listeners registered');
+    
+    // If already authenticated and connected, notify immediately
     if (_socket?.connected ?? false) {
-      _listenersRegistered = true;
-      debugPrint('[SOCKET SERVICE] 🚀 Client ready - notifying server');
+      debugPrint('[SOCKET SERVICE] 🚀 Socket already authenticated - notifying server');
       _socket!.emit('clientReady', {
         'timestamp': DateTime.now().toIso8601String(),
       });
     } else {
-      debugPrint('[SOCKET SERVICE] ⚠️ Cannot notify ready - socket not connected');
+      debugPrint('[SOCKET SERVICE] ⚠️ Socket not connected yet - will notify after authentication');
     }
   }
   

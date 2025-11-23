@@ -22,6 +22,7 @@ import 'device_identity_service.dart';
 import 'web/webauthn_crypto_service.dart';
 import 'native_crypto_service.dart';
 import 'event_bus.dart';
+import 'server_config_web.dart' if (dart.library.io) 'server_config_native.dart';
 
 class SignalService {
   static final SignalService instance = SignalService._internal();
@@ -3052,9 +3053,22 @@ Future<String> decryptItem({
         }
       }
       
+      // Get server URL (platform-specific)
+      String urlString;
+      if (kIsWeb) {
+        final apiServer = await loadWebApiServer();
+        urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
+      } else {
+        // Native: Use active server from ServerConfigService
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer == null) {
+          debugPrint('[SIGNAL_SERVICE] No active server configured');
+          return false;
+        }
+        urlString = activeServer.serverUrl;
+      }
+      
       // Load from server via REST API
-      final apiServer = await loadWebApiServer();
-      final urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
       final response = await ApiService.get(
         '$urlString/api/sender-keys/$channelId/$userId/$deviceId'
       );
@@ -3105,8 +3119,20 @@ Future<String> decryptItem({
     try {
       debugPrint('[SIGNAL_SERVICE] Loading all sender keys for channel $channelId');
       
-      final apiServer = await loadWebApiServer();
-      final urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
+      // Get server URL (platform-specific)
+      String urlString;
+      if (kIsWeb) {
+        final apiServer = await loadWebApiServer();
+        urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
+      } else {
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer == null) {
+          debugPrint('[SIGNAL_SERVICE] No active server configured');
+          return result;
+        }
+        urlString = activeServer.serverUrl;
+      }
+      
       final response = await ApiService.get('$urlString/api/sender-keys/$channelId');
       
       if (response.statusCode == 200 && response.data['success'] == true) {
@@ -3198,9 +3224,20 @@ Future<String> decryptItem({
       
       final senderKeyBase64 = base64Encode(distributionMessage);
       
+      // Get server URL (platform-specific)
+      String urlString;
+      if (kIsWeb) {
+        final apiServer = await loadWebApiServer();
+        urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
+      } else {
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer == null) {
+          throw Exception('No active server configured');
+        }
+        urlString = activeServer.serverUrl;
+      }
+      
       // Upload to server
-      final apiServer = await loadWebApiServer();
-      final urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
       final response = await ApiService.post(
         '$urlString/api/sender-keys/$channelId',
         data: {

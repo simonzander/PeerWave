@@ -61,6 +61,7 @@ dependencies:
   connectivity_plus: ^6.1.5
   crypto: ^3.0.6
   pointycastle: ^4.0.0
+  flutter_webrtc: ^1.2.0  # Required by livekit_client for E2EE on native platforms
   livekit_client: ^2.5.3
   file_picker: ^10.3.3
   mime: ^2.0.0

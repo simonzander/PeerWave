@@ -1,14 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const { SignalSenderKey, ChannelMembers, User, Client } = require('../db/model');
+const { verifyAuthEither } = require('../middleware/sessionAuth');
 
 /**
  * GET /api/sender-keys/:channelId
  * Get all sender keys for a channel (for initial sync)
  */
-router.get('/:channelId', async (req, res) => {
+router.get('/:channelId', verifyAuthEither, async (req, res) => {
     try {
-        const userId = req.session?.uuid;
+        const userId = req.userId;
         if (!userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
@@ -63,9 +64,9 @@ router.get('/:channelId', async (req, res) => {
  * GET /api/sender-keys/:channelId/:userId/:deviceId
  * Get a specific sender key
  */
-router.get('/:channelId/:userId/:deviceId', async (req, res) => {
+router.get('/:channelId/:userId/:deviceId', verifyAuthEither, async (req, res) => {
     try {
-        const requesterId = req.session?.uuid;
+        const requesterId = req.userId;
         if (!requesterId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
@@ -127,9 +128,9 @@ router.get('/:channelId/:userId/:deviceId', async (req, res) => {
  * Create or update sender key for current user
  * Body: { senderKey, deviceId }
  */
-router.post('/:channelId', async (req, res) => {
+router.post('/:channelId', verifyAuthEither, async (req, res) => {
     try {
-        const userId = req.session?.uuid;
+        const userId = req.userId;
         if (!userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }

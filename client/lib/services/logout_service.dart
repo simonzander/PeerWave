@@ -14,6 +14,7 @@ import 'web/webauthn_crypto_service.dart';
 import 'native_crypto_service.dart';
 import 'session_auth_service.dart';
 import 'clientid_native.dart';
+import 'server_config_web.dart' if (dart.library.io) 'server_config_native.dart';
 // Import auth service conditionally
 import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
 
@@ -68,52 +69,70 @@ class LogoutService {
             );
             
             // Make request to auth check endpoint
-            final apiServer = await loadWebApiServer();
-            String urlString = apiServer ?? '';
-            if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
-              urlString = 'https://$urlString';
-            }
-            
-            final response = await ApiService.dio.get(
-              '$urlString/client/auth/check',
-              options: Options(
-                headers: authHeaders,
-                validateStatus: (status) => true, // Accept any status code
-              ),
-            );
-            
-            debugPrint('[LOGOUT] Auth check response: ${response.statusCode}');
-            
-            if (response.statusCode == 200 && response.data != null) {
-              final authData = response.data as Map<String, dynamic>;
-              final isAuthenticated = authData['authenticated'] == true;
-              
-              if (isAuthenticated) {
-                debugPrint('[LOGOUT] ✓ Session is still valid - preventing auto-logout');
-                
-                // Show snackbar that user doesn't have permission to logout
-                final validContext = context;
-                if (validContext != null && validContext.mounted) {
-                  ScaffoldMessenger.of(validContext).showSnackBar(
-                    const SnackBar(
-                      content: Text('You don\'t have permission for this action'),
-                      duration: Duration(seconds: 3),
-                      backgroundColor: Colors.orange,
-                    ),
-                  );
-                  
-                  // Redirect to /app
-                  await Future.delayed(const Duration(milliseconds: 100));
-                  GoRouter.of(validContext).go('/app');
-                }
-                
-                _isLoggingOut = false;
-                return; // Stop logout procedure
-              } else {
-                debugPrint('[LOGOUT] Session invalid (${authData['reason']}), proceeding with logout');
+            String? urlString;
+            if (kIsWeb) {
+              final apiServer = await loadWebApiServer();
+              urlString = apiServer ?? '';
+              if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+                urlString = 'https://$urlString';
               }
             } else {
-              debugPrint('[LOGOUT] Auth check failed (status: ${response.statusCode}), proceeding with logout');
+              // Native: Use active server from ServerConfigService
+              final activeServer = ServerConfigService.getActiveServer();
+              if (activeServer == null) {
+                debugPrint('[LOGOUT] No active server configured, proceeding with logout');
+                // No server configured, can't check auth, proceed with logout
+                urlString = null;
+              } else {
+                urlString = activeServer.serverUrl;
+              }
+            }
+            
+            if (urlString == null || urlString.isEmpty) {
+              debugPrint('[LOGOUT] No server URL available, proceeding with logout');
+              // Continue with logout below
+            } else {
+              final response = await ApiService.dio.get(
+                '$urlString/client/auth/check',
+                options: Options(
+                  headers: authHeaders,
+                  validateStatus: (status) => true, // Accept any status code
+                ),
+              );
+              
+              debugPrint('[LOGOUT] Auth check response: ${response.statusCode}');
+              
+              if (response.statusCode == 200 && response.data != null) {
+                final authData = response.data as Map<String, dynamic>;
+                final isAuthenticated = authData['authenticated'] == true;
+                
+                if (isAuthenticated) {
+                  debugPrint('[LOGOUT] ✓ Session is still valid - preventing auto-logout');
+                  
+                  // Show snackbar that user doesn't have permission to logout
+                  final validContext = context;
+                  if (validContext != null && validContext.mounted) {
+                    ScaffoldMessenger.of(validContext).showSnackBar(
+                      const SnackBar(
+                        content: Text('You don\'t have permission for this action'),
+                        duration: Duration(seconds: 3),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                    
+                    // Redirect to /app
+                    await Future.delayed(const Duration(milliseconds: 100));
+                    GoRouter.of(validContext).go('/app');
+                  }
+                  
+                  _isLoggingOut = false;
+                  return; // Stop logout procedure
+                } else {
+                  debugPrint('[LOGOUT] Session invalid (${authData['reason']}), proceeding with logout');
+                }
+              } else {
+                debugPrint('[LOGOUT] Auth check failed (status: ${response.statusCode}), proceeding with logout');
+              }
             }
           } else {
             debugPrint('[LOGOUT] No session found, proceeding with logout');
