@@ -572,7 +572,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   _buildIconButton(
                     icon: Icons.logout,
                     isSelected: false,
-                    onTap: () => LogoutService.instance.logout(context),
+                    onTap: () => LogoutService.instance.logout(context, userInitiated: true),
                     tooltip: 'Logout',
                   ),
                   const SizedBox(height: 12),
@@ -706,7 +706,7 @@ class _DashboardPageState extends State<DashboardPage> {
             title: const Text('Logout'),
             onTap: () {
               Navigator.pop(context);
-              LogoutService.instance.logout(context);
+              LogoutService.instance.logout(context, userInitiated: true);
             },
           ),
           ListTile(

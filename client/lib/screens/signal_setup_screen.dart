@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/signal_service.dart';
+import '../services/signal_setup_service.dart';
 import '../services/logout_service.dart';
 import '../services/device_identity_service.dart';
 import '../services/device_scoped_storage_service.dart';
@@ -47,6 +48,9 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
           _statusText = 'Setup complete! Redirecting...';
           _progress = 1.0;
         });
+
+        // Mark setup as completed to prevent immediate re-check
+        SignalSetupService.instance.markSetupCompleted();
 
         // Small delay before navigation
         await Future.delayed(const Duration(milliseconds: 500));
@@ -145,13 +149,13 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
                       
                       // Logout and redirect
                       if (mounted) {
-                        await LogoutService.instance.logout(context);
+                        await LogoutService.instance.logout(context, userInitiated: true);
                       }
                     } catch (e) {
                       debugPrint('[SIGNAL SETUP] Error deleting local data: $e');
                       // Still logout even if deletion fails
                       if (mounted) {
-                        await LogoutService.instance.logout(context);
+                        await LogoutService.instance.logout(context, userInitiated: true);
                       }
                     }
                   }
@@ -166,7 +170,7 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
                   Navigator.of(context).pop();
                   // Logout and redirect to login
                   if (mounted) {
-                    await LogoutService.instance.logout(context);
+                    await LogoutService.instance.logout(context, userInitiated: true);
                   }
                 },
                 child: const Text('Logout'),

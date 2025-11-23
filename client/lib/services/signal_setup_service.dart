@@ -20,6 +20,7 @@ class SignalSetupService {
 
   bool _postLoginInitComplete = false;
   Completer<void>? _initializationCompleter;
+  bool _setupJustCompleted = false; // Flag to prevent immediate re-check after setup
 
   /// Initialize all services after successful login
   /// This consolidates multiple async operations into one sequential flow
@@ -173,6 +174,21 @@ class SignalSetupService {
   /// Check if Signal Protocol keys are properly set up
   /// Returns a map with setup status and missing keys information
   Future<Map<String, dynamic>> checkKeysStatus() async {
+    // 🔒 GUARD: If setup just completed, give it a grace period before checking again
+    // This prevents redirect loops when keys are still being written to database
+    if (_setupJustCompleted) {
+      debugPrint('[SIGNAL SETUP] Setup just completed, skipping check (grace period)');
+      return {
+        'needsSetup': false,
+        'missingKeys': <String, dynamic>{},
+        'hasIdentity': true,
+        'hasSignedPreKey': true,
+        'preKeysCount': 110, // Assume full set
+        'minPreKeysRequired': 20,
+        'maxPreKeys': 110,
+      };
+    }
+    
     final missingKeys = <String, dynamic>{};
     final result = {
       'needsSetup': false,
@@ -290,6 +306,19 @@ class SignalSetupService {
     return status['needsSetup'] as bool;
   }
 
+  /// Mark that signal setup was just completed
+  /// This provides a grace period to prevent redirect loops
+  void markSetupCompleted() {
+    debugPrint('[SIGNAL SETUP] ✅ Marking setup as just completed (grace period active)');
+    _setupJustCompleted = true;
+    
+    // Clear flag after 3 seconds (keys should be written by then)
+    Future.delayed(const Duration(seconds: 3), () {
+      debugPrint('[SIGNAL SETUP] Grace period expired, normal checks resumed');
+      _setupJustCompleted = false;
+    });
+  }
+
   /// Cleanup on logout - reset initialization state
   void cleanupOnLogout() {
     // 🔒 GUARD: Only cleanup if we were actually initialized
@@ -300,6 +329,7 @@ class SignalSetupService {
     }
     
     debugPrint('[SIGNAL SETUP] Cleaning up on logout...');
+    _setupJustCompleted = false;
     
     // Dispose message listeners
     MessageListenerService.instance.dispose();

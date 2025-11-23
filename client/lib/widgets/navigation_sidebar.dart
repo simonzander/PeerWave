@@ -168,7 +168,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
               size: 24,
             ),
             isSelected: false,
-            onTap: () => LogoutService.instance.logout(context),
+            onTap: () => LogoutService.instance.logout(context, userInitiated: true),
             tooltip: 'Logout',
           ),
           const SizedBox(height: 12),

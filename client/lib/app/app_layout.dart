@@ -295,7 +295,7 @@ class _AppLayoutState extends State<AppLayout> {
             title: const Text('Logout'),
             onTap: () {
               Navigator.pop(context);
-              LogoutService.instance.logout(context);
+              LogoutService.instance.logout(context, userInitiated: true);
             },
           ),
           ListTile(

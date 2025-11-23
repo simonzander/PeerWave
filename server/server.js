@@ -350,6 +350,13 @@ io.sockets.on("connection", socket => {
         socket.data.clientId = clientId;
         socket.data.sessionAuth = true;
         
+        // CRITICAL: Also set socket.handshake.session for compatibility with event handlers
+        // Many handlers check socket.handshake.session.authenticated
+        socket.handshake.session.uuid = session.user_id;
+        socket.handshake.session.deviceId = client.device_id;
+        socket.handshake.session.clientId = clientId;
+        socket.handshake.session.authenticated = true;
+        
         console.log(`[SIGNAL SERVER] ✓ Native client authenticated: ${deviceKey}`);
         
         return socket.emit("authenticated", { 
@@ -408,9 +415,9 @@ io.sockets.on("connection", socket => {
     
     // ✅ Check for pending messages and notify client
     try {
-      if (socket.handshake.session.uuid && socket.handshake.session.deviceId && socket.handshake.session.authenticated === true) {
-        const userId = socket.handshake.session.uuid;
-        const deviceId = socket.handshake.session.deviceId;
+      if (isAuthenticated()) {
+        const userId = getUserId();
+        const deviceId = getDeviceId();
         
         // COUNT query (fast, even with thousands of messages)
         const pendingCount = await Item.count({
@@ -438,14 +445,14 @@ io.sockets.on("connection", socket => {
   // 🚀 NEW: Fetch pending messages with pagination
   socket.on("fetchPendingMessages", async (data) => {
     try {
-      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+      if (!isAuthenticated()) {
         console.error('[SIGNAL SERVER] fetchPendingMessages blocked - not authenticated');
         socket.emit("fetchPendingMessagesError", { error: 'Not authenticated' });
         return;
       }
 
-      const userId = socket.handshake.session.uuid;
-      const deviceId = socket.handshake.session.deviceId;
+      const userId = getUserId();
+      const deviceId = getDeviceId();
       const { limit = 20, offset = 0 } = data;
 
       console.log(`[SIGNAL SERVER] Fetching pending messages: userId=${userId}, deviceId=${deviceId}, limit=${limit}, offset=${offset}`);
@@ -497,12 +504,14 @@ io.sockets.on("connection", socket => {
     console.log("[SIGNAL SERVER] signalIdentity event received");
     console.log(socket.handshake.session);
     try {
-      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+      if(isAuthenticated()) {
+        const userId = getUserId();
+        const clientId = getClientId();
         // Handle the signal identity - enqueue write operation
         await writeQueue.enqueue(async () => {
           return await Client.update(
             { public_key: data.publicKey, registration_id: data.registrationId },
-            { where: { owner: socket.handshake.session.uuid, clientid: socket.handshake.session.clientId } }
+            { where: { owner: userId, clientid: clientId } }
           );
         }, 'signalIdentity');
       }
@@ -941,7 +950,7 @@ io.sockets.on("connection", socket => {
     console.log("[SIGNAL SERVER] Received deprecated sendGroupMessage event", data);
     
     try {
-      if(!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+      if(!isAuthenticated()) {
         console.error('[SIGNAL SERVER] ERROR: sendGroupMessage blocked - not authenticated');
         return;
       }
@@ -969,14 +978,14 @@ io.sockets.on("connection", socket => {
   // GROUP MESSAGE READ RECEIPT HANDLER
   socket.on("groupMessageRead", async (data) => {
     try {
-      if(!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+      if(!isAuthenticated()) {
         console.error('[SIGNAL SERVER] ERROR: groupMessageRead blocked - not authenticated');
         return;
       }
 
       const { itemId, groupId } = data;
-      const readerUserId = socket.handshake.session.uuid;
-      const readerDeviceId = socket.handshake.session.deviceId;
+      const readerUserId = getUserId();
+      const readerDeviceId = getDeviceId();
 
       // Update readed flag for this specific device's Item
       const updatedCount = await writeQueue.enqueue(async () => {
@@ -1054,14 +1063,14 @@ io.sockets.on("connection", socket => {
   // Store sender key on server (when device creates/distributes sender key)
   socket.on("storeSenderKey", async (data) => {
     try {
-      if(!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+      if(!isAuthenticated()) {
         console.error('[SIGNAL SERVER] ERROR: storeSenderKey blocked - not authenticated');
         return;
       }
 
       const { groupId, senderKey } = data;
-      const userId = socket.handshake.session.uuid;
-      const deviceId = socket.handshake.session.deviceId;
+      const userId = getUserId();
+      const deviceId = getDeviceId();
 
       // Find the client record
       const client = await Client.findOne({
@@ -1107,14 +1116,14 @@ io.sockets.on("connection", socket => {
   // Broadcast sender key distribution message to all group members
   socket.on("broadcastSenderKey", async (data) => {
     try {
-      if(!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+      if(!isAuthenticated()) {
         console.error('[SIGNAL SERVER] ERROR: broadcastSenderKey blocked - not authenticated');
         return;
       }
 
       const { groupId, distributionMessage } = data;
-      const userId = socket.handshake.session.uuid;
-      const deviceId = socket.handshake.session.deviceId;
+      const userId = getUserId();
+      const deviceId = getDeviceId();
 
       console.log(`[SIGNAL SERVER] Broadcasting sender key for ${userId}:${deviceId} to group ${groupId}`);
 
@@ -1167,7 +1176,7 @@ io.sockets.on("connection", socket => {
   // Retrieve sender key from server (when device needs a missing sender key)
   socket.on("getSenderKey", async (data) => {
     try {
-      if(!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+      if(!isAuthenticated()) {
         console.error('[SIGNAL SERVER] ERROR: getSenderKey blocked - not authenticated');
         return;
       }
@@ -1380,13 +1389,13 @@ io.sockets.on("connection", socket => {
    */
   socket.on("announceFile", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+      if (!isAuthenticated()) {
         console.error('[P2P FILE] ERROR: Not authenticated');
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
-      const userId = socket.handshake.session.uuid;
-      const deviceId = socket.handshake.session.deviceId;
+      const userId = getUserId();
+      const deviceId = getDeviceId();
       const { fileId, mimeType, fileSize, checksum, chunkCount, availableChunks, sharedWith } = data;
 
       console.log(`[P2P FILE] Device ${userId}:${deviceId} announcing file: ${fileId.substring(0, 16)}... (${mimeType}, ${fileSize} bytes)`);
@@ -2562,15 +2571,15 @@ io.sockets.on("connection", socket => {
    */
   socket.on("sendGroupItem", async (data) => {
     try {
-      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+      if (!isAuthenticated()) {
         console.error('[GROUP ITEM] ERROR: Not authenticated');
         socket.emit("groupItemError", { error: "Not authenticated" });
         return;
       }
 
       const { channelId, itemId, type, payload, cipherType, timestamp } = data;
-      const userId = socket.handshake.session.uuid;
-      const deviceId = socket.handshake.session.deviceId;
+      const userId = getUserId();
+      const deviceId = getDeviceId();
 
       // Validate required fields
       if (!channelId || !itemId || !payload) {
@@ -2677,12 +2686,12 @@ io.sockets.on("connection", socket => {
    */
   socket.on("deleteGroupItem", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+      if (!isAuthenticated()) {
         console.error('[GROUP ITEM DELETE] ERROR: Not authenticated');
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
-      const userId = socket.handshake.session.uuid;
+      const userId = getUserId();
       const { itemId } = data;
 
       if (!itemId) {
@@ -2726,14 +2735,14 @@ io.sockets.on("connection", socket => {
    */
   socket.on("markGroupItemRead", async (data) => {
     try {
-      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId || socket.handshake.session.authenticated !== true) {
+      if (!isAuthenticated()) {
         console.error('[GROUP ITEM READ] ERROR: Not authenticated');
         return;
       }
 
       const { itemId } = data;
-      const userId = socket.handshake.session.uuid;
-      const deviceId = socket.handshake.session.deviceId;
+      const userId = getUserId();
+      const deviceId = getDeviceId();
 
       if (!itemId) {
         console.error('[GROUP ITEM READ] ERROR: Missing itemId');
