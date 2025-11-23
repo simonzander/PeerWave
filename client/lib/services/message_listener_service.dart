@@ -529,13 +529,21 @@ class MessageListenerService {
         debugPrint('[MESSAGE_LISTENER][TEST]   - Service registered: ${_videoConferenceService != null}');
         debugPrint('[MESSAGE_LISTENER][TEST]   - Has E2EE key: ${_videoConferenceService?.hasE2EEKey ?? false}');
         
-        // ⚠️ IMPORTANT: Ignore our own key requests (sender receives their own broadcast)
+        // ⚠️ IMPORTANT: Check device ID, not just user ID (multi-device support)
+        // Same user can have multiple devices (web + native) that need to exchange keys
         final currentUserId = SignalService.instance.currentUserId;
-        if (requesterId == currentUserId || senderId == currentUserId) {
-          debugPrint('[MESSAGE_LISTENER][TEST] ℹ️ Ignoring own key request (sender echo)');
+        final currentDeviceId = SignalService.instance.currentDeviceId;
+        
+        // Only ignore if it's from the SAME device (true echo)
+        if (requesterId == currentUserId && senderDeviceId == currentDeviceId) {
+          debugPrint('[MESSAGE_LISTENER][TEST] ℹ️ Ignoring own key request from same device (true echo)');
           debugPrint('═══════════════════════════════════════════════════════════');
           return;
         }
+        
+        debugPrint('[MESSAGE_LISTENER][TEST] ℹ️ Request from different device - will respond');
+        debugPrint('[MESSAGE_LISTENER][TEST]   - Requester device: $senderDeviceId');
+        debugPrint('[MESSAGE_LISTENER][TEST]   - Current device: $currentDeviceId');
         
         // Respond if we have a key available (even if not connected to LiveKit room yet)
         if (_videoConferenceService != null && _videoConferenceService!.hasE2EEKey) {

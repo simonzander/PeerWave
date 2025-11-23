@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
 import '../services/video_conference_service.dart';
 import '../services/signal_service.dart';
+import '../services/api_service.dart';
 import '../services/socket_service.dart' if (dart.library.io) '../services/socket_service_native.dart';
 import '../extensions/snackbar_extensions.dart';
 import 'dart:async';
@@ -120,6 +121,10 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       
       // Step 4: Check if first participant
       await _checkParticipantStatus();
+      
+      // Step 4.5: Pre-load sender keys for this channel (CRITICAL for decryption)
+      // This ensures we can decrypt video key responses from other participants
+      await _loadChannelSenderKeys();
       
       // Step 5: Handle E2EE key exchange
       if (_isFirstParticipant) {
@@ -271,7 +276,75 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
     }
   }
   
-  /// Generate E2EE key (for first participant)
+  /// Load sender keys for all channel participants
+  /// CRITICAL: Must be called BEFORE E2EE key exchange to decrypt responses
+  Future<void> _loadChannelSenderKeys() async {
+    try {
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('[PreJoin] 🔑 LOADING SENDER KEYS FOR CHANNEL');
+      debugPrint('[PreJoin] Channel: ${widget.channelId}');
+      
+      // Get all participants' user IDs and device IDs
+      final response = await ApiService.dio.get(
+        '/client/channels/${widget.channelId}/participants',
+      );
+      
+      if (response.data == null) {
+        debugPrint('[PreJoin] ⚠️ No participants data received');
+        return;
+      }
+      
+      final participants = response.data['participants'] as List<dynamic>? ?? [];
+      debugPrint('[PreJoin] Found ${participants.length} participants');
+      
+      int loaded = 0;
+      int failed = 0;
+      
+      // Load sender key for each participant
+      for (final participant in participants) {
+        final userId = participant['uuid'] as String?;
+        final deviceId = participant['deviceId'] as int?;
+        
+        if (userId == null || deviceId == null) continue;
+        
+        // Skip our own device (we already have our own key)
+        if (userId == SignalService.instance.currentUserId && 
+            deviceId == SignalService.instance.currentDeviceId) {
+          continue;
+        }
+        
+        try {
+          final keyLoaded = await SignalService.instance.loadSenderKeyFromServer(
+            channelId: widget.channelId,
+            userId: userId,
+            deviceId: deviceId,
+            forceReload: false, // Use cached if available
+          );
+          
+          if (keyLoaded) {
+            loaded++;
+            debugPrint('[PreJoin] ✓ Loaded sender key for $userId:$deviceId');
+          } else {
+            debugPrint('[PreJoin] ℹ️ No sender key available for $userId:$deviceId (might not have sent any messages yet)');
+          }
+        } catch (e) {
+          failed++;
+          debugPrint('[PreJoin] ⚠️ Failed to load sender key for $userId:$deviceId: $e');
+        }
+      }
+      
+      debugPrint('[PreJoin] Sender key loading complete:');
+      debugPrint('[PreJoin]   - Loaded: $loaded');
+      debugPrint('[PreJoin]   - Failed: $failed');
+      debugPrint('[PreJoin]   - Total participants: ${participants.length}');
+      debugPrint('═══════════════════════════════════════════════════════════');
+    } catch (e) {
+      debugPrint('[PreJoin] ❌ Error loading sender keys: $e');
+      debugPrint('[PreJoin] Continuing anyway - keys will be loaded on-demand if needed');
+    }
+  }
+  
+  /// Generate E2EE key (first participant)
   Future<void> _generateE2EEKey() async {
     try {
       debugPrint('═══════════════════════════════════════════════════════════');

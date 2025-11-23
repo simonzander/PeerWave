@@ -1,7 +1,12 @@
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
+import 'package:uuid/uuid.dart';
 import '../web_config.dart';
 import 'signal_service.dart';
+import 'session_auth_service.dart';
+import 'clientid_native.dart' if (dart.library.js) 'clientid_web_stub.dart';
 // Import auth service conditionally
 import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
 
@@ -52,7 +57,7 @@ class SocketService {
       _socket!.on('connect', (_) {
         debugPrint('[SOCKET SERVICE] Socket connected');
         // Authenticate with the server after connection
-        _socket!.emit('authenticate', null);
+        _authenticateSocket();
       });
       _socket!.on('authenticated', (data) {
         debugPrint('[SOCKET SERVICE] Authentication response: $data');
@@ -83,7 +88,7 @@ class SocketService {
       _socket!.on('reconnect', (_) {
         debugPrint('[SOCKET SERVICE] Socket reconnected');
         // Re-authenticate after reconnection
-        _socket!.emit('authenticate', null);
+        _authenticateSocket();
       });
       _socket!.on('reconnect_attempt', (_) {
         debugPrint('[SOCKET SERVICE] Socket reconnecting...');
@@ -172,10 +177,67 @@ class SocketService {
       _socket?.emit(event, data);
   }
 
+  /// Internal method to authenticate socket connection
+  Future<void> _authenticateSocket() async {
+    if (kIsWeb) {
+      // Web uses cookie-based session authentication
+      debugPrint('[SOCKET SERVICE] Web client - using cookie auth');
+      _socket?.emit('authenticate', null);
+    } else {
+      // Native uses HMAC authentication
+      try {
+        debugPrint('[SOCKET SERVICE] Native client - using HMAC auth');
+        
+        // Import necessary services
+        final clientId = await ClientIdService.getClientId();
+        final hasSession = await SessionAuthService().hasSession(clientId);
+        
+        if (!hasSession) {
+          debugPrint('[SOCKET SERVICE] ⚠️ No HMAC session found for socket auth');
+          _socket?.emit('authenticate', null);
+          return;
+        }
+        
+        // Generate auth headers for Socket.IO authentication
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final nonce = const Uuid().v4();
+        
+        final sessionSecret = await SessionAuthService().getSessionSecret(clientId);
+        if (sessionSecret == null) {
+          debugPrint('[SOCKET SERVICE] ⚠️ No session secret found');
+          _socket?.emit('authenticate', null);
+          return;
+        }
+        
+        // Generate signature for socket authentication
+        // Path is always '/socket.io/auth' for socket authentication
+        final message = '$clientId:$timestamp:$nonce:/socket.io/auth:';
+        final key = utf8.encode(sessionSecret);
+        final bytes = utf8.encode(message);
+        final hmac = Hmac(sha256, key);
+        final digest = hmac.convert(bytes);
+        final signature = digest.toString();
+        
+        final authData = {
+          'X-Client-ID': clientId,
+          'X-Timestamp': timestamp.toString(),
+          'X-Nonce': nonce,
+          'X-Signature': signature,
+        };
+        
+        debugPrint('[SOCKET SERVICE] Sending HMAC auth for socket connection');
+        _socket?.emit('authenticate', authData);
+      } catch (e) {
+        debugPrint('[SOCKET SERVICE] ⚠️ Error generating socket auth: $e');
+        _socket?.emit('authenticate', null);
+      }
+    }
+  }
+
   /// Manually trigger authentication (useful for re-authenticating)
   void authenticate() {
     debugPrint('[SOCKET SERVICE] Manually triggering authentication');
-    _socket?.emit('authenticate', null);
+    _authenticateSocket();
   }
 
   bool get isConnected => _socket?.connected ?? false;

@@ -23,24 +23,52 @@ class SecureSessionStorage {
   static const _sessionSecretPrefix = 'session_secret_';
   static const _sessionMetadataPrefix = 'session_metadata_';
 
-  /// Save session secret for a client
+  /// Save session secret for a client with retry on Windows file lock errors
   Future<void> saveSessionSecret(String clientId, String sessionSecret) async {
     final key = '$_sessionSecretPrefix$clientId';
-    await _storage.write(key: key, value: sessionSecret);
     
-    // Save metadata (timestamp)
-    final metadataKey = '$_sessionMetadataPrefix$clientId';
-    final metadata = {
-      'created_at': DateTime.now().toIso8601String(),
-      'client_id': clientId,
-    };
-    await _storage.write(key: metadataKey, value: metadata.toString());
+    // Retry logic for Windows file locking issues
+    int retries = 3;
+    while (retries > 0) {
+      try {
+        await _storage.write(key: key, value: sessionSecret);
+        
+        // Save metadata (timestamp)
+        final metadataKey = '$_sessionMetadataPrefix$clientId';
+        final metadata = {
+          'created_at': DateTime.now().toIso8601String(),
+          'client_id': clientId,
+        };
+        await _storage.write(key: metadataKey, value: metadata.toString());
+        return; // Success
+      } catch (e) {
+        retries--;
+        if (retries == 0) rethrow;
+        // Wait before retry (file might be locked)
+        await Future.delayed(Duration(milliseconds: 100));
+      }
+    }
   }
 
-  /// Get session secret for a client
+  /// Get session secret for a client with retry on Windows file lock errors
   Future<String?> getSessionSecret(String clientId) async {
     final key = '$_sessionSecretPrefix$clientId';
-    return await _storage.read(key: key);
+    
+    // Retry logic for Windows file locking issues
+    int retries = 3;
+    while (retries > 0) {
+      try {
+        return await _storage.read(key: key);
+      } catch (e) {
+        retries--;
+        if (retries == 0) {
+          print('[SecureSessionStorage] Failed to read session after retries: $e');
+          return null; // Return null instead of throwing
+        }
+        await Future.delayed(Duration(milliseconds: 100));
+      }
+    }
+    return null;
   }
 
   /// Check if session secret exists for client

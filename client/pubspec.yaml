@@ -81,6 +81,7 @@ dependencies:
   mobile_scanner: ^6.0.2  # QR code scanning for native (optional)
   local_notifier: ^0.1.6  # Desktop notifications for native
   universal_html: ^2.3.0
+  bitsdojo_window: ^0.1.6  # Custom window frame for desktop
 
 dev_dependencies:
   flutter_test:

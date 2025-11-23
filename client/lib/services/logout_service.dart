@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:universal_html/html.dart' as html show window;
 import 'package:go_router/go_router.dart';
+import 'package:dio/dio.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'signal_setup_service.dart';
 import 'user_profile_service.dart';
@@ -32,10 +33,10 @@ class LogoutService {
   /// Perform logout with full cleanup
   /// 
   /// This should be called:
-  /// - When user clicks logout button
-  /// - When 401 Unauthorized is received
-  /// - When session expires
-  Future<void> logout(BuildContext? context, {bool showMessage = true}) async {
+  /// - When user clicks logout button (userInitiated = true)
+  /// - When 401 Unauthorized is received (userInitiated = false)
+  /// - When session expires (userInitiated = false)
+  Future<void> logout(BuildContext? context, {bool showMessage = true, bool userInitiated = false}) async {
     if (_isLoggingOut) {
       debugPrint('[LOGOUT] Already logging out, skipping duplicate call');
       return;
@@ -46,8 +47,84 @@ class LogoutService {
 
     try {
       debugPrint('[LOGOUT] ========================================');
-      debugPrint('[LOGOUT] Starting logout process...');
+      debugPrint('[LOGOUT] Starting logout process... (userInitiated: $userInitiated)');
       debugPrint('[LOGOUT] ========================================');
+
+      // NATIVE ONLY: Check authentication status before proceeding with logout
+      // BUT: Skip check if user explicitly clicked logout button
+      if (!kIsWeb && !userInitiated) {
+        try {
+          debugPrint('[LOGOUT] Native: Checking authentication status before auto-logout...');
+          
+          final clientId = await ClientIdService.getClientId();
+          final hasSession = await SessionAuthService().hasSession(clientId);
+          
+          if (hasSession) {
+            // Generate auth headers
+            final authHeaders = await SessionAuthService().generateAuthHeaders(
+              clientId: clientId,
+              requestPath: '/client/auth/check',
+              requestBody: null,
+            );
+            
+            // Make request to auth check endpoint
+            final apiServer = await loadWebApiServer();
+            String urlString = apiServer ?? '';
+            if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+              urlString = 'https://$urlString';
+            }
+            
+            final response = await ApiService.dio.get(
+              '$urlString/client/auth/check',
+              options: Options(
+                headers: authHeaders,
+                validateStatus: (status) => true, // Accept any status code
+              ),
+            );
+            
+            debugPrint('[LOGOUT] Auth check response: ${response.statusCode}');
+            
+            if (response.statusCode == 200 && response.data != null) {
+              final authData = response.data as Map<String, dynamic>;
+              final isAuthenticated = authData['authenticated'] == true;
+              
+              if (isAuthenticated) {
+                debugPrint('[LOGOUT] ✓ Session is still valid - preventing auto-logout');
+                
+                // Show snackbar that user doesn't have permission to logout
+                final validContext = context;
+                if (validContext != null && validContext.mounted) {
+                  ScaffoldMessenger.of(validContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('You don\'t have permission for this action'),
+                      duration: Duration(seconds: 3),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  
+                  // Redirect to /app
+                  await Future.delayed(const Duration(milliseconds: 100));
+                  GoRouter.of(validContext).go('/app');
+                }
+                
+                _isLoggingOut = false;
+                return; // Stop logout procedure
+              } else {
+                debugPrint('[LOGOUT] Session invalid (${authData['reason']}), proceeding with logout');
+              }
+            } else {
+              debugPrint('[LOGOUT] Auth check failed (status: ${response.statusCode}), proceeding with logout');
+            }
+          } else {
+            debugPrint('[LOGOUT] No session found, proceeding with logout');
+          }
+        } catch (e) {
+          debugPrint('[LOGOUT] Auth check error: $e, proceeding with logout');
+          // Continue with logout on error
+        }
+      } else if (!kIsWeb && userInitiated) {
+        debugPrint('[LOGOUT] User-initiated logout - skipping auth check');
+      }
 
       // 1. Disconnect socket
       if (SocketService().isConnected) {

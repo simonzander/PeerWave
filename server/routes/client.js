@@ -1776,6 +1776,163 @@ clientRoutes.get("/client/auth/test", verifyAuthEither, async (req, res) => {
     }
 });
 
+// Check authentication status before logout (for native clients)
+// This endpoint helps native clients determine if they should proceed with logout
+// or if the session is still valid and logout should be prevented due to permissions
+clientRoutes.get("/client/auth/check", async (req, res) => {
+    try {
+        const clientId = req.headers['x-client-id'];
+        const timestamp = parseInt(req.headers['x-timestamp']);
+        const nonce = req.headers['x-nonce'];
+        const signature = req.headers['x-signature'];
+
+        // Check if HMAC headers are present (native client)
+        if (!clientId || !timestamp || !nonce || !signature) {
+            // No HMAC headers - not authenticated
+            console.log('[AUTH CHECK] No HMAC headers found - client not authenticated');
+            return res.status(200).json({
+                authenticated: false,
+                reason: 'no_credentials',
+                message: 'No authentication credentials provided'
+            });
+        }
+
+        // Verify timestamp (±5 minutes window)
+        const now = Date.now();
+        const maxDiff = 5 * 60 * 1000;
+        if (Math.abs(now - timestamp) > maxDiff) {
+            console.log(`[AUTH CHECK] Request expired: timestamp=${timestamp}, now=${now}`);
+            return res.status(200).json({
+                authenticated: false,
+                reason: 'request_expired',
+                message: 'Authentication timestamp expired'
+            });
+        }
+
+        // Check for replay attack (nonce reuse)
+        const [nonceCheck] = await sequelize.query(
+            'SELECT 1 FROM nonce_cache WHERE nonce = ?',
+            { replacements: [nonce] }
+        );
+
+        if (nonceCheck && nonceCheck.length > 0) {
+            console.log(`[AUTH CHECK] Duplicate nonce: ${nonce}`);
+            return res.status(200).json({
+                authenticated: false,
+                reason: 'duplicate_nonce',
+                message: 'Request nonce already used'
+            });
+        }
+
+        // Store nonce for replay prevention
+        await sequelize.query(
+            'INSERT INTO nonce_cache (nonce, created_at) VALUES (?, datetime("now"))',
+            { replacements: [nonce] }
+        );
+
+        // Get session from database
+        const [sessions] = await sequelize.query(
+            `SELECT session_secret, user_id, expires_at, device_info
+             FROM client_sessions 
+             WHERE client_id = ?`,
+            { replacements: [clientId] }
+        );
+
+        if (!sessions || sessions.length === 0) {
+            console.log(`[AUTH CHECK] No session found for client: ${clientId}`);
+            return res.status(200).json({
+                authenticated: false,
+                reason: 'no_session',
+                message: 'No active session for this client'
+            });
+        }
+
+        const session = sessions[0];
+
+        // Check if session expired
+        if (new Date(session.expires_at) < new Date()) {
+            console.log(`[AUTH CHECK] Session expired for client: ${clientId}`);
+            return res.status(200).json({
+                authenticated: false,
+                reason: 'session_expired',
+                message: 'Session has expired'
+            });
+        }
+
+        // Verify HMAC signature
+        const fullPath = req.originalUrl.split('?')[0];
+        const message = `${clientId}:${timestamp}:${nonce}:${fullPath}:`;
+        const expectedSignature = crypto
+            .createHmac('sha256', session.session_secret)
+            .update(message)
+            .digest('hex');
+
+        const signatureBuffer = Buffer.from(signature, 'hex');
+        const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+
+        if (signatureBuffer.length !== expectedBuffer.length ||
+            !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+            console.log(`[AUTH CHECK] Signature mismatch for client: ${clientId}`);
+            return res.status(200).json({
+                authenticated: false,
+                reason: 'invalid_signature',
+                message: 'Authentication signature invalid'
+            });
+        }
+
+        // Update last_used timestamp
+        await sequelize.query(
+            'UPDATE client_sessions SET last_used = datetime("now") WHERE client_id = ?',
+            { replacements: [clientId] }
+        );
+
+        // Check if user still exists and is active
+        const user = await User.findOne({ where: { uuid: session.user_id } });
+        if (!user) {
+            console.log(`[AUTH CHECK] User not found: ${session.user_id}`);
+            return res.status(200).json({
+                authenticated: false,
+                reason: 'user_not_found',
+                message: 'User account not found'
+            });
+        }
+
+        if (!user.active) {
+            console.log(`[AUTH CHECK] User inactive: ${session.user_id}`);
+            return res.status(200).json({
+                authenticated: false,
+                reason: 'user_inactive',
+                message: 'User account is inactive'
+            });
+        }
+
+        // All checks passed - session is valid
+        console.log(`[AUTH CHECK] ✓ Client ${clientId} authenticated successfully`);
+        
+        // Check user permissions for logout prevention scenarios
+        const hasChannelCreatePermission = await hasServerPermission(session.user_id, 'channel.create');
+        
+        res.status(200).json({
+            authenticated: true,
+            userId: session.user_id,
+            email: user.email,
+            displayName: user.displayName,
+            permissions: {
+                channelCreate: hasChannelCreatePermission
+            },
+            sessionExpiresAt: session.expires_at,
+            message: 'Session is valid'
+        });
+    } catch (error) {
+        console.error('[AUTH CHECK] Error:', error);
+        res.status(500).json({
+            authenticated: false,
+            reason: 'server_error',
+            message: 'Internal server error during authentication check'
+        });
+    }
+});
+
 // Check if @name is available
 clientRoutes.get("/client/profile/check-atname", async (req, res) => {
     try {

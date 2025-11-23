@@ -56,6 +56,7 @@ import 'services/file_transfer/chunking_service.dart';
 import 'services/video_conference_service.dart';
 import 'widgets/call_top_bar.dart';
 import 'widgets/call_overlay.dart';
+import 'widgets/custom_window_title_bar.dart';
 import 'screens/file_transfer/file_upload_screen.dart';
 import 'screens/file_transfer/file_manager_screen.dart';
 import 'screens/file_transfer/file_browser_screen.dart';
@@ -76,6 +77,7 @@ import 'services/server_config_web.dart' if (dart.library.io) 'services/server_c
 import 'services/clientid_native.dart' if (dart.library.js) 'services/clientid_web_stub.dart';
 import 'services/session_auth_service.dart';
 import 'debug_storage.dart';
+import 'package:bitsdojo_window/bitsdojo_window.dart';
 
 
 Future<void> main() async {
@@ -132,6 +134,18 @@ Future<void> main() async {
     serverUrl: serverUrl,
     themeProvider: themeProvider,
   ));
+  
+  // Configure native window appearance
+  if (!kIsWeb) {
+    doWhenWindowReady(() {
+      const initialSize = Size(1280, 800);
+      appWindow.minSize = const Size(800, 600);
+      appWindow.size = initialSize;
+      appWindow.alignment = Alignment.center;
+      appWindow.title = "PeerWave";
+      appWindow.show();
+    });
+  }
 }
 
 class MyApp extends StatefulWidget {
@@ -300,12 +314,20 @@ class _MyAppState extends State<MyApp> {
           themeMode: themeProvider.themeMode,
           routerConfig: _router!,
           builder: (context, child) {
+            // Wrap with custom title bar for desktop
+            final contentWithTitleBar = kIsWeb 
+              ? child ?? const SizedBox()
+              : WindowTitleBarWrapper(
+                  title: 'PeerWave',
+                  child: child ?? const SizedBox(),
+                );
+            
             return Stack(
               children: [
                 Column(
                   children: [
                     const CallTopBar(),
-                    Expanded(child: child ?? const SizedBox()),
+                    Expanded(child: contentWithTitleBar),
                   ],
                 ),
                 const CallOverlay(),

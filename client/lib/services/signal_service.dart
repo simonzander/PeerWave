@@ -2914,6 +2914,10 @@ Future<String> decryptItem({
       const SKIP_STORAGE_TYPES = {
         'fileKeyResponse',
         'senderKeyDistribution',
+        'video_e2ee_key_request',  // Video E2EE key exchange (ephemeral)
+        'video_e2ee_key_response', // Video E2EE key exchange (ephemeral)
+        'video_key_request',       // Legacy video key request (ephemeral)
+        'video_key_response',      // Legacy video key response (ephemeral)
       };
       
       final shouldStore = !SKIP_STORAGE_TYPES.contains(type);
