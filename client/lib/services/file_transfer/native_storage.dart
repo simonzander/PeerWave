@@ -3,14 +3,14 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:peerwave_client/core/storage/app_directories.dart';
 import 'storage_interface.dart';
 
 /// Native platform storage implementation (Android/iOS/Desktop)
 /// 
 /// Uses:
 /// - FlutterSecureStorage for metadata & keys
-/// - path_provider + File API for chunks
+/// - AppDirectories cache for chunks
 class NativeStorage implements FileStorageInterface {
   static const String KEY_FILES_LIST = 'files_list';
   static const String KEY_FILE_PREFIX = 'file_';
@@ -22,9 +22,8 @@ class NativeStorage implements FileStorageInterface {
   
   @override
   Future<void> initialize() async {
-    // Get application documents directory
-    final appDir = await getApplicationDocumentsDirectory();
-    _chunksDirectory = Directory('${appDir.path}/file_chunks');
+    // Use structured cache directory for file chunks
+    _chunksDirectory = Directory('${AppDirectories.cacheDirectory.path}/file_chunks');
     
     // Create directory if it doesn't exist
     if (!await _chunksDirectory!.exists()) {

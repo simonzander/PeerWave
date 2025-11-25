@@ -7,7 +7,9 @@ import '../widgets/theme_widgets.dart';
 import '../widgets/navigation_badge.dart';
 import '../widgets/sync_progress_banner.dart';
 import '../widgets/server_panel.dart';
+import '../widgets/server_unavailable_overlay.dart';
 import '../services/logout_service.dart';
+import '../services/server_connection_service.dart';
 import '../config/layout_config.dart';
 import 'package:go_router/go_router.dart';
 
@@ -21,6 +23,23 @@ class AppLayout extends StatefulWidget {
 
 class _AppLayoutState extends State<AppLayout> {
   int _selectedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Start server connection monitoring on native platforms
+    if (!kIsWeb) {
+      ServerConnectionService.instance.startMonitoring();
+    }
+  }
+
+  @override
+  void dispose() {
+    if (!kIsWeb) {
+      ServerConnectionService.instance.stopMonitoring();
+    }
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
@@ -253,20 +272,19 @@ class _AppLayoutState extends State<AppLayout> {
             decoration: BoxDecoration(
               color: colorScheme.primaryContainer,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Icon(
-                  Icons.waves,
-                  size: 48,
-                  color: colorScheme.onPrimaryContainer,
+                Image.asset(
+                  'assets/images/peerwave.png',
+                  width: 40,
+                  height: 40,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(width: 12),
                 Text(
                   'PeerWave',
                   style: TextStyle(
                     color: colorScheme.onPrimaryContainer,
-                    fontSize: 24,
+                    fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -395,29 +413,35 @@ class _AppLayoutState extends State<AppLayout> {
       
       if (layoutType == LayoutType.desktop || layoutType == LayoutType.tablet) {
         return Scaffold(
-          body: Row(
+          body: Stack(
             children: [
-              // Server Panel (far left, 72px) - Always visible on native
-              const ServerPanel(),
-              
-              // Navigation Sidebar (60px) - Hidden on signal-setup/login
-              if (shouldShowNavigation)
-                const NavigationSidebar(),
-              
-              // Content with Sync Banner
-              Expanded(
-                child: Column(
-                  children: [
-                    // 🚀 Sync Progress Banner
-                    const SyncProgressBanner(),
-                    
-                    // Main Content (Views handle their own Context Panel + Main Content)
-                    Expanded(
-                      child: widget.child ?? const DashboardPage(),
+              Row(
+                children: [
+                  // Server Panel (far left, 72px) - Always visible on native
+                  const ServerPanel(),
+                  
+                  // Navigation Sidebar (60px) - Hidden on signal-setup/login
+                  if (shouldShowNavigation)
+                    const NavigationSidebar(),
+                  
+                  // Content with Sync Banner
+                  Expanded(
+                    child: Column(
+                      children: [
+                        // 🚀 Sync Progress Banner
+                        const SyncProgressBanner(),
+                        
+                        // Main Content (Views handle their own Context Panel + Main Content)
+                        Expanded(
+                          child: widget.child ?? const DashboardPage(),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
+              // Server Unavailable Overlay (only on native)
+              const ServerUnavailableOverlay(),
             ],
           ),
         );
@@ -440,15 +464,21 @@ class _AppLayoutState extends State<AppLayout> {
           ),
         ],
         drawer: _buildMobileDrawer(context),
-        body: Column(
+        body: Stack(
           children: [
-            // 🚀 Sync Progress Banner
-            const SyncProgressBanner(),
-            
-            // Main Content
-            Expanded(
-              child: widget.child ?? const DashboardPage(),
+            Column(
+              children: [
+                // 🚀 Sync Progress Banner
+                const SyncProgressBanner(),
+                
+                // Main Content
+                Expanded(
+                  child: widget.child ?? const DashboardPage(),
+                ),
+              ],
             ),
+            // Server Unavailable Overlay (only on native)
+            const ServerUnavailableOverlay(),
           ],
         ),
       );

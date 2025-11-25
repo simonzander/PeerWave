@@ -16,6 +16,18 @@ Write-Host " PeerWave Build & Start" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
+# ===========================================
+# Generate version info from config
+# ===========================================
+Write-Host " [0/X] Generating version info..." -ForegroundColor Yellow
+dart run tools/generate_version.dart
+if ($LASTEXITCODE -ne 0) {
+    Write-Host " Version generation failed!" -ForegroundColor Red
+    exit 1
+}
+Write-Host " Version info generated" -ForegroundColor Green
+Write-Host ""
+
 # Determine build mode
 $mode = "full"
 if ($quick) { $mode = "quick" }

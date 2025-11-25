@@ -208,3 +208,8 @@ livekit-certs/*.pem
 livekit-certs/*.key
 livekit-certs/*.crt
 !livekit-certs/.gitkeep
+
+# Generated files
+client/lib/core/version/version_info.dart
+tools/.dart_tool/
+tools/pubspec.lock

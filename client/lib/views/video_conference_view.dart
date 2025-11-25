@@ -177,7 +177,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  'DTLS/SRTP Encrypted',
+                  'E2E Encrypted',
                   style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.primary,

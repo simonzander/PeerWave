@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:sqflite/sqflite.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart';
+import 'package:peerwave_client/core/storage/app_directories.dart';
 import '../device_identity_service.dart';
 import '../server_config_native.dart';
 
@@ -60,8 +60,7 @@ class DatabaseHelperNative {
 
   /// Initialize the database
   static Future<Database> _initDatabase() async {
-    final directory = await getApplicationDocumentsDirectory();
-    final path = join(directory.path, _databaseName);
+    final path = AppDirectories.getDatabasePath(_databaseName);
     
     debugPrint('[DATABASE_NATIVE] Database path: $path');
     
@@ -316,8 +315,7 @@ class DatabaseHelperNative {
   static Future<void> reset() async {
     await close();
     
-    final directory = await getApplicationDocumentsDirectory();
-    final path = join(directory.path, _databaseName);
+    final path = AppDirectories.getDatabasePath(_databaseName);
     
     try {
       await deleteDatabase(path);

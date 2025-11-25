@@ -78,6 +78,7 @@ import 'services/clientid_native.dart' if (dart.library.js) 'services/clientid_w
 import 'services/session_auth_service.dart';
 import 'debug_storage.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
+import 'core/storage/app_directories.dart';
 
 
 Future<void> main() async {
@@ -88,6 +89,12 @@ Future<void> main() async {
   // NOTE: Client ID generation moved to POST-LOGIN flow
   // Client ID is now fetched from server after WebAuthn authentication
   // based on the user's email (1:1 mapping email -> clientId)
+
+  // Initialize app directories for native (structured storage)
+  if (!kIsWeb) {
+    await AppDirectories.initialize();
+    debugPrint('[INIT] ✅ AppDirectories initialized');
+  }
 
   // Initialize server config service for native (multi-server support)
   if (!kIsWeb) {

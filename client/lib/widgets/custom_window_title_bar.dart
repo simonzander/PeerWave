@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:bitsdojo_window/bitsdojo_window.dart';
+import 'package:peerwave_client/core/version/version_info.dart';
 
 class CustomWindowTitleBar extends StatelessWidget {
   final String title;
@@ -34,11 +35,11 @@ class CustomWindowTitleBar extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
                   child: Row(
                     children: [
-                      // App icon/logo (optional)
-                      Icon(
-                        Icons.waves,
-                        size: 20,
-                        color: theme.colorScheme.primary,
+                      // App logo
+                      Image.asset(
+                        'assets/images/peerwave.png',
+                        width: 20,
+                        height: 20,
                       ),
                       const SizedBox(width: 8),
                       Text(
@@ -47,6 +48,15 @@ class CustomWindowTitleBar extends StatelessWidget {
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
                           color: textColor,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        VersionInfo.displayVersion,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w400,
+                          color: textColor.withOpacity(0.6),
                         ),
                       ),
                     ],

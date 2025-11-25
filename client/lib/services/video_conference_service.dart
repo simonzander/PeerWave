@@ -346,8 +346,7 @@ class VideoConferenceService extends ChangeNotifier {
         }
       } catch (e) {
         debugPrint('[VideoConf][TEST] ⚠️ Failed to create BaseKeyProvider: $e');
-        debugPrint('[VideoConf][TEST] ⚠️ Falling back to DTLS/SRTP transport encryption only');
-        _keyProvider = null;
+        rethrow;
       }
       
       debugPrint('[VideoConf][TEST] ✓ E2EE INITIALIZATION COMPLETE');

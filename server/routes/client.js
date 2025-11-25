@@ -7,6 +7,9 @@ const nodemailer = require("nodemailer");
 const crypto = require('crypto');
 const session = require('express-session');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+const yaml = require('js-yaml');
 const magicLinks = require('../store/magicLinksStore');
 const { User, Channel, Thread, SignalSignedPreKey, SignalPreKey, Client, Item, Role, ChannelMembers, sequelize } = require('../db/model');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
@@ -27,6 +30,23 @@ async function getLocationFromIp(ip) {
         country: data.country_name,
         org: data.org,
         ip: data.ip
+    };
+}
+
+// Load version configuration
+let versionConfig = null;
+try {
+    const versionConfigPath = path.join(__dirname, '../../version_config.yaml');
+    const fileContents = fs.readFileSync(versionConfigPath, 'utf8');
+    versionConfig = yaml.load(fileContents);
+    console.log(`[VERSION] Loaded version config: Server v${versionConfig.server.version}`);
+} catch (error) {
+    console.error('[VERSION] Failed to load version_config.yaml:', error.message);
+    // Fallback to defaults
+    versionConfig = {
+        project: { name: 'PeerWave', description: 'Decentralized communication platform' },
+        server: { version: '1.0.0', min_client_version: '0.9.0', max_client_version: '1.99.99' },
+        client: { version: '1.0.0', min_server_version: '1.0.0', max_server_version: '1.99.99' }
     };
 }
 
@@ -53,8 +73,19 @@ clientRoutes.use(session({
 
 clientRoutes.get("/client/meta", (req, res) => {
     const response = {
-        name: "PeerWave",
-        version: "1.0.0",
+        name: versionConfig.project.name,
+        version: versionConfig.server.version,
+        description: versionConfig.project.description,
+        compatibility: {
+            minClientVersion: versionConfig.server.min_client_version,
+            maxClientVersion: versionConfig.server.max_client_version,
+        },
+        features: {
+            e2ee: true,
+            groupCalls: true,
+            fileSharing: true,
+            webrtc: true,
+        }
     };
     
     // Add ICE server configuration if user is authenticated
