@@ -7,6 +7,7 @@ import '../web_config.dart';
 import 'signal_service.dart';
 import 'session_auth_service.dart';
 import 'clientid_native.dart' if (dart.library.js) 'clientid_web_stub.dart';
+import 'server_connection_service.dart';
 // Import auth service conditionally
 import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
 
@@ -56,6 +57,10 @@ class SocketService {
       });
       _socket!.on('connect', (_) {
         debugPrint('[SOCKET SERVICE] Socket connected');
+        // ✅ Report successful socket connection (only on native)
+        if (!kIsWeb) {
+          ServerConnectionService.instance.reportSuccess();
+        }
         // Authenticate with the server after connection
         _authenticateSocket();
       });
@@ -105,6 +110,10 @@ class SocketService {
       });
       // Listen for unauthorized/authentication errors
       _socket!.on('unauthorized', (_) {
+        // ❌ Report socket error (only on native)
+        if (!kIsWeb) {
+          ServerConnectionService.instance.reportSocketError('Socket unauthorized');
+        }
         // Only trigger auto-logout if user is logged in
         if (AuthService.isLoggedIn) {
           debugPrint('[SOCKET SERVICE] ⚠️  Unauthorized - triggering auto-logout');
@@ -115,6 +124,10 @@ class SocketService {
       });
       _socket!.on('error', (data) {
         debugPrint('[SOCKET SERVICE] Socket error: $data');
+        // ❌ Report socket error (only on native)
+        if (!kIsWeb) {
+          ServerConnectionService.instance.reportSocketError(data);
+        }
         if (data is Map && (data['message']?.toString().contains('unauthorized') ?? false)) {
           // Only trigger auto-logout if user is logged in
           if (AuthService.isLoggedIn) {

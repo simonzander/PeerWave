@@ -9,6 +9,7 @@ import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
 import 'session_auth_service.dart';
 import 'server_config_web.dart' if (dart.library.io) 'server_config_native.dart';
 import 'clientid_native.dart' if (dart.library.js) 'clientid_web_stub.dart';
+import 'server_connection_service.dart';
 
 /// Callback for handling 401 Unauthorized responses
 typedef UnauthorizedCallback = void Function();
@@ -26,6 +27,11 @@ void setGlobalUnauthorizedHandler(UnauthorizedCallback callback) {
 class UnauthorizedInterceptor extends Interceptor {
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
+    // ✅ Report successful API response (server is reachable)
+    if (!kIsWeb) {
+      ServerConnectionService.instance.reportSuccess();
+    }
+    
     if (response.statusCode == 401) {
       // For native: If SessionAuth was attempted (we see the error message), trigger logout
       // For web: Only trigger if already logged in
@@ -44,6 +50,11 @@ class UnauthorizedInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
+    // ❌ Report connection errors (only on native)
+    if (!kIsWeb) {
+      ServerConnectionService.instance.reportHttpError(err);
+    }
+    
     if (err.response?.statusCode == 401) {
       // For native: Always trigger auto-logout on 401
       // For web: Only trigger if already logged in
