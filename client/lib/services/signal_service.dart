@@ -1291,26 +1291,52 @@ class SignalService {
           final messageStore = await SqliteMessageStore.getInstance();
           final messageTimestamp = data['timestamp'] ?? data['createdAt'] ?? DateTime.now().toIso8601String();
           
-          await messageStore.storeReceivedMessage(
-            itemId: itemId,
-            sender: sender,
-            senderDeviceId: senderDeviceId,
-            message: message,
-            timestamp: messageTimestamp,
-            type: data['type'] ?? 'message',
-          );
+          // 🔑 MULTI-DEVICE FIX: Check if message is from own user (different device)
+          final isOwnMessage = sender == _currentUserId;
+          final recipient = data['recipient'] as String?;
+          
+          if (isOwnMessage) {
+            // Message from own device → Store as SENT message
+            // Use the original recipient (the other user in the conversation)
+            final actualRecipient = recipient ?? sender;
+            
+            debugPrint("[SIGNAL SERVICE] 📤 Storing message from own device (Device $senderDeviceId) as SENT to $actualRecipient");
+            await messageStore.storeSentMessage(
+              itemId: itemId,
+              recipientId: actualRecipient,
+              message: message,
+              timestamp: messageTimestamp,
+              type: data['type'] ?? 'message',
+              status: 'delivered', // Already delivered (we received it!)
+            );
+          } else {
+            // Message from another user → Store as RECEIVED message
+            debugPrint("[SIGNAL SERVICE] 📥 Storing message from other user ($sender) as RECEIVED");
+            await messageStore.storeReceivedMessage(
+              itemId: itemId,
+              sender: sender,
+              senderDeviceId: senderDeviceId,
+              message: message,
+              timestamp: messageTimestamp,
+              type: data['type'] ?? 'message',
+            );
+          }
           
           // Update recent conversations list
           final conversationsStore = await SqliteRecentConversationsStore.getInstance();
+          // Use the OTHER user's ID (not own ID)
+          final conversationUserId = isOwnMessage ? (recipient ?? sender) : sender;
           await conversationsStore.addOrUpdateConversation(
-            userId: sender,
-            displayName: sender, // Will be enriched by UI layer
+            userId: conversationUserId,
+            displayName: conversationUserId, // Will be enriched by UI layer
           );
           
-          // Increment unread count for this conversation
-          await conversationsStore.incrementUnreadCount(sender);
+          // Only increment unread count for messages from OTHER users
+          if (!isOwnMessage) {
+            await conversationsStore.incrementUnreadCount(sender);
+          }
           
-          debugPrint("[SIGNAL SERVICE] ✓ Cached decrypted 1:1 message in SQLite for itemId: $itemId");
+          debugPrint("[SIGNAL SERVICE] ✓ Cached decrypted 1:1 message in SQLite for itemId: $itemId (direction: ${isOwnMessage ? 'sent' : 'received'})");
           
           // Load sender's profile if not already cached
           try {
@@ -1423,21 +1449,33 @@ class SignalService {
   }
   
   // ✅ Update unread count for non-system messages (only 'message' and 'file' types)
-  if (!isSystemMessage && _unreadMessagesProvider != null) {
-    // This is a 1:1 direct message (no channel)
+  // Only increment for messages from OTHER users, not own messages
+  final isOwnMessage = sender == _currentUserId;
+  if (!isSystemMessage && !isOwnMessage && _unreadMessagesProvider != null) {
+    // This is a 1:1 direct message (no channel) from another user
     _unreadMessagesProvider!.incrementIfBadgeType(type, sender, false);
   }
   
   // ✅ Emit EventBus event for new 1:1 message/item (after decryption)
   if (!isSystemMessage) {
-    debugPrint('[SIGNAL SERVICE] → EVENT_BUS: newMessage (1:1) - type=$type, sender=$sender');
-    EventBus.instance.emit(AppEvent.newMessage, item);
+    debugPrint('[SIGNAL SERVICE] → EVENT_BUS: newMessage (1:1) - type=$type, sender=$sender, isOwnMessage=$isOwnMessage');
+    
+    // Add isOwnMessage flag to item for UI to distinguish
+    final enrichedItem = {
+      ...item,
+      'isOwnMessage': isOwnMessage,
+    };
+    
+    EventBus.instance.emit(AppEvent.newMessage, enrichedItem);
     
     // Also emit newConversation if this is the first message from this sender
     // (Views can check their conversation list to determine if it's truly new)
+    // Use the OTHER user's ID for conversation (not own ID)
+    final conversationUserId = isOwnMessage ? recipient : sender;
     EventBus.instance.emit(AppEvent.newConversation, {
-      'conversationId': sender,
+      'conversationId': conversationUserId,
       'isChannel': false,
+      'isOwnMessage': isOwnMessage,
     });
   }
   
