@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:just_audio/just_audio.dart';
+import 'package:audioplayers/audioplayers.dart' as ap;
 import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
 import '../utils/file_operations_native.dart'
@@ -26,62 +27,106 @@ class VoiceMessagePlayer extends StatefulWidget {
 }
 
 class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
-  late AudioPlayer _audioPlayer;
+  // Use audioplayers on Windows (just_audio doesn't support Windows)
+  // Use just_audio on other platforms (better web/mobile support)
+  AudioPlayer? _justAudioPlayer;
+  ap.AudioPlayer? _audioPlayersPlayer;
+  
   bool _isPlaying = false;
   Duration _currentPosition = Duration.zero;
   Duration _totalDuration = Duration.zero;
   bool _isLoading = false;
   String? _tempFilePath;
+  
+  bool get _isWindows => !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
   @override
   void initState() {
     super.initState();
-    _audioPlayer = AudioPlayer();
+    if (_isWindows) {
+      _audioPlayersPlayer = ap.AudioPlayer();
+    } else {
+      _justAudioPlayer = AudioPlayer();
+    }
     _setupAudioPlayer();
   }
 
   @override
   void dispose() {
-    _audioPlayer.dispose();
+    _justAudioPlayer?.dispose();
+    _audioPlayersPlayer?.dispose();
     _cleanupTempFile();
     super.dispose();
   }
 
   Future<void> _setupAudioPlayer() async {
-    // Listen to player state
-    _audioPlayer.playerStateStream.listen((state) {
-      if (mounted) {
-        setState(() {
-          _isPlaying = state.playing;
-        });
-      }
-    });
+    if (_isWindows) {
+      // Windows: Use audioplayers
+      _audioPlayersPlayer!.onPlayerStateChanged.listen((state) {
+        if (mounted) {
+          setState(() {
+            _isPlaying = state == ap.PlayerState.playing;
+          });
+        }
+      });
 
-    // Listen to position updates
-    _audioPlayer.positionStream.listen((position) {
-      if (mounted) {
-        setState(() {
-          _currentPosition = position;
-        });
-      }
-    });
+      _audioPlayersPlayer!.onPositionChanged.listen((position) {
+        if (mounted) {
+          setState(() {
+            _currentPosition = position;
+          });
+        }
+      });
 
-    // Listen to duration updates
-    _audioPlayer.durationStream.listen((duration) {
-      if (mounted && duration != null) {
-        setState(() {
-          _totalDuration = duration;
-        });
-      }
-    });
+      _audioPlayersPlayer!.onDurationChanged.listen((duration) {
+        if (mounted) {
+          setState(() {
+            _totalDuration = duration;
+          });
+        }
+      });
 
-    // Auto-reset when playback completes
-    _audioPlayer.processingStateStream.listen((state) {
-      if (state == ProcessingState.completed) {
-        _audioPlayer.seek(Duration.zero);
-        _audioPlayer.pause();
-      }
-    });
+      _audioPlayersPlayer!.onPlayerComplete.listen((_) {
+        if (mounted) {
+          setState(() {
+            _isPlaying = false;
+            _currentPosition = Duration.zero;
+          });
+        }
+      });
+    } else {
+      // Other platforms: Use just_audio
+      _justAudioPlayer!.playerStateStream.listen((state) {
+        if (mounted) {
+          setState(() {
+            _isPlaying = state.playing;
+          });
+        }
+      });
+
+      _justAudioPlayer!.positionStream.listen((position) {
+        if (mounted) {
+          setState(() {
+            _currentPosition = position;
+          });
+        }
+      });
+
+      _justAudioPlayer!.durationStream.listen((duration) {
+        if (mounted && duration != null) {
+          setState(() {
+            _totalDuration = duration;
+          });
+        }
+      });
+
+      _justAudioPlayer!.processingStateStream.listen((state) {
+        if (state == ProcessingState.completed) {
+          _justAudioPlayer!.seek(Duration.zero);
+          _justAudioPlayer!.pause();
+        }
+      });
+    }
   }
 
   Future<void> _prepareAudio() async {
@@ -97,28 +142,68 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
       final audioBytes = base64Decode(widget.base64Audio);
 
       if (kIsWeb) {
-        // Web: Use data URL directly
-        // Create a data URL from the audio bytes
-        final mimeType = 'audio/opus'; // or 'audio/ogg'
+        // Web: Try multiple approaches for browser compatibility
         final base64String = base64Encode(audioBytes);
-        final dataUrl = 'data:$mimeType;base64,$base64String';
         
-        // Load from data URL
-        await _audioPlayer.setUrl(dataUrl);
-        _tempFilePath = dataUrl; // Store for cleanup check
+        // Try different MIME types in order of browser compatibility
+        // Support both Opus (most platforms) and AAC (Windows native)
+        final mimeTypes = [
+          'audio/webm;codecs=opus', // Best for Chrome
+          'audio/ogg;codecs=opus',  // Good for Firefox
+          'audio/opus',              // Generic Opus fallback
+          'audio/mp4',               // AAC from Windows
+          'audio/aac',               // AAC alternative
+        ];
         
-        debugPrint('[VOICE_PLAYER] Audio prepared from data URL (web)');
+        String? workingUrl;
+        Exception? lastError;
+        
+        for (final mimeType in mimeTypes) {
+          try {
+            final dataUrl = 'data:$mimeType;base64,$base64String';
+            await _justAudioPlayer!.setUrl(dataUrl);
+            workingUrl = dataUrl;
+            debugPrint('[VOICE_PLAYER] Audio prepared with MIME type: $mimeType');
+            break;
+          } catch (e) {
+            lastError = e as Exception;
+            debugPrint('[VOICE_PLAYER] Failed with $mimeType: $e');
+            continue;
+          }
+        }
+        
+        if (workingUrl != null) {
+          _tempFilePath = workingUrl;
+        } else {
+          throw lastError ?? Exception('Failed to load audio with any MIME type');
+        }
       } else {
         // Native: Use file system
+        // Support multiple formats: .opus (Android/iOS/Linux), .m4a (Windows AAC)
         final tempDir = await getTemporaryDirectory();
         final timestamp = DateTime.now().millisecondsSinceEpoch;
-        _tempFilePath = '${tempDir.path}/voice_$timestamp.opus';
+        
+        // Detect format from first bytes or use .m4a as universal fallback
+        String extension = '.m4a'; // AAC container, widely supported
+        if (audioBytes.length > 4) {
+          // Check for Opus magic number (OpusHead)
+          final header = String.fromCharCodes(audioBytes.take(8));
+          if (header.contains('Opus')) {
+            extension = '.opus';
+          }
+        }
+        
+        _tempFilePath = '${tempDir.path}/voice_$timestamp$extension';
 
         // Write to file
         await FileOperations.writeBytes(_tempFilePath!, audioBytes);
 
         // Load audio
-        await _audioPlayer.setFilePath(_tempFilePath!);
+        if (_isWindows) {
+          await _audioPlayersPlayer!.setSourceDeviceFile(_tempFilePath!);
+        } else {
+          await _justAudioPlayer!.setFilePath(_tempFilePath!);
+        }
 
         debugPrint('[VOICE_PLAYER] Audio prepared from file: $_tempFilePath');
       }
@@ -157,9 +242,17 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
     }
 
     if (_isPlaying) {
-      await _audioPlayer.pause();
+      if (_isWindows) {
+        await _audioPlayersPlayer!.pause();
+      } else {
+        await _justAudioPlayer!.pause();
+      }
     } else {
-      await _audioPlayer.play();
+      if (_isWindows) {
+        await _audioPlayersPlayer!.resume();
+      } else {
+        await _justAudioPlayer!.play();
+      }
     }
   }
 

@@ -1584,7 +1584,17 @@ void deleteGroupItem(String itemId, String channelId) async {
   }
 
   Future<List<Map<String, dynamic>>> _fetchPreKeyBundleForUserInternal(String userId) async {
-    final apiServer = await loadWebApiServer();
+    // Get server URL from appropriate source
+    String? apiServer;
+    if (kIsWeb) {
+      apiServer = await loadWebApiServer();
+    } else {
+      final activeServer = ServerConfigService.getActiveServer();
+      if (activeServer != null) {
+        apiServer = activeServer.serverUrl;
+      }
+    }
+    
     final urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
     final response = await ApiService.get('$urlString/signal/prekey_bundle/$userId');
     debugPrint('[DEBUG] response.statusCode: \\${response.statusCode}');
@@ -2583,7 +2593,17 @@ Future<String> decryptItem({
   /// Request sender key from a group member
   Future<void> requestSenderKey(String groupId, String userId, int deviceId) async {
     try {
-      final apiServer = await loadWebApiServer();
+      // Get server URL from appropriate source
+      String? apiServer;
+      if (kIsWeb) {
+        apiServer = await loadWebApiServer();
+      } else {
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer != null) {
+          apiServer = activeServer.serverUrl;
+        }
+      }
+      
       final urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
       await ApiService.post(
         '$urlString/channels/$groupId/request-sender-key',

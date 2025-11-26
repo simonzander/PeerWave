@@ -32,29 +32,34 @@ class CustomWindowTitleBar extends StatelessWidget {
             Expanded(
               child: MoveWindow(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 12.0),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       // App logo
                       Image.asset(
                         'assets/images/peerwave.png',
-                        width: 20,
-                        height: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: textColor,
-                        ),
+                        width: 18,
+                        height: 18,
                       ),
                       const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: textColor,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
                       Text(
                         VersionInfo.displayVersion,
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 10,
                           fontWeight: FontWeight.w400,
                           color: textColor.withOpacity(0.6),
                         ),

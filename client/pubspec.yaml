@@ -73,9 +73,10 @@ dependencies:
   emoji_picker_flutter: ^3.1.0
   image_picker: ^1.1.2
   flutter_image_compress: ^2.3.0
-  record: ^5.1.2
+  record: ^6.1.2
   permission_handler: ^11.3.1
   just_audio: ^0.9.40
+  audioplayers: ^6.1.0  # For Windows desktop audio playback
   audio_waveforms: ^1.1.0
   fl_chart: ^0.69.2
   # Native client dependencies

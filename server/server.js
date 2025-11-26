@@ -119,6 +119,12 @@ app.use(sessionMiddleware);
     console.error('Failed to run HMAC auth migration:', err);
   });
 
+  // Run device_id migration for client_sessions
+  const { up: migrateDeviceId } = require('./migrations/add_device_id_to_sessions');
+  migrateDeviceId().catch(err => {
+    console.error('Failed to run device_id migration:', err);
+  });
+
   // License info endpoint
   app.get('/api/license-info', async (req, res) => {
     const license = await licenseValidator.validate();

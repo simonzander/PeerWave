@@ -1,6 +1,8 @@
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'api_service.dart';
 import '../web_config.dart';
+import 'server_config_native.dart'
+    if (dart.library.html) 'server_config_web.dart';
 import 'storage/sqlite_recent_conversations_store.dart';
 import 'storage/sqlite_group_message_store.dart';
 
@@ -118,7 +120,19 @@ class UserProfileService {
     try {
       debugPrint('[UserProfileService] Loading ${uuidsToLoad.length} profiles...');
       
-      final apiServer = await loadWebApiServer();
+      // Get server URL from appropriate source
+      String? apiServer;
+      if (kIsWeb) {
+        // Web: Load from web config
+        apiServer = await loadWebApiServer();
+      } else {
+        // Native: Get from ServerConfigService
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer != null) {
+          apiServer = activeServer.serverUrl;
+        }
+      }
+      
       if (apiServer == null || apiServer.isEmpty) {
         throw Exception('No API server configured');
       }
@@ -307,10 +321,45 @@ class UserProfileService {
   /// Get cache size (for debugging)
   int get cacheSize => _cache.length;
   
+  /// Find user UUID by atName (searches cache)
+  String? findUuidByAtName(String atName) {
+    for (final entry in _cache.entries) {
+      final profile = entry.value;
+      if (!profile.isStale) {
+        final profileAtName = profile.data['atName'] as String?;
+        if (profileAtName?.toLowerCase() == atName.toLowerCase()) {
+          return entry.key; // Return the UUID
+        }
+      }
+    }
+    return null;
+  }
+  
+  /// Get profile by atName (searches cache)
+  Map<String, dynamic>? getProfileByAtName(String atName) {
+    final uuid = findUuidByAtName(atName);
+    if (uuid != null) {
+      return getProfile(uuid);
+    }
+    return null;
+  }
+  
   /// Load current user's own profile and cache it
   Future<void> loadOwnProfile() async {
     try {
-      final apiServer = await loadWebApiServer();
+      // Get server URL from appropriate source
+      String? apiServer;
+      if (kIsWeb) {
+        // Web: Load from web config
+        apiServer = await loadWebApiServer();
+      } else {
+        // Native: Get from ServerConfigService
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer != null) {
+          apiServer = activeServer.serverUrl;
+        }
+      }
+      
       if (apiServer == null || apiServer.isEmpty) {
         throw Exception('No API server configured');
       }

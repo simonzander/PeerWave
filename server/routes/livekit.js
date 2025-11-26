@@ -162,22 +162,19 @@ router.post('/token', verifyAuthEither, async (req, res) => {
  * Uses LiveKit's embedded TURN server with JWT authentication
  * Replaces Coturn for P2P file transfer and direct messages
  */
-router.get('/ice-config', async (req, res) => {
+router.get('/ice-config', verifyAuthEither, async (req, res) => {
   try {
     // Load LiveKit SDK dynamically
     const AccessToken = await livekitWrapper.getAccessToken();
     
-    // Check if user is authenticated
-    const session = req.session;
+    // verifyAuthEither middleware sets req.userId for both native and web clients
+    const userId = req.userId;
+    const username = req.username || req.session?.userinfo?.username || req.session?.email || 'Unknown';
     
-    if (!session || (!session.userinfo && !session.uuid)) {
-      console.log('[LiveKit ICE] Unauthorized - No session found');
+    if (!userId) {
+      console.log('[LiveKit ICE] Unauthorized - No user ID found');
       return res.status(401).json({ error: 'Not authenticated' });
     }
-
-    // Get user info from either format
-    const userId = session.userinfo?.id || session.uuid;
-    const username = session.userinfo?.username || session.email || 'Unknown';
 
     console.log(`[LiveKit ICE] Config request: userId=${userId}, username=${username}`);
 

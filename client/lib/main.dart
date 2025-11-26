@@ -1024,9 +1024,18 @@ class _MyAppState extends State<MyApp> {
                   debugPrint('[MAIN] ========================================');
                   
                   try {
-                    final apiServer = await loadWebApiServer();
-                    String serverUrl = apiServer ?? '';
-                    if (!serverUrl.startsWith('http://') && !serverUrl.startsWith('https://')) {
+                    // Get server URL based on platform
+                    String serverUrl = '';
+                    if (kIsWeb) {
+                      final apiServer = await loadWebApiServer();
+                      serverUrl = apiServer ?? '';
+                    } else {
+                      final activeServer = ServerConfigService.getActiveServer();
+                      serverUrl = activeServer?.serverUrl ?? '';
+                    }
+                    
+                    // Ensure server URL has protocol
+                    if (serverUrl.isNotEmpty && !serverUrl.startsWith('http://') && !serverUrl.startsWith('https://')) {
                       serverUrl = 'https://$serverUrl';
                     }
                     
@@ -1072,9 +1081,18 @@ class _MyAppState extends State<MyApp> {
                 debugPrint('[MAIN] Running initialization for app route: $location');
                 
                 try {
-                  final apiServer = await loadWebApiServer();
-                  String serverUrl = apiServer ?? '';
-                  if (!serverUrl.startsWith('http://') && !serverUrl.startsWith('https://')) {
+                  // Get server URL based on platform
+                  String serverUrl = '';
+                  if (kIsWeb) {
+                    final apiServer = await loadWebApiServer();
+                    serverUrl = apiServer ?? '';
+                  } else {
+                    final activeServer = ServerConfigService.getActiveServer();
+                    serverUrl = activeServer?.serverUrl ?? '';
+                  }
+                  
+                  // Ensure server URL has protocol
+                  if (serverUrl.isNotEmpty && !serverUrl.startsWith('http://') && !serverUrl.startsWith('https://')) {
                     serverUrl = 'https://$serverUrl';
                   }
                   

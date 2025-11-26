@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -14,6 +14,8 @@ import 'package:audio_waveforms/audio_waveforms.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:async';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 import '../services/file_transfer/storage_interface.dart';
 import '../services/file_transfer/file_transfer_service.dart';
 import '../services/file_transfer/socket_file_client.dart';
@@ -69,6 +71,9 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
   Duration _recordingDuration = Duration.zero;
   Timer? _recordingTimer;
   
+  // Text empty state for dynamic button
+  bool _isTextEmpty = true;
+  
   // Attachment menu state
   OverlayEntry? _attachmentOverlay;
   
@@ -98,6 +103,14 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
   void _onTextChanged() {
     final text = _controller.text;
     final cursorPos = _controller.selection.baseOffset;
+    
+    // Update text empty state
+    final isEmpty = text.trim().isEmpty;
+    if (isEmpty != _isTextEmpty) {
+      setState(() {
+        _isTextEmpty = isEmpty;
+      });
+    }
     
     if (cursorPos < 0) return;
     
@@ -789,9 +802,12 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
 
   /// Start voice recording
   Future<void> _startRecording() async {
+    debugPrint('[MESSAGE_INPUT] _startRecording called');
     try {
       // Request microphone permission
+      debugPrint('[MESSAGE_INPUT] Requesting microphone permission');
       final status = await Permission.microphone.request();
+      debugPrint('[MESSAGE_INPUT] Permission status: $status');
       if (!status.isGranted) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -820,19 +836,58 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
       }
       
       // Start recording with audio recorder
-      await _audioRecorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.opus,
-          bitRate: 128000,
-          sampleRate: 44100,
-        ),
-        path: '', // Use default temp path
-      );
+      // Use platform-specific encoder for cross-platform compatibility
+      // Windows MediaFoundation supports: aacLc, flac, pcm16bits, wav (NOT opus)
+      // Solution: Use aacLc on Windows for compressed format with broad playback support
+      final encoder = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
+          ? AudioEncoder.aacLc  // Windows: AAC-LC (compressed, widely supported)
+          : AudioEncoder.opus;   // Other platforms: Opus
       
-      setState(() {
-        _isRecording = true;
-        _recordingDuration = Duration.zero;
-      });
+      debugPrint('[MESSAGE_INPUT] Starting recording with encoder: $encoder on platform: $defaultTargetPlatform');
+      
+      try {
+        // AAC and Opus both support bitRate and sampleRate
+        final config = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
+            ? const RecordConfig(
+                encoder: AudioEncoder.aacLc,
+                bitRate: 128000,
+                sampleRate: 44100,
+                numChannels: 1,  // Mono to reduce file size
+              )
+            : const RecordConfig(
+                encoder: AudioEncoder.opus,
+                bitRate: 128000,
+                sampleRate: 44100,
+              );
+        
+        // Get temporary directory and create a file path
+        // Windows requires a valid file path, empty string doesn't work
+        String? recordingPath;
+        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+          final tempDir = await getTemporaryDirectory();
+          final fileName = 'recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
+          recordingPath = path.join(tempDir.path, fileName);
+          debugPrint('[MESSAGE_INPUT] Windows recording path: $recordingPath');
+        }
+        
+        debugPrint('[MESSAGE_INPUT] Recording config: $config');
+        await _audioRecorder.start(config, path: recordingPath ?? '');
+        
+        debugPrint('[MESSAGE_INPUT] Recording started successfully');
+        
+        setState(() {
+          _isRecording = true;
+          _recordingDuration = Duration.zero;
+        });
+      } catch (e, stackTrace) {
+        debugPrint('[MESSAGE_INPUT] Failed to start recording: $e');
+        debugPrint('[MESSAGE_INPUT] Stack trace: $stackTrace');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to start recording: $e')),
+        );
+        return;
+      }
       
       // Start timer
       _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -851,7 +906,7 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
       debugPrint('[MESSAGE_INPUT] Error starting recording: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(content: Text('Recording error: $e')),
         );
       }
     }
@@ -1167,25 +1222,24 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
             
             const SizedBox(width: 8),
             
-            // Send button
-            IconButton(
-              icon: Icon(
-                Icons.send,
-                color: theme.colorScheme.primary,
-              ),
-              onPressed: _sendMessage,
-              tooltip: 'Send',
-            ),
-            
-            // Microphone button
-            IconButton(
-              icon: Icon(
-                Icons.mic_outlined,
-                color: theme.colorScheme.primary,
-              ),
-              onPressed: _startRecording,
-              tooltip: 'Voice message',
-            ),
+            // Dynamic button: Voice or Send
+            _isTextEmpty
+                ? IconButton(
+                    icon: Icon(
+                      Icons.mic_outlined,
+                      color: theme.colorScheme.primary,
+                    ),
+                    onPressed: _startRecording,
+                    tooltip: 'Voice message',
+                  )
+                : IconButton(
+                    icon: Icon(
+                      Icons.send,
+                      color: theme.colorScheme.primary,
+                    ),
+                    onPressed: _sendMessage,
+                    tooltip: 'Send',
+                  ),
           ],
         ),
           ],

@@ -112,7 +112,7 @@ clientRoutes.get("/direct/messages/:userId", verifyAuthEither, async (req, res) 
     const { userId } = req.params;
     // Support both web (session-based) and native (HMAC) authentication
     const sessionUuid = req.userId || req.session.uuid;
-    const sessionDeviceId = req.session.deviceId;
+    const sessionDeviceId = req.deviceId || req.session.deviceId;
     
     if (!sessionUuid || !sessionDeviceId) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
@@ -218,7 +218,7 @@ clientRoutes.get("/channels/:channelId/member-devices", verifyAuthEither, async 
 clientRoutes.get("/channels/:channelId/messages", verifyAuthEither, async (req, res) => {
     const { channelId } = req.params;
     const sessionUuid = req.userId || req.session.uuid;
-    const sessionDeviceId = req.session.deviceId;
+    const sessionDeviceId = req.deviceId || req.session.deviceId;
     
     if (!sessionDeviceId || !sessionUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
@@ -268,7 +268,7 @@ clientRoutes.get("/channels/:channelId/messages", verifyAuthEither, async (req, 
 // GET all channel messages for all channels the user is a member of
 clientRoutes.get("/channels/messages/all", verifyAuthEither, async (req, res) => {
     const sessionUuid = req.userId || req.session.uuid;
-    const sessionDeviceId = req.session.deviceId;
+    const sessionDeviceId = req.deviceId || req.session.deviceId;
     
     if (!sessionDeviceId || !sessionUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
@@ -329,7 +329,7 @@ clientRoutes.post("/channels/:channelId/group-messages", verifyAuthEither, async
     const { channelId } = req.params;
     const { itemId, ciphertext, senderId, senderDeviceId, timestamp } = req.body;
     const sessionUuid = req.userId || req.session.uuid;
-    const sessionDeviceId = req.session.deviceId;
+    const sessionDeviceId = req.deviceId || req.session.deviceId;
     
     if (!sessionUuid || !sessionDeviceId) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
@@ -411,7 +411,7 @@ clientRoutes.post("/channels/:channelId/group-messages", verifyAuthEither, async
 clientRoutes.post("/signal/prekeys/batch", verifyAuthEither, async (req, res) => {
     // Support both web (session-based) and native (HMAC) authentication
     const sessionUuid = req.userId || req.session.uuid;
-    const sessionDeviceId = req.session.deviceId;
+    const sessionDeviceId = req.deviceId || req.session.deviceId;
     
     if (!sessionUuid) {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
@@ -584,10 +584,15 @@ clientRoutes.get("/people/list", verifyAuthEither, async (req, res) => {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
     try {
+        console.log(`[PEOPLE_LIST] Fetching users for sessionUuid: ${sessionUuid}`);
         const users = await User.findAll({
             attributes: ['uuid', 'displayName', 'picture'],
-            where: { uuid: { [Op.ne]: req.session.uuid } } // Exclude the current user
+            where: { 
+                uuid: { [Op.ne]: sessionUuid }, // Exclude the current user
+                active: true // Only show active users
+            }
         });
+        console.log(`[PEOPLE_LIST] Found ${users.length} users`);
         res.status(200).json(users);
     } catch (error) {
         console.error('Error fetching users:', error);
@@ -1174,13 +1179,14 @@ clientRoutes.post("/magic/verify", async (req, res) => {
         await writeQueue.enqueue(
             () => sequelize.query(
                 `INSERT OR REPLACE INTO client_sessions 
-                 (client_id, session_secret, user_id, device_info, expires_at, last_used, created_at)
-                 VALUES (?, ?, ?, ?, datetime('now', '+30 days'), datetime('now'), datetime('now'))`,
+                 (client_id, session_secret, user_id, device_id, device_info, expires_at, last_used, created_at)
+                 VALUES (?, ?, ?, ?, ?, datetime('now', '+30 days'), datetime('now'), datetime('now'))`,
                 { 
                     replacements: [
                         clientid, 
                         sessionSecret, 
-                        entry.uuid, 
+                        entry.uuid,
+                        client.device_id, 
                         JSON.stringify({ userAgent, ip, location: locationString })
                     ] 
                 }
@@ -1503,8 +1509,8 @@ clientRoutes.delete("/items/:itemId", verifyAuthEither, async (req, res) => {
             where: { 
                 itemId: itemId,
                 [Op.or]: [
-                    { sender: req.session.uuid },
-                    { receiver: req.session.uuid }
+                    { sender: sessionUuid },
+                    { receiver: sessionUuid }
                 ]
             } 
         });
@@ -1538,14 +1544,14 @@ clientRoutes.delete("/items/:itemId", verifyAuthEither, async (req, res) => {
                 }),
                 'deleteItemForDevice'
             );
-            console.log(`[CLEANUP] Item ${itemId} for device ${receiverDeviceId} deleted by user ${req.session.uuid}`);
+            console.log(`[CLEANUP] Item ${itemId} for device ${receiverDeviceId} deleted by user ${sessionUuid}`);
         } else {
             // Delete all items with this itemId (all device versions)
             await writeQueue.enqueue(
                 () => Item.destroy({ where: { itemId: itemId } }),
                 'deleteItemAllDevices'
             );
-            console.log(`[CLEANUP] Item ${itemId} (all devices) deleted by user ${req.session.uuid}`);
+            console.log(`[CLEANUP] Item ${itemId} (all devices) deleted by user ${sessionUuid}`);
         }
         
         res.status(200).json({ status: "ok", message: "Item deleted successfully" });

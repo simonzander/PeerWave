@@ -8,7 +8,8 @@ import '../../widgets/message_list.dart';
 import '../../widgets/enhanced_message_input.dart';
 import '../../widgets/user_avatar.dart';
 import '../../services/signal_service.dart';
-import '../../services/socket_service.dart';
+import '../../services/socket_service_native.dart'
+    if (dart.library.html) '../../services/socket_service.dart';
 import '../../services/offline_message_queue.dart';
 import '../../services/storage/sqlite_message_store.dart';
 import '../../services/file_transfer/p2p_coordinator.dart';
@@ -522,7 +523,13 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
 
     // Check connection
-    if (!SocketService().isConnected) {
+    final socketService = SocketService();
+    final socket = socketService.socket;
+    final socketConnected = socketService.isConnected;
+    debugPrint('[DM_SCREEN] Socket check: service=$socketService, socket=$socket, socket?.connected=${socket?.connected}, isConnected=$socketConnected');
+    
+    if (!socketConnected) {
+      debugPrint('[DM_SCREEN] Not connected - queuing message');
       await OfflineMessageQueue.instance.enqueue(
         QueuedMessage(
           itemId: itemId,

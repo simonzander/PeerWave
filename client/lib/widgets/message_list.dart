@@ -6,7 +6,10 @@ import 'file_message_widget.dart';
 import 'user_avatar.dart';
 import 'user_profile_card_overlay.dart';
 import 'voice_message_player.dart';
+import 'mention_text_widget.dart';
 import '../models/file_message.dart';
+import '../services/signal_service.dart';
+import '../services/user_profile_service.dart';
 import 'dart:convert';
 
 /// Reusable widget for displaying a list of messages
@@ -452,6 +455,26 @@ class _MessageListState extends State<MessageList> {
           style: TextStyle(color: Colors.red[300], fontStyle: FontStyle.italic),
         );
       }
+    }
+    
+    // Check if text contains @mentions and no markdown formatting
+    final hasMentions = text.contains(RegExp(r'@\w+'));
+    final hasMarkdown = text.contains(RegExp(r'[*_`\[\]#]'));
+    
+    // If text has mentions but no markdown, use MentionTextWidget for highlighting
+    if (hasMentions && !hasMarkdown) {
+      // Get sender profile for optimization (sender info already loaded for message display)
+      final sender = msg['sender'] as String?;
+      final senderProfile = sender != null 
+        ? UserProfileService.instance.getProfile(sender) 
+        : null;
+      
+      return MentionTextWidget(
+        text: text,
+        style: const TextStyle(color: Colors.white, fontSize: 15),
+        currentUserId: SignalService.instance.currentUserId,
+        senderInfo: senderProfile,
+      );
     }
     
     // Default: Render as markdown text

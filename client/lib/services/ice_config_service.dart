@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../models/ice_server_config.dart';
 import '../services/api_service.dart';
 import '../web_config.dart';
+import 'server_config_web.dart' if (dart.library.io) 'server_config_native.dart';
 
 /// ICE Server Configuration Service
 /// 
@@ -48,9 +49,33 @@ class IceConfigService extends ChangeNotifier {
       _serverUrl = serverUrl;
     }
     
-    // Get server URL from web config or use provided/cached
-    _serverUrl ??= await loadWebApiServer();
-    _serverUrl ??= 'http://localhost:3000'; // Fallback
+    // Get server URL from appropriate source
+    if (_serverUrl == null || _serverUrl!.isEmpty) {
+      if (kIsWeb) {
+        // Web: Load from web config
+        _serverUrl = await loadWebApiServer();
+      } else {
+        // Native: Get from ServerConfigService
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer != null) {
+          _serverUrl = activeServer.serverUrl;
+          debugPrint('[ICE CONFIG] Using active server: $_serverUrl');
+        }
+      }
+    }
+    
+    // Ensure we have a valid server URL
+    if (_serverUrl == null || _serverUrl!.isEmpty) {
+      debugPrint('[ICE CONFIG] ⚠️ No server URL available, using fallback');
+      _serverUrl = 'http://localhost:3000'; // Fallback
+    }
+    
+    // Ensure server URL has protocol (only add if doesn't have one)
+    if (!_serverUrl!.startsWith('http://') && !_serverUrl!.startsWith('https://')) {
+      _serverUrl = 'https://$_serverUrl';
+    }
+    
+    debugPrint('[ICE CONFIG] Using server URL: $_serverUrl');
     
     // Check if we need to reload (cache expired or forced)
     if (!force && _isLoaded && _lastLoaded != null) {

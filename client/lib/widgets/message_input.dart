@@ -17,11 +17,28 @@ class _MessageInputState extends State<MessageInput> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   bool _showFormatting = false;
+  bool _isTextEmpty = true;
   OverlayEntry? _emojiOverlay;
   final LayerLink _emojiLayerLink = LayerLink();
 
   @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    final isEmpty = _controller.text.trim().isEmpty;
+    if (isEmpty != _isTextEmpty) {
+      setState(() {
+        _isTextEmpty = isEmpty;
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    _controller.removeListener(_onTextChanged);
     _emojiOverlay?.remove();
     _emojiOverlay = null;
     _controller.dispose();
@@ -301,12 +318,21 @@ class _MessageInputState extends State<MessageInput> {
                   _insertFormatting('@', '');
                 },
               ),
-              // Send button
-              IconButton(
-                icon: const Icon(Icons.send, color: Colors.amber),
-                tooltip: 'Send',
-                onPressed: _sendMessage,
-              ),
+              // Dynamic button: Voice message or Send
+              _isTextEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.mic, color: Colors.amber),
+                      tooltip: 'Voice Message',
+                      onPressed: () {
+                        debugPrint('[MESSAGE_INPUT] Voice message recording started');
+                        // TODO: Implement voice message recording
+                      },
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.send, color: Colors.amber),
+                      tooltip: 'Send',
+                      onPressed: _sendMessage,
+                    ),
             ],
           ),
         ),

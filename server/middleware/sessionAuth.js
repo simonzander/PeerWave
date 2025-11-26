@@ -59,7 +59,7 @@ async function verifySessionAuth(req, res, next) {
 
     // 3. Get session secret from database
     const [sessions] = await sequelize.query(
-      `SELECT session_secret, user_id, expires_at 
+      `SELECT session_secret, user_id, device_id, expires_at 
        FROM client_sessions 
        WHERE client_id = ?`,
       { replacements: [clientId] }
@@ -123,6 +123,7 @@ async function verifySessionAuth(req, res, next) {
     // Authentication successful - attach to request
     req.clientId = clientId;
     req.userId = session.user_id;
+    req.deviceId = session.device_id;
     req.sessionAuth = true;
 
     console.log(`[SessionAuth] ✓ Client ${clientId} authenticated successfully`);

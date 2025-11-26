@@ -34,7 +34,17 @@ class SocketService {
   
   IO.Socket? get socket => _socket;
   bool get isReady => _listenersRegistered && (_socket?.connected ?? false);
-  bool get isConnected => _socket?.connected ?? false;
+  
+  bool get isConnected {
+    final socketExists = _socket != null;
+    final connected = _socket?.connected ?? false;
+    final socketId = _socket?.id;
+    
+    debugPrint('[SOCKET SERVICE] >>> isConnected getter called <<<');
+    debugPrint('[SOCKET SERVICE] socket exists: $socketExists, connected: $connected, id: $socketId');
+    
+    return connected;
+  }
   
   Future<void> connect() async {
     final activeServer = ServerConfigService.getActiveServer();
@@ -87,6 +97,7 @@ class SocketService {
       });
       
       _socket!.on('authenticated', (data) {
+        debugPrint('[SOCKET SERVICE] 🔔 Authenticated event received: $data');
         _handleAuthenticated(data);
         // Complete the connection future after successful authentication
         if (data is Map && data['authenticated'] == true) {
@@ -94,14 +105,30 @@ class SocketService {
             _connectionCompleter!.complete();
             debugPrint('[SOCKET SERVICE] ✓ Connection and authentication complete');
           }
+        } else if (data is Map && data['authenticated'] == false) {
+          debugPrint('[SOCKET SERVICE] ❌ Authentication failed: ${data['error']}');
+          if (!_connectionCompleter!.isCompleted) {
+            _connectionCompleter!.completeError('Authentication failed: ${data['error']}');
+          }
         }
       });
       
       _socket!.on('disconnect', (reason) {
         debugPrint('[SOCKET SERVICE] ❌ Socket disconnected. Reason: $reason');
+        debugPrint('[SOCKET SERVICE] Socket ID before disconnect: ${_socket?.id}');
+        debugPrint('[SOCKET SERVICE] _listenersRegistered: $_listenersRegistered');
         resetReadyState();
       });
-      _socket!.on('reconnect', (_) async => await _authenticate());
+      _socket!.on('reconnect', (_) async {
+        debugPrint('[SOCKET SERVICE] 🔄 Socket reconnected');
+        await _authenticate();
+      });
+      _socket!.on('connect_error', (error) {
+        debugPrint('[SOCKET SERVICE] ❌ Connection error: $error');
+      });
+      _socket!.on('connect_timeout', (_) {
+        debugPrint('[SOCKET SERVICE] ❌ Connection timeout');
+      });
       _socket!.on('unauthorized', (_) {
         if (AuthService.isLoggedIn) {
           _socketUnauthorizedCallback?.call();
@@ -135,6 +162,8 @@ class SocketService {
       );
       
       debugPrint('[SOCKET SERVICE] ✅ Connect method completing, socket connected: ${_socket?.connected}');
+      debugPrint('[SOCKET SERVICE] isConnected getter returns: $isConnected');
+      debugPrint('[SOCKET SERVICE] isReady getter returns: $isReady');
     } catch (e) {
       debugPrint('[SOCKET SERVICE] ❌ Connection error: $e');
       if (!_connectionCompleter!.isCompleted) {
@@ -162,15 +191,20 @@ class SocketService {
   
   Future<void> _authenticate() async {
     try {
+      debugPrint('[SOCKET SERVICE] Starting authentication...');
       final clientId = await ClientIdService.getClientId();
+      debugPrint('[SOCKET SERVICE] Got client ID: $clientId');
       final authHeaders = await SessionAuthService().generateAuthHeaders(
         clientId: clientId,
         requestPath: '/socket.io/auth',
         requestBody: null,
       );
+      debugPrint('[SOCKET SERVICE] Generated auth headers, emitting authenticate event');
       _socket!.emit('authenticate', authHeaders);
+      debugPrint('[SOCKET SERVICE] Authenticate event emitted, waiting for response...');
     } catch (e) {
-      debugPrint('[SOCKET SERVICE] Auth error: $e');
+      debugPrint('[SOCKET SERVICE] ❌ Auth error: $e');
+      rethrow;
     }
   }
 
@@ -190,12 +224,17 @@ class SocketService {
   }
   
   void notifyClientReady() {
+    debugPrint('[SOCKET SERVICE] notifyClientReady called - socket connected: ${_socket?.connected}, isConnected: $isConnected');
     if (_socket?.connected ?? false) {
       _listenersRegistered = true;
       debugPrint('[SOCKET SERVICE] 🚀 Client ready - notifying server');
       _socket!.emit('clientReady', {'timestamp': DateTime.now().toIso8601String()});
     } else {
       debugPrint('[SOCKET SERVICE] ⚠️ Cannot notify ready - socket not connected');
+      debugPrint('[SOCKET SERVICE] Socket object exists: ${_socket != null}');
+      if (_socket != null) {
+        debugPrint('[SOCKET SERVICE] Socket ID: ${_socket!.id}, Connected: ${_socket!.connected}');
+      }
     }
   }
   
