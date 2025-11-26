@@ -31,6 +31,8 @@ import 'services/auth_service_web.dart' if (dart.library.io) 'services/auth_serv
 import 'services/api_service.dart';
 import 'auth/backup_recover_web.dart' if (dart.library.io) 'auth/backup_recover_web_native.dart';
 import 'services/socket_service.dart';
+import 'services/server_connection_service.dart';
+import 'widgets/server_unavailable_overlay.dart';
 // Role management imports
 import 'providers/role_provider.dart';
 import 'providers/notification_provider.dart';
@@ -193,6 +195,13 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _magicKey = widget.initialMagicKey;
+    
+    // Start server connection monitoring for native platforms
+    if (!kIsWeb) {
+      ServerConnectionService.instance.startMonitoring();
+      debugPrint('[INIT] ✅ Server connection monitoring started');
+    }
+    
     // NOTE: P2P services are initialized AFTER login
     // See router redirect logic -> _initServices() is called after successful WebAuthn login
     
@@ -218,6 +227,13 @@ class _MyAppState extends State<MyApp> {
   @override
   void dispose() {
     _sub?.cancel();
+    
+    // Stop server connection monitoring
+    if (!kIsWeb) {
+      ServerConnectionService.instance.stopMonitoring();
+      debugPrint('[DISPOSE] Server connection monitoring stopped');
+    }
+    
     super.dispose();
   }
 
@@ -338,6 +354,8 @@ class _MyAppState extends State<MyApp> {
                   ],
                 ),
                 const CallOverlay(),
+                // Server unavailable overlay (native only)
+                const ServerUnavailableOverlay(),
               ],
             );
           },

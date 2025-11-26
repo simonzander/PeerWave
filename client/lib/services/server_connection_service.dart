@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
 
 /// Service to monitor server connection status based on actual API/Socket errors
 class ServerConnectionService {
@@ -32,6 +34,8 @@ class ServerConnectionService {
     // Check if it's a connection-related error
     final isConnectionError = _isConnectionError(error);
     
+    debugPrint('[SERVER_CONNECTION] reportHttpError called - isConnectionError: $isConnectionError, error: ${error.toString().substring(0, error.toString().length > 100 ? 100 : error.toString().length)}');
+    
     if (isConnectionError) {
       _updateConnectionStatus(false);
       _scheduleReconnect();
@@ -52,7 +56,44 @@ class ServerConnectionService {
 
   /// Check if error is connection-related
   bool _isConnectionError(Object error) {
-    // Network errors, timeouts, refused connections
+    // Handle DioException specially - check the inner error
+    if (error is DioException) {
+      // Check DioException type
+      if (error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.sendTimeout ||
+          error.type == DioExceptionType.receiveTimeout ||
+          error.type == DioExceptionType.connectionError) {
+        debugPrint('[SERVER_CONNECTION] DioException connection error detected: ${error.type}');
+        return true;
+      }
+      
+      // Check inner error
+      if (error.error != null) {
+        if (error.error is SocketException) {
+          debugPrint('[SERVER_CONNECTION] SocketException inside DioException');
+          return true;
+        }
+        if (error.error is TimeoutException) {
+          debugPrint('[SERVER_CONNECTION] TimeoutException inside DioException');
+          return true;
+        }
+        if (error.error is HandshakeException) {
+          debugPrint('[SERVER_CONNECTION] HandshakeException inside DioException');
+          return true;
+        }
+      }
+      
+      // Check error message
+      final errorMsg = error.toString();
+      if (errorMsg != "") {
+        debugPrint('[SERVER_CONNECTION] Connection error in message: ${errorMsg.substring(0, errorMsg.length > 100 ? 100 : errorMsg.length)}');
+        return true;
+      }
+      
+      return false;
+    }
+    
+    // Network errors, timeouts, refused connections (direct exceptions)
     if (error is SocketException) return true;
     if (error is TimeoutException) return true;
     if (error is HandshakeException) return true;
@@ -96,9 +137,13 @@ class ServerConnectionService {
   }
 
   void _updateConnectionStatus(bool connected) {
+    debugPrint('[SERVER_CONNECTION] _updateConnectionStatus called - current: $_isConnected, new: $connected');
     if (_isConnected != connected) {
       _isConnected = connected;
       _isConnectedController.add(_isConnected);
+      debugPrint('[SERVER_CONNECTION] ✅ Status changed and broadcasted: $_isConnected');
+    } else {
+      debugPrint('[SERVER_CONNECTION] ℹ️ Status unchanged, not broadcasting');
     }
   }
 

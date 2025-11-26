@@ -7,6 +7,8 @@ import '../services/logout_service.dart';
 import '../services/device_identity_service.dart';
 import '../services/device_scoped_storage_service.dart';
 import '../services/preferences_service.dart';
+import '../services/server_connection_service.dart';
+import 'dart:async';
 
 /// Screen displayed during Signal Protocol key generation
 /// Shows PeerWave logo, progress bar, and status text
@@ -21,11 +23,31 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
   String _statusText = 'Initializing Signal Protocol...';
   double _progress = 0.0;
   bool _isComplete = false;
+  bool _showServerError = false;
+  StreamSubscription<bool>? _connectionSubscription;
 
   @override
   void initState() {
     super.initState();
+    
+    // Monitor connection status (native only)
+    if (!kIsWeb) {
+      _connectionSubscription = ServerConnectionService.instance.isConnectedStream.listen((isConnected) {
+        if (mounted) {
+          setState(() {
+            _showServerError = !isConnected;
+          });
+        }
+      });
+    }
+    
     _startSignalSetup();
+  }
+
+  @override
+  void dispose() {
+    _connectionSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _startSignalSetup() async {
@@ -186,6 +208,68 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     
+    // Show server unavailable screen if connection is lost
+    if (_showServerError && !kIsWeb) {
+      return Scaffold(
+        backgroundColor: colorScheme.surface,
+        body: Center(
+          child: Card(
+            margin: const EdgeInsets.all(24),
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Icon
+                  Icon(
+                    Icons.cloud_off,
+                    size: 64,
+                    color: colorScheme.error,
+                  ),
+                  const SizedBox(height: 24),
+                  
+                  // Title
+                  Text(
+                    'Server Unavailable',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  // Message
+                  Text(
+                    'Server is temporarily not available',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 32),
+                  
+                  // Retry Button
+                  FilledButton.icon(
+                    onPressed: () {
+                      // Reset connection status and retry setup
+                      ServerConnectionService.instance.checkConnection();
+                      setState(() {
+                        _showServerError = false;
+                        _statusText = 'Retrying...';
+                      });
+                      _startSignalSetup();
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    
+    // Normal signal setup screen
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: Center(

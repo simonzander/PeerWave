@@ -154,6 +154,11 @@ class RetryInterceptor extends Interceptor {
     if (_shouldRetry(err) && retryCount < maxRetries) {
       debugPrint('[API RETRY] Attempt ${retryCount + 1}/$maxRetries for ${err.requestOptions.path}');
       
+      // Report connection error on first attempt (show overlay immediately)
+      if (retryCount == 0 && !kIsWeb) {
+        ServerConnectionService.instance.reportHttpError(err);
+      }
+      
       // Get delay from Retry-After header or use default
       final delay = _getRetryDelay(err, retryCount);
       debugPrint('[API RETRY] Waiting ${delay.inSeconds}s before retry...');
@@ -167,6 +172,10 @@ class RetryInterceptor extends Interceptor {
       try {
         debugPrint('[API RETRY] Retrying request to ${options.path}');
         final response = await dio.fetch(options);
+        // ✅ Report success if retry succeeds
+        if (!kIsWeb) {
+          ServerConnectionService.instance.reportSuccess();
+        }
         return handler.resolve(response);
       } catch (e) {
         if (e is DioException) {
@@ -174,6 +183,11 @@ class RetryInterceptor extends Interceptor {
         }
         return handler.reject(err);
       }
+    }
+
+    // All retries exhausted - ensure error is reported
+    if (!kIsWeb && _shouldRetry(err)) {
+      ServerConnectionService.instance.reportHttpError(err);
     }
 
     return super.onError(err, handler);

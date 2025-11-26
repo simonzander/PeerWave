@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:async';
 import 'dashboard_page.dart';
 import '../widgets/navigation_sidebar.dart';
 import '../widgets/adaptive/adaptive_scaffold.dart';
@@ -7,7 +8,6 @@ import '../widgets/theme_widgets.dart';
 import '../widgets/navigation_badge.dart';
 import '../widgets/sync_progress_banner.dart';
 import '../widgets/server_panel.dart';
-import '../widgets/server_unavailable_overlay.dart';
 import '../services/logout_service.dart';
 import '../services/server_connection_service.dart';
 import '../config/layout_config.dart';
@@ -23,21 +23,39 @@ class AppLayout extends StatefulWidget {
 
 class _AppLayoutState extends State<AppLayout> {
   int _selectedIndex = 0;
+  StreamSubscription<bool>? _connectionSubscription;
+  bool _lastKnownConnectionStatus = true;
+  bool _showServerError = false;
 
   @override
   void initState() {
     super.initState();
-    // Start server connection monitoring on native platforms
+    
+    // Monitor connection status (native only)
     if (!kIsWeb) {
-      ServerConnectionService.instance.startMonitoring();
+      _connectionSubscription = ServerConnectionService.instance.isConnectedStream.listen((isConnected) {
+        if (mounted) {
+          setState(() {
+            _showServerError = !isConnected;
+          });
+        }
+        
+        if (!isConnected && _lastKnownConnectionStatus) {
+          // Connection lost
+          _lastKnownConnectionStatus = false;
+          debugPrint('[APP_LAYOUT] Connection lost - showing error screen');
+        } else if (isConnected && !_lastKnownConnectionStatus) {
+          // Connection restored
+          _lastKnownConnectionStatus = true;
+          debugPrint('[APP_LAYOUT] Connection restored - hiding error screen');
+        }
+      });
     }
   }
 
   @override
   void dispose() {
-    if (!kIsWeb) {
-      ServerConnectionService.instance.stopMonitoring();
-    }
+    _connectionSubscription?.cancel();
     super.dispose();
   }
 
@@ -336,6 +354,66 @@ class _AppLayoutState extends State<AppLayout> {
 
   @override
   Widget build(BuildContext context) {
+    // If server is unavailable (native only), show error screen
+    if (_showServerError && !kIsWeb) {
+      final colorScheme = Theme.of(context).colorScheme;
+      return Scaffold(
+        body: Row(
+          children: [
+            // Keep server panel visible so user can switch servers
+            const ServerPanel(),
+            
+            // Error message
+            Expanded(
+              child: Center(
+                child: Card(
+                  margin: const EdgeInsets.all(24),
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.cloud_off,
+                          size: 64,
+                          color: colorScheme.error,
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          'Server Unavailable',
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Server is temporarily not available',
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 32),
+                        FilledButton.icon(
+                          onPressed: () {
+                            // Reset connection status to retry
+                            ServerConnectionService.instance.checkConnection();
+                          },
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    // Normal app layout
     final bool isWeb = kIsWeb;
     final location = GoRouterState.of(context).matchedLocation;
     
@@ -413,35 +491,29 @@ class _AppLayoutState extends State<AppLayout> {
       
       if (layoutType == LayoutType.desktop || layoutType == LayoutType.tablet) {
         return Scaffold(
-          body: Stack(
+          body: Row(
             children: [
-              Row(
-                children: [
-                  // Server Panel (far left, 72px) - Always visible on native
-                  const ServerPanel(),
-                  
-                  // Navigation Sidebar (60px) - Hidden on signal-setup/login
-                  if (shouldShowNavigation)
-                    const NavigationSidebar(),
-                  
-                  // Content with Sync Banner
-                  Expanded(
-                    child: Column(
-                      children: [
-                        // 🚀 Sync Progress Banner
-                        const SyncProgressBanner(),
-                        
-                        // Main Content (Views handle their own Context Panel + Main Content)
-                        Expanded(
-                          child: widget.child ?? const DashboardPage(),
-                        ),
-                      ],
+              // Server Panel (far left, 72px) - Always visible on native
+              const ServerPanel(),
+              
+              // Navigation Sidebar (60px) - Hidden on signal-setup/login
+              if (shouldShowNavigation)
+                const NavigationSidebar(),
+              
+              // Content with Sync Banner
+              Expanded(
+                child: Column(
+                  children: [
+                    // 🚀 Sync Progress Banner
+                    const SyncProgressBanner(),
+                    
+                    // Main Content (Views handle their own Context Panel + Main Content)
+                    Expanded(
+                      child: widget.child ?? const DashboardPage(),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-              // Server Unavailable Overlay (only on native)
-              const ServerUnavailableOverlay(),
             ],
           ),
         );
@@ -464,21 +536,15 @@ class _AppLayoutState extends State<AppLayout> {
           ),
         ],
         drawer: _buildMobileDrawer(context),
-        body: Stack(
+        body: Column(
           children: [
-            Column(
-              children: [
-                // 🚀 Sync Progress Banner
-                const SyncProgressBanner(),
-                
-                // Main Content
-                Expanded(
-                  child: widget.child ?? const DashboardPage(),
-                ),
-              ],
+            // 🚀 Sync Progress Banner
+            const SyncProgressBanner(),
+            
+            // Main Content
+            Expanded(
+              child: widget.child ?? const DashboardPage(),
             ),
-            // Server Unavailable Overlay (only on native)
-            const ServerUnavailableOverlay(),
           ],
         ),
       );
