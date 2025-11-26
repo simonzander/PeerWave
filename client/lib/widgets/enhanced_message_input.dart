@@ -487,10 +487,54 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
   Future<void> _pickImage() async {
     bool isLoadingShown = false;
     try {
-      final picker = ImagePicker();
-      final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+      // Use file_picker on Windows (image_picker not supported)
+      // Use image_picker on other platforms for better UX
+      XFile? pickedFile;
       
-      if (pickedFile == null) return;
+      debugPrint('[MESSAGE_INPUT] Picking image, platform: $defaultTargetPlatform');
+      
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+        // Windows: Use file_picker
+        debugPrint('[MESSAGE_INPUT] Using file_picker for Windows');
+        try {
+          final result = await FilePicker.platform.pickFiles(
+            type: FileType.image,
+            allowMultiple: false,
+          );
+          
+          debugPrint('[MESSAGE_INPUT] FilePicker result: ${result?.files.length ?? 0} files');
+          
+          if (result == null || result.files.isEmpty) {
+            debugPrint('[MESSAGE_INPUT] No file selected');
+            return;
+          }
+          
+          final file = result.files.first;
+          if (file.path == null) {
+            debugPrint('[MESSAGE_INPUT] File path is null');
+            return;
+          }
+          
+          debugPrint('[MESSAGE_INPUT] Selected file: ${file.path}');
+          // Convert PlatformFile to XFile for consistency
+          pickedFile = XFile(file.path!);
+        } catch (e) {
+          debugPrint('[MESSAGE_INPUT] FilePicker error: $e');
+          rethrow;
+        }
+      } else {
+        // Other platforms: Use image_picker
+        debugPrint('[MESSAGE_INPUT] Using image_picker');
+        final picker = ImagePicker();
+        pickedFile = await picker.pickImage(source: ImageSource.gallery);
+      }
+      
+      if (pickedFile == null) {
+        debugPrint('[MESSAGE_INPUT] pickedFile is null');
+        return;
+      }
+      
+      debugPrint('[MESSAGE_INPUT] Reading image bytes from: ${pickedFile.path}');
       
       if (!mounted) return;
       
@@ -564,6 +608,18 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
 
   /// Compress image with progressive quality reduction
   Future<Uint8List> _compressImage(Uint8List imageBytes) async {
+    // flutter_image_compress doesn't support Windows
+    // On Windows, just resize if too large, no compression
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      debugPrint('[MESSAGE_INPUT] Windows: Skipping compression (not supported)');
+      // Just check size and warn if too large
+      if (imageBytes.length > 2 * 1024 * 1024) {
+        debugPrint('[MESSAGE_INPUT] Warning: Image is ${imageBytes.length} bytes (>2MB)');
+      }
+      return imageBytes;
+    }
+    
+    // Other platforms: Use flutter_image_compress
     const maxLongSide = 1920;
     const targetSize = 800 * 1024; // 800KB
     

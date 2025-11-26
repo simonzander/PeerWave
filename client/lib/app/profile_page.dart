@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:universal_html/html.dart' as html;
 import '../services/api_service.dart';
+import '../services/server_config_web.dart' if (dart.library.io) '../services/server_config_native.dart';
 import '../web_config.dart';
 import '../extensions/snackbar_extensions.dart';
 
@@ -70,10 +71,16 @@ class _ProfilePageState extends State<ProfilePage> {
     });
 
     try {
-      final apiServer = await loadWebApiServer();
-      String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
-        urlString = 'https://$urlString';
+      String urlString = '';
+      if (kIsWeb) {
+        final apiServer = await loadWebApiServer();
+        urlString = apiServer ?? '';
+        if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+          urlString = 'https://$urlString';
+        }
+      } else {
+        final server = ServerConfigService.getActiveServer();
+        urlString = server?.serverUrl ?? '';
       }
 
       final resp = await ApiService.get(
@@ -102,10 +109,16 @@ class _ProfilePageState extends State<ProfilePage> {
     });
 
     try {
-      final apiServer = await loadWebApiServer();
-      String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
-        urlString = 'https://$urlString';
+      String urlString = '';
+      if (kIsWeb) {
+        final apiServer = await loadWebApiServer();
+        urlString = apiServer ?? '';
+        if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+          urlString = 'https://$urlString';
+        }
+      } else {
+        final server = ServerConfigService.getActiveServer();
+        urlString = server?.serverUrl ?? '';
       }
 
       final resp = await ApiService.get('$urlString/client/profile');
@@ -209,10 +222,16 @@ class _ProfilePageState extends State<ProfilePage> {
     });
 
     try {
-      final apiServer = await loadWebApiServer();
-      String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
-        urlString = 'https://$urlString';
+      String urlString = '';
+      if (kIsWeb) {
+        final apiServer = await loadWebApiServer();
+        urlString = apiServer ?? '';
+        if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+          urlString = 'https://$urlString';
+        }
+      } else {
+        final server = ServerConfigService.getActiveServer();
+        urlString = server?.serverUrl ?? '';
       }
 
       final Map<String, dynamic> data = {
@@ -340,10 +359,16 @@ class _ProfilePageState extends State<ProfilePage> {
     });
 
     try {
-      final apiServer = await loadWebApiServer();
-      String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
-        urlString = 'https://$urlString';
+      String urlString = '';
+      if (kIsWeb) {
+        final apiServer = await loadWebApiServer();
+        urlString = apiServer ?? '';
+        if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+          urlString = 'https://$urlString';
+        }
+      } else {
+        final server = ServerConfigService.getActiveServer();
+        urlString = server?.serverUrl ?? '';
       }
 
       final resp = await ApiService.delete('$urlString/client/profile/delete');

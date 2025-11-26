@@ -31,41 +31,59 @@ class CustomWindowTitleBar extends StatelessWidget {
           children: [
             Expanded(
               child: MoveWindow(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // App logo
-                      Image.asset(
-                        'assets/images/peerwave.png',
-                        width: 18,
-                        height: 18,
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          title,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: textColor,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return Container(
+                      constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // App logo
+                          Image.asset(
+                            'assets/images/peerwave.png',
+                            width: 18,
+                            height: 18,
                           ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
+                          const SizedBox(width: 6),
+                          // Title and version - constrained to prevent overflow
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: constraints.maxWidth - 60, // Logo + padding + margins
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    title,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: textColor,
+                                      decoration: TextDecoration.none,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  VersionInfo.displayVersion,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w400,
+                                    color: textColor.withOpacity(0.6),
+                                    decoration: TextDecoration.none,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        VersionInfo.displayVersion,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w400,
-                          color: textColor.withOpacity(0.6),
-                        ),
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ),
             ),

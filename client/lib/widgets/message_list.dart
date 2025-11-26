@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'file_message_widget.dart';
 import 'user_avatar.dart';
 import 'user_profile_card_overlay.dart';
@@ -10,7 +12,6 @@ import 'mention_text_widget.dart';
 import '../models/file_message.dart';
 import '../services/signal_service.dart';
 import '../services/user_profile_service.dart';
-import 'dart:convert';
 
 /// Reusable widget for displaying a list of messages
 /// Works for both Direct Messages and Group Chats
@@ -354,31 +355,44 @@ class _MessageListState extends State<MessageList> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              constraints: const BoxConstraints(maxWidth: 300, maxHeight: 400),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey[700]!, width: 1),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Image.memory(
-                imageBytes,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        Icon(Icons.broken_image, size: 48, color: Colors.grey[600]),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Failed to load image',
-                          style: TextStyle(color: Colors.grey[500]),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+            GestureDetector(
+              onTap: () {
+                // Show fullscreen image viewer
+                showDialog(
+                  context: context,
+                  barrierColor: Colors.black87,
+                  builder: (context) => _FullscreenImageViewer(
+                    imageBytes: imageBytes,
+                    metadata: metadata,
+                  ),
+                );
+              },
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 300, maxHeight: 400),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[700]!, width: 1),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Image.memory(
+                  imageBytes,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        children: [
+                          Icon(Icons.broken_image, size: 48, color: Colors.grey[600]),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Failed to load image',
+                            style: TextStyle(color: Colors.grey[500]),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
             if (metadata != null && metadata['size'] != null) ...[
@@ -519,4 +533,94 @@ class _MessageListState extends State<MessageList> {
   }
 }
 
+/// Fullscreen image viewer with close button
+class _FullscreenImageViewer extends StatelessWidget {
+  final Uint8List imageBytes;
+  final dynamic metadata;
 
+  const _FullscreenImageViewer({
+    required this.imageBytes,
+    this.metadata,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: EdgeInsets.zero,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Background tap to close
+          GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: Container(color: Colors.transparent),
+          ),
+          
+          // Image in center
+          Center(
+            child: GestureDetector(
+              onTap: () {}, // Prevent closing when tapping image
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: Image.memory(
+                  imageBytes,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ),
+          
+          // Close button in top-right corner
+          Positioned(
+            top: 40,
+            right: 20,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 32),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.black.withOpacity(0.5),
+                padding: const EdgeInsets.all(8),
+              ),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+          
+          // Image info at bottom (if available)
+          if (metadata != null)
+            Positioned(
+              bottom: 40,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (metadata['filename'] != null)
+                      Text(
+                        metadata['filename'] as String,
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        textAlign: TextAlign.center,
+                      ),
+                    if (metadata['originalSize'] != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Size: ${(metadata['originalSize'] / 1024).toStringAsFixed(1)} KB',
+                        style: TextStyle(color: Colors.grey[300], fontSize: 12),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

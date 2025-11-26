@@ -2,15 +2,16 @@ const express = require('express');
 const router = express.Router();
 const { GroupItem, GroupItemRead, Channel, ChannelMembers, User, Client } = require('../db/model');
 const { Op } = require('sequelize');
+const { verifyAuthEither } = require('../middleware/sessionAuth');
 
 /**
  * POST /api/group-items
  * Create a new group item (message, reaction, etc.)
  * Body: { channelId, itemId, type, payload, cipherType, senderDevice, timestamp }
  */
-router.post('/', async (req, res) => {
+router.post('/', verifyAuthEither, async (req, res) => {
     try {
-        const userId = req.session?.uuid;
+        const userId = req.userId;
         if (!userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
@@ -73,9 +74,9 @@ router.post('/', async (req, res) => {
  * Get all items for a channel
  * Query params: ?since=timestamp&limit=50
  */
-router.get('/:channelId', async (req, res) => {
+router.get('/:channelId', verifyAuthEither, async (req, res) => {
     try {
-        const userId = req.session?.uuid;
+        const userId = req.userId;
         if (!userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
@@ -130,9 +131,9 @@ router.get('/:channelId', async (req, res) => {
  * Mark an item as read
  * Body: { deviceId }
  */
-router.post('/:itemId/read', async (req, res) => {
+router.post('/:itemId/read', verifyAuthEither, async (req, res) => {
     try {
-        const userId = req.session?.uuid;
+        const userId = req.userId;
         if (!userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
@@ -213,9 +214,9 @@ router.post('/:itemId/read', async (req, res) => {
  * GET /api/group-items/:itemId/read-status
  * Get read status for an item
  */
-router.get('/:itemId/read-status', async (req, res) => {
+router.get('/:itemId/read-status', verifyAuthEither, async (req, res) => {
     try {
-        const userId = req.session?.uuid;
+        const userId = req.userId;
         if (!userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
