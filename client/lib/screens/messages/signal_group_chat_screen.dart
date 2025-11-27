@@ -9,7 +9,8 @@ import '../../widgets/message_input.dart';
 import '../../widgets/animated_widgets.dart';
 import '../../services/api_service.dart';
 import '../../services/signal_service.dart';
-import '../../services/socket_service.dart';
+import '../../services/socket_service_native.dart'
+    if (dart.library.html) '../../services/socket_service.dart';
 import '../../services/offline_message_queue.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/file_transfer/p2p_coordinator.dart';

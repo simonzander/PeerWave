@@ -13,7 +13,7 @@ client:
   
   # Server compatibility range
   min_server_version: "1.0.0"
-  max_server_version: "1.99.99"  # Accepts any 1.x.x server version
+  max_server_version: "1.1.99"  # Accepts any 1.x.x server version
 
 server:
   # Semantic versioning: MAJOR.MINOR.PATCH
@@ -21,7 +21,7 @@ server:
   
   # Client compatibility range
   min_client_version: "0.9.0"
-  max_client_version: "1.99.99"  # Accepts any 1.x.x client version
+  max_client_version: "1.1.99"  # Accepts any 1.x.x client version
 
 # Version history and changelog
 changelog:

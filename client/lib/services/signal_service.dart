@@ -810,12 +810,17 @@ class SignalService {
 
     // NEW: Group Item Socket.IO listener
     SocketService().registerListener("groupItem", (data) {
-      // Update unread count for group messages
+      // Update unread count for group messages (ONLY for messages from OTHER users)
       if (_unreadMessagesProvider != null && data['channel'] != null && data['type'] != null) {
         final channelId = data['channel'] as String;
         final messageType = data['type'] as String;
-        // Only increment for 'message' and 'file' types
-        _unreadMessagesProvider!.incrementIfBadgeType(messageType, channelId, true);
+        final sender = data['sender'] as String?;
+        final isOwnMessage = sender == _currentUserId;
+        
+        // Only increment for 'message' and 'file' types from OTHER users
+        if (!isOwnMessage) {
+          _unreadMessagesProvider!.incrementIfBadgeType(messageType, channelId, true);
+        }
       }
       
       // ✅ Emit EventBus event for new group message/item (after decryption in callbacks)

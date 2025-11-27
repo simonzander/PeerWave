@@ -169,8 +169,9 @@ class NavigationBadge extends StatelessWidget {
         return 0;
       
       case NavigationBadgeType.activities:
-        // Use existing notification provider for activities
-        return notificationProvider.totalUnreadCount;
+        // Activities shows WebRTC participants and recent conversations
+        // No unread counting for now (not event-based)
+        return 0;
       
       case NavigationBadgeType.people:
         return 0;

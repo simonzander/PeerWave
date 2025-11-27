@@ -117,36 +117,205 @@ You can crop the hosted video with an experimental API that has not yet been sta
 ### Resizing
 You can resize the hosted video with an experimental API that has not yet been standardized. As of 2024-06-19, this API is available in Chrome 94, Edge 94 and Opera 80. 
 ## Getting Started
-### Node
+
+### Quick Start with Docker Compose (Recommended)
+
+The easiest way to run PeerWave is using Docker Compose:
 
 ```bash
-# Install dependencies for server
-npm install
+# Clone the repository
+git clone https://github.com/simonzander/PeerWave.git
+cd PeerWave
 
-# Run the server
-node server
+# Copy environment template
+cp server/.env.example server/.env
+
+# Edit configuration (see Configuration section below)
+nano server/.env
+
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
 ```
 
-### Docker Build
+PeerWave will be available at `http://localhost:3000`
+
+### Configuration
+
+#### Environment Variables
+
+Copy `server/.env.example` to `server/.env` and adjust values:
 
 ```bash
-# Building the image
-docker build --tag peerwave .
+# Required: Change these in production!
+SESSION_SECRET=your-long-random-string-here
+LIVEKIT_API_KEY=your-livekit-key
+LIVEKIT_API_SECRET=your-livekit-secret
 
-# Run the image in a container
-docker run -d -p 4000:4000 peerwave
+# Optional: Adjust as needed
+PORT=3000
+NODE_ENV=production
+LIVEKIT_TURN_DOMAIN=your-domain.com
+```
+
+Generate secure secrets:
+```bash
+openssl rand -base64 32
+```
+
+#### Configuration File
+
+Alternatively, mount a custom config file:
+
+```yaml
+# docker-compose.yml
+volumes:
+  - ./my-config.js:/usr/src/app/config/config.js:ro
+```
+
+See `server/config/config.example.js` for all available options.
+
+### Manual Deployment
+
+#### Prerequisites
+- Node.js 22+
+- Flutter 3.27.1+ (for web client)
+- Docker (optional)
+
+#### Build Web Client
+
+```bash
+cd client
+flutter pub get
+flutter build web --release
+
+# Copy to server
+cp -r build/web ../server/web
+```
+
+#### Run Server
+
+```bash
+cd server
+npm install
+node server.js
+```
+
+### Building Docker Image
+
+Use the provided build script:
+
+```bash
+# Linux/Mac
+chmod +x build-docker.sh
+./build-docker.sh v1.0.0
+
+# Windows
+.\build-docker.ps1 v1.0.0
+
+# With Docker Hub push
+./build-docker.sh v1.0.0 --push
+```
+
+Or manually:
+
+```bash
+# Build web client
+cd client && flutter build web --release
+cp -r build/web ../server/web
+
+# Build Docker image
+cd ../server
+docker build -t simonzander/peerwave:v1.0.0 .
 ```
 
 ### Docker Hub
-Image: [simonzander/peerwave](https://hub.docker.com/r/simonzander/peerwave)
+
+Pre-built images: [simonzander/peerwave](https://hub.docker.com/r/simonzander/peerwave)
 
 ```bash
-# Pull the image from Docker Hub
-docker pull simonzander/peerwave
+# Pull latest image
+docker pull simonzander/peerwave:latest
 
-# Run the image in a container
-docker run -d -p 4000:4000 peerwave
+# Run with environment variables
+docker run -d \
+  -p 3000:3000 \
+  -e SESSION_SECRET=your-secret \
+  -e LIVEKIT_API_KEY=your-key \
+  -e LIVEKIT_API_SECRET=your-secret \
+  -v ./db:/usr/src/app/db \
+  simonzander/peerwave:latest
 ```
+
+### Native Clients
+
+Download pre-built native clients from [GitHub Releases](https://github.com/simonzander/PeerWave/releases):
+
+- **Windows**: `.exe` installer or portable `.zip`
+- **macOS**: `.dmg` installer (coming soon)
+- **Linux**: AppImage (coming soon)
+
+#### Build from Source
+
+```bash
+# Windows
+cd client
+flutter build windows --release
+
+# macOS  
+flutter build macos --release
+
+# Linux
+flutter build linux --release
+```
+
+### Production Deployment Checklist
+
+- [ ] Change `SESSION_SECRET` to a random 32+ character string
+- [ ] Change `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`
+- [ ] Set `NODE_ENV=production`
+- [ ] Configure your domain in `LIVEKIT_TURN_DOMAIN`
+- [ ] Set up SSL certificates (if using HTTPS)
+- [ ] Configure CORS origins for your domains
+- [ ] Set up database backups (volume: `./db`)
+- [ ] Configure firewall rules for required ports
+- [ ] Review rate limiting settings
+- [ ] Enable logging and monitoring
+
+### Required Ports
+
+| Port Range | Protocol | Service | Required |
+|------------|----------|---------|----------|
+| 3000 | TCP | Web/API | Yes |
+| 7880 | TCP | LiveKit WebRTC | Yes |
+| 7881 | TCP | LiveKit HTTP API | Yes |
+| 5349 | TCP/UDP | TURN/TLS | Yes (P2P) |
+| 443 | UDP | TURN/UDP (QUIC) | Yes (P2P) |
+| 30100-30200 | UDP | RTP (WebRTC media) | Yes |
+| 30300-30400 | UDP | TURN Relay | Yes (P2P) |
+
+### Troubleshooting
+
+**Web client not loading:**
+- Ensure `server/web/` folder exists with built Flutter web files
+- Run `./build-docker.sh` to rebuild
+
+**Video calls not working:**
+- Check LiveKit is running: `docker-compose logs peerwave-livekit`
+- Verify TURN configuration in `.env`
+- Ensure UDP ports 30100-30400 are open
+
+**Database errors:**
+- Check `./db` volume permissions
+- Ensure SQLite file is writable
+- Review logs: `docker-compose logs peerwave-server`
+
+**Authentication issues (native clients):**
+- Verify `SESSION_SECRET` is set and persistent
+- Check HMAC configuration in `.env`
+- Review client/server time synchronization
 
 ## Limitations
 The main limitation is your upload speed, which is shared with your direct peers. If you are streaming, factors like the codec, resolution, and quick refreshes can increase your CPU (for VP8/VP9) or GPU (for H.264) load and affect your upload speed. The Chrome browser can handle up to 512 data connections and 56 streams.

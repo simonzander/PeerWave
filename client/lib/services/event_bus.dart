@@ -90,10 +90,11 @@ class EventBus {
   /// Type parameter T should match the data type emitted for this event.
   Stream<T> on<T>(AppEvent event) {
     if (!_controllers.containsKey(event)) {
-      _controllers[event] = StreamController<T>.broadcast();
+      _controllers[event] = StreamController<dynamic>.broadcast();
       debugPrint('[EVENT_BUS] Created stream for event: ${event.name}');
     }
-    return _controllers[event]!.stream as Stream<T>;
+    // Cast the stream instead of asserting, allowing dynamic to typed conversion
+    return _controllers[event]!.stream.cast<T>();
   }
   
   /// Emit an event with optional data
@@ -101,7 +102,7 @@ class EventBus {
   /// All subscribers to this event will receive the data.
   void emit(AppEvent event, [dynamic data]) {
     if (!_controllers.containsKey(event)) {
-      _controllers[event] = StreamController.broadcast();
+      _controllers[event] = StreamController<dynamic>.broadcast();
       debugPrint('[EVENT_BUS] Created stream for event: ${event.name}');
     }
     
