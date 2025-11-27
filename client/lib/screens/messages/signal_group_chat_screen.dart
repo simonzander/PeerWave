@@ -5,7 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import '../../widgets/message_list.dart';
-import '../../widgets/message_input.dart';
+import '../../widgets/enhanced_message_input.dart';
 import '../../widgets/animated_widgets.dart';
 import '../../services/api_service.dart';
 import '../../services/signal_service.dart';
@@ -16,6 +16,7 @@ import '../../services/user_profile_service.dart';
 import '../../services/file_transfer/p2p_coordinator.dart';
 import '../../services/file_transfer/socket_file_client.dart';
 import '../../services/storage/sqlite_group_message_store.dart';
+import '../../services/event_bus.dart';
 import '../../models/role.dart';
 import '../../models/file_message.dart';
 import '../../extensions/snackbar_extensions.dart';
@@ -32,12 +33,14 @@ class SignalGroupChatScreen extends StatefulWidget {
   final String host;
   final String channelUuid;
   final String channelName;
+  final String? scrollToMessageId; // Optional: message to scroll to after loading
 
   const SignalGroupChatScreen({
     super.key,
     required this.host,
     required this.channelUuid,
     required this.channelName,
+    this.scrollToMessageId,
   });
 
   @override
@@ -50,6 +53,8 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
   String? _error;
   final Set<String> _pendingReadReceipts = {};  // Track messages waiting for read receipt
   int _messageOffset = 0;
+  List<Map<String, String>> _channelMembers = []; // For @ mentions
+  String? _highlightedMessageId; // For highlighting target message
   bool _hasMoreMessages = true;
   bool _loadingMore = false;
   final ScrollController _scrollController = ScrollController();
@@ -85,18 +90,88 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
   /// Initialize the group chat screen: wait for sender key setup, then load messages
   Future<void> _initialize() async {
     await _initializeGroupChannel();
+    await _loadChannelMembers();
     await _loadMessages();
     _setupMessageListener();
+    _setupReactionListener(); // Listen for reaction updates
+    
+    // Auto-mark notifications as read for this channel
+    await _markChannelNotificationsAsRead();
     
     // Send read receipts for any pending messages when screen becomes visible
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _sendPendingReadReceipts();
       
-      // Scroll to bottom after initial load
+      // Scroll to bottom or target message after initial load
       if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        if (widget.scrollToMessageId != null) {
+          // Scroll to specific message
+          _scrollToMessage(widget.scrollToMessageId!);
+        } else {
+          // Scroll to bottom
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        }
       }
     });
+  }
+
+  /// Mark all notifications for this channel as read
+  Future<void> _markChannelNotificationsAsRead() async {
+    try {
+      final unreadProvider = Provider.of<UnreadMessagesProvider>(context, listen: false);
+      final groupMessageStore = await SqliteGroupMessageStore.getInstance();
+      
+      // Get unread notifications for this channel
+      final unreadNotifications = await groupMessageStore.getUnreadNotificationsForChannel(widget.channelUuid);
+      
+      if (unreadNotifications.isNotEmpty) {
+        // Mark as read in storage
+        for (final notification in unreadNotifications) {
+          final itemId = notification['itemId'] as String?;
+          if (itemId != null) {
+            await groupMessageStore.markNotificationAsRead(itemId);
+          }
+        }
+        
+        // Update unread counter
+        final itemIds = unreadNotifications
+            .map((n) => n['itemId'] as String?)
+            .where((id) => id != null)
+            .cast<String>()
+            .toList();
+        
+        if (itemIds.isNotEmpty) {
+          unreadProvider.markMultipleActivityNotificationsAsRead(itemIds);
+          debugPrint('[SIGNAL_GROUP] Marked ${itemIds.length} notifications as read for channel ${widget.channelUuid}');
+        }
+      }
+    } catch (e) {
+      debugPrint('[SIGNAL_GROUP] Error marking notifications as read: $e');
+    }
+  }
+
+  /// Load channel members for @ mention autocomplete
+  Future<void> _loadChannelMembers() async {
+    try {
+      final response = await ApiService.get('/api/channels/${widget.channelUuid}/members');
+      if (response.statusCode == 200 && response.data != null) {
+        final members = (response.data as List).map((member) {
+          return {
+            'userId': member['userId']?.toString() ?? '',
+            'displayName': member['displayName']?.toString() ?? member['username']?.toString() ?? 'Unknown',
+            'atName': member['username']?.toString() ?? member['displayName']?.toString() ?? '',
+          };
+        }).toList();
+        
+        setState(() {
+          _channelMembers = members.cast<Map<String, String>>();
+        });
+        
+        debugPrint('[SIGNAL_GROUP] Loaded ${_channelMembers.length} channel members for mentions');
+      }
+    } catch (e) {
+      debugPrint('[SIGNAL_GROUP] Error loading channel members: $e');
+    }
   }
 
   /// Initialize group channel: load all sender keys and upload our own
@@ -237,6 +312,29 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     SignalService.instance.registerItemCallback('groupItem', _handleGroupItem);
     SignalService.instance.registerItemCallback('groupItemReadUpdate', _handleReadReceipt);
     SocketService().registerListener('groupItemDelivered', _handleDeliveryReceipt);
+  }
+
+  /// Listen for reaction updates from other users
+  void _setupReactionListener() {
+    EventBus.instance.on(AppEvent.reactionUpdated).listen((data) {
+      if (!mounted) return;
+      
+      final messageId = data['messageId'] as String?;
+      final channelId = data['channelId'] as String?;
+      final reactions = data['reactions'] as Map<String, dynamic>?;
+      
+      // Only update if it's for this channel
+      if (channelId == widget.channelUuid && messageId != null && reactions != null) {
+        setState(() {
+          final msgIndex = _messages.indexWhere((m) => m['itemId'] == messageId);
+          if (msgIndex != -1) {
+            // Update reactions in the message data
+            _messages[msgIndex]['reactions'] = jsonEncode(reactions);
+            debugPrint('[SIGNAL_GROUP] Updated reactions for message $messageId: $reactions');
+          }
+        });
+      }
+    });
   }
 
   /// Handle delivery receipt from server
@@ -453,6 +551,50 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
   // - _handleNewMessage: Replaced by _handleGroupItem
   // ========================================
 
+  /// Scroll to a specific message and highlight it
+  Future<void> _scrollToMessage(String messageId) async {
+    // Wait for widget tree to build
+    await Future.delayed(const Duration(milliseconds: 300));
+    
+    if (!mounted || !_scrollController.hasClients) return;
+    
+    // Find message index
+    final messageIndex = _messages.indexWhere((m) => m['itemId'] == messageId);
+    
+    if (messageIndex == -1) {
+      debugPrint('[SIGNAL_GROUP] Message $messageId not found in list');
+      return;
+    }
+    
+    debugPrint('[SIGNAL_GROUP] Scrolling to message at index $messageIndex');
+    
+    // Calculate approximate scroll position (assuming ~80px per message)
+    final approximatePosition = messageIndex * 80.0;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final targetPosition = approximatePosition.clamp(0.0, maxScroll);
+    
+    // Scroll to position
+    await _scrollController.animateTo(
+      targetPosition,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
+    );
+    
+    // Highlight the message
+    setState(() {
+      _highlightedMessageId = messageId;
+    });
+    
+    // Remove highlight after 2 seconds
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() {
+          _highlightedMessageId = null;
+        });
+      }
+    });
+  }
+
   Future<void> _loadMessages({bool loadMore = false}) async {
     if (loadMore) {
       if (_loadingMore || !_hasMoreMessages) return;
@@ -668,9 +810,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     }
   }
 
-  Future<void> _sendMessage(String text) async {
+  Future<void> _sendMessage(String text, {String? type, Map<String, dynamic>? metadata}) async {
     if (text.trim().isEmpty) return;
 
+    final messageType = type ?? 'message';
     final itemId = const Uuid().v4();
     final timestamp = DateTime.now().toIso8601String();
 
@@ -774,8 +917,36 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         channelId: widget.channelUuid,
         message: text,
         itemId: itemId,
-        type: 'message',
+        type: messageType,
+        metadata: metadata,
       );
+      
+      // Send mention notifications if message has mentions
+      if (metadata != null && metadata['mentions'] != null && messageType == 'message') {
+        final mentions = metadata['mentions'] as List;
+        for (final mention in mentions) {
+          try {
+            final mentionItemId = const Uuid().v4();
+            final mentionPayload = {
+              'messageId': itemId,
+              'mentionedUserId': mention['userId'],
+              'sender': signalService.currentUserId,
+              'content': text.length > 50 ? '${text.substring(0, 50)}...' : text,
+            };
+            
+            await signalService.sendGroupItem(
+              channelId: widget.channelUuid,
+              message: jsonEncode(mentionPayload),
+              itemId: mentionItemId,
+              type: 'mention',
+            );
+            
+            debugPrint('[SIGNAL_GROUP] Sent mention notification for ${mention['userId']}');
+          } catch (e) {
+            debugPrint('[SIGNAL_GROUP] Error sending mention notification: $e');
+          }
+        }
+      }
 
       // Update message status
       setState(() {
@@ -943,12 +1114,22 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                                   messages: _messages,
                                   onFileDownload: _handleFileDownload,
                                   scrollController: _scrollController,
+                                  onReactionAdd: _addReaction,
+                                  onReactionRemove: _removeReaction,
+                                  currentUserId: SignalService.instance.currentUserId ?? '',
+                                  highlightedMessageId: _highlightedMessageId,
                                 ),
                               ),
                             ],
                           ),
           ),
-          MessageInput(onSendMessage: _sendMessage),
+          EnhancedMessageInput(
+            onSendMessage: (message, {type, metadata}) {
+              _sendMessage(message, type: type, metadata: metadata);
+            },
+            availableUsers: _channelMembers,
+            isGroupChat: true,
+          ),
         ],
       ),
     );
@@ -1025,6 +1206,118 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         ],
       ),
     );
+  }
+
+  // =========================================================================
+  // EMOJI REACTIONS
+  // =========================================================================
+
+  /// Add emoji reaction to a message
+  Future<void> _addReaction(String messageId, String emoji) async {
+    try {
+      final itemId = const Uuid().v4();
+      final signalService = SignalService.instance;
+      final currentUserId = signalService.currentUserId;
+      
+      if (currentUserId == null) {
+        debugPrint('[GROUP_CHAT] ✗ Cannot add reaction: no current user ID');
+        return;
+      }
+      
+      // Create emote message payload (will be encrypted)
+      final emotePayload = {
+        'messageId': messageId,
+        'emoji': emoji,
+        'action': 'add',
+        'sender': currentUserId,
+        'channelId': widget.channelUuid,
+      };
+      
+      // Encode as JSON (will be encrypted and decrypted by recipients)
+      final payloadJson = jsonEncode(emotePayload);
+      
+      // Send via Signal Protocol
+      await signalService.sendGroupItem(
+        channelId: widget.channelUuid,
+        itemId: itemId,
+        message: payloadJson,
+        type: 'emote',
+      );
+      
+      // Update local database immediately
+      final groupMessageStore = await SqliteGroupMessageStore.getInstance();
+      await groupMessageStore.addReaction(messageId, emoji, currentUserId);
+      
+      // Update UI
+      final reactions = await groupMessageStore.getReactions(messageId);
+      setState(() {
+        final msgIndex = _messages.indexWhere((m) => m['itemId'] == messageId);
+        if (msgIndex != -1) {
+          _messages[msgIndex]['reactions'] = jsonEncode(reactions);
+        }
+      });
+      
+      debugPrint('[GROUP_CHAT] ✓ Sent emote reaction: $emoji on message $messageId');
+    } catch (e) {
+      debugPrint('[GROUP_CHAT] ✗ Error sending reaction: $e');
+      if (mounted) {
+        context.showCustomSnackBar(
+          'Failed to add reaction: $e',
+          backgroundColor: Colors.red,
+        );
+      }
+    }
+  }
+
+  /// Remove emoji reaction from a message
+  Future<void> _removeReaction(String messageId, String emoji) async {
+    try {
+      final itemId = const Uuid().v4();
+      final signalService = SignalService.instance;
+      final currentUserId = signalService.currentUserId;
+      
+      if (currentUserId == null) {
+        debugPrint('[GROUP_CHAT] ✗ Cannot remove reaction: no current user ID');
+        return;
+      }
+      
+      // Create emote message payload (will be encrypted)
+      final emotePayload = {
+        'messageId': messageId,
+        'emoji': emoji,
+        'action': 'remove',
+        'sender': currentUserId,
+        'channelId': widget.channelUuid,
+      };
+      
+      // Encode as JSON (will be encrypted and decrypted by recipients)
+      final payloadJson = jsonEncode(emotePayload);
+      
+      // Send via Signal Protocol
+      await signalService.sendGroupItem(
+        channelId: widget.channelUuid,
+        itemId: itemId,
+        message: payloadJson,
+        type: 'emote',
+      );
+      
+      // Update local database immediately
+      final groupMessageStore = await SqliteGroupMessageStore.getInstance();
+      await groupMessageStore.removeReaction(messageId, emoji, currentUserId);
+      
+      // Update UI
+      final reactions = await groupMessageStore.getReactions(messageId);
+      setState(() {
+        final msgIndex = _messages.indexWhere((m) => m['itemId'] == messageId);
+        if (msgIndex != -1) {
+          _messages[msgIndex]['reactions'] = jsonEncode(reactions);
+        }
+      });
+      
+      debugPrint('[GROUP_CHAT] ✓ Removed emote reaction: $emoji from message $messageId');
+    } catch (e) {
+      debugPrint('[GROUP_CHAT] ✗ Error removing reaction: $e');
+    }
   }
 
   /// Handle file download request from FileMessageWidget

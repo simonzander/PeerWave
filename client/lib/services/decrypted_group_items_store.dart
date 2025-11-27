@@ -102,6 +102,7 @@ class DecryptedGroupItemsStore {
           'timestamp': msg['timestamp'],
           'type': msg['type'] ?? 'message',
           'decryptedAt': msg['decrypted_at'],
+          'reactions': msg['reactions'] ?? '{}', // Include reactions
         }).toList();
       }
     } catch (e) {

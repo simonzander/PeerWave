@@ -6,6 +6,12 @@ enum AppEvent {
   /// New message received (direct or channel)
   newMessage,
   
+  /// New activity notification (emote, mention, missingcall, etc.)
+  newNotification,
+  
+  /// Emoji reaction added or removed
+  reactionUpdated,
+  
   /// New channel created
   newChannel,
   

@@ -19,12 +19,36 @@ class UnreadMessagesProvider extends ChangeNotifier {
   // User UUID -> Unread Count
   Map<String, int> _directMessageUnreadCounts = {};
   
+  // Activity Notification Item ID -> Count (always 1 per notification)
+  Map<String, int> _activityNotificationCounts = {};
+  
   // Storage keys for persistence
   static const String _storageKeyChannels = 'unread_channel_counts';
   static const String _storageKeyDirectMessages = 'unread_dm_counts';
+  static const String _storageKeyActivityNotifications = 'unread_activity_notifications';
   
   /// Whitelisted message types that should increment badge counts
-  static const Set<String> BADGE_MESSAGE_TYPES = {'message', 'file'};
+  static const Set<String> BADGE_MESSAGE_TYPES = {
+    'message', 
+    'file', 
+    'emote', 
+    'mention', 
+    'missingcall', 
+    'addtochannel', 
+    'removefromchannel', 
+    'permissionchange'
+  };
+  
+  /// Activity notification types (subset of badge types)
+  /// These are shown in Activities/Notifications tab, not in chat message lists
+  static const Set<String> ACTIVITY_NOTIFICATION_TYPES = {
+    'emote', 
+    'mention', 
+    'missingcall', 
+    'addtochannel', 
+    'removefromchannel', 
+    'permissionchange'
+  };
   
   // ============================================================================
   // GETTERS
@@ -52,6 +76,13 @@ class UnreadMessagesProvider extends ChangeNotifier {
     return total;
   }
   
+  /// Get total unread count for activity notifications
+  /// These are notification-type messages (emote, mention, missingcall, etc.)
+  int get totalActivityNotifications {
+    final total = _activityNotificationCounts.values.fold(0, (a, b) => a + b);
+    return total;
+  }
+  
   /// Get immutable copy of all channel unread counts
   Map<String, int> get channelUnreadCounts {
     return Map.unmodifiable(_channelUnreadCounts);
@@ -60,6 +91,11 @@ class UnreadMessagesProvider extends ChangeNotifier {
   /// Get immutable copy of all direct message unread counts
   Map<String, int> get directMessageUnreadCounts {
     return Map.unmodifiable(_directMessageUnreadCounts);
+  }
+  
+  /// Get immutable copy of all activity notification counts
+  Map<String, int> get activityNotificationCounts {
+    return Map.unmodifiable(_activityNotificationCounts);
   }
   
   // ============================================================================
@@ -92,6 +128,30 @@ class UnreadMessagesProvider extends ChangeNotifier {
     
     notifyListeners();
     saveToStorage();
+  }
+  
+  /// Increment unread count for an activity notification
+  /// 
+  /// [itemId] The item ID of the notification message
+  void incrementActivityNotification(String itemId) {
+    _activityNotificationCounts[itemId] = 1; // Each notification counts as 1
+    
+    debugPrint('[UnreadProvider] ✓ Activity notification added: $itemId (total: $totalActivityNotifications)');
+    notifyListeners();
+    saveToStorage();
+  }
+  
+  /// Decrement/remove an activity notification when marked as read
+  /// 
+  /// [itemId] The item ID of the notification message
+  void decrementActivityNotification(String itemId) {
+    if (_activityNotificationCounts.containsKey(itemId)) {
+      _activityNotificationCounts.remove(itemId);
+      
+      debugPrint('[UnreadProvider] ✓ Activity notification removed: $itemId (total: $totalActivityNotifications)');
+      notifyListeners();
+      saveToStorage();
+    }
   }
   
   /// Increment unread count based on message type (with type filtering)
@@ -133,6 +193,43 @@ class UnreadMessagesProvider extends ChangeNotifier {
     if (_directMessageUnreadCounts.containsKey(userUuid)) {
       debugPrint('[UnreadProvider] Marking DM $userUuid as read');
       _directMessageUnreadCounts.remove(userUuid);
+      notifyListeners();
+      saveToStorage();
+    }
+  }
+  
+  /// Mark a specific activity notification as read
+  void markActivityNotificationAsRead(String itemId) {
+    if (_activityNotificationCounts.containsKey(itemId)) {
+      debugPrint('[UnreadProvider] Marking activity notification as read: $itemId');
+      _activityNotificationCounts.remove(itemId);
+      notifyListeners();
+      saveToStorage();
+    }
+  }
+  
+  /// Mark all activity notifications as read
+  void markAllActivityNotificationsAsRead() {
+    if (_activityNotificationCounts.isNotEmpty) {
+      debugPrint('[UnreadProvider] Marking all ${_activityNotificationCounts.length} activity notifications as read');
+      _activityNotificationCounts.clear();
+      notifyListeners();
+      saveToStorage();
+    }
+  }
+  
+  /// Mark multiple activity notifications as read (bulk operation)
+  void markMultipleActivityNotificationsAsRead(List<String> itemIds) {
+    bool changed = false;
+    for (final itemId in itemIds) {
+      if (_activityNotificationCounts.containsKey(itemId)) {
+        _activityNotificationCounts.remove(itemId);
+        changed = true;
+      }
+    }
+    
+    if (changed) {
+      debugPrint('[UnreadProvider] Marked ${itemIds.length} activity notifications as read');
       notifyListeners();
       saveToStorage();
     }
@@ -181,6 +278,7 @@ class UnreadMessagesProvider extends ChangeNotifier {
     debugPrint('[UnreadProvider] Resetting all unread counts');
     _channelUnreadCounts.clear();
     _directMessageUnreadCounts.clear();
+    _activityNotificationCounts.clear();
     notifyListeners();
     saveToStorage();
   }
@@ -214,6 +312,7 @@ class UnreadMessagesProvider extends ChangeNotifier {
         // Web: Use IndexedDB via idb_shim
         final channelsJson = await _loadFromIndexedDB(_storageKeyChannels);
         final dmJson = await _loadFromIndexedDB(_storageKeyDirectMessages);
+        final activityJson = await _loadFromIndexedDB(_storageKeyActivityNotifications);
         
         if (channelsJson != null && channelsJson.isNotEmpty) {
           final decoded = jsonDecode(channelsJson) as Map<String, dynamic>;
@@ -225,12 +324,19 @@ class UnreadMessagesProvider extends ChangeNotifier {
           final decoded = jsonDecode(dmJson) as Map<String, dynamic>;
           _directMessageUnreadCounts = decoded.map((k, v) => MapEntry(k, v as int));
           debugPrint('[UnreadProvider] Loaded ${_directMessageUnreadCounts.length} DM counts from storage');
+        }
+        
+        if (activityJson != null && activityJson.isNotEmpty) {
+          final decoded = jsonDecode(activityJson) as Map<String, dynamic>;
+          _activityNotificationCounts = decoded.map((k, v) => MapEntry(k, v as int));
+          debugPrint('[UnreadProvider] Loaded ${_activityNotificationCounts.length} activity notifications from storage');
         }
       } else {
         // Native: Use SharedPreferences
         final prefs = await SharedPreferences.getInstance();
         final channelsJson = prefs.getString(_storageKeyChannels);
         final dmJson = prefs.getString(_storageKeyDirectMessages);
+        final activityJson = prefs.getString(_storageKeyActivityNotifications);
         
         if (channelsJson != null && channelsJson.isNotEmpty) {
           final decoded = jsonDecode(channelsJson) as Map<String, dynamic>;
@@ -242,6 +348,12 @@ class UnreadMessagesProvider extends ChangeNotifier {
           final decoded = jsonDecode(dmJson) as Map<String, dynamic>;
           _directMessageUnreadCounts = decoded.map((k, v) => MapEntry(k, v as int));
           debugPrint('[UnreadProvider] Loaded ${_directMessageUnreadCounts.length} DM counts from storage');
+        }
+        
+        if (activityJson != null && activityJson.isNotEmpty) {
+          final decoded = jsonDecode(activityJson) as Map<String, dynamic>;
+          _activityNotificationCounts = decoded.map((k, v) => MapEntry(k, v as int));
+          debugPrint('[UnreadProvider] Loaded ${_activityNotificationCounts.length} activity notifications from storage');
         }
       }
       
@@ -259,11 +371,13 @@ class UnreadMessagesProvider extends ChangeNotifier {
         // Web: Use IndexedDB
         await _saveToIndexedDB(_storageKeyChannels, jsonEncode(_channelUnreadCounts));
         await _saveToIndexedDB(_storageKeyDirectMessages, jsonEncode(_directMessageUnreadCounts));
+        await _saveToIndexedDB(_storageKeyActivityNotifications, jsonEncode(_activityNotificationCounts));
       } else {
         // Native: Use SharedPreferences
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_storageKeyChannels, jsonEncode(_channelUnreadCounts));
         await prefs.setString(_storageKeyDirectMessages, jsonEncode(_directMessageUnreadCounts));
+        await prefs.setString(_storageKeyActivityNotifications, jsonEncode(_activityNotificationCounts));
       }
     } catch (e) {
       debugPrint('[UnreadProvider] Error saving to storage: $e');

@@ -17,7 +17,7 @@ class DatabaseHelper {
   static bool _factoryInitialized = false;
   static bool _initializing = false;
   static const String _databaseBaseName = 'peerwave'; // Base name without .db extension
-  static const int _databaseVersion = 6; // Version 6: Add starred_channels table
+  static const int _databaseVersion = 7; // Version 7: Add reactions column to messages
   
   static final DeviceIdentityService _deviceIdentity = DeviceIdentityService.instance;
   
@@ -180,6 +180,7 @@ class DatabaseHelper {
         read_receipt_sent INTEGER DEFAULT 0,
         metadata TEXT,
         decrypted_at TEXT NOT NULL,
+        reactions TEXT DEFAULT '{}',
         created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
       )
     ''');
@@ -329,6 +330,15 @@ class DatabaseHelper {
       ''');
       await db.execute('CREATE INDEX idx_starred_channels_timestamp ON starred_channels(starred_at DESC)');
       debugPrint('[DATABASE] ✓ Added starred_channels table (client-side starred state)');
+    }
+    
+    // Version 6 → 7: Add reactions column to messages table
+    if (oldVersion < 7) {
+      debugPrint('[DATABASE] Applying migration: Add reactions column to messages table');
+      await db.execute('''
+        ALTER TABLE messages ADD COLUMN reactions TEXT DEFAULT '{}'
+      ''');
+      debugPrint('[DATABASE] ✓ Added reactions column (stores emoji reactions as JSON map)');
     }
   }
 

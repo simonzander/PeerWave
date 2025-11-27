@@ -487,7 +487,269 @@ class SqliteMessageStore {
       'status': row['status'], // Include status for sent messages
       'decryptedAt': row['decrypted_at'],
       'metadata': metadata, // Include parsed metadata for image/voice messages
+      'reactions': row['reactions'] ?? '{}', // Include reactions
     };
   }
+
+  /// Get notification messages for DMs (emote, mention, missingcall, etc.)
+  /// These are stored in same messages table but filtered by type and channel_id IS NULL
+  Future<List<Map<String, dynamic>>> getNotificationMessages({
+    List<String>? types,
+    bool unreadOnly = false,
+    int limit = 100,
+  }) async {
+    try {
+      final db = await DatabaseHelper.database;
+      
+      final notificationTypes = types ?? [
+        'emote',
+        'mention',
+        'missingcall',
+        'addtochannel',
+        'removefromchannel',
+        'permissionchange',
+      ];
+      
+      final placeholders = List.filled(notificationTypes.length, '?').join(',');
+      String whereClause = 'type IN ($placeholders) AND channel_id IS NULL AND direction = ?';
+      List<dynamic> whereArgs = [...notificationTypes, 'received'];
+      
+      if (unreadOnly) {
+        whereClause += ' AND (status IS NULL OR status != ?)';
+        whereArgs.add('read');
+      }
+      
+      final results = await db.query(
+        'messages',
+        where: whereClause,
+        whereArgs: whereArgs,
+        orderBy: 'timestamp DESC',
+        limit: limit,
+      );
+      
+      // Decrypt and convert each result
+      final decryptedResults = <Map<String, dynamic>>[];
+      for (var row in results) {
+        try {
+          final converted = await _convertFromDb(row);
+          decryptedResults.add(converted);
+        } catch (e) {
+          debugPrint('[SQLITE_MESSAGE_STORE] ⚠ Failed to decrypt notification ${row['item_id']}: $e');
+        }
+      }
+      
+      debugPrint('[SQLITE_MESSAGE_STORE] ✓ Retrieved ${decryptedResults.length} DM notification messages');
+      return decryptedResults;
+    } catch (e, stackTrace) {
+      debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error getting DM notification messages: $e');
+      debugPrint('[SQLITE_MESSAGE_STORE] Stack trace: $stackTrace');
+      return [];
+    }
+  }
+
+  /// Mark a specific notification as read
+  Future<void> markNotificationAsRead(String itemId) async {
+    try {
+      final db = await DatabaseHelper.database;
+      
+      await db.update(
+        'messages',
+        {'status': 'read'},
+        where: 'item_id = ?',
+        whereArgs: [itemId],
+      );
+      
+      debugPrint('[SQLITE_MESSAGE_STORE] ✓ Marked notification as read: $itemId');
+    } catch (e, stackTrace) {
+      debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error marking notification as read: $e');
+      debugPrint('[SQLITE_MESSAGE_STORE] Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Mark all notifications as read for DMs
+  Future<void> markAllNotificationsAsRead({List<String>? types}) async {
+    try {
+      final db = await DatabaseHelper.database;
+      
+      final notificationTypes = types ?? [
+        'emote',
+        'mention',
+        'missingcall',
+        'addtochannel',
+        'removefromchannel',
+        'permissionchange',
+      ];
+      
+      final placeholders = List.filled(notificationTypes.length, '?').join(',');
+      final whereClause = 'type IN ($placeholders) AND channel_id IS NULL';
+      
+      await db.update(
+        'messages',
+        {'status': 'read'},
+        where: whereClause,
+        whereArgs: notificationTypes,
+      );
+      
+      debugPrint('[SQLITE_MESSAGE_STORE] ✓ Marked all DM notifications as read');
+    } catch (e, stackTrace) {
+      debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error marking all DM notifications as read: $e');
+      debugPrint('[SQLITE_MESSAGE_STORE] Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Get unread notification messages for a specific user (for auto-mark when opening conversation)
+  Future<List<Map<String, dynamic>>> getUnreadNotificationsForUser(String userId) async {
+    try {
+      final db = await DatabaseHelper.database;
+      
+      final notificationTypes = [
+        'emote',
+        'mention',
+        'missingcall',
+        'addtochannel',
+        'removefromchannel',
+        'permissionchange',
+      ];
+      
+      final placeholders = List.filled(notificationTypes.length, '?').join(',');
+      final whereClause = 'type IN ($placeholders) AND sender = ? AND channel_id IS NULL AND (status IS NULL OR status != ?)';
+      final whereArgs = [...notificationTypes, userId, 'read'];
+      
+      final results = await db.query(
+        'messages',
+        where: whereClause,
+        whereArgs: whereArgs,
+        orderBy: 'timestamp DESC',
+      );
+      
+      debugPrint('[SQLITE_MESSAGE_STORE] ✓ Found ${results.length} unread notifications for user $userId');
+      return results;
+    } catch (e, stackTrace) {
+      debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error getting unread notifications for user: $e');
+      debugPrint('[SQLITE_MESSAGE_STORE] Stack trace: $stackTrace');
+      return [];
+    }
+  }
+
+  // =========================================================================
+  // EMOJI REACTIONS
+  // =========================================================================
+
+  /// Add a reaction to a message
+  Future<void> addReaction(String messageId, String emoji, String userId) async {
+    try {
+      final db = await DatabaseHelper.database;
+      
+      // Get current reactions
+      final reactions = await getReactions(messageId);
+      
+      // Add user to emoji list (using Set to prevent duplicates)
+      if (reactions.containsKey(emoji)) {
+        final users = Set<String>.from(reactions[emoji] as List);
+        users.add(userId);
+        reactions[emoji] = users.toList();
+      } else {
+        reactions[emoji] = [userId];
+      }
+      
+      // Update in database
+      await db.update(
+        'messages',
+        {'reactions': jsonEncode(reactions)},
+        where: 'item_id = ?',
+        whereArgs: [messageId],
+      );
+      
+      debugPrint('[SQLITE_MESSAGE_STORE] ✓ Added reaction $emoji from $userId to message $messageId');
+    } catch (e) {
+      debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error adding reaction: $e');
+    }
+  }
+
+  /// Remove a reaction from a message
+  Future<void> removeReaction(String messageId, String emoji, String userId) async {
+    try {
+      final db = await DatabaseHelper.database;
+      
+      // Get current reactions
+      final reactions = await getReactions(messageId);
+      
+      // Remove user from emoji list
+      if (reactions.containsKey(emoji)) {
+        final users = Set<String>.from(reactions[emoji] as List);
+        users.remove(userId);
+        
+        if (users.isEmpty) {
+          // Remove emoji entirely if no users left
+          reactions.remove(emoji);
+        } else {
+          reactions[emoji] = users.toList();
+        }
+        
+        // Update in database
+        await db.update(
+          'messages',
+          {'reactions': jsonEncode(reactions)},
+          where: 'item_id = ?',
+          whereArgs: [messageId],
+        );
+        
+        debugPrint('[SQLITE_MESSAGE_STORE] ✓ Removed reaction $emoji from $userId from message $messageId');
+      }
+    } catch (e) {
+      debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error removing reaction: $e');
+    }
+  }
+
+  /// Get all reactions for a message
+  /// Returns: Map<emoji, List<userId>>
+  Future<Map<String, dynamic>> getReactions(String messageId) async {
+    try {
+      final db = await DatabaseHelper.database;
+      
+      final result = await db.query(
+        'messages',
+        columns: ['reactions'],
+        where: 'item_id = ?',
+        whereArgs: [messageId],
+        limit: 1,
+      );
+      
+      if (result.isEmpty) {
+        return {};
+      }
+      
+      final reactionsJson = result.first['reactions'] as String?;
+      if (reactionsJson == null || reactionsJson.isEmpty || reactionsJson == '{}') {
+        return {};
+      }
+      
+      return jsonDecode(reactionsJson) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error getting reactions: $e');
+      return {};
+    }
+  }
+
+  /// Update reactions for a message (bulk update)
+  Future<void> updateReactions(String messageId, Map<String, dynamic> reactions) async {
+    try {
+      final db = await DatabaseHelper.database;
+      
+      await db.update(
+        'messages',
+        {'reactions': jsonEncode(reactions)},
+        where: 'item_id = ?',
+        whereArgs: [messageId],
+      );
+      
+      debugPrint('[SQLITE_MESSAGE_STORE] ✓ Updated reactions for message $messageId');
+    } catch (e) {
+      debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error updating reactions: $e');
+    }
+  }
 }
+
 

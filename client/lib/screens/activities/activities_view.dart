@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../services/activities_service.dart';
 import '../../services/api_service.dart';
+import '../../services/event_bus.dart';
+import '../../services/storage/sqlite_group_message_store.dart';
+import '../../services/storage/sqlite_message_store.dart';
+import '../../providers/unread_messages_provider.dart';
 import 'dart:convert';
+import 'dart:async';
 
-/// Activities View - Shows WebRTC participants and recent conversations
+/// Activities View - Shows notifications and recent conversations
 class ActivitiesView extends StatefulWidget {
   final String host;
   final Function(String uuid, String displayName)? onDirectMessageTap;
@@ -20,13 +26,16 @@ class ActivitiesView extends StatefulWidget {
   State<ActivitiesView> createState() => _ActivitiesViewState();
 }
 
-class _ActivitiesViewState extends State<ActivitiesView> {
+class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
   bool _loading = true;
   List<Map<String, dynamic>> _webrtcChannels = [];
   List<Map<String, dynamic>> _conversations = [];
+  List<Map<String, dynamic>> _notifications = [];
   int _conversationsPage = 0;
   static const int _conversationsPerPage = 20;
   bool _hasMoreConversations = true;
+  StreamSubscription? _notificationSubscription;
 
   // Cache for user/channel info (store full objects for avatars, @names, etc.)
   final Map<String, Map<String, dynamic>> _userInfo = {};
@@ -35,7 +44,133 @@ class _ActivitiesViewState extends State<ActivitiesView> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _loadActivities();
+    _loadNotifications();
+    
+    // Listen for new notifications
+    _notificationSubscription = EventBus.instance.on<Map<String, dynamic>>(AppEvent.newNotification)
+      .listen((data) {
+        debugPrint('[ACTIVITIES_VIEW] New notification received');
+        _loadNotifications();
+      });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _notificationSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadNotifications() async {
+    try {
+      final groupMessageStore = await SqliteGroupMessageStore.getInstance();
+      final dmMessageStore = await SqliteMessageStore.getInstance();
+      
+      // Load notifications from both group and DM storage
+      final groupNotifs = await groupMessageStore.getNotificationMessages(limit: 100);
+      final dmNotifs = await dmMessageStore.getNotificationMessages(limit: 100);
+      
+      // Parse notification messages to extract metadata
+      final parsedNotifs = <Map<String, dynamic>>[];
+      for (final notif in [...groupNotifs, ...dmNotifs]) {
+        final parsed = Map<String, dynamic>.from(notif);
+        
+        // Try to parse JSON from message field for mention/emote notifications
+        if (notif['message'] != null && notif['message'].toString().isNotEmpty) {
+          try {
+            final messageData = jsonDecode(notif['message']);
+            if (messageData is Map<String, dynamic>) {
+              // Extract messageId for navigation
+              parsed['targetMessageId'] = messageData['messageId'];
+              // Extract content for display
+              if (messageData['content'] != null) {
+                parsed['content'] = messageData['content'];
+              }
+              // Preserve other metadata
+              parsed['notificationData'] = messageData;
+            }
+          } catch (e) {
+            // Not JSON or invalid - use raw message as content
+            parsed['content'] = notif['message'].toString();
+          }
+        }
+        
+        parsedNotifs.add(parsed);
+      }
+      
+      // Sort by timestamp
+      parsedNotifs.sort((a, b) {
+        final aTime = DateTime.tryParse(a['timestamp'] ?? '') ?? DateTime.now();
+        final bTime = DateTime.tryParse(b['timestamp'] ?? '') ?? DateTime.now();
+        return bTime.compareTo(aTime); // Newest first
+      });
+      
+      if (!mounted) return;
+      
+      setState(() {
+        _notifications = parsedNotifs;
+      });
+      
+      debugPrint('[ACTIVITIES_VIEW] Loaded ${_notifications.length} notifications');
+    } catch (e) {
+      debugPrint('[ACTIVITIES_VIEW] Error loading notifications: $e');
+    }
+  }
+
+  Future<void> _markNotificationAsRead(String itemId, String? channelId) async {
+    try {
+      final unreadProvider = Provider.of<UnreadMessagesProvider>(context, listen: false);
+      
+      if (channelId != null) {
+        // Group notification
+        final groupMessageStore = await SqliteGroupMessageStore.getInstance();
+        await groupMessageStore.markNotificationAsRead(itemId);
+      } else {
+        // DM notification
+        final dmMessageStore = await SqliteMessageStore.getInstance();
+        await dmMessageStore.markNotificationAsRead(itemId);
+      }
+      
+      // Update unread counter
+      unreadProvider.markActivityNotificationAsRead(itemId);
+      
+      // Reload notifications to reflect the change
+      await _loadNotifications();
+      
+      debugPrint('[ACTIVITIES_VIEW] Marked notification as read: $itemId');
+    } catch (e) {
+      debugPrint('[ACTIVITIES_VIEW] Error marking notification as read: $e');
+    }
+  }
+
+  Future<void> _markAllNotificationsAsRead() async {
+    try {
+      final unreadProvider = Provider.of<UnreadMessagesProvider>(context, listen: false);
+      final groupMessageStore = await SqliteGroupMessageStore.getInstance();
+      final dmMessageStore = await SqliteMessageStore.getInstance();
+      
+      // Mark all as read in storage
+      await groupMessageStore.markAllNotificationsAsRead();
+      await dmMessageStore.markAllNotificationsAsRead();
+      
+      // Clear all from unread counter
+      unreadProvider.markAllActivityNotificationsAsRead();
+      
+      // Reload notifications
+      await _loadNotifications();
+      
+      debugPrint('[ACTIVITIES_VIEW] Marked all notifications as read');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('All notifications marked as read')),
+        );
+      }
+    } catch (e) {
+      debugPrint('[ACTIVITIES_VIEW] Error marking all notifications as read: $e');
+    }
   }
 
   Future<void> _loadActivities() async {
@@ -266,6 +401,61 @@ class _ActivitiesViewState extends State<ActivitiesView> {
 
   @override
   Widget build(BuildContext context) {
+    // Show tabs with notifications and recent activities
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Activities'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Notifications', icon: Icon(Icons.notifications)),
+            Tab(text: 'Recent', icon: Icon(Icons.history)),
+          ],
+        ),
+        actions: [
+          // Show "mark all as read" button only on notifications tab
+          if (_tabController.index == 0 && _notifications.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.done_all),
+              onPressed: _markAllNotificationsAsRead,
+              tooltip: 'Mark all as read',
+            ),
+        ],
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildNotificationsTab(),
+          _buildRecentActivitiesTab(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotificationsTab() {
+    if (_notifications.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.notifications_none, size: 64, color: Colors.grey),
+            SizedBox(height: 16),
+            Text('No notifications', style: TextStyle(fontSize: 18, color: Colors.grey)),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: _notifications.length,
+      itemBuilder: (context, index) {
+        final notification = _notifications[index];
+        return _buildNotificationItem(notification);
+      },
+    );
+  }
+
+  Widget _buildRecentActivitiesTab() {
     if (_loading && _conversations.isEmpty) {
       return const Center(
         child: CircularProgressIndicator(),
@@ -584,5 +774,153 @@ class _ActivitiesViewState extends State<ActivitiesView> {
       return '';
     }
   }
+
+  Widget _buildNotificationItem(Map<String, dynamic> notification) {
+    final type = notification['type'] ?? '';
+    final itemId = notification['itemId'] ?? '';
+    final channelId = notification['channelId'];
+    final sender = notification['sender'] ?? '';
+    final timestamp = notification['timestamp'] ?? '';
+    final content = notification['content'] ?? '';
+    
+    // Get type-specific icon and title
+    IconData icon;
+    String title;
+    String subtitle = '';
+    
+    switch (type) {
+      case 'emote':
+        icon = Icons.emoji_emotions;
+        title = 'Emote Reaction';
+        subtitle = content.isNotEmpty ? content : 'Sent a reaction';
+        break;
+      case 'mention':
+        icon = Icons.alternate_email;
+        title = 'You were mentioned';
+        subtitle = content.isNotEmpty ? content : 'Mentioned you in a message';
+        break;
+      case 'missingcall':
+        icon = Icons.phone_missed;
+        title = 'Missed Call';
+        subtitle = 'You missed a call';
+        break;
+      case 'addtochannel':
+        icon = Icons.person_add;
+        title = 'Added to Channel';
+        subtitle = 'You were added to a channel';
+        break;
+      case 'removefromchannel':
+        icon = Icons.person_remove;
+        title = 'Removed from Channel';
+        subtitle = 'You were removed from a channel';
+        break;
+      case 'permissionchange':
+        icon = Icons.admin_panel_settings;
+        title = 'Permission Changed';
+        subtitle = 'Your permissions were updated';
+        break;
+      default:
+        icon = Icons.notifications;
+        title = 'Notification';
+        subtitle = content;
+    }
+    
+    // Format timestamp
+    String timeAgo = '';
+    try {
+      final time = DateTime.parse(timestamp);
+      final now = DateTime.now();
+      final difference = now.difference(time);
+      
+      if (difference.inMinutes < 1) {
+        timeAgo = 'Just now';
+      } else if (difference.inHours < 1) {
+        timeAgo = '${difference.inMinutes}m ago';
+      } else if (difference.inDays < 1) {
+        timeAgo = '${difference.inHours}h ago';
+      } else if (difference.inDays < 7) {
+        timeAgo = '${difference.inDays}d ago';
+      } else {
+        timeAgo = '${(difference.inDays / 7).floor()}w ago';
+      }
+    } catch (e) {
+      timeAgo = '';
+    }
+    
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          child: Icon(icon, color: Theme.of(context).colorScheme.onPrimaryContainer),
+        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (subtitle.isNotEmpty) Text(subtitle),
+            if (timeAgo.isNotEmpty) 
+              Text(timeAgo, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+          ],
+        ),
+        onTap: () => _handleNotificationTap(notification),
+      ),
+    );
+  }
+
+  Future<void> _handleNotificationTap(Map<String, dynamic> notification) async {
+    final type = notification['type'] ?? '';
+    final itemId = notification['itemId'] ?? '';
+    final channelId = notification['channelId'];
+    final sender = notification['sender'];
+    final targetMessageId = notification['targetMessageId']; // Extracted from JSON
+    
+    // Mark as read
+    await _markNotificationAsRead(itemId, channelId);
+    
+    // Navigate based on type
+    if (!mounted) return;
+    
+    switch (type) {
+      case 'mention':
+      case 'emote':
+        // Navigate to conversation with messageId for scrolling
+        if (channelId != null) {
+          // Group channel
+          final args = {
+            'channelId': channelId,
+            if (targetMessageId != null) 'scrollToMessageId': targetMessageId,
+          };
+          Navigator.pushNamed(context, '/channel', arguments: args);
+        } else if (sender != null) {
+          // Direct message
+          final args = {
+            'userId': sender,
+            if (targetMessageId != null) 'scrollToMessageId': targetMessageId,
+          };
+          Navigator.pushNamed(context, '/direct-message', arguments: args);
+        }
+        break;
+        
+      case 'missingcall':
+        // Navigate to user or channel
+        if (channelId != null) {
+          Navigator.pushNamed(context, '/channel', arguments: {'channelId': channelId});
+        } else if (sender != null) {
+          Navigator.pushNamed(context, '/direct-message', arguments: {'userId': sender});
+        }
+        break;
+        
+      case 'addtochannel':
+      case 'removefromchannel':
+      case 'permissionchange':
+        // Navigate to channel
+        if (channelId != null) {
+          Navigator.pushNamed(context, '/channel', arguments: {'channelId': channelId});
+        }
+        break;
+    }
+  }
 }
+
 

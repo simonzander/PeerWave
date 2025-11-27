@@ -15,6 +15,7 @@ import 'decrypted_group_items_store.dart';
 import 'sent_group_items_store.dart';
 import '../providers/unread_messages_provider.dart';
 import 'storage/sqlite_message_store.dart';
+import 'storage/sqlite_group_message_store.dart';
 import 'storage/sqlite_recent_conversations_store.dart';
 import 'storage/database_helper.dart';
 import 'user_profile_service.dart';
@@ -816,22 +817,56 @@ class SignalService {
         final messageType = data['type'] as String;
         final sender = data['sender'] as String?;
         final isOwnMessage = sender == _currentUserId;
+        final itemId = data['itemId'] as String?;
         
-        // Only increment for 'message' and 'file' types from OTHER users
+        // Check if this is an activity notification type
+        const activityTypes = {
+          'emote',
+          'mention',
+          'missingcall',
+          'addtochannel',
+          'removefromchannel',
+          'permissionchange',
+        };
+        
+        // Only increment for messages from OTHER users
         if (!isOwnMessage) {
-          _unreadMessagesProvider!.incrementIfBadgeType(messageType, channelId, true);
+          if (activityTypes.contains(messageType)) {
+            // Activity notification - increment activity counter
+            if (itemId != null) {
+              _unreadMessagesProvider!.incrementActivityNotification(itemId);
+              debugPrint('[SIGNAL SERVICE] ✓ Activity notification: $messageType ($itemId)');
+            }
+          } else {
+            // Regular message - increment channel counter
+            _unreadMessagesProvider!.incrementIfBadgeType(messageType, channelId, true);
+          }
         }
       }
       
       // ✅ Emit EventBus event for new group message/item (after decryption in callbacks)
       final type = data['type'];
       final channel = data['channel'];
+      final sender = data['sender'] as String?;
+      final isOwnMsg = sender == _currentUserId;
+      
       if (type != null && channel != null) {
-        // Only emit for actual content (message, file), not system messages
+        // Emit for actual content (message, file) and activity notifications
+        const activityTypes = {'emote', 'mention', 'missingcall', 'addtochannel', 'removefromchannel', 'permissionchange'};
+        
         if (type == 'message' || type == 'file') {
           debugPrint('[SIGNAL SERVICE] → EVENT_BUS: newMessage (group) - type=$type, channel=$channel');
           EventBus.instance.emit(AppEvent.newMessage, data);
+        } else if (activityTypes.contains(type) && !isOwnMsg) {
+          // Only emit notification for OTHER users' activity messages
+          debugPrint('[SIGNAL SERVICE] → EVENT_BUS: newNotification (group) - type=$type, channel=$channel');
+          EventBus.instance.emit(AppEvent.newNotification, data);
         }
+      }
+      
+      // Handle emote messages (reactions)
+      if (type == 'emote') {
+        _handleEmoteMessage(data, isGroupChat: true);
       }
       
       if (_itemTypeCallbacks.containsKey('groupItem')) {
@@ -1457,31 +1492,68 @@ class SignalService {
   // Only increment for messages from OTHER users, not own messages
   final isOwnMessage = sender == _currentUserId;
   if (!isSystemMessage && !isOwnMessage && _unreadMessagesProvider != null) {
-    // This is a 1:1 direct message (no channel) from another user
-    _unreadMessagesProvider!.incrementIfBadgeType(type, sender, false);
+    // Check if this is an activity notification type
+    const activityTypes = {
+      'emote',
+      'mention',
+      'missingcall',
+      'addtochannel',
+      'removefromchannel',
+      'permissionchange',
+    };
+    
+    if (activityTypes.contains(type)) {
+      // Activity notification - increment activity counter
+      _unreadMessagesProvider!.incrementActivityNotification(itemId);
+      debugPrint('[SIGNAL SERVICE] ✓ Activity notification (1:1): $type ($itemId)');
+    } else {
+      // Regular 1:1 direct message from another user
+      _unreadMessagesProvider!.incrementIfBadgeType(type, sender, false);
+    }
   }
   
   // ✅ Emit EventBus event for new 1:1 message/item (after decryption)
   if (!isSystemMessage) {
-    debugPrint('[SIGNAL SERVICE] → EVENT_BUS: newMessage (1:1) - type=$type, sender=$sender, isOwnMessage=$isOwnMessage');
+    // Check if activity notification type
+    const activityTypes = {'emote', 'mention', 'missingcall', 'addtochannel', 'removefromchannel', 'permissionchange'};
     
-    // Add isOwnMessage flag to item for UI to distinguish
-    final enrichedItem = {
-      ...item,
-      'isOwnMessage': isOwnMessage,
-    };
-    
-    EventBus.instance.emit(AppEvent.newMessage, enrichedItem);
-    
-    // Also emit newConversation if this is the first message from this sender
-    // (Views can check their conversation list to determine if it's truly new)
-    // Use the OTHER user's ID for conversation (not own ID)
-    final conversationUserId = isOwnMessage ? recipient : sender;
-    EventBus.instance.emit(AppEvent.newConversation, {
-      'conversationId': conversationUserId,
-      'isChannel': false,
-      'isOwnMessage': isOwnMessage,
-    });
+    if (activityTypes.contains(type) && !isOwnMessage) {
+      // Only emit notification for OTHER users' activity messages
+      debugPrint('[SIGNAL SERVICE] → EVENT_BUS: newNotification (1:1) - type=$type, sender=$sender');
+      
+      // Add isOwnMessage flag
+      final enrichedItem = {
+        ...item,
+        'isOwnMessage': isOwnMessage,
+      };
+      
+      EventBus.instance.emit(AppEvent.newNotification, enrichedItem);
+    } else if (!activityTypes.contains(type)) {
+      debugPrint('[SIGNAL SERVICE] → EVENT_BUS: newMessage (1:1) - type=$type, sender=$sender, isOwnMessage=$isOwnMessage');
+      
+      // Add isOwnMessage flag to item for UI to distinguish
+      final enrichedItem = {
+        ...item,
+        'isOwnMessage': isOwnMessage,
+      };
+      
+      EventBus.instance.emit(AppEvent.newMessage, enrichedItem);
+      
+      // Handle emote messages (reactions) for DMs
+      if (type == 'emote') {
+        _handleEmoteMessage(item, isGroupChat: false);
+      }
+      
+      // Also emit newConversation if this is the first message from this sender
+      // (Views can check their conversation list to determine if it's truly new)
+      // Use the OTHER user's ID for conversation (not own ID)
+      final conversationUserId = isOwnMessage ? recipient : sender;
+      EventBus.instance.emit(AppEvent.newConversation, {
+        'conversationId': conversationUserId,
+        'isChannel': false,
+        'isOwnMessage': isOwnMessage,
+      });
+    }
   }
   
   // ✅ PHASE 3: System messages already deleted from server above
@@ -1929,7 +2001,19 @@ void deleteGroupItem(String itemId, String channelId) async {
     // Store sent message in local storage for persistence after refresh
     // IMPORTANT: Only store actual chat messages and file messages, not system messages
     final timestamp = DateTime.now().toIso8601String();
-    const STORABLE_TYPES = {'message', 'file', 'image', 'voice', 'notification'};
+    const STORABLE_TYPES = {
+      'message', 
+      'file', 
+      'image', 
+      'voice', 
+      'notification',
+      'emote',
+      'mention',
+      'missingcall',
+      'addtochannel',
+      'removefromchannel',
+      'permissionchange'
+    };
     final shouldStore = !SKIP_STORAGE_TYPES.contains(type) && STORABLE_TYPES.contains(type);
     
     if (shouldStore) {
@@ -3346,6 +3430,123 @@ Future<String> decryptItem({
   /// Load received/decrypted group items for a channel
   Future<List<Map<String, dynamic>>> loadReceivedGroupItems(String channelId) async {
     return await decryptedGroupItemsStore.getChannelItems(channelId);
+  }
+  
+  
+  // ===== EMOJI REACTIONS =====
+  
+  /// Handle incoming emote message (emoji reaction)
+  /// Accepts either raw socket data (requires decryption) or already-decrypted item data
+  Future<void> _handleEmoteMessage(Map<String, dynamic> rawData, {required bool isGroupChat}) async {
+    try {
+      String decryptedJson;
+      
+      // Check if data is already decrypted (has 'message' field)
+      if (rawData.containsKey('message') && rawData['message'] is String) {
+        // Already decrypted (from receiveItem or local processing)
+        decryptedJson = rawData['message'] as String;
+      } else {
+        // Raw encrypted data - needs decryption
+        if (isGroupChat) {
+          // Group chat: decrypt with sender key
+          final channelId = rawData['channel'] as String?;
+          final senderId = rawData['sender'] as String?;
+          final senderDeviceId = rawData['senderDevice'] is int
+              ? rawData['senderDevice'] as int
+              : int.parse(rawData['senderDevice'].toString());
+          final payload = rawData['payload'] as String?;
+          
+          if (channelId == null || senderId == null || payload == null) {
+            debugPrint('[SIGNAL SERVICE] ✗ Missing required fields for group emote message');
+            return;
+          }
+          
+          decryptedJson = await decryptGroupItem(
+            channelId: channelId,
+            senderId: senderId,
+            senderDeviceId: senderDeviceId,
+            ciphertext: payload,
+          );
+        } else {
+          // DM: decrypt with session cipher
+          final senderId = rawData['sender'] as String?;
+          final senderDeviceId = rawData['senderDeviceId'] is int
+              ? rawData['senderDeviceId'] as int
+              : int.parse(rawData['senderDeviceId'].toString());
+          final payload = rawData['payload'];
+          final cipherType = rawData['cipherType'];
+          
+          if (senderId == null || payload == null) {
+            debugPrint('[SIGNAL SERVICE] ✗ Missing required fields for DM emote message');
+            return;
+          }
+          
+          final senderAddress = SignalProtocolAddress(senderId, senderDeviceId);
+          decryptedJson = await decryptItem(
+            senderAddress: senderAddress,
+            payload: payload,
+            cipherType: cipherType,
+          );
+        }
+      }
+      
+      // Parse the decrypted JSON
+      final emoteData = jsonDecode(decryptedJson) as Map<String, dynamic>;
+      final messageId = emoteData['messageId'] as String?;
+      final emoji = emoteData['emoji'] as String?;
+      final action = emoteData['action'] as String?;
+      final sender = emoteData['sender'] as String?;
+      
+      if (messageId == null || emoji == null || action == null || sender == null) {
+        debugPrint('[SIGNAL SERVICE] ✗ Invalid emote message data after decryption');
+        return;
+      }
+      
+      debugPrint('[SIGNAL SERVICE] Processing emote: $emoji $action by $sender on message $messageId');
+      
+      // Check if this is our own reaction
+      final isOwnReaction = sender == _currentUserId;
+      
+      // Get appropriate message store
+      if (isGroupChat) {
+        final groupMessageStore = await SqliteGroupMessageStore.getInstance();
+        if (action == 'add') {
+          await groupMessageStore.addReaction(messageId, emoji, sender);
+        } else if (action == 'remove') {
+          await groupMessageStore.removeReaction(messageId, emoji, sender);
+        }
+        final reactions = await groupMessageStore.getReactions(messageId);
+        
+        // Always emit reaction updated event for UI refresh (both own and others)
+        // The UI needs to update immediately for all reactions
+        EventBus.instance.emit(AppEvent.reactionUpdated, {
+          'messageId': messageId,
+          'reactions': reactions,
+          'channelId': emoteData['channelId'] ?? rawData['channel'],
+          'isOwnReaction': isOwnReaction,
+        });
+      } else {
+        final dmMessageStore = await SqliteMessageStore.getInstance();
+        if (action == 'add') {
+          await dmMessageStore.addReaction(messageId, emoji, sender);
+        } else if (action == 'remove') {
+          await dmMessageStore.removeReaction(messageId, emoji, sender);
+        }
+        final reactions = await dmMessageStore.getReactions(messageId);
+        
+        // Always emit reaction updated event for UI refresh (both own and others)
+        EventBus.instance.emit(AppEvent.reactionUpdated, {
+          'messageId': messageId,
+          'reactions': reactions,
+          'sender': rawData['sender'],
+          'isOwnReaction': isOwnReaction,
+        });
+      }
+      
+      debugPrint('[SIGNAL SERVICE] ✓ Updated reactions for message $messageId');
+    } catch (e) {
+      debugPrint('[SIGNAL SERVICE] ✗ Error handling emote message: $e');
+    }
   }
   
   // ===== HELPER METHODS =====

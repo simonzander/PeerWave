@@ -14,6 +14,7 @@ import '../../services/offline_message_queue.dart';
 import '../../services/storage/sqlite_message_store.dart';
 import '../../services/file_transfer/p2p_coordinator.dart';
 import '../../services/file_transfer/socket_file_client.dart';
+import '../../services/event_bus.dart';
 import '../../models/file_message.dart';
 import '../../extensions/snackbar_extensions.dart';
 import '../../providers/unread_messages_provider.dart';
@@ -26,12 +27,14 @@ class DirectMessagesScreen extends StatefulWidget {
   final String host;
   final String recipientUuid;
   final String recipientDisplayName;
+  final String? scrollToMessageId; // Optional: message to scroll to after loading
 
   const DirectMessagesScreen({
     super.key,
     required this.host,
     required this.recipientUuid,
     required this.recipientDisplayName,
+    this.scrollToMessageId,
   });
 
   @override
@@ -46,6 +49,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   bool _hasMoreMessages = true;
   bool _loadingMore = false;
   final ScrollController _scrollController = ScrollController();
+  String? _highlightedMessageId; // For highlighting target message
 
   @override
   void initState() {
@@ -101,6 +105,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     await _loadMessages();
     _setupReceiveItemCallbacks(); // ✅ Register granular callbacks
     _setupReceiptListeners();
+    _setupReactionListener(); // Listen for reaction updates
     
     // ✅ Clear unread count for this conversation
     if (mounted) {
@@ -113,17 +118,61 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       }
     }
     
+    // Auto-mark notifications as read for this DM conversation
+    await _markDMNotificationsAsRead();
+    
     // 🚀 Send read receipts for all unread received messages
     await _sendReadReceiptsForLoadedMessages();
     
-    // Scroll to bottom after initial load - wait for all builds to complete
+    // Scroll to bottom or target message after initial load - wait for all builds to complete
     SchedulerBinding.instance.addPostFrameCallback((_) {
       SchedulerBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
-          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+          if (widget.scrollToMessageId != null) {
+            // Scroll to specific message
+            _scrollToMessage(widget.scrollToMessageId!);
+          } else {
+            // Scroll to bottom
+            _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+          }
         }
       });
     });
+  }
+
+  /// Mark all notifications for this DM conversation as read
+  Future<void> _markDMNotificationsAsRead() async {
+    try {
+      final unreadProvider = Provider.of<UnreadMessagesProvider>(context, listen: false);
+      final dmMessageStore = await SqliteMessageStore.getInstance();
+      
+      // Get unread notifications for this user
+      final unreadNotifications = await dmMessageStore.getUnreadNotificationsForUser(widget.recipientUuid);
+      
+      if (unreadNotifications.isNotEmpty) {
+        // Mark as read in storage
+        for (final notification in unreadNotifications) {
+          final itemId = notification['itemId'] as String?;
+          if (itemId != null) {
+            await dmMessageStore.markNotificationAsRead(itemId);
+          }
+        }
+        
+        // Update unread counter
+        final itemIds = unreadNotifications
+            .map((n) => n['itemId'] as String?)
+            .where((id) => id != null)
+            .cast<String>()
+            .toList();
+        
+        if (itemIds.isNotEmpty) {
+          unreadProvider.markMultipleActivityNotificationsAsRead(itemIds);
+          debugPrint('[DM_SCREEN] Marked ${itemIds.length} notifications as read for user ${widget.recipientUuid}');
+        }
+      }
+    } catch (e) {
+      debugPrint('[DM_SCREEN] Error marking notifications as read: $e');
+    }
   }
 
   void _setupReceiptListeners() {
@@ -192,6 +241,29 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           });
         }
       });
+    });
+  }
+
+  /// Listen for reaction updates from other users
+  void _setupReactionListener() {
+    EventBus.instance.on(AppEvent.reactionUpdated).listen((data) {
+      if (!mounted) return;
+      
+      final messageId = data['messageId'] as String?;
+      final sender = data['sender'] as String?;
+      final reactions = data['reactions'] as Map<String, dynamic>?;
+      
+      // Only update if it's for this conversation
+      if (sender == widget.recipientUuid && messageId != null && reactions != null) {
+        setState(() {
+          final msgIndex = _messages.indexWhere((m) => m['itemId'] == messageId);
+          if (msgIndex != -1) {
+            // Update reactions in the message data
+            _messages[msgIndex]['reactions'] = jsonEncode(reactions);
+            debugPrint('[DM_SCREEN] Updated reactions for message $messageId: $reactions');
+          }
+        });
+      }
     });
   }
 
@@ -374,6 +446,50 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
   }
 
+  /// Scroll to a specific message and highlight it
+  Future<void> _scrollToMessage(String messageId) async {
+    // Wait for widget tree to build
+    await Future.delayed(const Duration(milliseconds: 300));
+    
+    if (!mounted || !_scrollController.hasClients) return;
+    
+    // Find message index
+    final messageIndex = _messages.indexWhere((m) => m['itemId'] == messageId);
+    
+    if (messageIndex == -1) {
+      debugPrint('[DM_SCREEN] Message $messageId not found in list');
+      return;
+    }
+    
+    debugPrint('[DM_SCREEN] Scrolling to message at index $messageIndex');
+    
+    // Calculate approximate scroll position (assuming ~80px per message)
+    final approximatePosition = messageIndex * 80.0;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final targetPosition = approximatePosition.clamp(0.0, maxScroll);
+    
+    // Scroll to position
+    await _scrollController.animateTo(
+      targetPosition,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
+    );
+    
+    // Highlight the message
+    setState(() {
+      _highlightedMessageId = messageId;
+    });
+    
+    // Remove highlight after 2 seconds
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() {
+          _highlightedMessageId = null;
+        });
+      }
+    });
+  }
+
   Future<void> _loadMessages({bool loadMore = false}) async {
     if (loadMore) {
       if (_loadingMore || !_hasMoreMessages) return;
@@ -417,6 +533,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           'status': isLocalSent ? (msg['status'] ?? 'sent') : null,
           'type': msg['type'],
           'metadata': msg['metadata'],
+          'reactions': msg['reactions'] ?? '{}', // Include reactions
         };
       }).toList();
       
@@ -571,25 +688,29 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         metadata: metadata,
       );
       
-      // Send notification messages for mentions
-      if (metadata != null && metadata['mentions'] != null) {
+      // Send mention notifications if message has mentions
+      if (metadata != null && metadata['mentions'] != null && messageType == 'message') {
         final mentions = metadata['mentions'] as List;
         for (final mention in mentions) {
           try {
+            final mentionItemId = const Uuid().v4();
+            final mentionPayload = {
+              'messageId': itemId,
+              'mentionedUserId': mention['userId'],
+              'sender': SignalService.instance.currentUserId,
+              'content': content.length > 50 ? '${content.substring(0, 50)}...' : content,
+            };
+            
             await SignalService.instance.sendItem(
+              itemId: mentionItemId,
               recipientUserId: mention['userId'] as String,
-              type: 'notification',
-              payload: jsonEncode({
-                'mentionedBy': SignalService.instance.currentUserId,
-                'mentionedByName': 'You',
-                'message': content,
-                'conversationId': widget.recipientUuid,
-                'conversationName': widget.recipientDisplayName,
-              }),
+              type: 'mention',
+              payload: jsonEncode(mentionPayload),
             );
-            debugPrint('[DM] Sent mention notification to ${mention['userId']}');
+            
+            debugPrint('[DM_SCREEN] Sent mention notification for ${mention['userId']}');
           } catch (e) {
-            debugPrint('[DM] Failed to send mention notification: $e');
+            debugPrint('[DM_SCREEN] Error sending mention notification: $e');
           }
         }
       }
@@ -679,6 +800,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                               messages: _messages,
                               onFileDownload: _handleFileDownload,
                               scrollController: _scrollController,
+                              onReactionAdd: _addReaction,
+                              onReactionRemove: _removeReaction,
+                              currentUserId: SignalService.instance.currentUserId ?? '',
+                              highlightedMessageId: _highlightedMessageId,
                             ),
                           ),
                         ],
@@ -745,6 +870,116 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         ),
       ),
     );
+  }
+
+  // =========================================================================
+  // EMOJI REACTIONS
+  // =========================================================================
+
+  /// Add emoji reaction to a message
+  Future<void> _addReaction(String messageId, String emoji) async {
+    try {
+      final itemId = const Uuid().v4();
+      final signalService = SignalService.instance;
+      final currentUserId = signalService.currentUserId;
+      
+      if (currentUserId == null) {
+        debugPrint('[DIRECT_MSG] ✗ Cannot add reaction: no current user ID');
+        return;
+      }
+      
+      // Create emote message payload (will be encrypted)
+      final emotePayload = {
+        'messageId': messageId,
+        'emoji': emoji,
+        'action': 'add',
+        'sender': currentUserId,
+      };
+      
+      // Encode as JSON (will be encrypted and decrypted by recipient)
+      final payloadJson = jsonEncode(emotePayload);
+      
+      // Send via Signal Protocol
+      await signalService.sendItem(
+        itemId: itemId,
+        recipientUserId: widget.recipientUuid,
+        payload: payloadJson,
+        type: 'emote',
+      );
+      
+      // Update local database immediately
+      final messageStore = await SqliteMessageStore.getInstance();
+      await messageStore.addReaction(messageId, emoji, currentUserId);
+      
+      // Update UI
+      final reactions = await messageStore.getReactions(messageId);
+      setState(() {
+        final msgIndex = _messages.indexWhere((m) => m['itemId'] == messageId);
+        if (msgIndex != -1) {
+          _messages[msgIndex]['reactions'] = jsonEncode(reactions);
+        }
+      });
+      
+      debugPrint('[DIRECT_MSG] ✓ Sent emote reaction: $emoji on message $messageId');
+    } catch (e) {
+      debugPrint('[DIRECT_MSG] ✗ Error sending reaction: $e');
+      if (mounted) {
+        context.showCustomSnackBar(
+          'Failed to add reaction: $e',
+          backgroundColor: Colors.red,
+        );
+      }
+    }
+  }
+
+  /// Remove emoji reaction from a message
+  Future<void> _removeReaction(String messageId, String emoji) async {
+    try {
+      final itemId = const Uuid().v4();
+      final signalService = SignalService.instance;
+      final currentUserId = signalService.currentUserId;
+      
+      if (currentUserId == null) {
+        debugPrint('[DIRECT_MSG] ✗ Cannot remove reaction: no current user ID');
+        return;
+      }
+      
+      // Create emote message payload (will be encrypted)
+      final emotePayload = {
+        'messageId': messageId,
+        'emoji': emoji,
+        'action': 'remove',
+        'sender': currentUserId,
+      };
+      
+      // Encode as JSON (will be encrypted and decrypted by recipient)
+      final payloadJson = jsonEncode(emotePayload);
+      
+      // Send via Signal Protocol
+      await signalService.sendItem(
+        itemId: itemId,
+        recipientUserId: widget.recipientUuid,
+        payload: payloadJson,
+        type: 'emote',
+      );
+      
+      // Update local database immediately
+      final messageStore = await SqliteMessageStore.getInstance();
+      await messageStore.removeReaction(messageId, emoji, currentUserId);
+      
+      // Update UI
+      final reactions = await messageStore.getReactions(messageId);
+      setState(() {
+        final msgIndex = _messages.indexWhere((m) => m['itemId'] == messageId);
+        if (msgIndex != -1) {
+          _messages[msgIndex]['reactions'] = jsonEncode(reactions);
+        }
+      });
+      
+      debugPrint('[DIRECT_MSG] ✓ Removed emote reaction: $emoji from message $messageId');
+    } catch (e) {
+      debugPrint('[DIRECT_MSG] ✗ Error removing reaction: $e');
+    }
   }
 
   /// Handle file download request from FileMessageWidget

@@ -9,6 +9,8 @@ import 'user_avatar.dart';
 import 'user_profile_card_overlay.dart';
 import 'voice_message_player.dart';
 import 'mention_text_widget.dart';
+import 'emoji_picker_dialog.dart';
+import 'reaction_badge.dart';
 import '../models/file_message.dart';
 import '../services/signal_service.dart';
 import '../services/user_profile_service.dart';
@@ -19,12 +21,20 @@ class MessageList extends StatefulWidget {
   final List<Map<String, dynamic>> messages;
   final void Function(FileMessage)? onFileDownload;
   final ScrollController? scrollController;
+  final Function(String messageId, String emoji)? onReactionAdd;
+  final Function(String messageId, String emoji)? onReactionRemove;
+  final String? currentUserId;
+  final String? highlightedMessageId; // For highlighting target message
 
   const MessageList({
     super.key,
     required this.messages,
     this.onFileDownload,
     this.scrollController,
+    this.onReactionAdd,
+    this.onReactionRemove,
+    this.currentUserId,
+    this.highlightedMessageId,
   });
 
   @override
@@ -230,6 +240,9 @@ class _MessageListState extends State<MessageList> {
         final text = msg['payload'] ?? msg['text'] ?? msg['message'] ?? '';
         final timeStr = msg['time'] ?? '';
         final isLocalSent = msg['isLocalSent'] == true;
+        final itemId = msg['itemId'] as String?;
+        final isHighlighted = widget.highlightedMessageId != null && 
+                              itemId == widget.highlightedMessageId;
         final theme = Theme.of(context);
 
         // Parse timestamp
@@ -279,7 +292,17 @@ class _MessageListState extends State<MessageList> {
                 ),
               ),
             // Message
-            Container(
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              decoration: isHighlighted ? BoxDecoration(
+                color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+                border: Border.all(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ) : null,
+              padding: isHighlighted ? const EdgeInsets.all(4) : null,
               margin: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -329,6 +352,9 @@ class _MessageListState extends State<MessageList> {
                         const SizedBox(height: 4),
                         // Check if this is a file message
                         _buildMessageContent(msg, text),
+                        // Emoji reactions
+                        const SizedBox(height: 6),
+                        _buildReactions(msg),
                       ],
                     ),
                   ),
@@ -339,6 +365,115 @@ class _MessageListState extends State<MessageList> {
         );
       },
     );
+  }
+
+  /// Build emoji reactions row for a message
+  Widget _buildReactions(Map<String, dynamic> msg) {
+    final messageId = msg['itemId'] as String?;
+    if (messageId == null) return const SizedBox.shrink();
+    
+    // Get reactions from message data
+    final reactionsData = msg['reactions'];
+    Map<String, dynamic> reactions = {};
+    
+    debugPrint('[MESSAGE_LIST] Building reactions for $messageId: reactionsData=$reactionsData (type: ${reactionsData.runtimeType})');
+    
+    if (reactionsData is String && reactionsData.isNotEmpty && reactionsData != '{}') {
+      try {
+        reactions = jsonDecode(reactionsData) as Map<String, dynamic>;
+        debugPrint('[MESSAGE_LIST] Parsed reactions: $reactions (${reactions.length} emojis)');
+      } catch (e) {
+        debugPrint('[MESSAGE_LIST] Failed to parse reactions: $e');
+      }
+    } else if (reactionsData is Map) {
+      reactions = Map<String, dynamic>.from(reactionsData);
+      debugPrint('[MESSAGE_LIST] Using Map reactions: $reactions (${reactions.length} emojis)');
+    }
+    
+    if (reactions.isEmpty) {
+      debugPrint('[MESSAGE_LIST] No reactions for message $messageId');
+    }
+    
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        // Emoji add button (+)
+        InkWell(
+          onTap: () => _showEmojiPicker(messageId),
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.add_reaction_outlined,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 2),
+                Icon(
+                  Icons.add,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+        
+        // Existing reaction badges
+        ...reactions.entries.map((entry) {
+          final emoji = entry.key;
+          final usersList = entry.value;
+          final users = usersList is List ? usersList.cast<String>() : <String>[];
+          final count = users.length;
+          final isActive = widget.currentUserId != null && users.contains(widget.currentUserId);
+          
+          return ReactionBadge(
+            emoji: emoji,
+            count: count,
+            isActive: isActive,
+            onTap: () => _toggleReaction(messageId, emoji, isActive),
+          );
+        }),
+      ],
+    );
+  }
+
+  /// Show emoji picker to add a reaction
+  void _showEmojiPicker(String messageId) {
+    EmojiPickerDialog.show(
+      context,
+      (emoji) {
+        if (widget.onReactionAdd != null) {
+          widget.onReactionAdd!(messageId, emoji);
+        }
+      },
+    );
+  }
+
+  /// Toggle a reaction (add if not present, remove if already reacted)
+  void _toggleReaction(String messageId, String emoji, bool isActive) {
+    if (isActive) {
+      // Remove reaction
+      if (widget.onReactionRemove != null) {
+        widget.onReactionRemove!(messageId, emoji);
+      }
+    } else {
+      // Add reaction
+      if (widget.onReactionAdd != null) {
+        widget.onReactionAdd!(messageId, emoji);
+      }
+    }
   }
 
   /// Build message content based on type (text, image, voice, or file)
