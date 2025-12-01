@@ -65,25 +65,6 @@ class _ServerPanelState extends State<ServerPanel> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('Edit Server'),
-              onTap: () {
-                Navigator.pop(context);
-                _showEditServerDialog(server);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.image),
-              title: const Text('Change Icon'),
-              onTap: () {
-                Navigator.pop(context);
-                // TODO: Implement icon picker
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Icon picker coming soon')),
-                );
-              },
-            ),
-            ListTile(
               leading: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
               title: Text('Logout', style: TextStyle(color: Theme.of(context).colorScheme.error)),
               onTap: () async {

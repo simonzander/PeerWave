@@ -695,11 +695,31 @@ authRoutes.post("/backupcode/regenerate", async(req, res) => {
 });
 */
 // POST logout route - destroys session and clears cookie
-authRoutes.post("/logout", (req, res) => {
-    const userId = req.session.uuid;
-    const deviceId = req.session.deviceId;
+authRoutes.post("/logout", async (req, res) => {
+    // Support both HMAC (native) and Session (web) authentication
+    const userId = req.userId || req.session.uuid;
+    const deviceId = req.deviceId || req.session.deviceId;
+    const clientId = req.clientId || req.session.clientId;
+    
     console.log(`[AUTH] Logout request from user ${userId}, device ${deviceId}`);
     
+    // If HMAC auth (native client), delete the HMAC session from database
+    if (req.userId && clientId) {
+        try {
+            const { sequelize } = require('../db/model');
+            await sequelize.query(
+                'DELETE FROM client_sessions WHERE client_id = ?',
+                { replacements: [clientId] }
+            );
+            console.log(`[AUTH] ✓ HMAC session deleted for client ${clientId}`);
+            return res.json({ success: true, message: 'Logged out successfully' });
+        } catch (error) {
+            console.error('[AUTH] Error deleting HMAC session:', error);
+            return res.status(500).json({ success: false, error: 'Failed to delete session' });
+        }
+    }
+    
+    // If Session auth (web client), destroy the session
     req.session.destroy((err) => {
         if (err) {
             console.error('[AUTH] Error destroying session:', err);

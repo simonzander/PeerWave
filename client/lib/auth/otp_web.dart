@@ -185,7 +185,7 @@ class _OtpWebPageState extends State<OtpWebPage> {
                       decoration: InputDecoration(
                         labelText: 'Enter OTP Code',
                         labelStyle: TextStyle(color: colorScheme.onSurfaceVariant),
-                        hintText: '000000',
+                        hintText: '00000',
                         hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withOpacity(0.5)),
                         filled: true,
                         fillColor: colorScheme.surfaceVariant,
@@ -198,7 +198,7 @@ class _OtpWebPageState extends State<OtpWebPage> {
                       ),
                       textAlign: TextAlign.center,
                       keyboardType: TextInputType.number,
-                      maxLength: 6,
+                      maxLength: 5,
                     ),
                     const SizedBox(height: 20),
                     if (_error != null)

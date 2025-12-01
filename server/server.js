@@ -528,10 +528,12 @@ io.sockets.on("connection", socket => {
 
   socket.on("getSignedPreKeys", async () => {
     try {
-      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+      if(isAuthenticated()) {
+        const userId = getUserId();
+        const clientId = getClientId();
         // Fetch signed pre-keys from the database
         const signedPreKeys = await SignalSignedPreKey.findAll({
-          where: { owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId },
+          where: { owner: userId, client: clientId },
           order: [['createdAt', 'DESC']]
         });
         socket.emit("getSignedPreKeysResponse", signedPreKeys);
@@ -544,10 +546,12 @@ io.sockets.on("connection", socket => {
 
   socket.on("removePreKey", async (data) => {
     try {
-      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+      if(isAuthenticated()) {
+        const userId = getUserId();
+        const clientId = getClientId();
         await writeQueue.enqueue(async () => {
           return await SignalPreKey.destroy({
-            where: { prekey_id: data.id, owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId }
+            where: { prekey_id: data.id, owner: userId, client: clientId }
           });
         }, `removePreKey-${data.id}`);
       }
@@ -558,10 +562,12 @@ io.sockets.on("connection", socket => {
 
   socket.on("removeSignedPreKey", async (data) => {
     try {
-      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+      if(isAuthenticated()) {
+        const userId = getUserId();
+        const clientId = getClientId();
         await writeQueue.enqueue(async () => {
           return await SignalSignedPreKey.destroy({
-            where: { signed_prekey_id: data.id, owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId }
+            where: { signed_prekey_id: data.id, owner: userId, client: clientId }
           });
         }, `removeSignedPreKey-${data.id}`);
       }
@@ -574,9 +580,9 @@ io.sockets.on("connection", socket => {
   socket.on("deleteAllSignalKeys", async (data) => {
     console.log("[SIGNAL SERVER] deleteAllSignalKeys event received", data);
     try {
-      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
-        const uuid = socket.handshake.session.uuid;
-        const clientId = socket.handshake.session.clientId;
+      if(isAuthenticated()) {
+        const uuid = getUserId();
+        const clientId = getClientId();
         const reason = data.reason || 'Unknown';
         const timestamp = data.timestamp || new Date().toISOString();
         
@@ -655,14 +661,16 @@ io.sockets.on("connection", socket => {
 
   socket.on("storeSignedPreKey", async (data) => {
     try {
-      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+      if(isAuthenticated()) {
+        const userId = getUserId();
+        const clientId = getClientId();
         // Create if not exists, otherwise do nothing - enqueue write operation
         await writeQueue.enqueue(async () => {
           return await SignalSignedPreKey.findOrCreate({
             where: {
               signed_prekey_id: data.id,
-              owner: socket.handshake.session.uuid,
-              client: socket.handshake.session.clientId,
+              owner: userId,
+              client: clientId,
             },
             defaults: {
               signed_prekey_data: data.data,
@@ -678,7 +686,9 @@ io.sockets.on("connection", socket => {
 
   socket.on("storePreKey", async (data) => {
     try {
-      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+      if(isAuthenticated()) {
+        const userId = getUserId();
+        const clientId = getClientId();
         // Only store if prekey_data is a 33-byte base64-encoded public key
         let decoded;
         try {
@@ -695,8 +705,8 @@ io.sockets.on("connection", socket => {
           return await SignalPreKey.findOrCreate({
             where: {
               prekey_id: data.id,
-              owner: socket.handshake.session.uuid,
-              client: socket.handshake.session.clientId,
+              owner: userId,
+              client: clientId,
             },
             defaults: {
               prekey_data: data.data,
@@ -717,7 +727,9 @@ io.sockets.on("connection", socket => {
     // NEW: { preKeys: [ { id, data }, ... ] }
     // OLD: [ { id, data }, ... ] (direct array for backwards compatibility)
     try {
-      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+      if(isAuthenticated()) {
+        const userId = getUserId();
+        const clientId = getClientId();
         // Handle both formats: direct array or wrapped in { preKeys: ... }
         const preKeysArray = Array.isArray(data) ? data : (Array.isArray(data.preKeys) ? data.preKeys : null);
         
@@ -743,8 +755,8 @@ io.sockets.on("connection", socket => {
                 const result = await SignalPreKey.findOrCreate({
                   where: {
                     prekey_id: preKey.id,
-                    owner: socket.handshake.session.uuid,
-                    client: socket.handshake.session.clientId,
+                    owner: userId,
+                    client: clientId,
                   },
                   defaults: {
                     prekey_data: preKey.data,
@@ -760,8 +772,8 @@ io.sockets.on("connection", socket => {
           // CRITICAL: After storage, return ALL PreKey IDs from server for sync verification
           const allServerPreKeys = await SignalPreKey.findAll({
             where: { 
-              owner: socket.handshake.session.uuid, 
-              client: socket.handshake.session.clientId 
+              owner: userId, 
+              client: clientId 
             },
             attributes: ['prekey_id']
           });
@@ -798,22 +810,24 @@ io.sockets.on("connection", socket => {
   // Signal status summary for current device
   socket.on("signalStatus", async (_) => {
     try {
-      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+      if(isAuthenticated()) {
+        const userId = getUserId();
+        const clientId = getClientId();
         // Identity: check if public_key and registration_id are present
         const client = await Client.findOne({
-          where: { owner: socket.handshake.session.uuid, clientid: socket.handshake.session.clientId }
+          where: { owner: userId, clientid: clientId }
         });
         const identityPresent = !!(client && client.public_key && client.registration_id);
 
         // PreKeys: count
         const preKeysCount = await SignalPreKey.count({
-          where: { owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId }
+          where: { owner: userId, client: clientId }
         });
-        console.log(`[SIGNAL SERVER] signalStatus: User ${socket.handshake.session.uuid} has ${preKeysCount} PreKeys on server`);
+        console.log(`[SIGNAL SERVER] signalStatus: User ${userId} has ${preKeysCount} PreKeys on server`);
 
         // SignedPreKey: latest
         const signedPreKey = await SignalSignedPreKey.findOne({
-          where: { owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId },
+          where: { owner: userId, client: clientId },
           order: [['createdAt', 'DESC']]
         });
         let signedPreKeyStatus = null;
@@ -842,10 +856,12 @@ io.sockets.on("connection", socket => {
 
   socket.on("getPreKeys", async () => {
     try {
-      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+      if(isAuthenticated()) {
+        const userId = getUserId();
+        const clientId = getClientId();
         // Fetch pre-keys from the database
         const preKeys = await SignalPreKey.findAll({
-          where: { owner: socket.handshake.session.uuid, client: socket.handshake.session.clientId }
+          where: { owner: userId, client: clientId }
         });
         socket.emit("getPreKeysResponse", preKeys);
       }
@@ -859,11 +875,11 @@ io.sockets.on("connection", socket => {
     console.log("[SIGNAL SERVER] sendItem event received", data);
     console.log(socket.handshake.session);
     try {
-      if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
+      if(isAuthenticated()) {
         const recipientUserId = data.recipient;
         const recipientDeviceId = data.recipientDeviceId;
-        const senderUserId = socket.handshake.session.uuid;
-        const senderDeviceId = socket.handshake.session.deviceId;
+        const senderUserId = getUserId();
+        const senderDeviceId = getDeviceId();
         const type = data.type;
         const payload = data.payload;
         const cipherType = parseInt(data.cipherType, 10);
@@ -934,13 +950,7 @@ io.sockets.on("connection", socket => {
           console.log(`[SIGNAL SERVER] Target device ${recipientUserId}:${recipientDeviceId} is offline, message stored in DB`);
         }
        } else {
-         console.error('[SIGNAL SERVER] ERROR: sendItem blocked - missing session data:');
-         console.error(`  uuid: ${!!socket.handshake.session.uuid}`);
-         console.error(`  email: ${!!socket.handshake.session.email}`);
-         console.error(`  deviceId: ${!!socket.handshake.session.deviceId}`);
-         console.error(`  clientId: ${!!socket.handshake.session.clientId}`);
-         console.error(`  authenticated: ${socket.handshake.session.authenticated}`);
-         console.error('  Please re-authenticate (logout/login or refresh page)');
+         console.error('[SIGNAL SERVER] ERROR: sendItem blocked - not authenticated');
       }
     } catch (error) {
       console.error('Error sending item:', error);
@@ -1477,12 +1487,12 @@ io.sockets.on("connection", socket => {
    */
   socket.on("unannounceFile", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId) {
+      if (!isAuthenticated()) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
-      const userId = socket.handshake.session.uuid;
-      const deviceId = socket.handshake.session.deviceId;
+      const userId = getUserId();
+      const deviceId = getDeviceId();
       const { fileId } = data;
 
       console.log(`[P2P FILE] Device ${userId}:${deviceId} unannouncing file: ${fileId}`);
@@ -1525,12 +1535,12 @@ io.sockets.on("connection", socket => {
    */
   socket.on("updateAvailableChunks", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId) {
+      if (!isAuthenticated()) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
-      const userId = socket.handshake.session.uuid;
-      const deviceId = socket.handshake.session.deviceId;
+      const userId = getUserId();
+      const deviceId = getDeviceId();
       const { fileId, availableChunks } = data;
 
       console.log(`[P2P FILE] Device ${userId}:${deviceId} updating chunks for ${fileId.substring(0, 8)}: ${availableChunks.length} chunks`);
@@ -1582,11 +1592,11 @@ io.sockets.on("connection", socket => {
    */
   socket.on("getFileInfo", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!isAuthenticated()) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
-      const userId = socket.handshake.session.uuid;
+      const userId = getUserId();
       const { fileId } = data;
       
       // Check permission
@@ -1618,12 +1628,12 @@ io.sockets.on("connection", socket => {
    */
   socket.on("registerLeecher", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId) {
+      if (!isAuthenticated()) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
-      const userId = socket.handshake.session.uuid;
-      const deviceId = socket.handshake.session.deviceId;
+      const userId = getUserId();
+      const deviceId = getDeviceId();
       const { fileId } = data;
 
       // Check permission
@@ -1648,12 +1658,12 @@ io.sockets.on("connection", socket => {
    */
   socket.on("unregisterLeecher", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId) {
+      if (!isAuthenticated()) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
-      const userId = socket.handshake.session.uuid;
-      const deviceId = socket.handshake.session.deviceId;
+      const userId = getUserId();
+      const deviceId = getDeviceId();
       const { fileId } = data;
 
       const success = fileRegistry.unregisterLeecher(userId, deviceId, fileId);
@@ -1700,11 +1710,11 @@ io.sockets.on("connection", socket => {
    */
   socket.on("getAvailableChunks", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!isAuthenticated()) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
-      const userId = socket.handshake.session.uuid;
+      const userId = getUserId();
       const { fileId } = data;
       
       // Check permission
@@ -1731,11 +1741,11 @@ io.sockets.on("connection", socket => {
    */
   socket.on("shareFile", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!isAuthenticated()) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
-      const userId = socket.handshake.session.uuid;
+      const userId = getUserId();
       const { fileId, targetUserId } = data;
 
       if (!fileId || !targetUserId) {
@@ -1791,11 +1801,11 @@ io.sockets.on("connection", socket => {
    */
   socket.on("updateFileShare", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid || !socket.handshake.session.deviceId) {
+      if (!isAuthenticated()) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
-      const userId = socket.handshake.session.uuid;
+      const userId = getUserId();
       const { fileId, action, userIds } = data;
 
       // Validation
@@ -1941,11 +1951,11 @@ io.sockets.on("connection", socket => {
    */
   socket.on("unshareFile", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!isAuthenticated()) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
-      const userId = socket.handshake.session.uuid;
+      const userId = getUserId();
       const { fileId, targetUserId } = data;
 
       if (!fileId || !targetUserId) {
@@ -1987,11 +1997,11 @@ io.sockets.on("connection", socket => {
    */
   socket.on("getSharedUsers", async (data, callback) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!isAuthenticated()) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
-      const userId = socket.handshake.session.uuid;
+      const userId = getUserId();
       const { fileId } = data;
 
       // Only creator can see who file is shared with
@@ -2024,8 +2034,8 @@ io.sockets.on("connection", socket => {
       if (targetDeviceId && targetDeviceId !== '') {
         const targetSocketId = deviceSockets.get(`${targetUserId}:${targetDeviceId}`);
         if (targetSocketId) {
-          const fromUserId = socket.handshake.session.uuid;
-          const fromDeviceId = socket.handshake.session.deviceId;
+          const fromUserId = getUserId();
+          const fromDeviceId = getDeviceId();
           safeEmitToDevice(io, targetUserId, targetDeviceId, "file:webrtc-offer", {
             fromUserId,
             fromDeviceId,
@@ -2042,8 +2052,8 @@ io.sockets.on("connection", socket => {
           .filter(s => s.handshake.session.uuid === targetUserId);
         
         if (targetSockets.length > 0) {
-          const fromUserId = socket.handshake.session.uuid;
-          const fromDeviceId = socket.handshake.session.deviceId;
+          const fromUserId = getUserId();
+          const fromDeviceId = getDeviceId();
           targetSockets.forEach(targetSocket => {
             const targetDeviceId = targetSocket.handshake.session?.deviceId;
             if (targetDeviceId) {
@@ -2149,8 +2159,8 @@ io.sockets.on("connection", socket => {
           .filter(s => s.handshake.session.uuid === targetUserId);
         
         if (targetSockets.length > 0) {
-          const fromUserId = socket.handshake.session.uuid;
-          const fromDeviceId = socket.handshake.session.deviceId;
+          const fromUserId = getUserId();
+          const fromDeviceId = getDeviceId();
           targetSockets.forEach(targetSocket => {
             const targetDeviceId = targetSocket.handshake.session?.deviceId;
             if (targetDeviceId) {
@@ -2176,13 +2186,13 @@ io.sockets.on("connection", socket => {
    */
   socket.on("file:key-request", (data) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!isAuthenticated()) {
         console.error('[P2P KEY] Key request blocked - not authenticated');
         return;
       }
 
       const { targetUserId, fileId } = data;
-      const requesterId = socket.handshake.session.uuid;
+      const requesterId = getUserId();
       
       console.log(`[P2P KEY] User ${requesterId} requesting key for file ${fileId} from ${targetUserId}`);
       
@@ -2220,13 +2230,13 @@ io.sockets.on("connection", socket => {
    */
   socket.on("file:key-response", (data) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!isAuthenticated()) {
         console.error('[P2P KEY] Key response blocked - not authenticated');
         return;
       }
 
       const { targetUserId, fileId, key, error } = data;
-      const seederId = socket.handshake.session.uuid;
+      const seederId = getUserId();
       
       console.log(`[P2P KEY] User ${seederId} sending key for file ${fileId} to ${targetUserId}`);
       
@@ -2261,13 +2271,13 @@ io.sockets.on("connection", socket => {
    */
   socket.on("video:key-request", (data) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!isAuthenticated()) {
         console.error('[VIDEO E2EE] Key request blocked - not authenticated');
         return;
       }
 
       const { targetUserId, channelId, signalMessage } = data;
-      const requesterId = socket.handshake.session.uuid;
+      const requesterId = getUserId();
       
       console.log(`[VIDEO E2EE] User ${requesterId} requesting key for channel ${channelId} from ${targetUserId}`);
       
@@ -2313,7 +2323,7 @@ io.sockets.on("connection", socket => {
       }
 
       const { targetUserId, channelId, signalMessage, error } = data;
-      const senderId = socket.handshake.session.uuid;
+      const senderId = getUserId();
       
       console.log(`[VIDEO E2EE] User ${senderId} sending key for channel ${channelId} to ${targetUserId}`);
       
@@ -2413,13 +2423,13 @@ io.sockets.on("connection", socket => {
    */
   socket.on("video:register-participant", async (data) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!isAuthenticated()) {
         console.error('[VIDEO PARTICIPANTS] Register blocked - not authenticated');
         return;
       }
 
       const { channelId } = data;
-      const userId = socket.handshake.session.uuid;
+      const userId = getUserId();
 
       if (!channelId) {
         console.error('[VIDEO PARTICIPANTS] Missing channelId');
@@ -2463,13 +2473,13 @@ io.sockets.on("connection", socket => {
    */
   socket.on("video:confirm-e2ee-key", async (data) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!isAuthenticated()) {
         console.error('[VIDEO PARTICIPANTS] Key confirm blocked - not authenticated');
         return;
       }
 
       const { channelId } = data;
-      const userId = socket.handshake.session.uuid;
+      const userId = getUserId();
 
       if (!channelId) {
         console.error('[VIDEO PARTICIPANTS] Missing channelId');
@@ -2496,13 +2506,13 @@ io.sockets.on("connection", socket => {
    */
   socket.on("video:leave-channel", async (data) => {
     try {
-      if (!socket.handshake.session.uuid) {
+      if (!isAuthenticated()) {
         console.error('[VIDEO PARTICIPANTS] Leave blocked - not authenticated');
         return;
       }
 
       const { channelId } = data;
-      const userId = socket.handshake.session.uuid;
+      const userId = getUserId();
 
       if (!channelId) {
         console.error('[VIDEO PARTICIPANTS] Missing channelId');
@@ -2532,16 +2542,12 @@ io.sockets.on("connection", socket => {
    */
   socket.on("deleteItem", async (data, callback) => {
     try {
-      if (
-        !socket.handshake.session.uuid ||
-        !socket.handshake.session.deviceId ||
-        socket.handshake.session.authenticated !== true
-      ) {
+      if (!isAuthenticated()) {
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
-      const userId = socket.handshake.session.uuid;
-      const deviceId = socket.handshake.session.deviceId;
+      const userId = getUserId();
+      const deviceId = getDeviceId();
       const { itemId } = data;
 
       if (!itemId) {

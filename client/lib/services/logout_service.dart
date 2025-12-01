@@ -271,7 +271,7 @@ class LogoutService {
         }
         
         ApiService.init();
-        await ApiService.post('$urlString/auth/logout');
+        await ApiService.post('$urlString/logout');
         debugPrint('[LOGOUT] ✓ Server logout successful');
       } catch (e) {
         debugPrint('[LOGOUT] ⚠ Server logout failed (may already be logged out): $e');

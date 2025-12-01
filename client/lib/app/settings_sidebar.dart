@@ -59,11 +59,17 @@ class SettingsSidebar extends StatelessWidget {
                 onTap: () => ThemeSelectorDialog.show(context),
               ),
               const Divider(),
-              // P2P File Sharing
-              ListTile(
-                leading: const Icon(Icons.folder_shared),
-                title: const Text('File Sharing'),
-                onTap: () => GoRouter.of(context).go('/file-transfer'),
+              Consumer<RoleProvider>(
+                builder: (context, roleProvider, child) {
+                  if (roleProvider.isAdmin) {
+                    return ListTile(
+                      leading: const Icon(Icons.admin_panel_settings),
+                      title: const Text('Server Settings'),
+                      onTap: () => GoRouter.of(context).go('/app/settings/server'),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
               ),
               const Divider(),
               // Role Management - Only visible for Admins

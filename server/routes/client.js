@@ -1142,6 +1142,20 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     const locationString = location
             ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
             : "Location not found";
+    // Check if this clientid exists for a DIFFERENT user (account switch scenario)
+    const existingClient = await Client.findOne({ where: { clientid: clientid } });
+    if (existingClient && existingClient.owner !== entry.uuid) {
+        // Client is switching accounts - delete old client entry and associated keys
+        console.log(`[MAGIC LINK] Client ${clientid} switching from user ${existingClient.owner} to ${entry.uuid}`);
+        await writeQueue.enqueue(async () => {
+            // Delete Signal Protocol keys
+            await SignalPreKey.destroy({ where: { client: clientid } });
+            await SignalSignedPreKey.destroy({ where: { client: clientid } });
+            // Delete client entry
+            await Client.destroy({ where: { clientid: clientid } });
+        }, 'deleteClientAndKeysOnAccountSwitch');
+    }
+    
     const maxDevice = await Client.max('device_id', { where: { owner: entry.uuid } });
     const [client] = await writeQueue.enqueue(
         () => Client.findOrCreate({
@@ -1224,6 +1238,21 @@ clientRoutes.post("/client/login", async (req, res) => {
         if (!owner) {
             return res.status(401).json({ status: "failed", message: "Invalid email" });
         }
+        
+        // Check if this clientid exists for a DIFFERENT user (account switch scenario)
+        const existingClient = await Client.findOne({ where: { clientid: clientid } });
+        if (existingClient && existingClient.owner !== owner.uuid) {
+            // Client is switching accounts - delete old client entry and associated keys
+            console.log(`[CLIENT LOGIN] Client ${clientid} switching from user ${existingClient.owner} to ${owner.uuid}`);
+            await writeQueue.enqueue(async () => {
+                // Delete Signal Protocol keys
+                await SignalPreKey.destroy({ where: { client: clientid } });
+                await SignalSignedPreKey.destroy({ where: { client: clientid } });
+                // Delete client entry
+                await Client.destroy({ where: { clientid: clientid } });
+            }, 'deleteClientAndKeysOnAccountSwitch');
+        }
+        
         const client = await Client.findOne({ where: { clientid: clientid, owner: owner.uuid } });
         if (client) {
             req.session.authenticated = true;
