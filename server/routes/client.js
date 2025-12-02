@@ -616,10 +616,11 @@ clientRoutes.get("/people/list", verifyAuthEither, async (req, res) => {
             attributes: ['uuid', 'displayName', 'picture'],
             where: { 
                 uuid: { [Op.ne]: sessionUuid }, // Exclude the current user
-                active: true // Only show active users
+                active: true, // Only show active users
+                verified: true // Only show verified users who completed registration
             }
         });
-        console.log(`[PEOPLE_LIST] Found ${users.length} users`);
+        console.log(`[PEOPLE_LIST] Found ${users.length} verified users`);
         res.status(200).json(users);
     } catch (error) {
         console.error('Error fetching users:', error);

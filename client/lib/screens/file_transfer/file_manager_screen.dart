@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:universal_html/html.dart' as html;
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:mime/mime.dart';
@@ -12,10 +13,13 @@ import '../../services/file_transfer/chunking_service.dart';
 import '../../services/file_transfer/encryption_service.dart';
 import '../../services/file_transfer/file_transfer_config.dart';
 import '../../services/file_transfer/file_transfer_service.dart';
-import '../../services/socket_service.dart';
 import '../../services/signal_service.dart';
+import '../../services/socket_service_native.dart'
+    if (dart.library.html) '../../services/socket_service.dart';
 import '../../services/api_service.dart';
 import '../../services/user_profile_service.dart';
+import '../../services/server_config_native.dart'
+    if (dart.library.html) '../../services/server_config_web.dart';
 import '../../providers/role_provider.dart';
 import '../../providers/file_transfer_stats_provider.dart';
 import '../../web_config.dart';
@@ -1484,12 +1488,30 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
     try {
       final results = <Map<String, dynamic>>[];
       
-      // Search users
-      final apiServer = await loadWebApiServer();
-      String urlString = apiServer ?? '';
+      // Get server URL from appropriate source
+      String? apiServer;
+      if (kIsWeb) {
+        // Web: Load from web config
+        apiServer = await loadWebApiServer();
+      } else {
+        // Native: Get from ServerConfigService
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer != null) {
+          apiServer = activeServer.serverUrl;
+        }
+      }
+      
+      if (apiServer == null || apiServer.isEmpty) {
+        throw Exception('No API server configured');
+      }
+      
+      String urlString = apiServer;
       if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
+      
+      // Initialize ApiService
+      ApiService.init();
       
       // Get all users (excluding self)
       final usersResp = await ApiService.get('$urlString/people/list');
@@ -1580,6 +1602,12 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
       
       final signalService = SignalService();
       final socketService = SocketService();
+      
+      // Check if socket is connected
+      if (socketService.socket == null) {
+        throw Exception('Socket not connected. Please ensure you are connected to the server.');
+      }
+      
       final fileTransferService = FileTransferService(
         storage: storage,
         socketFileClient: SocketFileClient(socket: socketService.socket!),
