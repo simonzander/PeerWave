@@ -122,17 +122,30 @@ class SqliteGroupMessageStore {
       
       // Decrypt message content for each result
       final decryptedResults = <Map<String, dynamic>>[];
+      final messagesToDelete = <String>[];
+      
       for (var row in results) {
         final decryptedRow = Map<String, dynamic>.from(row);
         if (row['message'] != null) {
           try {
             decryptedRow['message'] = await _encryption.decryptString(row['message']);
+            decryptedResults.add(decryptedRow);
           } catch (e) {
-            debugPrint('[GROUP STORE] ⚠ Failed to decrypt message ${row['item_id']}: $e');
-            decryptedRow['message'] = '[Decryption failed]';
+            debugPrint('[GROUP STORE] ⚠️ Failed to decrypt message ${row['item_id']}: $e');
+            debugPrint('[GROUP STORE] 🗑️ Message will be deleted (cannot decrypt)');
+            messagesToDelete.add(row['item_id'] as String);
           }
+        } else {
+          decryptedResults.add(decryptedRow);
         }
-        decryptedResults.add(decryptedRow);
+      }
+      
+      // Delete messages that couldn't be decrypted
+      if (messagesToDelete.isNotEmpty) {
+        debugPrint('[GROUP STORE] 🗑️ Deleting ${messagesToDelete.length} channel messages that failed decryption');
+        for (final itemId in messagesToDelete) {
+          await deleteGroupItem(channelId, itemId);
+        }
       }
       
       debugPrint('[GROUP STORE] ✓ Retrieved and decrypted ${decryptedResults.length} messages for channel $channelId');
@@ -168,8 +181,10 @@ class SqliteGroupMessageStore {
         try {
           decryptedRow['message'] = await _encryption.decryptString(row['message']);
         } catch (e) {
-          debugPrint('[GROUP STORE] ⚠ Failed to decrypt message $itemId: $e');
-          decryptedRow['message'] = '[Decryption failed]';
+          debugPrint('[GROUP STORE] ⚠️ Failed to decrypt message $itemId: $e');
+          debugPrint('[GROUP STORE] 🗑️ Message will be deleted (cannot decrypt)');
+          await deleteGroupItem(channelId, itemId);
+          return null; // Return null since message is corrupted
         }
       }
       
@@ -223,17 +238,30 @@ class SqliteGroupMessageStore {
       
       // Decrypt message content for each result
       final decryptedResults = <Map<String, dynamic>>[];
+      final messagesToDelete = <String>[];
+      
       for (var row in results) {
         final decryptedRow = Map<String, dynamic>.from(row);
         if (row['message'] != null) {
           try {
             decryptedRow['message'] = await _encryption.decryptString(row['message']);
+            decryptedResults.add(decryptedRow);
           } catch (e) {
-            debugPrint('[GROUP STORE] ⚠ Failed to decrypt message ${row['item_id']}: $e');
-            decryptedRow['message'] = '[Decryption failed]';
+            debugPrint('[GROUP STORE] ⚠️ Failed to decrypt message ${row['item_id']}: $e');
+            debugPrint('[GROUP STORE] 🗑️ Message will be deleted (cannot decrypt)');
+            messagesToDelete.add(row['item_id'] as String);
           }
+        } else {
+          decryptedResults.add(decryptedRow);
         }
-        decryptedResults.add(decryptedRow);
+      }
+      
+      // Delete messages that couldn't be decrypted
+      if (messagesToDelete.isNotEmpty) {
+        debugPrint('[GROUP STORE] 🗑️ Deleting ${messagesToDelete.length} messages of type $type that failed decryption');
+        for (final itemId in messagesToDelete) {
+          await deleteGroupItem(channelId, itemId);
+        }
       }
       
       debugPrint('[GROUP STORE] ✓ Retrieved and decrypted ${decryptedResults.length} messages of type $type');
@@ -262,17 +290,30 @@ class SqliteGroupMessageStore {
       
       // Decrypt message content for each result
       final decryptedResults = <Map<String, dynamic>>[];
+      final messagesToDelete = <String>[];
+      
       for (var row in results) {
         final decryptedRow = Map<String, dynamic>.from(row);
         if (row['message'] != null) {
           try {
             decryptedRow['message'] = await _encryption.decryptString(row['message']);
+            decryptedResults.add(decryptedRow);
           } catch (e) {
-            debugPrint('[GROUP STORE] ⚠ Failed to decrypt message ${row['item_id']}: $e');
-            decryptedRow['message'] = '[Decryption failed]';
+            debugPrint('[GROUP STORE] ⚠️ Failed to decrypt message ${row['item_id']}: $e');
+            debugPrint('[GROUP STORE] 🗑️ Message will be deleted (cannot decrypt)');
+            messagesToDelete.add(row['item_id'] as String);
           }
+        } else {
+          decryptedResults.add(decryptedRow);
         }
-        decryptedResults.add(decryptedRow);
+      }
+      
+      // Delete messages that couldn't be decrypted
+      if (messagesToDelete.isNotEmpty) {
+        debugPrint('[GROUP STORE] 🗑️ Deleting ${messagesToDelete.length} messages from $sender that failed decryption');
+        for (final itemId in messagesToDelete) {
+          await deleteGroupItem(channelId, itemId);
+        }
       }
       
       debugPrint('[GROUP STORE] ✓ Retrieved and decrypted ${decryptedResults.length} messages from $sender');
@@ -371,8 +412,10 @@ class SqliteGroupMessageStore {
         try {
           decryptedRow['message'] = await _encryption.decryptString(row['message']);
         } catch (e) {
-          debugPrint('[GROUP STORE] ⚠ Failed to decrypt last message: $e');
-          decryptedRow['message'] = '[Decryption failed]';
+          debugPrint('[GROUP STORE] ⚠️ Failed to decrypt last message: $e');
+          debugPrint('[GROUP STORE] 🗑️ Message will be deleted (cannot decrypt)');
+          await deleteGroupItem(channelId, row['item_id'] as String);
+          return null; // Return null since message is corrupted
         }
       }
       
@@ -486,17 +529,33 @@ class SqliteGroupMessageStore {
       
       // Decrypt message content for each result
       final decryptedResults = <Map<String, dynamic>>[];
+      final messagesToDelete = <Map<String, String>>[];
+      
       for (var row in results) {
         final decryptedRow = Map<String, dynamic>.from(row);
         if (row['message'] != null) {
           try {
             decryptedRow['message'] = await _encryption.decryptString(row['message']);
+            decryptedResults.add(decryptedRow);
           } catch (e) {
-            debugPrint('[GROUP STORE] ⚠ Failed to decrypt notification ${row['item_id']}: $e');
-            decryptedRow['message'] = '[Decryption failed]';
+            debugPrint('[GROUP STORE] ⚠️ Failed to decrypt notification ${row['item_id']}: $e');
+            debugPrint('[GROUP STORE] 🗑️ Message will be deleted (cannot decrypt)');
+            messagesToDelete.add({
+              'channelId': row['channel_id'] as String,
+              'itemId': row['item_id'] as String,
+            });
           }
+        } else {
+          decryptedResults.add(decryptedRow);
         }
-        decryptedResults.add(decryptedRow);
+      }
+      
+      // Delete messages that couldn't be decrypted
+      if (messagesToDelete.isNotEmpty) {
+        debugPrint('[GROUP STORE] 🗑️ Deleting ${messagesToDelete.length} notification messages that failed decryption');
+        for (final msg in messagesToDelete) {
+          await deleteGroupItem(msg['channelId']!, msg['itemId']!);
+        }
       }
       
       debugPrint('[GROUP STORE] ✓ Retrieved ${decryptedResults.length} notification messages');

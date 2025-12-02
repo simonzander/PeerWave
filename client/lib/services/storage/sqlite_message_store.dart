@@ -83,7 +83,13 @@ class SqliteMessageStore {
     );
     
     if (result.isEmpty) return null;
-    return await _convertFromDb(result.first);
+    
+    final converted = await _convertFromDb(result.first);
+    if (converted == null) {
+      // Failed to decrypt, delete it
+      await deleteMessage(itemId);
+    }
+    return converted;
   }
 
   /// Store a received message (1:1 or group)
@@ -192,11 +198,28 @@ class SqliteMessageStore {
       offset: offset,
     );
     
-    // Decrypt all messages
+    // Decrypt all messages and delete those that fail
     final decryptedMessages = <Map<String, dynamic>>[];
+    final messagesToDelete = <String>[];
+    
     for (final row in result) {
-      decryptedMessages.add(await _convertFromDb(row));
+      final converted = await _convertFromDb(row);
+      if (converted != null) {
+        decryptedMessages.add(converted);
+      } else {
+        // Mark for deletion
+        messagesToDelete.add(row['item_id'] as String);
+      }
     }
+    
+    // Delete messages that couldn't be decrypted
+    if (messagesToDelete.isNotEmpty) {
+      debugPrint('[SQLITE_MESSAGE_STORE] 🗑️ Deleting ${messagesToDelete.length} 1:1 messages that failed decryption');
+      for (final itemId in messagesToDelete) {
+        await deleteMessage(itemId);
+      }
+    }
+    
     return decryptedMessages;
   }
 
@@ -227,11 +250,28 @@ class SqliteMessageStore {
       offset: offset,
     );
     
-    // Decrypt all messages
+    // Decrypt all messages and delete those that fail
     final decryptedMessages = <Map<String, dynamic>>[];
+    final messagesToDelete = <String>[];
+    
     for (final row in result) {
-      decryptedMessages.add(await _convertFromDb(row));
+      final converted = await _convertFromDb(row);
+      if (converted != null) {
+        decryptedMessages.add(converted);
+      } else {
+        // Mark for deletion
+        messagesToDelete.add(row['item_id'] as String);
+      }
     }
+    
+    // Delete messages that couldn't be decrypted
+    if (messagesToDelete.isNotEmpty) {
+      debugPrint('[SQLITE_MESSAGE_STORE] 🗑️ Deleting ${messagesToDelete.length} channel messages that failed decryption');
+      for (final itemId in messagesToDelete) {
+        await deleteMessage(itemId);
+      }
+    }
+    
     return decryptedMessages;
   }
 
@@ -282,7 +322,13 @@ class SqliteMessageStore {
     );
     
     if (result.isEmpty) return null;
-    return await _convertFromDb(result.first);
+    
+    final converted = await _convertFromDb(result.first);
+    if (converted == null) {
+      // Failed to decrypt, delete it
+      await deleteMessage(result.first['item_id'] as String);
+    }
+    return converted;
   }
 
   /// Get last message from a channel
@@ -298,7 +344,13 @@ class SqliteMessageStore {
     );
     
     if (result.isEmpty) return null;
-    return await _convertFromDb(result.first);
+    
+    final converted = await _convertFromDb(result.first);
+    if (converted == null) {
+      // Failed to decrypt, delete it
+      await deleteMessage(result.first['item_id'] as String);
+    }
+    return converted;
   }
 
   /// Count messages in a conversation
@@ -459,10 +511,19 @@ class SqliteMessageStore {
   }
 
   /// Convert database row to app format
-  Future<Map<String, dynamic>> _convertFromDb(Map<String, dynamic> row) async {
+  /// Returns null if decryption fails (message should be deleted)
+  Future<Map<String, dynamic>?> _convertFromDb(Map<String, dynamic> row) async {
     // Decrypt the message content (stored as BLOB)
     final encryptedMessage = row['message'];
-    final decryptedMessage = await _encryption.decryptString(encryptedMessage);
+    String? decryptedMessage;
+    
+    try {
+      decryptedMessage = await _encryption.decryptString(encryptedMessage);
+    } catch (e) {
+      debugPrint('[SQLITE_MESSAGE_STORE] ⚠️ Decryption failed for message ${row['item_id']}: $e');
+      debugPrint('[SQLITE_MESSAGE_STORE] 🗑️ Message will be deleted (cannot decrypt)');
+      return null; // Signal that this message should be deleted
+    }
     
     // Parse metadata if present
     Map<String, dynamic>? metadata;
@@ -529,12 +590,23 @@ class SqliteMessageStore {
       
       // Decrypt and convert each result
       final decryptedResults = <Map<String, dynamic>>[];
+      final messagesToDelete = <String>[];
+      
       for (var row in results) {
-        try {
-          final converted = await _convertFromDb(row);
+        final converted = await _convertFromDb(row);
+        if (converted != null) {
           decryptedResults.add(converted);
-        } catch (e) {
-          debugPrint('[SQLITE_MESSAGE_STORE] ⚠ Failed to decrypt notification ${row['item_id']}: $e');
+        } else {
+          // Mark for deletion
+          messagesToDelete.add(row['item_id'] as String);
+        }
+      }
+      
+      // Delete messages that couldn't be decrypted
+      if (messagesToDelete.isNotEmpty) {
+        debugPrint('[SQLITE_MESSAGE_STORE] 🗑️ Deleting ${messagesToDelete.length} notification messages that failed decryption');
+        for (final itemId in messagesToDelete) {
+          await deleteMessage(itemId);
         }
       }
       
