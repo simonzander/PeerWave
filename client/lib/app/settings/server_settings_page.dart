@@ -271,6 +271,16 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
         if (mounted) {
           context.showSuccessSnackBar('Invitation sent to $email');
         }
+      } else {
+        // Handle non-200 responses
+        final errorData = resp.data;
+        final errorMessage = errorData is Map && errorData['message'] != null
+            ? errorData['message']
+            : 'Failed to send invitation (${resp.statusCode})';
+        
+        if (mounted) {
+          context.showErrorSnackBar(errorMessage);
+        }
       }
     } catch (e) {
       if (mounted) {

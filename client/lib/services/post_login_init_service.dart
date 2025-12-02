@@ -12,7 +12,6 @@ import '../providers/unread_messages_provider.dart';
 import '../providers/role_provider.dart';
 import '../providers/file_transfer_stats_provider.dart';
 import 'storage/database_helper.dart';
-import 'server_config_native.dart' if (dart.library.html) 'dart:core';
 // P2P imports
 import 'file_transfer/storage_interface.dart';
 import 'file_transfer/encryption_service.dart';
@@ -234,21 +233,6 @@ class PostLoginInitService {
             debugPrint('[POST_LOGIN_INIT]   ✓ Recent conversations loaded');
           } catch (e) {
             debugPrint('[POST_LOGIN_INIT]   ⚠️ Recent conversations error: $e');
-          }
-        }),
-
-        // Server metadata (native only)
-        Future(() async {
-          if (!kIsWeb) {
-            try {
-              final activeServer = ServerConfigService.getActiveServer();
-              if (activeServer != null) {
-                await ServerConfigService.updateServerMetadata(activeServer.id);
-                debugPrint('[POST_LOGIN_INIT]   ✓ Server metadata updated');
-              }
-            } catch (e) {
-              debugPrint('[POST_LOGIN_INIT]   ⚠️ Server metadata error: $e');
-            }
           }
         }),
       ]);
