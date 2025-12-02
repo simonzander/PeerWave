@@ -1,6 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../services/server_config_native.dart';
+import '../providers/unread_messages_provider.dart';
 
 /// Discord-like server panel for native clients
 /// Shows list of connected servers with icons and notification badges
@@ -8,10 +11,7 @@ import '../services/server_config_native.dart';
 class ServerPanel extends StatefulWidget {
   final Function(String serverId)? onServerSelected;
 
-  const ServerPanel({
-    Key? key,
-    this.onServerSelected,
-  }) : super(key: key);
+  const ServerPanel({Key? key, this.onServerSelected}) : super(key: key);
 
   @override
   State<ServerPanel> createState() => _ServerPanelState();
@@ -20,6 +20,7 @@ class ServerPanel extends StatefulWidget {
 class _ServerPanelState extends State<ServerPanel> {
   List<ServerConfig> _servers = [];
   String? _activeServerId;
+  UnreadMessagesProvider? _unreadProvider;
 
   @override
   void initState() {
@@ -30,8 +31,34 @@ class _ServerPanelState extends State<ServerPanel> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // Setup UnreadMessagesProvider listener
+    if (_unreadProvider == null) {
+      _unreadProvider = context.watch<UnreadMessagesProvider>();
+      _unreadProvider!.addListener(_updateActiveServerBadge);
+    }
     // Reload servers when dependencies change (e.g., after navigation)
     _loadServers();
+  }
+
+  @override
+  void dispose() {
+    _unreadProvider?.removeListener(_updateActiveServerBadge);
+    super.dispose();
+  }
+
+  void _updateActiveServerBadge() {
+    if (_activeServerId != null && _unreadProvider != null) {
+      final total =
+          _unreadProvider!.totalChannelUnread +
+          _unreadProvider!.totalDirectMessageUnread +
+          _unreadProvider!.totalActivityNotifications;
+      setState(() {
+        final index = _servers.indexWhere((s) => s.id == _activeServerId);
+        if (index != -1) {
+          _servers[index].unreadCount = total;
+        }
+      });
+    }
   }
 
   void _loadServers() {
@@ -42,15 +69,24 @@ class _ServerPanelState extends State<ServerPanel> {
   }
 
   Future<void> _switchServer(String serverId) async {
+    // Save current server's unread count before switching
+    if (_unreadProvider != null) {
+      await ServerConfigService.saveCurrentServerUnreadCount(
+        _unreadProvider!.totalChannelUnread,
+        _unreadProvider!.totalDirectMessageUnread,
+        _unreadProvider!.totalActivityNotifications,
+      );
+    }
+
     await ServerConfigService.setActiveServer(serverId);
     await ServerConfigService.resetUnreadCount(serverId);
-    
+
     setState(() {
       _activeServerId = serverId;
     });
-    
+
     widget.onServerSelected?.call(serverId);
-    
+
     // Trigger reload of the app
     if (mounted) {
       context.go('/app');
@@ -65,8 +101,14 @@ class _ServerPanelState extends State<ServerPanel> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
-              title: Text('Logout', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              leading: Icon(
+                Icons.logout,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: Text(
+                'Logout',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
               onTap: () async {
                 Navigator.pop(context);
                 await _logoutFromServer(server);
@@ -74,8 +116,14 @@ class _ServerPanelState extends State<ServerPanel> {
             ),
             const Divider(),
             ListTile(
-              leading: Icon(Icons.delete_forever, color: Theme.of(context).colorScheme.error),
-              title: Text('Delete Server', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              leading: Icon(
+                Icons.delete_forever,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: Text(
+                'Delete Server',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
               subtitle: const Text('Remove all data'),
               onTap: () async {
                 Navigator.pop(context);
@@ -89,8 +137,10 @@ class _ServerPanelState extends State<ServerPanel> {
   }
 
   void _showEditServerDialog(ServerConfig server) {
-    final controller = TextEditingController(text: server.displayName ?? server.getDisplayName());
-    
+    final controller = TextEditingController(
+      text: server.displayName ?? server.getDisplayName(),
+    );
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -153,7 +203,7 @@ class _ServerPanelState extends State<ServerPanel> {
     if (confirm == true) {
       await ServerConfigService.removeServer(server.id);
       _loadServers();
-      
+
       // If no servers left, go to server selection
       if (_servers.isEmpty && mounted) {
         context.go('/server-selection');
@@ -203,7 +253,7 @@ class _ServerPanelState extends State<ServerPanel> {
       try {
         await ServerConfigService.deleteServerWithData(server.id);
         _loadServers();
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -212,7 +262,7 @@ class _ServerPanelState extends State<ServerPanel> {
             ),
           );
         }
-        
+
         // If no servers left, go to server selection
         if (_servers.isEmpty && mounted) {
           context.go('/server-selection');
@@ -275,7 +325,10 @@ class _ServerPanelState extends State<ServerPanel> {
             padding: const EdgeInsets.only(bottom: 16),
             child: _AddServerButton(
               onTap: () {
-                context.push('/server-selection', extra: {'isAddingServer': true});
+                context.push(
+                  '/server-selection',
+                  extra: {'isAddingServer': true},
+                );
               },
             ),
           ),
@@ -344,25 +397,7 @@ class _ServerIcon extends StatelessWidget {
                 ),
               ),
               child: Center(
-                child: server.iconPath != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(isActive ? 14 : 22),
-                        child: Image.file(
-                          server.iconPath! as dynamic,
-                          width: 48,
-                          height: 48,
-                          fit: BoxFit.cover,
-                        ),
-                      )
-                    : Text(
-                        server.getShortName(),
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: isActive
-                                  ? Theme.of(context).colorScheme.onPrimaryContainer
-                                  : Theme.of(context).colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
+                child: _buildServerImage(context, server, isActive),
               ),
             ),
           ),
@@ -374,31 +409,101 @@ class _ServerIcon extends StatelessWidget {
               top: 0,
               child: Container(
                 padding: const EdgeInsets.all(4),
-                constraints: const BoxConstraints(
-                  minWidth: 20,
-                  minHeight: 20,
-                ),
+                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.error,
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     width: 2,
                   ),
                 ),
                 child: Center(
                   child: Text(
-                    server.unreadCount > 99 ? '99+' : server.unreadCount.toString(),
+                    server.unreadCount > 99
+                        ? '99+'
+                        : server.unreadCount.toString(),
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onError,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
-                        ),
+                      color: Theme.of(context).colorScheme.onError,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 10,
+                    ),
                   ),
                 ),
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  /// Build server image with priority: serverPicture > iconPath > first letter
+  Widget _buildServerImage(
+    BuildContext context,
+    ServerConfig server,
+    bool isActive,
+  ) {
+    // Priority 1: Server picture from /client/meta (base64)
+    if (server.serverPicture != null && server.serverPicture!.isNotEmpty) {
+      try {
+        final base64Data = server.serverPicture!.contains(',')
+            ? server.serverPicture!.split(',').last
+            : server.serverPicture!;
+        final bytes = base64Decode(base64Data);
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(isActive ? 14 : 22),
+          child: Image.memory(
+            bytes,
+            width: 48,
+            height: 48,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              // Fallback to letter if image fails to decode
+              return _buildLetterAvatar(context, server, isActive);
+            },
+          ),
+        );
+      } catch (e) {
+        // Fallback to next priority if base64 decode fails
+      }
+    }
+
+    // Priority 2: Local icon path (custom icon)
+    if (server.iconPath != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(isActive ? 14 : 22),
+        child: Image.file(
+          server.iconPath! as dynamic,
+          width: 48,
+          height: 48,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            // Fallback to letter if file fails to load
+            return _buildLetterAvatar(context, server, isActive);
+          },
+        ),
+      );
+    }
+
+    // Priority 3: First letter of server name (NOT hostname)
+    return _buildLetterAvatar(context, server, isActive);
+  }
+
+  /// Build letter avatar for server
+  Widget _buildLetterAvatar(
+    BuildContext context,
+    ServerConfig server,
+    bool isActive,
+  ) {
+    return Text(
+      server.getShortName(),
+      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+        color: isActive
+            ? Theme.of(context).colorScheme.onPrimaryContainer
+            : Theme.of(context).colorScheme.onSurfaceVariant,
+        fontWeight: FontWeight.bold,
       ),
     );
   }

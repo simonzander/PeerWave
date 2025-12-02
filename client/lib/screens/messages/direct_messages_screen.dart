@@ -20,14 +20,20 @@ import '../../extensions/snackbar_extensions.dart';
 import '../../providers/unread_messages_provider.dart';
 
 /// Whitelist of message types that should be displayed in UI
-const Set<String> DISPLAYABLE_MESSAGE_TYPES = {'message', 'file', 'image', 'voice'};
+const Set<String> DISPLAYABLE_MESSAGE_TYPES = {
+  'message',
+  'file',
+  'image',
+  'voice',
+};
 
 /// Screen for Direct Messages (1:1 Signal chats)
 class DirectMessagesScreen extends StatefulWidget {
   final String host;
   final String recipientUuid;
   final String recipientDisplayName;
-  final String? scrollToMessageId; // Optional: message to scroll to after loading
+  final String?
+  scrollToMessageId; // Optional: message to scroll to after loading
 
   const DirectMessagesScreen({
     super.key,
@@ -56,11 +62,11 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     super.initState();
     _initialize();
   }
-  
+
   @override
   void dispose() {
     _scrollController.dispose();
-    
+
     // ✅ Unregister specific callbacks for this conversation
     for (final type in DISPLAYABLE_MESSAGE_TYPES) {
       SignalService.instance.unregisterReceiveItem(
@@ -69,9 +75,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         _handleNewMessageFromCallback,
       );
     }
-    
+
     debugPrint('[DM_SCREEN] Unregistered all receiveItem callbacks');
-    
+
     SignalService.instance.clearDeliveryCallbacks();
     SignalService.instance.clearReadCallbacks();
     super.dispose();
@@ -82,20 +88,24 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     super.didUpdateWidget(oldWidget);
     // Reload messages when recipient changes
     if (oldWidget.recipientUuid != widget.recipientUuid) {
-      debugPrint('[DIRECT_MESSAGES] Recipient changed from ${oldWidget.recipientUuid} to ${widget.recipientUuid}');
+      debugPrint(
+        '[DIRECT_MESSAGES] Recipient changed from ${oldWidget.recipientUuid} to ${widget.recipientUuid}',
+      );
       _messages = []; // Clear old messages
       _messageOffset = 0;
       _hasMoreMessages = true;
-      
+
       // Clear unread count for new conversation
       try {
         final unreadProvider = context.read<UnreadMessagesProvider>();
         unreadProvider.markDirectMessageAsRead(widget.recipientUuid);
-        debugPrint('[DM_SCREEN] ✓ Cleared unread count for new conversation ${widget.recipientUuid}');
+        debugPrint(
+          '[DM_SCREEN] ✓ Cleared unread count for new conversation ${widget.recipientUuid}',
+        );
       } catch (e) {
         debugPrint('[DM_SCREEN] ⚠️ Error clearing unread count: $e');
       }
-      
+
       _initialize(); // Reload
     }
   }
@@ -106,24 +116,26 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     _setupReceiveItemCallbacks(); // ✅ Register granular callbacks
     _setupReceiptListeners();
     _setupReactionListener(); // Listen for reaction updates
-    
+
     // ✅ Clear unread count for this conversation
     if (mounted) {
       try {
         final unreadProvider = context.read<UnreadMessagesProvider>();
         unreadProvider.markDirectMessageAsRead(widget.recipientUuid);
-        debugPrint('[DM_SCREEN] ✓ Cleared unread count for ${widget.recipientUuid}');
+        debugPrint(
+          '[DM_SCREEN] ✓ Cleared unread count for ${widget.recipientUuid}',
+        );
       } catch (e) {
         debugPrint('[DM_SCREEN] ⚠️ Error clearing unread count: $e');
       }
     }
-    
+
     // Auto-mark notifications as read for this DM conversation
     await _markDMNotificationsAsRead();
-    
+
     // 🚀 Send read receipts for all unread received messages
     await _sendReadReceiptsForLoadedMessages();
-    
+
     // Scroll to bottom or target message after initial load - wait for all builds to complete
     SchedulerBinding.instance.addPostFrameCallback((_) {
       SchedulerBinding.instance.addPostFrameCallback((_) {
@@ -133,7 +145,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             _scrollToMessage(widget.scrollToMessageId!);
           } else {
             // Scroll to bottom
-            _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+            _scrollController.jumpTo(
+              _scrollController.position.maxScrollExtent,
+            );
           }
         }
       });
@@ -143,12 +157,16 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   /// Mark all notifications for this DM conversation as read
   Future<void> _markDMNotificationsAsRead() async {
     try {
-      final unreadProvider = Provider.of<UnreadMessagesProvider>(context, listen: false);
+      final unreadProvider = Provider.of<UnreadMessagesProvider>(
+        context,
+        listen: false,
+      );
       final dmMessageStore = await SqliteMessageStore.getInstance();
-      
+
       // Get unread notifications for this user
-      final unreadNotifications = await dmMessageStore.getUnreadNotificationsForUser(widget.recipientUuid);
-      
+      final unreadNotifications = await dmMessageStore
+          .getUnreadNotificationsForUser(widget.recipientUuid);
+
       if (unreadNotifications.isNotEmpty) {
         // Mark as read in storage
         for (final notification in unreadNotifications) {
@@ -157,17 +175,19 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             await dmMessageStore.markNotificationAsRead(itemId);
           }
         }
-        
+
         // Update unread counter
         final itemIds = unreadNotifications
             .map((n) => n['itemId'] as String?)
             .where((id) => id != null)
             .cast<String>()
             .toList();
-        
+
         if (itemIds.isNotEmpty) {
           unreadProvider.markMultipleActivityNotificationsAsRead(itemIds);
-          debugPrint('[DM_SCREEN] Marked ${itemIds.length} notifications as read for user ${widget.recipientUuid}');
+          debugPrint(
+            '[DM_SCREEN] Marked ${itemIds.length} notifications as read for user ${widget.recipientUuid}',
+          );
         }
       }
     } catch (e) {
@@ -179,9 +199,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     // Listen for delivery receipts
     SignalService.instance.onDeliveryReceipt((itemId) async {
       if (!mounted) return;
-      
+
       debugPrint('[DM_SCREEN] Delivery receipt received for itemId: $itemId');
-      
+
       // Update status in SQLite
       try {
         final messageStore = await SqliteMessageStore.getInstance();
@@ -189,17 +209,23 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       } catch (e) {
         debugPrint('[DM_SCREEN] ⚠️ Error updating status in SQLite: $e');
       }
-      
+
       // Schedule setState for next frame to avoid layout conflicts
       SchedulerBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           setState(() {
-            final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
+            final msgIndex = _messages.indexWhere(
+              (msg) => msg['itemId'] == itemId,
+            );
             if (msgIndex != -1) {
-              debugPrint('[DM_SCREEN] ✓ Updated message status to delivered: $itemId');
+              debugPrint(
+                '[DM_SCREEN] ✓ Updated message status to delivered: $itemId',
+              );
               _messages[msgIndex]['status'] = 'delivered';
             } else {
-              debugPrint('[DM_SCREEN] ⚠ Message not found in list for delivery receipt: $itemId');
+              debugPrint(
+                '[DM_SCREEN] ⚠ Message not found in list for delivery receipt: $itemId',
+              );
             }
           });
         }
@@ -214,7 +240,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
       if (!mounted) return;
 
-      debugPrint('[DM_SCREEN] Read receipt received for itemId: $itemId from user: $readByUserId, device: $readByDeviceId');
+      debugPrint(
+        '[DM_SCREEN] Read receipt received for itemId: $itemId from user: $readByUserId, device: $readByDeviceId',
+      );
 
       // Update status in SQLite
       try {
@@ -228,15 +256,21 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       SchedulerBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           setState(() {
-            final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
+            final msgIndex = _messages.indexWhere(
+              (msg) => msg['itemId'] == itemId,
+            );
             if (msgIndex != -1) {
-              debugPrint('[DM_SCREEN] ✓ Updated message status to read: $itemId');
+              debugPrint(
+                '[DM_SCREEN] ✓ Updated message status to read: $itemId',
+              );
               _messages[msgIndex]['status'] = 'read';
 
               // Delete message from server after read confirmation
               SignalService.instance.deleteItemFromServer(itemId);
             } else {
-              debugPrint('[DM_SCREEN] ⚠ Message not found in list for read receipt: $itemId');
+              debugPrint(
+                '[DM_SCREEN] ⚠ Message not found in list for read receipt: $itemId',
+              );
             }
           });
         }
@@ -248,19 +282,35 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   void _setupReactionListener() {
     EventBus.instance.on(AppEvent.reactionUpdated).listen((data) {
       if (!mounted) return;
-      
+
       final messageId = data['messageId'] as String?;
-      final sender = data['sender'] as String?;
       final reactions = data['reactions'] as Map<String, dynamic>?;
-      
-      // Only update if it's for this conversation
-      if (sender == widget.recipientUuid && messageId != null && reactions != null) {
+
+      debugPrint('[DM_SCREEN] 🎭 Reaction update event received:');
+      debugPrint('[DM_SCREEN]   messageId: $messageId');
+      debugPrint('[DM_SCREEN]   reactions: $reactions');
+
+      // Update if the message is in this conversation
+      if (messageId != null && reactions != null) {
         setState(() {
-          final msgIndex = _messages.indexWhere((m) => m['itemId'] == messageId);
+          final msgIndex = _messages.indexWhere(
+            (m) => m['itemId'] == messageId,
+          );
+          debugPrint('[DM_SCREEN]   Found message at index: $msgIndex');
           if (msgIndex != -1) {
             // Update reactions in the message data
-            _messages[msgIndex]['reactions'] = jsonEncode(reactions);
-            debugPrint('[DM_SCREEN] Updated reactions for message $messageId: $reactions');
+            final reactionsJson = jsonEncode(reactions);
+            _messages[msgIndex]['reactions'] = reactionsJson;
+            debugPrint(
+              '[DM_SCREEN] ✓ Updated reactions for message $messageId: $reactionsJson',
+            );
+            debugPrint(
+              '[DM_SCREEN]   Message now has reactions: ${_messages[msgIndex]['reactions']}',
+            );
+          } else {
+            debugPrint(
+              '[DM_SCREEN] ⚠️ Message $messageId not found in _messages list',
+            );
           }
         });
       }
@@ -277,23 +327,27 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         _handleNewMessageFromCallback,
       );
     }
-    
-    debugPrint('[DM_SCREEN] Registered receiveItem callbacks for ${DISPLAYABLE_MESSAGE_TYPES.length} types');
+
+    debugPrint(
+      '[DM_SCREEN] Registered receiveItem callbacks for ${DISPLAYABLE_MESSAGE_TYPES.length} types',
+    );
   }
 
   /// ✅ NEW: Handle incoming messages from SignalService callbacks
   void _handleNewMessageFromCallback(Map<String, dynamic> item) {
     if (!mounted) return;
-    
-    debugPrint('[DM_SCREEN] New message received via callback: ${item['itemId']}');
-    
+
+    debugPrint(
+      '[DM_SCREEN] New message received via callback: ${item['itemId']}',
+    );
+
     final itemId = item['itemId'];
     final exists = _messages.any((msg) => msg['itemId'] == itemId);
-    
+
     if (!exists) {
       // New message - append to list
       final isLocalSent = item['isLocalSent'] == true;
-      
+
       final newMessage = {
         'itemId': item['itemId'],
         'sender': item['sender'],
@@ -307,17 +361,18 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         'status': isLocalSent ? (item['status'] ?? 'sending') : null,
         'type': item['type'],
         'metadata': item['metadata'],
+        'reactions': item['reactions'] ?? '{}', // Include reactions
       };
-      
+
       // ✅ OPTIMIZED: Schedule setState for next frame to avoid layout conflicts
       SchedulerBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           setState(() {
             _messages.add(newMessage);
           });
-          
+
           debugPrint('[DM_SCREEN] ✓ Message appended to UI list');
-          
+
           // Send read receipt if this is a received message
           if (!isLocalSent && item['sender'] == widget.recipientUuid) {
             final senderDeviceId = item['senderDeviceId'] is int
@@ -325,7 +380,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                 : int.parse(item['senderDeviceId'].toString());
             _sendReadReceipt(item['itemId'], item['sender'], senderDeviceId);
           }
-          
+
           // Auto-scroll to new message - wait for multiple frames
           SchedulerBinding.instance.addPostFrameCallback((_) {
             SchedulerBinding.instance.addPostFrameCallback((_) {
@@ -350,45 +405,57 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
               setState(() {
                 _messages[msgIndex]['status'] = item['status'];
               });
-              debugPrint('[DM_SCREEN] ✓ Updated message status: ${item['status']}');
+              debugPrint(
+                '[DM_SCREEN] ✓ Updated message status: ${item['status']}',
+              );
             }
           });
         }
       } else {
-        debugPrint('[DM_SCREEN] ⚠ Message already in list (duplicate prevention)');
+        debugPrint(
+          '[DM_SCREEN] ⚠ Message already in list (duplicate prevention)',
+        );
       }
     }
   }
 
-  Future<void> _sendReadReceipt(String itemId, String sender, int senderDeviceId) async {
+  Future<void> _sendReadReceipt(
+    String itemId,
+    String sender,
+    int senderDeviceId,
+  ) async {
     try {
       // Check if we already sent a read receipt for this message
       final messageStore = await SqliteMessageStore.getInstance();
       final alreadySent = await messageStore.hasReadReceiptBeenSent(itemId);
-      
+
       if (alreadySent) {
-        debugPrint('[DM_SCREEN] Read receipt already sent for itemId: $itemId, skipping');
+        debugPrint(
+          '[DM_SCREEN] Read receipt already sent for itemId: $itemId, skipping',
+        );
         return;
       }
-      
+
       final myDeviceId = SignalService.instance.currentDeviceId;
 
       await SignalService.instance.sendItem(
         recipientUserId: sender,
         type: "read_receipt",
-        payload: jsonEncode({
-          'itemId': itemId,
-          'readByDeviceId': myDeviceId,
-        }),
+        payload: jsonEncode({'itemId': itemId, 'readByDeviceId': myDeviceId}),
       );
-      
+
       // Mark that we sent the read receipt
       await messageStore.markReadReceiptSent(itemId);
-      debugPrint('[DM_SCREEN] ✓ Read receipt sent and marked for itemId: $itemId');
-      
+      debugPrint(
+        '[DM_SCREEN] ✓ Read receipt sent and marked for itemId: $itemId',
+      );
+
       // Mark this conversation as read in the unread provider
       try {
-        final provider = Provider.of<UnreadMessagesProvider>(context, listen: false);
+        final provider = Provider.of<UnreadMessagesProvider>(
+          context,
+          listen: false,
+        );
         provider.markDirectMessageAsRead(sender);
       } catch (e) {
         debugPrint('[DM_SCREEN] Error updating unread badge: $e');
@@ -401,48 +468,59 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   /// Send read receipts for all loaded messages that haven't been marked as read
   Future<void> _sendReadReceiptsForLoadedMessages() async {
     try {
-      debugPrint('[DM_SCREEN] 🔍 Checking loaded messages for unsent read receipts...');
-      
+      debugPrint(
+        '[DM_SCREEN] 🔍 Checking loaded messages for unsent read receipts...',
+      );
+
       // Filter received messages (not sent by me) from this conversation
-      final receivedMessages = _messages.where((msg) => 
-        msg['isLocalSent'] != true && 
-        msg['sender'] == widget.recipientUuid
-      ).toList();
-      
-      debugPrint('[DM_SCREEN] Found ${receivedMessages.length} received messages to check');
-      
+      final receivedMessages = _messages
+          .where(
+            (msg) =>
+                msg['isLocalSent'] != true &&
+                msg['sender'] == widget.recipientUuid,
+          )
+          .toList();
+
+      debugPrint(
+        '[DM_SCREEN] Found ${receivedMessages.length} received messages to check',
+      );
+
       int sentCount = 0;
       for (final msg in receivedMessages) {
         final itemId = msg['itemId'] as String?;
         final sender = msg['sender'] as String?;
         final senderDeviceId = msg['senderDeviceId'];
-        
+
         if (itemId == null || sender == null || senderDeviceId == null) {
           continue;
         }
-        
+
         // Check if read receipt was already sent
         final messageStore = await SqliteMessageStore.getInstance();
         final alreadySent = await messageStore.hasReadReceiptBeenSent(itemId);
-        
+
         if (!alreadySent) {
           // Send read receipt
           final deviceId = senderDeviceId is int
               ? senderDeviceId
               : int.parse(senderDeviceId.toString());
-          
+
           await _sendReadReceipt(itemId, sender, deviceId);
           sentCount++;
         }
       }
-      
+
       if (sentCount > 0) {
-        debugPrint('[DM_SCREEN] ✓ Sent $sentCount read receipts for previously loaded messages');
+        debugPrint(
+          '[DM_SCREEN] ✓ Sent $sentCount read receipts for previously loaded messages',
+        );
       } else {
         debugPrint('[DM_SCREEN] ✓ All loaded messages already marked as read');
       }
     } catch (e) {
-      debugPrint('[DM_SCREEN] Error sending read receipts for loaded messages: $e');
+      debugPrint(
+        '[DM_SCREEN] Error sending read receipts for loaded messages: $e',
+      );
     }
   }
 
@@ -450,36 +528,36 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   Future<void> _scrollToMessage(String messageId) async {
     // Wait for widget tree to build
     await Future.delayed(const Duration(milliseconds: 300));
-    
+
     if (!mounted || !_scrollController.hasClients) return;
-    
+
     // Find message index
     final messageIndex = _messages.indexWhere((m) => m['itemId'] == messageId);
-    
+
     if (messageIndex == -1) {
       debugPrint('[DM_SCREEN] Message $messageId not found in list');
       return;
     }
-    
+
     debugPrint('[DM_SCREEN] Scrolling to message at index $messageIndex');
-    
+
     // Calculate approximate scroll position (assuming ~80px per message)
     final approximatePosition = messageIndex * 80.0;
     final maxScroll = _scrollController.position.maxScrollExtent;
     final targetPosition = approximatePosition.clamp(0.0, maxScroll);
-    
+
     // Scroll to position
     await _scrollController.animateTo(
       targetPosition,
       duration: const Duration(milliseconds: 500),
       curve: Curves.easeInOut,
     );
-    
+
     // Highlight the message
     setState(() {
       _highlightedMessageId = messageId;
     });
-    
+
     // Remove highlight after 2 seconds
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
@@ -506,7 +584,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     try {
       // ✅ EINZIGE Datenquelle: SQLite
       final messageStore = await SqliteMessageStore.getInstance();
-      
+
       // Load messages with pagination
       final messages = await messageStore.getMessagesFromConversation(
         widget.recipientUuid,
@@ -514,17 +592,23 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         offset: loadMore ? _messageOffset : 0,
         types: DISPLAYABLE_MESSAGE_TYPES.toList(),
       );
-      
-      debugPrint('[DM_SCREEN] Loaded ${messages.length} messages from SQLite (offset: ${loadMore ? _messageOffset : 0})');
-      
+
+      debugPrint(
+        '[DM_SCREEN] Loaded ${messages.length} messages from SQLite (offset: ${loadMore ? _messageOffset : 0})',
+      );
+
       // Transform to UI format
       final uiMessages = messages.map((msg) {
         final isLocalSent = msg['direction'] == 'sent';
         return {
           'itemId': msg['item_id'],
-          'sender': isLocalSent ? SignalService.instance.currentUserId : msg['sender'],
+          'sender': isLocalSent
+              ? SignalService.instance.currentUserId
+              : msg['sender'],
           'senderDeviceId': msg['sender_device_id'],
-          'senderDisplayName': isLocalSent ? 'You' : widget.recipientDisplayName,
+          'senderDisplayName': isLocalSent
+              ? 'You'
+              : widget.recipientDisplayName,
           'text': msg['message'],
           'message': msg['message'],
           'payload': msg['message'],
@@ -536,10 +620,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           'reactions': msg['reactions'] ?? '{}', // Include reactions
         };
       }).toList();
-      
+
       // Reverse messages since DB returns DESC (newest first), but UI needs ASC (oldest first)
       final reversedMessages = uiMessages.reversed.toList();
-      
+
       // Schedule setState for next frame to avoid layout conflicts during scroll
       SchedulerBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -559,13 +643,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           });
         }
       });
-      
+
       debugPrint('[DM_SCREEN] ✓ Messages loaded successfully');
-      
     } catch (e, stackTrace) {
       debugPrint('[DM_SCREEN] ❌ Error loading messages: $e');
       debugPrint('[DM_SCREEN] Stack trace: $stackTrace');
-      
+
       // Schedule setState for next frame to avoid layout conflicts
       SchedulerBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -586,7 +669,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     Map<String, dynamic>? metadata,
   }) async {
     final messageType = type ?? 'message';
-    
+
     if (content.trim().isEmpty) return;
 
     // Validate size for base64 content (image, voice)
@@ -607,14 +690,18 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     final timestamp = DateTime.now().toIso8601String();
 
     // Add to UI immediately for text and displayable types
-    if (messageType == 'message' || messageType == 'image' || messageType == 'voice') {
+    if (messageType == 'message' ||
+        messageType == 'image' ||
+        messageType == 'voice') {
       setState(() {
         _messages.add({
           'itemId': itemId,
           'sender': SignalService.instance.currentUserId,
           'senderDeviceId': SignalService.instance.currentDeviceId,
           'senderDisplayName': 'You',
-          'text': messageType == 'message' ? content : '[${messageType.toUpperCase()}]',
+          'text': messageType == 'message'
+              ? content
+              : '[${messageType.toUpperCase()}]',
           'message': content,
           'payload': content,
           'time': timestamp,
@@ -624,7 +711,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           'metadata': metadata,
         });
       });
-      
+
       // Auto-scroll to new sent message - wait for multiple frames
       SchedulerBinding.instance.addPostFrameCallback((_) {
         SchedulerBinding.instance.addPostFrameCallback((_) {
@@ -643,8 +730,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     final socketService = SocketService();
     final socket = socketService.socket;
     final socketConnected = socketService.isConnected;
-    debugPrint('[DM_SCREEN] Socket check: service=$socketService, socket=$socket, socket?.connected=${socket?.connected}, isConnected=$socketConnected');
-    
+    debugPrint(
+      '[DM_SCREEN] Socket check: service=$socketService, socket=$socket, socket?.connected=${socket?.connected}, isConnected=$socketConnected',
+    );
+
     if (!socketConnected) {
       debugPrint('[DM_SCREEN] Not connected - queuing message');
       await OfflineMessageQueue.instance.enqueue(
@@ -661,14 +750,14 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           },
         ),
       );
-      
+
       if (mounted) {
         context.showErrorSnackBar(
           'Not connected. Message queued.',
           duration: const Duration(seconds: 3),
         );
       }
-      
+
       setState(() {
         final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
         if (msgIndex != -1) {
@@ -687,9 +776,11 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         itemId: itemId,
         metadata: metadata,
       );
-      
+
       // Send mention notifications if message has mentions
-      if (metadata != null && metadata['mentions'] != null && messageType == 'message') {
+      if (metadata != null &&
+          metadata['mentions'] != null &&
+          messageType == 'message') {
         final mentions = metadata['mentions'] as List;
         for (final mention in mentions) {
           try {
@@ -698,23 +789,27 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
               'messageId': itemId,
               'mentionedUserId': mention['userId'],
               'sender': SignalService.instance.currentUserId,
-              'content': content.length > 50 ? '${content.substring(0, 50)}...' : content,
+              'content': content.length > 50
+                  ? '${content.substring(0, 50)}...'
+                  : content,
             };
-            
+
             await SignalService.instance.sendItem(
               itemId: mentionItemId,
               recipientUserId: mention['userId'] as String,
               type: 'mention',
               payload: jsonEncode(mentionPayload),
             );
-            
-            debugPrint('[DM_SCREEN] Sent mention notification for ${mention['userId']}');
+
+            debugPrint(
+              '[DM_SCREEN] Sent mention notification for ${mention['userId']}',
+            );
           } catch (e) {
             debugPrint('[DM_SCREEN] Error sending mention notification: $e');
           }
         }
       }
-      
+
       // Update status
       setState(() {
         final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
@@ -730,7 +825,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           _messages[msgIndex]['status'] = 'failed';
         }
       });
-      
+
       if (mounted) {
         context.showErrorSnackBar(
           'Failed to send ${messageType}: ${e.toString()}',
@@ -772,42 +867,50 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                     ),
                   )
                 : _error != null
-                    ? _buildErrorState()
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (_hasMoreMessages)
-                            Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(8.0),
-                                child: _loadingMore
-                                    ? const SizedBox(
-                                        width: 24,
-                                        height: 24,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
-                                      )
-                                    : ActionChip(
-                                        avatar: const Icon(Icons.arrow_upward, size: 18),
-                                        label: const Text('Load older messages'),
-                                        onPressed: () => _loadMessages(loadMore: true),
-                                        backgroundColor: colorScheme.surfaceContainerHighest,
-                                      ),
-                              ),
+                ? _buildErrorState()
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_hasMoreMessages)
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: _loadingMore
+                                ? const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : ActionChip(
+                                    avatar: const Icon(
+                                      Icons.arrow_upward,
+                                      size: 18,
+                                    ),
+                                    label: const Text('Load older messages'),
+                                    onPressed: () =>
+                                        _loadMessages(loadMore: true),
+                                    backgroundColor:
+                                        colorScheme.surfaceContainerHighest,
+                                  ),
                           ),
-                          Expanded(
-                            child: MessageList(
-                              key: ValueKey(_messages.length),
-                              messages: _messages,
-                              onFileDownload: _handleFileDownload,
-                              scrollController: _scrollController,
-                              onReactionAdd: _addReaction,
-                              onReactionRemove: _removeReaction,
-                              currentUserId: SignalService.instance.currentUserId ?? '',
-                              highlightedMessageId: _highlightedMessageId,
-                            ),
-                          ),
-                        ],
+                        ),
+                      Expanded(
+                        child: MessageList(
+                          key: ValueKey(_messages.length),
+                          messages: _messages,
+                          onFileDownload: _handleFileDownload,
+                          scrollController: _scrollController,
+                          onReactionAdd: _addReaction,
+                          onReactionRemove: _removeReaction,
+                          currentUserId:
+                              SignalService.instance.currentUserId ?? '',
+                          highlightedMessageId: _highlightedMessageId,
+                        ),
                       ),
+                    ],
+                  ),
           ),
           EnhancedMessageInput(
             onSendMessage: (message, {type, metadata}) {
@@ -821,8 +924,11 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
               {
                 'userId': widget.recipientUuid,
                 'displayName': widget.recipientDisplayName,
-                'atName': widget.recipientDisplayName.toLowerCase().replaceAll(' ', ''),
-              }
+                'atName': widget.recipientDisplayName.toLowerCase().replaceAll(
+                  ' ',
+                  '',
+                ),
+              },
             ],
             isGroupChat: false,
             recipientUserId: widget.recipientUuid, // For P2P file sharing
@@ -843,11 +949,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: colorScheme.error,
-            ),
+            Icon(Icons.error_outline, size: 64, color: colorScheme.error),
             const SizedBox(height: 16),
             Text(
               _error!,
@@ -882,12 +984,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       final itemId = const Uuid().v4();
       final signalService = SignalService.instance;
       final currentUserId = signalService.currentUserId;
-      
+
       if (currentUserId == null) {
         debugPrint('[DIRECT_MSG] ✗ Cannot add reaction: no current user ID');
         return;
       }
-      
+
       // Create emote message payload (will be encrypted)
       final emotePayload = {
         'messageId': messageId,
@@ -895,10 +997,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         'action': 'add',
         'sender': currentUserId,
       };
-      
+
       // Encode as JSON (will be encrypted and decrypted by recipient)
       final payloadJson = jsonEncode(emotePayload);
-      
+
       // Send via Signal Protocol
       await signalService.sendItem(
         itemId: itemId,
@@ -906,11 +1008,11 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         payload: payloadJson,
         type: 'emote',
       );
-      
+
       // Update local database immediately
       final messageStore = await SqliteMessageStore.getInstance();
       await messageStore.addReaction(messageId, emoji, currentUserId);
-      
+
       // Update UI
       final reactions = await messageStore.getReactions(messageId);
       setState(() {
@@ -919,8 +1021,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           _messages[msgIndex]['reactions'] = jsonEncode(reactions);
         }
       });
-      
-      debugPrint('[DIRECT_MSG] ✓ Sent emote reaction: $emoji on message $messageId');
+
+      debugPrint(
+        '[DIRECT_MSG] ✓ Sent emote reaction: $emoji on message $messageId',
+      );
     } catch (e) {
       debugPrint('[DIRECT_MSG] ✗ Error sending reaction: $e');
       if (mounted) {
@@ -938,12 +1042,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       final itemId = const Uuid().v4();
       final signalService = SignalService.instance;
       final currentUserId = signalService.currentUserId;
-      
+
       if (currentUserId == null) {
         debugPrint('[DIRECT_MSG] ✗ Cannot remove reaction: no current user ID');
         return;
       }
-      
+
       // Create emote message payload (will be encrypted)
       final emotePayload = {
         'messageId': messageId,
@@ -951,10 +1055,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         'action': 'remove',
         'sender': currentUserId,
       };
-      
+
       // Encode as JSON (will be encrypted and decrypted by recipient)
       final payloadJson = jsonEncode(emotePayload);
-      
+
       // Send via Signal Protocol
       await signalService.sendItem(
         itemId: itemId,
@@ -962,11 +1066,11 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         payload: payloadJson,
         type: 'emote',
       );
-      
+
       // Update local database immediately
       final messageStore = await SqliteMessageStore.getInstance();
       await messageStore.removeReaction(messageId, emoji, currentUserId);
-      
+
       // Update UI
       final reactions = await messageStore.getReactions(messageId);
       setState(() {
@@ -975,8 +1079,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           _messages[msgIndex]['reactions'] = jsonEncode(reactions);
         }
       });
-      
-      debugPrint('[DIRECT_MSG] ✓ Removed emote reaction: $emoji from message $messageId');
+
+      debugPrint(
+        '[DIRECT_MSG] ✓ Removed emote reaction: $emoji from message $messageId',
+      );
     } catch (e) {
       debugPrint('[DIRECT_MSG] ✗ Error removing reaction: $e');
     }
@@ -987,14 +1093,18 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     try {
       // Cast to FileMessage
       final FileMessage fileMessage = fileMessageDynamic as FileMessage;
-      
-      debugPrint('[DIRECT_MSG] ================================================');
+
+      debugPrint(
+        '[DIRECT_MSG] ================================================',
+      );
       debugPrint('[DIRECT_MSG] File download requested');
       debugPrint('[DIRECT_MSG] File ID: ${fileMessage.fileId}');
       debugPrint('[DIRECT_MSG] File Name: ${fileMessage.fileName}');
       debugPrint('[DIRECT_MSG] File Size: ${fileMessage.fileSizeFormatted}');
-      debugPrint('[DIRECT_MSG] ================================================');
-      
+      debugPrint(
+        '[DIRECT_MSG] ================================================',
+      );
+
       // Show snackbar
       if (mounted) {
         context.showSuccessSnackBar(
@@ -1002,40 +1112,45 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           duration: const Duration(seconds: 2),
         );
       }
-      
+
       // Get P2P Coordinator
-      final p2pCoordinator = Provider.of<P2PCoordinator?>(context, listen: false);
+      final p2pCoordinator = Provider.of<P2PCoordinator?>(
+        context,
+        listen: false,
+      );
       if (p2pCoordinator == null) {
         throw Exception('P2P Coordinator not initialized');
       }
-      
+
       // Get Socket File Client
       final socketService = SocketService();
       if (socketService.socket == null) {
         throw Exception('Socket not connected');
       }
       final socketClient = SocketFileClient(socket: socketService.socket!);
-      
+
       // 1. Fetch file info and seeder chunks from server
       debugPrint('[DIRECT_MSG] Fetching file info and seeders...');
       // Fetch file info for validation and to get sharedWith list
       final fileInfo = await socketClient.getFileInfo(fileMessage.fileId);
-      final seederChunks = await socketClient.getAvailableChunks(fileMessage.fileId);
-      
+      final seederChunks = await socketClient.getAvailableChunks(
+        fileMessage.fileId,
+      );
+
       if (seederChunks.isEmpty) {
         throw Exception('No seeders available for this file');
       }
-      
+
       debugPrint('[DIRECT_MSG] Found ${seederChunks.length} seeders');
-      
+
       // Register as leecher
       await socketClient.registerLeecher(fileMessage.fileId);
-      
+
       // 2. Decode the encrypted file key (base64 → Uint8List)
       debugPrint('[DIRECT_MSG] Decoding file encryption key...');
       final Uint8List fileKey = base64Decode(fileMessage.encryptedFileKey);
       debugPrint('[DIRECT_MSG] File key decoded: ${fileKey.length} bytes');
-      
+
       // 3. Start P2P download with the file key
       debugPrint('[DIRECT_MSG] Starting P2P download...');
       await p2pCoordinator.startDownload(
@@ -1047,11 +1162,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         chunkCount: fileMessage.chunkCount,
         fileKey: fileKey,
         seederChunks: seederChunks,
-        sharedWith: (fileInfo['sharedWith'] as List?)?.cast<String>(), // ✅ NEW: Pass sharedWith from fileInfo
+        sharedWith: (fileInfo['sharedWith'] as List?)
+            ?.cast<String>(), // ✅ NEW: Pass sharedWith from fileInfo
       );
-      
+
       debugPrint('[DIRECT_MSG] Download started successfully!');
-      
+
       // Show success feedback
       if (mounted) {
         final colorScheme = Theme.of(context).colorScheme;
@@ -1067,11 +1183,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           ),
         );
       }
-      
     } catch (e, stackTrace) {
       debugPrint('[DIRECT_MSG] ❌ Download failed: $e');
       debugPrint('[DIRECT_MSG] Stack trace: $stackTrace');
-      
+
       if (mounted) {
         context.showErrorSnackBar(
           'Download failed: $e',
@@ -1081,4 +1196,3 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
   }
 }
-

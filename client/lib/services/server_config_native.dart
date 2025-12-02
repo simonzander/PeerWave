@@ -6,6 +6,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'clientid_native.dart';
 import 'session_auth_service.dart';
+import 'api_service.dart';
 
 /// Configuration for a single server connection
 class ServerConfig {
@@ -18,6 +19,8 @@ class ServerConfig {
   final DateTime createdAt;     // When this server was added
   int unreadCount;              // Unread message count for badge
   String? displayName;          // Custom display name (default: extract from URL)
+  String? serverPicture;        // Base64 server picture from /client/meta
+  String? serverName;           // Server name from /client/meta
 
   ServerConfig({
     required this.id,
@@ -29,6 +32,8 @@ class ServerConfig {
     required this.createdAt,
     this.unreadCount = 0,
     this.displayName,
+    this.serverPicture,
+    this.serverName,
   });
 
   /// Convert to JSON for storage
@@ -43,6 +48,8 @@ class ServerConfig {
       'createdAt': createdAt.toIso8601String(),
       'unreadCount': unreadCount,
       'displayName': displayName,
+      'serverPicture': serverPicture,
+      'serverName': serverName,
     };
   }
 
@@ -58,6 +65,8 @@ class ServerConfig {
       createdAt: DateTime.parse(json['createdAt'] as String),
       unreadCount: json['unreadCount'] as int? ?? 0,
       displayName: json['displayName'] as String?,
+      serverPicture: json['serverPicture'] as String?,
+      serverName: json['serverName'] as String?,
     );
   }
 
@@ -77,6 +86,14 @@ class ServerConfig {
 
   /// Get short name for icon (first letter of display name)
   String getShortName() {
+    // Priority: 1. displayName, 2. serverName, 3. hostname
+    if (displayName != null && displayName!.isNotEmpty) {
+      return displayName![0].toUpperCase();
+    }
+    if (serverName != null && serverName!.isNotEmpty) {
+      return serverName![0].toUpperCase();
+    }
+    // Fallback to hostname (only until we fetch server metadata)
     final name = getDisplayName();
     return name.isNotEmpty ? name[0].toUpperCase() : 'S';
   }
@@ -87,6 +104,8 @@ class ServerConfig {
     int? unreadCount,
     String? displayName,
     String? credentials,
+    String? serverPicture,
+    String? serverName,
   }) {
     return ServerConfig(
       id: this.id,
@@ -98,6 +117,8 @@ class ServerConfig {
       createdAt: createdAt,
       unreadCount: unreadCount ?? this.unreadCount,
       displayName: displayName ?? this.displayName,
+      serverPicture: serverPicture ?? this.serverPicture,
+      serverName: serverName ?? this.serverName,
     );
   }
 }
@@ -466,6 +487,68 @@ class ServerConfigService {
       _servers[index] = _servers[index].copyWith(credentials: credentials);
       await _saveServers();
       print('[ServerConfig] Updated credentials for $serverId');
+    }
+  }
+
+  /// Fetch and update server metadata (name and picture) from /client/meta
+  static Future<void> updateServerMetadata(String serverId) async {
+    try {
+      final index = _servers.indexWhere((s) => s.id == serverId);
+      if (index == -1) {
+        print('[ServerConfig] Server not found: $serverId');
+        return;
+      }
+
+      final server = _servers[index];
+      
+      // Fetch /client/meta
+      final response = await ApiService.get('${server.serverUrl}/client/meta');
+      
+      if (response.statusCode == 200) {
+        final data = response.data;
+        final serverName = data['serverName'] as String?;
+        final serverPicture = data['serverPicture'] as String?;
+        
+        // Update server config
+        _servers[index] = server.copyWith(
+          serverName: serverName,
+          serverPicture: serverPicture,
+          displayName: server.displayName ?? serverName, // Use server name as default if no custom name
+        );
+        
+        await _saveServers();
+        print('[ServerConfig] Updated metadata for ${server.getDisplayName()}: name=$serverName, hasPicture=${serverPicture != null}');
+      }
+    } catch (e) {
+      print('[ServerConfig] Failed to fetch server metadata for $serverId: $e');
+    }
+  }
+
+  /// Update unread count from UnreadMessagesProvider (for active server)
+  static Future<void> updateUnreadCountFromProvider(
+    String serverId,
+    int totalChannelUnread,
+    int totalDirectMessageUnread,
+    int totalActivityNotifications,
+  ) async {
+    final total = totalChannelUnread + totalDirectMessageUnread + totalActivityNotifications;
+    await updateUnreadCount(serverId, total);
+  }
+
+  /// Save current server's unread count before switching (called by ServerPanel)
+  static Future<void> saveCurrentServerUnreadCount(
+    int totalChannelUnread,
+    int totalDirectMessageUnread,
+    int totalActivityNotifications,
+  ) async {
+    final activeServer = getActiveServer();
+    if (activeServer != null) {
+      await updateUnreadCountFromProvider(
+        activeServer.id,
+        totalChannelUnread,
+        totalDirectMessageUnread,
+        totalActivityNotifications,
+      );
     }
   }
 

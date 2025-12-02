@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import '../../services/activities_service.dart';
 import '../../services/api_service.dart';
 import '../../services/event_bus.dart';
@@ -26,7 +27,8 @@ class ActivitiesView extends StatefulWidget {
   State<ActivitiesView> createState() => _ActivitiesViewState();
 }
 
-class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProviderStateMixin {
+class _ActivitiesViewState extends State<ActivitiesView>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _loading = true;
   List<Map<String, dynamic>> _webrtcChannels = [];
@@ -47,13 +49,14 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
     _tabController = TabController(length: 2, vsync: this);
     _loadActivities();
     _loadNotifications();
-    
+
     // Listen for new notifications
-    _notificationSubscription = EventBus.instance.on<Map<String, dynamic>>(AppEvent.newNotification)
-      .listen((data) {
-        debugPrint('[ACTIVITIES_VIEW] New notification received');
-        _loadNotifications();
-      });
+    _notificationSubscription = EventBus.instance
+        .on<Map<String, dynamic>>(AppEvent.newNotification)
+        .listen((data) {
+          debugPrint('[ACTIVITIES_VIEW] New notification received');
+          _loadNotifications();
+        });
   }
 
   @override
@@ -67,23 +70,69 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
     try {
       final groupMessageStore = await SqliteGroupMessageStore.getInstance();
       final dmMessageStore = await SqliteMessageStore.getInstance();
-      
+
       // Load notifications from both group and DM storage
-      final groupNotifs = await groupMessageStore.getNotificationMessages(limit: 100);
+      final groupNotifs = await groupMessageStore.getNotificationMessages(
+        limit: 100,
+      );
       final dmNotifs = await dmMessageStore.getNotificationMessages(limit: 100);
-      
+
       // Parse notification messages to extract metadata
       final parsedNotifs = <Map<String, dynamic>>[];
       for (final notif in [...groupNotifs, ...dmNotifs]) {
         final parsed = Map<String, dynamic>.from(notif);
-        
+
         // Try to parse JSON from message field for mention/emote notifications
-        if (notif['message'] != null && notif['message'].toString().isNotEmpty) {
+        if (notif['message'] != null &&
+            notif['message'].toString().isNotEmpty) {
           try {
             final messageData = jsonDecode(notif['message']);
             if (messageData is Map<String, dynamic>) {
               // Extract messageId for navigation
               parsed['targetMessageId'] = messageData['messageId'];
+
+              // For emote reactions, fetch the original message content
+              if (notif['type'] == 'emote' &&
+                  messageData['messageId'] != null) {
+                parsed['emoji'] = messageData['emoji'];
+                parsed['action'] = messageData['action'];
+
+                // Fetch the original message being reacted to
+                try {
+                  final targetMessageId = messageData['messageId'] as String;
+                  Map<String, dynamic>? originalMessage;
+
+                  if (notif['channelId'] != null) {
+                    // Group message - need channelId to fetch
+                    final channelId = notif['channelId'] as String;
+                    originalMessage = await groupMessageStore.getGroupItem(
+                      channelId,
+                      targetMessageId,
+                    );
+                  } else {
+                    // DM
+                    originalMessage = await dmMessageStore.getMessage(
+                      targetMessageId,
+                    );
+                  }
+
+                  if (originalMessage != null &&
+                      originalMessage['message'] != null) {
+                    // Get first 50 characters of original message
+                    final originalContent = originalMessage['message']
+                        .toString();
+                    parsed['originalMessageContent'] =
+                        originalContent.length > 50
+                        ? '${originalContent.substring(0, 50)}...'
+                        : originalContent;
+                  }
+                } catch (e) {
+                  debugPrint(
+                    '[ACTIVITIES_VIEW] Error fetching original message: $e',
+                  );
+                }
+              }
+
               // Extract content for display
               if (messageData['content'] != null) {
                 parsed['content'] = messageData['content'];
@@ -96,33 +145,87 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
             parsed['content'] = notif['message'].toString();
           }
         }
-        
+
         parsedNotifs.add(parsed);
       }
-      
+
       // Sort by timestamp
       parsedNotifs.sort((a, b) {
         final aTime = DateTime.tryParse(a['timestamp'] ?? '') ?? DateTime.now();
         final bTime = DateTime.tryParse(b['timestamp'] ?? '') ?? DateTime.now();
         return bTime.compareTo(aTime); // Newest first
       });
-      
+
+      // Enrich notifications with sender user info
+      await _enrichNotificationsWithUserInfo(parsedNotifs);
+
       if (!mounted) return;
-      
+
       setState(() {
         _notifications = parsedNotifs;
       });
-      
-      debugPrint('[ACTIVITIES_VIEW] Loaded ${_notifications.length} notifications');
+
+      debugPrint(
+        '[ACTIVITIES_VIEW] Loaded ${_notifications.length} notifications',
+      );
     } catch (e) {
       debugPrint('[ACTIVITIES_VIEW] Error loading notifications: $e');
     }
   }
 
+  /// Enrich notifications with sender user info (BATCH OPTIMIZED)
+  Future<void> _enrichNotificationsWithUserInfo(
+    List<Map<String, dynamic>> notifications,
+  ) async {
+    // Collect all uncached sender IDs
+    final senderIds = notifications
+        .map((n) => n['sender'] as String?)
+        .where((id) => id != null && !_userInfo.containsKey(id))
+        .cast<String>()
+        .toSet()
+        .toList();
+
+    // Batch fetch all user info in one request
+    if (senderIds.isNotEmpty) {
+      try {
+        ApiService.init();
+        final resp = await ApiService.post(
+          '${widget.host}/client/people/info',
+          data: {'userIds': senderIds},
+        );
+
+        if (resp.statusCode == 200) {
+          final users = resp.data is List ? resp.data : [];
+          for (final user in users) {
+            _userInfo[user['uuid']] = {
+              'displayName': user['displayName'] ?? user['uuid'],
+              'picture': user['picture'] ?? '',
+              'atName': user['atName'] ?? '',
+            };
+          }
+          debugPrint('[ACTIVITIES_VIEW] Fetched user info for ${users.length} senders');
+        }
+      } catch (e) {
+        debugPrint('[ACTIVITIES_VIEW] Error batch fetching user info for notifications: $e');
+        // Fallback: cache missing users with UUID as displayName
+        for (final senderId in senderIds) {
+          _userInfo[senderId] = {
+            'displayName': senderId,
+            'picture': '',
+            'atName': '',
+          };
+        }
+      }
+    }
+  }
+
   Future<void> _markNotificationAsRead(String itemId, String? channelId) async {
     try {
-      final unreadProvider = Provider.of<UnreadMessagesProvider>(context, listen: false);
-      
+      final unreadProvider = Provider.of<UnreadMessagesProvider>(
+        context,
+        listen: false,
+      );
+
       if (channelId != null) {
         // Group notification
         final groupMessageStore = await SqliteGroupMessageStore.getInstance();
@@ -132,13 +235,13 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
         final dmMessageStore = await SqliteMessageStore.getInstance();
         await dmMessageStore.markNotificationAsRead(itemId);
       }
-      
+
       // Update unread counter
       unreadProvider.markActivityNotificationAsRead(itemId);
-      
+
       // Reload notifications to reflect the change
       await _loadNotifications();
-      
+
       debugPrint('[ACTIVITIES_VIEW] Marked notification as read: $itemId');
     } catch (e) {
       debugPrint('[ACTIVITIES_VIEW] Error marking notification as read: $e');
@@ -147,43 +250,49 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
 
   Future<void> _markAllNotificationsAsRead() async {
     try {
-      final unreadProvider = Provider.of<UnreadMessagesProvider>(context, listen: false);
+      final unreadProvider = Provider.of<UnreadMessagesProvider>(
+        context,
+        listen: false,
+      );
       final groupMessageStore = await SqliteGroupMessageStore.getInstance();
       final dmMessageStore = await SqliteMessageStore.getInstance();
-      
+
       // Mark all as read in storage
       await groupMessageStore.markAllNotificationsAsRead();
       await dmMessageStore.markAllNotificationsAsRead();
-      
+
       // Clear all from unread counter
       unreadProvider.markAllActivityNotificationsAsRead();
-      
+
       // Reload notifications
       await _loadNotifications();
-      
+
       debugPrint('[ACTIVITIES_VIEW] Marked all notifications as read');
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('All notifications marked as read')),
         );
       }
     } catch (e) {
-      debugPrint('[ACTIVITIES_VIEW] Error marking all notifications as read: $e');
+      debugPrint(
+        '[ACTIVITIES_VIEW] Error marking all notifications as read: $e',
+      );
     }
   }
 
   Future<void> _loadActivities() async {
     if (!mounted) return;
-    
+
     setState(() {
       _loading = true;
     });
 
     try {
       // Load WebRTC channels with participants
-      final webrtcChannels = await ActivitiesService.getWebRTCChannelParticipants(widget.host);
-      
+      final webrtcChannels =
+          await ActivitiesService.getWebRTCChannelParticipants(widget.host);
+
       // Load conversations (1:1 + Signal groups)
       await _loadMoreConversations();
 
@@ -191,17 +300,17 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
       await _fetchSenderNamesForConversations();
 
       if (!mounted) return;
-      
+
       setState(() {
-        _webrtcChannels = webrtcChannels.where((ch) => 
-          (ch['participants'] as List?)?.isNotEmpty ?? false
-        ).toList();
+        _webrtcChannels = webrtcChannels
+            .where((ch) => (ch['participants'] as List?)?.isNotEmpty ?? false)
+            .toList();
         _loading = false;
       });
     } catch (e) {
       debugPrint('[ACTIVITIES_VIEW] Error loading activities: $e');
       if (!mounted) return;
-      
+
       setState(() {
         _loading = false;
       });
@@ -233,11 +342,12 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
       await _enrichConversationsWithNames(newConversations);
 
       if (!mounted) return;
-      
+
       setState(() {
         _conversations.addAll(newConversations);
         _conversationsPage++;
-        _hasMoreConversations = newConversations.length == _conversationsPerPage;
+        _hasMoreConversations =
+            newConversations.length == _conversationsPerPage;
       });
     } catch (e) {
       debugPrint('[ACTIVITIES_VIEW] Error loading more conversations: $e');
@@ -245,7 +355,9 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
   }
 
   /// Enrich conversations with actual user/channel names from API (BATCH OPTIMIZED)
-  Future<void> _enrichConversationsWithNames(List<Map<String, dynamic>> conversations) async {
+  Future<void> _enrichConversationsWithNames(
+    List<Map<String, dynamic>> conversations,
+  ) async {
     // Collect all uncached user IDs
     final userIds = conversations
         .where((c) => c['type'] == 'direct')
@@ -261,7 +373,7 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
           '${widget.host}/client/people/info',
           data: {'userIds': userIds},
         );
-        
+
         if (resp.statusCode == 200) {
           final users = resp.data is List ? resp.data : [];
           for (final user in users) {
@@ -300,7 +412,7 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
           '${widget.host}/client/channels/info',
           data: {'channelIds': channelIds},
         );
-        
+
         if (resp.statusCode == 200) {
           final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
           final channels = data['channels'] as List? ?? [];
@@ -331,22 +443,22 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
     for (final conv in conversations) {
       if (conv['type'] == 'direct') {
         final userId = conv['userId'] as String;
-        final userInfo = _userInfo[userId] ?? {
-          'displayName': userId,
-          'picture': '',
-          'atName': '',
-        };
+        final userInfo =
+            _userInfo[userId] ??
+            {'displayName': userId, 'picture': '', 'atName': ''};
         conv['displayName'] = userInfo['displayName'];
         conv['picture'] = userInfo['picture'];
         conv['atName'] = userInfo['atName'];
       } else if (conv['type'] == 'group') {
         final channelId = conv['channelId'] as String;
-        final channelInfo = _channelInfo[channelId] ?? {
-          'name': channelId,
-          'description': '',
-          'private': false,
-          'type': 'signal',
-        };
+        final channelInfo =
+            _channelInfo[channelId] ??
+            {
+              'name': channelId,
+              'description': '',
+              'private': false,
+              'type': 'signal',
+            };
         conv['channelName'] = channelInfo['name'];
         conv['channelDescription'] = channelInfo['description'];
         conv['channelPrivate'] = channelInfo['private'];
@@ -358,18 +470,20 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
   /// Batch fetch sender names for all messages in conversations
   Future<void> _fetchSenderNamesForConversations() async {
     final senderIds = <String>{};
-    
+
     // Collect all unique sender IDs from all messages
     for (final conv in _conversations) {
       final messages = (conv['lastMessages'] as List?) ?? [];
       for (final msg in messages) {
         final sender = msg['sender'] as String?;
-        if (sender != null && sender != 'self' && !_userInfo.containsKey(sender)) {
+        if (sender != null &&
+            sender != 'self' &&
+            !_userInfo.containsKey(sender)) {
           senderIds.add(sender);
         }
       }
     }
-    
+
     // Batch fetch all at once
     if (senderIds.isNotEmpty) {
       try {
@@ -378,11 +492,11 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
           '${widget.host}/client/people/info',
           data: {'userIds': senderIds.toList()},
         );
-        
+
         if (resp.statusCode == 200) {
           final users = resp.data is List ? resp.data : [];
           if (!mounted) return;
-          
+
           setState(() {
             for (final user in users) {
               _userInfo[user['uuid']] = {
@@ -424,10 +538,7 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
       ),
       body: TabBarView(
         controller: _tabController,
-        children: [
-          _buildNotificationsTab(),
-          _buildRecentActivitiesTab(),
-        ],
+        children: [_buildNotificationsTab(), _buildRecentActivitiesTab()],
       ),
     );
   }
@@ -440,7 +551,10 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
           children: [
             Icon(Icons.notifications_none, size: 64, color: Colors.grey),
             SizedBox(height: 16),
-            Text('No notifications', style: TextStyle(fontSize: 18, color: Colors.grey)),
+            Text(
+              'No notifications',
+              style: TextStyle(fontSize: 18, color: Colors.grey),
+            ),
           ],
         ),
       );
@@ -457,15 +571,13 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
 
   Widget _buildRecentActivitiesTab() {
     if (_loading && _conversations.isEmpty) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     return RefreshIndicator(
       onRefresh: () async {
         if (!mounted) return;
-        
+
         setState(() {
           _conversations.clear();
           _conversationsPage = 0;
@@ -480,14 +592,19 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
           if (_webrtcChannels.isNotEmpty) ...[
             _buildSectionHeader('Active Video Channels', Icons.videocam),
             const SizedBox(height: 12),
-            ..._webrtcChannels.map((channel) => _buildWebRTCChannelCard(channel)),
+            ..._webrtcChannels.map(
+              (channel) => _buildWebRTCChannelCard(channel),
+            ),
             const SizedBox(height: 24),
           ],
 
           // Recent Conversations Section
-          _buildSectionHeader('Recent Conversations', Icons.chat_bubble_outline),
+          _buildSectionHeader(
+            'Recent Conversations',
+            Icons.chat_bubble_outline,
+          ),
           const SizedBox(height: 12),
-          
+
           if (_conversations.isEmpty)
             const Padding(
               padding: EdgeInsets.all(32.0),
@@ -525,9 +642,9 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
         const SizedBox(width: 8),
         Text(
           title,
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
       ],
     );
@@ -535,7 +652,7 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
 
   Widget _buildWebRTCChannelCard(Map<String, dynamic> channel) {
     final participants = (channel['participants'] as List?) ?? [];
-    
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: ListTile(
@@ -570,24 +687,30 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
   Widget _buildConversationCard(Map<String, dynamic> conv) {
     final lastMessages = (conv['lastMessages'] as List?) ?? [];
     final type = conv['type'] as String;
-    final title = type == 'direct' 
+    final title = type == 'direct'
         ? (conv['displayName'] ?? 'Unknown User')
         : (conv['channelName'] ?? 'Unknown Channel');
-    
+
     // Get additional info
     final picture = type == 'direct' ? (conv['picture'] as String? ?? '') : '';
     final atName = type == 'direct' ? (conv['atName'] as String? ?? '') : '';
-    final channelDescription = type == 'group' ? (conv['channelDescription'] as String? ?? '') : '';
-    final isPrivate = type == 'group' ? (conv['channelPrivate'] as bool? ?? false) : false;
-    
+    final channelDescription = type == 'group'
+        ? (conv['channelDescription'] as String? ?? '')
+        : '';
+    final isPrivate = type == 'group'
+        ? (conv['channelPrivate'] as bool? ?? false)
+        : false;
+
     // Subtitle text
     final subtitle = type == 'direct'
         ? (atName.isNotEmpty ? '@$atName' : '')
         : (channelDescription.isNotEmpty ? channelDescription : '');
-    
+
     // Ensure we show at least 3 messages, or all if less than 3
-    final messagesToShow = lastMessages.length >= 3 ? lastMessages.take(3).toList() : lastMessages;
-    
+    final messagesToShow = lastMessages.length >= 3
+        ? lastMessages.take(3).toList()
+        : lastMessages;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -611,12 +734,16 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
                             ? Theme.of(context).colorScheme.secondaryContainer
                             : Theme.of(context).colorScheme.tertiaryContainer,
                         child: Icon(
-                          type == 'direct' 
-                              ? Icons.person 
+                          type == 'direct'
+                              ? Icons.person
                               : (isPrivate ? Icons.lock : Icons.tag),
                           color: type == 'direct'
-                              ? Theme.of(context).colorScheme.onSecondaryContainer
-                              : Theme.of(context).colorScheme.onTertiaryContainer,
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.onSecondaryContainer
+                              : Theme.of(
+                                  context,
+                                ).colorScheme.onTertiaryContainer,
                         ),
                       ),
                 const SizedBox(width: 12),
@@ -641,10 +768,7 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
                         ),
                       Text(
                         _formatLastMessageTime(conv['lastMessageTime'] ?? ''),
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
                       ),
                     ],
                   ),
@@ -653,28 +777,23 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
                   icon: const Icon(Icons.open_in_new, size: 20),
                   onPressed: () {
                     if (type == 'direct' && widget.onDirectMessageTap != null) {
-                      widget.onDirectMessageTap!(
-                        conv['userId'],
-                        title,
-                      );
+                      widget.onDirectMessageTap!(conv['userId'], title);
                     } else if (type == 'group' && widget.onChannelTap != null) {
-                      widget.onChannelTap!(
-                        conv['channelId'],
-                        title,
-                        'signal',
-                      );
+                      widget.onChannelTap!(conv['channelId'], title, 'signal');
                     }
                   },
                 ),
               ],
             ),
-            
+
             // Messages
             if (messagesToShow.isNotEmpty) ...[
               const SizedBox(height: 12),
               const Divider(),
               const SizedBox(height: 8),
-              ...messagesToShow.map((msg) => _buildMessagePreview(msg, type == 'group')),
+              ...messagesToShow.map(
+                (msg) => _buildMessagePreview(msg, type == 'group'),
+              ),
             ],
           ],
         ),
@@ -687,14 +806,14 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
     final message = msg['message'] as String? ?? '';
     final timestamp = _formatMessageTime(msg['timestamp'] ?? '');
     final senderUuid = msg['sender'] as String?;
-    
+
     // For group chats, get sender display name from cache
     String? senderName;
     if (isGroupChat && !isSelf && senderUuid != null) {
       final userInfo = _userInfo[senderUuid];
       senderName = userInfo?['displayName'] ?? senderUuid;
     }
-    
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: Row(
@@ -723,7 +842,9 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
                   const SizedBox(height: 2),
                 ],
                 Text(
-                  message.length > 150 ? '${message.substring(0, 150)}...' : message,
+                  message.length > 150
+                      ? '${message.substring(0, 150)}...'
+                      : message,
                   style: const TextStyle(fontSize: 14),
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
@@ -731,10 +852,7 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
                 const SizedBox(height: 2),
                 Text(
                   timestamp,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[600],
-                  ),
+                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                 ),
               ],
             ),
@@ -777,22 +895,30 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
 
   Widget _buildNotificationItem(Map<String, dynamic> notification) {
     final type = notification['type'] ?? '';
-    final itemId = notification['itemId'] ?? '';
-    final channelId = notification['channelId'];
     final sender = notification['sender'] ?? '';
     final timestamp = notification['timestamp'] ?? '';
     final content = notification['content'] ?? '';
-    
+
     // Get type-specific icon and title
     IconData icon;
     String title;
     String subtitle = '';
-    
+
     switch (type) {
       case 'emote':
         icon = Icons.emoji_emotions;
-        title = 'Emote Reaction';
-        subtitle = content.isNotEmpty ? content : 'Sent a reaction';
+        // Get sender name
+        final senderInfo = _userInfo[sender];
+        final senderName = senderInfo?['displayName'] ?? 'Someone';
+        final emoji = notification['emoji'] ?? '👍';
+        final originalMsg = notification['originalMessageContent'];
+
+        title = '$senderName reacted $emoji';
+        if (originalMsg != null && originalMsg.isNotEmpty) {
+          subtitle = 'to: $originalMsg';
+        } else {
+          subtitle = 'to your message';
+        }
         break;
       case 'mention':
         icon = Icons.alternate_email;
@@ -824,14 +950,14 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
         title = 'Notification';
         subtitle = content;
     }
-    
+
     // Format timestamp
     String timeAgo = '';
     try {
       final time = DateTime.parse(timestamp);
       final now = DateTime.now();
       final difference = now.difference(time);
-      
+
       if (difference.inMinutes < 1) {
         timeAgo = 'Just now';
       } else if (difference.inHours < 1) {
@@ -846,21 +972,27 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
     } catch (e) {
       timeAgo = '';
     }
-    
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          child: Icon(icon, color: Theme.of(context).colorScheme.onPrimaryContainer),
+          child: Icon(
+            icon,
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+          ),
         ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (subtitle.isNotEmpty) Text(subtitle),
-            if (timeAgo.isNotEmpty) 
-              Text(timeAgo, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+            if (timeAgo.isNotEmpty)
+              Text(
+                timeAgo,
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
           ],
         ),
         onTap: () => _handleNotificationTap(notification),
@@ -873,54 +1005,95 @@ class _ActivitiesViewState extends State<ActivitiesView> with SingleTickerProvid
     final itemId = notification['itemId'] ?? '';
     final channelId = notification['channelId'];
     final sender = notification['sender'];
-    final targetMessageId = notification['targetMessageId']; // Extracted from JSON
-    
+    final targetMessageId =
+        notification['targetMessageId']; // Extracted from JSON
+
     // Mark as read
     await _markNotificationAsRead(itemId, channelId);
-    
+
     // Navigate based on type
     if (!mounted) return;
-    
+
     switch (type) {
       case 'mention':
       case 'emote':
         // Navigate to conversation with messageId for scrolling
         if (channelId != null) {
-          // Group channel
-          final args = {
-            'channelId': channelId,
-            if (targetMessageId != null) 'scrollToMessageId': targetMessageId,
-          };
-          Navigator.pushNamed(context, '/channel', arguments: args);
+          // Group channel - navigate using go_router
+          final channelInfoData = _channelInfo[channelId];
+          final channelName = channelInfoData?['name'] ?? 'Unknown';
+          final channelType = channelInfoData?['type'] ?? 'public';
+
+          context.go(
+            '/app/channels/$channelId',
+            extra: {
+              'host': widget.host,
+              'name': channelName,
+              'type': channelType,
+              if (targetMessageId != null) 'scrollToMessageId': targetMessageId,
+            },
+          );
         } else if (sender != null) {
-          // Direct message
-          final args = {
-            'userId': sender,
-            if (targetMessageId != null) 'scrollToMessageId': targetMessageId,
-          };
-          Navigator.pushNamed(context, '/direct-message', arguments: args);
+          // Direct message - navigate using go_router
+          final userInfoData = _userInfo[sender];
+          final displayName = userInfoData?['displayName'] ?? 'Unknown';
+
+          context.go(
+            '/app/messages/$sender',
+            extra: {
+              'host': widget.host,
+              'displayName': displayName,
+              if (targetMessageId != null) 'scrollToMessageId': targetMessageId,
+            },
+          );
         }
         break;
-        
+
       case 'missingcall':
         // Navigate to user or channel
         if (channelId != null) {
-          Navigator.pushNamed(context, '/channel', arguments: {'channelId': channelId});
+          final channelInfoData = _channelInfo[channelId];
+          final channelName = channelInfoData?['name'] ?? 'Unknown';
+          final channelType = channelInfoData?['type'] ?? 'public';
+
+          context.go(
+            '/app/channels/$channelId',
+            extra: {
+              'host': widget.host,
+              'name': channelName,
+              'type': channelType,
+            },
+          );
         } else if (sender != null) {
-          Navigator.pushNamed(context, '/direct-message', arguments: {'userId': sender});
+          final userInfoData = _userInfo[sender];
+          final displayName = userInfoData?['displayName'] ?? 'Unknown';
+
+          context.go(
+            '/app/messages/$sender',
+            extra: {'host': widget.host, 'displayName': displayName},
+          );
         }
         break;
-        
+
       case 'addtochannel':
       case 'removefromchannel':
       case 'permissionchange':
         // Navigate to channel
         if (channelId != null) {
-          Navigator.pushNamed(context, '/channel', arguments: {'channelId': channelId});
+          final channelInfoData = _channelInfo[channelId];
+          final channelName = channelInfoData?['name'] ?? 'Unknown';
+          final channelType = channelInfoData?['type'] ?? 'public';
+
+          context.go(
+            '/app/channels/$channelId',
+            extra: {
+              'host': widget.host,
+              'name': channelName,
+              'type': channelType,
+            },
+          );
         }
         break;
     }
   }
 }
-
-

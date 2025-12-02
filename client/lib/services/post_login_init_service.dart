@@ -12,6 +12,7 @@ import '../providers/unread_messages_provider.dart';
 import '../providers/role_provider.dart';
 import '../providers/file_transfer_stats_provider.dart';
 import 'storage/database_helper.dart';
+import 'server_config_native.dart' if (dart.library.html) 'dart:core';
 // P2P imports
 import 'file_transfer/storage_interface.dart';
 import 'file_transfer/encryption_service.dart';
@@ -21,12 +22,13 @@ import 'file_transfer/webrtc_service.dart';
 import 'file_transfer/p2p_coordinator.dart';
 import 'file_transfer/file_reannounce_service.dart';
 import 'file_transfer/socket_file_client.dart';
-import 'file_transfer/storage_factory_web.dart' if (dart.library.io) 'file_transfer/storage_factory_native.dart';
+import 'file_transfer/storage_factory_web.dart'
+    if (dart.library.io) 'file_transfer/storage_factory_native.dart';
 // Video conference imports
 import 'video_conference_service.dart';
 
 /// Orchestrates all post-login service initialization in the correct order
-/// 
+///
 /// This service ensures services are initialized with proper dependencies:
 /// 1. Network layer (ICE config, Socket.IO)
 /// 2. Core services (Database, Signal Protocol)
@@ -37,10 +39,10 @@ import 'video_conference_service.dart';
 class PostLoginInitService {
   static final PostLoginInitService instance = PostLoginInitService._();
   PostLoginInitService._();
-  
+
   bool _isInitialized = false;
   bool _isInitializing = false;
-  
+
   // P2P services (initialized during post-login)
   FileStorageInterface? _fileStorage;
   EncryptionService? _encryptionService;
@@ -48,7 +50,7 @@ class PostLoginInitService {
   DownloadManager? _downloadManager;
   WebRTCFileService? _webrtcService;
   P2PCoordinator? _p2pCoordinator;
-  
+
   // Getters for P2P services (for providers)
   FileStorageInterface? get fileStorage => _fileStorage;
   EncryptionService? get encryptionService => _encryptionService;
@@ -56,12 +58,12 @@ class PostLoginInitService {
   DownloadManager? get downloadManager => _downloadManager;
   WebRTCFileService? get webrtcService => _webrtcService;
   P2PCoordinator? get p2pCoordinator => _p2pCoordinator;
-  
+
   bool get isInitialized => _isInitialized;
   bool get isInitializing => _isInitializing;
-  
+
   /// Initialize all post-login services in the correct order
-  /// 
+  ///
   /// [serverUrl] - API server URL (e.g. http://localhost:3000)
   /// [unreadProvider] - Provider for unread message counts
   /// [roleProvider] - Provider for user roles
@@ -77,74 +79,88 @@ class PostLoginInitService {
       debugPrint('[POST_LOGIN_INIT] Already initialized');
       return;
     }
-    
+
     if (_isInitializing) {
       debugPrint('[POST_LOGIN_INIT] Already initializing, please wait...');
       return;
     }
-    
+
     _isInitializing = true;
     debugPrint('[POST_LOGIN_INIT] ========================================');
     debugPrint('[POST_LOGIN_INIT] Starting post-login initialization...');
     debugPrint('[POST_LOGIN_INIT] ========================================');
-    
+
     try {
       final totalSteps = 15;
       var currentStep = 0;
-      
+
       // ========================================
       // PHASE 1: Network Foundation (SEQUENTIAL)
       // ========================================
-      
+
       // Step 1: Load ICE server configuration
       currentStep++;
       onProgress?.call('Loading ICE configuration...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Loading ICE configuration...');
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Loading ICE configuration...',
+      );
       try {
         await IceConfigService().loadConfig(serverUrl: serverUrl);
         debugPrint('[POST_LOGIN_INIT] ✓ ICE configuration loaded');
       } catch (e) {
-        debugPrint('[POST_LOGIN_INIT] ⚠️ ICE config failed (using fallback): $e');
+        debugPrint(
+          '[POST_LOGIN_INIT] ⚠️ ICE config failed (using fallback): $e',
+        );
       }
-      
+
       // Step 2: Connect to Socket.IO server (CRITICAL)
       currentStep++;
       onProgress?.call('Connecting to server...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Connecting to Socket.IO...');
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Connecting to Socket.IO...',
+      );
       await SocketService().connect();
       debugPrint('[POST_LOGIN_INIT] ✓ Socket.IO connected');
-      
+
       // ========================================
       // PHASE 2: Core Services (SEQUENTIAL)
       // ========================================
-      
+
       // Step 3: Initialize Database
       currentStep++;
       onProgress?.call('Initializing database...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing database...');
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing database...',
+      );
       await DatabaseHelper.database;
       debugPrint('[POST_LOGIN_INIT] ✓ Database initialized');
-      
+
       // Step 3.5: Initialize Starred Channels Service (uses database)
       onProgress?.call('Loading preferences...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing starred channels...');
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing starred channels...',
+      );
       await StarredChannelsService.instance.initialize();
       debugPrint('[POST_LOGIN_INIT] ✓ Starred channels initialized');
-      
+
       // Step 4: Initialize Signal Protocol stores
       currentStep++;
       onProgress?.call('Initializing encryption...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing Signal Protocol...');
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing Signal Protocol...',
+      );
       await SignalService.instance.initStoresAndListeners();
       debugPrint('[POST_LOGIN_INIT] ✓ Signal Protocol initialized');
-      
+
       // Step 5: Check and generate Signal keys if needed
       currentStep++;
       onProgress?.call('Checking encryption keys...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Checking Signal keys...');
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Checking Signal keys...',
+      );
       final keysStatus = await SignalSetupService.instance.checkKeysStatus();
       final needsSetup = keysStatus['needsSetup'] as bool;
-      
+
       if (needsSetup) {
         debugPrint('[POST_LOGIN_INIT] Generating Signal keys...');
         await SignalSetupService.instance.initializeAfterLogin(
@@ -155,15 +171,17 @@ class PostLoginInitService {
         );
       }
       debugPrint('[POST_LOGIN_INIT] ✓ Signal keys ready');
-      
+
       // ========================================
       // PHASE 3: Data Services (PARALLEL)
       // ========================================
-      
+
       currentStep++;
       onProgress?.call('Loading application data...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Loading data services (parallel)...');
-      
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Loading data services (parallel)...',
+      );
+
       await Future.wait([
         // User profiles
         Future(() async {
@@ -176,7 +194,7 @@ class PostLoginInitService {
             debugPrint('[POST_LOGIN_INIT]   ⚠️ User profiles error: $e');
           }
         }),
-        
+
         // Message cleanup service
         Future(() async {
           try {
@@ -186,7 +204,7 @@ class PostLoginInitService {
             debugPrint('[POST_LOGIN_INIT]   ⚠️ Message cleanup error: $e');
           }
         }),
-        
+
         // Unread messages
         Future(() async {
           try {
@@ -196,7 +214,7 @@ class PostLoginInitService {
             debugPrint('[POST_LOGIN_INIT]   ⚠️ Unread messages error: $e');
           }
         }),
-        
+
         // User roles
         Future(() async {
           try {
@@ -208,7 +226,7 @@ class PostLoginInitService {
             debugPrint('[POST_LOGIN_INIT]   ⚠️ User roles error: $e');
           }
         }),
-        
+
         // Recent conversations
         Future(() async {
           try {
@@ -218,71 +236,112 @@ class PostLoginInitService {
             debugPrint('[POST_LOGIN_INIT]   ⚠️ Recent conversations error: $e');
           }
         }),
+
+        // Server metadata (native only)
+        Future(() async {
+          if (!kIsWeb) {
+            try {
+              final activeServer = ServerConfigService.getActiveServer();
+              if (activeServer != null) {
+                await ServerConfigService.updateServerMetadata(activeServer.id);
+                debugPrint('[POST_LOGIN_INIT]   ✓ Server metadata updated');
+              }
+            } catch (e) {
+              debugPrint('[POST_LOGIN_INIT]   ⚠️ Server metadata error: $e');
+            }
+          }
+        }),
       ]);
-      
+
       debugPrint('[POST_LOGIN_INIT] ✓ Data services loaded');
-      
+
       // ========================================
       // PHASE 4: Communication Services (SEQUENTIAL)
       // ========================================
-      
+
       // Step 7: Initialize Message Listener
       currentStep++;
-      onProgress?.call('Setting up message listeners...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing message listeners...');
+      onProgress?.call(
+        'Setting up message listeners...',
+        currentStep,
+        totalSteps,
+      );
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing message listeners...',
+      );
       SignalService.instance.setUnreadMessagesProvider(unreadProvider);
       MessageListenerService.instance.initialize();
       debugPrint('[POST_LOGIN_INIT] ✓ Message listeners ready');
-      
+
       // Step 8: Activities Service (static methods, no initialization needed)
       currentStep++;
       onProgress?.call('Activity tracking ready...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Activities service (static, no init needed)');
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Activities service (static, no init needed)',
+      );
       debugPrint('[POST_LOGIN_INIT] ✓ Activities service ready');
-      
+
       // ========================================
       // PHASE 5: P2P File Transfer (SEQUENTIAL)
       // ========================================
-      
+
       // Step 9: Initialize P2P base services (parallel possible)
       currentStep++;
       onProgress?.call('Initializing P2P services...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing P2P base services...');
-      
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing P2P base services...',
+      );
+
       _fileStorage = createFileStorage();
       await _fileStorage!.initialize();
       _encryptionService = EncryptionService();
       _chunkingService = ChunkingService();
       debugPrint('[POST_LOGIN_INIT] ✓ P2P base services ready');
-      
+
       // Step 10: Download Manager
       currentStep++;
-      onProgress?.call('Setting up download manager...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing download manager...');
+      onProgress?.call(
+        'Setting up download manager...',
+        currentStep,
+        totalSteps,
+      );
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing download manager...',
+      );
       _downloadManager = DownloadManager(
         storage: _fileStorage!,
         chunkingService: _chunkingService!,
         encryptionService: _encryptionService!,
       );
       debugPrint('[POST_LOGIN_INIT] ✓ Download manager ready');
-      
+
       // Step 11: WebRTC File Service
       currentStep++;
       onProgress?.call('Setting up WebRTC...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing WebRTC file service...');
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing WebRTC file service...',
+      );
       final iceServers = IceConfigService().getIceServers();
       _webrtcService = WebRTCFileService(iceServers: iceServers);
       debugPrint('[POST_LOGIN_INIT] ✓ WebRTC file service ready');
-      
+
       // Step 12: P2P Coordinator
       currentStep++;
-      onProgress?.call('Initializing P2P coordinator...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing P2P coordinator...');
-      
+      onProgress?.call(
+        'Initializing P2P coordinator...',
+        currentStep,
+        totalSteps,
+      );
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing P2P coordinator...',
+      );
+
       final socketService = SocketService();
       if (socketService.socket != null && socketService.isConnected) {
-        final socketFileClient = SocketFileClient(socket: socketService.socket!);
-        
+        final socketFileClient = SocketFileClient(
+          socket: socketService.socket!,
+        );
+
         _p2pCoordinator = P2PCoordinator(
           webrtcService: _webrtcService!,
           downloadManager: _downloadManager!,
@@ -295,61 +354,77 @@ class PostLoginInitService {
         );
         debugPrint('[POST_LOGIN_INIT] ✓ P2P coordinator ready');
       } else {
-        debugPrint('[POST_LOGIN_INIT] ⚠️ Socket not connected, skipping P2P coordinator');
+        debugPrint(
+          '[POST_LOGIN_INIT] ⚠️ Socket not connected, skipping P2P coordinator',
+        );
       }
-      
+
       // Step 13: File Re-announce Service
       currentStep++;
       onProgress?.call('Announcing local files...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Re-announcing local files...');
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Re-announcing local files...',
+      );
       if (_p2pCoordinator != null) {
         try {
           final socketService = SocketService();
           if (socketService.socket != null) {
-            final socketFileClient = SocketFileClient(socket: socketService.socket!);
+            final socketFileClient = SocketFileClient(
+              socket: socketService.socket!,
+            );
             final reannounceService = FileReannounceService(
               storage: _fileStorage!,
               socketClient: socketFileClient,
             );
             final result = await reannounceService.reannounceAllFiles();
             if (result.reannounced > 0) {
-              debugPrint('[POST_LOGIN_INIT] ✓ Re-announced ${result.reannounced} files');
+              debugPrint(
+                '[POST_LOGIN_INIT] ✓ Re-announced ${result.reannounced} files',
+              );
             }
           }
         } catch (e) {
           debugPrint('[POST_LOGIN_INIT] ⚠️ File re-announce error: $e');
         }
       } else {
-        debugPrint('[POST_LOGIN_INIT] ⚠️ P2P coordinator not available, skipping file re-announce');
+        debugPrint(
+          '[POST_LOGIN_INIT] ⚠️ P2P coordinator not available, skipping file re-announce',
+        );
       }
-      
+
       // ========================================
       // PHASE 6: Video Services (PARALLEL)
       // ========================================
-      
+
       currentStep++;
       onProgress?.call('Finalizing...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing video services (parallel)...');
-      
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing video services (parallel)...',
+      );
+
       await Future.wait([
         // Video conference service (no explicit init needed - lazy)
         Future(() async {
-          debugPrint('[POST_LOGIN_INIT]   ✓ Video conference service ready (lazy)');
+          debugPrint(
+            '[POST_LOGIN_INIT]   ✓ Video conference service ready (lazy)',
+          );
         }),
-        
+
         // E2EE service (no explicit init needed - lazy)
         Future(() async {
           debugPrint('[POST_LOGIN_INIT]   ✓ E2EE service ready (lazy)');
         }),
       ]);
-      
+
       // ========================================
       // FINAL STEP: Check for active call to rejoin
       // ========================================
       currentStep++;
       onProgress?.call('Checking for active calls...', currentStep, totalSteps);
-      debugPrint('[POST_LOGIN_INIT] [$currentStep/$totalSteps] Checking for active WebRTC call to rejoin...');
-      
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Checking for active WebRTC call to rejoin...',
+      );
+
       try {
         final videoConferenceService = VideoConferenceService.instance;
         await videoConferenceService.checkForRejoin();
@@ -358,12 +433,11 @@ class PostLoginInitService {
         debugPrint('[POST_LOGIN_INIT]   ⚠️ WebRTC rejoin check failed: $e');
         // Don't fail initialization if rejoin fails
       }
-      
+
       _isInitialized = true;
       debugPrint('[POST_LOGIN_INIT] ========================================');
       debugPrint('[POST_LOGIN_INIT] ✅ All services initialized successfully!');
       debugPrint('[POST_LOGIN_INIT] ========================================');
-      
     } catch (e, stackTrace) {
       debugPrint('[POST_LOGIN_INIT] ========================================');
       debugPrint('[POST_LOGIN_INIT] ❌ Initialization failed: $e');
@@ -374,13 +448,13 @@ class PostLoginInitService {
       _isInitializing = false;
     }
   }
-  
+
   /// Reset state on logout
   void reset() {
     debugPrint('[POST_LOGIN_INIT] Resetting state...');
     _isInitialized = false;
     _isInitializing = false;
-    
+
     // Clear P2P services
     _fileStorage = null;
     _encryptionService = null;
@@ -388,7 +462,7 @@ class PostLoginInitService {
     _downloadManager = null;
     _webrtcService = null;
     _p2pCoordinator = null;
-    
+
     debugPrint('[POST_LOGIN_INIT] ✓ State reset');
   }
 }

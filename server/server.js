@@ -125,6 +125,12 @@ app.use(sessionMiddleware);
     console.error('Failed to run device_id migration:', err);
   });
 
+  // Run server settings migration
+  const { up: migrateServerSettings } = require('./migrations/add_server_settings');
+  migrateServerSettings().catch(err => {
+    console.error('Failed to run server settings migration:', err);
+  });
+
   // License info endpoint
   app.get('/api/license-info', async (req, res) => {
     const license = await licenseValidator.validate();

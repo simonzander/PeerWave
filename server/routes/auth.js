@@ -436,18 +436,75 @@ authRoutes.get("/register", (req, res) => {
     // Render the register form
     res.render("register");
 });
-authRoutes.post("/register", (req, res) => {
+authRoutes.post("/register", async (req, res) => {
 
     const email = req.body.email;
+    const invitationToken = req.body.invitationToken; // Optional invitation token
     req.session.email = email; // Store email in session for later use
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         return res.status(400).json({ error: "Invalid email address" });
     }
 
-    User.findOrCreate({ where: { email } })
-        .then(([user, created]) => {
-            if (!created && (user.verified == true && !user.credentials && user.backupCodes != "")) {
+    try {
+        // Check server registration settings
+        const { ServerSettings, Invitation } = require('../db/model');
+        const settings = await ServerSettings.findOne({ where: { id: 1 } });
+        
+        if (settings) {
+            const registrationMode = settings.registration_mode || 'open';
+            
+            // Handle email_suffix mode
+            if (registrationMode === 'email_suffix') {
+                const allowedSuffixes = JSON.parse(settings.allowed_email_suffixes || '[]');
+                if (allowedSuffixes.length > 0) {
+                    const emailDomain = email.split('@')[1];
+                    const isAllowed = allowedSuffixes.some(suffix => 
+                        emailDomain.endsWith(suffix)
+                    );
+                    
+                    if (!isAllowed) {
+                        return res.status(403).json({ 
+                            error: "Registration is restricted to specific email domains" 
+                        });
+                    }
+                }
+            }
+            
+            // Handle invitation_only mode
+            if (registrationMode === 'invitation_only') {
+                if (!invitationToken) {
+                    return res.status(403).json({ 
+                        error: "An invitation is required to register" 
+                    });
+                }
+                
+                // Validate invitation
+                const invitation = await Invitation.findOne({
+                    where: {
+                        email,
+                        token: invitationToken,
+                        used: false,
+                        expires_at: {
+                            [Op.gt]: new Date()
+                        }
+                    }
+                });
+                
+                if (!invitation) {
+                    return res.status(403).json({ 
+                        error: "Invalid or expired invitation" 
+                    });
+                }
+                
+                // Mark invitation as used (will be finalized after email verification)
+                req.session.pendingInvitationId = invitation.id;
+            }
+        }
+
+        User.findOrCreate({ where: { email } })
+            .then(([user, created]) => {
+                if (!created && (user.verified == true && !user.credentials && user.backupCodes != "")) {
                 return res.status(400).json({ error: "Email already registered. Try logging in instead or starting the recovery process." });
             }
             const otp = Math.floor(10000 + Math.random() * 90000); // Generate a 5-digit OTP
@@ -497,6 +554,11 @@ authRoutes.post("/register", (req, res) => {
             console.error('Error creating user:', error);
             res.status(500).json({ error: "Error on creating user" });
         });
+        
+    } catch (error) {
+        console.error('Error in registration:', error);
+        res.status(500).json({ error: "Internal server error" });
+    }
 
 });
 
@@ -520,6 +582,20 @@ authRoutes.post("/otp", (req, res) => {
             
             // Auto-assign roles based on email and configuration
             await autoAssignRoles(email, updatedUser.uuid);
+            
+            // Mark invitation as used if registration was via invitation
+            if (req.session.pendingInvitationId) {
+                const { Invitation } = require('../db/model');
+                await writeQueue.enqueue(
+                    () => Invitation.update(
+                        { used: true, used_at: new Date() },
+                        { where: { id: req.session.pendingInvitationId } }
+                    ),
+                    'markInvitationUsed'
+                );
+                delete req.session.pendingInvitationId;
+                console.log(`[INVITATION] Marked invitation ${req.session.pendingInvitationId} as used for ${email}`);
+            }
             
             req.session.otp = true;
             req.session.authenticated = true;
@@ -1584,4 +1660,52 @@ authRoutes.post("/webauthn/delete", (req, res) => {
     }
 });
 
+// ==================== INVITATION VERIFICATION ROUTE (PUBLIC) ====================
+
+// POST verify invitation token (public endpoint for registration validation)
+authRoutes.post("/api/invitations/verify", async (req, res) => {
+    try {
+        const { email, token } = req.body;
+        
+        if (!email || !token) {
+            return res.status(400).json({ 
+                valid: false, 
+                message: "Email and token required" 
+            });
+        }
+        
+        const { Invitation } = require('../db/model');
+        
+        const invitation = await Invitation.findOne({
+            where: {
+                email,
+                token,
+                used: false,
+                expires_at: {
+                    [Op.gt]: new Date()
+                }
+            }
+        });
+        
+        if (!invitation) {
+            return res.json({ 
+                valid: false, 
+                message: "Invalid or expired invitation" 
+            });
+        }
+        
+        res.json({ 
+            valid: true, 
+            message: "Invitation is valid" 
+        });
+    } catch (error) {
+        console.error('Error verifying invitation:', error);
+        res.status(500).json({ 
+            valid: false, 
+            message: "Internal server error" 
+        });
+    }
+});
+
 module.exports = authRoutes;
+

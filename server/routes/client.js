@@ -54,8 +54,14 @@ const clientRoutes = express.Router();
 
 // Add body-parser middleware with default limits for all other routes
 clientRoutes.use((req, res, next) => {
-    // Skip body parsing for profile setup route - will be handled separately
+    // Skip body parsing for routes that need custom limits
     if (req.path === '/client/profile/setup' && req.method === 'POST') {
+        return next();
+    }
+    if (req.path === '/api/server/settings' && req.method === 'POST') {
+        return next();
+    }
+    if (req.path === '/client/profile/update' && req.method === 'POST') {
         return next();
     }
     bodyParser.urlencoded({ extended: true })(req, res, () => {
@@ -71,7 +77,7 @@ clientRoutes.use(session({
     cookie: config.cookie // Set to true if using HTTPS
 }));
 
-clientRoutes.get("/client/meta", (req, res) => {
+clientRoutes.get("/client/meta", async (req, res) => {
     const response = {
         name: versionConfig.project.name,
         version: versionConfig.server.version,
@@ -103,6 +109,27 @@ clientRoutes.get("/client/meta", (req, res) => {
         response.iceServers = [
             { urls: ['stun:stun.l.google.com:19302'] }
         ];
+    }
+    
+    // Add server settings (server name, picture, registration mode)
+    try {
+        const { ServerSettings } = require('../db/model');
+        const settings = await ServerSettings.findOne({ where: { id: 1 } });
+        
+        if (settings) {
+            response.serverName = settings.server_name || 'PeerWave Server';
+            response.serverPicture = settings.server_picture || null;
+            response.registrationMode = settings.registration_mode || 'open';
+        } else {
+            response.serverName = 'PeerWave Server';
+            response.serverPicture = null;
+            response.registrationMode = 'open';
+        }
+    } catch (error) {
+        console.error('[CLIENT META] Failed to load server settings:', error);
+        response.serverName = 'PeerWave Server';
+        response.serverPicture = null;
+        response.registrationMode = 'open';
     }
     
     res.json(response);
@@ -2102,6 +2129,254 @@ clientRoutes.get("/admin/cleanup", async (req, res) => {
         });
     } catch (error) {
         console.error('Error triggering manual cleanup:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// ==================== SERVER SETTINGS ROUTES ====================
+
+// GET server settings (admin only)
+clientRoutes.get("/api/server/settings", verifyAuthEither, async (req, res) => {
+    try {
+        const userUuid = req.userId || req.session.uuid;
+        
+        // Check admin permission
+        const isAdmin = await hasServerPermission(userUuid, 'server.manage');
+        if (!isAdmin) {
+            return res.status(403).json({ status: "error", message: "Forbidden: Admin access required" });
+        }
+        
+        const { ServerSettings } = require('../db/model');
+        let settings = await ServerSettings.findOne({ where: { id: 1 } });
+        
+        // Create default settings if none exist
+        if (!settings) {
+            settings = await ServerSettings.create({
+                id: 1,
+                server_name: 'PeerWave Server',
+                server_picture: null,
+                registration_mode: 'open',
+                allowed_email_suffixes: '[]'
+            });
+        }
+        
+        res.json({
+            status: "ok",
+            settings: {
+                serverName: settings.server_name,
+                serverPicture: settings.server_picture,
+                registrationMode: settings.registration_mode,
+                allowedEmailSuffixes: JSON.parse(settings.allowed_email_suffixes || '[]')
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching server settings:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// POST server settings (admin only)
+clientRoutes.post("/api/server/settings", bodyParser.json({ limit: '5mb' }), verifyAuthEither, async (req, res) => {
+    try {
+        const userUuid = req.userId || req.session.uuid;
+        
+        // Check admin permission
+        const isAdmin = await hasServerPermission(userUuid, 'server.manage');
+        if (!isAdmin) {
+            return res.status(403).json({ status: "error", message: "Forbidden: Admin access required" });
+        }
+        
+        const { serverName, serverPicture, registrationMode, allowedEmailSuffixes } = req.body;
+        
+        // Validate registration mode
+        const validModes = ['open', 'email_suffix', 'invitation_only'];
+        if (registrationMode && !validModes.includes(registrationMode)) {
+            return res.status(400).json({ status: "error", message: "Invalid registration mode" });
+        }
+        
+        const { ServerSettings } = require('../db/model');
+        let settings = await ServerSettings.findOne({ where: { id: 1 } });
+        
+        if (!settings) {
+            settings = await ServerSettings.create({ id: 1 });
+        }
+        
+        // Update settings
+        if (serverName !== undefined) settings.server_name = serverName;
+        if (serverPicture !== undefined) settings.server_picture = serverPicture;
+        if (registrationMode !== undefined) settings.registration_mode = registrationMode;
+        if (allowedEmailSuffixes !== undefined) {
+            settings.allowed_email_suffixes = JSON.stringify(allowedEmailSuffixes);
+        }
+        
+        await settings.save();
+        
+        console.log(`[SERVER SETTINGS] Updated by ${userUuid}`);
+        
+        res.json({
+            status: "ok",
+            message: "Server settings updated successfully",
+            settings: {
+                serverName: settings.server_name,
+                serverPicture: settings.server_picture,
+                registrationMode: settings.registration_mode,
+                allowedEmailSuffixes: JSON.parse(settings.allowed_email_suffixes || '[]')
+            }
+        });
+    } catch (error) {
+        console.error('Error updating server settings:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// ==================== INVITATION ROUTES ====================
+
+// POST send invitation (admin only)
+clientRoutes.post("/api/server/invitations/send", verifyAuthEither, async (req, res) => {
+    try {
+        const userUuid = req.userId || req.session.uuid;
+        
+        // Check admin permission
+        const isAdmin = await hasServerPermission(userUuid, 'server.manage');
+        if (!isAdmin) {
+            return res.status(403).json({ status: "error", message: "Forbidden: Admin access required" });
+        }
+        
+        const { email } = req.body;
+        
+        if (!email || !email.includes('@')) {
+            return res.status(400).json({ status: "error", message: "Valid email required" });
+        }
+        
+        // Check if user already exists
+        const existingUser = await User.findOne({ where: { email } });
+        if (existingUser) {
+            return res.status(400).json({ status: "error", message: "User with this email already exists" });
+        }
+        
+        // Generate 6-digit token
+        const token = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        // Calculate expiry (48 hours from now)
+        const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
+        
+        const { Invitation } = require('../db/model');
+        
+        // Create invitation
+        const invitation = await Invitation.create({
+            email,
+            token,
+            expires_at: expiresAt,
+            invited_by: userUuid
+        });
+        
+        // Send email
+        const transporter = nodemailer.createTransport(config.smtp);
+        const { ServerSettings } = require('../db/model');
+        const settings = await ServerSettings.findOne({ where: { id: 1 } });
+        const serverName = settings?.server_name || 'PeerWave Server';
+        
+        await transporter.sendMail({
+            from: config.smtp.auth.user,
+            to: email,
+            subject: `You're Invited to Join ${serverName}`,
+            html: `
+                <h2>You've been invited to join ${serverName}!</h2>
+                <p>Your invitation code: <strong>${token}</strong></p>
+                <p>This invitation expires in 48 hours.</p>
+                <p>To register, visit the server and enter your email and invitation code.</p>
+            `
+        });
+        
+        console.log(`[INVITATION] Sent to ${email} by ${userUuid}, token: ${token}`);
+        
+        res.json({
+            status: "ok",
+            message: "Invitation sent successfully",
+            invitation: {
+                id: invitation.id,
+                email: invitation.email,
+                token: invitation.token,
+                expiresAt: invitation.expires_at
+            }
+        });
+    } catch (error) {
+        console.error('Error sending invitation:', error);
+        res.status(500).json({ status: "error", message: "Failed to send invitation" });
+    }
+});
+
+// GET list invitations (admin only)
+clientRoutes.get("/api/server/invitations", verifyAuthEither, async (req, res) => {
+    try {
+        const userUuid = req.userId || req.session.uuid;
+        
+        // Check admin permission
+        const isAdmin = await hasServerPermission(userUuid, 'server.manage');
+        if (!isAdmin) {
+            return res.status(403).json({ status: "error", message: "Forbidden: Admin access required" });
+        }
+        
+        const { Invitation } = require('../db/model');
+        
+        // Get active invitations (not used, not expired)
+        const invitations = await Invitation.findAll({
+            where: {
+                used: false,
+                expires_at: {
+                    [Op.gt]: new Date()
+                }
+            },
+            order: [['created_at', 'DESC']]
+        });
+        
+        res.json({
+            status: "ok",
+            invitations: invitations.map(inv => ({
+                id: inv.id,
+                email: inv.email,
+                token: inv.token,
+                createdAt: inv.created_at,
+                expiresAt: inv.expires_at,
+                invitedBy: inv.invited_by
+            }))
+        });
+    } catch (error) {
+        console.error('Error fetching invitations:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// DELETE invitation (admin only)
+clientRoutes.delete("/api/server/invitations/:id", verifyAuthEither, async (req, res) => {
+    try {
+        const userUuid = req.userId || req.session.uuid;
+        const { id } = req.params;
+        
+        // Check admin permission
+        const isAdmin = await hasServerPermission(userUuid, 'server.manage');
+        if (!isAdmin) {
+            return res.status(403).json({ status: "error", message: "Forbidden: Admin access required" });
+        }
+        
+        const { Invitation } = require('../db/model');
+        
+        const deleted = await Invitation.destroy({
+            where: { id: parseInt(id) }
+        });
+        
+        if (deleted === 0) {
+            return res.status(404).json({ status: "error", message: "Invitation not found" });
+        }
+        
+        console.log(`[INVITATION] Deleted invitation ${id} by ${userUuid}`);
+        
+        res.json({
+            status: "ok",
+            message: "Invitation deleted successfully"
+        });
+    } catch (error) {
+        console.error('Error deleting invitation:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });

@@ -61,9 +61,9 @@ class SettingsSidebar extends StatelessWidget {
               const Divider(),
               Consumer<RoleProvider>(
                 builder: (context, roleProvider, child) {
-                  if (roleProvider.isAdmin) {
+                  if (roleProvider.hasServerPermission('server.manage')) {
                     return ListTile(
-                      leading: const Icon(Icons.admin_panel_settings),
+                      leading: const Icon(Icons.dns),
                       title: const Text('Server Settings'),
                       onTap: () => GoRouter.of(context).go('/app/settings/server'),
                     );

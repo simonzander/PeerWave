@@ -909,6 +909,85 @@ async function initializeStandardRoles() {
 }
 
 
+// ServerSettings model (single row configuration)
+const ServerSettings = sequelize.define('ServerSettings', {
+    id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true
+    },
+    server_name: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        defaultValue: 'PeerWave Server'
+    },
+    server_picture: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    registration_mode: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: 'open' // 'open', 'email_suffix', 'invitation_only'
+    },
+    allowed_email_suffixes: {
+        type: DataTypes.TEXT, // JSON array stored as text
+        allowNull: true,
+        defaultValue: '[]'
+    }
+}, {
+    timestamps: true,
+    underscored: true,
+    tableName: 'ServerSettings'
+});
+
+// Invitations model
+const Invitation = sequelize.define('Invitation', {
+    id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true
+    },
+    email: {
+        type: DataTypes.STRING,
+        allowNull: false
+    },
+    token: {
+        type: DataTypes.STRING(6),
+        allowNull: false,
+        unique: true
+    },
+    expires_at: {
+        type: DataTypes.DATE,
+        allowNull: false
+    },
+    used: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
+    used_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    invited_by: {
+        type: DataTypes.STRING,
+        allowNull: false
+    }
+}, {
+    timestamps: true,
+    underscored: true,
+    createdAt: 'created_at',
+    updatedAt: false,
+    tableName: 'Invitations',
+    indexes: [
+        { fields: ['email'] },
+        { fields: ['token'], unique: true },
+        { fields: ['expires_at'] }
+    ]
+});
+
+
 module.exports = {
     User,
     OTP,
@@ -926,5 +1005,7 @@ module.exports = {
     UserRoleChannel,
     ClientSession,
     NonceCache,
+    ServerSettings,
+    Invitation,
     sequelize
 };

@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'auth/auth_layout_web.dart' if (dart.library.io) 'auth/auth_layout_native.dart';
 import 'auth/magic_link_web.dart' if (dart.library.io) 'auth/magic_link_native.dart';
 import 'auth/otp_web.dart';
+import 'auth/invitation_entry_page.dart';
 import 'auth/register_webauthn_page.dart' if (dart.library.io) 'auth/register_webauthn_page_native.dart';
 import 'auth/register_profile_page.dart';
 import 'auth/magic_link_native.dart' show MagicLinkWebPageWithServer;
@@ -23,6 +24,7 @@ import 'app/dashboard_page.dart';
 import 'app/settings_sidebar.dart';
 import 'app/profile_page.dart';
 import 'app/settings/general_settings_page.dart';
+import 'app/settings/server_settings_page.dart';
 import 'app/webauthn_web.dart' if (dart.library.io) 'app/webauthn_stub.dart';
 import 'app/backupcode_web.dart' if (dart.library.io) 'app/backupcode_web_native.dart';
 import 'app/backupcode_settings_page.dart' if (dart.library.io) 'app/backupcode_settings_page_native.dart';
@@ -430,6 +432,30 @@ class _MyAppState extends State<MyApp> {
               },
             ),
             GoRoute(
+              path: '/register/invitation',
+              builder: (context, state) {
+                final extra = state.extra as Map?;
+                final email = extra?['email'] as String? ?? '';
+                if (email.isEmpty) {
+                  return Scaffold(
+                    body: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('Email required'),
+                          TextButton(
+                            onPressed: () => context.go('/login'),
+                            child: const Text('Back to Login'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                return InvitationEntryPage(email: email);
+              },
+            ),
+            GoRoute(
               path: '/register/backupcode',
               builder: (context, state) => const BackupCodeListPage(),
             ),
@@ -629,6 +655,18 @@ class _MyAppState extends State<MyApp> {
                     GoRoute(
                       path: '/app/settings/notifications',
                       builder: (context, state) => Center(child: Text('Notification Settings')), // Placeholder
+                    ),
+                    GoRoute(
+                      path: '/app/settings/server',
+                      builder: (context, state) => const ServerSettingsPage(),
+                      redirect: (context, state) {
+                        final roleProvider = context.read<RoleProvider>();
+                        // Only allow access if user has server.manage permission
+                        if (!roleProvider.hasServerPermission('server.manage')) {
+                          return '/app/settings';
+                        }
+                        return null; // Allow navigation
+                      },
                     ),
                     GoRoute(
                       path: '/app/settings/roles',
@@ -862,6 +900,17 @@ class _MyAppState extends State<MyApp> {
                     GoRoute(
                       path: '/app/settings/notifications',
                       builder: (context, state) => Center(child: Text('Notification Settings')),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/server',
+                      builder: (context, state) => const ServerSettingsPage(),
+                      redirect: (context, state) {
+                        final roleProvider = context.read<RoleProvider>();
+                        if (!roleProvider.hasServerPermission('server.manage')) {
+                          return '/app/settings';
+                        }
+                        return null;
+                      },
                     ),
                     GoRoute(
                       path: '/app/settings/roles',
