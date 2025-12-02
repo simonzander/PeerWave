@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../services/video_conference_service.dart';
 import '../services/message_listener_service.dart';
+import '../services/user_profile_service.dart';
 import '../screens/channel/channel_members_screen.dart';
 import '../widgets/animated_widgets.dart';
+import '../widgets/participant_profile_display.dart';
 import '../models/role.dart';
 import '../extensions/snackbar_extensions.dart';
 
@@ -361,16 +363,26 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     }
     
     final identity = participant.identity ?? 'Unknown';
+    final userId = participant.identity; // LiveKit identity is the user ID
+    final bool videoOff = videoTrack == null || videoTrack.muted;
+    
+    // Get profile picture from UserProfileService
+    final profilePicture = userId != null ? UserProfileService.instance.getPicture(userId) : null;
     
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Video
-          if (videoTrack != null && !videoTrack.muted)
+          // Video or Profile Picture
+          if (!videoOff)
             VideoTrackRenderer(
               videoTrack,
+            )
+          else if (profilePicture != null && profilePicture.isNotEmpty)
+            ParticipantProfileDisplay(
+              profilePictureBase64: profilePicture,
+              displayName: identity,
             )
           else
             Container(

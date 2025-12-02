@@ -521,7 +521,7 @@ roleRoutes.get('/channels/:channelId/members', verifyAuthEither, requireAuth, as
         
         // Add channel owner first
         const owner = await User.findByPk(channel.owner, {
-            attributes: ['uuid', 'displayName', 'email']
+            attributes: ['uuid', 'displayName', 'email', 'profilePicture']
         });
         
         if (owner) {
@@ -529,6 +529,7 @@ roleRoutes.get('/channels/:channelId/members', verifyAuthEither, requireAuth, as
                 userId: owner.uuid,
                 displayName: owner.displayName || owner.email,
                 email: owner.email,
+                profilePicture: owner.profilePicture,
                 isOwner: true,
                 roles: []
             });
@@ -539,7 +540,7 @@ roleRoutes.get('/channels/:channelId/members', verifyAuthEither, requireAuth, as
             where: { channelId },
             include: [{
                 model: User,
-                attributes: ['uuid', 'displayName', 'email']
+                attributes: ['uuid', 'displayName', 'email', 'profilePicture']
             }]
         });
         
@@ -553,6 +554,7 @@ roleRoutes.get('/channels/:channelId/members', verifyAuthEither, requireAuth, as
                     userId: userId,
                     displayName: member.User.displayName || member.User.email,
                     email: member.User.email,
+                    profilePicture: member.User.profilePicture,
                     isOwner: userId === channel.owner,
                     roles: []
                 });
@@ -566,7 +568,7 @@ roleRoutes.get('/channels/:channelId/members', verifyAuthEither, requireAuth, as
                 {
                     model: User,
                     as: 'User',
-                    attributes: ['uuid', 'displayName', 'email']
+                    attributes: ['uuid', 'displayName', 'email', 'profilePicture']
                 },
                 {
                     model: Role,

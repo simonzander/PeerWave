@@ -85,6 +85,7 @@ dependencies:
   local_notifier: ^0.1.6  # Desktop notifications for native
   universal_html: ^2.3.0
   bitsdojo_window: ^0.1.6  # Custom window frame for desktop
+  palette_generator: ^0.3.3+4  # Color extraction from images
 
 dev_dependencies:
   flutter_test:

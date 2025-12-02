@@ -166,6 +166,7 @@ class ChannelMember {
   final String userId;
   final String username;
   final String? displayName;
+  final String? profilePicture;
   final List<Role> roles;
   final bool isOwner;
 
@@ -173,6 +174,7 @@ class ChannelMember {
     required this.userId,
     required this.username,
     this.displayName,
+    this.profilePicture,
     required this.roles,
     this.isOwner = false,
   });
@@ -186,6 +188,7 @@ class ChannelMember {
                 (json['displayName'] as String?) ?? 
                 'Unknown',
       displayName: json['displayName'] as String?,
+      profilePicture: json['profilePicture'] as String?,
       isOwner: json['isOwner'] as bool? ?? false,
       roles: (json['roles'] as List<dynamic>?)
               ?.map((e) => Role.fromJson(e as Map<String, dynamic>))
@@ -200,6 +203,7 @@ class ChannelMember {
       'userId': userId,
       'username': username,
       'displayName': displayName,
+      'profilePicture': profilePicture,
       'isOwner': isOwner,
       'roles': roles.map((r) => r.toJson()).toList(),
     };
