@@ -2236,26 +2236,35 @@ clientRoutes.post("/api/server/invitations/send", verifyAuthEither, async (req, 
     try {
         const userUuid = req.userId || req.session.uuid;
         
+        console.log('[INVITATION] POST received, body:', JSON.stringify(req.body));
+        console.log('[INVITATION] User UUID:', userUuid);
+        
         // Check admin permission
         const isAdmin = await hasServerPermission(userUuid, 'server.manage');
+        console.log('[INVITATION] Is admin:', isAdmin);
         if (!isAdmin) {
             return res.status(403).json({ status: "error", message: "Forbidden: Admin access required" });
         }
         
         const { email } = req.body;
+        console.log('[INVITATION] Email from body:', email);
         
         if (!email || !email.includes('@')) {
+            console.log('[INVITATION] Email validation failed');
             return res.status(400).json({ status: "error", message: "Valid email required" });
         }
+        console.log('[INVITATION] Email validation passed');
         
         // Check if user already exists
         const existingUser = await User.findOne({ where: { email } });
+        console.log('[INVITATION] Existing user check:', existingUser ? 'User exists' : 'No existing user');
         if (existingUser) {
             return res.status(400).json({ status: "error", message: "User with this email already exists" });
         }
         
         // Generate 6-digit token
         const token = Math.floor(100000 + Math.random() * 900000).toString();
+        console.log('[INVITATION] Generated token:', token);
         
         // Calculate expiry (48 hours from now)
         const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
@@ -2263,19 +2272,23 @@ clientRoutes.post("/api/server/invitations/send", verifyAuthEither, async (req, 
         const { Invitation } = require('../db/model');
         
         // Create invitation
+        console.log('[INVITATION] Creating invitation record...');
         const invitation = await Invitation.create({
             email,
             token,
             expires_at: expiresAt,
             invited_by: userUuid
         });
+        console.log('[INVITATION] Invitation created:', invitation.id);
         
         // Send email
+        console.log('[INVITATION] Configuring email transporter...');
         const transporter = nodemailer.createTransport(config.smtp);
         const { ServerSettings } = require('../db/model');
         const settings = await ServerSettings.findOne({ where: { id: 1 } });
         const serverName = settings?.server_name || 'PeerWave Server';
         
+        console.log('[INVITATION] Sending email to:', email);
         await transporter.sendMail({
             from: config.smtp.auth.user,
             to: email,
@@ -2288,7 +2301,7 @@ clientRoutes.post("/api/server/invitations/send", verifyAuthEither, async (req, 
             `
         });
         
-        console.log(`[INVITATION] Sent to ${email} by ${userUuid}, token: ${token}`);
+        console.log(`[INVITATION] Successfully sent to ${email} by ${userUuid}, token: ${token}`);
         
         res.json({
             status: "ok",
@@ -2301,8 +2314,9 @@ clientRoutes.post("/api/server/invitations/send", verifyAuthEither, async (req, 
             }
         });
     } catch (error) {
-        console.error('Error sending invitation:', error);
-        res.status(500).json({ status: "error", message: "Failed to send invitation" });
+        console.error('[INVITATION] Error occurred:', error);
+        console.error('[INVITATION] Error stack:', error.stack);
+        res.status(500).json({ status: "error", message: "Failed to send invitation: " + error.message });
     }
 });
 

@@ -47,12 +47,17 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
         roleProvider.getRolesByScope(widget.channelScope),
       ]);
 
+      final members = results[0] as List<ChannelMember>;
+      debugPrint('[MEMBERS_SCREEN] Loaded ${members.length} members:');
+      members.forEach((m) => debugPrint('[MEMBERS_SCREEN] - ${m.name} (${m.userId})'));
+
       setState(() {
-        _members = results[0] as List<ChannelMember>;
+        _members = members;
         _availableRoles = results[1] as List<Role>;
         _isLoading = false;
       });
     } catch (e) {
+      debugPrint('[MEMBERS_SCREEN] Error loading data: $e');
       setState(() {
         _errorMessage = e.toString();
         _isLoading = false;
@@ -221,16 +226,20 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                     if (value.length >= 2) {
                       setState(() => isLoading = true);
                       try {
+                        debugPrint('[ADD_USER_DIALOG] Searching for: $value');
                         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
                         final users = await roleProvider.getAvailableUsersForChannel(
                           widget.channelId,
                           search: value,
                         );
+                        debugPrint('[ADD_USER_DIALOG] Found ${users.length} users');
+                        users.forEach((u) => debugPrint('[ADD_USER_DIALOG] - ${u['displayName']} (${u['email']})'));
                         setState(() {
                           availableUsers = users;
                           isLoading = false;
                         });
                       } catch (e) {
+                        debugPrint('[ADD_USER_DIALOG] Error: $e');
                         setState(() => isLoading = false);
                         if (context.mounted) {
                           _showError(e.toString());

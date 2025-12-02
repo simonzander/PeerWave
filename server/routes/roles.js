@@ -16,13 +16,19 @@ const {
     deleteRole,
     getRolesByScope
 } = require('../db/roleHelpers');
+const { verifyAuthEither } = require('../middleware/sessionAuth');
 
 const roleRoutes = express.Router();
 
-// Middleware to check if user is authenticated
+// Middleware to check if user is authenticated (supports both session and HMAC auth)
 const requireAuth = (req, res, next) => {
-    if (!req.session.authenticated || !req.session.uuid) {
+    const userUuid = req.userId || req.session.uuid;
+    if (!userUuid) {
         return res.status(401).json({ error: 'Unauthorized' });
+    }
+    // Ensure req.session.uuid is set for compatibility with existing code
+    if (!req.session.uuid && req.userId) {
+        req.session.uuid = req.userId;
     }
     next();
 };
@@ -44,7 +50,7 @@ const requirePermission = (permission) => {
 };
 
 // GET /api/user/roles - Get current user's roles
-roleRoutes.get('/user/roles', requireAuth, async (req, res) => {
+roleRoutes.get('/user/roles', verifyAuthEither, requireAuth, async (req, res) => {
     try {
         const userId = req.session.uuid;
         
@@ -123,7 +129,7 @@ roleRoutes.get('/user/roles', requireAuth, async (req, res) => {
 });
 
 // GET /api/roles - Get all roles by scope
-roleRoutes.get('/roles', requireAuth, async (req, res) => {
+roleRoutes.get('/roles', verifyAuthEither, requireAuth, async (req, res) => {
     try {
         const { scope } = req.query;
         
@@ -152,7 +158,7 @@ roleRoutes.get('/roles', requireAuth, async (req, res) => {
 });
 
 // POST /api/roles - Create new role (admin only)
-roleRoutes.post('/roles', requireAuth, requirePermission('role.create'), async (req, res) => {
+roleRoutes.post('/roles', verifyAuthEither, requireAuth, requirePermission('role.create'), async (req, res) => {
     try {
         const { name, description, scope, permissions } = req.body;
         
@@ -195,7 +201,7 @@ roleRoutes.post('/roles', requireAuth, requirePermission('role.create'), async (
 });
 
 // PUT /api/roles/:roleId - Update role (admin only, not standard roles)
-roleRoutes.put('/roles/:roleId', requireAuth, requirePermission('role.edit'), async (req, res) => {
+roleRoutes.put('/roles/:roleId', verifyAuthEither, requireAuth, requirePermission('role.edit'), async (req, res) => {
     try {
         const { roleId } = req.params;
         const { name, description, permissions } = req.body;
@@ -231,7 +237,7 @@ roleRoutes.put('/roles/:roleId', requireAuth, requirePermission('role.edit'), as
 });
 
 // DELETE /api/roles/:roleId - Delete role (admin only, not standard roles)
-roleRoutes.delete('/roles/:roleId', requireAuth, requirePermission('role.delete'), async (req, res) => {
+roleRoutes.delete('/roles/:roleId', verifyAuthEither, requireAuth, requirePermission('role.delete'), async (req, res) => {
     try {
         const { roleId } = req.params;
         
@@ -245,7 +251,7 @@ roleRoutes.delete('/roles/:roleId', requireAuth, requirePermission('role.delete'
 });
 
 // POST /api/users/:userId/roles - Assign server role to user
-roleRoutes.post('/users/:userId/roles', requireAuth, requirePermission('role.assign'), async (req, res) => {
+roleRoutes.post('/users/:userId/roles', verifyAuthEither, requireAuth, requirePermission('role.assign'), async (req, res) => {
     try {
         const { userId } = req.params;
         const { roleId } = req.body;
@@ -279,7 +285,7 @@ roleRoutes.post('/users/:userId/roles', requireAuth, requirePermission('role.ass
 });
 
 // DELETE /api/users/:userId/roles/:roleId - Remove server role from user
-roleRoutes.delete('/users/:userId/roles/:roleId', requireAuth, requirePermission('role.assign'), async (req, res) => {
+roleRoutes.delete('/users/:userId/roles/:roleId', verifyAuthEither, requireAuth, requirePermission('role.assign'), async (req, res) => {
     try {
         const { userId, roleId } = req.params;
         
@@ -302,7 +308,7 @@ roleRoutes.delete('/users/:userId/roles/:roleId', requireAuth, requirePermission
 });
 
 // GET /api/users - Get all users (for user management)
-roleRoutes.get('/users', requireAuth, requirePermission('user.manage'), async (req, res) => {
+roleRoutes.get('/users', verifyAuthEither, requireAuth, requirePermission('user.manage'), async (req, res) => {
     try {
         const users = await User.findAll({
             attributes: ['uuid', 'email', 'displayName', 'verified', 'active', 'createdAt'],
@@ -317,7 +323,7 @@ roleRoutes.get('/users', requireAuth, requirePermission('user.manage'), async (r
 });
 
 // PATCH /api/users/:userId/deactivate - Deactivate a user
-roleRoutes.patch('/users/:userId/deactivate', requireAuth, requirePermission('user.manage'), async (req, res) => {
+roleRoutes.patch('/users/:userId/deactivate', verifyAuthEither, requireAuth, requirePermission('user.manage'), async (req, res) => {
     try {
         const { userId } = req.params;
         
@@ -344,7 +350,7 @@ roleRoutes.patch('/users/:userId/deactivate', requireAuth, requirePermission('us
 });
 
 // PATCH /api/users/:userId/activate - Activate a user
-roleRoutes.patch('/users/:userId/activate', requireAuth, requirePermission('user.manage'), async (req, res) => {
+roleRoutes.patch('/users/:userId/activate', verifyAuthEither, requireAuth, requirePermission('user.manage'), async (req, res) => {
     try {
         const { userId } = req.params;
         
@@ -366,7 +372,7 @@ roleRoutes.patch('/users/:userId/activate', requireAuth, requirePermission('user
 });
 
 // DELETE /api/users/:userId - Delete a user
-roleRoutes.delete('/users/:userId', requireAuth, requirePermission('user.manage'), async (req, res) => {
+roleRoutes.delete('/users/:userId', verifyAuthEither, requireAuth, requirePermission('user.manage'), async (req, res) => {
     try {
         const { userId } = req.params;
         
@@ -400,7 +406,7 @@ roleRoutes.delete('/users/:userId', requireAuth, requirePermission('user.manage'
 });
 
 // GET /api/users/:userId/roles - Get all roles for a specific user
-roleRoutes.get('/users/:userId/roles', requireAuth, requirePermission('user.manage'), async (req, res) => {
+roleRoutes.get('/users/:userId/roles', verifyAuthEither, requireAuth, requirePermission('user.manage'), async (req, res) => {
     try {
         const { userId } = req.params;
         
@@ -432,7 +438,7 @@ roleRoutes.get('/users/:userId/roles', requireAuth, requirePermission('user.mana
 });
 
 // POST /api/users/:userId/channels/:channelId/roles - Assign channel role
-roleRoutes.post('/users/:userId/channels/:channelId/roles', requireAuth, async (req, res) => {
+roleRoutes.post('/users/:userId/channels/:channelId/roles', verifyAuthEither, requireAuth, async (req, res) => {
     try {
         const { userId, channelId } = req.params;
         const { roleId } = req.body;
@@ -457,7 +463,7 @@ roleRoutes.post('/users/:userId/channels/:channelId/roles', requireAuth, async (
 });
 
 // DELETE /api/users/:userId/channels/:channelId/roles/:roleId - Remove channel role
-roleRoutes.delete('/users/:userId/channels/:channelId/roles/:roleId', requireAuth, async (req, res) => {
+roleRoutes.delete('/users/:userId/channels/:channelId/roles/:roleId', verifyAuthEither, requireAuth, async (req, res) => {
     try {
         const { userId, channelId, roleId } = req.params;
         
@@ -477,7 +483,7 @@ roleRoutes.delete('/users/:userId/channels/:channelId/roles/:roleId', requireAut
 });
 
 // GET /api/channels/:channelId/members - Get channel members with roles
-roleRoutes.get('/channels/:channelId/members', requireAuth, async (req, res) => {
+roleRoutes.get('/channels/:channelId/members', verifyAuthEither, requireAuth, async (req, res) => {
     try {
         const { channelId } = req.params;
         
@@ -528,6 +534,32 @@ roleRoutes.get('/channels/:channelId/members', requireAuth, async (req, res) => 
             });
         }
         
+        // Get all channel members (even those without roles)
+        const channelMembers = await ChannelMembers.findAll({
+            where: { channelId },
+            include: [{
+                model: User,
+                attributes: ['uuid', 'displayName', 'email']
+            }]
+        });
+        
+        // Add all members to the map
+        for (const member of channelMembers) {
+            if (!member.User) continue;
+            
+            const userId = member.User.uuid;
+            if (!usersMap.has(userId)) {
+                usersMap.set(userId, {
+                    userId: userId,
+                    displayName: member.User.displayName || member.User.email,
+                    email: member.User.email,
+                    isOwner: userId === channel.owner,
+                    roles: []
+                });
+            }
+        }
+        
+        // Now get all role assignments
         const userRoles = await UserRoleChannel.findAll({
             where: { channelId },
             include: [
@@ -544,21 +576,12 @@ roleRoutes.get('/channels/:channelId/members', requireAuth, async (req, res) => 
             ]
         });
         
+        // Add roles to existing members
         for (const ur of userRoles) {
-            if (!ur.User) continue;
+            if (!ur.User || !ur.Role) continue;
             
             const userId = ur.User.uuid;
-            if (!usersMap.has(userId)) {
-                usersMap.set(userId, {
-                    userId: userId,
-                    displayName: ur.User.displayName || ur.User.email,
-                    email: ur.User.email,
-                    isOwner: userId === channel.owner,
-                    roles: []
-                });
-            }
-            
-            if (ur.Role) {
+            if (usersMap.has(userId)) {
                 usersMap.get(userId).roles.push({
                     id: ur.Role.id,
                     uuid: ur.Role.uuid,
@@ -583,10 +606,13 @@ roleRoutes.get('/channels/:channelId/members', requireAuth, async (req, res) => 
 });
 
 // POST /api/channels/:channelId/members - Add user to channel
-roleRoutes.post('/channels/:channelId/members', requireAuth, async (req, res) => {
+roleRoutes.post('/channels/:channelId/members', verifyAuthEither, requireAuth, async (req, res) => {
     try {
         const { channelId } = req.params;
         const { userId, roleId } = req.body;
+        
+        console.log('[ADD_MEMBER] Request received - channelId:', channelId, 'userId:', userId, 'roleId:', roleId);
+        console.log('[ADD_MEMBER] req.session.uuid:', req.session.uuid);
         
         if (!userId) {
             return res.status(400).json({ error: 'userId is required' });
@@ -594,6 +620,7 @@ roleRoutes.post('/channels/:channelId/members', requireAuth, async (req, res) =>
         
         // Check if user has permission to add members
         const canAdd = await hasChannelPermission(req.session.uuid, channelId, 'user.add');
+        console.log('[ADD_MEMBER] canAdd:', canAdd);
         if (!canAdd) {
             return res.status(403).json({ error: 'Forbidden: Cannot add members to this channel' });
         }
@@ -660,19 +687,24 @@ roleRoutes.post('/channels/:channelId/members', requireAuth, async (req, res) =>
             message: 'User added to channel successfully' 
         });
     } catch (error) {
-        console.error('Error adding user to channel:', error);
-        res.status(500).json({ error: 'Failed to add user to channel' });
+        console.error('[ADD_MEMBER] Error adding user to channel:', error);
+        console.error('[ADD_MEMBER] Error stack:', error.stack);
+        res.status(500).json({ error: 'Failed to add user to channel: ' + error.message });
     }
 });
 
 // GET /api/channels/:channelId/available-users - Get users not in channel
-roleRoutes.get('/channels/:channelId/available-users', requireAuth, async (req, res) => {
+roleRoutes.get('/channels/:channelId/available-users', verifyAuthEither, requireAuth, async (req, res) => {
     try {
         const { channelId } = req.params;
         const { search } = req.query;
         
+        console.log('[AVAILABLE_USERS] Request - channelId:', channelId, 'search:', search);
+        console.log('[AVAILABLE_USERS] req.session.uuid:', req.session.uuid);
+        
         // Check if user has permission to add members
         const canAdd = await hasChannelPermission(req.session.uuid, channelId, 'user.add');
+        console.log('[AVAILABLE_USERS] canAdd permission:', canAdd);
         if (!canAdd) {
             return res.status(403).json({ error: 'Forbidden: Cannot add members to this channel' });
         }
@@ -684,6 +716,7 @@ roleRoutes.get('/channels/:channelId/available-users', requireAuth, async (req, 
         });
         
         const existingUserIds = existingMembers.map(m => m.userId);
+        console.log('[AVAILABLE_USERS] Existing member IDs:', existingUserIds);
         
         // Build query for available users
         const whereClause = {
@@ -699,12 +732,17 @@ roleRoutes.get('/channels/:channelId/available-users', requireAuth, async (req, 
             ];
         }
         
+        console.log('[AVAILABLE_USERS] Where clause:', JSON.stringify(whereClause));
+        
         const availableUsers = await User.findAll({
             where: whereClause,
             attributes: ['uuid', 'displayName', 'email'],
             limit: 50,
             order: [['displayName', 'ASC']]
         });
+        
+        console.log('[AVAILABLE_USERS] Found users:', availableUsers.length);
+        availableUsers.forEach(u => console.log('[AVAILABLE_USERS] -', u.displayName || u.email, '(', u.uuid, ')'));
         
         res.json({
             users: availableUsers.map(u => ({
@@ -714,13 +752,14 @@ roleRoutes.get('/channels/:channelId/available-users', requireAuth, async (req, 
             }))
         });
     } catch (error) {
-        console.error('Error fetching available users:', error);
+        console.error('[AVAILABLE_USERS] Error fetching available users:', error);
+        console.error('[AVAILABLE_USERS] Error stack:', error.stack);
         res.status(500).json({ error: 'Failed to fetch available users' });
     }
 });
 
 // POST /api/channels/:channelId/leave - Leave a channel
-roleRoutes.post('/channels/:channelId/leave', requireAuth, async (req, res) => {
+roleRoutes.post('/channels/:channelId/leave', verifyAuthEither, requireAuth, async (req, res) => {
     try {
         const { channelId } = req.params;
         const userId = req.session.uuid;
@@ -764,7 +803,7 @@ roleRoutes.post('/channels/:channelId/leave', requireAuth, async (req, res) => {
 });
 
 // DELETE /api/channels/:channelId/members/:userId - Kick user from channel
-roleRoutes.delete('/channels/:channelId/members/:userId', requireAuth, async (req, res) => {
+roleRoutes.delete('/channels/:channelId/members/:userId', verifyAuthEither, requireAuth, async (req, res) => {
     try {
         const { channelId, userId } = req.params;
         const requesterId = req.session.uuid;
@@ -816,7 +855,7 @@ roleRoutes.delete('/channels/:channelId/members/:userId', requireAuth, async (re
 });
 
 // DELETE /api/channels/:channelId - Delete a channel
-roleRoutes.delete('/channels/:channelId', requireAuth, async (req, res) => {
+roleRoutes.delete('/channels/:channelId', verifyAuthEither, requireAuth, async (req, res) => {
     try {
         const { channelId } = req.params;
         const userId = req.session.uuid;

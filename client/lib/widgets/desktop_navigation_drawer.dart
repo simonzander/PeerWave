@@ -541,9 +541,9 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
     setState(() => isLoadingRoles = true);
     try {
       ApiService.init();
-      final dio = ApiService.dio;
       final scope = channelType == 'webrtc' ? 'channelWebRtc' : 'channelSignal';
-      final resp = await dio.get('${widget.host}/api/roles?scope=$scope');
+      final url = ApiService.ensureHttpPrefix(widget.host);
+      final resp = await ApiService.get('$url/api/roles?scope=$scope');
       
       if (resp.statusCode == 200) {
         final data = resp.data;
