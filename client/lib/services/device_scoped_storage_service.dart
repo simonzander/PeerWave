@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
-import 'package:idb_shim/idb_browser.dart';
+import 'package:idb_shim/idb.dart';
 import 'device_identity_service.dart';
 import 'web/encrypted_storage_wrapper.dart';
+import 'idb_factory_web.dart' as web;
+import 'idb_factory_native.dart' as native;
 
 /// Service for managing device-scoped encrypted IndexedDB storage
 /// 
@@ -14,8 +16,21 @@ class DeviceScopedStorageService {
   DeviceScopedStorageService._();
   
   final DeviceIdentityService _deviceIdentity = DeviceIdentityService.instance;
-  final IdbFactory _idbFactory = idbFactoryBrowser;
+  late final IdbFactory _idbFactory = _getIdbFactory();
   final EncryptedStorageWrapper _encryption = EncryptedStorageWrapper();
+  
+  /// Get the appropriate IdbFactory for the current platform
+  IdbFactory _getIdbFactory() {
+    if (kIsWeb) {
+      // Web: Use browser implementation
+      debugPrint('[DEVICE_STORAGE] Using idbFactoryBrowser for web');
+      return web.getIdbFactoryWeb();
+    } else {
+      // Native: Use SQLite-backed implementation for persistence
+      debugPrint('[DEVICE_STORAGE] Using idbFactorySqflite for native persistence');
+      return native.getIdbFactoryNative();
+    }
+  }
   
   /// Get device-specific database name
   String getDeviceDatabaseName(String baseName) {
@@ -162,17 +177,34 @@ class DeviceScopedStorageService {
         },
       );
       
+      debugPrint('[DEVICE_STORAGE] Database opened, checking object stores...');
+      debugPrint('[DEVICE_STORAGE] Available object stores: ${db.objectStoreNames}');
+      debugPrint('[DEVICE_STORAGE] Looking for store: $storeName');
+      
+      if (!db.objectStoreNames.contains(storeName)) {
+        debugPrint('[DEVICE_STORAGE] ⚠️ Object store "$storeName" does not exist!');
+        db.close();
+        return [];
+      }
+      
       final txn = db.transaction(storeName, 'readonly');
       final store = txn.objectStore(storeName);
       
+      debugPrint('[DEVICE_STORAGE] Opening cursor to iterate keys...');
       final keys = <String>[];
       final cursor = await store.openCursor(autoAdvance: true);
+      
+      debugPrint('[DEVICE_STORAGE] Cursor created, iterating...');
       await cursor.forEach((c) {
-        keys.add(c.key.toString());
+        final key = c.key.toString();
+        debugPrint('[DEVICE_STORAGE] Found key: $key');
+        keys.add(key);
       });
       
       await txn.completed;
+      db.close();
       
+      debugPrint('[DEVICE_STORAGE] ✓ Found ${keys.length} total keys');
       return keys;
     } catch (e) {
       debugPrint('[DEVICE_STORAGE] ✗ Failed to get all keys: $e');

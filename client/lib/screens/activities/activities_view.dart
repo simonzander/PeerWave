@@ -7,6 +7,7 @@ import '../../services/event_bus.dart';
 import '../../services/storage/sqlite_group_message_store.dart';
 import '../../services/storage/sqlite_message_store.dart';
 import '../../providers/unread_messages_provider.dart';
+import '../../app/views/people_context_data_loader.dart';
 import 'dart:convert';
 import 'dart:async';
 
@@ -803,9 +804,13 @@ class _ActivitiesViewState extends State<ActivitiesView>
 
   Widget _buildMessagePreview(Map<String, dynamic> msg, bool isGroupChat) {
     final isSelf = msg['sender'] == 'self';
-    final message = msg['message'] as String? ?? '';
+    final messageContent = msg['message'] as String? ?? '';
+    final messageType = msg['type'] as String? ?? 'message';
     final timestamp = _formatMessageTime(msg['timestamp'] ?? '');
     final senderUuid = msg['sender'] as String?;
+
+    // Format message with type icon
+    final formattedMessage = PeopleContextDataLoader.formatMessagePreview(messageType, messageContent);
 
     // For group chats, get sender display name from cache
     String? senderName;
@@ -842,9 +847,9 @@ class _ActivitiesViewState extends State<ActivitiesView>
                   const SizedBox(height: 2),
                 ],
                 Text(
-                  message.length > 150
-                      ? '${message.substring(0, 150)}...'
-                      : message,
+                  formattedMessage.length > 150
+                      ? '${formattedMessage.substring(0, 150)}...'
+                      : formattedMessage,
                   style: const TextStyle(fontSize: 14),
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,

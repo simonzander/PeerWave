@@ -221,13 +221,20 @@ class PermanentPreKeyStore extends PreKeyStore {
   Future<List<int>> _getAllPreKeyIds() async {
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
+    debugPrint('[PREKEY STORE] Getting all keys from storage (baseName: $_storeName, storeName: $_storeName)');
     final keys = await storage.getAllKeys(_storeName, _storeName);
+    debugPrint('[PREKEY STORE] Found ${keys.length} total keys in storage: $keys');
     
-    return keys
-        .where((k) => k.startsWith(_keyPrefix))
+    final filtered = keys.where((k) => k.startsWith(_keyPrefix)).toList();
+    debugPrint('[PREKEY STORE] Filtered to ${filtered.length} keys with prefix "$_keyPrefix": $filtered');
+    
+    final ids = filtered
         .map((k) => int.tryParse(k.replaceFirst(_keyPrefix, '')))
         .whereType<int>()
         .toList();
+    debugPrint('[PREKEY STORE] Parsed to ${ids.length} PreKey IDs: $ids');
+    
+    return ids;
     
     /* LEGACY NATIVE STORAGE - DISABLED
     if (kIsWeb) {

@@ -8,6 +8,7 @@ import '../../services/user_profile_service.dart';
 import '../../services/storage/sqlite_message_store.dart';
 import '../../services/recent_conversations_service.dart';
 import '../../services/starred_conversations_service.dart';
+import '../../app/views/people_context_data_loader.dart';
 import 'dart:async';
 
 /// Messages Main Content - Shows conversation list with enhanced UI
@@ -151,10 +152,13 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
           
           String lastMessage = '';
           String lastMessageTime = '';
+          String lastMessageType = 'message';
           
           if (messages.isNotEmpty) {
             final lastMsg = messages.first;
-            lastMessage = lastMsg['message'] as String? ?? '';
+            final msgType = lastMsg['type'] ?? 'message';
+            lastMessageType = msgType;
+            lastMessage = PeopleContextDataLoader.formatMessagePreview(msgType, lastMsg['message']);
             lastMessageTime = lastMsg['timestamp'] as String? ?? '';
           }
           
@@ -169,6 +173,7 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
             'online': false, // TODO: Get online status
             'lastMessage': lastMessage,
             'lastMessageTime': lastMessageTime,
+            'lastMessageType': lastMessageType,
             'unreadCount': unreadProvider.directMessageUnreadCounts[userId] ?? 0,
             'isStarred': StarredConversationsService.instance.isStarred(userId),
           });

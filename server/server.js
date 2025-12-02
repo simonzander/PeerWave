@@ -59,6 +59,9 @@ function isValidUUID(uuid) {
   return uuidRegex.test(uuid);
 }
 
+// 🔄 Pending message queue for devices that are not ready yet
+const pendingMessages = new Map(); // deviceKey -> [{event, data, timestamp}]
+
 // 🚀 Helper function to safely emit to a device (only if client is ready)
 function safeEmitToDevice(io, userId, deviceId, event, data) {
   const deviceKey = `${userId}:${deviceId}`;
@@ -76,8 +79,18 @@ function safeEmitToDevice(io, userId, deviceId, event, data) {
   }
   
   if (!targetSocket.clientReady) {
-    console.log(`[SAFE_EMIT] ⚠️ Client ${deviceKey} not ready yet, queuing/dropping event: ${event}`);
-    // TODO: Optionally queue the event for later delivery
+    console.log(`[SAFE_EMIT] ⚠️ Client ${deviceKey} not ready yet, queuing event: ${event}`);
+    
+    // Queue the message for delivery when client becomes ready
+    if (!pendingMessages.has(deviceKey)) {
+      pendingMessages.set(deviceKey, []);
+    }
+    pendingMessages.get(deviceKey).push({
+      event,
+      data,
+      timestamp: Date.now()
+    });
+    console.log(`[SAFE_EMIT] 📥 Queued event '${event}' for ${deviceKey} (queue size: ${pendingMessages.get(deviceKey).length})`);
     return false;
   }
   
@@ -85,6 +98,28 @@ function safeEmitToDevice(io, userId, deviceId, event, data) {
   targetSocket.emit(event, data);
   console.log(`[SAFE_EMIT] ✓ Event '${event}' sent to ${deviceKey}`);
   return true;
+}
+
+// 🚀 Flush pending messages when client becomes ready
+function flushPendingMessages(io, socket, userId, deviceId) {
+  const deviceKey = `${userId}:${deviceId}`;
+  const pending = pendingMessages.get(deviceKey);
+  
+  if (!pending || pending.length === 0) {
+    console.log(`[SAFE_EMIT] No pending messages for ${deviceKey}`);
+    return;
+  }
+  
+  console.log(`[SAFE_EMIT] 🚀 Flushing ${pending.length} pending messages for ${deviceKey}`);
+  
+  for (const msg of pending) {
+    const age = Date.now() - msg.timestamp;
+    console.log(`[SAFE_EMIT] Delivering queued event '${msg.event}' (age: ${age}ms)`);
+    socket.emit(msg.event, msg.data);
+  }
+  
+  pendingMessages.delete(deviceKey);
+  console.log(`[SAFE_EMIT] ✅ All pending messages delivered to ${deviceKey}`);
 }
 
 // Configure session middleware
@@ -424,6 +459,13 @@ io.sockets.on("connection", socket => {
     console.log("[SIGNAL SERVER] Client ready notification received:", data);
     socket.clientReady = true;
     console.log(`[SIGNAL SERVER] Socket ${socket.id} marked as ready for events`);
+    
+    // 🚀 Flush any pending messages that were queued while client was initializing
+    if (isAuthenticated()) {
+      const userId = getUserId();
+      const deviceId = getDeviceId();
+      flushPendingMessages(io, socket, userId, deviceId);
+    }
     
     // ✅ Check for pending messages and notify client
     try {

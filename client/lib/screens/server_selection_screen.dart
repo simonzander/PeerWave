@@ -106,8 +106,10 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
         print('[ServerSelection] Initializing device identity for native client...');
         final data = response.data ?? {};
         final email = data['email'] as String? ?? 'native@device';
-        // Generate synthetic credential ID: hash(clientId + serverUrl)
-        final syntheticCredId = '${clientId}_${serverUrl.hashCode}'.replaceAll('-', '');
+        // Generate synthetic credential ID: use serverUrl directly (no hashCode!)
+        // CRITICAL: hashCode is NOT stable across Dart VM restarts!
+        // This was causing new deviceId → new database → prekeys regenerated every time
+        final syntheticCredId = '${clientId}_$serverUrl'.replaceAll('-', '').replaceAll(':', '').replaceAll('/', '');
         await DeviceIdentityService.instance.setDeviceIdentity(email, syntheticCredId, clientId);
         print('[ServerSelection] ✓ Device identity initialized');
         

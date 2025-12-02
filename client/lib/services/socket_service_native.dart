@@ -186,6 +186,14 @@ class SocketService {
       final deviceId = data['deviceId'] is int ? data['deviceId'] : int.parse(data['deviceId'].toString());
       SignalService.instance.setCurrentUserInfo(data['uuid'], deviceId);
       debugPrint('[SOCKET SERVICE] User info set, socket still connected: ${_socket?.connected}');
+      
+      // 🚀 CRITICAL: If listeners are already registered, notify server immediately after auth
+      if (_listenersRegistered) {
+        debugPrint('[SOCKET SERVICE] 🚀 Authentication complete & listeners registered - notifying server');
+        _socket!.emit('clientReady', {'timestamp': DateTime.now().toIso8601String()});
+      } else {
+        debugPrint('[SOCKET SERVICE] Authentication complete but listeners not yet registered - will notify when ready');
+      }
     }
   }
   
