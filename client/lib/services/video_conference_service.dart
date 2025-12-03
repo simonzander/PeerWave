@@ -12,6 +12,7 @@ import 'signal_service.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'message_listener_service.dart';
 import 'windows_e2ee_manager.dart';
+import 'sound_service.dart';
 
 /// LiveKit-based Video Conference Service with Signal Protocol E2EE
 ///
@@ -1074,6 +1075,9 @@ class VideoConferenceService extends ChangeNotifier {
       // Exchange encryption keys with new participant
       await _exchangeKeysWithParticipant(event.participant.identity);
 
+      // Play join sound
+      SoundService.instance.playParticipantJoined();
+
       _participantJoinedController.add(event.participant);
       notifyListeners();
     });
@@ -1091,6 +1095,9 @@ class VideoConferenceService extends ChangeNotifier {
         );
         _currentScreenShareParticipantId = null;
       }
+
+      // Play leave sound
+      SoundService.instance.playParticipantLeft();
 
       _participantLeftController.add(event.participant);
       notifyListeners();
@@ -1131,6 +1138,9 @@ class VideoConferenceService extends ChangeNotifier {
           '[VideoConf] 📺 Screen share started by: ${event.participant.identity}',
         );
         _currentScreenShareParticipantId = event.participant.identity;
+
+        // Play screen share started sound
+        SoundService.instance.playScreenShareStarted();
       }
 
       notifyListeners();
@@ -1149,6 +1159,9 @@ class VideoConferenceService extends ChangeNotifier {
           '[VideoConf] 🛑 Screen share stopped by: ${event.participant.identity}',
         );
         _currentScreenShareParticipantId = null;
+
+        // Play screen share stopped sound
+        SoundService.instance.playScreenShareStopped();
       }
 
       notifyListeners();

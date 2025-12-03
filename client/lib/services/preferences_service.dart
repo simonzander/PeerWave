@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:idb_shim/idb_browser.dart';
 
 /// Service für Persistierung von Theme-Präferenzen
-/// 
+///
 /// - Web: IndexedDB (via idb_shim)
 /// - Native: SharedPreferences
 class PreferencesService {
@@ -16,7 +16,36 @@ class PreferencesService {
   static const String _keyThemeMode = 'theme_mode';
   static const String _keyColorSchemeId = 'color_scheme_id';
   static const String _keyLastRoute = 'last_app_route';
-  
+
+  // Notification Settings Keys
+  static const String _keyNotificationsEnabled = 'notifications_enabled';
+  static const String _keySoundsEnabled = 'sounds_enabled';
+  static const String _keyVideoSoundsEnabled = 'video_sounds_enabled';
+  static const String _keyParticipantSoundsEnabled =
+      'participant_sounds_enabled';
+  static const String _keyScreenShareSoundsEnabled =
+      'screen_share_sounds_enabled';
+  static const String _keyDirectMessageNotificationsEnabled =
+      'dm_notifications_enabled';
+  static const String _keyDirectMessageSoundsEnabled = 'dm_sounds_enabled';
+  static const String _keyDirectMessagePreviewEnabled = 'dm_preview_enabled';
+  static const String _keyGroupMessageNotificationsEnabled =
+      'group_notifications_enabled';
+  static const String _keyGroupMessageSoundsEnabled = 'group_sounds_enabled';
+  static const String _keyGroupMessagePreviewEnabled = 'group_preview_enabled';
+  static const String _keyOnlyMentionsInGroups = 'only_mentions_in_groups';
+  static const String _keyMentionNotificationsEnabled =
+      'mention_notifications_enabled';
+  static const String _keyReactionNotificationsEnabled =
+      'reaction_notifications_enabled';
+  static const String _keyMissedCallNotificationsEnabled =
+      'missed_call_notifications_enabled';
+  static const String _keyChannelInviteNotificationsEnabled =
+      'channel_invite_notifications_enabled';
+  static const String _keyPermissionChangeNotificationsEnabled =
+      'permission_change_notifications_enabled';
+  static const String _keyDndEnabled = 'dnd_enabled';
+
   // IndexedDB Config (Web)
   static const String _dbName = 'peerwave_preferences';
   static const String _storeName = 'settings';
@@ -116,7 +145,9 @@ class PreferencesService {
         await txn.completed;
         db.close();
       } catch (e) {
-        debugPrint('[PreferencesService] Error clearing last route from IndexedDB: $e');
+        debugPrint(
+          '[PreferencesService] Error clearing last route from IndexedDB: $e',
+        );
       }
     } else {
       final prefs = await SharedPreferences.getInstance();
@@ -184,6 +215,128 @@ class PreferencesService {
   }
 
   // ============================================================================
+  // Notification Settings
+  // ============================================================================
+
+  Future<void> saveBoolPref(String key, bool value) async {
+    if (kIsWeb) {
+      await _saveToIndexedDB(key, value.toString());
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(key, value);
+    }
+  }
+
+  Future<bool> loadBoolPref(String key, {bool defaultValue = true}) async {
+    if (kIsWeb) {
+      final value = await _loadFromIndexedDB(key);
+      if (value == null) return defaultValue;
+      return value.toLowerCase() == 'true';
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(key) ?? defaultValue;
+    }
+  }
+
+  // Notification Master Controls
+  Future<void> saveNotificationsEnabled(bool enabled) =>
+      saveBoolPref(_keyNotificationsEnabled, enabled);
+  Future<bool> loadNotificationsEnabled() =>
+      loadBoolPref(_keyNotificationsEnabled, defaultValue: true);
+
+  Future<void> saveSoundsEnabled(bool enabled) =>
+      saveBoolPref(_keySoundsEnabled, enabled);
+  Future<bool> loadSoundsEnabled() =>
+      loadBoolPref(_keySoundsEnabled, defaultValue: true);
+
+  // Video Conference Sounds
+  Future<void> saveVideoSoundsEnabled(bool enabled) =>
+      saveBoolPref(_keyVideoSoundsEnabled, enabled);
+  Future<bool> loadVideoSoundsEnabled() =>
+      loadBoolPref(_keyVideoSoundsEnabled, defaultValue: true);
+
+  Future<void> saveParticipantSoundsEnabled(bool enabled) =>
+      saveBoolPref(_keyParticipantSoundsEnabled, enabled);
+  Future<bool> loadParticipantSoundsEnabled() =>
+      loadBoolPref(_keyParticipantSoundsEnabled, defaultValue: true);
+
+  Future<void> saveScreenShareSoundsEnabled(bool enabled) =>
+      saveBoolPref(_keyScreenShareSoundsEnabled, enabled);
+  Future<bool> loadScreenShareSoundsEnabled() =>
+      loadBoolPref(_keyScreenShareSoundsEnabled, defaultValue: true);
+
+  // Direct Message Notifications
+  Future<void> saveDirectMessageNotificationsEnabled(bool enabled) =>
+      saveBoolPref(_keyDirectMessageNotificationsEnabled, enabled);
+  Future<bool> loadDirectMessageNotificationsEnabled() =>
+      loadBoolPref(_keyDirectMessageNotificationsEnabled, defaultValue: true);
+
+  Future<void> saveDirectMessageSoundsEnabled(bool enabled) =>
+      saveBoolPref(_keyDirectMessageSoundsEnabled, enabled);
+  Future<bool> loadDirectMessageSoundsEnabled() =>
+      loadBoolPref(_keyDirectMessageSoundsEnabled, defaultValue: true);
+
+  Future<void> saveDirectMessagePreviewEnabled(bool enabled) =>
+      saveBoolPref(_keyDirectMessagePreviewEnabled, enabled);
+  Future<bool> loadDirectMessagePreviewEnabled() =>
+      loadBoolPref(_keyDirectMessagePreviewEnabled, defaultValue: true);
+
+  // Group Message Notifications
+  Future<void> saveGroupMessageNotificationsEnabled(bool enabled) =>
+      saveBoolPref(_keyGroupMessageNotificationsEnabled, enabled);
+  Future<bool> loadGroupMessageNotificationsEnabled() =>
+      loadBoolPref(_keyGroupMessageNotificationsEnabled, defaultValue: true);
+
+  Future<void> saveGroupMessageSoundsEnabled(bool enabled) =>
+      saveBoolPref(_keyGroupMessageSoundsEnabled, enabled);
+  Future<bool> loadGroupMessageSoundsEnabled() =>
+      loadBoolPref(_keyGroupMessageSoundsEnabled, defaultValue: true);
+
+  Future<void> saveGroupMessagePreviewEnabled(bool enabled) =>
+      saveBoolPref(_keyGroupMessagePreviewEnabled, enabled);
+  Future<bool> loadGroupMessagePreviewEnabled() =>
+      loadBoolPref(_keyGroupMessagePreviewEnabled, defaultValue: true);
+
+  Future<void> saveOnlyMentionsInGroups(bool enabled) =>
+      saveBoolPref(_keyOnlyMentionsInGroups, enabled);
+  Future<bool> loadOnlyMentionsInGroups() =>
+      loadBoolPref(_keyOnlyMentionsInGroups, defaultValue: false);
+
+  // Activity Notifications
+  Future<void> saveMentionNotificationsEnabled(bool enabled) =>
+      saveBoolPref(_keyMentionNotificationsEnabled, enabled);
+  Future<bool> loadMentionNotificationsEnabled() =>
+      loadBoolPref(_keyMentionNotificationsEnabled, defaultValue: true);
+
+  Future<void> saveReactionNotificationsEnabled(bool enabled) =>
+      saveBoolPref(_keyReactionNotificationsEnabled, enabled);
+  Future<bool> loadReactionNotificationsEnabled() =>
+      loadBoolPref(_keyReactionNotificationsEnabled, defaultValue: true);
+
+  Future<void> saveMissedCallNotificationsEnabled(bool enabled) =>
+      saveBoolPref(_keyMissedCallNotificationsEnabled, enabled);
+  Future<bool> loadMissedCallNotificationsEnabled() =>
+      loadBoolPref(_keyMissedCallNotificationsEnabled, defaultValue: true);
+
+  Future<void> saveChannelInviteNotificationsEnabled(bool enabled) =>
+      saveBoolPref(_keyChannelInviteNotificationsEnabled, enabled);
+  Future<bool> loadChannelInviteNotificationsEnabled() =>
+      loadBoolPref(_keyChannelInviteNotificationsEnabled, defaultValue: true);
+
+  Future<void> savePermissionChangeNotificationsEnabled(bool enabled) =>
+      saveBoolPref(_keyPermissionChangeNotificationsEnabled, enabled);
+  Future<bool> loadPermissionChangeNotificationsEnabled() => loadBoolPref(
+    _keyPermissionChangeNotificationsEnabled,
+    defaultValue: true,
+  );
+
+  // Do Not Disturb
+  Future<void> saveDndEnabled(bool enabled) =>
+      saveBoolPref(_keyDndEnabled, enabled);
+  Future<bool> loadDndEnabled() =>
+      loadBoolPref(_keyDndEnabled, defaultValue: false);
+
+  // ============================================================================
   // Clear All
   // ============================================================================
 
@@ -209,4 +362,3 @@ class PreferencesService {
     }
   }
 }
-

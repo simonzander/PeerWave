@@ -6,6 +6,9 @@ import 'ice_config_service.dart';
 import 'user_profile_service.dart';
 import 'message_cleanup_service.dart';
 import 'message_listener_service.dart';
+import 'notification_service.dart';
+import 'notification_listener_service.dart';
+import 'sound_service.dart';
 import 'recent_conversations_service.dart';
 import 'starred_channels_service.dart';
 import '../providers/unread_messages_provider.dart';
@@ -256,6 +259,16 @@ class PostLoginInitService {
       SignalService.instance.setUnreadMessagesProvider(unreadProvider);
       MessageListenerService.instance.initialize();
       debugPrint('[POST_LOGIN_INIT] ✓ Message listeners ready');
+
+      // Initialize notification services
+      await SoundService.instance.initialize();
+      await NotificationService.instance.initialize();
+      // Request permission on web
+      if (kIsWeb) {
+        await NotificationService.instance.requestPermission();
+      }
+      await NotificationListenerService.instance.initialize();
+      debugPrint('[POST_LOGIN_INIT] ✓ Notification services ready');
 
       // Step 8: Activities Service (static methods, no initialization needed)
       currentStep++;
