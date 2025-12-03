@@ -37,6 +37,9 @@ class _CallTopBarState extends State<CallTopBar> {
   
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
     return Consumer<VideoConferenceService>(
       builder: (context, service, _) {
         // Show TopBar only when in call AND not in full-view mode
@@ -45,7 +48,7 @@ class _CallTopBarState extends State<CallTopBar> {
         }
         
         return Container(
-          color: Colors.green.shade700,
+          color: colorScheme.surfaceContainerHighest,
           child: SafeArea(
             bottom: false,
             child: Container(
@@ -57,8 +60,8 @@ class _CallTopBarState extends State<CallTopBar> {
                   Container(
                     width: 8,
                     height: 8,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -73,8 +76,8 @@ class _CallTopBarState extends State<CallTopBar> {
                           flex: 3,
                           child: Text(
                             service.channelName ?? 'Video Call',
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: colorScheme.primary,
                               fontWeight: FontWeight.bold,
                               fontSize: 14,
                             ),
@@ -84,7 +87,7 @@ class _CallTopBarState extends State<CallTopBar> {
                         ),
                         
                         const SizedBox(width: 8),
-                        const Text('•', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                        Text('•', style: TextStyle(color: colorScheme.errorContainer, fontSize: 12)),
                         const SizedBox(width: 8),
                         
                         // Call duration
@@ -93,22 +96,22 @@ class _CallTopBarState extends State<CallTopBar> {
                             flex: 2,
                             child: CallDurationTimer(
                               startTime: service.callStartTime!,
-                              style: const TextStyle(
-                                color: Colors.white70,
+                              style: TextStyle(
+                                color: colorScheme.primary,
                                 fontSize: 12,
                               ),
                             ),
                           ),
                         
                         const SizedBox(width: 8),
-                        const Text('•', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                        Text('•', style: TextStyle(color: colorScheme.errorContainer, fontSize: 12)),
                         const SizedBox(width: 8),
                         
                         // Participant count
                         Text(
                           '${service.remoteParticipants.length + 1}',
-                          style: const TextStyle(
-                            color: Colors.white70,
+                          style: TextStyle(
+                            color: colorScheme.primary,
                             fontSize: 12,
                           ),
                         ),
@@ -129,21 +132,21 @@ class _CallTopBarState extends State<CallTopBar> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     for (var i = 0; i < service.remoteParticipants.length && i < 3; i++)
-                                      _buildParticipantAvatar(service.remoteParticipants[i].identity),
+                                      _buildParticipantAvatar(service.remoteParticipants[i].identity, colorScheme),
                                     if (service.remoteParticipants.length > 3)
                                       Container(
                                         width: 20,
                                         height: 20,
                                         margin: const EdgeInsets.only(left: 2),
                                         decoration: BoxDecoration(
-                                          color: Colors.grey.shade600,
+                                          color: colorScheme.outlineVariant,
                                           borderRadius: BorderRadius.circular(4),
                                         ),
                                         child: Center(
                                           child: Text(
                                             '+${service.remoteParticipants.length - 3}',
-                                            style: const TextStyle(
-                                              color: Colors.white,
+                                            style: TextStyle(
+                                              color: colorScheme.primary,
                                               fontSize: 8,
                                               fontWeight: FontWeight.bold,
                                             ),
@@ -166,9 +169,9 @@ class _CallTopBarState extends State<CallTopBar> {
                     iconSize: 24,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.open_in_full,
-                      color: Colors.white,
+                      color: colorScheme.onSurface,
                       size: 20,
                     ),
                     onPressed: () {
@@ -188,9 +191,9 @@ class _CallTopBarState extends State<CallTopBar> {
                       iconSize: 24,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.video_label,
-                        color: Colors.white,
+                        color: colorScheme.onSurface,
                         size: 20,
                       ),
                       onPressed: () => service.showOverlay(),
@@ -208,7 +211,7 @@ class _CallTopBarState extends State<CallTopBar> {
                       service.localParticipant?.isCameraEnabled() == true
                           ? Icons.videocam
                           : Icons.videocam_off,
-                      color: Colors.white,
+                      color: colorScheme.onSurface,
                       size: 20,
                     ),
                     onPressed: () => service.toggleCamera(),
@@ -225,7 +228,7 @@ class _CallTopBarState extends State<CallTopBar> {
                       service.localParticipant?.isMicrophoneEnabled() == true
                           ? Icons.mic
                           : Icons.mic_off,
-                      color: Colors.white,
+                      color: colorScheme.onSurface,
                       size: 20,
                     ),
                     onPressed: () => service.toggleMicrophone(),
@@ -238,9 +241,9 @@ class _CallTopBarState extends State<CallTopBar> {
                     iconSize: 24,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.call_end,
-                      color: Colors.white,
+                      color: colorScheme.errorContainer,
                       size: 20,
                     ),
                     onPressed: () async {
@@ -256,7 +259,7 @@ class _CallTopBarState extends State<CallTopBar> {
     );
   }
   
-  Widget _buildParticipantAvatar(String uuid) {
+  Widget _buildParticipantAvatar(String uuid, ColorScheme colorScheme) {
     final profileService = UserProfileService.instance;
     final picture = profileService.getPicture(uuid);
     
@@ -265,7 +268,7 @@ class _CallTopBarState extends State<CallTopBar> {
       height: 20,
       margin: const EdgeInsets.only(left: 2),
       decoration: BoxDecoration(
-        color: Colors.blue.shade400,
+        color: colorScheme.primaryContainer,
         borderRadius: BorderRadius.circular(4),
         border: Border.all(color: Colors.white, width: 1),
       ),
@@ -279,8 +282,8 @@ class _CallTopBarState extends State<CallTopBar> {
                   return Center(
                     child: Text(
                       uuid.substring(0, 1).toUpperCase(),
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: colorScheme.onPrimary,
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                       ),
@@ -291,8 +294,8 @@ class _CallTopBarState extends State<CallTopBar> {
             : Center(
                 child: Text(
                   uuid.substring(0, 1).toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: colorScheme.onPrimary,
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                   ),
