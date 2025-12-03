@@ -12,7 +12,7 @@ import '../models/role.dart';
 import '../extensions/snackbar_extensions.dart';
 
 /// VideoConferenceView - UI for video conferencing
-/// 
+///
 /// Features:
 /// - Video grid layout (responsive)
 /// - Local video preview
@@ -22,46 +22,50 @@ import '../extensions/snackbar_extensions.dart';
 class VideoConferenceView extends StatefulWidget {
   final String channelId;
   final String channelName;
-  final MediaDevice? selectedCamera;        // NEW: Pre-selected from PreJoin
-  final MediaDevice? selectedMicrophone;    // NEW: Pre-selected from PreJoin
-  
+  final MediaDevice? selectedCamera; // NEW: Pre-selected from PreJoin
+  final MediaDevice? selectedMicrophone; // NEW: Pre-selected from PreJoin
+
   const VideoConferenceView({
     super.key,
     required this.channelId,
     required this.channelName,
-    this.selectedCamera,        // NEW
-    this.selectedMicrophone,    // NEW
+    this.selectedCamera, // NEW
+    this.selectedMicrophone, // NEW
   });
-  
+
   @override
   State<VideoConferenceView> createState() => _VideoConferenceViewState();
 }
 
 class _VideoConferenceViewState extends State<VideoConferenceView> {
   VideoConferenceService? _service;
-  
+
   bool _isJoining = false;
   String? _errorMessage;
-  
+
   @override
   void initState() {
     super.initState();
   }
-  
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    
+
     // Get service from Provider
     if (_service == null) {
       try {
         _service = Provider.of<VideoConferenceService>(context, listen: false);
         debugPrint('[VideoConferenceView] Service obtained from Provider');
-        
+
         // Register with MessageListenerService for E2EE key exchange
-        MessageListenerService.instance.registerVideoConferenceService(_service!);
-        debugPrint('[VideoConferenceView] Registered VideoConferenceService with MessageListener');
-        
+        MessageListenerService.instance.registerVideoConferenceService(
+          _service!,
+        );
+        debugPrint(
+          '[VideoConferenceView] Registered VideoConferenceService with MessageListener',
+        );
+
         // Schedule join for after build completes (only if not already in call)
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && !(_service?.isInCall ?? false)) {
@@ -80,40 +84,39 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         });
       }
     }
-    
+
     // Full-view mode is already set by navigateToCurrentChannelFullView() before navigation
     // So we don't need to call enterFullView() here anymore
   }
-  
+
   Future<void> _joinChannel() async {
     if (_isJoining || _service == null) return;
-    
+
     setState(() {
       _isJoining = true;
       _errorMessage = null;
     });
-    
+
     try {
       debugPrint('[VideoConferenceView] Joining channel: ${widget.channelId}');
-      
+
       // Join LiveKit room with pre-selected devices from PreJoin
       await _service!.joinRoom(
         widget.channelId,
-        channelName: widget.channelName,             // Pass channel name for overlay
-        cameraDevice: widget.selectedCamera,        // Pass selected camera
+        channelName: widget.channelName, // Pass channel name for overlay
+        cameraDevice: widget.selectedCamera, // Pass selected camera
         microphoneDevice: widget.selectedMicrophone, // Pass selected microphone
       );
-      
+
       // Consumer will automatically listen for updates - no manual listener needed
-      
+
       setState(() => _isJoining = false);
       debugPrint('[VideoConferenceView] Successfully joined channel');
-      
+
       // Ensure we're in full-view mode after joining (not overlay mode)
       _service!.enterFullView();
-      
+
       // Stay in full-view mode - overlay will show when user navigates away
-      
     } catch (e) {
       debugPrint('[VideoConferenceView] Join error: $e');
       setState(() {
@@ -122,13 +125,13 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       });
     }
   }
-  
+
   Future<void> _leaveChannel() async {
     if (_service == null) return;
-    
+
     try {
       await _service!.leaveRoom();
-      
+
       // Navigate back to channels view
       if (mounted) {
         context.go('/app/channels');
@@ -137,33 +140,37 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       debugPrint('[VideoConferenceView] Leave error: $e');
     }
   }
-  
+
   @override
   void dispose() {
     // Exit full-view mode when navigating away (back to overlay mode)
     if (_service != null && _service!.isInCall) {
-      debugPrint('[VideoConferenceView] Exiting full-view, returning to overlay mode');
+      debugPrint(
+        '[VideoConferenceView] Exiting full-view, returning to overlay mode',
+      );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _service?.exitFullView();
       });
     }
-    
+
     // Unregister from MessageListenerService
     MessageListenerService.instance.unregisterVideoConferenceService();
-    debugPrint('[VideoConferenceView] Unregistered VideoConferenceService from MessageListener');
-    
+    debugPrint(
+      '[VideoConferenceView] Unregistered VideoConferenceService from MessageListener',
+    );
+
     // No need to remove listener - Consumer handles it
     // _service?.removeListener(_onServiceUpdate); // Removed
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     // E2EE Status: Frame encryption not available in Flutter Web (Web Worker limitation)
     // But we still have:
     // 1. WebRTC DTLS/SRTP transport encryption
     // 2. Signal Protocol for signaling/key exchange
-    
+
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -246,7 +253,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       bottomNavigationBar: _buildControls(),
     );
   }
-  
+
   Widget _buildBody() {
     if (_isJoining) {
       return const Center(
@@ -260,15 +267,22 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         ),
       );
     }
-    
+
     if (_errorMessage != null) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, size: 64, color: Theme.of(context).colorScheme.error),
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Theme.of(context).colorScheme.error,
+            ),
             const SizedBox(height: 16),
-            Text(_errorMessage!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            Text(
+              _errorMessage!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -278,10 +292,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         ),
       );
     }
-    
+
     return _buildVideoGrid();
   }
-  
+
   Widget _buildVideoGrid() {
     // Use Consumer to only rebuild when service changes
     return Consumer<VideoConferenceService>(
@@ -289,20 +303,29 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         if (service.room == null) {
           return const Center(child: CircularProgressIndicator());
         }
-        
+
         final room = service.room!;
+        // Force read of current state - don't cache participant references
         final localParticipant = room.localParticipant;
-        final remoteParticipants = service.remoteParticipants;
-        
+        final remoteParticipants = room.remoteParticipants.values.toList();
+
         debugPrint('[VideoConferenceView] Building video grid:');
-        debugPrint('[VideoConferenceView]   - Local participant: ${localParticipant?.identity}');
-        debugPrint('[VideoConferenceView]   - Remote participants: ${remoteParticipants.length}');
+        debugPrint(
+          '[VideoConferenceView]   - Local participant: ${localParticipant?.identity}',
+        );
+        debugPrint(
+          '[VideoConferenceView]   - Remote participants: ${remoteParticipants.length}',
+        );
         for (final remote in remoteParticipants) {
           debugPrint('[VideoConferenceView]     - ${remote.identity}');
-          debugPrint('[VideoConferenceView]       Video tracks: ${remote.videoTrackPublications.length}');
-          debugPrint('[VideoConferenceView]       Audio tracks: ${remote.audioTrackPublications.length}');
+          debugPrint(
+            '[VideoConferenceView]       Video tracks: ${remote.videoTrackPublications.length}',
+          );
+          debugPrint(
+            '[VideoConferenceView]       Audio tracks: ${remote.audioTrackPublications.length}',
+          );
         }
-        
+
         // Build participant list
         final List<dynamic> participants = [];
         if (localParticipant != null) {
@@ -311,15 +334,17 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         for (final remote in remoteParticipants) {
           participants.add({'participant': remote, 'isLocal': false});
         }
-        
-        debugPrint('[VideoConferenceView] Total participants to render: ${participants.length}');
-        
+
+        debugPrint(
+          '[VideoConferenceView] Total participants to render: ${participants.length}',
+        );
+
         // Calculate grid dimensions
         final totalParticipants = participants.length;
         int columns = 1;
         if (totalParticipants > 1) columns = 2;
         if (totalParticipants > 4) columns = 3;
-        
+
         return GridView.builder(
           padding: const EdgeInsets.all(8),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -333,17 +358,14 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             final item = participants[index];
             final participant = item['participant'];
             final isLocal = item['isLocal'] as bool;
-            
-            return _buildVideoTile(
-              participant: participant,
-              isLocal: isLocal,
-            );
+
+            return _buildVideoTile(participant: participant, isLocal: isLocal);
           },
         );
       },
     );
   }
-  
+
   Widget _buildVideoTile({
     required dynamic participant,
     required bool isLocal,
@@ -351,24 +373,28 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     // Get video track
     VideoTrack? videoTrack;
     bool audioMuted = true;
-    
+
     if (participant is LocalParticipant || participant is RemoteParticipant) {
       final videoPubs = participant.videoTrackPublications;
       if (videoPubs.isNotEmpty) {
         videoTrack = videoPubs.first.track as VideoTrack?;
       }
-      
+
       final audioPubs = participant.audioTrackPublications;
       audioMuted = audioPubs.isEmpty || audioPubs.first.muted;
     }
-    
-    final identity = participant.identity ?? 'Unknown';
+
     final userId = participant.identity; // LiveKit identity is the user ID
     final bool videoOff = videoTrack == null || videoTrack.muted;
-    
-    // Get profile picture from UserProfileService
-    final profilePicture = userId != null ? UserProfileService.instance.getPicture(userId) : null;
-    
+
+    // Get display name and profile picture from UserProfileService
+    final displayName = userId != null
+        ? (UserProfileService.instance.getDisplayName(userId) ?? userId)
+        : 'Unknown';
+    final profilePicture = userId != null
+        ? UserProfileService.instance.getPicture(userId)
+        : null;
+
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Stack(
@@ -378,20 +404,25 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           if (!videoOff)
             VideoTrackRenderer(
               videoTrack,
+              key: ValueKey(videoTrack.mediaStreamTrack.id),
             )
           else if (profilePicture != null && profilePicture.isNotEmpty)
             ParticipantProfileDisplay(
               profilePictureBase64: profilePicture,
-              displayName: identity,
+              displayName: displayName,
             )
           else
             Container(
               color: Theme.of(context).colorScheme.surfaceVariant,
               child: Center(
-                child: Icon(Icons.videocam_off, size: 48, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                child: Icon(
+                  Icons.videocam_off,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
-          
+
           // Label overlay
           Positioned(
             bottom: 8,
@@ -412,7 +443,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    isLocal ? 'You' : identity,
+                    isLocal ? 'You' : displayName,
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.onSurface,
                       fontSize: 12,
@@ -422,25 +453,29 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
               ),
             ),
           ),
-          
+
           // Muted indicator
           if (audioMuted)
             Positioned(
               top: 8,
               right: 8,
-              child: Icon(Icons.mic_off, color: Theme.of(context).colorScheme.error, size: 24),
+              child: Icon(
+                Icons.mic_off,
+                color: Theme.of(context).colorScheme.error,
+                size: 24,
+              ),
             ),
         ],
       ),
     );
   }
-  
+
   Widget _buildControls() {
     if (_service == null) return const SizedBox.shrink();
-    
+
     final isMicEnabled = _service!.isMicrophoneEnabled();
     final isCameraEnabled = _service!.isCameraEnabled();
-    
+
     return Container(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -452,17 +487,19 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             icon: isMicEnabled ? Icons.mic : Icons.mic_off,
             label: 'Audio',
             onPressed: () => _service!.toggleMicrophone(),
+            onLongPress: () => _showMicrophoneDeviceSelector(context),
             isActive: isMicEnabled,
           ),
-          
+
           // Toggle Video
           _buildControlButton(
             icon: isCameraEnabled ? Icons.videocam : Icons.videocam_off,
             label: 'Video',
             onPressed: () => _service!.toggleCamera(),
+            onLongPress: () => _showCameraDeviceSelector(context),
             isActive: isCameraEnabled,
           ),
-          
+
           // Leave Call
           _buildControlButton(
             icon: Icons.call_end,
@@ -475,30 +512,188 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       ),
     );
   }
-  
+
+  /// Show microphone device selector dialog
+  Future<void> _showMicrophoneDeviceSelector(BuildContext context) async {
+    try {
+      final devices = await Hardware.instance.enumerateDevices();
+      final microphones = devices.where((d) => d.kind == 'audioinput').toList();
+
+      if (!mounted) return;
+
+      // Capture scaffold messenger before showing modal
+      final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+      showModalBottomSheet(
+        context: context,
+        builder: (context) => Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Select Microphone',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              if (microphones.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text('No microphones available'),
+                )
+              else
+                ...microphones.map((device) {
+                  return ListTile(
+                    leading: const Icon(Icons.mic),
+                    title: Text(device.label),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      try {
+                        await _service?.switchMicrophone(device);
+                        if (mounted) {
+                          scaffoldMessenger.showSnackBar(
+                            SnackBar(
+                              content: Text('Switched to ${device.label}'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        debugPrint(
+                          '[VideoConferenceView] Error switching microphone: $e',
+                        );
+                        if (mounted) {
+                          scaffoldMessenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('Failed to switch microphone'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                  );
+                }).toList(),
+            ],
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('[VideoConferenceView] Error loading microphones: $e');
+    }
+  }
+
+  /// Show camera device selector dialog
+  Future<void> _showCameraDeviceSelector(BuildContext context) async {
+    try {
+      final devices = await Hardware.instance.enumerateDevices();
+      final cameras = devices.where((d) => d.kind == 'videoinput').toList();
+
+      if (!mounted) return;
+
+      // Capture scaffold messenger before showing modal
+      final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+      showModalBottomSheet(
+        context: context,
+        builder: (context) => Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Select Camera',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              if (cameras.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text('No cameras available'),
+                )
+              else
+                ...cameras.map((device) {
+                  return ListTile(
+                    leading: const Icon(Icons.videocam),
+                    title: Text(device.label),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      try {
+                        await _service?.switchCamera(device);
+                        if (mounted) {
+                          scaffoldMessenger.showSnackBar(
+                            SnackBar(
+                              content: Text('Switched to ${device.label}'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        debugPrint(
+                          '[VideoConferenceView] Error switching camera: $e',
+                        );
+                        if (mounted) {
+                          scaffoldMessenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('Failed to switch camera'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                  );
+                }).toList(),
+            ],
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('[VideoConferenceView] Error loading cameras: $e');
+    }
+  }
+
   Widget _buildControlButton({
     required IconData icon,
     required String label,
     required VoidCallback onPressed,
+    VoidCallback? onLongPress,
     required bool isActive,
     Color? color,
   }) {
     return Builder(
       builder: (context) {
-        final buttonColor = color ?? (isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.surfaceVariant);
-        
+        final buttonColor =
+            color ??
+            (isActive
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.surfaceVariant);
+
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            FloatingActionButton(
-              onPressed: onPressed,
-              backgroundColor: buttonColor,
-              child: Icon(icon, color: Theme.of(context).colorScheme.onPrimary),
+            GestureDetector(
+              onTap: onPressed,
+              onLongPress: onLongPress,
+              onSecondaryTap: onLongPress,
+              child: FloatingActionButton(
+                onPressed: null, // Disabled, using GestureDetector instead
+                backgroundColor: buttonColor,
+                child: Icon(
+                  icon,
+                  color: Theme.of(context).colorScheme.onPrimary,
+                ),
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               label,
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 12),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: 12,
+              ),
             ),
           ],
         );
@@ -506,4 +701,3 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     );
   }
 }
-
