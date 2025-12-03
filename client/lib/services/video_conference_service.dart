@@ -64,6 +64,9 @@ class VideoConferenceService extends ChangeNotifier {
   String? _channelName;
   DateTime? _callStartTime;
 
+  // NEW: Screen share state
+  String? _currentScreenShareParticipantId;
+
   // NEW: Overlay state
   bool _isOverlayVisible = true;
   bool _isInFullView =
@@ -104,6 +107,11 @@ class VideoConferenceService extends ChangeNotifier {
   double get overlayPositionX => _overlayPositionX;
   double get overlayPositionY => _overlayPositionY;
   GoRouter? get router => _router;
+
+  // NEW: Screen share state getters
+  String? get currentScreenShareParticipantId =>
+      _currentScreenShareParticipantId;
+  bool get hasActiveScreenShare => _currentScreenShareParticipantId != null;
 
   // NEW: Allow app root to inject the GoRouter instance once
   void attachRouter(GoRouter router) {
@@ -1004,6 +1012,17 @@ class VideoConferenceService extends ChangeNotifier {
         );
         _remoteParticipants[participant.identity] = participant;
 
+        // Check if this participant is already sharing screen
+        final hasScreenShare = participant.videoTrackPublications.any(
+          (pub) => pub.source == TrackSource.screenShareVideo,
+        );
+        if (hasScreenShare) {
+          debugPrint(
+            '[VideoConf] 📺 Existing screen share detected from: ${participant.identity}',
+          );
+          _currentScreenShareParticipantId = participant.identity;
+        }
+
         // Exchange keys with existing participants
         await _exchangeKeysWithParticipant(participant.identity);
       }
@@ -1065,6 +1084,14 @@ class VideoConferenceService extends ChangeNotifier {
       _remoteParticipants.remove(event.participant.identity);
       _participantKeys.remove(event.participant.identity);
 
+      // Clear screen share state if the sharer left
+      if (event.participant.identity == _currentScreenShareParticipantId) {
+        debugPrint(
+          '[VideoConf] 👋 Screen sharer left, clearing screen share state',
+        );
+        _currentScreenShareParticipantId = null;
+      }
+
       _participantLeftController.add(event.participant);
       notifyListeners();
     });
@@ -1097,6 +1124,15 @@ class VideoConferenceService extends ChangeNotifier {
         '[VideoConf] Track published: ${event.publication.kind} from ${event.participant.identity}',
       );
       debugPrint('[VideoConf]   - Track SID: ${event.publication.sid}');
+
+      // Track screen share state
+      if (event.publication.source == TrackSource.screenShareVideo) {
+        debugPrint(
+          '[VideoConf] 📺 Screen share started by: ${event.participant.identity}',
+        );
+        _currentScreenShareParticipantId = event.participant.identity;
+      }
+
       notifyListeners();
     });
 
@@ -1105,6 +1141,16 @@ class VideoConferenceService extends ChangeNotifier {
       debugPrint(
         '[VideoConf] Track unpublished: ${event.publication.kind} from ${event.participant.identity}',
       );
+
+      // Clear screen share state if the sharer stopped
+      if (event.publication.source == TrackSource.screenShareVideo &&
+          event.participant.identity == _currentScreenShareParticipantId) {
+        debugPrint(
+          '[VideoConf] 🛑 Screen share stopped by: ${event.participant.identity}',
+        );
+        _currentScreenShareParticipantId = null;
+      }
+
       notifyListeners();
     });
 
@@ -1413,6 +1459,114 @@ class VideoConferenceService extends ChangeNotifier {
   /// Check if microphone is enabled
   bool isMicrophoneEnabled() {
     return _room?.localParticipant?.isMicrophoneEnabled() ?? false;
+  }
+
+  /// Check if screen share is enabled
+  bool isScreenShareEnabled() {
+    final localParticipant = _room?.localParticipant;
+    if (localParticipant == null) return false;
+
+    // Check if we have an active screen share track
+    return localParticipant.videoTrackPublications.any(
+      (pub) => pub.source == TrackSource.screenShareVideo,
+    );
+  }
+
+  /// Toggle screen share on/off
+  /// Check if screen sharing is supported on current platform
+  bool get isScreenShareSupported {
+    // Screen sharing is supported on web and desktop platforms
+    return true;
+  }
+
+  /// For desktop platforms, this should be set before calling toggleScreenShare(true)
+  String? _selectedDesktopSourceId;
+
+  /// Set the desktop screen source ID (Windows/Linux/macOS only)
+  /// Call this after user selects from ScreenSelectDialog
+  void setDesktopScreenSource(String sourceId) {
+    _selectedDesktopSourceId = sourceId;
+  }
+
+  Future<bool> toggleScreenShare() async {
+    if (_room == null) {
+      debugPrint('[VideoConf] ❌ Cannot toggle screen share: Room is null');
+      return false;
+    }
+
+    try {
+      final isCurrentlySharing = isScreenShareEnabled();
+      final localIdentity = _room!.localParticipant?.identity;
+
+      if (isCurrentlySharing) {
+        // Stop screen sharing
+        debugPrint('[VideoConf] 🚫 Stopping screen share');
+        await _room!.localParticipant?.setScreenShareEnabled(false);
+
+        // Clear screen share state if we were the one sharing
+        if (_currentScreenShareParticipantId == localIdentity) {
+          _currentScreenShareParticipantId = null;
+        }
+
+        notifyListeners();
+        return false;
+      } else {
+        // Check if someone else is sharing
+        if (_currentScreenShareParticipantId != null &&
+            _currentScreenShareParticipantId != localIdentity) {
+          final sharingParticipant =
+              _remoteParticipants[_currentScreenShareParticipantId];
+          final sharerName =
+              sharingParticipant?.name ?? _currentScreenShareParticipantId;
+
+          debugPrint(
+            '[VideoConf] ⚠️ User $sharerName is already sharing. Taking over...',
+          );
+
+          // Return false to trigger UI warning, but don't block
+          // The caller should show a warning and then call this again to confirm
+        }
+
+        // Start screen sharing - platform specific
+        debugPrint('[VideoConf] 💻 Starting screen share');
+
+        if (kIsWeb) {
+          // Web: Use browser's native getDisplayMedia
+          await _room!.localParticipant?.setScreenShareEnabled(true);
+        } else {
+          // Desktop (Windows/Linux/macOS): Use sourceId from screen picker
+          if (_selectedDesktopSourceId == null) {
+            throw Exception(
+              'No screen source selected. Call setDesktopScreenSource() first.',
+            );
+          }
+
+          final track = await LocalVideoTrack.createScreenShareTrack(
+            ScreenShareCaptureOptions(
+              sourceId: _selectedDesktopSourceId,
+              maxFrameRate: 15.0,
+            ),
+          );
+
+          await _room!.localParticipant?.publishVideoTrack(track);
+          debugPrint(
+            '[VideoConf] ✅ Desktop screen share track published: ${_selectedDesktopSourceId}',
+          );
+
+          // Clear the selected source after use
+          _selectedDesktopSourceId = null;
+        }
+
+        // Set ourselves as the current sharer
+        _currentScreenShareParticipantId = localIdentity;
+
+        notifyListeners();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('[VideoConf] ❌ Error toggling screen share: $e');
+      rethrow;
+    }
   }
 
   /// Switch to a different camera device

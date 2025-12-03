@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:livekit_client/livekit_client.dart';
+import 'package:livekit_client/livekit_client.dart' as lk;
+import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../services/video_conference_service.dart';
@@ -22,8 +24,8 @@ import '../extensions/snackbar_extensions.dart';
 class VideoConferenceView extends StatefulWidget {
   final String channelId;
   final String channelName;
-  final MediaDevice? selectedCamera; // NEW: Pre-selected from PreJoin
-  final MediaDevice? selectedMicrophone; // NEW: Pre-selected from PreJoin
+  final lk.MediaDevice? selectedCamera; // NEW: Pre-selected from PreJoin
+  final lk.MediaDevice? selectedMicrophone; // NEW: Pre-selected from PreJoin
 
   const VideoConferenceView({
     super.key,
@@ -293,10 +295,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       );
     }
 
-    return _buildVideoGrid();
+    return _buildSmartLayout();
   }
 
-  Widget _buildVideoGrid() {
+  Widget _buildSmartLayout() {
     // Use Consumer to only rebuild when service changes
     return Consumer<VideoConferenceService>(
       builder: (context, service, child) {
@@ -305,63 +307,248 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         }
 
         final room = service.room!;
-        // Force read of current state - don't cache participant references
         final localParticipant = room.localParticipant;
         final remoteParticipants = room.remoteParticipants.values.toList();
 
-        debugPrint('[VideoConferenceView] Building video grid:');
-        debugPrint(
-          '[VideoConferenceView]   - Local participant: ${localParticipant?.identity}',
-        );
-        debugPrint(
-          '[VideoConferenceView]   - Remote participants: ${remoteParticipants.length}',
-        );
-        for (final remote in remoteParticipants) {
-          debugPrint('[VideoConferenceView]     - ${remote.identity}');
-          debugPrint(
-            '[VideoConferenceView]       Video tracks: ${remote.videoTrackPublications.length}',
-          );
-          debugPrint(
-            '[VideoConferenceView]       Audio tracks: ${remote.audioTrackPublications.length}',
-          );
-        }
+        // Check if anyone is sharing screen
+        final hasScreenShare = service.hasActiveScreenShare;
+        final screenShareParticipantId =
+            service.currentScreenShareParticipantId;
 
-        // Build participant list
-        final List<dynamic> participants = [];
+        // Build participant list (for camera feeds only)
+        final List<Map<String, dynamic>> cameraParticipants = [];
         if (localParticipant != null) {
-          participants.add({'participant': localParticipant, 'isLocal': true});
+          cameraParticipants.add({
+            'participant': localParticipant,
+            'isLocal': true,
+          });
         }
         for (final remote in remoteParticipants) {
-          participants.add({'participant': remote, 'isLocal': false});
+          cameraParticipants.add({'participant': remote, 'isLocal': false});
         }
 
-        debugPrint(
-          '[VideoConferenceView] Total participants to render: ${participants.length}',
-        );
+        if (hasScreenShare) {
+          // Find the participant who is sharing
+          final screenShareParticipant =
+              screenShareParticipantId == localParticipant?.identity
+              ? localParticipant
+              : remoteParticipants.firstWhere(
+                  (p) => p.identity == screenShareParticipantId,
+                  orElse: () => remoteParticipants.first,
+                );
 
-        // Calculate grid dimensions
-        final totalParticipants = participants.length;
-        int columns = 1;
-        if (totalParticipants > 1) columns = 2;
-        if (totalParticipants > 4) columns = 3;
+          // Determine layout based on screen orientation
+          final size = MediaQuery.of(context).size;
+          final isHorizontal = size.width > size.height;
 
-        return GridView.builder(
-          padding: const EdgeInsets.all(8),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            childAspectRatio: 16 / 9,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
+          if (isHorizontal) {
+            return _buildHorizontalScreenShareLayout(
+              screenShareParticipant: screenShareParticipant,
+              cameraParticipants: cameraParticipants,
+            );
+          } else {
+            return _buildVerticalScreenShareLayout(
+              screenShareParticipant: screenShareParticipant,
+              cameraParticipants: cameraParticipants,
+            );
+          }
+        } else {
+          // No screen share - use regular grid
+          return _buildRegularGrid(cameraParticipants);
+        }
+      },
+    );
+  }
+
+  /// Horizontal layout: Screen share on left (80%), cameras on right (20%)
+  Widget _buildHorizontalScreenShareLayout({
+    required dynamic screenShareParticipant,
+    required List<Map<String, dynamic>> cameraParticipants,
+  }) {
+    return Row(
+      children: [
+        // Screen share - 80% width
+        Expanded(
+          flex: 8,
+          child: Container(
+            color: Colors.black,
+            child: _buildScreenShareTile(screenShareParticipant),
           ),
-          itemCount: totalParticipants,
-          itemBuilder: (context, index) {
-            final item = participants[index];
-            final participant = item['participant'];
-            final isLocal = item['isLocal'] as bool;
+        ),
+        // Camera feeds - 20% width (vertical list)
+        Expanded(
+          flex: 2,
+          child: ListView.builder(
+            itemCount: cameraParticipants.length,
+            itemBuilder: (context, index) {
+              final item = cameraParticipants[index];
+              return Padding(
+                padding: const EdgeInsets.all(4.0),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: _buildVideoTile(
+                    participant: item['participant'],
+                    isLocal: item['isLocal'],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
 
-            return _buildVideoTile(participant: participant, isLocal: isLocal);
-          },
-        );
+  /// Vertical layout: Cameras on top (20%), screen share below (80%)
+  Widget _buildVerticalScreenShareLayout({
+    required dynamic screenShareParticipant,
+    required List<Map<String, dynamic>> cameraParticipants,
+  }) {
+    return Column(
+      children: [
+        // Camera feeds - 20% height (horizontal scrollable row)
+        SizedBox(
+          height: MediaQuery.of(context).size.height * 0.2,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: cameraParticipants.length,
+            itemBuilder: (context, index) {
+              final item = cameraParticipants[index];
+              return Padding(
+                padding: const EdgeInsets.all(4.0),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: _buildVideoTile(
+                    participant: item['participant'],
+                    isLocal: item['isLocal'],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        // Screen share - 80% height
+        Expanded(
+          child: Container(
+            color: Colors.black,
+            width: double.infinity,
+            child: _buildScreenShareTile(screenShareParticipant),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build screen share tile with label
+  Widget _buildScreenShareTile(dynamic participant) {
+    // Get screen share track
+    lk.VideoTrack? screenShareTrack;
+    if (participant is lk.LocalParticipant ||
+        participant is lk.RemoteParticipant) {
+      final screenPubs = participant.videoTrackPublications.where(
+        (p) => p.source == lk.TrackSource.screenShareVideo,
+      );
+      if (screenPubs.isNotEmpty) {
+        screenShareTrack = screenPubs.first.track as lk.VideoTrack?;
+      }
+    }
+
+    final userId = participant.identity;
+    final displayName = userId != null
+        ? (UserProfileService.instance.getDisplayName(userId) ?? userId)
+        : 'Unknown';
+
+    final isLocal = participant is lk.LocalParticipant;
+    final label = isLocal ? 'Your Screen' : '$displayName\'s Screen';
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (screenShareTrack != null)
+          lk.VideoTrackRenderer(
+            screenShareTrack,
+            key: ValueKey(screenShareTrack.mediaStreamTrack.id),
+            fit: lk.VideoViewFit.contain,
+          )
+        else
+          Container(
+            color: Theme.of(context).colorScheme.surfaceVariant,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.screen_share,
+                    size: 64,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Screen share loading...',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        // Label
+        Positioned(
+          top: 8,
+          left: 8,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.scrim.withOpacity(0.7),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.screen_share,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Regular grid layout (no screen share)
+  Widget _buildRegularGrid(List<Map<String, dynamic>> participants) {
+    final totalParticipants = participants.length;
+    int columns = 1;
+    if (totalParticipants > 1) columns = 2;
+    if (totalParticipants > 4) columns = 3;
+
+    return GridView.builder(
+      padding: const EdgeInsets.all(8),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        childAspectRatio: 16 / 9,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+      ),
+      itemCount: totalParticipants,
+      itemBuilder: (context, index) {
+        final item = participants[index];
+        final participant = item['participant'];
+        final isLocal = item['isLocal'] as bool;
+
+        return _buildVideoTile(participant: participant, isLocal: isLocal);
       },
     );
   }
@@ -370,14 +557,17 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     required dynamic participant,
     required bool isLocal,
   }) {
-    // Get video track
-    VideoTrack? videoTrack;
+    // Get camera video track (not screen share)
+    lk.VideoTrack? videoTrack;
     bool audioMuted = true;
 
-    if (participant is LocalParticipant || participant is RemoteParticipant) {
-      final videoPubs = participant.videoTrackPublications;
-      if (videoPubs.isNotEmpty) {
-        videoTrack = videoPubs.first.track as VideoTrack?;
+    if (participant is lk.LocalParticipant || participant is lk.RemoteParticipant) {
+      // Get camera track only (exclude screen share)
+      final cameraPubs = participant.videoTrackPublications.where(
+        (p) => p.source != lk.TrackSource.screenShareVideo,
+      );
+      if (cameraPubs.isNotEmpty) {
+        videoTrack = cameraPubs.first.track as lk.VideoTrack?;
       }
 
       final audioPubs = participant.audioTrackPublications;
@@ -402,7 +592,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         children: [
           // Video or Profile Picture
           if (!videoOff)
-            VideoTrackRenderer(
+            lk.VideoTrackRenderer(
               videoTrack,
               key: ValueKey(videoTrack.mediaStreamTrack.id),
             )
@@ -475,6 +665,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
     final isMicEnabled = _service!.isMicrophoneEnabled();
     final isCameraEnabled = _service!.isCameraEnabled();
+    final isScreenShareEnabled = _service!.isScreenShareEnabled();
 
     return Container(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -500,6 +691,16 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             isActive: isCameraEnabled,
           ),
 
+          // Toggle Screen Share
+          _buildControlButton(
+            icon: isScreenShareEnabled
+                ? Icons.stop_screen_share
+                : Icons.screen_share,
+            label: 'Share',
+            onPressed: () => _toggleScreenShare(context),
+            isActive: isScreenShareEnabled,
+          ),
+
           // Leave Call
           _buildControlButton(
             icon: Icons.call_end,
@@ -513,10 +714,95 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     );
   }
 
+  /// Toggle screen share with conflict detection
+  Future<void> _toggleScreenShare(BuildContext context) async {
+    if (_service == null) return;
+
+    try {
+      final isCurrentlySharing = _service!.isScreenShareEnabled();
+
+      // If stopping, just stop
+      if (isCurrentlySharing) {
+        await _service!.toggleScreenShare();
+        return;
+      }
+
+      // If starting on desktop, show screen picker first
+      if (!kIsWeb) {
+        final source = await showDialog<webrtc.DesktopCapturerSource>(
+          context: context,
+          builder: (context) => lk.ScreenSelectDialog(),
+        );
+
+        if (source == null) {
+          debugPrint('[VideoConferenceView] Screen share cancelled');
+          return;
+        }
+
+        debugPrint(
+          '[VideoConferenceView] Selected screen source: ${source.id} (${source.name})',
+        );
+        _service!.setDesktopScreenSource(source.id);
+      }
+
+      // Check if someone else is currently sharing
+      final currentSharer = _service!.currentScreenShareParticipantId;
+      final localIdentity = _service!.room?.localParticipant?.identity;
+
+      if (currentSharer != null && currentSharer != localIdentity) {
+        // Someone else is sharing - show warning
+        final sharingParticipant = _service!.remoteParticipants.firstWhere(
+          (p) => p.identity == currentSharer,
+          orElse: () => throw Exception('Participant not found'),
+        );
+        final sharerName = sharingParticipant.name.isEmpty
+            ? currentSharer
+            : sharingParticipant.name;
+
+        if (!mounted) return;
+
+        final shouldTakeOver = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Screen Share In Progress'),
+            content: Text(
+              '$sharerName is currently presenting. Taking over will stop their screen share. Continue?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Take Over'),
+              ),
+            ],
+          ),
+        );
+
+        if (shouldTakeOver != true) return;
+      }
+
+      // Toggle screen share
+      await _service!.toggleScreenShare();
+    } catch (e) {
+      debugPrint('[VideoConferenceView] Error toggling screen share: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to toggle screen share: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   /// Show microphone device selector dialog
   Future<void> _showMicrophoneDeviceSelector(BuildContext context) async {
     try {
-      final devices = await Hardware.instance.enumerateDevices();
+      final devices = await lk.Hardware.instance.enumerateDevices();
       final microphones = devices.where((d) => d.kind == 'audioinput').toList();
 
       if (!mounted) return;
@@ -587,7 +873,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   /// Show camera device selector dialog
   Future<void> _showCameraDeviceSelector(BuildContext context) async {
     try {
-      final devices = await Hardware.instance.enumerateDevices();
+      final devices = await lk.Hardware.instance.enumerateDevices();
       final cameras = devices.where((d) => d.kind == 'videoinput').toList();
 
       if (!mounted) return;
@@ -658,16 +944,19 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   Widget _buildControlButton({
     required IconData icon,
     required String label,
-    required VoidCallback onPressed,
+    VoidCallback? onPressed,
     VoidCallback? onLongPress,
     required bool isActive,
     Color? color,
   }) {
     return Builder(
       builder: (context) {
+        final isDisabled = onPressed == null;
         final buttonColor =
             color ??
-            (isActive
+            (isDisabled
+                ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5)
+                : isActive
                 ? Theme.of(context).colorScheme.primary
                 : Theme.of(context).colorScheme.surfaceVariant);
 
@@ -675,15 +964,19 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           mainAxisSize: MainAxisSize.min,
           children: [
             GestureDetector(
-              onTap: onPressed,
-              onLongPress: onLongPress,
-              onSecondaryTap: onLongPress,
+              onTap: isDisabled ? null : onPressed,
+              onLongPress: isDisabled ? null : onLongPress,
+              onSecondaryTap: isDisabled ? null : onLongPress,
               child: FloatingActionButton(
                 onPressed: null, // Disabled, using GestureDetector instead
                 backgroundColor: buttonColor,
                 child: Icon(
                   icon,
-                  color: Theme.of(context).colorScheme.onPrimary,
+                  color: isDisabled
+                      ? Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.38)
+                      : Theme.of(context).colorScheme.onPrimary,
                 ),
               ),
             ),
