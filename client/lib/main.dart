@@ -26,6 +26,7 @@ import 'app/profile_page.dart';
 import 'app/settings/general_settings_page.dart';
 import 'app/settings/server_settings_page.dart';
 import 'app/settings/notification_settings_page.dart';
+import 'app/settings/system_tray_settings_page.dart';
 import 'app/webauthn_web.dart' if (dart.library.io) 'app/webauthn_stub.dart';
 import 'app/backupcode_web.dart' if (dart.library.io) 'app/backupcode_web_native.dart';
 import 'app/backupcode_settings_page.dart' if (dart.library.io) 'app/backupcode_settings_page_native.dart';
@@ -84,6 +85,7 @@ import 'services/session_auth_service.dart';
 import 'debug_storage.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'core/storage/app_directories.dart';
+import 'services/system_tray_service_web.dart' if (dart.library.io) 'services/system_tray_service.dart';
 
 
 Future<void> main() async {
@@ -149,6 +151,11 @@ Future<void> main() async {
   
   // Configure native window appearance
   if (!kIsWeb) {
+    // Initialize system tray service first
+    final systemTray = SystemTrayService();
+    await systemTray.initialize();
+    
+    // Then configure bitsdojo window (if needed for custom frame)
     doWhenWindowReady(() {
       const initialSize = Size(1280, 800);
       appWindow.minSize = const Size(800, 600);
@@ -658,6 +665,10 @@ class _MyAppState extends State<MyApp> {
                       builder: (context, state) => const NotificationSettingsPage(),
                     ),
                     GoRoute(
+                      path: '/app/settings/system-tray',
+                      builder: (context, state) => const SystemTraySettingsPage(),
+                    ),
+                    GoRoute(
                       path: '/app/settings/server',
                       builder: (context, state) => const ServerSettingsPage(),
                       redirect: (context, state) {
@@ -901,6 +912,10 @@ class _MyAppState extends State<MyApp> {
                     GoRoute(
                       path: '/app/settings/notifications',
                       builder: (context, state) => const NotificationSettingsPage(),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/system-tray',
+                      builder: (context, state) => const SystemTraySettingsPage(),
                     ),
                     GoRoute(
                       path: '/app/settings/server',

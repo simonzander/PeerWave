@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../providers/role_provider.dart';
@@ -58,6 +59,13 @@ class SettingsSidebar extends StatelessWidget {
                 title: const Text('Theme'),
                 onTap: () => ThemeSelectorDialog.show(context),
               ),
+              // System Tray Settings - Only visible on desktop
+              if (!kIsWeb)
+                ListTile(
+                  leading: const Icon(Icons.launch),
+                  title: const Text('System Tray'),
+                  onTap: () => GoRouter.of(context).go('/app/settings/system-tray'),
+                ),
               const Divider(),
               Consumer<RoleProvider>(
                 builder: (context, roleProvider, child) {

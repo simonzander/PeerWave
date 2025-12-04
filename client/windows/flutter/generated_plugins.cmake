@@ -16,6 +16,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   local_notifier
   permission_handler_windows
   record_windows
+  tray_manager
   url_launcher_windows
 )
 

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:peerwave_client/core/version/version_info.dart';
+import '../services/system_tray_service_web.dart'
+    if (dart.library.io) '../services/system_tray_service.dart';
 
 class CustomWindowTitleBar extends StatelessWidget {
   final String title;
@@ -120,7 +122,20 @@ class WindowButtons extends StatelessWidget {
       children: [
         MinimizeWindowButton(colors: buttonColors),
         MaximizeWindowButton(colors: buttonColors),
-        CloseWindowButton(colors: closeButtonColors),
+        // Custom close button that hides to tray instead of closing
+        WindowButton(
+          colors: closeButtonColors,
+          iconBuilder: (buttonContext) => CloseIcon(
+            color: buttonContext.iconColor,
+          ),
+          onPressed: () async {
+            if (!kIsWeb) {
+              // Hide to system tray instead of closing
+              final systemTray = SystemTrayService();
+              await systemTray.hideWindow();
+            }
+          },
+        ),
       ],
     );
   }

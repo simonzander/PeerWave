@@ -13,6 +13,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   livekit_client
   local_notifier
   record_linux
+  tray_manager
   url_launcher_linux
 )
 
