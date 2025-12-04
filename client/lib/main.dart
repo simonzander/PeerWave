@@ -26,6 +26,7 @@ import 'app/profile_page.dart';
 import 'app/settings/general_settings_page.dart';
 import 'app/settings/server_settings_page.dart';
 import 'app/settings/notification_settings_page.dart';
+import 'app/settings/voice_video_settings_page.dart';
 import 'app/settings/system_tray_settings_page.dart';
 import 'app/webauthn_web.dart' if (dart.library.io) 'app/webauthn_stub.dart';
 import 'app/backupcode_web.dart' if (dart.library.io) 'app/backupcode_web_native.dart';
@@ -665,6 +666,10 @@ class _MyAppState extends State<MyApp> {
                       builder: (context, state) => const NotificationSettingsPage(),
                     ),
                     GoRoute(
+                      path: '/app/settings/voice-video',
+                      builder: (context, state) => const VoiceVideoSettingsPage(),
+                    ),
+                    GoRoute(
                       path: '/app/settings/system-tray',
                       builder: (context, state) => const SystemTraySettingsPage(),
                     ),
@@ -912,6 +917,10 @@ class _MyAppState extends State<MyApp> {
                     GoRoute(
                       path: '/app/settings/notifications',
                       builder: (context, state) => const NotificationSettingsPage(),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/voice-video',
+                      builder: (context, state) => const VoiceVideoSettingsPage(),
                     ),
                     GoRoute(
                       path: '/app/settings/system-tray',

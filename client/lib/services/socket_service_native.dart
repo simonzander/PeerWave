@@ -113,15 +113,19 @@ class SocketService {
         }
       });
       
-      _socket!.on('disconnect', (reason) {
-        debugPrint('[SOCKET SERVICE] ❌ Socket disconnected. Reason: $reason');
-        debugPrint('[SOCKET SERVICE] Socket ID before disconnect: ${_socket?.id}');
-        debugPrint('[SOCKET SERVICE] _listenersRegistered: $_listenersRegistered');
-        resetReadyState();
+            _socket!.on('disconnect', (reason) {
+        debugPrint('[SOCKET SERVICE] ❌ Disconnected: $reason');
+        // Don't reset ready state on disconnect - we'll re-send clientReady on reconnect
+        // resetReadyState();
       });
       _socket!.on('reconnect', (_) async {
         debugPrint('[SOCKET SERVICE] 🔄 Socket reconnected');
         await _authenticate();
+        // After successful reconnect and auth, notify ready if listeners were registered
+        if (_listenersRegistered) {
+          debugPrint('[SOCKET SERVICE] 🚀 Reconnected - re-sending clientReady');
+          _socket!.emit('clientReady', {'timestamp': DateTime.now().toIso8601String()});
+        }
       });
       _socket!.on('connect_error', (error) {
         debugPrint('[SOCKET SERVICE] ❌ Connection error: $error');

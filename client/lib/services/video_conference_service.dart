@@ -7,6 +7,10 @@ import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/video_quality_preset.dart';
+import '../models/audio_settings.dart';
+import 'video_quality_manager.dart';
+import 'audio_processor_service.dart';
 import 'api_service.dart';
 import 'signal_service.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
@@ -53,6 +57,21 @@ class VideoConferenceService extends ChangeNotifier {
   // Security level tracking
   String _encryptionLevel = 'none'; // 'none', 'transport', 'e2ee'
   String get encryptionLevel => _encryptionLevel;
+
+  // Video quality settings
+  VideoQualitySettings _videoQualitySettings = VideoQualitySettings.defaults();
+  VideoQualitySettings get videoQualitySettings => _videoQualitySettings;
+
+  // Audio settings
+  AudioSettings _audioSettings = AudioSettings.defaults();
+  AudioSettings get audioSettings => _audioSettings;
+
+  // Per-participant audio state
+  final Map<String, ParticipantAudioState> _participantAudioStates = {};
+
+  // Service integrations
+  final VideoQualityManager _qualityManager = VideoQualityManager.instance;
+  final AudioProcessorService _audioProcessor = AudioProcessorService.instance;
 
   // State management
   String? _currentChannelId;
@@ -883,16 +902,27 @@ class VideoConferenceService extends ChangeNotifier {
       LocalAudioTrack? audioTrack;
 
       try {
+        // Get current quality settings
+        final cameraPreset = _videoQualitySettings.cameraPreset;
+        debugPrint('[VideoConf] Using camera quality: ${cameraPreset.name}');
+        
         // Use pre-selected camera device if available
         if (cameraDevice != null) {
           debugPrint(
             '[VideoConf] Using pre-selected camera: ${cameraDevice.label}',
           );
           videoTrack = await LocalVideoTrack.createCameraTrack(
-            CameraCaptureOptions(deviceId: cameraDevice.deviceId),
+            CameraCaptureOptions(
+              deviceId: cameraDevice.deviceId,
+              params: cameraPreset.parameters,
+            ),
           );
         } else {
-          videoTrack = await LocalVideoTrack.createCameraTrack();
+          videoTrack = await LocalVideoTrack.createCameraTrack(
+            CameraCaptureOptions(
+              params: cameraPreset.parameters,
+            ),
+          );
         }
         debugPrint('[VideoConf] ✓ Camera track created');
       } catch (e) {
@@ -900,18 +930,32 @@ class VideoConferenceService extends ChangeNotifier {
       }
 
       try {
+        // Use audio settings for microphone
+        debugPrint('[VideoConf] Applying audio settings...');
+        
         // Use pre-selected microphone device if available
         if (microphoneDevice != null) {
           debugPrint(
             '[VideoConf] Using pre-selected microphone: ${microphoneDevice.label}',
           );
           audioTrack = await LocalAudioTrack.create(
-            AudioCaptureOptions(deviceId: microphoneDevice.deviceId),
+            AudioCaptureOptions(
+              deviceId: microphoneDevice.deviceId,
+              noiseSuppression: _audioSettings.noiseSuppression,
+              echoCancellation: _audioSettings.echoCancellation,
+              autoGainControl: _audioSettings.autoGainControl,
+            ),
           );
         } else {
-          audioTrack = await LocalAudioTrack.create(AudioCaptureOptions());
+          audioTrack = await LocalAudioTrack.create(
+            AudioCaptureOptions(
+              noiseSuppression: _audioSettings.noiseSuppression,
+              echoCancellation: _audioSettings.echoCancellation,
+              autoGainControl: _audioSettings.autoGainControl,
+            ),
+          );
         }
-        debugPrint('[VideoConf] ✓ Microphone track created');
+        debugPrint('[VideoConf] ✓ Microphone track created with audio processing');
       } catch (e) {
         debugPrint('[VideoConf] ⚠️ Failed to create audio track: $e');
       }
@@ -974,7 +1018,23 @@ class VideoConferenceService extends ChangeNotifier {
       // Publish local tracks if available
       if (videoTrack != null) {
         debugPrint('[VideoConf] Publishing video track...');
-        await _room!.localParticipant?.publishVideoTrack(videoTrack);
+        
+        // Use simulcast if enabled in settings
+        if (_videoQualitySettings.simulcastEnabled) {
+          final simulcastLayers = _videoQualitySettings.cameraPreset.generateSimulcastLayers();
+          debugPrint('[VideoConf] 📡 Publishing with simulcast (${simulcastLayers.length} layers)');
+          
+          await _room!.localParticipant?.publishVideoTrack(
+            videoTrack,
+            publishOptions: VideoPublishOptions(
+              simulcast: true,
+              videoSimulcastLayers: simulcastLayers,
+            ),
+          );
+        } else {
+          debugPrint('[VideoConf] Publishing without simulcast');
+          await _room!.localParticipant?.publishVideoTrack(videoTrack);
+        }
       }
 
       if (audioTrack != null) {
@@ -1033,6 +1093,14 @@ class VideoConferenceService extends ChangeNotifier {
 
       _isConnected = true;
       _isConnecting = false;
+
+      // Initialize video quality manager
+      _qualityManager.initialize(_room!);
+      debugPrint('[VideoConf] ✅ VideoQualityManager initialized');
+
+      // Update audio processor settings
+      _audioProcessor.updateSettings(_audioSettings);
+      debugPrint('[VideoConf] ✅ AudioProcessorService initialized');
 
       // NEW: Save persistence for rejoin
       await _savePersistence();
@@ -1554,14 +1622,34 @@ class VideoConferenceService extends ChangeNotifier {
             );
           }
 
+          // Get screenshare quality settings
+          final screensharePreset = _videoQualitySettings.screensharePreset;
+          debugPrint('[VideoConf] Using screenshare quality: ${screensharePreset.name}');
+
           final track = await LocalVideoTrack.createScreenShareTrack(
             ScreenShareCaptureOptions(
               sourceId: _selectedDesktopSourceId,
-              maxFrameRate: 15.0,
+              maxFrameRate: (screensharePreset.parameters.encoding?.maxFramerate ?? 15).toDouble(),
+              params: screensharePreset.parameters,
             ),
           );
 
-          await _room!.localParticipant?.publishVideoTrack(track);
+          // Publish with simulcast if enabled
+          if (_videoQualitySettings.simulcastEnabled) {
+            final simulcastLayers = screensharePreset.generateSimulcastLayers();
+            debugPrint('[VideoConf] 📡 Publishing screenshare with simulcast (${simulcastLayers.length} layers)');
+            
+            await _room!.localParticipant?.publishVideoTrack(
+              track,
+              publishOptions: VideoPublishOptions(
+                simulcast: true,
+                videoSimulcastLayers: simulcastLayers,
+              ),
+            );
+          } else {
+            await _room!.localParticipant?.publishVideoTrack(track);
+          }
+          
           debugPrint(
             '[VideoConf] ✅ Desktop screen share track published: ${_selectedDesktopSourceId}',
           );
@@ -1685,7 +1773,12 @@ class VideoConferenceService extends ChangeNotifier {
         '[VideoConf]   Creating new audio track with device: ${device.deviceId}',
       );
       final audioTrack = await LocalAudioTrack.create(
-        AudioCaptureOptions(deviceId: device.deviceId),
+        AudioCaptureOptions(
+          deviceId: device.deviceId,
+          noiseSuppression: _audioSettings.noiseSuppression,
+          echoCancellation: _audioSettings.echoCancellation,
+          autoGainControl: _audioSettings.autoGainControl,
+        ),
       );
       debugPrint(
         '[VideoConf]   ✓ New track created: ${audioTrack.mediaStreamTrack.id}',
@@ -1710,9 +1803,134 @@ class VideoConferenceService extends ChangeNotifier {
     }
   }
 
+  // ============================================================================
+  // VIDEO & AUDIO QUALITY SETTINGS
+  // ============================================================================
+
+  /// Load video quality settings from storage
+  Future<void> loadVideoQualitySettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getString('video_quality_settings');
+      if (json != null) {
+        _videoQualitySettings = VideoQualitySettings.fromJson(
+          jsonDecode(json) as Map<String, dynamic>,
+        );
+        debugPrint('[VideoConf] ✓ Loaded video quality settings');
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[VideoConf] Failed to load video quality settings: $e');
+    }
+  }
+
+  /// Update video quality settings
+  Future<void> updateVideoQualitySettings(VideoQualitySettings settings) async {
+    _videoQualitySettings = settings;
+    notifyListeners();
+
+    // Save to storage
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'video_quality_settings',
+        jsonEncode(settings.toJson()),
+      );
+      debugPrint('[VideoConf] ✓ Saved video quality settings');
+    } catch (e) {
+      debugPrint('[VideoConf] Failed to save video quality settings: $e');
+    }
+  }
+
+  /// Load audio settings from storage
+  Future<void> loadAudioSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getString('audio_settings');
+      if (json != null) {
+        _audioSettings = AudioSettings.fromJson(
+          jsonDecode(json) as Map<String, dynamic>,
+        );
+        debugPrint('[VideoConf] ✓ Loaded audio settings');
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[VideoConf] Failed to load audio settings: $e');
+    }
+  }
+
+  /// Update audio settings
+  Future<void> updateAudioSettings(AudioSettings settings) async {
+    _audioSettings = settings;
+    _audioProcessor.updateSettings(settings);
+    notifyListeners();
+
+    // Save to storage
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'audio_settings',
+        jsonEncode(settings.toJson()),
+      );
+      debugPrint('[VideoConf] ✓ Saved audio settings');
+    } catch (e) {
+      debugPrint('[VideoConf] Failed to save audio settings: $e');
+    }
+  }
+
+  /// Get per-participant audio state
+  ParticipantAudioState getParticipantAudioState(String participantId) {
+    return _participantAudioStates[participantId] ??
+        ParticipantAudioState(participantId: participantId);
+  }
+
+  /// Update per-participant audio state
+  Future<void> updateParticipantAudioState(ParticipantAudioState state) async {
+    _participantAudioStates[state.participantId] = state;
+    notifyListeners();
+
+    // Save to storage
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final allStates = _participantAudioStates.values
+          .map((s) => s.toJson())
+          .toList();
+      await prefs.setString(
+        'participant_audio_states',
+        jsonEncode(allStates),
+      );
+      debugPrint('[VideoConf] ✓ Saved participant audio state for ${state.participantId}');
+    } catch (e) {
+      debugPrint('[VideoConf] Failed to save participant audio state: $e');
+    }
+  }
+
+  /// Load per-participant audio states from storage
+  Future<void> loadParticipantAudioStates() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getString('participant_audio_states');
+      if (json != null) {
+        final list = jsonDecode(json) as List<dynamic>;
+        for (final item in list) {
+          final state = ParticipantAudioState.fromJson(
+            item as Map<String, dynamic>,
+          );
+          _participantAudioStates[state.participantId] = state;
+        }
+        debugPrint('[VideoConf] ✓ Loaded ${_participantAudioStates.length} participant audio states');
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[VideoConf] Failed to load participant audio states: $e');
+    }
+  }
+
   @override
   void dispose() {
     leaveRoom();
+    _qualityManager.dispose();
+    _audioProcessor.dispose();
     _participantJoinedController.close();
     _participantLeftController.close();
     _trackSubscribedController.close();

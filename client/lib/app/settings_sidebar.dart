@@ -59,6 +59,12 @@ class SettingsSidebar extends StatelessWidget {
                 title: const Text('Theme'),
                 onTap: () => ThemeSelectorDialog.show(context),
               ),
+              // Voice & Video Settings
+              ListTile(
+                leading: const Icon(Icons.videocam),
+                title: const Text('Voice & Video'),
+                onTap: () => GoRouter.of(context).go('/app/settings/voice-video'),
+              ),
               // System Tray Settings - Only visible on desktop
               if (!kIsWeb)
                 ListTile(

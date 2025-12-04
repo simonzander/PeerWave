@@ -14,6 +14,7 @@ import '../widgets/participant_profile_display.dart';
 import '../widgets/speaking_border_wrapper.dart';
 import '../widgets/hidden_participants_badge.dart';
 import '../widgets/participant_visibility_manager.dart';
+import '../widgets/participant_context_menu.dart';
 import '../models/role.dart';
 import '../models/participant_audio_state.dart';
 import '../extensions/snackbar_extensions.dart';
@@ -813,6 +814,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         onLongPress: userId != null
             ? () => _showParticipantMenu(context, userId, isPinned)
             : null,
+        onSecondaryTap: userId != null
+            ? () => _showParticipantMenu(context, userId, isPinned)
+            : null,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -909,25 +913,53 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     return SpeakingBorderWrapper(isSpeaking: isSpeaking, child: tileContent);
   }
 
-  /// Show participant context menu (pin/unpin)
+  /// Show participant context menu (volume, mute, pin/unpin)
   void _showParticipantMenu(
     BuildContext context,
     String participantId,
     bool isPinned,
   ) {
+    // Find the participant object from the room
+    final room = _service?.room;
+    if (room == null) return;
+
+    // Check if it's a remote participant
+    final remoteParticipant = room.remoteParticipants.values.firstWhere(
+      (p) => p.identity == participantId,
+      orElse: () => room.remoteParticipants.values.first,
+    );
+
+    // Show context menu as bottom sheet (better for mobile/touch)
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: Icon(
-                isPinned ? Icons.push_pin_outlined : Icons.push_pin,
+            // Drag handle
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(2),
               ),
-              title: Text(isPinned ? 'Unpin Participant' : 'Pin Participant'),
-              onTap: () {
+            ),
+
+            // Participant context menu content
+            ParticipantContextMenuContent(
+              participant: remoteParticipant,
+              isPinned: isPinned,
+              onPin: () {
                 Navigator.pop(context);
                 _togglePin(participantId);
               },
