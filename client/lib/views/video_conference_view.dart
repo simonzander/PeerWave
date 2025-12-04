@@ -4,13 +4,18 @@ import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:async';
 import '../services/video_conference_service.dart';
 import '../services/message_listener_service.dart';
 import '../services/user_profile_service.dart';
 import '../screens/channel/channel_members_screen.dart';
 import '../widgets/animated_widgets.dart';
 import '../widgets/participant_profile_display.dart';
+import '../widgets/speaking_border_wrapper.dart';
+import '../widgets/hidden_participants_badge.dart';
+import '../widgets/participant_visibility_manager.dart';
 import '../models/role.dart';
+import '../models/participant_audio_state.dart';
 import '../extensions/snackbar_extensions.dart';
 
 /// VideoConferenceView - UI for video conferencing
@@ -45,9 +50,21 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   bool _isJoining = false;
   String? _errorMessage;
 
+  // Audio state tracking
+  final Map<String, ParticipantAudioState> _participantStates = {};
+  Timer? _visibilityUpdateTimer;
+  int _maxVisibleParticipants = 0;
+  final Map<String, StreamSubscription> _audioSubscriptions = {};
+
   @override
   void initState() {
     super.initState();
+
+    // Start periodic visibility updates
+    _visibilityUpdateTimer = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (_) => _updateVisibility(),
+    );
   }
 
   @override
@@ -145,6 +162,15 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
   @override
   void dispose() {
+    // Clean up audio subscriptions
+    for (final sub in _audioSubscriptions.values) {
+      sub.cancel();
+    }
+    _audioSubscriptions.clear();
+
+    // Stop visibility timer
+    _visibilityUpdateTimer?.cancel();
+
     // Exit full-view mode when navigating away (back to overlay mode)
     if (_service != null && _service!.isInCall) {
       debugPrint(
@@ -164,6 +190,154 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     // No need to remove listener - Consumer handles it
     // _service?.removeListener(_onServiceUpdate); // Removed
     super.dispose();
+  }
+
+  /// Update visibility based on screen size and participant activity
+  void _updateVisibility() {
+    if (_service == null || _service!.room == null || !mounted) return;
+
+    final screenSize = MediaQuery.of(context).size;
+    final hasScreenShare = _service!.hasActiveScreenShare;
+
+    // Calculate max visible participants
+    _maxVisibleParticipants = ParticipantVisibilityManager.calculateMaxVisible(
+      screenSize,
+      hasScreenShare: hasScreenShare,
+    );
+
+    // Update participant states
+    _updateParticipantStates();
+
+    setState(() {});
+  }
+
+  /// Update participant states with current participants
+  void _updateParticipantStates() {
+    if (_service?.room == null) return;
+
+    final room = _service!.room!;
+    final allParticipantIds = <String>{};
+
+    // Add local participant
+    if (room.localParticipant != null) {
+      final localId = room.localParticipant!.identity;
+      allParticipantIds.add(localId);
+
+      if (!_participantStates.containsKey(localId)) {
+        _participantStates[localId] = ParticipantAudioState(
+          participantId: localId,
+        );
+        _setupAudioListener(room.localParticipant!);
+      }
+    }
+
+    // Add remote participants
+    for (final remote in room.remoteParticipants.values) {
+      final remoteId = remote.identity;
+      allParticipantIds.add(remoteId);
+
+      if (!_participantStates.containsKey(remoteId)) {
+        _participantStates[remoteId] = ParticipantAudioState(
+          participantId: remoteId,
+        );
+        _setupAudioListener(remote);
+      }
+    }
+
+    // Remove states for participants who left
+    _participantStates.removeWhere((id, _) => !allParticipantIds.contains(id));
+    _audioSubscriptions.removeWhere((id, sub) {
+      if (!allParticipantIds.contains(id)) {
+        sub.cancel();
+        return true;
+      }
+      return false;
+    });
+  }
+
+  /// Setup audio level listener for a participant
+  void _setupAudioListener(dynamic participant) {
+    if (participant == null) return;
+
+    final participantId = participant.identity;
+    if (participantId == null) return;
+
+    // Listen for participant updates (speaking state changes)
+    participant.addListener(() {
+      if (!mounted) return;
+
+      // Check if participant is speaking (LiveKit tracks this internally)
+      final isSpeaking = participant.isSpeaking ?? false;
+
+      if (_participantStates.containsKey(participantId)) {
+        final currentState = _participantStates[participantId]!;
+        if (currentState.isSpeaking != isSpeaking) {
+          setState(() {
+            _participantStates[participantId]!.updateSpeaking(isSpeaking);
+          });
+
+          // Check if we need to replace a visible participant
+          if (isSpeaking && !currentState.isVisible) {
+            _handleHiddenParticipantSpeaking(participantId);
+          }
+        }
+      }
+    });
+  }
+
+  /// Handle when a hidden participant starts speaking
+  void _handleHiddenParticipantSpeaking(String hiddenSpeakerId) {
+    if (_service?.room == null) return;
+
+    final localId = _service!.room!.localParticipant?.identity;
+    if (localId == null) return;
+
+    final manager = ParticipantVisibilityManager(
+      maxVisibleParticipants: _maxVisibleParticipants,
+      localParticipantId: localId,
+    );
+
+    final visibleIds = manager.getVisibleParticipantIds(_participantStates);
+    final toReplace = manager.findParticipantToReplace(
+      _participantStates,
+      visibleIds,
+    );
+
+    if (toReplace != null && toReplace != hiddenSpeakerId) {
+      setState(() {
+        // Swap visibility
+        _participantStates[toReplace]!.isVisible = false;
+        _participantStates[hiddenSpeakerId]!.isVisible = true;
+      });
+    }
+  }
+
+  /// Toggle pin state for a participant
+  void _togglePin(String participantId) {
+    if (!_participantStates.containsKey(participantId)) return;
+
+    final currentState = _participantStates[participantId]!;
+    final newPinState = !currentState.isPinned;
+
+    // Check max pinned limit (3)
+    final pinnedCount = _participantStates.values
+        .where((s) => s.isPinned)
+        .length;
+    if (newPinState && pinnedCount >= 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Maximum 3 participants can be pinned'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _participantStates[participantId] = currentState.copyWith(
+        isPinned: newPinState,
+      );
+    });
   }
 
   @override
@@ -528,28 +702,67 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   }
 
   /// Regular grid layout (no screen share)
+  /// Regular grid layout (no screen share) with smart visibility
   Widget _buildRegularGrid(List<Map<String, dynamic>> participants) {
-    final totalParticipants = participants.length;
+    if (_service?.room == null) return const SizedBox.shrink();
+
+    final localId = _service!.room!.localParticipant?.identity;
+    if (localId == null) return const SizedBox.shrink();
+
+    // Get visibility manager
+    final manager = ParticipantVisibilityManager(
+      maxVisibleParticipants: _maxVisibleParticipants,
+      localParticipantId: localId,
+    );
+
+    // Get list of visible participant IDs
+    final visibleIds = manager.getVisibleParticipantIds(_participantStates);
+
+    // Filter participants to only show visible ones
+    final visibleParticipants = participants.where((item) {
+      final participant = item['participant'];
+      final participantId = participant.identity;
+      return participantId != null && visibleIds.contains(participantId);
+    }).toList();
+
+    final totalVisible = visibleParticipants.length;
+    final totalHidden = participants.length - totalVisible;
+
     int columns = 1;
-    if (totalParticipants > 1) columns = 2;
-    if (totalParticipants > 4) columns = 3;
+    if (totalVisible > 1) columns = 2;
+    if (totalVisible > 4) columns = 3;
 
-    return GridView.builder(
-      padding: const EdgeInsets.all(8),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: columns,
-        childAspectRatio: 16 / 9,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-      ),
-      itemCount: totalParticipants,
-      itemBuilder: (context, index) {
-        final item = participants[index];
-        final participant = item['participant'];
-        final isLocal = item['isLocal'] as bool;
+    return Stack(
+      children: [
+        GridView.builder(
+          padding: const EdgeInsets.all(8),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            childAspectRatio: 16 / 9,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+          ),
+          itemCount: totalVisible,
+          itemBuilder: (context, index) {
+            final item = visibleParticipants[index];
+            final participant = item['participant'];
+            final isLocal = item['isLocal'] as bool;
 
-        return _buildVideoTile(participant: participant, isLocal: isLocal);
-      },
+            return _buildVideoTile(participant: participant, isLocal: isLocal);
+          },
+        ),
+
+        // Hidden participants badge
+        if (totalHidden > 0)
+          Positioned(
+            bottom: 16,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: HiddenParticipantsBadge(hiddenCount: totalHidden),
+            ),
+          ),
+      ],
     );
   }
 
@@ -561,7 +774,8 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     lk.VideoTrack? videoTrack;
     bool audioMuted = true;
 
-    if (participant is lk.LocalParticipant || participant is lk.RemoteParticipant) {
+    if (participant is lk.LocalParticipant ||
+        participant is lk.RemoteParticipant) {
       // Get camera track only (exclude screen share)
       final cameraPubs = participant.videoTrackPublications.where(
         (p) => p.source != lk.TrackSource.screenShareVideo,
@@ -585,77 +799,141 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         ? UserProfileService.instance.getPicture(userId)
         : null;
 
-    return Card(
+    // Get audio state for speaking indicator
+    final isSpeaking = userId != null && _participantStates.containsKey(userId)
+        ? _participantStates[userId]!.isSpeaking
+        : false;
+    final isPinned = userId != null && _participantStates.containsKey(userId)
+        ? _participantStates[userId]!.isPinned
+        : false;
+
+    final tileContent = Card(
       clipBehavior: Clip.antiAlias,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Video or Profile Picture
-          if (!videoOff)
-            lk.VideoTrackRenderer(
-              videoTrack,
-              key: ValueKey(videoTrack.mediaStreamTrack.id),
-            )
-          else if (profilePicture != null && profilePicture.isNotEmpty)
-            ParticipantProfileDisplay(
-              profilePictureBase64: profilePicture,
-              displayName: displayName,
-            )
-          else
-            Container(
-              color: Theme.of(context).colorScheme.surfaceVariant,
-              child: Center(
-                child: Icon(
-                  Icons.videocam_off,
-                  size: 48,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+      child: GestureDetector(
+        onLongPress: userId != null
+            ? () => _showParticipantMenu(context, userId, isPinned)
+            : null,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Video or Profile Picture
+            if (!videoOff)
+              lk.VideoTrackRenderer(
+                videoTrack,
+                key: ValueKey(videoTrack.mediaStreamTrack.id),
+              )
+            else if (profilePicture != null && profilePicture.isNotEmpty)
+              ParticipantProfileDisplay(
+                profilePictureBase64: profilePicture,
+                displayName: displayName,
+              )
+            else
+              Container(
+                color: Theme.of(context).colorScheme.surfaceVariant,
+                child: Center(
+                  child: Icon(
+                    Icons.videocam_off,
+                    size: 48,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+
+            // Pin indicator
+            if (isPinned)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Icon(
+                    Icons.push_pin,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+
+            // Label overlay
+            Positioned(
+              bottom: 8,
+              left: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.scrim.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isLocal ? Icons.person : Icons.person_outline,
+                      size: 14,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isLocal ? 'You' : displayName,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
 
-          // Label overlay
-          Positioned(
-            bottom: 8,
-            left: 8,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.scrim.withOpacity(0.6),
-                borderRadius: BorderRadius.circular(4),
+            // Muted indicator
+            if (audioMuted)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Icon(
+                  Icons.mic_off,
+                  color: Theme.of(context).colorScheme.error,
+                  size: 24,
+                ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isLocal ? Icons.person : Icons.person_outline,
-                    size: 14,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    isLocal ? 'You' : displayName,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          ],
+        ),
+      ),
+    );
 
-          // Muted indicator
-          if (audioMuted)
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Icon(
-                Icons.mic_off,
-                color: Theme.of(context).colorScheme.error,
-                size: 24,
+    // Wrap with speaking border
+    return SpeakingBorderWrapper(isSpeaking: isSpeaking, child: tileContent);
+  }
+
+  /// Show participant context menu (pin/unpin)
+  void _showParticipantMenu(
+    BuildContext context,
+    String participantId,
+    bool isPinned,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(
+                isPinned ? Icons.push_pin_outlined : Icons.push_pin,
               ),
+              title: Text(isPinned ? 'Unpin Participant' : 'Pin Participant'),
+              onTap: () {
+                Navigator.pop(context);
+                _togglePin(participantId);
+              },
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
