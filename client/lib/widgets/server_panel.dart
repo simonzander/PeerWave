@@ -66,6 +66,17 @@ class _ServerPanelState extends State<ServerPanel> {
       _servers = ServerConfigService.getAllServers();
       _activeServerId = ServerConfigService.getActiveServer()?.id;
     });
+    
+    // Load server metadata (name and picture) for all servers
+    for (final server in _servers) {
+      ServerConfigService.updateServerMetadata(server.id).then((_) {
+        if (mounted) {
+          setState(() {
+            _servers = ServerConfigService.getAllServers();
+          });
+        }
+      });
+    }
   }
 
   Future<void> _switchServer(String serverId) async {
