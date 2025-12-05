@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:livekit_client/livekit_client.dart';
 import '../services/video_conference_service.dart';
+import '../services/user_profile_service.dart';
 import '../models/participant_audio_state.dart';
 import 'speaking_border_wrapper.dart';
+import 'video_participant_tile.dart';
 
 /// Draggable video overlay that shows active call
 /// Can be minimized, maximized, and closed
@@ -18,7 +20,17 @@ class _CallOverlayState extends State<CallOverlay> {
   bool _isMinimized = false;
   double? _dragStartX;
   double? _dragStartY;
+  double _overlayWidth = 320.0;
+  double _overlayHeight = 180.0;
+  bool _isResizing = false;
   final Map<String, ParticipantAudioState> _participantStates = {};
+  final Map<String, String> _displayNameCache = {};
+  final Map<String, String> _profilePictureCache = {};
+  
+  static const double _minWidth = 240.0;
+  static const double _maxWidth = 800.0;
+  static const double _minHeight = 135.0;
+  static const double _maxHeight = 600.0;
 
   @override
   Widget build(BuildContext context) {
@@ -35,8 +47,8 @@ class _CallOverlayState extends State<CallOverlay> {
         }
 
         final screenSize = MediaQuery.of(context).size;
-        final overlayWidth = _isMinimized ? 240.0 : 320.0;
-        final overlayHeight = _isMinimized ? 135.0 : 180.0;
+        final overlayWidth = _isMinimized ? _minWidth : _overlayWidth;
+        final overlayHeight = _isMinimized ? _minHeight : _overlayHeight;
 
         // Use drag positions if actively dragging, otherwise use service positions
         final x = (_dragStartX ?? service.overlayPositionX).clamp(
@@ -51,31 +63,89 @@ class _CallOverlayState extends State<CallOverlay> {
         return Positioned(
           left: x,
           top: y,
-          child: GestureDetector(
-            onPanStart: (details) {
-              _dragStartX = x;
-              _dragStartY = y;
-            },
-            onPanUpdate: (details) {
-              // Update local position for smooth dragging
-              setState(() {
-                _dragStartX = (_dragStartX! + details.delta.dx).clamp(
-                  0.0,
-                  screenSize.width - overlayWidth,
-                );
-                _dragStartY = (_dragStartY! + details.delta.dy).clamp(
-                  0.0,
-                  screenSize.height - overlayHeight,
-                );
-              });
-            },
-            onPanEnd: (details) {
-              // Only update service position when drag ends (persistence + performance)
-              if (_dragStartX != null && _dragStartY != null) {
-                service.updateOverlayPosition(_dragStartX!, _dragStartY!);
-              }
-            },
-            child: _buildOverlayContent(service, overlayWidth, overlayHeight),
+          child: Stack(
+            children: [
+              // Main draggable overlay
+              GestureDetector(
+                onPanStart: (details) {
+                  if (!_isResizing) {
+                    _dragStartX = x;
+                    _dragStartY = y;
+                  }
+                },
+                onPanUpdate: (details) {
+                  if (!_isResizing) {
+                    // Update local position for smooth dragging
+                    setState(() {
+                      _dragStartX = (_dragStartX! + details.delta.dx).clamp(
+                        0.0,
+                        screenSize.width - overlayWidth,
+                      );
+                      _dragStartY = (_dragStartY! + details.delta.dy).clamp(
+                        0.0,
+                        screenSize.height - overlayHeight,
+                      );
+                    });
+                  }
+                },
+                onPanEnd: (details) {
+                  if (!_isResizing) {
+                    // Only update service position when drag ends (persistence + performance)
+                    if (_dragStartX != null && _dragStartY != null) {
+                      service.updateOverlayPosition(_dragStartX!, _dragStartY!);
+                    }
+                  }
+                },
+                child: _buildOverlayContent(service, overlayWidth, overlayHeight),
+              ),
+              
+              // Resize handle (bottom-right corner)
+              if (!_isMinimized)
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: GestureDetector(
+                    onPanStart: (details) {
+                      setState(() {
+                        _isResizing = true;
+                      });
+                    },
+                    onPanUpdate: (details) {
+                      setState(() {
+                        _overlayWidth = (_overlayWidth + details.delta.dx).clamp(
+                          _minWidth,
+                          _maxWidth.clamp(_minWidth, screenSize.width - x),
+                        );
+                        _overlayHeight = (_overlayHeight + details.delta.dy).clamp(
+                          _minHeight,
+                          _maxHeight.clamp(_minHeight, screenSize.height - y),
+                        );
+                      });
+                    },
+                    onPanEnd: (details) {
+                      setState(() {
+                        _isResizing = false;
+                      });
+                    },
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.6),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(8),
+                          bottomRight: Radius.circular(8),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.open_in_full,
+                        color: Colors.white.withOpacity(0.7),
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         );
       },
@@ -192,6 +262,7 @@ class _CallOverlayState extends State<CallOverlay> {
         _participantStates[localId] = ParticipantAudioState(
           participantId: localId,
         );
+        _loadParticipantProfile(localId);
       }
 
       // Update speaking state
@@ -210,6 +281,7 @@ class _CallOverlayState extends State<CallOverlay> {
         _participantStates[remoteId] = ParticipantAudioState(
           participantId: remoteId,
         );
+        _loadParticipantProfile(remoteId);
       }
 
       // Update speaking state
@@ -221,6 +293,27 @@ class _CallOverlayState extends State<CallOverlay> {
 
     // Remove states for participants who left
     _participantStates.removeWhere((id, _) => !allParticipantIds.contains(id));
+  }
+
+  /// Load participant profile with callback
+  void _loadParticipantProfile(String participantId) {
+    final profile = UserProfileService.instance.getProfileOrLoad(
+      participantId,
+      onLoaded: (profile) {
+        if (mounted && profile != null) {
+          setState(() {
+            _displayNameCache[participantId] = profile['displayName'] as String? ?? participantId;
+            _profilePictureCache[participantId] = profile['picture'] as String? ?? '';
+          });
+        }
+      },
+    );
+    
+    // Use cached data immediately if available
+    if (profile != null) {
+      _displayNameCache[participantId] = profile['displayName'] as String? ?? participantId;
+      _profilePictureCache[participantId] = profile['picture'] as String? ?? '';
+    }
   }
 
   Widget _buildVideoGrid(VideoConferenceService service) {
@@ -442,79 +535,29 @@ class _CallOverlayState extends State<CallOverlay> {
     required bool isLocal,
     required bool showLabel,
   }) {
-    // Get video track
-    VideoTrack? videoTrack;
-    bool audioMuted = true;
-
-    if (participant is LocalParticipant || participant is RemoteParticipant) {
-      final videoPubs = participant.videoTrackPublications;
-      if (videoPubs.isNotEmpty) {
-        videoTrack = videoPubs.first.track as VideoTrack?;
-      }
-
-      final audioPubs = participant.audioTrackPublications;
-      audioMuted = audioPubs.isEmpty || audioPubs.first.muted;
-    }
-
     final identity = participant.identity ?? 'Unknown';
+
+    // Get display name and profile picture from cache
+    final displayName = _displayNameCache[identity] ?? identity;
+    final profilePicture = _profilePictureCache[identity];
 
     // Get speaking state
     final isSpeaking = _participantStates.containsKey(identity)
         ? _participantStates[identity]!.isSpeaking
         : false;
 
-    final tileContent = Stack(
-      fit: StackFit.expand,
-      children: [
-        // Video or placeholder
-        if (videoTrack != null && !videoTrack.muted)
-          VideoTrackRenderer(videoTrack)
-        else
-          Container(
-            color: Colors.grey.shade900,
-            child: Center(
-              child: Icon(
-                Icons.videocam_off,
-                size: showLabel ? 32 : 16,
-                color: Colors.white.withOpacity(0.5),
-              ),
-            ),
-          ),
-
-        // Label (only if showLabel is true)
-        if (showLabel)
-          Positioned(
-            bottom: 4,
-            left: 4,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                isLocal ? 'You' : identity,
-                style: const TextStyle(color: Colors.white, fontSize: 10),
-              ),
-            ),
-          ),
-
-        // Muted indicator
-        if (audioMuted)
-          Positioned(
-            top: 4,
-            right: 4,
-            child: Icon(
-              Icons.mic_off,
-              color: Colors.red,
-              size: showLabel ? 16 : 12,
-            ),
-          ),
-      ],
+    // Use VideoParticipantTile for consistent rendering
+    final tile = VideoParticipantTile(
+      key: ValueKey('overlay_tile_$identity'),
+      participant: participant,
+      isLocal: isLocal,
+      displayName: displayName,
+      profilePicture: profilePicture,
+      isPinned: false,
     );
 
     // Wrap with speaking border
-    return SpeakingBorderWrapper(isSpeaking: isSpeaking, child: tileContent);
+    return SpeakingBorderWrapper(isSpeaking: isSpeaking, child: tile);
   }
 
   Widget _buildIconButton({

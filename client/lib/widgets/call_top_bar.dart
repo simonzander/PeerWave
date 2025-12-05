@@ -17,6 +17,8 @@ class CallTopBar extends StatefulWidget {
 }
 
 class _CallTopBarState extends State<CallTopBar> {
+  final Map<String, String?> _profilePictures = {};
+
   @override
   void initState() {
     super.initState();
@@ -24,15 +26,21 @@ class _CallTopBarState extends State<CallTopBar> {
     _loadParticipantProfiles();
   }
 
-  void _loadParticipantProfiles() async {
+  void _loadParticipantProfiles() {
     final service = VideoConferenceService.instance;
     if (service.remoteParticipants.isNotEmpty) {
-      final uuids = service.remoteParticipants.map((p) => p.identity).toList();
-      try {
-        await UserProfileService.instance.ensureProfilesLoaded(uuids);
-        if (mounted) setState(() {}); // Refresh to show loaded avatars
-      } catch (e) {
-        debugPrint('[CallTopBar] Failed to load participant profiles: $e');
+      for (final participant in service.remoteParticipants) {
+        final uuid = participant.identity;
+        UserProfileService.instance.getProfileOrLoad(
+          uuid,
+          onLoaded: (profile) {
+            if (mounted && profile != null) {
+              setState(() {
+                _profilePictures[uuid] = profile['picture'] as String?;
+              });
+            }
+          },
+        );
       }
     }
   }
@@ -304,8 +312,7 @@ class _CallTopBarState extends State<CallTopBar> {
   }
 
   Widget _buildParticipantAvatar(String uuid, ColorScheme colorScheme) {
-    final profileService = UserProfileService.instance;
-    final picture = profileService.getPicture(uuid);
+    final picture = _profilePictures[uuid];
 
     return Container(
       width: 20,
