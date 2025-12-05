@@ -155,6 +155,20 @@ async function verifyAuthEither(req, res, next) {
     console.log(`[AuthEither] Web client detected, using cookie auth`);
     req.userId = req.session.uuid;
     req.sessionAuth = false;
+    
+    // Update last_used for web client sessions too
+    if (req.session.clientId) {
+      try {
+        await sequelize.query(
+          'UPDATE client_sessions SET last_used = datetime("now") WHERE client_id = ?',
+          { replacements: [req.session.clientId] }
+        );
+      } catch (err) {
+        console.error('[AuthEither] Failed to update last_used for web client:', err);
+        // Don't fail the request if update fails
+      }
+    }
+    
     return next();
   }
   

@@ -2396,4 +2396,69 @@ clientRoutes.delete("/api/server/invitations/:id", verifyAuthEither, async (req,
     }
 });
 
+// DELETE client/device session (logout a specific device)
+clientRoutes.delete("/client/:clientId", verifyAuthEither, async (req, res) => {
+    try {
+        const { clientId } = req.params;
+        const userUuid = req.userId || req.session.uuid;
+        
+        if (!userUuid) {
+            return res.status(401).json({ status: "error", message: "Unauthorized" });
+        }
+        
+        // Find the client to verify ownership
+        const client = await Client.findOne({ 
+            where: { 
+                clientid: clientId,
+                owner: userUuid 
+            } 
+        });
+        
+        if (!client) {
+            return res.status(404).json({ 
+                status: "error", 
+                message: "Client not found or access denied" 
+            });
+        }
+        
+        console.log(`[CLIENT DELETE] User ${userUuid} deleting client ${clientId}`);
+        
+        // Delete associated Signal keys
+        await writeQueue.enqueue(async () => {
+            await SignalPreKey.destroy({ where: { client: clientId } });
+            await SignalSignedPreKey.destroy({ where: { client: clientId } });
+            console.log(`[CLIENT DELETE] Deleted Signal keys for client ${clientId}`);
+        }, 'deleteClientSignalKeys');
+        
+        // Delete session from database
+        await sequelize.query(
+            'DELETE FROM client_sessions WHERE client_id = ?',
+            { replacements: [clientId] }
+        );
+        
+        // Delete nonce cache entries (optional cleanup for replay attack prevention)
+        // This is not critical as nonces expire anyway, but keeps the cache clean
+        await sequelize.query(
+            'DELETE FROM nonce_cache WHERE created_at < datetime("now", "-1 day")',
+            { type: sequelize.QueryTypes.DELETE }
+        );
+        
+        // Delete the client (this also deletes public_key and registration_id stored in Client table)
+        await writeQueue.enqueue(
+            () => Client.destroy({ where: { clientid: clientId } }),
+            'deleteClient'
+        );
+        
+        console.log(`[CLIENT DELETE] Successfully deleted client ${clientId} and all associated data`);
+        
+        res.status(200).json({ 
+            status: "ok", 
+            message: "Client deleted successfully" 
+        });
+    } catch (error) {
+        console.error('Error deleting client:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
 module.exports = clientRoutes;
