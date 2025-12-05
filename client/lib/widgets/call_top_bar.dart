@@ -18,6 +18,9 @@ class CallTopBar extends StatefulWidget {
 
 class _CallTopBarState extends State<CallTopBar> {
   final Map<String, String?> _profilePictures = {};
+  final Map<String, String> _displayNames = {};
+  final Set<String> _loadedProfiles = {}; // Track which profiles we've already loaded
+  final Map<String, Widget> _cachedAvatars = {}; // Cache avatar widgets to prevent rebuilds
 
   @override
   void initState() {
@@ -31,16 +34,30 @@ class _CallTopBarState extends State<CallTopBar> {
     if (service.remoteParticipants.isNotEmpty) {
       for (final participant in service.remoteParticipants) {
         final uuid = participant.identity;
-        UserProfileService.instance.getProfileOrLoad(
+        
+        // Skip if already loaded
+        if (_loadedProfiles.contains(uuid)) continue;
+        _loadedProfiles.add(uuid);
+        
+        final profile = UserProfileService.instance.getProfileOrLoad(
           uuid,
           onLoaded: (profile) {
             if (mounted && profile != null) {
               setState(() {
                 _profilePictures[uuid] = profile['picture'] as String?;
+                _displayNames[uuid] = profile['displayName'] as String? ?? uuid;
+                // Clear cached avatar to rebuild with new picture
+                _cachedAvatars.remove(uuid);
               });
             }
           },
         );
+        
+        // Use cached data immediately if available
+        if (profile != null) {
+          _profilePictures[uuid] = profile['picture'] as String?;
+          _displayNames[uuid] = profile['displayName'] as String? ?? uuid;
+        }
       }
     }
   }
@@ -67,13 +84,10 @@ class _CallTopBarState extends State<CallTopBar> {
               child: Row(
                 children: [
                   // Live indicator
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: colorScheme.primary,
-                      shape: BoxShape.circle,
-                    ),
+                  Icon(
+                    Icons.videocam,
+                    color: colorScheme.errorContainer,
+                    size: 16,
                   ),
                   const SizedBox(width: 8),
 
@@ -88,8 +102,9 @@ class _CallTopBarState extends State<CallTopBar> {
                             service.channelName ?? 'Video Call',
                             style: TextStyle(
                               color: colorScheme.primary,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.normal,
                               fontSize: 14,
+                              decoration: TextDecoration.none,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -97,14 +112,12 @@ class _CallTopBarState extends State<CallTopBar> {
                         ),
 
                         const SizedBox(width: 8),
-                        Text(
-                          '•',
-                          style: TextStyle(
-                            color: colorScheme.errorContainer,
-                            fontSize: 12,
-                          ),
+                        Icon(
+                          Icons.access_time,
+                          color: colorScheme.onSurface,
+                          size: 14,
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 4),
 
                         // Call duration
                         if (service.callStartTime != null)
@@ -113,84 +126,81 @@ class _CallTopBarState extends State<CallTopBar> {
                             child: CallDurationTimer(
                               startTime: service.callStartTime!,
                               style: TextStyle(
-                                color: colorScheme.primary,
+                                color: colorScheme.onSurface,
+                                fontWeight: FontWeight.normal,
                                 fontSize: 12,
+                                decoration: TextDecoration.none,
                               ),
                             ),
                           ),
 
                         const SizedBox(width: 8),
-                        Text(
-                          '•',
-                          style: TextStyle(
-                            color: colorScheme.errorContainer,
-                            fontSize: 12,
-                          ),
+                        Icon(
+                          Icons.people,
+                          color: colorScheme.onSurface,
+                          size: 14,
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 4),
 
                         // Participant count
                         Text(
                           '${service.remoteParticipants.length + 1}',
                           style: TextStyle(
-                            color: colorScheme.primary,
+                            color: colorScheme.onSurface,
+                            fontWeight: FontWeight.normal,
                             fontSize: 12,
+                            decoration: TextDecoration.none,
                           ),
                         ),
 
-                        const SizedBox(width: 4),
+                        const SizedBox(width: 8),
 
                         // Participant avatars
                         if (service.remoteParticipants.isNotEmpty)
-                          Flexible(
-                            flex: 1,
-                            child: Builder(
-                              builder: (context) {
-                                // Trigger profile load when participants change
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  _loadParticipantProfiles();
-                                });
-                                return Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    for (
-                                      var i = 0;
-                                      i < service.remoteParticipants.length &&
-                                          i < 3;
-                                      i++
-                                    )
-                                      _buildParticipantAvatar(
-                                        service.remoteParticipants[i].identity,
-                                        colorScheme,
+                          Builder(
+                            builder: (context) {
+                              // Ensure profiles are loaded when participant list changes
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                _loadParticipantProfiles();
+                              });
+                              
+                              return Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  for (
+                                    var i = 0;
+                                    i < service.remoteParticipants.length &&
+                                        i < 3;
+                                    i++
+                                  )
+                                    _getCachedAvatar(
+                                      service.remoteParticipants[i].identity,
+                                      colorScheme,
+                                    ),
+                                  if (service.remoteParticipants.length > 3)
+                                    Container(
+                                      width: 24,
+                                      height: 24,
+                                      margin: const EdgeInsets.only(left: 4),
+                                      decoration: BoxDecoration(
+                                        color: colorScheme.outlineVariant,
+                                        borderRadius: BorderRadius.circular(4),
                                       ),
-                                    if (service.remoteParticipants.length > 3)
-                                      Container(
-                                        width: 20,
-                                        height: 20,
-                                        margin: const EdgeInsets.only(left: 2),
-                                        decoration: BoxDecoration(
-                                          color: colorScheme.outlineVariant,
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                        ),
-                                        child: Center(
-                                          child: Text(
-                                            '+${service.remoteParticipants.length - 3}',
-                                            style: TextStyle(
-                                              color: colorScheme.primary,
-                                              fontSize: 8,
-                                              fontWeight: FontWeight.bold,
-                                            ),
+                                      child: Center(
+                                        child: Text(
+                                          '+${service.remoteParticipants.length - 3}',
+                                          style: TextStyle(
+                                            color: colorScheme.onSurface,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            decoration: TextDecoration.none,
                                           ),
                                         ),
                                       ),
-                                  ],
-                                );
-                              },
-                            ),
+                                    ),
+                                ],
+                              );
+                            },
                           ),
                       ],
                     ),
@@ -311,32 +321,51 @@ class _CallTopBarState extends State<CallTopBar> {
     );
   }
 
+  /// Get cached avatar widget or build new one if profile changed
+  Widget _getCachedAvatar(String uuid, ColorScheme colorScheme) {
+    final picture = _profilePictures[uuid];
+    final cacheKey = '$uuid-$picture'; // Include picture in cache key
+    
+    // Return cached widget if it exists and hasn't changed
+    if (_cachedAvatars.containsKey(cacheKey)) {
+      return _cachedAvatars[cacheKey]!;
+    }
+    
+    // Build and cache new avatar widget
+    final avatar = _buildParticipantAvatar(uuid, colorScheme);
+    _cachedAvatars[cacheKey] = avatar;
+    return avatar;
+  }
+
   Widget _buildParticipantAvatar(String uuid, ColorScheme colorScheme) {
     final picture = _profilePictures[uuid];
+    final displayName = _displayNames[uuid] ?? uuid;
+    final fallbackLetter = displayName.substring(0, 1).toUpperCase();
 
     return Container(
-      width: 20,
-      height: 20,
-      margin: const EdgeInsets.only(left: 2),
+      width: 24,
+      height: 24,
+      margin: const EdgeInsets.only(left: 4),
       decoration: BoxDecoration(
         color: colorScheme.primaryContainer,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.white, width: 1),
+        border: Border.all(color: colorScheme.outline.withOpacity(0.3), width: 1),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(3),
         child: picture != null && picture.isNotEmpty
             ? Image.memory(
-                base64Decode(picture),
+                base64Decode(picture.split(',').last),
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) {
                   return Center(
                     child: Text(
-                      uuid.substring(0, 1).toUpperCase(),
+                      fallbackLetter,
                       style: TextStyle(
-                        color: colorScheme.onPrimary,
-                        fontSize: 10,
+                        color: colorScheme.onPrimaryContainer,
+                        fontSize: 11,
                         fontWeight: FontWeight.bold,
+                        decoration: TextDecoration.none,
                       ),
                     ),
                   );
@@ -344,11 +373,12 @@ class _CallTopBarState extends State<CallTopBar> {
               )
             : Center(
                 child: Text(
-                  uuid.substring(0, 1).toUpperCase(),
+                  fallbackLetter,
                   style: TextStyle(
-                    color: colorScheme.onPrimary,
-                    fontSize: 10,
+                    color: colorScheme.onPrimaryContainer,
+                    fontSize: 11,
                     fontWeight: FontWeight.bold,
+                    decoration: TextDecoration.none,
                   ),
                 ),
               ),
