@@ -1026,7 +1026,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
       // Get sharedWith list from metadata
       final sharedWith = (file['sharedWith'] as List?)?.cast<String>();
       
-      await client.announceFile(
+      final result = await client.announceFile(
         fileId: fileId,
         mimeType: file['mimeType'] as String? ?? 'application/octet-stream',
         fileSize: file['fileSize'] as int? ?? 0,
@@ -1036,12 +1036,22 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
         sharedWith: sharedWith, // ← WICHTIG: sharedWith mit announced!
       );
       
-      // Update local storage
-      await storage.updateFileMetadata(fileId, {
-        'isSeeder': true,
-        'status': 'seeding',
-        'lastActivity': DateTime.now().toIso8601String(),
-      });
+      // Update local storage with server's merged sharedWith
+      if (result['sharedWith'] != null) {
+        await storage.updateFileMetadata(fileId, {
+          'sharedWith': result['sharedWith'],
+          'isSeeder': true,
+          'status': 'seeding',
+          'lastActivity': DateTime.now().toIso8601String(),
+        });
+      } else {
+        // Fallback if server doesn't return sharedWith
+        await storage.updateFileMetadata(fileId, {
+          'isSeeder': true,
+          'status': 'seeding',
+          'lastActivity': DateTime.now().toIso8601String(),
+        });
+      }
       
       _showSuccess('File announced successfully');
       _loadLocalFiles();
@@ -1340,7 +1350,7 @@ class _AddFileProgressDialogState extends State<_AddFileProgressDialog> {
           // Get all chunk indices
           final allChunks = List<int>.generate(chunks.length, (i) => i);
           
-          await client.announceFile(
+          final result = await client.announceFile(
             fileId: fileId,
             mimeType: mimeType,
             fileSize: widget.fileSize,
@@ -1349,6 +1359,14 @@ class _AddFileProgressDialogState extends State<_AddFileProgressDialog> {
             availableChunks: allChunks,
             sharedWith: <String>[], // ✅ WICHTIG: leere sharedWith Liste
           );
+          
+          // Update local storage with server's merged sharedWith (if any)
+          if (result['sharedWith'] != null) {
+            await storage.updateFileMetadata(fileId, {
+              'sharedWith': result['sharedWith'],
+            });
+            debugPrint('[ADD_FILE] Updated sharedWith from server: ${result['sharedWith'].length} users');
+          }
           
           debugPrint('[ADD_FILE] File announced: $fileId with ${chunks.length} chunks');
         } else {

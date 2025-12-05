@@ -122,6 +122,89 @@ function flushPendingMessages(io, socket, userId, deviceId) {
   console.log(`[SAFE_EMIT] ✅ All pending messages delivered to ${deviceKey}`);
 }
 
+/**
+ * Send Signal messages to all users in sharedWith list about update
+ * Uses store-and-forward for offline users
+ */
+async function sendSharedWithUpdateSignal(fileId, sharedWith) {
+  try {
+    console.log(`[SIGNAL] Sending sharedWith update for ${fileId.substring(0, 8)} to ${sharedWith.length} users`);
+    
+    for (const userId of sharedWith) {
+      try {
+        // Get all devices for this user
+        const clients = await Client.findAll({
+          where: { uuid: userId }
+        });
+        
+        if (clients.length === 0) {
+          console.log(`[SIGNAL] No devices found for user ${userId}`);
+          continue;
+        }
+        
+        console.log(`[SIGNAL] Found ${clients.length} devices for user ${userId}`);
+        
+        // Send to each device
+        for (const client of clients) {
+          try {
+            const recipientDeviceId = client.deviceId.toString();
+            
+            // Create Signal message payload
+            const message = {
+              type: 'file:sharedWith-update',
+              fileId: fileId,
+              sharedWith: sharedWith,
+              timestamp: Date.now()
+            };
+            
+            // Store message in database for offline delivery
+            await writeQueue.enqueue(async () => {
+              return await Item.create({
+                sender: 'SYSTEM', // System message
+                deviceSender: '0',
+                receiver: userId,
+                deviceReceiver: recipientDeviceId,
+                type: 'file:sharedWith-update',
+                payload: JSON.stringify(message),
+                cipherType: 0, // Unencrypted system message
+                itemId: `sharedWith-${fileId}-${Date.now()}`
+              });
+            }, `sharedWith-update-${userId}-${recipientDeviceId}-${Date.now()}`);
+            
+            console.log(`[SIGNAL] ✓ Message stored for ${userId}:${recipientDeviceId}`);
+            
+            // Try to deliver immediately if online
+            const targetSocketId = deviceSockets.get(`${userId}:${recipientDeviceId}`);
+            if (targetSocketId) {
+              safeEmitToDevice(io, userId, recipientDeviceId, "receiveItem", {
+                sender: 'SYSTEM',
+                senderDeviceId: '0',
+                recipient: userId,
+                type: 'file:sharedWith-update',
+                payload: JSON.stringify(message),
+                cipherType: 0,
+                itemId: `sharedWith-${fileId}-${Date.now()}`
+              });
+              console.log(`[SIGNAL] ✓ Delivered immediately to online device ${userId}:${recipientDeviceId}`);
+            }
+            
+          } catch (err) {
+            console.error(`[SIGNAL] Failed to send to device ${client.deviceId}:`, err);
+          }
+        }
+        
+      } catch (err) {
+        console.error(`[SIGNAL] Failed to process user ${userId}:`, err);
+        // Continue with other users
+      }
+    }
+    
+    console.log(`[SIGNAL] Completed sending sharedWith updates for ${fileId.substring(0, 8)}`);
+  } catch (error) {
+    console.error('[SIGNAL] Error in sendSharedWithUpdateSignal:', error);
+  }
+}
+
 // Configure session middleware
 
 const sessionMiddleware = session({
@@ -1467,65 +1550,176 @@ io.sockets.on("connection", socket => {
         console.log(`[P2P FILE] Shared with: ${sharedWith.join(', ')}`);
       }
 
-      // Register file with userId:deviceId format + sharedWith
-      const fileInfo = fileRegistry.announceFile(userId, deviceId, {
-        fileId,
-        mimeType,
-        fileSize,
-        checksum,
-        chunkCount,
-        availableChunks,
-        sharedWith
-      });
+      // Check if this is a reannouncement
+      const existingFile = fileRegistry.getFileInfo(fileId);
+      
+      if (existingFile) {
+        // ========================================
+        // REANNOUNCEMENT - Use merge logic
+        // ========================================
+        console.log(`[P2P FILE] Reannouncing existing file: ${fileId.substring(0, 8)}`);
+        
+        const result = fileRegistry.reannounceFile(fileId, userId, deviceId, {
+          availableChunks,
+          sharedWith
+        });
+        
+        if (!result) {
+          console.error(`[P2P FILE] ❌ Reannouncement failed for ${fileId.substring(0, 8)}`);
+          return callback?.({ success: false, error: "Reannouncement failed" });
+        }
+        
+        // Calculate chunk quality
+        const chunkQuality = fileRegistry.getChunkQuality(fileId);
+        
+        // Broadcast updated sharedWith to all online seeders (WebSocket)
+        const seeders = fileRegistry.getSeeders(fileId);
+        seeders.forEach(seederKey => {
+          const [seederUserId, seederDeviceId] = seederKey.split(':');
+          if (seederKey !== `${userId}:${deviceId}`) { // Don't notify sender
+            safeEmitToDevice(io, seederUserId, seederDeviceId, "file:sharedWith-updated", {
+              fileId,
+              sharedWith: result.sharedWith
+            });
+          }
+        });
+        
+        // Send Signal messages to all holders (async, non-blocking)
+        setImmediate(() => {
+          sendSharedWithUpdateSignal(fileId, result.sharedWith).catch(err => {
+            console.error('[SIGNAL] Error sending sharedWith update:', err);
+          });
+        });
+        
+        console.log(`[P2P FILE] Notifying ${result.sharedWith.length} authorized users about file reannouncement`);
+        
+        // Notify authorized users about reannouncement
+        result.sharedWith.forEach(targetUserId => {
+          const targetSockets = Array.from(io.sockets.sockets.values())
+            .filter(s => 
+              s.handshake.session?.uuid === targetUserId &&
+              s.id !== socket.id
+            );
+          
+          targetSockets.forEach(targetSocket => {
+            const targetDeviceId = targetSocket.handshake.session?.deviceId;
+            if (targetDeviceId) {
+              safeEmitToDevice(io, targetUserId, targetDeviceId, "fileAnnounced", {
+                fileId,
+                userId,
+                deviceId,
+                mimeType: existingFile.mimeType,
+                fileSize: existingFile.fileSize,
+                seederCount: result.seedersCount,
+                chunkQuality,
+                sharedWith: result.sharedWith
+              });
+            }
+          });
+        });
+        
+        callback?.({ 
+          success: true, 
+          chunkQuality,
+          sharedWith: result.sharedWith
+        });
+        
+      } else {
+        // ========================================
+        // NEW FILE - First announcement
+        // ========================================
+        
+        // Register file with userId:deviceId format + sharedWith
+        const fileInfo = fileRegistry.announceFile(userId, deviceId, {
+          fileId,
+          mimeType,
+          fileSize,
+          checksum,
+          chunkCount,
+          availableChunks,
+          sharedWith
+        });
 
-      // ========================================
-      // SECURITY: Check if announce was denied
-      // ========================================
-      if (!fileInfo) {
-        console.error(`[SECURITY] ❌ Announce REJECTED for user ${userId} - file ${fileId.substring(0, 16)}`);
-        return callback?.({ 
-          success: false, 
-          error: "Permission denied: You don't have access to this file" 
+        // ========================================
+        // SECURITY: Check if announce was denied
+        // ========================================
+        if (!fileInfo) {
+          console.error(`[SECURITY] ❌ Announce REJECTED for user ${userId} - file ${fileId.substring(0, 16)}`);
+          return callback?.({ 
+            success: false, 
+            error: "Permission denied: You don't have access to this file" 
+          });
+        }
+
+        // Calculate chunk quality
+        const chunkQuality = fileRegistry.getChunkQuality(fileId);
+
+        callback?.({ success: true, fileInfo, chunkQuality });
+
+        // LÖSUNG 12: Notify only authorized users (no broadcast!)
+        const sharedUsers = fileRegistry.getSharedUsers(fileId);
+        console.log(`[P2P FILE] Notifying ${sharedUsers.length} authorized users about file announcement (quality: ${chunkQuality}%)`);
+        
+        // Find sockets of authorized users
+        const targetSockets = Array.from(io.sockets.sockets.values())
+          .filter(s => 
+            s.handshake.session?.uuid && 
+            sharedUsers.includes(s.handshake.session.uuid) &&
+            s.id !== socket.id // Don't notify the announcer
+          );
+        
+        // Send targeted notification to each authorized user
+        targetSockets.forEach(targetSocket => {
+          const targetUserId = targetSocket.handshake.session?.uuid;
+          const targetDeviceId = targetSocket.handshake.session?.deviceId;
+          if (targetUserId && targetDeviceId) {
+            safeEmitToDevice(io, targetUserId, targetDeviceId, "fileAnnounced", {
+              fileId,
+              userId,
+              deviceId,
+              mimeType,
+              fileSize,
+              seederCount: fileInfo.seederCount,
+              chunkQuality,
+              sharedWith: sharedUsers
+            });
+          }
         });
       }
 
-      // Calculate chunk quality
-      const chunkQuality = fileRegistry.getChunkQuality(fileId);
-
-      callback?.({ success: true, fileInfo, chunkQuality });
-
-      // LÖSUNG 12: Notify only authorized users (no broadcast!)
-      const sharedUsers = fileRegistry.getSharedUsers(fileId);
-      console.log(`[P2P FILE] Notifying ${sharedUsers.length} authorized users about file announcement (quality: ${chunkQuality}%)`);
-      
-      // Find sockets of authorized users
-      const targetSockets = Array.from(io.sockets.sockets.values())
-        .filter(s => 
-          s.handshake.session?.uuid && 
-          sharedUsers.includes(s.handshake.session.uuid) &&
-          s.id !== socket.id // Don't notify the announcer
-        );
-      
-      // Send targeted notification to each authorized user
-      targetSockets.forEach(targetSocket => {
-        const targetUserId = targetSocket.handshake.session?.uuid;
-        const targetDeviceId = targetSocket.handshake.session?.deviceId;
-        if (targetUserId && targetDeviceId) {
-          safeEmitToDevice(io, targetUserId, targetDeviceId, "fileAnnounced", {
-            fileId,
-            userId,
-            deviceId,
-            mimeType,
-            fileSize,
-            seederCount: fileInfo.seederCount,
-            chunkQuality,
-            sharedWith: sharedUsers
-          });
-        }
-      });
-
     } catch (error) {
       console.error('[P2P FILE] Error announcing file:', error);
+      callback?.({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Get current sharedWith list for a file (for sync before reannouncement)
+   */
+  socket.on("file:get-sharedWith", async (data, callback) => {
+    try {
+      if (!isAuthenticated()) {
+        return callback?.({ success: false, error: "Not authenticated" });
+      }
+
+      const { fileId } = data;
+      
+      if (!fileId) {
+        return callback?.({ success: false, error: 'Missing fileId' });
+      }
+      
+      const sharedWith = fileRegistry.getSharedWith(fileId);
+      
+      if (sharedWith !== null) {
+        callback?.({
+          success: true,
+          sharedWith: sharedWith
+        });
+      } else {
+        callback?.({ success: false, error: 'File not found' });
+      }
+    } catch (error) {
+      console.error('[SOCKET] Error getting sharedWith:', error);
       callback?.({ success: false, error: error.message });
     }
   });

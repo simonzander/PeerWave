@@ -124,6 +124,24 @@ class SocketFileClient {
     return completer.future;
   }
   
+  /// Get current sharedWith list from server (for sync before reannouncement)
+  Future<List<String>?> getSharedWith(String fileId) async {
+    final completer = Completer<List<String>?>();
+    
+    socket.emitWithAck('file:get-sharedWith', {
+      'fileId': fileId,
+    }, ack: (data) {
+      if (data['success'] == true && data['sharedWith'] != null) {
+        final sharedWith = (data['sharedWith'] as List).cast<String>();
+        completer.complete(sharedWith);
+      } else {
+        completer.complete(null);
+      }
+    });
+    
+    return completer.future;
+  }
+  
   /// Update file share - add or revoke users (NEW SECURE VERSION)
   /// 
   /// Permission Model:
@@ -413,6 +431,11 @@ class SocketFileClient {
     _addEventListener('fileAccessRevoked', callback);
   }
   
+  /// Listen for sharedWith updates (democratic P2P sharing)
+  void onSharedWithUpdated(Function(Map<String, dynamic>) callback) {
+    _addEventListener('file:sharedWith-updated', callback);
+  }
+  
   // ============================================
   // PRIVATE METHODS
   // ============================================
@@ -440,6 +463,12 @@ class SocketFileClient {
     socket.on('fileAccessRevoked', (data) {
       debugPrint('[FILE CLIENT] File access revoked: ${data['fileId']} by ${data['byUserId']}');
       _notifyListeners('fileAccessRevoked', data);
+    });
+    
+    // SharedWith updates (democratic P2P)
+    socket.on('file:sharedWith-updated', (data) {
+      debugPrint('[FILE CLIENT] SharedWith updated: ${data['fileId']} - ${data['sharedWith']?.length ?? 0} users');
+      _notifyListeners('file:sharedWith-updated', data);
     });
     
     // WebRTC signaling

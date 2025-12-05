@@ -13,7 +13,36 @@ class FileReannounceService {
   FileReannounceService({
     required this.storage,
     required this.socketClient,
-  });
+  }) {
+    _setupSharedWithListener();
+  }
+  
+  /// Setup listener for real-time sharedWith updates (WebSocket)
+  void _setupSharedWithListener() {
+    socketClient.onSharedWithUpdated((data) async {
+      try {
+        final fileId = data['fileId'] as String?;
+        final sharedWith = (data['sharedWith'] as List?)?.cast<String>();
+        
+        if (fileId == null || sharedWith == null) {
+          debugPrint('[REANNOUNCE] Invalid sharedWith update data');
+          return;
+        }
+        
+        debugPrint('[REANNOUNCE] Received sharedWith update for $fileId: ${sharedWith.length} users');
+        
+        // Update local storage
+        await storage.updateFileMetadata(fileId, {
+          'sharedWith': sharedWith,
+        });
+        
+        debugPrint('[REANNOUNCE] ✓ Updated local sharedWith for $fileId');
+        
+      } catch (e) {
+        debugPrint('[REANNOUNCE] Error handling sharedWith update: $e');
+      }
+    });
+  }
   
   /// Re-announce all files from local storage
   /// 
@@ -80,21 +109,60 @@ class FileReannounceService {
           
           debugPrint('[REANNOUNCE] $fileId has ${availableChunks.length}/$chunkCount chunks ($chunkQuality%)');
           
-          // Announce to network
-          await socketClient.announceFile(
+          // STEP 1: Query server for current sharedWith state
+          List<String>? mergedSharedWith;
+          try {
+            final serverSharedWith = await socketClient.getSharedWith(fileId);
+            if (serverSharedWith != null) {
+              debugPrint('[REANNOUNCE] Server sharedWith: ${serverSharedWith.length} users');
+              
+              // Merge with local sharedWith
+              final localSharedWith = (fileMetadata['sharedWith'] as List?)?.cast<String>() ?? [];
+              mergedSharedWith = {...localSharedWith, ...serverSharedWith}.toList();
+              
+              // Update local storage
+              await storage.updateFileMetadata(fileId, {
+                'sharedWith': mergedSharedWith,
+              });
+              
+              debugPrint('[REANNOUNCE] Merged sharedWith: ${mergedSharedWith.length} users');
+            } else {
+              // Server doesn't have file, use local
+              mergedSharedWith = (fileMetadata['sharedWith'] as List?)?.cast<String>();
+            }
+          } catch (e) {
+            debugPrint('[REANNOUNCE] Warning: Could not sync sharedWith from server: $e');
+            // Continue with local sharedWith
+            mergedSharedWith = (fileMetadata['sharedWith'] as List?)?.cast<String>();
+          }
+          
+          // STEP 2: Announce to network with merged sharedWith
+          final result = await socketClient.announceFile(
             fileId: fileId,
             mimeType: fileMetadata['mimeType'] as String? ?? 'application/octet-stream',
             fileSize: fileMetadata['fileSize'] as int? ?? 0,
             checksum: fileMetadata['checksum'] as String? ?? '',
             chunkCount: fileMetadata['chunkCount'] as int? ?? 0,
             availableChunks: availableChunks,
+            sharedWith: mergedSharedWith,
           );
           
-          // Update lastActivity timestamp and mark as seeder
-          await storage.updateFileMetadata(fileId, {
-            'lastActivity': DateTime.now().toIso8601String(),
-            'isSeeder': true,
-          });
+          // STEP 3: Update local storage with server's final merged list
+          if (result['sharedWith'] != null) {
+            await storage.updateFileMetadata(fileId, {
+              'sharedWith': result['sharedWith'],
+              'lastActivity': DateTime.now().toIso8601String(),
+              'isSeeder': true,
+            });
+            
+            debugPrint('[REANNOUNCE] Updated local sharedWith from server: ${result['sharedWith'].length} users');
+          } else {
+            // Fallback: just update lastActivity and seeder status
+            await storage.updateFileMetadata(fileId, {
+              'lastActivity': DateTime.now().toIso8601String(),
+              'isSeeder': true,
+            });
+          }
           
           debugPrint('[REANNOUNCE] ✓ Successfully re-announced: $fileName ($chunkQuality% complete)');
           reannounced++;
@@ -135,7 +203,7 @@ class FileReannounceService {
     }
   }
   
-  /// Re-announce a single file
+  /// Re-announce a single file (with sharedWith sync)
   Future<bool> reannounceFile(String fileId) async {
     try {
       final fileMetadata = await storage.getFileMetadata(fileId);
@@ -153,20 +221,58 @@ class FileReannounceService {
         return false;
       }
       
-      // Announce to network
-      await socketClient.announceFile(
+      // STEP 1: Query server for current sharedWith state
+      List<String>? mergedSharedWith;
+      try {
+        final serverSharedWith = await socketClient.getSharedWith(fileId);
+        if (serverSharedWith != null) {
+          debugPrint('[REANNOUNCE] Server sharedWith: ${serverSharedWith.length} users');
+          
+          // Merge with local sharedWith
+          final localSharedWith = (fileMetadata['sharedWith'] as List?)?.cast<String>() ?? [];
+          mergedSharedWith = {...localSharedWith, ...serverSharedWith}.toList();
+          
+          // Update local storage
+          await storage.updateFileMetadata(fileId, {
+            'sharedWith': mergedSharedWith,
+          });
+          
+          debugPrint('[REANNOUNCE] Merged sharedWith: ${mergedSharedWith.length} users');
+        } else {
+          // Server doesn't have file, use local
+          mergedSharedWith = (fileMetadata['sharedWith'] as List?)?.cast<String>();
+        }
+      } catch (e) {
+        debugPrint('[REANNOUNCE] Warning: Could not sync sharedWith from server: $e');
+        // Continue with local sharedWith
+        mergedSharedWith = (fileMetadata['sharedWith'] as List?)?.cast<String>();
+      }
+      
+      // STEP 2: Announce to network with merged sharedWith
+      final result = await socketClient.announceFile(
         fileId: fileId,
         mimeType: fileMetadata['mimeType'] as String? ?? 'application/octet-stream',
         fileSize: fileMetadata['fileSize'] as int? ?? 0,
         checksum: fileMetadata['checksum'] as String? ?? '',
         chunkCount: fileMetadata['chunkCount'] as int? ?? 0,
         availableChunks: availableChunks,
+        sharedWith: mergedSharedWith,
       );
       
-      // Update lastActivity
-      await storage.updateFileMetadata(fileId, {
-        'lastActivity': DateTime.now().toIso8601String(),
-      });
+      // STEP 3: Update local storage with server's final merged list
+      if (result['sharedWith'] != null) {
+        await storage.updateFileMetadata(fileId, {
+          'sharedWith': result['sharedWith'],
+          'lastActivity': DateTime.now().toIso8601String(),
+        });
+        
+        debugPrint('[REANNOUNCE] Updated local sharedWith from server: ${result['sharedWith'].length} users');
+      } else {
+        // Fallback: just update lastActivity
+        await storage.updateFileMetadata(fileId, {
+          'lastActivity': DateTime.now().toIso8601String(),
+        });
+      }
       
       debugPrint('[REANNOUNCE] ✓ Successfully re-announced: $fileId');
       return true;

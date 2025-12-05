@@ -235,6 +235,17 @@ class MessageListenerService {
           return; // Don't store as regular message
         }
 
+        if (itemType == 'file:sharedWith-update') {
+          // P2P file sharedWith update (democratic sharing)
+          await _processFileSharedWithUpdate(
+            itemId: itemId,
+            senderId: senderId,
+            senderDeviceId: senderDeviceId,
+            decryptedPayload: decrypted,
+          );
+          return; // Don't store as regular message
+        }
+
         // Handle new video E2EE key exchange message types (with timestamp-based race condition resolution)
         if (itemType == 'video_e2ee_key_request' ||
             itemType == 'video_e2ee_key_response') {
@@ -591,6 +602,50 @@ class MessageListenerService {
       debugPrint('[MESSAGE_LISTENER] File share update processed successfully');
     } catch (e) {
       debugPrint('[MESSAGE_LISTENER] Error processing file share update: $e');
+    }
+  }
+
+  /// Process file sharedWith update (P2P democratic sharing via Signal)
+  Future<void> _processFileSharedWithUpdate({
+    required String itemId,
+    required String senderId,
+    required int senderDeviceId,
+    required String decryptedPayload,
+  }) async {
+    try {
+      debugPrint('[MESSAGE_LISTENER] Processing file sharedWith update from Signal');
+
+      // Parse the decrypted JSON payload
+      final Map<String, dynamic> updateData = jsonDecode(decryptedPayload);
+      final fileId = updateData['fileId'] as String?;
+      final sharedWith = (updateData['sharedWith'] as List?)?.cast<String>();
+      final timestamp = updateData['timestamp'] as int?;
+
+      if (fileId == null || sharedWith == null) {
+        debugPrint('[MESSAGE_LISTENER] Missing fileId or sharedWith in update');
+        return;
+      }
+
+      debugPrint('[MESSAGE_LISTENER] SharedWith update for $fileId: ${sharedWith.length} users');
+
+      final fileTransferService = _getFileTransferService();
+      if (fileTransferService != null) {
+        try {
+          // Update local storage with new sharedWith list
+          await fileTransferService.updateFileMetadata(fileId, {
+            'sharedWith': sharedWith,
+            'lastSync': DateTime.now().millisecondsSinceEpoch,
+          });
+          
+          debugPrint('[MESSAGE_LISTENER] ✓ Updated local sharedWith for $fileId via Signal');
+        } catch (e) {
+          debugPrint('[MESSAGE_LISTENER] Warning: Could not update local sharedWith: $e');
+        }
+      }
+
+      debugPrint('[MESSAGE_LISTENER] File sharedWith update processed successfully');
+    } catch (e) {
+      debugPrint('[MESSAGE_LISTENER] Error processing file sharedWith update: $e');
     }
   }
 

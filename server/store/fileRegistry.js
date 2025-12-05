@@ -147,6 +147,80 @@ class FileRegistry {
   }
 
   /**
+   * Re-announce a file (add/update seeder)
+   * Merges sharedWith lists from all seeders (democratic P2P sharing)
+   * 
+   * @param {string} fileId - File ID
+   * @param {string} seederUserId - User ID
+   * @param {string} seederDeviceId - Device ID
+   * @param {object} metadata - File metadata with sharedWith
+   * @returns {object|null} Result with merged sharedWith or null
+   */
+  reannounceFile(fileId, seederUserId, seederDeviceId, metadata) {
+    const file = this.files.get(fileId);
+    
+    if (!file) {
+      console.log(`[FileRegistry] Cannot reannounce non-existent file: ${fileId}`);
+      return null;
+    }
+    
+    const deviceKey = `${seederUserId}:${seederDeviceId}`;
+    
+    // MERGE sharedWith lists (union)
+    const newSharedWith = metadata.sharedWith || [];
+    const currentSharedWith = file.sharedWith ? Array.from(file.sharedWith) : [];
+    
+    // Combine and deduplicate
+    const mergedSharedWith = [...new Set([...currentSharedWith, ...newSharedWith])];
+    
+    // Enforce 1000 user limit
+    if (mergedSharedWith.length > 1000) {
+      console.warn(`[FileRegistry] sharedWith list too large (${mergedSharedWith.length}), truncating to 1000`);
+      file.sharedWith = new Set(mergedSharedWith.slice(0, 1000));
+    } else {
+      file.sharedWith = new Set(mergedSharedWith);
+    }
+    
+    // Update or add seeder
+    file.seeders.add(deviceKey);
+    this.fileSeeders.get(fileId)?.add(deviceKey);
+    
+    // Update device's seed list
+    if (!this.userSeeds.has(deviceKey)) {
+      this.userSeeds.set(deviceKey, new Set());
+    }
+    this.userSeeds.get(deviceKey).add(fileId);
+    
+    // Update available chunks for this seeder
+    if (!file.seederChunks) {
+      file.seederChunks = new Map();
+    }
+    file.seederChunks.set(deviceKey, metadata.availableChunks || []);
+    
+    file.lastActivity = Date.now();
+    
+    console.log(`[FileRegistry] Reannounced ${fileId.substring(0, 8)} by ${seederUserId}:${seederDeviceId}`);
+    console.log(`[FileRegistry] Merged sharedWith: ${file.sharedWith.size} users`);
+    
+    return {
+      success: true,
+      sharedWith: Array.from(file.sharedWith),
+      seedersCount: file.seeders.size
+    };
+  }
+
+  /**
+   * Get current sharedWith list for a file
+   * 
+   * @param {string} fileId - File ID
+   * @returns {array|null} Array of user IDs or null if file not found
+   */
+  getSharedWith(fileId) {
+    const file = this.files.get(fileId);
+    return file && file.sharedWith ? Array.from(file.sharedWith) : null;
+  }
+
+  /**
    * Share a file with another user (LÖSUNG 13)
    * 
    * @param {string} fileId - File ID
