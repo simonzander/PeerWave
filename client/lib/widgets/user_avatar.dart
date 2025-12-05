@@ -3,7 +3,7 @@ import 'dart:convert';
 import '../services/user_profile_service.dart';
 
 /// Widget to display user avatar with picture or initials
-class UserAvatar extends StatelessWidget {
+class UserAvatar extends StatefulWidget {
   final String? userId;
   final String? displayName;
   final String? pictureData; // base64 or URL
@@ -22,24 +22,61 @@ class UserAvatar extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<UserAvatar> createState() => _UserAvatarState();
+}
+
+class _UserAvatarState extends State<UserAvatar> {
+  String? _loadedDisplayName;
+  String? _loadedPicture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  @override
+  void didUpdateWidget(UserAvatar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reload if userId changed
+    if (widget.userId != oldWidget.userId) {
+      _loadProfile();
+    }
+  }
+
+  void _loadProfile() {
+    final userIdValue = widget.userId;
+    if (userIdValue != null && userIdValue.isNotEmpty) {
+      final profile = UserProfileService.instance.getProfileOrLoad(
+        userIdValue,
+        onLoaded: (profile) {
+          if (mounted && profile != null) {
+            setState(() {
+              _loadedDisplayName = profile['displayName'] as String?;
+              _loadedPicture = profile['picture'] as String?;
+            });
+          }
+        },
+      );
+      
+      // Use cached data immediately if available
+      if (profile != null) {
+        _loadedDisplayName = profile['displayName'] as String?;
+        _loadedPicture = profile['picture'] as String?;
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     
-    // Try to get profile from service if userId is provided
-    String? effectiveDisplayName = displayName;
-    String? effectivePicture = pictureData;
-    
-    final userIdValue = userId;
-    if (userIdValue != null && userIdValue.isNotEmpty) {
-      final profile = UserProfileService.instance.getProfile(userIdValue);
-      if (profile != null) {
-        effectiveDisplayName ??= profile['displayName'];
-        effectivePicture ??= profile['picture'];
-      }
-    }
+    // Use loaded profile data, falling back to widget properties
+    String? effectiveDisplayName = widget.displayName ?? _loadedDisplayName;
+    String? effectivePicture = widget.pictureData ?? _loadedPicture;
     
     // Fallback to userId if no displayName
-    effectiveDisplayName ??= userId ?? 'U';
+    effectiveDisplayName ??= widget.userId ?? 'U';
     
     // Get first letter for initials
     final initials = _getInitials(effectiveDisplayName);
@@ -63,13 +100,13 @@ class UserAvatar extends StatelessWidget {
     }
     
     return SizedBox(
-      width: size,
-      height: size,
+      width: widget.size,
+      height: widget.size,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           CircleAvatar(
-            radius: size / 2,
+            radius: widget.size / 2,
             backgroundColor: imageProvider == null 
                 ? _getColorForUser(effectiveDisplayName)
                 : Colors.transparent,
@@ -79,22 +116,22 @@ class UserAvatar extends StatelessWidget {
                     initials,
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: size / 2.5,
+                      fontSize: widget.size / 2.5,
                       fontWeight: FontWeight.w600,
                     ),
                   )
                 : null,
           ),
           // Online status indicator
-          if (showOnlineStatus)
+          if (widget.showOnlineStatus)
             Positioned(
               right: 0,
               bottom: 0,
               child: Container(
-                width: size / 4,
-                height: size / 4,
+                width: widget.size / 4,
+                height: widget.size / 4,
                 decoration: BoxDecoration(
-                  color: isOnline ? Colors.green : Colors.grey,
+                  color: widget.isOnline ? Colors.green : Colors.grey,
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: colorScheme.surface,
@@ -198,7 +235,7 @@ class LargeUserAvatar extends StatelessWidget {
 }
 
 /// Square avatar with rounded corners - for context panels and lists
-class SquareUserAvatar extends StatelessWidget {
+class SquareUserAvatar extends StatefulWidget {
   final String? userId;
   final String? displayName;
   final String? pictureData;
@@ -217,24 +254,59 @@ class SquareUserAvatar extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<SquareUserAvatar> createState() => _SquareUserAvatarState();
+}
+
+class _SquareUserAvatarState extends State<SquareUserAvatar> {
+  String? _loadedDisplayName;
+  String? _loadedPicture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  @override
+  void didUpdateWidget(SquareUserAvatar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.userId != oldWidget.userId) {
+      _loadProfile();
+    }
+  }
+
+  void _loadProfile() {
+    final userIdValue = widget.userId;
+    if (userIdValue != null && userIdValue.isNotEmpty) {
+      final profile = UserProfileService.instance.getProfileOrLoad(
+        userIdValue,
+        onLoaded: (profile) {
+          if (mounted && profile != null) {
+            setState(() {
+              _loadedDisplayName = profile['displayName'] as String?;
+              _loadedPicture = profile['picture'] as String?;
+            });
+          }
+        },
+      );
+      
+      if (profile != null) {
+        _loadedDisplayName = profile['displayName'] as String?;
+        _loadedPicture = profile['picture'] as String?;
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     
-    // Try to get profile from service if userId is provided
-    String? effectiveDisplayName = displayName;
-    String? effectivePicture = pictureData;
-    
-    final userIdValue = userId;
-    if (userIdValue != null && userIdValue.isNotEmpty) {
-      final profile = UserProfileService.instance.getProfile(userIdValue);
-      if (profile != null) {
-        effectiveDisplayName ??= profile['displayName'];
-        effectivePicture ??= profile['picture'];
-      }
-    }
+    // Use loaded profile data, falling back to widget properties
+    String? effectiveDisplayName = widget.displayName ?? _loadedDisplayName;
+    String? effectivePicture = widget.pictureData ?? _loadedPicture;
     
     // Fallback to userId if no displayName
-    effectiveDisplayName ??= userId ?? 'U';
+    effectiveDisplayName ??= widget.userId ?? 'U';
     
     // Get first letter for initials
     final initials = _getInitials(effectiveDisplayName);
@@ -258,14 +330,14 @@ class SquareUserAvatar extends StatelessWidget {
     }
     
     return SizedBox(
-      width: size,
-      height: size,
+      width: widget.size,
+      height: widget.size,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Container(
-            width: size,
-            height: size,
+            width: widget.size,
+            height: widget.size,
             decoration: BoxDecoration(
               color: imageProvider == null 
                   ? _getColorForUser(effectiveDisplayName)
@@ -284,7 +356,7 @@ class SquareUserAvatar extends StatelessWidget {
                       initials,
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: size / 2.5,
+                        fontSize: widget.size / 2.5,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -292,15 +364,15 @@ class SquareUserAvatar extends StatelessWidget {
                 : null,
           ),
           // Online status indicator
-          if (showOnlineStatus)
+          if (widget.showOnlineStatus)
             Positioned(
               right: -2,
               bottom: -2,
               child: Container(
-                width: size / 4,
-                height: size / 4,
+                width: widget.size / 4,
+                height: widget.size / 4,
                 decoration: BoxDecoration(
-                  color: isOnline ? Colors.green : Colors.grey,
+                  color: widget.isOnline ? Colors.green : Colors.grey,
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: colorScheme.surface,

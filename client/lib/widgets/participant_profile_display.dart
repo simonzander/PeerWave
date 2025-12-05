@@ -5,7 +5,7 @@ import '../utils/image_color_extractor.dart';
 /// Widget that displays a participant's profile picture with a colored background
 /// when their camera is deactivated
 class ParticipantProfileDisplay extends StatefulWidget {
-  final String? profilePictureBase64;
+  final String profilePictureBase64;
   final String displayName;
   final double size;
 
@@ -33,13 +33,17 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
   @override
   void didUpdateWidget(ParticipantProfileDisplay oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Only re-extract if the actual content changed (not just reference)
+    // Compare actual string content to prevent unnecessary updates
     if (oldWidget.profilePictureBase64 != widget.profilePictureBase64) {
+      // Reset state before re-extracting
+      _isLoading = true;
       _extractBackgroundColor();
     }
   }
 
   Future<void> _extractBackgroundColor() async {
-    if (widget.profilePictureBase64 == null || widget.profilePictureBase64!.isEmpty) {
+    if (widget.profilePictureBase64.isEmpty) {
       setState(() {
         _backgroundColor = Colors.teal;
         _isLoading = false;
@@ -49,7 +53,7 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
 
     try {
       final color = await ImageColorExtractor.extractDominantColor(
-        widget.profilePictureBase64!,
+        widget.profilePictureBase64,
       );
       if (mounted) {
         setState(() {
@@ -99,13 +103,13 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
   }
 
   Widget _buildProfileContent() {
-    if (widget.profilePictureBase64 == null || widget.profilePictureBase64!.isEmpty) {
+    if (widget.profilePictureBase64.isEmpty) {
       return _buildFallbackAvatar();
     }
 
     try {
       // Remove data URL prefix if present
-      String cleanBase64 = widget.profilePictureBase64!;
+      String cleanBase64 = widget.profilePictureBase64;
       if (cleanBase64.contains(',')) {
         cleanBase64 = cleanBase64.split(',')[1];
       }

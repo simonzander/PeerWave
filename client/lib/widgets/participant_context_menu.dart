@@ -45,12 +45,34 @@ class ParticipantContextMenuContent extends StatefulWidget {
 class _ParticipantContextMenuContentState
     extends State<ParticipantContextMenuContent> {
   late ParticipantAudioState _audioState;
+  String? _displayName;
+  String? _profilePicture;
 
   @override
   void initState() {
     super.initState();
     final service = VideoConferenceService.instance;
     _audioState = service.getParticipantAudioState(widget.participant.sid);
+    
+    // Load profile with callback
+    final userId = widget.participant.identity;
+    final profile = UserProfileService.instance.getProfileOrLoad(
+      userId,
+      onLoaded: (profile) {
+        if (mounted && profile != null) {
+          setState(() {
+            _displayName = profile['displayName'] as String?;
+            _profilePicture = profile['picture'] as String?;
+          });
+        }
+      },
+    );
+    
+    // Use cached data if available
+    if (profile != null) {
+      _displayName = profile['displayName'] as String?;
+      _profilePicture = profile['picture'] as String?;
+    }
   }
 
   void _updateAudioState(ParticipantAudioState newState) {
@@ -64,9 +86,8 @@ class _ParticipantContextMenuContentState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final userId = widget.participant.identity;
-    final displayName =
-        UserProfileService.instance.getDisplayName(userId) ?? userId;
-    final profilePicture = UserProfileService.instance.getPicture(userId);
+    final displayName = _displayName ?? userId;
+    final profilePicture = _profilePicture;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -239,12 +260,34 @@ class ParticipantContextMenu extends StatefulWidget {
 
 class _ParticipantContextMenuState extends State<ParticipantContextMenu> {
   late ParticipantAudioState _audioState;
+  String? _displayName;
+  String? _profilePicture;
 
   @override
   void initState() {
     super.initState();
     final service = VideoConferenceService.instance;
     _audioState = service.getParticipantAudioState(widget.participant.sid);
+    
+    // Load profile with callback
+    final userId = widget.participant.identity;
+    final profile = UserProfileService.instance.getProfileOrLoad(
+      userId,
+      onLoaded: (profile) {
+        if (mounted && profile != null) {
+          setState(() {
+            _displayName = profile['displayName'] as String?;
+            _profilePicture = profile['picture'] as String?;
+          });
+        }
+      },
+    );
+    
+    // Use cached data if available
+    if (profile != null) {
+      _displayName = profile['displayName'] as String?;
+      _profilePicture = profile['picture'] as String?;
+    }
   }
 
   void _updateAudioState(ParticipantAudioState newState) {
@@ -258,9 +301,8 @@ class _ParticipantContextMenuState extends State<ParticipantContextMenu> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final userId = widget.participant.identity;
-    final displayName =
-        UserProfileService.instance.getDisplayName(userId) ?? userId;
-    final profilePicture = UserProfileService.instance.getPicture(userId);
+    final displayName = _displayName ?? userId;
+    final profilePicture = _profilePicture;
 
     return Material(
       elevation: 8,

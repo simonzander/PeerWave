@@ -10,11 +10,11 @@ import '../services/message_listener_service.dart';
 import '../services/user_profile_service.dart';
 import '../screens/channel/channel_members_screen.dart';
 import '../widgets/animated_widgets.dart';
-import '../widgets/participant_profile_display.dart';
-import '../widgets/speaking_border_wrapper.dart';
 import '../widgets/hidden_participants_badge.dart';
 import '../widgets/participant_visibility_manager.dart';
 import '../widgets/participant_context_menu.dart';
+import '../widgets/video_participant_tile.dart';
+import '../widgets/speaking_border_wrapper.dart';
 import '../models/role.dart';
 import '../models/participant_audio_state.dart';
 import '../extensions/snackbar_extensions.dart';
@@ -53,9 +53,14 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
   // Audio state tracking
   final Map<String, ParticipantAudioState> _participantStates = {};
+  final Map<String, ValueNotifier<bool>> _speakingNotifiers = {};
   Timer? _visibilityUpdateTimer;
   int _maxVisibleParticipants = 0;
   final Map<String, StreamSubscription> _audioSubscriptions = {};
+  
+  // Profile cache to prevent flickering
+  final Map<String, String> _displayNameCache = {};
+  final Map<String, String> _profilePictureCache = {};
 
   @override
   void initState() {
@@ -169,6 +174,12 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     }
     _audioSubscriptions.clear();
 
+    // Clean up speaking notifiers
+    for (final notifier in _speakingNotifiers.values) {
+      notifier.dispose();
+    }
+    _speakingNotifiers.clear();
+
     // Stop visibility timer
     _visibilityUpdateTimer?.cancel();
 
@@ -201,15 +212,18 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     final hasScreenShare = _service!.hasActiveScreenShare;
 
     // Calculate max visible participants
-    _maxVisibleParticipants = ParticipantVisibilityManager.calculateMaxVisible(
+    final newMaxVisible = ParticipantVisibilityManager.calculateMaxVisible(
       screenSize,
       hasScreenShare: hasScreenShare,
     );
 
-    // Update participant states
-    _updateParticipantStates();
-
-    setState(() {});
+    // Only update if something changed
+    if (newMaxVisible != _maxVisibleParticipants) {
+      _maxVisibleParticipants = newMaxVisible;
+      // Update participant states
+      _updateParticipantStates();
+      setState(() {});
+    }
   }
 
   /// Update participant states with current participants
@@ -228,7 +242,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         _participantStates[localId] = ParticipantAudioState(
           participantId: localId,
         );
+        _speakingNotifiers[localId] = ValueNotifier(false);
         _setupAudioListener(room.localParticipant!);
+        _loadParticipantProfile(localId);
       }
     }
 
@@ -241,12 +257,21 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         _participantStates[remoteId] = ParticipantAudioState(
           participantId: remoteId,
         );
+        _speakingNotifiers[remoteId] = ValueNotifier(false);
         _setupAudioListener(remote);
+        _loadParticipantProfile(remoteId);
       }
     }
 
     // Remove states for participants who left
     _participantStates.removeWhere((id, _) => !allParticipantIds.contains(id));
+    _speakingNotifiers.removeWhere((id, notifier) {
+      if (!allParticipantIds.contains(id)) {
+        notifier.dispose();
+        return true;
+      }
+      return false;
+    });
     _audioSubscriptions.removeWhere((id, sub) {
       if (!allParticipantIds.contains(id)) {
         sub.cancel();
@@ -254,6 +279,27 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       }
       return false;
     });
+  }
+
+  /// Load participant profile with callback
+  void _loadParticipantProfile(String participantId) {
+    final profile = UserProfileService.instance.getProfileOrLoad(
+      participantId,
+      onLoaded: (profile) {
+        if (mounted && profile != null) {
+          setState(() {
+            _displayNameCache[participantId] = profile['displayName'] as String? ?? participantId;
+            _profilePictureCache[participantId] = profile['picture'] as String? ?? '';
+          });
+        }
+      },
+    );
+    
+    // Use cached data immediately if available
+    if (profile != null) {
+      _displayNameCache[participantId] = profile['displayName'] as String? ?? participantId;
+      _profilePictureCache[participantId] = profile['picture'] as String? ?? '';
+    }
   }
 
   /// Setup audio level listener for a participant
@@ -273,9 +319,12 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       if (_participantStates.containsKey(participantId)) {
         final currentState = _participantStates[participantId]!;
         if (currentState.isSpeaking != isSpeaking) {
-          setState(() {
-            _participantStates[participantId]!.updateSpeaking(isSpeaking);
-          });
+          // Update state without rebuilding parent
+          _participantStates[participantId]!.updateSpeaking(isSpeaking);
+          // Notify listeners (speaking border wrapper)
+          if (_speakingNotifiers.containsKey(participantId)) {
+            _speakingNotifiers[participantId]!.value = isSpeaking;
+          }
 
           // Check if we need to replace a visible participant
           if (isSpeaking && !currentState.isVisible) {
@@ -630,7 +679,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
     final userId = participant.identity;
     final displayName = userId != null
-        ? (UserProfileService.instance.getDisplayName(userId) ?? userId)
+        ? (_displayNameCache[userId] ?? userId)
         : 'Unknown';
 
     final isLocal = participant is lk.LocalParticipant;
@@ -771,146 +820,42 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     required dynamic participant,
     required bool isLocal,
   }) {
-    // Get camera video track (not screen share)
-    lk.VideoTrack? videoTrack;
-    bool audioMuted = true;
-
-    if (participant is lk.LocalParticipant ||
-        participant is lk.RemoteParticipant) {
-      // Get camera track only (exclude screen share)
-      final cameraPubs = participant.videoTrackPublications.where(
-        (p) => p.source != lk.TrackSource.screenShareVideo,
-      );
-      if (cameraPubs.isNotEmpty) {
-        videoTrack = cameraPubs.first.track as lk.VideoTrack?;
-      }
-
-      final audioPubs = participant.audioTrackPublications;
-      audioMuted = audioPubs.isEmpty || audioPubs.first.muted;
-    }
-
     final userId = participant.identity; // LiveKit identity is the user ID
-    final bool videoOff = videoTrack == null || videoTrack.muted;
 
-    // Get display name and profile picture from UserProfileService
+    // Get display name and profile picture from cache
     final displayName = userId != null
-        ? (UserProfileService.instance.getDisplayName(userId) ?? userId)
+        ? (_displayNameCache[userId] ?? userId)
         : 'Unknown';
     final profilePicture = userId != null
-        ? UserProfileService.instance.getPicture(userId)
+        ? _profilePictureCache[userId]
         : null;
 
     // Get audio state for speaking indicator
-    final isSpeaking = userId != null && _participantStates.containsKey(userId)
-        ? _participantStates[userId]!.isSpeaking
-        : false;
+    final speakingNotifier = userId != null && _speakingNotifiers.containsKey(userId)
+        ? _speakingNotifiers[userId]!
+        : null;
     final isPinned = userId != null && _participantStates.containsKey(userId)
         ? _participantStates[userId]!.isPinned
         : false;
 
-    final tileContent = Card(
-      clipBehavior: Clip.antiAlias,
-      child: GestureDetector(
+    // Wrap tile with speaking indicator that doesn't rebuild tile content
+    return _SpeakingStateWrapper(
+      speakingNotifier: speakingNotifier,
+      child: VideoParticipantTile(
+        key: ValueKey('tile_$userId'),
+        participant: participant,
+        isLocal: isLocal,
+        displayName: displayName,
+        profilePicture: profilePicture,
+        isPinned: isPinned,
         onLongPress: userId != null
             ? () => _showParticipantMenu(context, userId, isPinned)
             : null,
         onSecondaryTap: userId != null
             ? () => _showParticipantMenu(context, userId, isPinned)
             : null,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Video or Profile Picture
-            if (!videoOff)
-              lk.VideoTrackRenderer(
-                videoTrack,
-                key: ValueKey(videoTrack.mediaStreamTrack.id),
-              )
-            else if (profilePicture != null && profilePicture.isNotEmpty)
-              ParticipantProfileDisplay(
-                profilePictureBase64: profilePicture,
-                displayName: displayName,
-              )
-            else
-              Container(
-                color: Theme.of(context).colorScheme.surfaceVariant,
-                child: Center(
-                  child: Icon(
-                    Icons.videocam_off,
-                    size: 48,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-
-            // Pin indicator
-            if (isPinned)
-              Positioned(
-                top: 8,
-                left: 8,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Icon(
-                    Icons.push_pin,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                  ),
-                ),
-              ),
-
-            // Label overlay
-            Positioned(
-              bottom: 8,
-              left: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.scrim.withOpacity(0.6),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      isLocal ? Icons.person : Icons.person_outline,
-                      size: 14,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      isLocal ? 'You' : displayName,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurface,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Muted indicator
-            if (audioMuted)
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Icon(
-                  Icons.mic_off,
-                  color: Theme.of(context).colorScheme.error,
-                  size: 24,
-                ),
-              ),
-          ],
-        ),
       ),
     );
-
-    // Wrap with speaking border
-    return SpeakingBorderWrapper(isSpeaking: isSpeaking, child: tileContent);
   }
 
   /// Show participant context menu (volume, mute, pin/unpin)
@@ -990,6 +935,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             onPressed: () => _service!.toggleMicrophone(),
             onLongPress: () => _showMicrophoneDeviceSelector(context),
             isActive: isMicEnabled,
+            heroTag: 'audio_button',
           ),
 
           // Toggle Video
@@ -999,6 +945,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             onPressed: () => _service!.toggleCamera(),
             onLongPress: () => _showCameraDeviceSelector(context),
             isActive: isCameraEnabled,
+            heroTag: 'video_button',
           ),
 
           // Toggle Screen Share
@@ -1009,6 +956,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             label: 'Share',
             onPressed: () => _toggleScreenShare(context),
             isActive: isScreenShareEnabled,
+            heroTag: 'share_button',
           ),
 
           // Leave Call
@@ -1018,6 +966,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             onPressed: _leaveChannel,
             isActive: false,
             color: Theme.of(context).colorScheme.error,
+            heroTag: 'leave_button',
           ),
         ],
       ),
@@ -1258,6 +1207,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     VoidCallback? onLongPress,
     required bool isActive,
     Color? color,
+    String? heroTag,
   }) {
     return Builder(
       builder: (context) {
@@ -1278,6 +1228,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
               onLongPress: isDisabled ? null : onLongPress,
               onSecondaryTap: isDisabled ? null : onLongPress,
               child: FloatingActionButton(
+                heroTag: heroTag ?? label, // Use unique tag to avoid conflicts
                 onPressed: null, // Disabled, using GestureDetector instead
                 backgroundColor: buttonColor,
                 child: Icon(
@@ -1301,6 +1252,38 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           ],
         );
       },
+    );
+  }
+}
+
+/// Wrapper that isolates speaking state changes to only affect the border
+class _SpeakingStateWrapper extends StatelessWidget {
+  final ValueNotifier<bool>? speakingNotifier;
+  final Widget child;
+
+  const _SpeakingStateWrapper({
+    required this.speakingNotifier,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (speakingNotifier == null) {
+      return SpeakingBorderWrapper(
+        isSpeaking: false,
+        child: child,
+      );
+    }
+
+    return ValueListenableBuilder<bool>(
+      valueListenable: speakingNotifier!,
+      builder: (context, isSpeaking, child) {
+        return SpeakingBorderWrapper(
+          isSpeaking: isSpeaking,
+          child: child!,
+        );
+      },
+      child: child,
     );
   }
 }

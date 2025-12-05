@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import '../services/video_conference_service.dart';
 import '../services/user_profile_service.dart';
+import '../main.dart';
 import 'call_duration_timer.dart';
 import 'dart:convert';
 
@@ -9,7 +11,7 @@ import 'dart:convert';
 /// Only visible when in a call and overlay is visible
 class CallTopBar extends StatefulWidget {
   const CallTopBar({Key? key}) : super(key: key);
-  
+
   @override
   State<CallTopBar> createState() => _CallTopBarState();
 }
@@ -21,7 +23,7 @@ class _CallTopBarState extends State<CallTopBar> {
     // Load participant profiles when topbar is created
     _loadParticipantProfiles();
   }
-  
+
   void _loadParticipantProfiles() async {
     final service = VideoConferenceService.instance;
     if (service.remoteParticipants.isNotEmpty) {
@@ -34,19 +36,19 @@ class _CallTopBarState extends State<CallTopBar> {
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
+
     return Consumer<VideoConferenceService>(
       builder: (context, service, _) {
         // Show TopBar only when in call AND not in full-view mode
         if (!service.isInCall || service.isInFullView) {
           return const SizedBox.shrink();
         }
-        
+
         return Container(
           color: colorScheme.surfaceContainerHighest,
           child: SafeArea(
@@ -66,7 +68,7 @@ class _CallTopBarState extends State<CallTopBar> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  
+
                   // Channel info - all in one row
                   Expanded(
                     child: Row(
@@ -85,11 +87,17 @@ class _CallTopBarState extends State<CallTopBar> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        
+
                         const SizedBox(width: 8),
-                        Text('•', style: TextStyle(color: colorScheme.errorContainer, fontSize: 12)),
+                        Text(
+                          '•',
+                          style: TextStyle(
+                            color: colorScheme.errorContainer,
+                            fontSize: 12,
+                          ),
+                        ),
                         const SizedBox(width: 8),
-                        
+
                         // Call duration
                         if (service.callStartTime != null)
                           Flexible(
@@ -102,11 +110,17 @@ class _CallTopBarState extends State<CallTopBar> {
                               ),
                             ),
                           ),
-                        
+
                         const SizedBox(width: 8),
-                        Text('•', style: TextStyle(color: colorScheme.errorContainer, fontSize: 12)),
+                        Text(
+                          '•',
+                          style: TextStyle(
+                            color: colorScheme.errorContainer,
+                            fontSize: 12,
+                          ),
+                        ),
                         const SizedBox(width: 8),
-                        
+
                         // Participant count
                         Text(
                           '${service.remoteParticipants.length + 1}',
@@ -115,9 +129,9 @@ class _CallTopBarState extends State<CallTopBar> {
                             fontSize: 12,
                           ),
                         ),
-                        
+
                         const SizedBox(width: 4),
-                        
+
                         // Participant avatars
                         if (service.remoteParticipants.isNotEmpty)
                           Flexible(
@@ -125,14 +139,24 @@ class _CallTopBarState extends State<CallTopBar> {
                             child: Builder(
                               builder: (context) {
                                 // Trigger profile load when participants change
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
                                   _loadParticipantProfiles();
                                 });
                                 return Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    for (var i = 0; i < service.remoteParticipants.length && i < 3; i++)
-                                      _buildParticipantAvatar(service.remoteParticipants[i].identity, colorScheme),
+                                    for (
+                                      var i = 0;
+                                      i < service.remoteParticipants.length &&
+                                          i < 3;
+                                      i++
+                                    )
+                                      _buildParticipantAvatar(
+                                        service.remoteParticipants[i].identity,
+                                        colorScheme,
+                                      ),
                                     if (service.remoteParticipants.length > 3)
                                       Container(
                                         width: 20,
@@ -140,7 +164,9 @@ class _CallTopBarState extends State<CallTopBar> {
                                         margin: const EdgeInsets.only(left: 2),
                                         decoration: BoxDecoration(
                                           color: colorScheme.outlineVariant,
-                                          borderRadius: BorderRadius.circular(4),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
                                         ),
                                         child: Center(
                                           child: Text(
@@ -161,10 +187,10 @@ class _CallTopBarState extends State<CallTopBar> {
                       ],
                     ),
                   ),
-                  
+
                   const SizedBox(width: 8),
-                  
-                  // Return to full view button (delegates navigation to service)
+
+                  // Return to full view button
                   IconButton(
                     iconSize: 24,
                     padding: EdgeInsets.zero,
@@ -175,16 +201,35 @@ class _CallTopBarState extends State<CallTopBar> {
                       size: 20,
                     ),
                     onPressed: () {
-                      try {
-                        service.navigateToCurrentChannelFullView();
-                      } catch (e) {
-                        debugPrint('[CallTopBar] Navigation error: $e');
+                      final channelId = service.currentChannelId;
+                      final channelName = service.channelName;
+                      if (channelId != null) {
+                        service.enterFullView();
+                        // Use global navigator key to access GoRouter
+                        final navigatorContext =
+                            MyApp.rootNavigatorKey.currentContext;
+                        if (navigatorContext != null) {
+                          GoRouter.of(
+                            navigatorContext,
+                          ).go(
+                            '/app/channels/$channelId',
+                            extra: {
+                              'host': 'localhost:3000',
+                              'name': channelName ?? 'Channel',
+                              'type': 'webrtc',
+                            },
+                          );
+                        } else {
+                          debugPrint(
+                            '[CallTopBar] Navigator key has no context',
+                          );
+                        }
                       }
                     },
                   ),
-                  
+
                   const SizedBox(width: 12),
-                  
+
                   // Show overlay button (visible when overlay is hidden)
                   if (!service.isOverlayVisible)
                     IconButton(
@@ -198,10 +243,9 @@ class _CallTopBarState extends State<CallTopBar> {
                       ),
                       onPressed: () => service.showOverlay(),
                     ),
-                  
-                  if (!service.isOverlayVisible)
-                    const SizedBox(width: 12),
-                  
+
+                  if (!service.isOverlayVisible) const SizedBox(width: 12),
+
                   // Toggle camera button
                   IconButton(
                     iconSize: 24,
@@ -216,9 +260,9 @@ class _CallTopBarState extends State<CallTopBar> {
                     ),
                     onPressed: () => service.toggleCamera(),
                   ),
-                  
+
                   const SizedBox(width: 12),
-                  
+
                   // Toggle microphone button
                   IconButton(
                     iconSize: 24,
@@ -233,9 +277,9 @@ class _CallTopBarState extends State<CallTopBar> {
                     ),
                     onPressed: () => service.toggleMicrophone(),
                   ),
-                  
+
                   const SizedBox(width: 12),
-                  
+
                   // Leave call button
                   IconButton(
                     iconSize: 24,
@@ -258,11 +302,11 @@ class _CallTopBarState extends State<CallTopBar> {
       },
     );
   }
-  
+
   Widget _buildParticipantAvatar(String uuid, ColorScheme colorScheme) {
     final profileService = UserProfileService.instance;
     final picture = profileService.getPicture(uuid);
-    
+
     return Container(
       width: 20,
       height: 20,

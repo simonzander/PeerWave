@@ -70,6 +70,7 @@ class _SpeakingBorderWrapperState extends State<SpeakingBorderWrapper>
 
     return AnimatedBuilder(
       animation: _glowAnimation,
+      child: widget.child, // Pass child here so it doesn't rebuild
       builder: (context, child) {
         final glowOpacity = _glowAnimation.value * 0.8;
 
@@ -86,7 +87,7 @@ class _SpeakingBorderWrapperState extends State<SpeakingBorderWrapper>
                   ]
                 : [],
           ),
-          child: widget.child,
+          child: child, // Use the child parameter from builder
         );
       },
     );

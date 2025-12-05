@@ -37,6 +37,9 @@ class UserProfileService {
   // Track UUIDs currently being loaded (prevent duplicate requests)
   final Set<String> _loadingUuids = {};
   
+  // Callbacks waiting for profiles to load: uuid -> List of callbacks
+  final Map<String, List<void Function(Map<String, dynamic>?)>> _pendingCallbacks = {};
+  
   bool _isInitialLoading = false;
 
   /// Initialize profiles: Load own profile + recent conversation partners
@@ -257,6 +260,18 @@ class UserProfileService {
     };
     
     _cache[uuid] = _CachedProfile(profileData, DateTime.now());
+    
+    // Notify any pending callbacks
+    final callbacks = _pendingCallbacks.remove(uuid);
+    if (callbacks != null) {
+      for (final callback in callbacks) {
+        try {
+          callback(profileData);
+        } catch (e) {
+          debugPrint('[UserProfileService] Error in callback for $uuid: $e');
+        }
+      }
+    }
   }
 
   /// Get displayName for a UUID
@@ -271,6 +286,65 @@ class UserProfileService {
   /// Get displayName or fallback to UUID (use only when sure profile is loaded)
   String getDisplayNameOrUuid(String uuid) {
     return getDisplayName(uuid) ?? uuid;
+  }
+  
+  /// Get profile with automatic loading and callback when ready
+  /// 
+  /// Returns cached profile immediately if available.
+  /// If not cached, triggers async load and calls onLoaded when ready.
+  /// 
+  /// Usage:
+  /// ```dart
+  /// String displayName = 'Loading...';
+  /// 
+  /// final profile = UserProfileService.instance.getProfileOrLoad(
+  ///   userId,
+  ///   onLoaded: (profile) {
+  ///     setState(() {
+  ///       displayName = profile?['displayName'] ?? userId;
+  ///     });
+  ///   },
+  /// );
+  /// 
+  /// if (profile != null) {
+  ///   displayName = profile['displayName'] ?? userId;
+  /// }
+  /// ```
+  Map<String, dynamic>? getProfileOrLoad(
+    String uuid, {
+    void Function(Map<String, dynamic>?)? onLoaded,
+  }) {
+    // Check cache first
+    final cached = _cache[uuid];
+    if (cached != null && !cached.isStale) {
+      // Already cached - return immediately
+      return cached.data;
+    }
+    
+    // Not cached - register callback and trigger load
+    if (onLoaded != null) {
+      _pendingCallbacks.putIfAbsent(uuid, () => []).add(onLoaded);
+    }
+    
+    // Trigger load if not already loading
+    if (!_loadingUuids.contains(uuid)) {
+      loadProfile(uuid).catchError((e) {
+        debugPrint('[UserProfileService] Failed to load profile $uuid: $e');
+        // Call callbacks with null on error
+        final callbacks = _pendingCallbacks.remove(uuid);
+        if (callbacks != null) {
+          for (final callback in callbacks) {
+            try {
+              callback(null);
+            } catch (e) {
+              debugPrint('[UserProfileService] Error in error callback: $e');
+            }
+          }
+        }
+      });
+    }
+    
+    return null; // Will call onLoaded when ready
   }
 
   /// Get atName for a UUID

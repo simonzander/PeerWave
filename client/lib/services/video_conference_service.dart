@@ -4,7 +4,6 @@ import 'dart:io' show Platform;
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:go_router/go_router.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/video_quality_preset.dart';
@@ -94,9 +93,6 @@ class VideoConferenceService extends ChangeNotifier {
   double _overlayPositionX = 100;
   double _overlayPositionY = 100;
 
-  // NEW: Navigation (router) reference
-  GoRouter? _router;
-
   // Stream controllers
   final _participantJoinedController =
       StreamController<RemoteParticipant>.broadcast();
@@ -126,17 +122,11 @@ class VideoConferenceService extends ChangeNotifier {
   bool get isInFullView => _isInFullView;
   double get overlayPositionX => _overlayPositionX;
   double get overlayPositionY => _overlayPositionY;
-  GoRouter? get router => _router;
 
   // NEW: Screen share state getters
   String? get currentScreenShareParticipantId =>
       _currentScreenShareParticipantId;
   bool get hasActiveScreenShare => _currentScreenShareParticipantId != null;
-
-  // NEW: Allow app root to inject the GoRouter instance once
-  void attachRouter(GoRouter router) {
-    _router = router;
-  }
 
   // Streams
   Stream<RemoteParticipant> get onParticipantJoined =>
@@ -905,7 +895,7 @@ class VideoConferenceService extends ChangeNotifier {
         // Get current quality settings
         final cameraPreset = _videoQualitySettings.cameraPreset;
         debugPrint('[VideoConf] Using camera quality: ${cameraPreset.name}');
-        
+
         // Use pre-selected camera device if available
         if (cameraDevice != null) {
           debugPrint(
@@ -919,9 +909,7 @@ class VideoConferenceService extends ChangeNotifier {
           );
         } else {
           videoTrack = await LocalVideoTrack.createCameraTrack(
-            CameraCaptureOptions(
-              params: cameraPreset.parameters,
-            ),
+            CameraCaptureOptions(params: cameraPreset.parameters),
           );
         }
         debugPrint('[VideoConf] ✓ Camera track created');
@@ -932,7 +920,7 @@ class VideoConferenceService extends ChangeNotifier {
       try {
         // Use audio settings for microphone
         debugPrint('[VideoConf] Applying audio settings...');
-        
+
         // Use pre-selected microphone device if available
         if (microphoneDevice != null) {
           debugPrint(
@@ -955,7 +943,9 @@ class VideoConferenceService extends ChangeNotifier {
             ),
           );
         }
-        debugPrint('[VideoConf] ✓ Microphone track created with audio processing');
+        debugPrint(
+          '[VideoConf] ✓ Microphone track created with audio processing',
+        );
       } catch (e) {
         debugPrint('[VideoConf] ⚠️ Failed to create audio track: $e');
       }
@@ -1018,12 +1008,15 @@ class VideoConferenceService extends ChangeNotifier {
       // Publish local tracks if available
       if (videoTrack != null) {
         debugPrint('[VideoConf] Publishing video track...');
-        
+
         // Use simulcast if enabled in settings
         if (_videoQualitySettings.simulcastEnabled) {
-          final simulcastLayers = _videoQualitySettings.cameraPreset.generateSimulcastLayers();
-          debugPrint('[VideoConf] 📡 Publishing with simulcast (${simulcastLayers.length} layers)');
-          
+          final simulcastLayers = _videoQualitySettings.cameraPreset
+              .generateSimulcastLayers();
+          debugPrint(
+            '[VideoConf] 📡 Publishing with simulcast (${simulcastLayers.length} layers)',
+          );
+
           await _room!.localParticipant?.publishVideoTrack(
             videoTrack,
             publishOptions: VideoPublishOptions(
@@ -1383,37 +1376,6 @@ class VideoConferenceService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// NEW: Navigate to the current channel's full-view page via GoRouter
-  void navigateToCurrentChannelFullView() {
-    if (_router == null) {
-      debugPrint(
-        '[VideoConferenceService] navigateToCurrentChannelFullView: router is null',
-      );
-      return;
-    }
-    final channelId = _currentChannelId;
-    if (channelId == null) {
-      debugPrint(
-        '[VideoConferenceService] navigateToCurrentChannelFullView: currentChannelId is null',
-      );
-      return;
-    }
-
-    debugPrint(
-      '[VideoConferenceService] Entering full-view mode BEFORE navigation',
-    );
-    // Enter full-view mode IMMEDIATELY to hide TopBar/overlay before navigation
-    enterFullView();
-
-    debugPrint(
-      '[VideoConferenceService] Navigating to full-view for channel: $channelId',
-    );
-    _router!.go(
-      '/app/channels/$channelId',
-      extra: {'host': '', 'name': _channelName ?? 'Channel', 'type': 'webrtc'},
-    );
-  }
-
   /// NEW: Update overlay position
   void updateOverlayPosition(double x, double y) {
     _overlayPositionX = x;
@@ -1624,12 +1586,16 @@ class VideoConferenceService extends ChangeNotifier {
 
           // Get screenshare quality settings
           final screensharePreset = _videoQualitySettings.screensharePreset;
-          debugPrint('[VideoConf] Using screenshare quality: ${screensharePreset.name}');
+          debugPrint(
+            '[VideoConf] Using screenshare quality: ${screensharePreset.name}',
+          );
 
           final track = await LocalVideoTrack.createScreenShareTrack(
             ScreenShareCaptureOptions(
               sourceId: _selectedDesktopSourceId,
-              maxFrameRate: (screensharePreset.parameters.encoding?.maxFramerate ?? 15).toDouble(),
+              maxFrameRate:
+                  (screensharePreset.parameters.encoding?.maxFramerate ?? 15)
+                      .toDouble(),
               params: screensharePreset.parameters,
             ),
           );
@@ -1637,8 +1603,10 @@ class VideoConferenceService extends ChangeNotifier {
           // Publish with simulcast if enabled
           if (_videoQualitySettings.simulcastEnabled) {
             final simulcastLayers = screensharePreset.generateSimulcastLayers();
-            debugPrint('[VideoConf] 📡 Publishing screenshare with simulcast (${simulcastLayers.length} layers)');
-            
+            debugPrint(
+              '[VideoConf] 📡 Publishing screenshare with simulcast (${simulcastLayers.length} layers)',
+            );
+
             await _room!.localParticipant?.publishVideoTrack(
               track,
               publishOptions: VideoPublishOptions(
@@ -1649,7 +1617,7 @@ class VideoConferenceService extends ChangeNotifier {
           } else {
             await _room!.localParticipant?.publishVideoTrack(track);
           }
-          
+
           debugPrint(
             '[VideoConf] ✅ Desktop screen share track published: ${_selectedDesktopSourceId}',
           );
@@ -1868,10 +1836,7 @@ class VideoConferenceService extends ChangeNotifier {
     // Save to storage
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        'audio_settings',
-        jsonEncode(settings.toJson()),
-      );
+      await prefs.setString('audio_settings', jsonEncode(settings.toJson()));
       debugPrint('[VideoConf] ✓ Saved audio settings');
     } catch (e) {
       debugPrint('[VideoConf] Failed to save audio settings: $e');
@@ -1895,11 +1860,10 @@ class VideoConferenceService extends ChangeNotifier {
       final allStates = _participantAudioStates.values
           .map((s) => s.toJson())
           .toList();
-      await prefs.setString(
-        'participant_audio_states',
-        jsonEncode(allStates),
+      await prefs.setString('participant_audio_states', jsonEncode(allStates));
+      debugPrint(
+        '[VideoConf] ✓ Saved participant audio state for ${state.participantId}',
       );
-      debugPrint('[VideoConf] ✓ Saved participant audio state for ${state.participantId}');
     } catch (e) {
       debugPrint('[VideoConf] Failed to save participant audio state: $e');
     }
@@ -1918,7 +1882,9 @@ class VideoConferenceService extends ChangeNotifier {
           );
           _participantAudioStates[state.participantId] = state;
         }
-        debugPrint('[VideoConf] ✓ Loaded ${_participantAudioStates.length} participant audio states');
+        debugPrint(
+          '[VideoConf] ✓ Loaded ${_participantAudioStates.length} participant audio states',
+        );
         notifyListeners();
       }
     } catch (e) {
