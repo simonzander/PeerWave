@@ -65,7 +65,7 @@ class NotificationListenerService {
       }
 
       // Only show notifications for actual content (not system messages)
-      if (type != 'message' && type != 'file') {
+      if (type != 'message' && type != 'file' && type != 'voice' && type != 'image') {
         debugPrint(
           '[NotificationListener] Skipping non-content message type: $type',
         );
@@ -77,19 +77,38 @@ class NotificationListenerService {
       final senderName =
           UserProfileService.instance.getDisplayName(senderId) ?? senderId;
 
+      // Get appropriate message preview based on type
+      String messagePreview;
+      switch (type) {
+        case 'voice':
+          messagePreview = 'Voice message';
+          break;
+        case 'image':
+          messagePreview = 'Image';
+          break;
+        case 'file':
+          messagePreview = 'File';
+          break;
+        case 'message':
+        default:
+          messagePreview = message ?? 'New message';
+      }
+
       if (channel != null) {
         // Group message
         _showGroupMessageNotification(
           channelId: channel,
           senderName: senderName,
-          message: message ?? 'New message',
+          message: messagePreview,
+          messageType: type,
         );
       } else {
         // Direct message
         _showDirectMessageNotification(
           senderId: senderId,
           senderName: senderName,
-          message: message ?? 'New message',
+          message: messagePreview,
+          messageType: type,
         );
       }
     } catch (e) {
@@ -158,12 +177,14 @@ class NotificationListenerService {
     required String senderId,
     required String senderName,
     required String message,
+    String? messageType,
   }) {
-    debugPrint('[NotificationListener] 💬 Showing 1:1 notification');
+    debugPrint('[NotificationListener] 💬 Showing 1:1 notification (type: $messageType)');
     NotificationService.instance.notifyNewDirectMessage(
       senderName: senderName,
       messagePreview: message,
       senderId: senderId,
+      messageType: messageType,
     );
   }
 
@@ -172,8 +193,9 @@ class NotificationListenerService {
     required String channelId,
     required String senderName,
     required String message,
+    String? messageType,
   }) {
-    debugPrint('[NotificationListener] 💬 Showing group notification');
+    debugPrint('[NotificationListener] 💬 Showing group notification (type: $messageType)');
 
     // TODO: Fetch actual channel name from service
     final channelName = channelId; // Fallback to ID for now
@@ -183,6 +205,7 @@ class NotificationListenerService {
       senderName: senderName,
       messagePreview: message,
       channelId: channelId,
+      messageType: messageType,
     );
   }
 

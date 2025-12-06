@@ -266,6 +266,7 @@ class NotificationService {
     required String senderName,
     required String messagePreview,
     String? senderId,
+    String? messageType,
   }) async {
     debugPrint('[NotificationService] 📬 notifyNewDirectMessage called');
     debugPrint(
@@ -281,11 +282,28 @@ class NotificationService {
       await _playSound('sounds/message_received.mp3');
     }
 
+    // Choose icon based on message type
+    String icon;
+    switch (messageType) {
+      case 'voice':
+        icon = '🎤';
+        break;
+      case 'image':
+        icon = '📸';
+        break;
+      case 'file':
+        icon = '📎';
+        break;
+      case 'message':
+      default:
+        icon = '💬';
+    }
+
     final body = _directMessagePreviewEnabled ? messagePreview : 'New message';
     await _showNotification(
       title: senderName,
       body: body,
-      icon: '💬',
+      icon: icon,
       identifier: 'dm_$senderId',
     );
   }
@@ -297,6 +315,7 @@ class NotificationService {
     required String messagePreview,
     String? channelId,
     bool isMention = false,
+    String? messageType,
   }) async {
     if (!_enabled || _dndEnabled || !_groupMessageNotificationsEnabled) {
       return;
@@ -311,13 +330,30 @@ class NotificationService {
       await _playSound('sounds/message_received.mp3');
     }
 
+    // Choose icon based on message type
+    String icon;
+    switch (messageType) {
+      case 'voice':
+        icon = '🎤';
+        break;
+      case 'image':
+        icon = '📸';
+        break;
+      case 'file':
+        icon = '📎';
+        break;
+      case 'message':
+      default:
+        icon = '💬';
+    }
+
     final body = _groupMessagePreviewEnabled
         ? '$senderName: $messagePreview'
         : '$senderName sent a message';
     await _showNotification(
       title: channelName,
       body: body,
-      icon: '💬',
+      icon: icon,
       identifier: 'group_$channelId',
     );
   }
