@@ -351,6 +351,15 @@ class DatabaseHelper {
     }
   }
 
+  /// Reset database state (for hot reload)
+  /// This prevents "database_closed" errors after hot reload
+  static void reset() {
+    debugPrint('[DATABASE] Resetting database state for hot reload');
+    _database = null;
+    _initializing = false;
+    // Don't reset _factoryInitialized - factory init should persist
+  }
+
   /// Check if database is properly initialized with all tables
   static Future<bool> isDatabaseReady() async {
     try {

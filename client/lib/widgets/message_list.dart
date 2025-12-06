@@ -476,6 +476,54 @@ class _MessageListState extends State<MessageList> {
     }
   }
 
+  /// Build amber warning for identity key changes
+  Widget _buildIdentityChangeWarning(Map<String, dynamic> msg) {
+    final sender = msg['senderDisplayName'] ?? msg['sender'] ?? 'Unknown';
+    final theme = Theme.of(context);
+    
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade900.withOpacity(0.3),
+        border: Border.all(color: Colors.amber.shade700, width: 1.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.security,
+            color: Colors.amber.shade300,
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Security code changed',
+                  style: TextStyle(
+                    color: Colors.amber.shade200,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$sender\'s security code changed. This happens when they reinstall the app or switch devices. Messages are still secure.',
+                  style: TextStyle(
+                    color: Colors.amber.shade100,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Build message content based on type (text, image, voice, or file)
   Widget _buildMessageContent(Map<String, dynamic> msg, String text) {
     final type = msg['type'] as String?;
@@ -604,6 +652,11 @@ class _MessageListState extends State<MessageList> {
           style: TextStyle(color: Colors.red[300], fontStyle: FontStyle.italic),
         );
       }
+    }
+    
+    // System message: Identity Key Changed
+    if (type == 'system:identityKeyChanged') {
+      return _buildIdentityChangeWarning(msg);
     }
     
     // Check if text contains @mentions and no markdown formatting

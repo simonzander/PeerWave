@@ -108,14 +108,30 @@ class PermanentPreKeyStore extends PreKeyStore {
   Future<List<PreKeyRecord>> getAllPreKeys() async {
     final ids = await _getAllPreKeyIds();
     List<PreKeyRecord> preKeys = [];
+    bool hasDecryptionFailure = false;
+    
     for (final id in ids) {
       try {
         final preKey = await loadPreKey(id);
         preKeys.add(preKey);
-      } catch (_) {
-        // Ignore missing or corrupted prekeys
+      } catch (e) {
+        // Check if this is a decryption failure
+        if (e.toString().contains('InvalidCipherTextException') || 
+            e.toString().contains('Decryption failed')) {
+          debugPrint('[PREKEY STORE] ⚠️ Decryption failed for prekey_$id: $e');
+          hasDecryptionFailure = true;
+        } else {
+          // Ignore other errors (missing prekeys, etc.)
+          debugPrint('[PREKEY STORE] Ignoring error for prekey_$id: $e');
+        }
       }
     }
+    
+    // If any decryption failed, throw exception to trigger key regeneration
+    if (hasDecryptionFailure && preKeys.isEmpty) {
+      throw Exception('Decryption failed: All PreKeys are corrupted or encrypted with wrong key');
+    }
+    
     return preKeys;
   }
 

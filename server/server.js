@@ -971,6 +971,7 @@ io.sockets.on("connection", socket => {
 
         const status = {
           identity: identityPresent,
+          identityPublicKey: client ? client.public_key : null, // ← NEW: Send public key for validation
           preKeys: preKeysCount,
           signedPreKey: signedPreKeyStatus
         };
@@ -999,6 +1000,41 @@ io.sockets.on("connection", socket => {
     } catch (error) {
       console.error('Error fetching pre-keys:', error);
       socket.emit("getPreKeysResponse", { error: 'Failed to fetch pre-keys' });
+    }
+  });
+
+  // 🔄 SESSION RECOVERY: Handle session corruption/missing session notifications
+  socket.on("sessionRecoveryNeeded", async (data) => {
+    console.log("[SIGNAL SERVER] 🔄 Session recovery notification received", data);
+    try {
+      if(isAuthenticated()) {
+        const { senderUserId, senderDeviceId, recipientUserId, recipientDeviceId, reason } = data;
+        
+        // Validate that the request is from the recipient
+        const currentUserId = getUserId();
+        const currentDeviceId = getDeviceId();
+        if (currentUserId !== recipientUserId || currentDeviceId !== recipientDeviceId) {
+          console.error('[SIGNAL SERVER] ❌ Session recovery request from unauthorized device');
+          return;
+        }
+        
+        console.log(`[SIGNAL SERVER] 📤 Forwarding session recovery request to sender ${senderUserId}:${senderDeviceId}`);
+        console.log(`[SIGNAL SERVER] Reason: ${reason} (recipient: ${recipientUserId}:${recipientDeviceId})`);
+        
+        // Forward notification to the sender who needs to resend
+        safeEmitToDevice(io, senderUserId, senderDeviceId, "sessionRecoveryRequested", {
+          recipientUserId: recipientUserId,
+          recipientDeviceId: recipientDeviceId,
+          reason: reason,
+          requestedAt: new Date().toISOString()
+        });
+        
+        console.log(`[SIGNAL SERVER] ✓ Session recovery notification sent to ${senderUserId}:${senderDeviceId}`);
+      } else {
+        console.error('[SIGNAL SERVER] ❌ sessionRecoveryNeeded blocked - not authenticated');
+      }
+    } catch (error) {
+      console.error('[SIGNAL SERVER] Error handling session recovery:', error);
     }
   });
 

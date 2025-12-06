@@ -42,6 +42,7 @@ class NotificationProvider with ChangeNotifier {
       case MessageType.deliveryReceipt:
       case MessageType.groupDeliveryReceipt:
       case MessageType.groupReadReceipt:
+      case MessageType.system:
         // Don't create notifications for receipts
         break;
     }

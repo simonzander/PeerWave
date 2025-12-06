@@ -250,9 +250,17 @@ class LogoutService {
             debugPrint('[LOGOUT] ✓ Encryption key cleared from secure storage');
           }
           
-          // Clear device identity
-          await DeviceIdentityService.instance.clearDeviceIdentity();
-          debugPrint('[LOGOUT] ✓ Device identity cleared');
+          // Clear device identity for current server only (preserve other servers)
+          final activeServer = ServerConfigService.getActiveServer();
+          if (activeServer != null) {
+            await DeviceIdentityService.instance.clearDeviceIdentity(
+              serverUrl: activeServer.serverUrl
+            );
+            debugPrint('[LOGOUT] ✓ Device identity cleared for server: ${activeServer.serverUrl}');
+          } else {
+            await DeviceIdentityService.instance.clearDeviceIdentity();
+            debugPrint('[LOGOUT] ✓ Device identity cleared (no active server)');
+          }
         } catch (e) {
           debugPrint('[LOGOUT] ⚠ Error clearing native encryption data: $e');
         }

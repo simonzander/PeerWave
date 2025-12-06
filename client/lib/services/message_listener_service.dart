@@ -4,6 +4,7 @@ import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'signal_service.dart';
 import 'video_conference_service.dart';
 import 'user_profile_service.dart';
+import 'storage/sqlite_message_store.dart';
 
 /// Global service that listens for all incoming messages (1:1 and group)
 /// and stores them in local storage, regardless of which screen is open.
@@ -241,6 +242,18 @@ class MessageListenerService {
             itemId: itemId,
             senderId: senderId,
             senderDeviceId: senderDeviceId,
+            decryptedPayload: decrypted,
+          );
+          return; // Don't store as regular message
+        }
+
+        if (itemType == 'system:identityKeyChanged') {
+          // Identity key change notification (auto-trust system message)
+          await _processIdentityKeyChangeNotification(
+            itemId: itemId,
+            senderId: senderId,
+            senderDeviceId: senderDeviceId,
+            timestamp: timestamp,
             decryptedPayload: decrypted,
           );
           return; // Don't store as regular message
@@ -649,6 +662,48 @@ class MessageListenerService {
     }
   }
 
+  /// Process identity key change notification (system message)
+  Future<void> _processIdentityKeyChangeNotification({
+    required String itemId,
+    required String senderId,
+    required int senderDeviceId,
+    required String? timestamp,
+    required String decryptedPayload,
+  }) async {
+    try {
+      debugPrint('[MESSAGE_LISTENER] Processing identity key change notification from $senderId');
+      
+      // Store as system message in SQLite for 1:1 messages
+      final messageStore = await SqliteMessageStore.getInstance();
+      await messageStore.storeReceivedMessage(
+        itemId: itemId,
+        sender: senderId,
+        senderDeviceId: senderDeviceId,
+        message: decryptedPayload,
+        timestamp: timestamp ?? DateTime.now().toIso8601String(),
+        type: 'system:identityKeyChanged', // Special type for UI rendering
+      );
+      
+      // Trigger notification for UI update
+      _triggerNotification(
+        MessageNotification(
+          type: MessageType.system,
+          itemId: itemId,
+          channelId: null, // 1:1 message
+          senderId: senderId,
+          senderDeviceId: senderDeviceId,
+          timestamp: timestamp ?? DateTime.now().toIso8601String(),
+          encrypted: false,
+          message: 'Identity key changed',
+        ),
+      );
+      
+      debugPrint('[MESSAGE_LISTENER] ✓ Identity key change notification processed');
+    } catch (e) {
+      debugPrint('[MESSAGE_LISTENER] Error processing identity key change: $e');
+    }
+  }
+
   /// Process video E2EE key (extracted from groupItem handler)
   Future<void> _processVideoE2EEKey({
     required String itemId,
@@ -945,6 +1000,7 @@ enum MessageType {
   deliveryReceipt,
   groupDeliveryReceipt,
   groupReadReceipt,
+  system, // ← NEW: System notifications (identity key changes, etc.)
 }
 
 /// Message notification data

@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/server_config_native.dart';
+import '../services/device_identity_service.dart';
 import '../providers/unread_messages_provider.dart';
 
 /// Discord-like server panel for native clients
@@ -91,6 +93,17 @@ class _ServerPanelState extends State<ServerPanel> {
 
     await ServerConfigService.setActiveServer(serverId);
     await ServerConfigService.resetUnreadCount(serverId);
+    
+    // Switch device identity for native (multi-server support)
+    if (!kIsWeb) {
+      final server = ServerConfigService.getServerById(serverId);
+      if (server != null) {
+        final switched = await DeviceIdentityService.instance.switchToServer(server.serverUrl);
+        if (!switched) {
+          debugPrint('[ServerPanel] Warning: Could not switch to server identity for ${server.serverUrl}');
+        }
+      }
+    }
 
     setState(() {
       _activeServerId = serverId;

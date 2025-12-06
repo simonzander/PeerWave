@@ -97,6 +97,10 @@ import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'core/storage/app_directories.dart';
 import 'services/system_tray_service_web.dart'
     if (dart.library.io) 'services/system_tray_service.dart';
+import 'services/storage/database_helper.dart';
+import 'services/device_scoped_storage_service.dart';
+import 'services/idb_factory_web.dart'
+    if (dart.library.io) 'services/idb_factory_native.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -262,6 +266,27 @@ class _MyAppState extends State<MyApp> {
     }
 
     super.dispose();
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    
+    // Hot reload detected - reset database and storage caches
+    debugPrint('[HOT_RELOAD] 🔥 Hot reload detected - resetting storage caches');
+    
+    // Close all cached IndexedDB connections
+    DeviceScopedStorageService.instance.closeAllDatabases();
+    
+    // Reset SQLite database helper (prevents "database_closed" errors)
+    DatabaseHelper.reset();
+    
+    // Reset IndexedDB factory for native platforms
+    if (!kIsWeb) {
+      resetIdbFactoryNative();
+    }
+    
+    debugPrint('[HOT_RELOAD] ✅ Storage caches reset - ready for new connections');
   }
 
   @override
@@ -1069,8 +1094,19 @@ class _MyAppState extends State<MyApp> {
         // This is required for database and Signal Protocol operations
         if (loggedIn && !DeviceIdentityService.instance.isInitialized) {
           debugPrint('[ROUTER] 🔄 Restoring device identity from storage...');
+          
+          // For native, get the active server URL to restore the correct identity
+          String? serverUrl;
+          if (!kIsWeb) {
+            final activeServer = ServerConfigService.getActiveServer();
+            serverUrl = activeServer?.serverUrl;
+            if (serverUrl != null) {
+              debugPrint('[ROUTER] 🔄 Active server: $serverUrl');
+            }
+          }
+          
           final restored = await DeviceIdentityService.instance
-              .tryRestoreFromSession();
+              .tryRestoreFromSession(serverUrl: serverUrl);
           if (restored) {
             debugPrint('[ROUTER] ✅ Device identity restored');
           } else {

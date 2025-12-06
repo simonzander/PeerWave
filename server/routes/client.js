@@ -434,6 +434,129 @@ clientRoutes.post("/channels/:channelId/group-messages", verifyAuthEither, async
     }
 });
 
+// 🆕 Lightweight endpoint to check Signal key status (for client validation)
+clientRoutes.get("/signal/status/minimal", verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
+    const sessionDeviceId = req.deviceId || req.session.deviceId;
+    
+    if (!sessionUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        // Fetch identity key from Client table
+        const client = await Client.findOne({ 
+            where: { 
+                owner: sessionUuid, 
+                clientid: sessionDeviceId 
+            }
+        });
+        
+        // Fetch latest SignedPreKey
+        const signedPreKey = await SignalSignedPreKey.findOne({
+            where: {
+                owner: sessionUuid,
+                client: sessionDeviceId
+            },
+            order: [['id', 'DESC']]
+        });
+        
+        // Count PreKeys
+        const preKeyCount = await SignalPreKey.count({
+            where: {
+                owner: sessionUuid,
+                client: sessionDeviceId
+            }
+        });
+        
+        res.json({
+            identityKey: client?.public_key || null,
+            signedPreKeyId: signedPreKey?.id || null,
+            preKeyCount: preKeyCount
+        });
+    } catch (error) {
+        console.error('[SIGNAL] Error fetching minimal status:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// 🆕 Validate and sync Signal keys (for client initialization)
+clientRoutes.post("/signal/validate-and-sync", verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
+    const sessionDeviceId = req.deviceId || req.session.deviceId;
+    
+    if (!sessionUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        const { localIdentityKey, localSignedPreKeyId, localPreKeyCount } = req.body;
+        
+        const validationResult = {
+            keysValid: true,
+            missingKeys: [],
+            preKeyIdsToDelete: []
+        };
+        
+        // Fetch server state from Client table (Identity key stored here)
+        const serverClient = await Client.findOne({ 
+            where: { 
+                owner: sessionUuid, 
+                clientid: sessionDeviceId 
+            }
+        });
+        
+        const serverSignedPreKey = await SignalSignedPreKey.findOne({
+            where: {
+                owner: sessionUuid,
+                client: sessionDeviceId
+            },
+            order: [['id', 'DESC']]
+        });
+        
+        const serverPreKeys = await SignalPreKey.findAll({
+            where: {
+                owner: sessionUuid,
+                client: sessionDeviceId
+            },
+            attributes: ['id']
+        });
+        
+        // Validate Identity
+        if (!serverClient || serverClient.public_key !== localIdentityKey) {
+            validationResult.keysValid = false;
+            validationResult.missingKeys.push('identity');
+            validationResult.reason = 'Identity key mismatch';
+            return res.json(validationResult);
+        }
+        
+        // Validate SignedPreKey
+        if (!serverSignedPreKey || serverSignedPreKey.id !== localSignedPreKeyId) {
+            validationResult.keysValid = false;
+            validationResult.missingKeys.push('signedPreKey');
+            validationResult.reason = 'SignedPreKey out of sync';
+            return res.json(validationResult);
+        }
+        
+        // Validate PreKeys - find consumed ones
+        const serverPreKeyIds = serverPreKeys.map(k => k.id);
+        const localPreKeyIds = Array.from({length: localPreKeyCount}, (_, i) => i);
+        
+        // Find PreKeys that exist locally but not on server (consumed)
+        const consumedPreKeyIds = localPreKeyIds.filter(id => !serverPreKeyIds.includes(id));
+        
+        if (consumedPreKeyIds.length > 0) {
+            validationResult.preKeyIdsToDelete = consumedPreKeyIds;
+            validationResult.reason = `${consumedPreKeyIds.length} PreKeys consumed`;
+        }
+        
+        res.json(validationResult);
+    } catch (error) {
+        console.error('[SIGNAL] Error validating keys:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
 // Batch store PreKeys via HTTP POST (for progressive initialization)
 clientRoutes.post("/signal/prekeys/batch", verifyAuthEither, async (req, res) => {
     // Support both web (session-based) and native (HMAC) authentication

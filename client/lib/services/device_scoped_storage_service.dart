@@ -16,11 +16,15 @@ class DeviceScopedStorageService {
   DeviceScopedStorageService._();
   
   final DeviceIdentityService _deviceIdentity = DeviceIdentityService.instance;
-  late final IdbFactory _idbFactory = _getIdbFactory();
+  IdbFactory _idbFactory = _getStaticIdbFactory();
   final EncryptedStorageWrapper _encryption = EncryptedStorageWrapper();
   
-  /// Get the appropriate IdbFactory for the current platform
-  IdbFactory _getIdbFactory() {
+  // Cache open databases to avoid closing them prematurely
+  final Map<String, Database> _databaseCache = {};
+  final Map<String, Future<Database>> _pendingOpens = {};
+  
+  /// Get the appropriate IdbFactory for the current platform (static)
+  static IdbFactory _getStaticIdbFactory() {
     if (kIsWeb) {
       // Web: Use browser implementation
       debugPrint('[DEVICE_STORAGE] Using idbFactoryBrowser for web');
@@ -42,7 +46,7 @@ class DeviceScopedStorageService {
     return '${baseName}_$deviceId';
   }
   
-  /// Open device-specific database
+  /// Open device-specific database (with caching to prevent premature closes)
   Future<Database> openDeviceDatabase(
     String baseName, {
     int version = 1,
@@ -50,13 +54,73 @@ class DeviceScopedStorageService {
   }) async {
     final dbName = getDeviceDatabaseName(baseName);
     
+    // Check cache first
+    if (_databaseCache.containsKey(dbName)) {
+      debugPrint('[DEVICE_STORAGE] Reusing cached database: $dbName');
+      return _databaseCache[dbName]!;
+    }
+    
+    // Check if already opening (prevent duplicate opens)
+    if (_pendingOpens.containsKey(dbName)) {
+      debugPrint('[DEVICE_STORAGE] Waiting for pending open: $dbName');
+      return await _pendingOpens[dbName]!;
+    }
+    
     debugPrint('[DEVICE_STORAGE] Opening encrypted database: $dbName');
     
-    return await _idbFactory.open(
-      dbName,
-      version: version,
-      onUpgradeNeeded: onUpgradeNeeded,
-    );
+    // Create future for this open operation
+    final openFuture = _openDatabaseInternal(dbName, version, onUpgradeNeeded);
+    _pendingOpens[dbName] = openFuture;
+    
+    try {
+      final db = await openFuture;
+      _databaseCache[dbName] = db;
+      return db;
+    } finally {
+      _pendingOpens.remove(dbName);
+    }
+  }
+  
+  /// Internal database open with error recovery
+  Future<Database> _openDatabaseInternal(
+    String dbName,
+    int version,
+    void Function(VersionChangeEvent) onUpgradeNeeded,
+  ) async {
+    try {
+      return await _idbFactory.open(
+        dbName,
+        version: version,
+        onUpgradeNeeded: onUpgradeNeeded,
+      );
+    } catch (e) {
+      // Check if this is a "database_closed" error (hot reload issue)
+      if (e.toString().contains('database_closed')) {
+        debugPrint('[DEVICE_STORAGE] ⚠️ Database closed error detected (hot reload?) - reinitializing factory');
+        
+        // Clear all caches
+        _databaseCache.clear();
+        _pendingOpens.clear();
+        
+        // Reset the factory cache to force recreation
+        if (!kIsWeb) {
+          native.resetIdbFactoryNative();
+          // Recreate the factory and update instance
+          _idbFactory = native.getIdbFactoryNative();
+          debugPrint('[DEVICE_STORAGE] ✓ Factory reinitialized');
+          
+          // Retry with new factory
+          return await _idbFactory.open(
+            dbName,
+            version: version,
+            onUpgradeNeeded: onUpgradeNeeded,
+          );
+        }
+      }
+      
+      // Re-throw if not a database_closed error or if web platform
+      rethrow;
+    }
   }
   
   /// Store encrypted data in device-specific database
@@ -85,7 +149,7 @@ class DeviceScopedStorageService {
     final store = txn.objectStore(storeName);
     await store.put(envelope, key);
     await txn.completed;
-    db.close();
+    // Note: db.close() removed - database is cached for reuse
     
     debugPrint('[DEVICE_STORAGE] ✓ Stored encrypted data: $key');
   }
@@ -112,7 +176,7 @@ class DeviceScopedStorageService {
     final store = txn.objectStore(storeName);
     final envelope = await store.getObject(key);
     await txn.completed;
-    db.close();
+    // Note: db.close() removed - database is cached for reuse
     
     if (envelope == null) {
       debugPrint('[DEVICE_STORAGE] ✗ Key not found: $key');
@@ -183,7 +247,7 @@ class DeviceScopedStorageService {
       
       if (!db.objectStoreNames.contains(storeName)) {
         debugPrint('[DEVICE_STORAGE] ⚠️ Object store "$storeName" does not exist!');
-        db.close();
+        // Note: db.close() removed - database is cached for reuse
         return [];
       }
       
@@ -202,7 +266,7 @@ class DeviceScopedStorageService {
       });
       
       await txn.completed;
-      db.close();
+      // Note: db.close() removed - database is cached for reuse
       
       debugPrint('[DEVICE_STORAGE] ✓ Found ${keys.length} total keys');
       return keys;
@@ -212,12 +276,34 @@ class DeviceScopedStorageService {
     }
   }
   
+  /// Close all cached databases
+  Future<void> closeAllDatabases() async {
+    debugPrint('[DEVICE_STORAGE] Closing ${_databaseCache.length} cached databases...');
+    
+    for (final entry in _databaseCache.entries) {
+      try {
+        entry.value.close();
+        debugPrint('[DEVICE_STORAGE] ✓ Closed: ${entry.key}');
+      } catch (e) {
+        debugPrint('[DEVICE_STORAGE] ⚠️ Error closing ${entry.key}: $e');
+      }
+    }
+    
+    _databaseCache.clear();
+    _pendingOpens.clear();
+    
+    debugPrint('[DEVICE_STORAGE] ✓ All databases closed and cache cleared');
+  }
+  
   /// Delete all databases for current device
   Future<void> deleteAllDeviceDatabases() async {
     if (!_deviceIdentity.isInitialized) {
       debugPrint('[DEVICE_STORAGE] No device identity - skipping cleanup');
       return;
     }
+    
+    // Close all cached databases first
+    await closeAllDatabases();
     
     debugPrint('[DEVICE_STORAGE] Deleting all databases for device: ${_deviceIdentity.deviceId}');
     
