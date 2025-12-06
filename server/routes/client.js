@@ -502,7 +502,7 @@ clientRoutes.post("/signal/validate-and-sync", verifyAuthEither, async (req, res
         const serverClient = await Client.findOne({ 
             where: { 
                 owner: sessionUuid, 
-                clientid: sessionDeviceId 
+                device_id: sessionDeviceId 
             }
         });
         
@@ -523,7 +523,15 @@ clientRoutes.post("/signal/validate-and-sync", verifyAuthEither, async (req, res
         });
         
         // Validate Identity
-        if (!serverClient || serverClient.public_key !== localIdentityKey) {
+        // Allow null public_key (first-time setup), but if it exists it must match
+        if (!serverClient) {
+            validationResult.keysValid = false;
+            validationResult.missingKeys.push('identity');
+            validationResult.reason = 'Client record not found';
+            return res.json(validationResult);
+        }
+        
+        if (serverClient.public_key !== null && serverClient.public_key !== localIdentityKey) {
             validationResult.keysValid = false;
             validationResult.missingKeys.push('identity');
             validationResult.reason = 'Identity key mismatch';
@@ -531,7 +539,8 @@ clientRoutes.post("/signal/validate-and-sync", verifyAuthEither, async (req, res
         }
         
         // Validate SignedPreKey
-        if (!serverSignedPreKey || serverSignedPreKey.id !== localSignedPreKeyId) {
+        // Allow null (first-time setup), but if it exists the ID must match
+        if (serverSignedPreKey && serverSignedPreKey.id !== localSignedPreKeyId) {
             validationResult.keysValid = false;
             validationResult.missingKeys.push('signedPreKey');
             validationResult.reason = 'SignedPreKey out of sync';

@@ -113,7 +113,7 @@ class _ServerPanelState extends State<ServerPanel> {
 
     // Trigger reload of the app
     if (mounted) {
-      context.go('/app');
+      context.go('/app/activities');
     }
   }
 

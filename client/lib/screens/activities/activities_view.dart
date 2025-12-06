@@ -8,6 +8,7 @@ import '../../services/storage/sqlite_group_message_store.dart';
 import '../../services/storage/sqlite_message_store.dart';
 import '../../providers/unread_messages_provider.dart';
 import '../../app/views/people_context_data_loader.dart';
+import '../../services/user_profile_service.dart';
 import 'dart:convert';
 import 'dart:async';
 
@@ -43,6 +44,9 @@ class _ActivitiesViewState extends State<ActivitiesView>
   // Cache for user/channel info (store full objects for avatars, @names, etc.)
   final Map<String, Map<String, dynamic>> _userInfo = {};
   final Map<String, Map<String, dynamic>> _channelInfo = {};
+
+  // Track loaded profiles from UserProfileService for reactive updates
+  final Map<String, Map<String, dynamic>?> _loadedProfiles = {};
 
   @override
   void initState() {
@@ -204,10 +208,14 @@ class _ActivitiesViewState extends State<ActivitiesView>
               'atName': user['atName'] ?? '',
             };
           }
-          debugPrint('[ACTIVITIES_VIEW] Fetched user info for ${users.length} senders');
+          debugPrint(
+            '[ACTIVITIES_VIEW] Fetched user info for ${users.length} senders',
+          );
         }
       } catch (e) {
-        debugPrint('[ACTIVITIES_VIEW] Error batch fetching user info for notifications: $e');
+        debugPrint(
+          '[ACTIVITIES_VIEW] Error batch fetching user info for notifications: $e',
+        );
         // Fallback: cache missing users with UUID as displayName
         for (final senderId in senderIds) {
           _userInfo[senderId] = {
@@ -693,6 +701,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
         : (conv['channelName'] ?? 'Unknown Channel');
 
     // Get additional info
+    final userId = type == 'direct' ? (conv['userId'] as String? ?? '') : '';
     final picture = type == 'direct' ? (conv['picture'] as String? ?? '') : '';
     final atName = type == 'direct' ? (conv['atName'] as String? ?? '') : '';
     final channelDescription = type == 'group'
@@ -722,31 +731,8 @@ class _ActivitiesViewState extends State<ActivitiesView>
             // Header
             Row(
               children: [
-                // Avatar with picture support
-                type == 'direct' && picture.isNotEmpty
-                    ? CircleAvatar(
-                        backgroundImage: NetworkImage('${widget.host}$picture'),
-                        onBackgroundImageError: (_, __) {
-                          // Fallback handled by error widget
-                        },
-                      )
-                    : CircleAvatar(
-                        backgroundColor: type == 'direct'
-                            ? Theme.of(context).colorScheme.secondaryContainer
-                            : Theme.of(context).colorScheme.tertiaryContainer,
-                        child: Icon(
-                          type == 'direct'
-                              ? Icons.person
-                              : (isPrivate ? Icons.lock : Icons.tag),
-                          color: type == 'direct'
-                              ? Theme.of(
-                                  context,
-                                ).colorScheme.onSecondaryContainer
-                              : Theme.of(
-                                  context,
-                                ).colorScheme.onTertiaryContainer,
-                        ),
-                      ),
+                // Square avatar (for direct messages, use UserProfileService with callback)
+                _buildConversationAvatar(type, userId, picture, isPrivate),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -802,6 +788,102 @@ class _ActivitiesViewState extends State<ActivitiesView>
     );
   }
 
+  /// Build conversation avatar (square for Recent tab)
+  Widget _buildConversationAvatar(
+    String type,
+    String userId,
+    String picture,
+    bool isPrivate,
+  ) {
+    if (type == 'direct') {
+      // For direct messages, use UserProfileService with callback
+      final profile =
+          _loadedProfiles[userId] ??
+          UserProfileService.instance.getProfileOrLoad(
+            userId,
+            onLoaded: (profile) {
+              if (mounted && profile != null) {
+                setState(() {
+                  _loadedProfiles[userId] = profile;
+                });
+              }
+            },
+          );
+
+      final effectivePicture = profile?['picture'] as String? ?? picture;
+      final displayName = profile?['displayName'] as String? ?? userId;
+
+      return _buildSquareAvatar(
+        pictureData: effectivePicture,
+        fallbackIcon: Icons.person,
+        fallbackColor: Theme.of(context).colorScheme.secondaryContainer,
+        iconColor: Theme.of(context).colorScheme.onSecondaryContainer,
+        initials: displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U',
+      );
+    } else {
+      // For group channels, use existing logic
+      return _buildSquareAvatar(
+        pictureData: picture,
+        fallbackIcon: isPrivate ? Icons.lock : Icons.tag,
+        fallbackColor: Theme.of(context).colorScheme.tertiaryContainer,
+        iconColor: Theme.of(context).colorScheme.onTertiaryContainer,
+        initials: '#',
+      );
+    }
+  }
+
+  /// Build square avatar widget
+  Widget _buildSquareAvatar({
+    required String? pictureData,
+    required IconData fallbackIcon,
+    required Color fallbackColor,
+    required Color iconColor,
+    required String initials,
+  }) {
+    ImageProvider? imageProvider;
+
+    if (pictureData != null && pictureData.isNotEmpty) {
+      try {
+        if (pictureData.startsWith('data:image/')) {
+          // Base64 encoded image
+          final base64Data = pictureData.split(',').last;
+          final bytes = base64Decode(base64Data);
+          imageProvider = MemoryImage(bytes);
+        } else if (pictureData.startsWith('http://') ||
+            pictureData.startsWith('https://')) {
+          // URL
+          imageProvider = NetworkImage(pictureData);
+        } else if (pictureData.startsWith('/')) {
+          // Relative path
+          imageProvider = NetworkImage('${widget.host}$pictureData');
+        }
+      } catch (e) {
+        debugPrint('[ACTIVITIES_VIEW] Error parsing picture: $e');
+      }
+    }
+
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: imageProvider == null ? fallbackColor : null,
+        borderRadius: BorderRadius.circular(4), // Slightly rounded corners
+        image: imageProvider != null
+            ? DecorationImage(
+                image: imageProvider,
+                fit: BoxFit.cover,
+                onError: (_, __) {
+                  // Error handled by falling back to icon
+                },
+              )
+            : null,
+      ),
+      child: imageProvider == null
+          ? Icon(fallbackIcon, color: iconColor, size: 24)
+          : null,
+    );
+  }
+
   Widget _buildMessagePreview(Map<String, dynamic> msg, bool isGroupChat) {
     final isSelf = msg['sender'] == 'self';
     final messageContent = msg['message'] as String? ?? '';
@@ -810,7 +892,10 @@ class _ActivitiesViewState extends State<ActivitiesView>
     final senderUuid = msg['sender'] as String?;
 
     // Format message with type icon
-    final formattedMessage = PeopleContextDataLoader.formatMessagePreview(messageType, messageContent);
+    final formattedMessage = PeopleContextDataLoader.formatMessagePreview(
+      messageType,
+      messageContent,
+    );
 
     // For group chats, get sender display name from cache
     String? senderName;

@@ -5,10 +5,14 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:async';
+import 'dart:convert';
 import '../services/video_conference_service.dart';
 import '../services/message_listener_service.dart';
 import '../services/user_profile_service.dart';
+import '../services/api_service.dart';
+import '../services/signal_service.dart';
 import '../screens/channel/channel_members_screen.dart';
+import '../screens/channel/channel_settings_screen.dart';
 import '../widgets/animated_widgets.dart';
 import '../widgets/hidden_participants_badge.dart';
 import '../widgets/participant_visibility_manager.dart';
@@ -30,6 +34,7 @@ import '../extensions/snackbar_extensions.dart';
 class VideoConferenceView extends StatefulWidget {
   final String channelId;
   final String channelName;
+  final String? host; // For settings and API calls
   final lk.MediaDevice? selectedCamera; // NEW: Pre-selected from PreJoin
   final lk.MediaDevice? selectedMicrophone; // NEW: Pre-selected from PreJoin
 
@@ -37,6 +42,7 @@ class VideoConferenceView extends StatefulWidget {
     super.key,
     required this.channelId,
     required this.channelName,
+    this.host,
     this.selectedCamera, // NEW
     this.selectedMicrophone, // NEW
   });
@@ -51,13 +57,17 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   bool _isJoining = false;
   String? _errorMessage;
 
+  // Channel data
+  Map<String, dynamic>? _channelData;
+  bool _isOwner = false;
+
   // Audio state tracking
   final Map<String, ParticipantAudioState> _participantStates = {};
   final Map<String, ValueNotifier<bool>> _speakingNotifiers = {};
   Timer? _visibilityUpdateTimer;
   int _maxVisibleParticipants = 0;
   final Map<String, StreamSubscription> _audioSubscriptions = {};
-  
+
   // Profile cache to prevent flickering
   final Map<String, String> _displayNameCache = {};
   final Map<String, String> _profilePictureCache = {};
@@ -65,6 +75,11 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   @override
   void initState() {
     super.initState();
+
+    // Load channel details if host is available
+    if (widget.host != null) {
+      _loadChannelDetails();
+    }
 
     // Start periodic visibility updates
     _visibilityUpdateTimer = Timer.periodic(
@@ -204,6 +219,40 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     super.dispose();
   }
 
+  /// Load channel details to determine ownership
+  Future<void> _loadChannelDetails() async {
+    if (widget.host == null) return;
+
+    try {
+      ApiService.init();
+      final hostUrl = ApiService.ensureHttpPrefix(widget.host!);
+      final resp = await ApiService.get(
+        '$hostUrl/client/channels/${widget.channelId}',
+      );
+
+      if (resp.statusCode == 200) {
+        final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
+        if (mounted) {
+          setState(() {
+            _channelData = Map<String, dynamic>.from(data);
+
+            // Check if current user is owner
+            final currentUserId = SignalService.instance.currentUserId;
+            _isOwner =
+                currentUserId != null &&
+                _channelData!['owner'] == currentUserId;
+          });
+        }
+
+        debugPrint(
+          '[VIDEO_CONFERENCE] Channel owner: ${_channelData!['owner']}, Is owner: $_isOwner',
+        );
+      }
+    } catch (e) {
+      debugPrint('[VIDEO_CONFERENCE] Error loading channel details: $e');
+    }
+  }
+
   /// Update visibility based on screen size and participant activity
   void _updateVisibility() {
     if (_service == null || _service!.room == null || !mounted) return;
@@ -288,16 +337,19 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       onLoaded: (profile) {
         if (mounted && profile != null) {
           setState(() {
-            _displayNameCache[participantId] = profile['displayName'] as String? ?? participantId;
-            _profilePictureCache[participantId] = profile['picture'] as String? ?? '';
+            _displayNameCache[participantId] =
+                profile['displayName'] as String? ?? participantId;
+            _profilePictureCache[participantId] =
+                profile['picture'] as String? ?? '';
           });
         }
       },
     );
-    
+
     // Use cached data immediately if available
     if (profile != null) {
-      _displayNameCache[participantId] = profile['displayName'] as String? ?? participantId;
+      _displayNameCache[participantId] =
+          profile['displayName'] as String? ?? participantId;
       _profilePictureCache[participantId] = profile['picture'] as String? ?? '';
     }
   }
@@ -445,13 +497,33 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           // Settings button
           IconButton(
             icon: const Icon(Icons.settings),
-            onPressed: () {
-              context.showInfoSnackBar(
-                'Channel settings coming soon',
-                duration: const Duration(seconds: 2),
-              );
-            },
-            tooltip: 'Settings',
+            onPressed: widget.host == null
+                ? null
+                : () async {
+                    final result = await Navigator.push(
+                      context,
+                      SlidePageRoute(
+                        builder: (context) => ChannelSettingsScreen(
+                          channelId: widget.channelId,
+                          channelName: widget.channelName,
+                          channelType: 'webrtc',
+                          channelDescription:
+                              _channelData?['description'] as String?,
+                          isPrivate: _channelData?['private'] as bool? ?? false,
+                          defaultJoinRole:
+                              _channelData?['defaultJoinRole'] as String?,
+                          host: widget.host!,
+                          isOwner: _isOwner,
+                        ),
+                      ),
+                    );
+
+                    // Reload channel details if settings were updated
+                    if (result == true) {
+                      await _loadChannelDetails();
+                    }
+                  },
+            tooltip: widget.host == null ? 'Settings unavailable' : 'Settings',
           ),
           // Participant count - optimized with Selector
           Selector<VideoConferenceService, int>(
@@ -826,12 +898,11 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     final displayName = userId != null
         ? (_displayNameCache[userId] ?? userId)
         : 'Unknown';
-    final profilePicture = userId != null
-        ? _profilePictureCache[userId]
-        : null;
+    final profilePicture = userId != null ? _profilePictureCache[userId] : null;
 
     // Get audio state for speaking indicator
-    final speakingNotifier = userId != null && _speakingNotifiers.containsKey(userId)
+    final speakingNotifier =
+        userId != null && _speakingNotifiers.containsKey(userId)
         ? _speakingNotifiers[userId]!
         : null;
     final isPinned = userId != null && _participantStates.containsKey(userId)
@@ -1269,19 +1340,13 @@ class _SpeakingStateWrapper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (speakingNotifier == null) {
-      return SpeakingBorderWrapper(
-        isSpeaking: false,
-        child: child,
-      );
+      return SpeakingBorderWrapper(isSpeaking: false, child: child);
     }
 
     return ValueListenableBuilder<bool>(
       valueListenable: speakingNotifier!,
       builder: (context, isSpeaking, child) {
-        return SpeakingBorderWrapper(
-          isSpeaking: isSpeaking,
-          child: child!,
-        );
+        return SpeakingBorderWrapper(isSpeaking: isSpeaking, child: child!);
       },
       child: child,
     );

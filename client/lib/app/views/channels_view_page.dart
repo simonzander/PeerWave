@@ -255,6 +255,7 @@ class _ChannelsViewPageState extends BaseViewState<ChannelsViewPage> {
           return VideoConferenceView(
             channelId: _videoConferenceConfig?['channelId'] ?? widget.initialChannelUuid!,
             channelName: _videoConferenceConfig?['channelName'] ?? widget.initialChannelName ?? 'Channel',
+            host: widget.host,
             selectedCamera: _videoConferenceConfig?['selectedCamera'],
             selectedMicrophone: _videoConferenceConfig?['selectedMicrophone'],
           );

@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../web_config.dart';
 import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
+import '../services/device_identity_service.dart';
 
 @JS('window.localStorage.getItem')
 external String localStorageGetItem(String key);
@@ -31,8 +32,8 @@ class _WebauthnPageState extends State<WebauthnPage> {
   DateTime? _expiresAt;
   Timer? _countdownTimer;
   bool _isLoadingKey = false;
-  bool _showAsQR = true;  // Toggle between QR and text
-  
+  bool _showAsQR = true; // Toggle between QR and text
+
   // Existing state
   List<Map<String, dynamic>> webauthnCredentials = [];
   List<Map<String, dynamic>> Clients = [];
@@ -126,7 +127,9 @@ class _WebauthnPageState extends State<WebauthnPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Regenerate Backup Codes?'),
-        content: const Text('Do you really want to regenerate your codes? All unused codes will be deleted.'),
+        content: const Text(
+          'Do you really want to regenerate your codes? All unused codes will be deleted.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -135,21 +138,28 @@ class _WebauthnPageState extends State<WebauthnPage> {
           TextButton(
             onPressed: () async {
               Navigator.of(context).pop(true);
-              setState(() { loading = true; });
+              setState(() {
+                loading = true;
+              });
               try {
                 final apiServer = await loadWebApiServer();
                 String urlString = apiServer ?? '';
-                if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+                if (!urlString.startsWith('http://') &&
+                    !urlString.startsWith('https://')) {
                   urlString = 'https://$urlString';
                 }
-                final resp = await ApiService.get('$urlString/backupcode/regenerate');
+                final resp = await ApiService.get(
+                  '$urlString/backupcode/regenerate',
+                );
                 if (resp.statusCode == 200) {
                   GoRouter.of(context).go('/app/settings/backupcode/list');
                 }
               } catch (e) {
                 _showError('Error regenerating backup codes: $e');
               } finally {
-                setState(() { loading = false; });
+                setState(() {
+                  loading = false;
+                });
               }
             },
             child: const Text('Regenerate'),
@@ -160,11 +170,14 @@ class _WebauthnPageState extends State<WebauthnPage> {
   }
 
   Future<void> _loadWebauthnCredentials() async {
-    setState(() { loading = true; });
+    setState(() {
+      loading = true;
+    });
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
       final resp = await ApiService.get('$urlString/webauthn/list');
@@ -175,23 +188,30 @@ class _WebauthnPageState extends State<WebauthnPage> {
           });
         } else if (resp.data is Map && resp.data['credentials'] is List) {
           setState(() {
-            webauthnCredentials = List<Map<String, dynamic>>.from(resp.data['credentials']);
+            webauthnCredentials = List<Map<String, dynamic>>.from(
+              resp.data['credentials'],
+            );
           });
         }
       }
     } catch (e) {
       // handle error, optionally show snackbar
     } finally {
-      setState(() { loading = false; });
+      setState(() {
+        loading = false;
+      });
     }
   }
 
   Future<void> _loadClients() async {
-    setState(() { loading = true; });
+    setState(() {
+      loading = true;
+    });
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
       final resp = await ApiService.get('$urlString/client/list');
@@ -209,26 +229,36 @@ class _WebauthnPageState extends State<WebauthnPage> {
     } catch (e) {
       // handle error, optionally show snackbar
     } finally {
-      setState(() { loading = false; });
+      setState(() {
+        loading = false;
+      });
     }
   }
 
   Future<void> _deleteWebAuthnCredential(String credentialId) async {
-    setState(() { loading = true; });
+    setState(() {
+      loading = true;
+    });
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final resp = await ApiService.post('$urlString/webauthn/delete', data: { 'credentialId': credentialId });
+      final resp = await ApiService.post(
+        '$urlString/webauthn/delete',
+        data: {'credentialId': credentialId},
+      );
       if (resp.statusCode == 200) {
         _loadWebauthnCredentials();
       }
     } catch (e) {
       _showError('Error deleting credential: $e');
     } finally {
-      setState(() { loading = false; });
+      setState(() {
+        loading = false;
+      });
     }
   }
 
@@ -257,11 +287,14 @@ class _WebauthnPageState extends State<WebauthnPage> {
     );
 
     if (confirmed == true) {
-      setState(() { loading = true; });
+      setState(() {
+        loading = true;
+      });
       try {
         final apiServer = await loadWebApiServer();
         String urlString = apiServer ?? '';
-        if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+        if (!urlString.startsWith('http://') &&
+            !urlString.startsWith('https://')) {
           urlString = 'https://$urlString';
         }
         final resp = await ApiService.delete('$urlString/client/$clientId');
@@ -274,17 +307,22 @@ class _WebauthnPageState extends State<WebauthnPage> {
       } catch (e) {
         _showError('Error removing device: $e');
       } finally {
-        setState(() { loading = false; });
+        setState(() {
+          loading = false;
+        });
       }
     }
   }
 
   Future<void> _loadBackupUsage() async {
-    setState(() { loading = true; });
+    setState(() {
+      loading = true;
+    });
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
       final resp = await ApiService.get('$urlString/backupcode/usage');
@@ -301,7 +339,9 @@ class _WebauthnPageState extends State<WebauthnPage> {
     } catch (e) {
       // handle error, optionally show snackbar
     } finally {
-      setState(() { loading = false; });
+      setState(() {
+        loading = false;
+      });
     }
   }
 
@@ -321,9 +361,10 @@ class _WebauthnPageState extends State<WebauthnPage> {
       final date = DateTime.parse(timestamp);
       final now = DateTime.now();
       final difference = now.difference(date);
-      
+
       if (difference.inMinutes < 1) return 'Just now';
-      if (difference.inMinutes < 60) return '${difference.inMinutes} minutes ago';
+      if (difference.inMinutes < 60)
+        return '${difference.inMinutes} minutes ago';
       if (difference.inHours < 24) return '${difference.inHours} hours ago';
       return '${difference.inDays} days ago';
     } catch (e) {
@@ -338,7 +379,10 @@ class _WebauthnPageState extends State<WebauthnPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Credentials Management', style: Theme.of(context).textTheme.headlineMedium),
+          Text(
+            'Credentials Management',
+            style: Theme.of(context).textTheme.headlineMedium,
+          ),
           const SizedBox(height: 8),
           Text(
             'Manage your connected devices and credentials',
@@ -357,7 +401,10 @@ class _WebauthnPageState extends State<WebauthnPage> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.vpn_key, color: Theme.of(context).colorScheme.primary),
+                      Icon(
+                        Icons.vpn_key,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                       const SizedBox(width: 12),
                       Text(
                         'Add New Client',
@@ -380,12 +427,21 @@ class _WebauthnPageState extends State<WebauthnPage> {
                             ? const SizedBox(
                                 width: 20,
                                 height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Icon(Icons.add),
-                        label: Text(_isLoadingKey ? 'Generating...' : 'Generate Magic Key'),
+                        label: Text(
+                          _isLoadingKey
+                              ? 'Generating...'
+                              : 'Generate Magic Key',
+                        ),
                         style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 32,
+                            vertical: 16,
+                          ),
                         ),
                       ),
                     )
@@ -394,7 +450,10 @@ class _WebauthnPageState extends State<WebauthnPage> {
                       children: [
                         // Timer
                         Container(
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 12,
+                            horizontal: 20,
+                          ),
                           decoration: BoxDecoration(
                             color: Theme.of(context).colorScheme.errorContainer,
                             borderRadius: BorderRadius.circular(8),
@@ -402,12 +461,18 @@ class _WebauthnPageState extends State<WebauthnPage> {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.timer, color: Theme.of(context).colorScheme.error),
+                              Icon(
+                                Icons.timer,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
                               const SizedBox(width: 8),
                               Text(
                                 'Expires in: ${_getRemainingTime()}',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      color: Theme.of(context).colorScheme.error,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.error,
                                       fontWeight: FontWeight.bold,
                                     ),
                               ),
@@ -419,8 +484,16 @@ class _WebauthnPageState extends State<WebauthnPage> {
                         // Toggle buttons
                         SegmentedButton<bool>(
                           segments: const [
-                            ButtonSegment(value: true, label: Text('QR Code'), icon: Icon(Icons.qr_code)),
-                            ButtonSegment(value: false, label: Text('Text'), icon: Icon(Icons.text_fields)),
+                            ButtonSegment(
+                              value: true,
+                              label: Text('QR Code'),
+                              icon: Icon(Icons.qr_code),
+                            ),
+                            ButtonSegment(
+                              value: false,
+                              label: Text('Text'),
+                              icon: Icon(Icons.text_fields),
+                            ),
                           ],
                           selected: {_showAsQR},
                           onSelectionChanged: (Set<bool> selection) {
@@ -438,7 +511,9 @@ class _WebauthnPageState extends State<WebauthnPage> {
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Theme.of(context).colorScheme.outline),
+                              border: Border.all(
+                                color: Theme.of(context).colorScheme.outline,
+                              ),
                             ),
                             child: QrImageView(
                               data: _magicKey!,
@@ -451,23 +526,30 @@ class _WebauthnPageState extends State<WebauthnPage> {
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Theme.of(context).colorScheme.outline),
+                              border: Border.all(
+                                color: Theme.of(context).colorScheme.outline,
+                              ),
                             ),
                             child: Column(
                               children: [
                                 SelectableText(
                                   _magicKey!,
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        fontFamily: 'monospace',
-                                      ),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(fontFamily: 'monospace'),
                                 ),
                                 const SizedBox(height: 12),
                                 ElevatedButton.icon(
                                   onPressed: () {
-                                    Clipboard.setData(ClipboardData(text: _magicKey!));
-                                    _showSuccess('Magic key copied to clipboard');
+                                    Clipboard.setData(
+                                      ClipboardData(text: _magicKey!),
+                                    );
+                                    _showSuccess(
+                                      'Magic key copied to clipboard',
+                                    );
                                   },
                                   icon: const Icon(Icons.copy),
                                   label: const Text('Copy to Clipboard'),
@@ -495,7 +577,10 @@ class _WebauthnPageState extends State<WebauthnPage> {
           const SizedBox(height: 32),
 
           // WebAuthn Credentials Table
-          Text('WebAuthn Management', style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            'WebAuthn Management',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const SizedBox(height: 16),
           loading
               ? const Center(child: CircularProgressIndicator())
@@ -513,34 +598,58 @@ class _WebauthnPageState extends State<WebauthnPage> {
                     ],
                     rows: webauthnCredentials.isEmpty
                         ? [
-                            DataRow(cells: [
-                              DataCell(Text('-')),
-                              DataCell(Text('-')),
-                              DataCell(Text('-')),
-                              DataCell(Text('-')),
-                              DataCell(Text('-')),
-                              DataCell(Text('-')),
-                              DataCell(Container()),
-                            ]),
+                            DataRow(
+                              cells: [
+                                DataCell(Text('-')),
+                                DataCell(Text('-')),
+                                DataCell(Text('-')),
+                                DataCell(Text('-')),
+                                DataCell(Text('-')),
+                                DataCell(Text('-')),
+                                DataCell(Container()),
+                              ],
+                            ),
                           ]
-                        : webauthnCredentials.map((cred) => DataRow(cells: [
-                              DataCell(Text(cred['id']?.toString() ?? '-')),
-                              DataCell(Text(cred['browser']?.toString() ?? '-')),
-                              DataCell(Text(cred['location']?.toString() ?? '-')),
-                              DataCell(Text(cred['ip']?.toString() ?? '-')),
-                              DataCell(Text(cred['created']?.toString() ?? '-')),
-                              DataCell(Text(cred['lastLogin']?.toString() ?? '-')),
-                              DataCell(
-                                webauthnCredentials.length > 1
-                                    ? IconButton(
-                                        icon: const Icon(Icons.delete),
-                                        onPressed: () {
-                                          _deleteWebAuthnCredential(cred['id']?.toString() ?? '');
-                                        },
-                                      )
-                                    : Container(),
-                              ),
-                            ])).toList(),
+                        : webauthnCredentials
+                              .map(
+                                (cred) => DataRow(
+                                  cells: [
+                                    DataCell(
+                                      Text(cred['id']?.toString() ?? '-'),
+                                    ),
+                                    DataCell(
+                                      Text(cred['browser']?.toString() ?? '-'),
+                                    ),
+                                    DataCell(
+                                      Text(cred['location']?.toString() ?? '-'),
+                                    ),
+                                    DataCell(
+                                      Text(cred['ip']?.toString() ?? '-'),
+                                    ),
+                                    DataCell(
+                                      Text(cred['created']?.toString() ?? '-'),
+                                    ),
+                                    DataCell(
+                                      Text(
+                                        cred['lastLogin']?.toString() ?? '-',
+                                      ),
+                                    ),
+                                    DataCell(
+                                      webauthnCredentials.length > 1
+                                          ? IconButton(
+                                              icon: const Icon(Icons.delete),
+                                              onPressed: () {
+                                                _deleteWebAuthnCredential(
+                                                  cred['id']?.toString() ?? '',
+                                                );
+                                              },
+                                            )
+                                          : Container(),
+                                    ),
+                                  ],
+                                ),
+                              )
+                              .toList(),
                   ),
                 ),
           // Add Credentials Button
@@ -568,7 +677,10 @@ class _WebauthnPageState extends State<WebauthnPage> {
                     children: [
                       Row(
                         children: [
-                          Icon(Icons.devices, color: Theme.of(context).colorScheme.primary),
+                          Icon(
+                            Icons.devices,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
                           const SizedBox(width: 12),
                           Text(
                             'Connected Devices',
@@ -593,8 +705,11 @@ class _WebauthnPageState extends State<WebauthnPage> {
                         padding: const EdgeInsets.all(20.0),
                         child: Text(
                           'No connected devices',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                         ),
                       ),
@@ -607,29 +722,95 @@ class _WebauthnPageState extends State<WebauthnPage> {
                       separatorBuilder: (context, index) => const Divider(),
                       itemBuilder: (context, index) {
                         final device = Clients[index];
-                        final isNative = !(device['browser'] ?? '').toLowerCase().contains('mozilla');
-                        
+                        final isNative = !(device['browser'] ?? '')
+                            .toLowerCase()
+                            .contains('mozilla');
+
+                        // Check if this is the current device
+                        final deviceClientId =
+                            device['clientid'] ??
+                            device['id']?.toString() ??
+                            '';
+                        String? currentClientId;
+                        bool isCurrentDevice = false;
+
+                        try {
+                          if (DeviceIdentityService.instance.isInitialized) {
+                            currentClientId =
+                                DeviceIdentityService.instance.clientId;
+                            isCurrentDevice = deviceClientId == currentClientId;
+                          }
+                        } catch (e) {
+                          // Device identity not initialized, skip check
+                        }
+
                         return ListTile(
                           leading: Icon(
                             isNative ? Icons.computer : Icons.web,
                             color: Theme.of(context).colorScheme.primary,
                           ),
-                          title: Text(device['browser'] ?? 'Unknown Device'),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  device['browser'] ?? 'Unknown Device',
+                                ),
+                              ),
+                              if (isCurrentDevice)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primaryContainer,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    'This Device',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimaryContainer,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Location: ${device['location'] ?? 'Unknown'}'),
+                              Text(
+                                'Location: ${device['location'] ?? 'Unknown'}',
+                              ),
                               Text('IP: ${device['ip'] ?? 'Unknown'}'),
                               if (device['device_id'] != null)
                                 Text('Device ID: ${device['device_id']}'),
                               if (device['updatedAt'] != null)
-                                Text('Last active: ${_formatTimestamp(device['updatedAt'])}'),
+                                Text(
+                                  'Last active: ${_formatTimestamp(device['updatedAt'])}',
+                                ),
                             ],
                           ),
                           trailing: IconButton(
-                            icon: Icon(Icons.delete, color: Theme.of(context).colorScheme.error),
-                            onPressed: () => _deleteClient(device['clientid'] ?? device['id']?.toString() ?? ''),
-                            tooltip: 'Remove device',
+                            icon: Icon(
+                              Icons.delete,
+                              color: isCurrentDevice
+                                  ? Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.3)
+                                  : Theme.of(context).colorScheme.error,
+                            ),
+                            onPressed: isCurrentDevice
+                                ? null
+                                : () => _deleteClient(deviceClientId),
+                            tooltip: isCurrentDevice
+                                ? 'Cannot remove current device'
+                                : 'Remove device',
                           ),
                         );
                       },
@@ -646,7 +827,10 @@ class _WebauthnPageState extends State<WebauthnPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('$backupUnusedCount codes from $backupTotalCount are unused', style: Theme.of(context).textTheme.bodyLarge),
+              Text(
+                '$backupUnusedCount codes from $backupTotalCount are unused',
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
               ElevatedButton(
                 onPressed: backupButtonEnabled
                     ? _confirmAndRegenerateBackupCodes

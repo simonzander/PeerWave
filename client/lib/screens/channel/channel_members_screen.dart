@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../../models/role.dart';
 import '../../models/user_roles.dart';
 import '../../providers/role_provider.dart';
+import '../../services/user_profile_service.dart';
+import 'dart:convert';
 
 class ChannelMembersScreen extends StatefulWidget {
   final String channelId;
@@ -26,6 +28,9 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
+  // Track loaded profiles from UserProfileService for reactive updates
+  final Map<String, Map<String, dynamic>?> _loadedProfiles = {};
+
   @override
   void initState() {
     super.initState();
@@ -40,7 +45,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
     try {
       final roleProvider = Provider.of<RoleProvider>(context, listen: false);
-      
+
       // Load members and available roles in parallel
       final results = await Future.wait([
         roleProvider.getChannelMembers(widget.channelId),
@@ -49,7 +54,9 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
       final members = results[0] as List<ChannelMember>;
       debugPrint('[MEMBERS_SCREEN] Loaded ${members.length} members:');
-      members.forEach((m) => debugPrint('[MEMBERS_SCREEN] - ${m.name} (${m.userId})'));
+      members.forEach(
+        (m) => debugPrint('[MEMBERS_SCREEN] - ${m.name} (${m.userId})'),
+      );
 
       setState(() {
         _members = members;
@@ -83,10 +90,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                 value: selectedRole,
                 hint: const Text('Select Role'),
                 items: _availableRoles.map((role) {
-                  return DropdownMenuItem(
-                    value: role,
-                    child: Text(role.name),
-                  );
+                  return DropdownMenuItem(value: role, child: Text(role.name));
                 }).toList(),
                 onChanged: (role) {
                   setState(() {
@@ -98,10 +102,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                 const SizedBox(height: 16),
                 Text(
                   'Permissions: ${selectedRole!.permissions.join(", ")}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
               ],
             ],
@@ -143,9 +144,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Remove Role'),
-        content: Text(
-          'Remove the role "${role.name}" from ${member.name}?',
-        ),
+        content: Text('Remove the role "${role.name}" from ${member.name}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -181,19 +180,13 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 
   void _showSuccess(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.green),
     );
   }
 
@@ -227,13 +220,23 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                       setState(() => isLoading = true);
                       try {
                         debugPrint('[ADD_USER_DIALOG] Searching for: $value');
-                        final roleProvider = Provider.of<RoleProvider>(context, listen: false);
-                        final users = await roleProvider.getAvailableUsersForChannel(
-                          widget.channelId,
-                          search: value,
+                        final roleProvider = Provider.of<RoleProvider>(
+                          context,
+                          listen: false,
                         );
-                        debugPrint('[ADD_USER_DIALOG] Found ${users.length} users');
-                        users.forEach((u) => debugPrint('[ADD_USER_DIALOG] - ${u['displayName']} (${u['email']})'));
+                        final users = await roleProvider
+                            .getAvailableUsersForChannel(
+                              widget.channelId,
+                              search: value,
+                            );
+                        debugPrint(
+                          '[ADD_USER_DIALOG] Found ${users.length} users',
+                        );
+                        users.forEach(
+                          (u) => debugPrint(
+                            '[ADD_USER_DIALOG] - ${u['displayName']} (${u['email']})',
+                          ),
+                        );
                         setState(() {
                           availableUsers = users;
                           isLoading = false;
@@ -261,16 +264,11 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                       itemCount: availableUsers.length,
                       itemBuilder: (context, index) {
                         final user = availableUsers[index];
-                        final isSelected = selectedUser?['uuid'] == user['uuid'];
+                        final isSelected =
+                            selectedUser?['uuid'] == user['uuid'];
                         return ListTile(
                           selected: isSelected,
-                          leading: CircleAvatar(
-                            child: Text(
-                              user['displayName']!.isNotEmpty
-                                  ? user['displayName']![0].toUpperCase()
-                                  : '?',
-                            ),
-                          ),
+                          leading: _buildUserSearchAvatar(user),
                           title: Text(user['displayName']!),
                           subtitle: Text(user['email']!),
                           onTap: () {
@@ -314,7 +312,10 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                   ? null
                   : () async {
                       try {
-                        final roleProvider = Provider.of<RoleProvider>(context, listen: false);
+                        final roleProvider = Provider.of<RoleProvider>(
+                          context,
+                          listen: false,
+                        );
                         await roleProvider.addUserToChannel(
                           channelId: widget.channelId,
                           userId: selectedUser!['uuid']!,
@@ -345,9 +346,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Leave Channel'),
-        content: Text(
-          'Are you sure you want to leave ${widget.channelName}?',
-        ),
+        content: Text('Are you sure you want to leave ${widget.channelName}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -427,9 +426,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Remove User'),
-        content: Text(
-          'Remove ${member.name} from ${widget.channelName}?',
-        ),
+        content: Text('Remove ${member.name} from ${widget.channelName}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -465,28 +462,37 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
   @override
   Widget build(BuildContext context) {
     final roleProvider = Provider.of<RoleProvider>(context);
-    
+
     // Debug logging
     debugPrint('[ChannelMembers] Channel ID: ${widget.channelId}');
     debugPrint('[ChannelMembers] isAdmin: ${roleProvider.isAdmin}');
-    debugPrint('[ChannelMembers] isChannelOwner: ${roleProvider.isChannelOwner(widget.channelId)}');
-    debugPrint('[ChannelMembers] has role.assign: ${roleProvider.hasChannelPermission(widget.channelId, 'role.assign')}');
-    debugPrint('[ChannelMembers] has user.add: ${roleProvider.hasChannelPermission(widget.channelId, 'user.add')}');
-    
-    final canManageRoles = roleProvider.isAdmin ||
+    debugPrint(
+      '[ChannelMembers] isChannelOwner: ${roleProvider.isChannelOwner(widget.channelId)}',
+    );
+    debugPrint(
+      '[ChannelMembers] has role.assign: ${roleProvider.hasChannelPermission(widget.channelId, 'role.assign')}',
+    );
+    debugPrint(
+      '[ChannelMembers] has user.add: ${roleProvider.hasChannelPermission(widget.channelId, 'user.add')}',
+    );
+
+    final canManageRoles =
+        roleProvider.isAdmin ||
         roleProvider.isChannelOwner(widget.channelId) ||
         roleProvider.hasChannelPermission(widget.channelId, 'role.assign');
-    
-    final canAddUsers = roleProvider.isAdmin ||
+
+    final canAddUsers =
+        roleProvider.isAdmin ||
         roleProvider.isChannelOwner(widget.channelId) ||
         roleProvider.hasChannelPermission(widget.channelId, 'user.add');
-    
-    final canKickUsers = roleProvider.isAdmin ||
+
+    final canKickUsers =
+        roleProvider.isAdmin ||
         roleProvider.isChannelOwner(widget.channelId) ||
         roleProvider.hasChannelPermission(widget.channelId, 'user.kick');
-    
+
     final isOwner = roleProvider.isChannelOwner(widget.channelId);
-    
+
     debugPrint('[ChannelMembers] canManageRoles: $canManageRoles');
     debugPrint('[ChannelMembers] canAddUsers: $canAddUsers');
     debugPrint('[ChannelMembers] canKickUsers: $canKickUsers');
@@ -515,10 +521,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
               tooltip: 'Delete Channel',
               color: Colors.red,
             ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData),
         ],
       ),
       body: Column(
@@ -532,11 +535,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
               ),
             ),
           if (_isLoading)
-            const Expanded(
-              child: Center(
-                child: CircularProgressIndicator(),
-              ),
-            )
+            const Expanded(child: Center(child: CircularProgressIndicator()))
           else
             Expanded(
               child: ListView.builder(
@@ -549,13 +548,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                       vertical: 8,
                     ),
                     child: ExpansionTile(
-                      leading: CircleAvatar(
-                        child: Text(
-                          member.name.isNotEmpty
-                              ? member.name[0].toUpperCase()
-                              : '?',
-                        ),
-                      ),
+                      leading: _buildMemberAvatar(member),
                       title: Text(
                         member.name,
                         style: const TextStyle(fontWeight: FontWeight.bold),
@@ -564,14 +557,14 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                         member.isOwner
                             ? 'Owner'
                             : member.isModerator
-                                ? 'Moderator'
-                                : 'Member',
+                            ? 'Moderator'
+                            : 'Member',
                         style: TextStyle(
                           color: member.isOwner
                               ? Colors.purple
                               : member.isModerator
-                                  ? Colors.blue
-                                  : Colors.grey,
+                              ? Colors.blue
+                              : Colors.grey,
                         ),
                       ),
                       trailing: Row(
@@ -621,11 +614,11 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                                       tooltip: 'Remove Role',
                                     )
                                   : role.standard
-                                      ? Chip(
-                                          label: const Text('Standard'),
-                                          backgroundColor: Colors.grey[300],
-                                        )
-                                      : null,
+                                  ? Chip(
+                                      label: const Text('Standard'),
+                                      backgroundColor: Colors.grey[300],
+                                    )
+                                  : null,
                             );
                           }).toList(),
                       ],
@@ -638,5 +631,128 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
       ),
     );
   }
-}
 
+  /// Build square avatar for member using UserProfileService
+  Widget _buildMemberAvatar(ChannelMember member) {
+    final profile =
+        _loadedProfiles[member.userId] ??
+        UserProfileService.instance.getProfileOrLoad(
+          member.userId,
+          onLoaded: (profile) {
+            if (mounted && profile != null) {
+              setState(() {
+                _loadedProfiles[member.userId] = profile;
+              });
+            }
+          },
+        );
+
+    final effectivePicture =
+        profile?['picture'] as String? ?? member.profilePicture;
+    final displayName = profile?['displayName'] as String? ?? member.name;
+
+    return _buildSquareAvatar(
+      pictureData: effectivePicture,
+      fallbackInitial: displayName.isNotEmpty
+          ? displayName[0].toUpperCase()
+          : '?',
+    );
+  }
+
+  /// Build square avatar for user in search results
+  Widget _buildUserSearchAvatar(Map<String, String> user) {
+    final userId = user['uuid'];
+    if (userId == null) {
+      return _buildSquareAvatar(
+        pictureData: null,
+        fallbackInitial: user['displayName']!.isNotEmpty
+            ? user['displayName']![0].toUpperCase()
+            : '?',
+      );
+    }
+
+    final profile =
+        _loadedProfiles[userId] ??
+        UserProfileService.instance.getProfileOrLoad(
+          userId,
+          onLoaded: (profile) {
+            if (mounted && profile != null) {
+              setState(() {
+                _loadedProfiles[userId] = profile;
+              });
+            }
+          },
+        );
+
+    final effectivePicture = profile?['picture'] as String?;
+    final displayName =
+        profile?['displayName'] as String? ?? user['displayName']!;
+
+    return _buildSquareAvatar(
+      pictureData: effectivePicture,
+      fallbackInitial: displayName.isNotEmpty
+          ? displayName[0].toUpperCase()
+          : '?',
+    );
+  }
+
+  /// Build square avatar widget
+  Widget _buildSquareAvatar({
+    required String? pictureData,
+    required String fallbackInitial,
+  }) {
+    ImageProvider? imageProvider;
+
+    if (pictureData != null && pictureData.isNotEmpty) {
+      try {
+        if (pictureData.startsWith('data:image/')) {
+          // Base64 encoded image
+          final base64Data = pictureData.split(',').last;
+          final bytes = base64Decode(base64Data);
+          imageProvider = MemoryImage(bytes);
+        } else if (pictureData.startsWith('http://') ||
+            pictureData.startsWith('https://')) {
+          // URL
+          imageProvider = NetworkImage(pictureData);
+        } else if (pictureData.startsWith('/')) {
+          // Relative path - would need host, skip for now
+          imageProvider = null;
+        }
+      } catch (e) {
+        debugPrint('[CHANNEL_MEMBERS] Error parsing picture: $e');
+      }
+    }
+
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: imageProvider == null
+            ? Theme.of(context).colorScheme.primaryContainer
+            : null,
+        borderRadius: BorderRadius.circular(4), // Slightly rounded corners
+        image: imageProvider != null
+            ? DecorationImage(
+                image: imageProvider,
+                fit: BoxFit.cover,
+                onError: (_, __) {
+                  // Error handled by falling back to initials
+                },
+              )
+            : null,
+      ),
+      child: imageProvider == null
+          ? Center(
+              child: Text(
+                fallbackInitial,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            )
+          : null,
+    );
+  }
+}

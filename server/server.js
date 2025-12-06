@@ -134,7 +134,7 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
       try {
         // Get all devices for this user
         const clients = await Client.findAll({
-          where: { uuid: userId }
+          where: { owner: userId }
         });
         
         if (clients.length === 0) {
@@ -147,7 +147,7 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
         // Send to each device
         for (const client of clients) {
           try {
-            const recipientDeviceId = client.deviceId.toString();
+            const recipientDeviceId = client.device_id.toString();
             
             // Create Signal message payload
             const message = {
@@ -944,6 +944,9 @@ io.sockets.on("connection", socket => {
       if(isAuthenticated()) {
         const userId = getUserId();
         const clientId = getClientId();
+        
+        console.log(`[SIGNAL SERVER] signalStatus: userId=${userId}, clientId=${clientId}`);
+        
         // Identity: check if public_key and registration_id are present
         const client = await Client.findOne({
           where: { owner: userId, clientid: clientId }
@@ -954,7 +957,7 @@ io.sockets.on("connection", socket => {
         const preKeysCount = await SignalPreKey.count({
           where: { owner: userId, client: clientId }
         });
-        console.log(`[SIGNAL SERVER] signalStatus: User ${userId} has ${preKeysCount} PreKeys on server`);
+        console.log(`[SIGNAL SERVER] signalStatus: User ${userId}, Client ${clientId} has ${preKeysCount} PreKeys on server`);
 
         // SignedPreKey: latest
         const signedPreKey = await SignalSignedPreKey.findOne({
@@ -965,7 +968,9 @@ io.sockets.on("connection", socket => {
         if (signedPreKey) {
           signedPreKeyStatus = {
             id: signedPreKey.signed_prekey_id,
-            createdAt: signedPreKey.createdAt
+            createdAt: signedPreKey.createdAt,
+            signed_prekey_data: signedPreKey.signed_prekey_data,
+            signed_prekey_signature: signedPreKey.signed_prekey_signature
           };
         }
 

@@ -207,8 +207,45 @@ class MessageListenerService {
         return;
       }
 
-      // Decrypt and store in local storage
+      // Skip notifications for own messages
       final signalService = SignalService.instance;
+      final isOwnMessage = senderId == signalService.currentUserId;
+
+      if (isOwnMessage) {
+        debugPrint(
+          '[MESSAGE_LISTENER] Skipping notification for own message: $itemId',
+        );
+        // Still decrypt and store, but don't trigger notification or increment unread count
+        try {
+          final decrypted = await signalService.decryptGroupItem(
+            channelId: channelId,
+            senderId: senderId,
+            senderDeviceId: senderDeviceId,
+            ciphertext: payload,
+          );
+
+          await signalService.decryptedGroupItemsStore.storeDecryptedGroupItem(
+            itemId: itemId,
+            channelId: channelId,
+            sender: senderId,
+            senderDevice: senderDeviceId,
+            message: decrypted,
+            timestamp: timestamp ?? DateTime.now().toIso8601String(),
+            type: itemType,
+          );
+        } catch (e) {
+          debugPrint('[MESSAGE_LISTENER] Error storing own message: $e');
+        }
+        return;
+      }
+
+      // Skip emote messages - they're handled by the dedicated emote handler
+      if (itemType == 'emote') {
+        debugPrint(
+          '[MESSAGE_LISTENER] Skipping emote message - handled by dedicated handler',
+        );
+        return;
+      }
 
       try {
         // Decrypt using auto-reload on error
@@ -626,7 +663,9 @@ class MessageListenerService {
     required String decryptedPayload,
   }) async {
     try {
-      debugPrint('[MESSAGE_LISTENER] Processing file sharedWith update from Signal');
+      debugPrint(
+        '[MESSAGE_LISTENER] Processing file sharedWith update from Signal',
+      );
 
       // Parse the decrypted JSON payload
       final Map<String, dynamic> updateData = jsonDecode(decryptedPayload);
@@ -639,7 +678,9 @@ class MessageListenerService {
         return;
       }
 
-      debugPrint('[MESSAGE_LISTENER] SharedWith update for $fileId: ${sharedWith.length} users');
+      debugPrint(
+        '[MESSAGE_LISTENER] SharedWith update for $fileId: ${sharedWith.length} users',
+      );
 
       final fileTransferService = _getFileTransferService();
       if (fileTransferService != null) {
@@ -649,16 +690,24 @@ class MessageListenerService {
             'sharedWith': sharedWith,
             'lastSync': DateTime.now().millisecondsSinceEpoch,
           });
-          
-          debugPrint('[MESSAGE_LISTENER] ✓ Updated local sharedWith for $fileId via Signal');
+
+          debugPrint(
+            '[MESSAGE_LISTENER] ✓ Updated local sharedWith for $fileId via Signal',
+          );
         } catch (e) {
-          debugPrint('[MESSAGE_LISTENER] Warning: Could not update local sharedWith: $e');
+          debugPrint(
+            '[MESSAGE_LISTENER] Warning: Could not update local sharedWith: $e',
+          );
         }
       }
 
-      debugPrint('[MESSAGE_LISTENER] File sharedWith update processed successfully');
+      debugPrint(
+        '[MESSAGE_LISTENER] File sharedWith update processed successfully',
+      );
     } catch (e) {
-      debugPrint('[MESSAGE_LISTENER] Error processing file sharedWith update: $e');
+      debugPrint(
+        '[MESSAGE_LISTENER] Error processing file sharedWith update: $e',
+      );
     }
   }
 
@@ -671,8 +720,10 @@ class MessageListenerService {
     required String decryptedPayload,
   }) async {
     try {
-      debugPrint('[MESSAGE_LISTENER] Processing identity key change notification from $senderId');
-      
+      debugPrint(
+        '[MESSAGE_LISTENER] Processing identity key change notification from $senderId',
+      );
+
       // Store as system message in SQLite for 1:1 messages
       final messageStore = await SqliteMessageStore.getInstance();
       await messageStore.storeReceivedMessage(
@@ -683,7 +734,7 @@ class MessageListenerService {
         timestamp: timestamp ?? DateTime.now().toIso8601String(),
         type: 'system:identityKeyChanged', // Special type for UI rendering
       );
-      
+
       // Trigger notification for UI update
       _triggerNotification(
         MessageNotification(
@@ -697,8 +748,10 @@ class MessageListenerService {
           message: 'Identity key changed',
         ),
       );
-      
-      debugPrint('[MESSAGE_LISTENER] ✓ Identity key change notification processed');
+
+      debugPrint(
+        '[MESSAGE_LISTENER] ✓ Identity key change notification processed',
+      );
     } catch (e) {
       debugPrint('[MESSAGE_LISTENER] Error processing identity key change: $e');
     }

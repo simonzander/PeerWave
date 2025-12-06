@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/file_transfer_stats_provider.dart';
 import 'package:fl_chart/fl_chart.dart';
+import '../theme/app_theme_constants.dart';
 
 /// Context panel for Files view showing transfer statistics
 class FilesContextPanel extends StatelessWidget {
@@ -10,82 +11,102 @@ class FilesContextPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Consumer<FileTransferStatsProvider>(
       builder: (context, stats, child) {
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
+        return Container(
+          color: AppThemeConstants.contextPanelBackground,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Title
-              Text(
-                'Transfer Statistics',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              
-              // Active Transfers Summary
-              _buildSummaryCard(context, stats),
-              const SizedBox(height: 16),
-              
-              // Upload Speed Section
-              _buildSpeedSection(
-                context,
-                title: 'Upload Speed',
-                speed: stats.totalUploadSpeed,
-                icon: Icons.arrow_upward,
-                color: colorScheme.error, // Use error/warning color for uploads
-              ),
-              const SizedBox(height: 8),
-              _buildSpeedGraph(
-                context,
-                stats.speedHistory,
-                isUpload: true,
-              ),
-              const SizedBox(height: 16),
-              
-              // Download Speed Section
-              _buildSpeedSection(
-                context,
-                title: 'Download Speed',
-                speed: stats.totalDownloadSpeed,
-                icon: Icons.arrow_downward,
-                color: colorScheme.primary,
-              ),
-              const SizedBox(height: 8),
-              _buildSpeedGraph(
-                context,
-                stats.speedHistory,
-                isUpload: false,
-              ),
-              const SizedBox(height: 16),
-              
-              // Recent Activity
-              if (stats.activeTransfers.isNotEmpty) ...[
-                Text(
-                  'Active Transfers',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+              const Divider(height: 1),
+
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title
+                      Text(
+                        'Transfer Statistics',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Active Transfers Summary
+                      _buildSummaryCard(context, stats),
+                      const SizedBox(height: 16),
+
+                      // Upload Speed Section
+                      _buildSpeedSection(
+                        context,
+                        title: 'Upload Speed',
+                        speed: stats.totalUploadSpeed,
+                        icon: Icons.arrow_upward,
+                        color: colorScheme
+                            .error, // Use error/warning color for uploads
+                      ),
+                      const SizedBox(height: 8),
+                      _buildSpeedGraph(
+                        context,
+                        stats.speedHistory,
+                        isUpload: true,
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Download Speed Section
+                      _buildSpeedSection(
+                        context,
+                        title: 'Download Speed',
+                        speed: stats.totalDownloadSpeed,
+                        icon: Icons.arrow_downward,
+                        color: colorScheme.primary,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildSpeedGraph(
+                        context,
+                        stats.speedHistory,
+                        isUpload: false,
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Recent Activity
+                      if (stats.activeTransfers.isNotEmpty) ...[
+                        Text(
+                          'Active Transfers',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        ...stats.activeTransfers
+                            .take(10)
+                            .map(
+                              (transfer) =>
+                                  _buildTransferItem(context, transfer),
+                            )
+                            .toList(),
+                      ],
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                ...stats.activeTransfers.take(10).map(
-                  (transfer) => _buildTransferItem(context, transfer),
-                ).toList(),
-              ],
+              ),
             ],
           ),
         );
       },
     );
   }
-  
-  Widget _buildSummaryCard(BuildContext context, FileTransferStatsProvider stats) {
+
+  Widget _buildSummaryCard(
+    BuildContext context,
+    FileTransferStatsProvider stats,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12.0),
@@ -116,7 +137,7 @@ class FilesContextPanel extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildSummaryItem(
     BuildContext context, {
     required IconData icon,
@@ -135,14 +156,11 @@ class FilesContextPanel extends StatelessWidget {
             color: color,
           ),
         ),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
       ],
     );
   }
-  
+
   Widget _buildSpeedSection(
     BuildContext context, {
     required String title,
@@ -156,9 +174,9 @@ class FilesContextPanel extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           title,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
         ),
         const Spacer(),
         Text(
@@ -171,15 +189,17 @@ class FilesContextPanel extends StatelessWidget {
       ],
     );
   }
-  
+
   Widget _buildSpeedGraph(
     BuildContext context,
     List<SpeedDataPoint> history, {
     required bool isUpload,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    final color = isUpload ? colorScheme.error : colorScheme.primary; // Use error/warning for uploads
-    
+    final color = isUpload
+        ? colorScheme.error
+        : colorScheme.primary; // Use error/warning for uploads
+
     if (history.isEmpty) {
       return Container(
         height: 100,
@@ -194,7 +214,7 @@ class FilesContextPanel extends StatelessWidget {
         ),
       );
     }
-    
+
     return Container(
       height: 100,
       padding: const EdgeInsets.only(right: 8, top: 8),
@@ -211,14 +231,10 @@ class FilesContextPanel extends StatelessWidget {
               );
             },
           ),
-          titlesData: FlTitlesData(
-            show: false,
-          ),
+          titlesData: FlTitlesData(show: false),
           borderData: FlBorderData(
             show: true,
-            border: Border.all(
-              color: colorScheme.outline.withOpacity(0.3),
-            ),
+            border: Border.all(color: colorScheme.outline.withOpacity(0.3)),
           ),
           minX: 0,
           maxX: (history.length - 1).toDouble(),
@@ -227,8 +243,8 @@ class FilesContextPanel extends StatelessWidget {
           lineBarsData: [
             LineChartBarData(
               spots: history.asMap().entries.map((entry) {
-                final speed = isUpload 
-                    ? entry.value.uploadSpeed 
+                final speed = isUpload
+                    ? entry.value.uploadSpeed
                     : entry.value.downloadSpeed;
                 return FlSpot(entry.key.toDouble(), speed / 1024); // KB/s
               }).toList(),
@@ -247,23 +263,23 @@ class FilesContextPanel extends StatelessWidget {
       ),
     );
   }
-  
+
   double _getMaxSpeed(List<SpeedDataPoint> history, bool isUpload) {
     if (history.isEmpty) return 100;
-    
-    final maxSpeed = history.map((p) => 
-      isUpload ? p.uploadSpeed : p.downloadSpeed
-    ).reduce((a, b) => a > b ? a : b);
-    
+
+    final maxSpeed = history
+        .map((p) => isUpload ? p.uploadSpeed : p.downloadSpeed)
+        .reduce((a, b) => a > b ? a : b);
+
     // Convert to KB/s and add 20% padding
     return (maxSpeed / 1024) * 1.2 + 10;
   }
-  
+
   Widget _buildTransferItem(BuildContext context, ActiveTransfer transfer) {
     final colorScheme = Theme.of(context).colorScheme;
     final isUpload = transfer.direction == TransferDirection.upload;
     final color = isUpload ? colorScheme.tertiary : colorScheme.primary;
-    
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
       child: Container(
