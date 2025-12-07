@@ -1255,7 +1255,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                     channelDescription: _channelData?['description'] as String?,
                     isPrivate: _channelData?['private'] as bool? ?? false,
                     defaultJoinRole:
-                        _channelData?['defaultJoinRole'] as String?,
+                        _channelData?['defaultRoleId'] as String?,
                     host: widget.host,
                     isOwner: _isOwner,
                   ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import '../../services/api_service.dart';
 import '../../models/role.dart';
 import '../../providers/role_provider.dart';
@@ -119,6 +120,7 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
         name: _nameController.text.trim(),
         description: _descriptionController.text.trim(),
         isPrivate: _isPrivate,
+        defaultRoleId: _selectedDefaultRole,
       );
 
       if (resp.statusCode == 200) {
@@ -210,10 +212,17 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
 
       if (resp.statusCode == 200) {
         if (mounted) {
-          _showSuccess('Channel deleted successfully');
-          // Pop twice: once for this screen, once to exit the channel view
-          Navigator.of(context).pop();
-          Navigator.of(context).pop();
+          // Navigate to channels overview using GoRouter
+          context.go('/app/channels');
+          
+          // Show success toast
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Channel "${widget.channelName}" deleted successfully'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 3),
+            ),
+          );
         }
       } else {
         throw Exception('Failed to delete channel: ${resp.statusCode}');

@@ -829,6 +829,181 @@ clientRoutes.post("/client/people/info", verifyAuthEither, async (req, res) => {
     }
 });
 
+// GET /client/channels/discover - Get discoverable channels (public channels user isn't part of)
+// IMPORTANT: This must come BEFORE /client/channels/:uuid to avoid route collision
+clientRoutes.get("/client/channels/discover", verifyAuthEither, async(req, res) => {
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = parseInt(req.query.offset) || 0;
+    
+    const userUuid = req.userId || req.session.uuid;
+    if (!userUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        const { ChannelMembers } = require('../db/model');
+        
+        // Find channels where user is owner
+        const ownedChannelIds = await Channel.findAll({
+            where: { owner: userUuid },
+            attributes: ['uuid']
+        });
+        
+        // Find channels where user is member
+        const memberChannelIds = await ChannelMembers.findAll({
+            where: { userId: userUuid },
+            attributes: ['channelId']
+        });
+        
+        // Combine owned and member channel IDs to exclude
+        const excludeChannelUuids = [
+            ...ownedChannelIds.map(c => c.uuid),
+            ...memberChannelIds.map(cm => cm.channelId)
+        ];
+        
+        // Find public channels user isn't part of
+        const discoverChannels = await Channel.findAll({
+            where: {
+                private: false,
+                uuid: { [Op.notIn]: excludeChannelUuids.length > 0 ? excludeChannelUuids : [''] }
+            },
+            order: [['createdAt', 'DESC']],
+            limit: limit,
+            offset: offset
+        });
+        
+        // Count total discoverable channels
+        const totalCount = await Channel.count({
+            where: {
+                private: false,
+                uuid: { [Op.notIn]: excludeChannelUuids.length > 0 ? excludeChannelUuids : [''] }
+            }
+        });
+        
+        res.status(200).json({ 
+            status: "success", 
+            channels: discoverChannels,
+            total: totalCount,
+            hasMore: offset + discoverChannels.length < totalCount
+        });
+    } catch (error) {
+        console.error('Error fetching discover channels:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// GET /client/channels/:uuid - Get single channel details
+clientRoutes.get("/client/channels/:uuid", verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
+    if (!sessionUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+
+    try {
+        const { uuid } = req.params;
+        
+        const channel = await Channel.findOne({
+            where: { uuid },
+            attributes: ['uuid', 'name', 'description', 'owner', 'private', 'type', 'defaultRoleId']
+        });
+
+        if (!channel) {
+            return res.status(404).json({ status: "error", message: "Channel not found" });
+        }
+
+        res.status(200).json(channel);
+    } catch (error) {
+        console.error('Error fetching channel details:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// PUT /client/channels/:uuid - Update channel settings (owner only)
+clientRoutes.put("/client/channels/:uuid", verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
+    if (!sessionUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+
+    try {
+        const { uuid } = req.params;
+        const { name, description, private: isPrivate, defaultRoleId } = req.body;
+        
+        // Find the channel
+        const channel = await Channel.findOne({ where: { uuid } });
+
+        if (!channel) {
+            return res.status(404).json({ status: "error", message: "Channel not found" });
+        }
+
+        // Check if user is owner
+        if (channel.owner !== sessionUuid) {
+            return res.status(403).json({ status: "error", message: "Only channel owners can update settings" });
+        }
+
+        // Update fields if provided
+        const updates = {};
+        if (name !== undefined) updates.name = name;
+        if (description !== undefined) updates.description = description;
+        if (isPrivate !== undefined) updates.private = isPrivate;
+        if (defaultRoleId !== undefined) updates.defaultRoleId = defaultRoleId;
+
+        await channel.update(updates);
+
+        res.status(200).json({ status: "success", channel });
+    } catch (error) {
+        console.error('Error updating channel:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
+// DELETE /client/channels/:uuid - Delete a channel (owner only)
+clientRoutes.delete("/client/channels/:uuid", verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
+    if (!sessionUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+
+    try {
+        const { uuid } = req.params;
+        
+        // Find the channel
+        const channel = await Channel.findOne({ where: { uuid } });
+
+        if (!channel) {
+            return res.status(404).json({ status: "error", message: "Channel not found" });
+        }
+
+        // Check if user is owner
+        if (channel.owner !== sessionUuid) {
+            return res.status(403).json({ status: "error", message: "Only channel owners can delete the channel" });
+        }
+
+        // Delete all channel memberships
+        const { ChannelMembers } = require('../db/model');
+        await ChannelMembers.destroy({
+            where: { channelId: uuid }
+        });
+
+        // Delete all channel role assignments
+        const { UserRoleChannel } = require('../db/model');
+        await UserRoleChannel.destroy({
+            where: { channelId: uuid }
+        });
+
+        // Delete the channel itself
+        await channel.destroy();
+
+        res.status(200).json({ 
+            status: "success",
+            message: "Channel deleted successfully" 
+        });
+    } catch (error) {
+        console.error('Error deleting channel:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+});
+
 clientRoutes.post("/client/channels/info", verifyAuthEither, async (req, res) => {
     const sessionUuid = req.userId || req.session.uuid;
     if (!sessionUuid) {
@@ -1039,68 +1214,6 @@ clientRoutes.post("/client/channels/:channelId/join", verifyAuthEither, async(re
         });
     } catch (error) {
         console.error('Error joining channel:', error);
-        res.status(500).json({ status: "error", message: "Internal server error" });
-    }
-});
-
-// Get discoverable channels (public channels user isn't part of)
-clientRoutes.get("/client/channels/discover", verifyAuthEither, async(req, res) => {
-    const limit = parseInt(req.query.limit) || 10;
-    const offset = parseInt(req.query.offset) || 0;
-    
-    const userUuid = req.userId || req.session.uuid;
-    if (!userUuid) {
-        return res.status(401).json({ status: "error", message: "Unauthorized" });
-    }
-    
-    try {
-        const { ChannelMembers } = require('../db/model');
-        
-        // Find channels where user is owner
-        const ownedChannelIds = await Channel.findAll({
-            where: { owner: userUuid },
-            attributes: ['uuid']
-        });
-        
-        // Find channels where user is member
-        const memberChannelIds = await ChannelMembers.findAll({
-            where: { userId: userUuid },
-            attributes: ['channelId']
-        });
-        
-        // Combine owned and member channel IDs to exclude
-        const excludeChannelUuids = [
-            ...ownedChannelIds.map(c => c.uuid),
-            ...memberChannelIds.map(cm => cm.channelId)
-        ];
-        
-        // Find public channels user isn't part of
-        const discoverChannels = await Channel.findAll({
-            where: {
-                private: false,
-                uuid: { [Op.notIn]: excludeChannelUuids.length > 0 ? excludeChannelUuids : [''] }
-            },
-            order: [['createdAt', 'DESC']],
-            limit: limit,
-            offset: offset
-        });
-        
-        // Count total discoverable channels
-        const totalCount = await Channel.count({
-            where: {
-                private: false,
-                uuid: { [Op.notIn]: excludeChannelUuids.length > 0 ? excludeChannelUuids : [''] }
-            }
-        });
-        
-        res.status(200).json({ 
-            status: "success", 
-            channels: discoverChannels,
-            total: totalCount,
-            hasMore: offset + discoverChannels.length < totalCount
-        });
-    } catch (error) {
-        console.error('Error fetching discover channels:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });

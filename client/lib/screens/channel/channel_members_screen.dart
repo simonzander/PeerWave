@@ -647,8 +647,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
           },
         );
 
-    final effectivePicture =
-        profile?['picture'] as String? ?? member.profilePicture;
+    final effectivePicture = profile?['picture'] as String?;
     final displayName = profile?['displayName'] as String? ?? member.name;
 
     return _buildSquareAvatar(

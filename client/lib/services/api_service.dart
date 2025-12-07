@@ -404,6 +404,7 @@ class ApiService {
     String? name,
     String? description,
     bool? isPrivate,
+    String? defaultRoleId,
   }) async {
     final url = ensureHttpPrefix(host);
     final response = await dio.put(
@@ -412,6 +413,7 @@ class ApiService {
         if (name != null) 'name': name,
         if (description != null) 'description': description,
         if (isPrivate != null) 'private': isPrivate,
+        if (defaultRoleId != null) 'defaultRoleId': defaultRoleId,
       },
       options: Options(
         contentType: 'application/json',

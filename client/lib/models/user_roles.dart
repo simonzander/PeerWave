@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'role.dart';
 import 'package:flutter/foundation.dart';
 
@@ -203,7 +205,17 @@ class ChannelMember {
       if (picture is String) {
         profilePictureData = picture;
       } else if (picture is Map && picture['data'] != null) {
-        profilePictureData = picture['data'] as String?;
+        // Handle Buffer format from server {type: 'Buffer', data: [bytes]}
+        final data = picture['data'];
+        if (data is List) {
+          // Convert byte array to base64 data URI
+          final bytes = Uint8List.fromList(data.cast<int>());
+          final base64String = base64Encode(bytes);
+          // Assume JPEG format (most common), could be enhanced to detect type
+          profilePictureData = 'data:image/jpeg;base64,$base64String';
+        } else if (data is String) {
+          profilePictureData = data;
+        }
       }
 
       // Debug other fields
@@ -236,12 +248,13 @@ class ChannelMember {
         return value.toString();
       }
 
+      final userId = extractString(json['userId']) ?? 'unknown';
       final username = extractString(json['username']);
       final email = extractString(json['email']);
       final displayName = extractString(json['displayName']);
 
       return ChannelMember(
-        userId: json['userId'] as String,
+        userId: userId,
         username: username ?? email ?? displayName ?? 'Unknown',
         displayName: displayName,
         profilePicture: profilePictureData,
