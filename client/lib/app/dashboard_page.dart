@@ -1020,12 +1020,12 @@ class _EmptyStateWidget extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 80, color: Colors.grey[600]),
+          Icon(icon, size: 80, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
           const SizedBox(height: 24),
           Text(
             title,
             style: TextStyle(
-              color: Colors.grey[400],
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
               fontSize: 24,
               fontWeight: FontWeight.bold,
             ),
@@ -1034,7 +1034,7 @@ class _EmptyStateWidget extends StatelessWidget {
           Text(
             subtitle,
             style: TextStyle(
-              color: Colors.grey[600],
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
               fontSize: 16,
             ),
           ),

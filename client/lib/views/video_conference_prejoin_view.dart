@@ -547,6 +547,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
   /// Build controls section
   Widget _buildControls() {
     return Container(
+      color: Theme.of(context).colorScheme.surface,
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
@@ -591,11 +592,12 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
         // Camera Selection
         DropdownButtonFormField<MediaDevice>(
           value: _selectedCamera,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Camera',
-            prefixIcon: Icon(Icons.videocam),
-            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.videocam, color: Theme.of(context).colorScheme.onSurface),
+            border: const OutlineInputBorder(),
             hintText: 'Select a camera...',
+            filled: false,
           ),
           items: [
             // Add "None" option
@@ -634,11 +636,12 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
         // Microphone Selection
         DropdownButtonFormField<MediaDevice>(
           value: _selectedMicrophone,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Microphone',
-            prefixIcon: Icon(Icons.mic),
-            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.mic, color: Theme.of(context).colorScheme.onSurface),
+            border: const OutlineInputBorder(),
             hintText: 'Select a microphone...',
+            filled: false,
           ),
           items: [
             // Add "None" option
@@ -668,10 +671,10 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
   /// Build E2EE status indicator
   Widget _buildE2EEStatus() {
     if (_isCheckingParticipants) {
-      return const ListTile(
-        leading: CircularProgressIndicator(),
-        title: Text('Checking participants...'),
-        subtitle: Text('Verifying who else is in the call'),
+      return ListTile(
+        leading: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
+        title: Text('Checking participants...', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+        subtitle: Text('Verifying who else is in the call', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       );
     }
     
@@ -679,14 +682,14 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       if (_hasE2EEKey) {
         return ListTile(
           leading: Icon(Icons.lock, color: Theme.of(context).colorScheme.primary, size: 32),
-          title: const Text('End-to-end encryption ready'),
-          subtitle: const Text('You are the first participant - encryption key generated'),
+          title: Text('End-to-end encryption ready', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+          subtitle: Text('You are the first participant - encryption key generated', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
         );
       } else if (_isExchangingKey) {
-        return const ListTile(
-          leading: CircularProgressIndicator(),
-          title: Text('Generating encryption key...'),
-          subtitle: Text('You are the first participant'),
+        return ListTile(
+          leading: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
+          title: Text('Generating encryption key...', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+          subtitle: Text('You are the first participant', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
         );
       } else {
         return ListTile(
@@ -699,24 +702,24 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
     
     if (_isExchangingKey) {
       return ListTile(
-        leading: const CircularProgressIndicator(),
-        title: const Text('Exchanging encryption keys...'),
-        subtitle: Text('$_participantCount ${_participantCount == 1 ? "participant" : "participants"} in call'),
+        leading: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
+        title: Text('Exchanging encryption keys...', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+        subtitle: Text('$_participantCount ${_participantCount == 1 ? "participant" : "participants"} in call', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       );
     }
     
     if (_hasE2EEKey) {
       return ListTile(
         leading: Icon(Icons.lock, color: Theme.of(context).colorScheme.primary, size: 32),
-        title: const Text('End-to-end encryption ready'),
-        subtitle: const Text('Keys exchanged securely via Signal Protocol'),
+        title: Text('End-to-end encryption ready', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+        subtitle: Text('Keys exchanged securely via Signal Protocol', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       );
     }
     
     return ListTile(
       leading: Icon(Icons.error, color: Theme.of(context).colorScheme.error, size: 32),
-      title: const Text('Key exchange failed'),
-      subtitle: Text(_keyExchangeError ?? 'Unknown error'),
+      title: Text('Key exchange failed', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+      subtitle: Text(_keyExchangeError ?? 'Unknown error', style: TextStyle(color: Theme.of(context).colorScheme.error)),
       trailing: TextButton(
         onPressed: _requestE2EEKey,
         child: const Text('Retry'),

@@ -269,9 +269,11 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           );
           // Show warning but don't block completely
           if (mounted) {
+            final warningColor = Theme.of(context).brightness == Brightness.dark 
+                ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
             context.showCustomSnackBar(
               'Signal Protocol initialization incomplete. Some features may not work.',
-              backgroundColor: Colors.orange,
+              backgroundColor: warningColor,
               duration: const Duration(seconds: 5),
             );
           }
@@ -334,13 +336,15 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                 ? ' and ${failedKeys.length - 3} more'
                 : '';
 
+            final warningColor = Theme.of(context).brightness == Brightness.dark 
+                ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
             context.showCustomSnackBar(
               'Cannot decrypt messages from: $memberList$remaining',
-              backgroundColor: Colors.orange,
+              backgroundColor: warningColor,
               duration: const Duration(seconds: 8),
               action: SnackBarAction(
                 label: 'Retry',
-                textColor: Colors.white,
+                textColor: Theme.of(context).colorScheme.onError,
                 onPressed: () {
                   _initializeGroupChannel(); // Retry loading
                 },
@@ -356,16 +360,20 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           if (errorMsg.contains('Failed to load') &&
               errorMsg.contains('sender key')) {
             // Partial failure - some member keys missing
+            final warningColor = Theme.of(context).brightness == Brightness.dark 
+                ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
             context.showCustomSnackBar(
               loadError.toString().replaceAll('Exception: ', ''),
-              backgroundColor: Colors.orange,
+              backgroundColor: warningColor,
               duration: const Duration(seconds: 7),
             );
           } else if (errorMsg.contains('HTTP') || errorMsg.contains('server')) {
             // Server error
+            final warningColor = Theme.of(context).brightness == Brightness.dark 
+                ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
             context.showCustomSnackBar(
               'Failed to load member encryption keys. You may not be able to read all messages.',
-              backgroundColor: Colors.orange,
+              backgroundColor: warningColor,
               duration: const Duration(seconds: 7),
             );
           }
@@ -376,9 +384,11 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       debugPrint('[SIGNAL_GROUP] Error initializing group channel: $e');
       // Show error but don't block the UI completely
       if (mounted) {
+        final warningColor = Theme.of(context).brightness == Brightness.dark 
+            ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
         context.showCustomSnackBar(
           'Failed to initialize group chat: $e',
-          backgroundColor: Colors.orange,
+          backgroundColor: warningColor,
           duration: const Duration(seconds: 5),
         );
       }
@@ -992,7 +1002,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         if (mounted) {
           context.showCustomSnackBar(
             'Cannot send message: Signal Protocol not initialized. Please refresh the page.',
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
             duration: const Duration(seconds: 5),
           );
         }
@@ -1018,9 +1028,11 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         } catch (keyError) {
           // Show warning but allow retry
           if (mounted) {
+            final warningColor = Theme.of(context).brightness == Brightness.dark 
+                ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
             context.showCustomSnackBar(
               'Sender key creation failed. Retrying may work: $keyError',
-              backgroundColor: Colors.orange,
+              backgroundColor: warningColor,
               duration: const Duration(seconds: 5),
             );
           }
@@ -1064,9 +1076,11 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         );
 
         if (mounted) {
+          final warningColor = Theme.of(context).brightness == Brightness.dark 
+              ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
           context.showCustomSnackBar(
             'Not connected. Message queued and will be sent when reconnected.',
-            backgroundColor: Colors.orange,
+            backgroundColor: warningColor,
             duration: const Duration(seconds: 5),
           );
         }
@@ -1145,24 +1159,27 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
 
       // STEP 4: Better error messages based on error type
       String errorMessage = 'Failed to send message';
-      Color errorColor = Colors.red;
+      final theme = Theme.of(context);
+      final warningColor = theme.brightness == Brightness.dark 
+          ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
+      Color errorColor = theme.colorScheme.error;
 
       if (e.toString().contains('No sender key found')) {
         errorMessage = 'Sender key not available. Please try again.';
-        errorColor = Colors.orange;
+        errorColor = warningColor;
       } else if (e.toString().contains('User not authenticated')) {
         errorMessage = 'Session expired. Please refresh the page.';
-        errorColor = Colors.red;
+        errorColor = theme.colorScheme.error;
       } else if (e.toString().contains('Identity key')) {
         errorMessage = 'Encryption keys missing. Please refresh the page.';
-        errorColor = Colors.red;
+        errorColor = theme.colorScheme.error;
       } else if (e.toString().contains('Cannot create sender key')) {
         errorMessage = 'Signal keys missing. Please refresh the page.';
-        errorColor = Colors.red;
+        errorColor = theme.colorScheme.error;
       } else if (e.toString().contains('network') ||
           e.toString().contains('connection')) {
         errorMessage = 'Network error. Please check your connection and retry.';
-        errorColor = Colors.orange;
+        errorColor = warningColor;
       } else {
         errorMessage = 'Failed to send message: ${e.toString()}';
       }
@@ -1184,7 +1201,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('# ${widget.channelName}'),
+        title: Text(
+          '# ${widget.channelName}',
+          style: TextStyle(color: colorScheme.onSurface),
+        ),
         backgroundColor: colorScheme.surfaceContainerHighest,
         foregroundColor: colorScheme.onSurface,
         elevation: 1,
@@ -1300,11 +1320,17 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                                     ),
                                   )
                                 : ActionChip(
-                                    avatar: const Icon(
+                                    avatar: Icon(
                                       Icons.arrow_upward,
                                       size: 18,
+                                      color: colorScheme.onSurface,
                                     ),
-                                    label: const Text('Load older messages'),
+                                    label: Text(
+                                      'Load older messages',
+                                      style: TextStyle(
+                                        color: colorScheme.onSurface,
+                                      ),
+                                    ),
                                     onPressed: () =>
                                         _loadMessages(loadMore: true),
                                     backgroundColor:
@@ -1466,7 +1492,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       if (mounted) {
         context.showCustomSnackBar(
           'Failed to add reaction: $e',
-          backgroundColor: Colors.red,
+          backgroundColor: Theme.of(context).colorScheme.error,
         );
       }
     }
@@ -1546,7 +1572,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       if (mounted) {
         context.showCustomSnackBar(
           'Starting download: ${fileMessage.fileName}...',
-          backgroundColor: Colors.blue,
+          backgroundColor: Theme.of(context).colorScheme.primary,
           duration: const Duration(seconds: 2),
         );
       }
@@ -1613,7 +1639,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           backgroundColor: Colors.green,
           action: SnackBarAction(
             label: 'View',
-            textColor: Colors.white,
+            textColor: Theme.of(context).colorScheme.onPrimary,
             onPressed: () {
               // TODO: Navigate to downloads screen
               debugPrint('[GROUP_CHAT] Navigate to downloads screen');
@@ -1628,7 +1654,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       if (mounted) {
         context.showCustomSnackBar(
           'Download failed: $e',
-          backgroundColor: Colors.red,
+          backgroundColor: Theme.of(context).colorScheme.error,
           duration: const Duration(seconds: 5),
         );
       }

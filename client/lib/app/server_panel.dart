@@ -226,7 +226,7 @@ class _ServerPanelState extends State<ServerPanel> {
   Widget build(BuildContext context) {
     return Container(
       width: 72,
-      color: const Color(0xFF202225),
+      color: Theme.of(context).colorScheme.surface,
       child: Column(
         children: [
           const SizedBox(height: 16),
@@ -236,7 +236,7 @@ class _ServerPanelState extends State<ServerPanel> {
               )).toList(),
           const Spacer(),
           IconButton(
-            icon: const Icon(Icons.add_circle, color: Colors.white, size: 36),
+            icon: Icon(Icons.add_circle, color: Theme.of(context).colorScheme.onSurface, size: 36),
             onPressed: () {
               GoRouter.of(context).go('/login');
             },
@@ -357,8 +357,10 @@ class _ServerIcon extends StatelessWidget {
               },
               child: CircleAvatar(
                 radius: 28,
-                backgroundColor: server.hasServerError ? Colors.red[200] : Colors.blue[400],
-                child: Icon(Icons.cloud, color: Colors.white),
+                backgroundColor: server.hasServerError 
+                    ? Theme.of(context).colorScheme.error.withOpacity(0.3) 
+                    : Theme.of(context).colorScheme.primary,
+                child: Icon(Icons.cloud, color: Theme.of(context).colorScheme.onPrimary),
               ),
             ),
           ),
@@ -370,8 +372,8 @@ class _ServerIcon extends StatelessWidget {
           child: server.hasAuthError || server.hasServerError
               ? CircleAvatar(
                   radius: 10,
-                  backgroundColor: Colors.yellow[700],
-                  child: Icon(Icons.warning, color: Colors.black, size: 14),
+                  backgroundColor: Colors.amber.shade600,
+                  child: Icon(Icons.warning, color: Theme.of(context).colorScheme.onSurface, size: 14),
                 )
               : (server.missedNotifications > 0
                   ? CircleAvatar(
@@ -379,7 +381,7 @@ class _ServerIcon extends StatelessWidget {
                       backgroundColor: Colors.orange,
                       child: Text(
                         '${server.missedNotifications}',
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 12),
                       ),
                     )
                   : const SizedBox.shrink()),

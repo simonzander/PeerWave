@@ -37,11 +37,9 @@ class ChannelsContextPanel extends StatelessWidget {
         // Categorize channels
         final categorized = _categorizeChannels(unreadProvider);
         
-        return Container(
-          color: AppThemeConstants.contextPanelBackground,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
               const Divider(height: 1),
               
               // Content
@@ -55,6 +53,7 @@ class ChannelsContextPanel extends StatelessWidget {
                           if (categorized['starred']!.isNotEmpty) ...[
                             _buildSectionHeader('Starred'),
                             ...categorized['starred']!.map((channel) => _buildChannelTile(
+                              context: context,
                               channel: channel,
                               onTap: () => onChannelTap(
                                 channel['uuid'],
@@ -72,6 +71,7 @@ class ChannelsContextPanel extends StatelessWidget {
                           if (categorized['live']!.isNotEmpty) ...[
                             _buildSectionHeader('Live'),
                             ...categorized['live']!.map((channel) => _buildChannelTile(
+                              context: context,
                               channel: channel,
                               onTap: () => onChannelTap(
                                 channel['uuid'],
@@ -89,6 +89,7 @@ class ChannelsContextPanel extends StatelessWidget {
                           if (categorized['unread']!.isNotEmpty) ...[
                             _buildSectionHeader('Unread'),
                             ...categorized['unread']!.map((channel) => _buildChannelTile(
+                              context: context,
                               channel: channel,
                               onTap: () => onChannelTap(
                                 channel['uuid'],
@@ -105,6 +106,7 @@ class ChannelsContextPanel extends StatelessWidget {
                           if (categorized['other']!.isNotEmpty) ...[
                             _buildSectionHeader('Channels'),
                             ...categorized['other']!.map((channel) => _buildChannelTile(
+                              context: context,
                               channel: channel,
                               onTap: () => onChannelTap(
                                 channel['uuid'],
@@ -123,7 +125,6 @@ class ChannelsContextPanel extends StatelessWidget {
                       ),
               ),
             ],
-          ),
         );
       },
     );
@@ -188,6 +189,7 @@ class ChannelsContextPanel extends StatelessWidget {
   }
 
   Widget _buildChannelTile({
+    required BuildContext context,
     required Map<String, dynamic> channel,
     required VoidCallback onTap,
     required UnreadMessagesProvider unreadProvider,
@@ -210,17 +212,17 @@ class ChannelsContextPanel extends StatelessWidget {
       cursor: SystemMouseCursors.click,
       child: Material(
         color: isActive 
-            ? AppThemeConstants.activeChannelBackground
+            ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
             : Colors.transparent,
         child: InkWell(
           onTap: onTap,
           hoverColor: isActive 
-              ? AppThemeConstants.activeChannelBackground
-              : const Color(0xFF1A1E24),
-          splashColor: const Color(0xFF252A32),
+              ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
+              : Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+          splashColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
           highlightColor: isActive
-              ? AppThemeConstants.activeChannelBackground
-              : const Color(0xFF1F242B),
+              ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
+              : Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
@@ -237,15 +239,11 @@ class ChannelsContextPanel extends StatelessWidget {
                             ? Icons.lock 
                             : (type == 'webrtc' ? Icons.videocam : Icons.tag),
                         backgroundColor: isLive 
-                            ? Colors.red.withOpacity(0.2)
-                            : (type == 'webrtc' 
-                                ? Colors.blue.withOpacity(0.2) 
-                                : Colors.grey.withOpacity(0.2)),
+                            ? Theme.of(context).colorScheme.error.withOpacity(0.2)
+                            : Theme.of(context).colorScheme.primary.withOpacity(0.2),
                         iconColor: isLive 
-                            ? Colors.red
-                            : (type == 'webrtc' 
-                                ? Colors.blue 
-                                : AppThemeConstants.textSecondary),
+                            ? Theme.of(context).colorScheme.error
+                            : Theme.of(context).colorScheme.primary,
                         size: 48,
                       ),
                       // Unread badge (bottom right, squared red badge)
@@ -274,7 +272,7 @@ class ChannelsContextPanel extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: AppThemeConstants.textPrimary,
+                                color: Theme.of(context).colorScheme.onSurface,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -282,10 +280,10 @@ class ChannelsContextPanel extends StatelessWidget {
                           ),
                           if (showStar) ...[
                             const SizedBox(width: 4),
-                            const Icon(
+                            Icon(
                               Icons.star,
                               size: 14,
-                              color: Colors.amber,
+                              color: Theme.of(context).colorScheme.tertiary,
                             ),
                           ],
                         ],
@@ -298,7 +296,7 @@ class ChannelsContextPanel extends StatelessWidget {
                           '${participants.length} ${participants.length == 1 ? 'participant' : 'participants'} • LIVE',
                           style: TextStyle(
                             fontSize: 12,
-                            color: Colors.red,
+                            color: Theme.of(context).colorScheme.error,
                           ),
                         )
                       else if (lastMessage.isNotEmpty)
@@ -306,7 +304,7 @@ class ChannelsContextPanel extends StatelessWidget {
                           lastMessage,
                           style: TextStyle(
                             fontSize: 12,
-                            color: AppThemeConstants.textSecondary.withOpacity(0.8),
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -316,7 +314,7 @@ class ChannelsContextPanel extends StatelessWidget {
                           description,
                           style: TextStyle(
                             fontSize: 12,
-                            color: AppThemeConstants.textSecondary.withOpacity(0.8),
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -326,7 +324,7 @@ class ChannelsContextPanel extends StatelessWidget {
                           type == 'webrtc' ? 'Video channel' : 'Text channel',
                           style: TextStyle(
                             fontSize: 12,
-                            color: AppThemeConstants.textSecondary.withOpacity(0.6),
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
                           ),
                         ),
                     ],

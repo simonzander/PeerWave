@@ -884,11 +884,17 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                                     ),
                                   )
                                 : ActionChip(
-                                    avatar: const Icon(
+                                    avatar: Icon(
                                       Icons.arrow_upward,
                                       size: 18,
+                                      color: colorScheme.onSurface,
                                     ),
-                                    label: const Text('Load older messages'),
+                                    label: Text(
+                                      'Load older messages',
+                                      style: TextStyle(
+                                        color: colorScheme.onSurface,
+                                      ),
+                                    ),
                                     onPressed: () =>
                                         _loadMessages(loadMore: true),
                                     backgroundColor:

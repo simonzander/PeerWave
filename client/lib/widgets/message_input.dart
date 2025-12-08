@@ -113,7 +113,7 @@ class _MessageInputState extends State<MessageInput> {
           child: Material(
             elevation: 8,
             borderRadius: BorderRadius.circular(12),
-            color: Colors.grey[850],
+            color: Theme.of(context).colorScheme.surface,
             child: _EmojiPickerWidget(
               onEmojiSelected: (emoji) {
                 _insertEmoji(emoji);
@@ -152,187 +152,229 @@ class _MessageInputState extends State<MessageInput> {
         // Rich text formatting toolbar
         if (_showFormatting)
           Container(
-            color: Colors.grey[900],
+            color: Theme.of(context).colorScheme.surface,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.format_bold, size: 20),
-                    color: Colors.white70,
-                    tooltip: 'Bold',
-                    onPressed: () => _insertFormatting('**', '**'),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.format_italic, size: 20),
-                    color: Colors.white70,
-                    tooltip: 'Italic',
-                    onPressed: () => _insertFormatting('_', '_'),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.format_strikethrough, size: 20),
-                    color: Colors.white70,
-                    tooltip: 'Strikethrough',
-                    onPressed: () => _insertFormatting('~~', '~~'),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.link, size: 20),
-                    color: Colors.white70,
-                    tooltip: 'Link',
-                    onPressed: () => _insertFormatting('[', '](https://example.com)'),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.format_list_numbered, size: 20),
-                    color: Colors.white70,
-                    tooltip: 'Numbered List',
-                    onPressed: () => _insertFormatting('1. ', '\n'),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.format_list_bulleted, size: 20),
-                    color: Colors.white70,
-                    tooltip: 'Bullet List',
-                    onPressed: () => _insertFormatting('• ', '\n'),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.code, size: 20),
-                    color: Colors.white70,
-                    tooltip: 'Inline Code',
-                    onPressed: () => _insertFormatting('`', '`'),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.code_off, size: 20),
-                    color: Colors.white70,
-                    tooltip: 'Code Block',
-                    onPressed: () => _insertFormatting('```\n', '\n```'),
-                  ),
-                ],
+              child: Builder(
+                builder: (context) {
+                  final theme = Theme.of(context);
+                  final iconColor = theme.colorScheme.onSurface.withOpacity(0.7);
+                  return Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.format_bold, size: 20),
+                        color: iconColor,
+                        tooltip: 'Bold',
+                        onPressed: () => _insertFormatting('**', '**'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.format_italic, size: 20),
+                        color: iconColor,
+                        tooltip: 'Italic',
+                        onPressed: () => _insertFormatting('_', '_'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.format_strikethrough, size: 20),
+                        color: iconColor,
+                        tooltip: 'Strikethrough',
+                        onPressed: () => _insertFormatting('~~', '~~'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.link, size: 20),
+                        color: iconColor,
+                        tooltip: 'Link',
+                        onPressed: () => _insertFormatting('[', '](https://example.com)'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.format_list_numbered, size: 20),
+                        color: iconColor,
+                        tooltip: 'Numbered List',
+                        onPressed: () => _insertFormatting('1. ', '\n'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.format_list_bulleted, size: 20),
+                        color: iconColor,
+                        tooltip: 'Bullet List',
+                        onPressed: () => _insertFormatting('• ', '\n'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.code, size: 20),
+                        color: iconColor,
+                        tooltip: 'Inline Code',
+                        onPressed: () => _insertFormatting('`', '`'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.code_off, size: 20),
+                        color: iconColor,
+                        tooltip: 'Code Block',
+                        onPressed: () => _insertFormatting('```\n', '\n```'),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
         // Input area
         Container(
-          color: Colors.grey[850],
+          color: Theme.of(context).colorScheme.surface,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               // Plus button with context menu
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.add_circle_outline, color: Colors.white70),
-                color: Colors.grey[800],
-                tooltip: 'Attach',
+              Builder(
+                builder: (context) {
+                  final theme = Theme.of(context);
+                  return PopupMenuButton<String>(
+                    icon: Icon(Icons.add_circle_outline, color: theme.colorScheme.onSurface.withOpacity(0.7)),
+                    color: theme.colorScheme.surfaceVariant,
+                    tooltip: 'Attach',
                 onSelected: (value) {
                   debugPrint('[MESSAGE_INPUT] Selected attachment type: $value');
                 },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'file',
-                    child: Row(
-                      children: [
-                        Icon(Icons.attach_file, color: Colors.white70),
-                        SizedBox(width: 8),
-                        Text('File', style: TextStyle(color: Colors.white)),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'image',
-                    child: Row(
-                      children: [
-                        Icon(Icons.image, color: Colors.white70),
-                        SizedBox(width: 8),
-                        Text('Image', style: TextStyle(color: Colors.white)),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'camera',
-                    child: Row(
-                      children: [
-                        Icon(Icons.camera_alt, color: Colors.white70),
-                        SizedBox(width: 8),
-                        Text('Camera', style: TextStyle(color: Colors.white)),
-                      ],
-                    ),
-                  ),
-                ],
+                    itemBuilder: (context) {
+                      final theme = Theme.of(context);
+                      final iconColor = theme.colorScheme.onSurface.withOpacity(0.7);
+                      final textColor = theme.colorScheme.onSurface;
+                      return [
+                        PopupMenuItem(
+                          value: 'file',
+                          child: Row(
+                            children: [
+                              Icon(Icons.attach_file, color: iconColor),
+                              const SizedBox(width: 8),
+                              Text('File', style: TextStyle(color: textColor)),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'image',
+                          child: Row(
+                            children: [
+                              Icon(Icons.image, color: iconColor),
+                              const SizedBox(width: 8),
+                              Text('Image', style: TextStyle(color: textColor)),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'camera',
+                          child: Row(
+                            children: [
+                              Icon(Icons.camera_alt, color: iconColor),
+                              const SizedBox(width: 8),
+                              Text('Camera', style: TextStyle(color: textColor)),
+                            ],
+                          ),
+                        ),
+                      ];
+                    },
+                  );
+                },
               ),
               const SizedBox(width: 8),
               // Text input
               Expanded(
-                child: TextField(
-                  controller: _controller,
-                  focusNode: _focusNode,
-                  maxLines: null,
-                  keyboardType: TextInputType.multiline,
-                  decoration: InputDecoration(
-                    hintText: 'Type a message...',
-                    hintStyle: const TextStyle(color: Colors.white54),
-                    filled: true,
-                    fillColor: Colors.grey[800],
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                  style: const TextStyle(color: Colors.white),
-                  onSubmitted: (_) => _sendMessage(),
+                child: Builder(
+                  builder: (context) {
+                    final theme = Theme.of(context);
+                    return TextField(
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      maxLines: null,
+                      keyboardType: TextInputType.multiline,
+                      decoration: InputDecoration(
+                        hintText: 'Type a message...',
+                        hintStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5)),
+                        filled: true,
+                        fillColor: theme.colorScheme.surfaceVariant,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                      style: TextStyle(color: theme.colorScheme.onSurface),
+                      onSubmitted: (_) => _sendMessage(),
+                    );
+                  },
                 ),
               ),
               const SizedBox(width: 8),
               // Formatting toggle
-              IconButton(
-                icon: Icon(
-                  _showFormatting ? Icons.format_clear : Icons.format_size,
-                  color: Colors.white70,
-                ),
-                tooltip: _showFormatting ? 'Hide Formatting' : 'Show Formatting',
-                onPressed: () {
-                  setState(() {
-                    _showFormatting = !_showFormatting;
-                  });
+              Builder(
+                builder: (context) {
+                  final theme = Theme.of(context);
+                  final iconColor = theme.colorScheme.onSurface.withOpacity(0.7);
+                  return IconButton(
+                    icon: Icon(
+                      _showFormatting ? Icons.format_clear : Icons.format_size,
+                      color: iconColor,
+                    ),
+                    tooltip: _showFormatting ? 'Hide Formatting' : 'Show Formatting',
+                    onPressed: () {
+                      setState(() {
+                        _showFormatting = !_showFormatting;
+                      });
+                    },
+                  );
                 },
               ),
               // Emoji button
               CompositedTransformTarget(
                 link: _emojiLayerLink,
-                child: IconButton(
-                  icon: const Icon(Icons.emoji_emotions_outlined, color: Colors.white70),
-                  tooltip: 'Emoji',
-                  onPressed: () {
-                    if (_emojiOverlay == null) {
-                      _showEmojiPicker(context);
-                    } else {
-                      _hideEmojiPicker();
-                    }
+                child: Builder(
+                  builder: (context) {
+                    final iconColor = Theme.of(context).colorScheme.onSurface.withOpacity(0.7);
+                    return IconButton(
+                      icon: Icon(Icons.emoji_emotions_outlined, color: iconColor),
+                      tooltip: 'Emoji',
+                      onPressed: () {
+                        if (_emojiOverlay == null) {
+                          _showEmojiPicker(context);
+                        } else {
+                          _hideEmojiPicker();
+                        }
+                      },
+                    );
                   },
                 ),
               ),
               // Mention button
-              IconButton(
-                icon: const Icon(Icons.alternate_email, color: Colors.white70),
-                tooltip: 'Mention',
-                onPressed: () {
-                  _insertFormatting('@', '');
+              Builder(
+                builder: (context) {
+                  final iconColor = Theme.of(context).colorScheme.onSurface.withOpacity(0.7);
+                  return IconButton(
+                    icon: Icon(Icons.alternate_email, color: iconColor),
+                    tooltip: 'Mention',
+                    onPressed: () {
+                      _insertFormatting('@', '');
+                    },
+                  );
                 },
               ),
               // Dynamic button: Voice message or Send
-              _isTextEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.mic, color: Colors.amber),
-                      tooltip: 'Voice Message',
-                      onPressed: () {
-                        debugPrint('[MESSAGE_INPUT] Voice message recording started');
-                        // TODO: Implement voice message recording
-                      },
-                    )
-                  : IconButton(
-                      icon: const Icon(Icons.send, color: Colors.amber),
-                      tooltip: 'Send',
-                      onPressed: _sendMessage,
-                    ),
+              Builder(
+                builder: (context) {
+                  final theme = Theme.of(context);
+                  return _isTextEmpty
+                      ? IconButton(
+                          icon: Icon(Icons.mic, color: theme.colorScheme.primary),
+                          tooltip: 'Voice Message',
+                          onPressed: () {
+                            debugPrint('[MESSAGE_INPUT] Voice message recording started');
+                            // TODO: Implement voice message recording
+                          },
+                        )
+                      : IconButton(
+                          icon: Icon(Icons.send, color: theme.colorScheme.primary),
+                          tooltip: 'Send',
+                          onPressed: _sendMessage,
+                        );
+                },
+              ),
             ],
           ),
         ),
@@ -383,10 +425,11 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[700]!, width: 1),
+        border: Border.all(color: theme.colorScheme.outline, width: 1),
       ),
       child: Column(
         children: [
@@ -394,7 +437,7 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.grey[800],
+              color: theme.colorScheme.surfaceVariant,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
@@ -406,10 +449,10 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
                   child: TextField(
                     decoration: InputDecoration(
                       hintText: 'Search emojis...',
-                      hintStyle: TextStyle(color: Colors.grey[500], fontSize: 14),
-                      prefixIcon: Icon(Icons.search, color: Colors.grey[500], size: 20),
+                      hintStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 14),
+                      prefixIcon: Icon(Icons.search, color: theme.colorScheme.onSurface.withOpacity(0.5), size: 20),
                       filled: true,
-                      fillColor: Colors.grey[900],
+                      fillColor: theme.colorScheme.surface,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide.none,
@@ -417,7 +460,7 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       isDense: true,
                     ),
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 14),
                     onChanged: (value) {
                       setState(() {
                         _searchQuery = value;
@@ -427,7 +470,7 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white70),
+                  icon: Icon(Icons.close, color: theme.colorScheme.onSurface.withOpacity(0.7)),
                   iconSize: 20,
                   onPressed: widget.onClose,
                   padding: EdgeInsets.zero,
@@ -439,7 +482,7 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
           // Category tabs
           Container(
             height: 40,
-            color: Colors.grey[800],
+            color: theme.colorScheme.surfaceVariant,
             child: ListView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -455,13 +498,13 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                     decoration: BoxDecoration(
-                      color: isSelected ? Colors.amber : Colors.transparent,
+                      color: isSelected ? theme.colorScheme.primary : Colors.transparent,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       category,
                       style: TextStyle(
-                        color: isSelected ? Colors.black : Colors.white70,
+                        color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withOpacity(0.7),
                         fontSize: 13,
                         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                       ),
@@ -490,7 +533,7 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
                   borderRadius: BorderRadius.circular(6),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.grey[800],
+                      color: Theme.of(context).colorScheme.surfaceVariant,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Center(

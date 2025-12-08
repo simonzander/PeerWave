@@ -340,7 +340,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                                         .map((role) => Chip(
                                               label: Text(
                                                 role.name,
-                                                style: const TextStyle(fontSize: 12),
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                                ),
                                               ),
                                               backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                                             ))

@@ -526,6 +526,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
   Widget build(BuildContext context) {
     // Show tabs with notifications and recent activities
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: const Text('Activities'),
         bottom: TabBar(
@@ -554,15 +555,15 @@ class _ActivitiesViewState extends State<ActivitiesView>
 
   Widget _buildNotificationsTab() {
     if (_notifications.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.notifications_none, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
+            Icon(Icons.notifications_none, size: 64, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4)),
+            const SizedBox(height: 16),
             Text(
               'No notifications',
-              style: TextStyle(fontSize: 18, color: Colors.grey),
+              style: TextStyle(fontSize: 18, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
             ),
           ],
         ),
@@ -749,13 +750,13 @@ class _ActivitiesViewState extends State<ActivitiesView>
                         Text(
                           subtitle,
                           style: TextStyle(
-                            color: Colors.grey[600],
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                             fontSize: 12,
                           ),
                         ),
                       Text(
                         _formatLastMessageTime(conv['lastMessageTime'] ?? ''),
-                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6), fontSize: 12),
                       ),
                     ],
                   ),
@@ -926,7 +927,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
-                      color: Colors.grey[700],
+                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -942,7 +943,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
                 const SizedBox(height: 2),
                 Text(
                   timestamp,
-                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
                 ),
               ],
             ),
@@ -1081,7 +1082,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
             if (timeAgo.isNotEmpty)
               Text(
                 timeAgo,
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
               ),
           ],
         ),

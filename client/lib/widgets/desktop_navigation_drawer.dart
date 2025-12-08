@@ -632,7 +632,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
             if (isLoadingRoles)
               const Center(child: CircularProgressIndicator())
             else if (availableRoles.isEmpty)
-              const Text('No standard roles available', style: TextStyle(color: Colors.grey))
+              Text('No standard roles available', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5)))
             else
               DropdownButton<Role>(
                 isExpanded: true,

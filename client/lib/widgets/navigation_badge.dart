@@ -52,11 +52,11 @@ class NavigationBadge extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.all(2),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.surface,
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
+                              color: Theme.of(context).colorScheme.shadow.withOpacity(0.2),
                               blurRadius: 2,
                             ),
                           ],
@@ -90,13 +90,13 @@ class NavigationBadge extends StatelessWidget {
                         constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                         decoration: BoxDecoration(
-                          color: Colors.red,
+                          color: Theme.of(context).colorScheme.error,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           count > 99 ? '99+' : '$count',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onError,
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
                             height: 1.0,
@@ -129,13 +129,13 @@ class NavigationBadge extends StatelessWidget {
                 constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.red,
+                  color: Theme.of(context).colorScheme.error,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   count > 99 ? '99+' : '$count',
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onError,
                     fontSize: 9,
                     fontWeight: FontWeight.bold,
                     height: 1.0,

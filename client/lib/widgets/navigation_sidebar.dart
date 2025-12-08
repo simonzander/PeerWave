@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/logout_service.dart';
-import '../theme/app_theme_constants.dart';
 import 'navigation_badge.dart';
 
 /// Navigation Sidebar for Desktop Layout
@@ -76,7 +75,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
   Widget build(BuildContext context) {
     return Container(
       width: 60,
-      color: AppThemeConstants.sidebarBackground,
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Column(
         children: [
           const SizedBox(height: 12),
@@ -151,7 +150,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
           _buildIconButton(
             badge: Icon(
               Icons.settings,
-              color: AppThemeConstants.textSecondary,
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
               size: 24,
             ),
             isSelected: false,
@@ -164,7 +163,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
           _buildIconButton(
             badge: Icon(
               Icons.logout,
-              color: AppThemeConstants.textSecondary,
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
               size: 24,
             ),
             isSelected: false,

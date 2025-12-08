@@ -4,7 +4,6 @@ import '../widgets/people_context_panel.dart';
 import '../widgets/channels_context_panel.dart';
 import '../widgets/files_context_panel.dart';
 import '../widgets/activities_context_panel.dart';
-import '../theme/app_theme_constants.dart';
 
 /// Context Panel - Shows contextual content based on selected view
 /// 
@@ -66,7 +65,7 @@ class ContextPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: useFullWidth ? double.infinity : width,
-      color: AppThemeConstants.contextPanelBackground,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: _buildContent(),
     );
   }

@@ -78,20 +78,20 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           Icon(
             Icons.download_done,
             size: 64,
-            color: Colors.grey[400],
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
           ),
           const SizedBox(height: 16),
           Text(
             'No downloads',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.grey[600],
+                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                 ),
           ),
           const SizedBox(height: 8),
           Text(
             'Browse files to start downloading',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[500],
+                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
                 ),
           ),
           const SizedBox(height: 24),
@@ -175,7 +175,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                   LinearProgressIndicator(
                     value: task.progress / 100,
                     minHeight: 8,
-                    backgroundColor: Colors.grey[200],
+                    backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
                   ),
                   const SizedBox(height: 8),
                 ],
@@ -192,7 +192,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                         '${task.downloadedChunks} / ${task.chunkCount} chunks',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.grey[600],
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                         ),
                       ),
                       if (task.status == DownloadStatus.downloading)
@@ -200,7 +200,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                           _formatSpeed(task.speed),
                           style: TextStyle(
                             fontSize: 12,
-                            color: Colors.grey[600],
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                           ),
                         ),
                     ],
@@ -212,7 +212,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                     _formatETA(task.estimatedTimeRemaining),
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.grey[600],
+                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -302,7 +302,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         'No seeders connected',
         style: TextStyle(
           fontSize: 12,
-          color: Colors.grey[600],
+          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
         ),
       );
     }
@@ -313,13 +313,21 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     for (final peerId in connectedSeeders.take(3)) {
       chips.add(
         Chip(
-          avatar: const Icon(Icons.person, size: 16),
+          avatar: Icon(
+            Icons.person,
+            size: 16,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           label: Text(
             peerId.length > 8 ? '${peerId.substring(0, 8)}...' : peerId,
-            style: const TextStyle(fontSize: 11),
+            style: TextStyle(
+              fontSize: 11,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           visualDensity: VisualDensity.compact,
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
         ),
       );
     }
@@ -330,10 +338,14 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         Chip(
           label: Text(
             '+${connectedSeeders.length - 3}',
-            style: const TextStyle(fontSize: 11),
+            style: TextStyle(
+              fontSize: 11,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           visualDensity: VisualDensity.compact,
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
         ),
       );
     }

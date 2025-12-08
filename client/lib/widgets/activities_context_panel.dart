@@ -255,14 +255,14 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
           Icon(
             Icons.notifications_none,
             size: 64,
-            color: Colors.grey[400],
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
           ),
           const SizedBox(height: 16),
           Text(
             'No notifications',
             style: TextStyle(
               fontSize: 18,
-              color: Colors.grey[600],
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
             ),
           ),
           const SizedBox(height: 8),
@@ -270,7 +270,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
             'You\'re all caught up!',
             style: TextStyle(
               fontSize: 14,
-              color: Colors.grey[500],
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
             ),
           ),
         ],
@@ -346,7 +346,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
                           notification.title,
                           style: TextStyle(
                             fontSize: 13,
-                            color: Colors.grey[700],
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                           ),
                         ),
                       ),
@@ -368,7 +368,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
                     _formatTimestamp(notification.timestamp),
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.grey[600],
+                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                     ),
                   ),
                 ],
@@ -432,18 +432,18 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
         break;
       case NotificationType.call:
         icon = Icons.videocam;
-        backgroundColor = Colors.green.shade100;
-        iconColor = Colors.green.shade900;
+        backgroundColor = Colors.green.withOpacity(0.2);
+        iconColor = Colors.green.shade700;
         break;
       case NotificationType.mention:
         icon = Icons.alternate_email;
-        backgroundColor = Colors.orange.shade100;
-        iconColor = Colors.orange.shade900;
+        backgroundColor = colorScheme.tertiaryContainer;
+        iconColor = colorScheme.onTertiaryContainer;
         break;
       case NotificationType.reaction:
         icon = Icons.favorite;
-        backgroundColor = Colors.pink.shade100;
-        iconColor = Colors.pink.shade900;
+        backgroundColor = colorScheme.errorContainer;
+        iconColor = colorScheme.onErrorContainer;
         break;
     }
     

@@ -83,7 +83,7 @@ class _SidebarPanelState extends State<SidebarPanel> {
       width: widget.panelWidth,
       margin: EdgeInsets.only(bottom: 0, top: 0, left: 0, right: 0),
       child: Material(
-        color: Colors.grey[900],
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         elevation: 8,
         shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         child: Padding(

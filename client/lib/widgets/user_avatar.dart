@@ -115,7 +115,7 @@ class _UserAvatarState extends State<UserAvatar> {
                 ? Text(
                     initials,
                     style: TextStyle(
-                      color: Colors.white,
+                      color: colorScheme.onPrimary,
                       fontSize: widget.size / 2.5,
                       fontWeight: FontWeight.w600,
                     ),
@@ -131,7 +131,7 @@ class _UserAvatarState extends State<UserAvatar> {
                 width: widget.size / 4,
                 height: widget.size / 4,
                 decoration: BoxDecoration(
-                  color: widget.isOnline ? Colors.green : Colors.grey,
+                  color: widget.isOnline ? Colors.green : colorScheme.onSurface.withOpacity(0.3),
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: colorScheme.surface,
@@ -355,7 +355,7 @@ class _SquareUserAvatarState extends State<SquareUserAvatar> {
                     child: Text(
                       initials,
                       style: TextStyle(
-                        color: Colors.white,
+                        color: colorScheme.onPrimary,
                         fontSize: widget.size / 2.5,
                         fontWeight: FontWeight.w600,
                       ),
@@ -372,7 +372,7 @@ class _SquareUserAvatarState extends State<SquareUserAvatar> {
                 width: widget.size / 4,
                 height: widget.size / 4,
                 decoration: BoxDecoration(
-                  color: widget.isOnline ? Colors.green : Colors.grey,
+                  color: widget.isOnline ? Colors.green : colorScheme.onSurface.withOpacity(0.3),
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: colorScheme.surface,

@@ -15,61 +15,69 @@ class SettingsSidebar extends StatelessWidget {
       children: [
         Container(
           width: 220,
-          color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.1),
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: ListView(
             children: [
               DrawerHeader(
                 padding: EdgeInsets.zero,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.arrow_back),
+                      icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
                       tooltip: 'Back',
                       onPressed: () => GoRouter.of(context).go('/app'),
                     ),
                     const SizedBox(width: 4),
-                    Text('Settings', style: Theme.of(context).textTheme.titleLarge),
+                    Text(
+                      'Settings',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
                   ],
                 ),
               ),
               ListTile(
-                leading: const Icon(Icons.settings),
-                title: const Text('General'),
+                leading: Icon(Icons.settings, color: Theme.of(context).colorScheme.onSurface),
+                title: Text('General', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                 onTap: () => GoRouter.of(context).go('/app/settings/general'),
               ),
               const Divider(),
               ListTile(
-                leading: const Icon(Icons.person),
-                title: const Text('Profile'),
+                leading: Icon(Icons.person, color: Theme.of(context).colorScheme.onSurface),
+                title: Text('Profile', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                 onTap: () => GoRouter.of(context).go('/app/settings/profile'),
               ),
               ListTile(
-                leading: const Icon(Icons.security),
-                title: const Text('Credentials'),
+                leading: Icon(Icons.security, color: Theme.of(context).colorScheme.onSurface),
+                title: Text('Credentials', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                 onTap: () => GoRouter.of(context).go('/app/settings/webauthn'),
               ),
               ListTile(
-                leading: const Icon(Icons.notifications),
-                title: const Text('Notifications'),
+                leading: Icon(Icons.notifications, color: Theme.of(context).colorScheme.onSurface),
+                title: Text('Notifications', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                 onTap: () => GoRouter.of(context).go('/app/settings/notifications'),
               ),
               ListTile(
-                leading: const Icon(Icons.palette_outlined),
-                title: const Text('Theme'),
+                leading: Icon(Icons.palette_outlined, color: Theme.of(context).colorScheme.onSurface),
+                title: Text('Theme', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                 onTap: () => ThemeSelectorDialog.show(context),
               ),
               // Voice & Video Settings
               ListTile(
-                leading: const Icon(Icons.videocam),
-                title: const Text('Voice & Video'),
+                leading: Icon(Icons.videocam, color: Theme.of(context).colorScheme.onSurface),
+                title: Text('Voice & Video', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                 onTap: () => GoRouter.of(context).go('/app/settings/voice-video'),
               ),
               // System Tray Settings - Only visible on desktop
               if (!kIsWeb)
                 ListTile(
-                  leading: const Icon(Icons.launch),
-                  title: const Text('System Tray'),
+                  leading: Icon(Icons.launch, color: Theme.of(context).colorScheme.onSurface),
+                  title: Text('System Tray', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                   onTap: () => GoRouter.of(context).go('/app/settings/system-tray'),
                 ),
               const Divider(),
@@ -77,8 +85,8 @@ class SettingsSidebar extends StatelessWidget {
                 builder: (context, roleProvider, child) {
                   if (roleProvider.hasServerPermission('server.manage')) {
                     return ListTile(
-                      leading: const Icon(Icons.dns),
-                      title: const Text('Server Settings'),
+                      leading: Icon(Icons.dns, color: Theme.of(context).colorScheme.onSurface),
+                      title: Text('Server Settings', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                       onTap: () => GoRouter.of(context).go('/app/settings/server'),
                     );
                   }
@@ -91,8 +99,8 @@ class SettingsSidebar extends StatelessWidget {
                 builder: (context, roleProvider, child) {
                   if (roleProvider.isAdmin) {
                     return ListTile(
-                      leading: const Icon(Icons.admin_panel_settings),
-                      title: const Text('Role Management'),
+                      leading: Icon(Icons.admin_panel_settings, color: Theme.of(context).colorScheme.onSurface),
+                      title: Text('Role Management', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                       onTap: () => GoRouter.of(context).go('/app/settings/roles'),
                     );
                   }
@@ -104,8 +112,8 @@ class SettingsSidebar extends StatelessWidget {
                 builder: (context, roleProvider, child) {
                   if (roleProvider.hasServerPermission('user.manage')) {
                     return ListTile(
-                      leading: const Icon(Icons.people),
-                      title: const Text('User Management'),
+                      leading: Icon(Icons.people, color: Theme.of(context).colorScheme.onSurface),
+                      title: Text('User Management', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                       onTap: () => GoRouter.of(context).go('/app/settings/users'),
                     );
                   }

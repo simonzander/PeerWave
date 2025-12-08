@@ -14,11 +14,9 @@ class FilesContextPanel extends StatelessWidget {
 
     return Consumer<FileTransferStatsProvider>(
       builder: (context, stats, child) {
-        return Container(
-          color: AppThemeConstants.contextPanelBackground,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
               const Divider(height: 1),
 
               // Content
@@ -95,7 +93,6 @@ class FilesContextPanel extends StatelessWidget {
                 ),
               ),
             ],
-          ),
         );
       },
     );

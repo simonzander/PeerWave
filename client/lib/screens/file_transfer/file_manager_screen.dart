@@ -257,7 +257,12 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
         children: [
           Icon(icon, size: 16, color: isSelected ? colorScheme.onPrimary : null),
           const SizedBox(width: 6),
-          Text(label),
+          Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? colorScheme.onPrimary : colorScheme.onSurface,
+            ),
+          ),
           if (count > 0) ...[
             const SizedBox(width: 6),
             Container(
@@ -284,6 +289,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
           _currentFilter = filter;
         });
       },
+      backgroundColor: colorScheme.surface,
       selectedColor: colorScheme.primary,
       labelStyle: TextStyle(
         color: isSelected ? colorScheme.onPrimary : null,
@@ -619,20 +625,21 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   }
   
   Widget _buildPartialSeedingBadge(int availableChunks, int totalChunks) {
+    final color = Theme.of(context).colorScheme.tertiary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.lightGreen.withOpacity(0.1),
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.cloud_upload_outlined, size: 14, color: Colors.lightGreen),
+          Icon(Icons.cloud_upload_outlined, size: 14, color: color),
           const SizedBox(width: 4),
           Text(
             'Seeding $availableChunks/$totalChunks',
-            style: const TextStyle(fontSize: 12, color: Colors.lightGreen),
+            style: TextStyle(fontSize: 12, color: color),
           ),
         ],
       ),
@@ -640,20 +647,21 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   }
   
   Widget _buildDownloadersBadge(int count) {
+    final color = Theme.of(context).colorScheme.secondary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.orange.withOpacity(0.1),
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.download, size: 14, color: Colors.orange),
+          Icon(Icons.download, size: 14, color: color),
           const SizedBox(width: 4),
           Text(
             '$count ${count == 1 ? 'downloader' : 'downloaders'}',
-            style: const TextStyle(fontSize: 12, color: Colors.orange),
+            style: TextStyle(fontSize: 12, color: color),
           ),
         ],
       ),
@@ -687,20 +695,21 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   }
   
   Widget _buildSharedWithBadge(int count) {
+    final color = Theme.of(context).colorScheme.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.purple.withOpacity(0.1),
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.people, size: 14, color: Colors.purple),
+          Icon(Icons.people, size: 14, color: color),
           const SizedBox(width: 4),
           Text(
             'Shared with $count',
-            style: const TextStyle(fontSize: 12, color: Colors.purple),
+            style: TextStyle(fontSize: 12, color: color),
           ),
         ],
       ),
@@ -1767,7 +1776,7 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
                 padding: const EdgeInsets.all(24.0),
                 child: Text(
                   'Type at least 2 characters to search',
-                  style: TextStyle(color: Colors.grey[600]),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
                 ),
               )
             else if (_searchResults.isEmpty)
@@ -1775,11 +1784,11 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
                 padding: const EdgeInsets.all(24.0),
                 child: Column(
                   children: [
-                    Icon(Icons.search_off, size: 48, color: Colors.grey[400]),
+                    Icon(Icons.search_off, size: 48, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4)),
                     const SizedBox(height: 12),
                     Text(
                       'No users or channels found',
-                      style: TextStyle(color: Colors.grey[600]),
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
                     ),
                   ],
                 ),

@@ -76,7 +76,7 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Container(
-        color: Colors.grey[900],
+        color: Theme.of(context).colorScheme.surface,
         child: const Center(
           child: CircularProgressIndicator(),
         ),
@@ -123,7 +123,7 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.3),
+              color: Theme.of(context).colorScheme.shadow.withOpacity(0.3),
               blurRadius: 20,
               spreadRadius: 5,
             ),
@@ -156,11 +156,11 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
       width: widget.size,
       height: widget.size,
       decoration: BoxDecoration(
-        color: Colors.grey[800],
+        color: Theme.of(context).colorScheme.surfaceVariant,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.3),
+            color: Theme.of(context).colorScheme.shadow.withOpacity(0.3),
             blurRadius: 20,
             spreadRadius: 5,
           ),
@@ -172,7 +172,7 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
           style: TextStyle(
             fontSize: widget.size * 0.4,
             fontWeight: FontWeight.bold,
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
       ),

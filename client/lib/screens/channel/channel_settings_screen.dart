@@ -168,12 +168,12 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
             const SizedBox(height: 12),
             Text(
               'Channel: ${widget.channelName}',
-              style: TextStyle(color: Colors.grey[600]),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
             ),
             const SizedBox(height: 12),
             const Text(
               'This action cannot be undone. All messages and data will be permanently deleted.',
-              style: TextStyle(color: Colors.red),
+              style: TextStyle(color: Color(0xFFEF5350)),
             ),
           ],
         ),
@@ -185,8 +185,8 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
             ),
             child: const Text('Delete'),
           ),
@@ -244,7 +244,7 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(content: Text(message), backgroundColor: Theme.of(context).colorScheme.error),
     );
   }
 
@@ -315,7 +315,15 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
                       fillColor: colorScheme.surfaceVariant,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
+                        borderSide: BorderSide(color: colorScheme.outlineVariant),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: colorScheme.outlineVariant),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: colorScheme.primary, width: 2),
                       ),
                     ),
                   ),
@@ -364,7 +372,7 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
                         _isPrivate
                             ? 'Only invited members can access this channel'
                             : 'Anyone can discover and join this channel',
-                        style: TextStyle(color: Colors.grey[600]),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
                       ),
                       value: _isPrivate,
                       onChanged: widget.isOwner
@@ -392,8 +400,9 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
                       vertical: 8,
                     ),
                     decoration: BoxDecoration(
-                      color: colorScheme.surfaceVariant,
+                      color: colorScheme.surfaceVariant.withOpacity(0.5),
                       borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: colorScheme.outlineVariant),
                     ),
                     child: DropdownButtonFormField<String>(
                       value: _selectedDefaultRole,
@@ -401,24 +410,15 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
                       decoration: const InputDecoration(
                         border: InputBorder.none,
                         prefixIcon: Icon(Icons.person_outline),
+                        contentPadding: EdgeInsets.symmetric(vertical: 8),
                       ),
+                      isExpanded: true,
                       items: _availableRoles.map((role) {
                         return DropdownMenuItem(
                           value: role.uuid,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(role.name),
-                              if (role.description != null)
-                                Text(
-                                  role.description!,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                            ],
+                          child: Text(
+                            role.name,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         );
                       }).toList(),
@@ -436,12 +436,12 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
 
                   // Danger Zone
                   if (widget.isOwner) ...[
-                    Divider(color: Colors.red.withOpacity(0.3)),
+                    Divider(color: Theme.of(context).colorScheme.error.withOpacity(0.3)),
                     const SizedBox(height: 16),
-                    _buildSectionTitle('Danger Zone', color: Colors.red),
+                    _buildSectionTitle('Danger Zone', color: Theme.of(context).colorScheme.error),
                     const SizedBox(height: 8),
                     Card(
-                      color: Colors.red.withOpacity(0.1),
+                      color: Theme.of(context).colorScheme.error.withOpacity(0.1),
                       child: Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(
@@ -449,14 +449,14 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
                           children: [
                             Row(
                               children: [
-                                Icon(Icons.warning, color: Colors.red),
+                                Icon(Icons.warning, color: Theme.of(context).colorScheme.error),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
                                     'Delete this channel',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.red[700],
+                                      color: Theme.of(context).colorScheme.error,
                                     ),
                                   ),
                                 ),
@@ -467,7 +467,7 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
                               'Once you delete a channel, there is no going back. All messages and data will be permanently deleted.',
                               style: TextStyle(
                                 fontSize: 13,
-                                color: Colors.grey[700],
+                                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                               ),
                             ),
                             const SizedBox(height: 16),
@@ -478,8 +478,8 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
                                 icon: const Icon(Icons.delete_forever),
                                 label: const Text('Delete Channel'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.red,
-                                  foregroundColor: Colors.white,
+                                  backgroundColor: Theme.of(context).colorScheme.error,
+                                  foregroundColor: Theme.of(context).colorScheme.onError,
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 12,
                                   ),

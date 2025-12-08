@@ -225,8 +225,10 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
                 Expanded(
                   child: TextField(
                     controller: _searchController,
+                    style: TextStyle(color: colorScheme.onSurface),
                     decoration: InputDecoration(
                       hintText: 'Search conversations...',
+                      hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
                       prefixIcon: Icon(Icons.search, color: colorScheme.onSurfaceVariant),
                       suffixIcon: _searchQuery.isNotEmpty
                           ? IconButton(
@@ -338,7 +340,14 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
                 : theme.colorScheme.onSurfaceVariant,
           ),
           const SizedBox(width: 6),
-          Text(label),
+          Text(
+            label,
+            style: TextStyle(
+              color: isSelected
+                  ? theme.colorScheme.onSecondaryContainer
+                  : theme.colorScheme.onSurface,
+            ),
+          ),
         ],
       ),
       selected: isSelected,

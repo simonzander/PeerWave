@@ -321,9 +321,11 @@ class _ProfilePageState extends State<ProfilePage> {
               const SizedBox(height: 16),
               TextField(
                 controller: confirmController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: 'Type DELETE here',
-                  border: OutlineInputBorder(),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                  border: const OutlineInputBorder(),
                 ),
               ),
             ],
@@ -467,10 +469,12 @@ class _ProfilePageState extends State<ProfilePage> {
                 // UUID (Read-only)
                 TextField(
                   controller: TextEditingController(text: _uuid ?? ''),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'UUID',
-                    prefixIcon: Icon(Icons.fingerprint),
-                    border: OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.fingerprint),
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                    border: const OutlineInputBorder(),
                   ),
                   readOnly: true,
                   enabled: false,
@@ -480,10 +484,12 @@ class _ProfilePageState extends State<ProfilePage> {
                 // Email (Read-only)
                 TextField(
                   controller: TextEditingController(text: _email ?? ''),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Email',
-                    prefixIcon: Icon(Icons.email),
-                    border: OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.email),
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                    border: const OutlineInputBorder(),
                   ),
                   readOnly: true,
                   enabled: false,
@@ -493,11 +499,13 @@ class _ProfilePageState extends State<ProfilePage> {
                 // Display Name
                 TextField(
                   controller: _displayNameController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Display Name',
                     hintText: 'Your display name',
-                    prefixIcon: Icon(Icons.person),
-                    border: OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.person),
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                    border: const OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -510,6 +518,8 @@ class _ProfilePageState extends State<ProfilePage> {
                     hintText: 'username',
                     prefixText: '@',
                     prefixIcon: const Icon(Icons.alternate_email),
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surfaceVariant,
                     border: const OutlineInputBorder(),
                     errorText: _atNameError,
                     suffixIcon: _checkingAtName

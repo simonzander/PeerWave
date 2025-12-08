@@ -128,7 +128,7 @@ class _MentionTextWidgetState extends State<MentionTextWidget> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final primaryColor = theme.colorScheme.primary;
-    final defaultStyle = widget.style ?? const TextStyle(color: Colors.white, fontSize: 15);
+    final defaultStyle = widget.style ?? TextStyle(color: theme.colorScheme.onSurface, fontSize: 15);
 
     // Parse text and find @mentions
     final mentionRegex = RegExp(r'@(\w+)');

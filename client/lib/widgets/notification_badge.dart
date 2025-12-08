@@ -38,7 +38,7 @@ class NotificationBadge extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: Colors.red,
+                  color: Theme.of(context).colorScheme.error,
                   shape: BoxShape.circle,
                 ),
                 constraints: const BoxConstraints(
@@ -48,8 +48,8 @@ class NotificationBadge extends StatelessWidget {
                 child: Center(
                   child: Text(
                     count > 99 ? '99+' : '$count',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onError,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                     ),
@@ -93,7 +93,7 @@ class GlobalNotificationBadge extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: Colors.red,
+                  color: Theme.of(context).colorScheme.error,
                   shape: BoxShape.circle,
                 ),
                 constraints: const BoxConstraints(
@@ -103,8 +103,8 @@ class GlobalNotificationBadge extends StatelessWidget {
                 child: Center(
                   child: Text(
                     count > 99 ? '99+' : '$count',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onError,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                     ),

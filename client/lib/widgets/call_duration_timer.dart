@@ -63,8 +63,8 @@ class _CallDurationTimerState extends State<CallDurationTimer> {
   Widget build(BuildContext context) {
     return Text(
       _formatDuration(),
-      style: widget.style ?? const TextStyle(
-        color: Colors.white,
+      style: widget.style ?? TextStyle(
+        color: Theme.of(context).colorScheme.onSurface,
         fontWeight: FontWeight.bold,
         fontSize: 14,
       ),

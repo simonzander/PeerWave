@@ -134,79 +134,85 @@ class _MessageListState extends State<MessageList> {
     if (isGroupMessage) {
       if (status == 'read' || (readCount != null && readCount == totalCount)) {
         // All read - green double check
+        final theme = Theme.of(context);
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.done_all, size: 16, color: Colors.green),
+            Icon(Icons.done_all, size: 16, color: theme.colorScheme.primary),
             const SizedBox(width: 4),
             Text(
               'Read by all',
-              style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+              style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurface.withOpacity(0.5)),
             ),
           ],
         );
       } else if (readCount != null && readCount > 0) {
         // Some read - grey double check with count
+        final theme = Theme.of(context);
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.done_all, size: 16, color: Colors.grey),
+            Icon(Icons.done_all, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.5)),
             const SizedBox(width: 4),
             Text(
               'Read by $readCount of $totalCount',
-              style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+              style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurface.withOpacity(0.5)),
             ),
           ],
         );
       } else if (deliveredCount != null && deliveredCount == totalCount) {
         // All delivered but not read
+        final theme = Theme.of(context);
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.done_all, size: 16, color: Colors.grey),
+            Icon(Icons.done_all, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.5)),
             const SizedBox(width: 4),
             Text(
               'Delivered to all',
-              style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+              style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurface.withOpacity(0.5)),
             ),
           ],
         );
       } else if (deliveredCount != null && deliveredCount > 0) {
         // Some delivered
+        final theme = Theme.of(context);
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.check, size: 16, color: Colors.grey),
+            Icon(Icons.check, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.5)),
             const SizedBox(width: 4),
             Text(
               'Delivered to $deliveredCount of $totalCount',
-              style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+              style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurface.withOpacity(0.5)),
             ),
           ],
         );
       } else if (status == 'delivered') {
         // Delivered to server, waiting for reads
-        return const Icon(Icons.check, size: 16, color: Colors.grey);
+        final theme = Theme.of(context);
+        return Icon(Icons.check, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.5));
       }
     }
 
     // Standard 1:1 message status
+    final theme = Theme.of(context);
     switch (status) {
       case 'sending':
-        return const SizedBox(
+        return SizedBox(
           width: 14,
           height: 14,
-          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey),
+          child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.onSurface.withOpacity(0.5)),
         );
       case 'sent':
         // Sent to server, waiting for delivery confirmation
-        return const Icon(Icons.check, size: 16, color: Colors.grey);
+        return Icon(Icons.check, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.5));
       case 'delivered':
-        return const Icon(Icons.check, size: 16, color: Colors.grey);
+        return Icon(Icons.check, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.5));
       case 'read':
-        return const Icon(Icons.done_all, size: 16, color: Colors.green);
+        return Icon(Icons.done_all, size: 16, color: theme.colorScheme.primary);
       case 'failed':
-        return const Icon(Icons.error_outline, size: 16, color: Colors.red);
+        return Icon(Icons.error_outline, size: 16, color: theme.colorScheme.error);
       default:
         return const SizedBox.shrink();
     }
@@ -215,15 +221,16 @@ class _MessageListState extends State<MessageList> {
   @override
   Widget build(BuildContext context) {
     if (widget.messages.isEmpty) {
+      final theme = Theme.of(context);
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey[600]),
+            Icon(Icons.chat_bubble_outline, size: 64, color: theme.colorScheme.onSurface.withOpacity(0.3)),
             const SizedBox(height: 16),
             Text(
               'No messages yet',
-              style: TextStyle(color: Colors.grey[600], fontSize: 18),
+              style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 18),
             ),
           ],
         ),
@@ -275,19 +282,19 @@ class _MessageListState extends State<MessageList> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Row(
                   children: [
-                    Expanded(child: Divider(color: Colors.grey[700], thickness: 1)),
+                    Expanded(child: Divider(color: theme.colorScheme.onSurface.withOpacity(0.2), thickness: 1)),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Text(
                         _getDateDividerText(msgTime),
                         style: TextStyle(
-                          color: Colors.grey[500],
+                          color: theme.colorScheme.onSurface.withOpacity(0.5),
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
-                    Expanded(child: Divider(color: Colors.grey[700], thickness: 1)),
+                    Expanded(child: Divider(color: theme.colorScheme.onSurface.withOpacity(0.2), thickness: 1)),
                   ],
                 ),
               ),
@@ -334,14 +341,14 @@ class _MessageListState extends State<MessageList> {
                                 sender,
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  color: isLocalSent ? theme.colorScheme.primary : Colors.white,
+                                  color: isLocalSent ? theme.colorScheme.primary : theme.colorScheme.onSurface,
                                 ),
                               ),
                             ),
                             const SizedBox(width: 8),
                             Text(
                               _formatTime(msgTime),
-                              style: const TextStyle(color: Colors.white54, fontSize: 13),
+                              style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 13),
                             ),
                             if (isLocalSent) ...[
                               const SizedBox(width: 8),
@@ -476,23 +483,26 @@ class _MessageListState extends State<MessageList> {
     }
   }
 
-  /// Build amber warning for identity key changes
+  /// Build warning for identity key changes
   Widget _buildIdentityChangeWarning(Map<String, dynamic> msg) {
     final sender = msg['senderDisplayName'] ?? msg['sender'] ?? 'Unknown';
     final theme = Theme.of(context);
+    final warningColor = theme.brightness == Brightness.dark 
+        ? const Color(0xFFFFA726) // Amber 400
+        : const Color(0xFFFF8F00); // Amber 900
     
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.amber.shade900.withOpacity(0.3),
-        border: Border.all(color: Colors.amber.shade700, width: 1.5),
+        color: warningColor.withOpacity(0.15),
+        border: Border.all(color: warningColor.withOpacity(0.5), width: 1.5),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
           Icon(
             Icons.security,
-            color: Colors.amber.shade300,
+            color: warningColor,
             size: 20,
           ),
           const SizedBox(width: 12),
@@ -503,7 +513,7 @@ class _MessageListState extends State<MessageList> {
                 Text(
                   'Security code changed',
                   style: TextStyle(
-                    color: Colors.amber.shade200,
+                    color: theme.colorScheme.onSurface,
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
                   ),
@@ -512,7 +522,7 @@ class _MessageListState extends State<MessageList> {
                 Text(
                   '$sender\'s security code changed. This happens when they reinstall the app or switch devices. Messages are still secure.',
                   style: TextStyle(
-                    color: Colors.amber.shade100,
+                    color: theme.colorScheme.onSurface.withOpacity(0.8),
                     fontSize: 13,
                   ),
                 ),
@@ -554,7 +564,7 @@ class _MessageListState extends State<MessageList> {
                 constraints: const BoxConstraints(maxWidth: 300, maxHeight: 400),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[700]!, width: 1),
+                  border: Border.all(color: Theme.of(context).colorScheme.outline.withOpacity(0.5), width: 1),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: Image.memory(
@@ -565,11 +575,11 @@ class _MessageListState extends State<MessageList> {
                       padding: const EdgeInsets.all(16),
                       child: Column(
                         children: [
-                          Icon(Icons.broken_image, size: 48, color: Colors.grey[600]),
+                          Icon(Icons.broken_image, size: 48, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4)),
                           const SizedBox(height: 8),
                           Text(
                             'Failed to load image',
-                            style: TextStyle(color: Colors.grey[500]),
+                            style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5)),
                           ),
                         ],
                       ),
@@ -582,16 +592,17 @@ class _MessageListState extends State<MessageList> {
               const SizedBox(height: 4),
               Text(
                 '${(metadata['size'] / 1024).toStringAsFixed(1)} KB',
-                style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5), fontSize: 12),
               ),
             ],
           ],
         );
       } catch (e) {
         debugPrint('[MESSAGE_LIST] Failed to render image: $e');
+        final errorTheme = Theme.of(context);
         return Text(
           'Image (failed to load)',
-          style: TextStyle(color: Colors.red[300], fontStyle: FontStyle.italic),
+          style: TextStyle(color: errorTheme.colorScheme.error, fontStyle: FontStyle.italic),
         );
       }
     }
@@ -605,9 +616,10 @@ class _MessageListState extends State<MessageList> {
         final isOwnMessage = msg['isLocalSent'] == true;
         
         if (base64Audio.isEmpty) {
+          final errorTheme = Theme.of(context);
           return Text(
             'Voice message (no audio data)',
-            style: TextStyle(color: Colors.red[300], fontStyle: FontStyle.italic),
+            style: TextStyle(color: errorTheme.colorScheme.error, fontStyle: FontStyle.italic),
           );
         }
         
@@ -619,9 +631,10 @@ class _MessageListState extends State<MessageList> {
         );
       } catch (e) {
         debugPrint('[MESSAGE_LIST] Failed to render voice message: $e');
+        final errorTheme = Theme.of(context);
         return Text(
           'Voice message (failed to load)',
-          style: TextStyle(color: Colors.red[300], fontStyle: FontStyle.italic),
+          style: TextStyle(color: errorTheme.colorScheme.error, fontStyle: FontStyle.italic),
         );
       }
     }
@@ -647,9 +660,10 @@ class _MessageListState extends State<MessageList> {
       } catch (e) {
         debugPrint('[MESSAGE_LIST] Failed to parse file message: $e');
         // Fallback to text rendering
+        final errorTheme = Theme.of(context);
         return Text(
           'File message (failed to load)',
-          style: TextStyle(color: Colors.red[300], fontStyle: FontStyle.italic),
+          style: TextStyle(color: errorTheme.colorScheme.error, fontStyle: FontStyle.italic),
         );
       }
     }
@@ -670,44 +684,46 @@ class _MessageListState extends State<MessageList> {
       final senderProfile = sender != null 
         ? UserProfileService.instance.getProfile(sender) 
         : null;
+      final mentionTheme = Theme.of(context);
       
       return MentionTextWidget(
         text: text,
-        style: const TextStyle(color: Colors.white, fontSize: 15),
+        style: TextStyle(color: mentionTheme.colorScheme.onSurface, fontSize: 15),
         currentUserId: SignalService.instance.currentUserId,
         senderInfo: senderProfile,
       );
     }
     
     // Default: Render as markdown text
+    final markdownTheme = Theme.of(context);
     return MarkdownBody(
       data: text,
       selectable: true,
       styleSheet: MarkdownStyleSheet(
-        p: const TextStyle(color: Colors.white, fontSize: 15),
-        strong: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        em: const TextStyle(color: Colors.white, fontStyle: FontStyle.italic),
-        del: const TextStyle(color: Colors.white, decoration: TextDecoration.lineThrough),
+        p: TextStyle(color: markdownTheme.colorScheme.onSurface, fontSize: 15),
+        strong: TextStyle(color: markdownTheme.colorScheme.onSurface, fontWeight: FontWeight.bold),
+        em: TextStyle(color: markdownTheme.colorScheme.onSurface, fontStyle: FontStyle.italic),
+        del: TextStyle(color: markdownTheme.colorScheme.onSurface, decoration: TextDecoration.lineThrough),
         code: TextStyle(
-          backgroundColor: Colors.grey[800],
-          color: Colors.amber[300],
+          backgroundColor: markdownTheme.colorScheme.surfaceVariant,
+          color: markdownTheme.colorScheme.primary,
           fontFamily: 'monospace',
         ),
         codeblockDecoration: BoxDecoration(
-          color: Colors.grey[850],
+          color: markdownTheme.colorScheme.surfaceVariant.withOpacity(0.5),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey[700]!),
+          border: Border.all(color: markdownTheme.colorScheme.outline),
         ),
         codeblockPadding: const EdgeInsets.all(12),
-        blockquote: TextStyle(color: Colors.grey[400], fontStyle: FontStyle.italic),
+        blockquote: TextStyle(color: markdownTheme.colorScheme.onSurface.withOpacity(0.6), fontStyle: FontStyle.italic),
         blockquoteDecoration: BoxDecoration(
-          border: Border(left: BorderSide(color: Colors.grey[600]!, width: 4)),
+          border: Border(left: BorderSide(color: markdownTheme.colorScheme.outline, width: 4)),
         ),
-        listBullet: const TextStyle(color: Colors.white),
-        a: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline),
-        h1: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-        h2: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-        h3: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+        listBullet: TextStyle(color: markdownTheme.colorScheme.onSurface),
+        a: TextStyle(color: markdownTheme.colorScheme.primary, decoration: TextDecoration.underline),
+        h1: TextStyle(color: markdownTheme.colorScheme.onSurface, fontSize: 24, fontWeight: FontWeight.bold),
+        h2: TextStyle(color: markdownTheme.colorScheme.onSurface, fontSize: 20, fontWeight: FontWeight.bold),
+        h3: TextStyle(color: markdownTheme.colorScheme.onSurface, fontSize: 18, fontWeight: FontWeight.bold),
       ),
       onTapLink: (text, href, title) async {
         if (href != null) {
@@ -800,7 +816,7 @@ class _FullscreenImageViewer extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         'Size: ${(metadata['originalSize'] / 1024).toStringAsFixed(1)} KB',
-                        style: TextStyle(color: Colors.grey[300], fontSize: 12),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7), fontSize: 12),
                       ),
                     ],
                   ],

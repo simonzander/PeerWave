@@ -28,13 +28,13 @@ class RegistrationProgressBar extends StatelessWidget {
           // Step indicators
           Row(
             children: [
-              _buildStepIndicator(1, 'OTP', currentStep >= 1),
-              _buildConnector(currentStep >= 2),
-              _buildStepIndicator(2, 'Backup Codes', currentStep >= 2),
-              _buildConnector(currentStep >= 3),
-              _buildStepIndicator(3, 'Security Key', currentStep >= 3),
-              _buildConnector(currentStep >= 4),
-              _buildStepIndicator(4, 'Profile', currentStep >= 4),
+              _buildStepIndicator(context, 1, 'OTP', currentStep >= 1),
+              _buildConnector(context, currentStep >= 2),
+              _buildStepIndicator(context, 2, 'Backup Codes', currentStep >= 2),
+              _buildConnector(context, currentStep >= 3),
+              _buildStepIndicator(context, 3, 'Security Key', currentStep >= 3),
+              _buildConnector(context, currentStep >= 4),
+              _buildStepIndicator(context, 4, 'Profile', currentStep >= 4),
             ],
           ),
         ],
@@ -42,7 +42,7 @@ class RegistrationProgressBar extends StatelessWidget {
     );
   }
 
-  Widget _buildStepIndicator(int step, String label, bool isActive) {
+  Widget _buildStepIndicator(BuildContext context, int step, String label, bool isActive) {
     return Expanded(
       child: Column(
         children: [
@@ -50,10 +50,10 @@ class RegistrationProgressBar extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: isActive ? Colors.blueAccent : const Color(0xFF40444B),
+              color: isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.surfaceVariant,
               shape: BoxShape.circle,
               border: Border.all(
-                color: isActive ? Colors.blueAccent : const Color(0xFF40444B),
+                color: isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline,
                 width: 2,
               ),
             ),
@@ -62,21 +62,21 @@ class RegistrationProgressBar extends StatelessWidget {
                   ? (currentStep == step
                       ? Text(
                           step.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onPrimary,
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
                           ),
                         )
-                      : const Icon(
+                      : Icon(
                           Icons.check,
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.onPrimary,
                           size: 24,
                         ))
                   : Text(
                       step.toString(),
-                      style: const TextStyle(
-                        color: Colors.white54,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
                       ),
@@ -87,7 +87,7 @@ class RegistrationProgressBar extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: isActive ? Colors.white : Colors.white54,
+              color: isActive ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
               fontSize: 12,
               fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
             ),
@@ -98,12 +98,12 @@ class RegistrationProgressBar extends StatelessWidget {
     );
   }
 
-  Widget _buildConnector(bool isActive) {
+  Widget _buildConnector(BuildContext context, bool isActive) {
     return Expanded(
       child: Container(
         height: 2,
         margin: const EdgeInsets.only(bottom: 30),
-        color: isActive ? Colors.blueAccent : const Color(0xFF40444B),
+        color: isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline,
       ),
     );
   }

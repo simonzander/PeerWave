@@ -68,10 +68,10 @@ class _SocketAwareWidgetState extends State<SocketAwareWidget> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
+              Icon(
                 Icons.cloud_off,
                 size: 80,
-                color: Colors.grey,
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
               ),
               const SizedBox(height: 24),
               const Text(
@@ -86,7 +86,7 @@ class _SocketAwareWidgetState extends State<SocketAwareWidget> {
                 '${widget.featureName} requires an active connection',
                 style: TextStyle(
                   fontSize: 16,
-                  color: Colors.grey[600],
+                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                 ),
                 textAlign: TextAlign.center,
               ),

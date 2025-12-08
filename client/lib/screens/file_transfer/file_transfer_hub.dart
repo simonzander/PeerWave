@@ -36,7 +36,7 @@ class FileTransferHub extends StatelessWidget {
               Text(
                 'Secure peer-to-peer file transfer with encryption',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey[600],
+                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                     ),
                 textAlign: TextAlign.center,
               ),
@@ -76,20 +76,20 @@ class FileTransferHub extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
+                  color: Theme.of(context).colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                  border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.3)),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.info_outline, color: Colors.blue[700]),
+                    Icon(Icons.info_outline, color: Theme.of(context).colorScheme.primary),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         'Files are encrypted and transferred directly between peers using WebRTC.',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.blue[900],
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
                         ),
                       ),
                     ),
@@ -145,13 +145,13 @@ class FileTransferHub extends StatelessWidget {
                       subtitle,
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.grey[600],
+                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                       ),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_ios, size: 20, color: Colors.grey[400]),
+              Icon(Icons.arrow_forward_ios, size: 20, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4)),
             ],
           ),
         ),

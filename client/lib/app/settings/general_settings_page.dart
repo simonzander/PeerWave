@@ -102,6 +102,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
     }
 
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
         title: const Text('General Settings'),
       ),
@@ -110,6 +111,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
         children: [
           // Auto-Delete Section
           Card(
+            color: colorScheme.surfaceContainerHighest,
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -150,6 +152,8 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                       helperText: '0 = disabled, default: 365 days (1 year)',
                       suffixText: 'days',
                       prefixIcon: const Icon(Icons.calendar_today),
+                      filled: true,
+                      fillColor: colorScheme.surfaceVariant,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -182,36 +186,88 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                     runSpacing: 8,
                     children: [
                       ActionChip(
-                        label: const Text('Disabled'),
-                        avatar: const Icon(Icons.block, size: 18),
+                        label: Text(
+                          'Disabled',
+                          style: TextStyle(
+                            color: _autoDeleteDays == 0
+                                ? colorScheme.onPrimaryContainer
+                                : colorScheme.onSurface,
+                          ),
+                        ),
+                        avatar: Icon(
+                          Icons.block,
+                          size: 18,
+                          color: _autoDeleteDays == 0
+                              ? colorScheme.onPrimaryContainer
+                              : colorScheme.onSurface,
+                        ),
                         onPressed: () => _saveAutoDeleteDays(0),
                         backgroundColor: _autoDeleteDays == 0 
                             ? colorScheme.primaryContainer 
-                            : null,
+                            : colorScheme.surfaceVariant,
                       ),
                       ActionChip(
-                        label: const Text('30 days'),
-                        avatar: const Icon(Icons.calendar_view_month, size: 18),
+                        label: Text(
+                          '30 days',
+                          style: TextStyle(
+                            color: _autoDeleteDays == 30
+                                ? colorScheme.onPrimaryContainer
+                                : colorScheme.onSurface,
+                          ),
+                        ),
+                        avatar: Icon(
+                          Icons.calendar_view_month,
+                          size: 18,
+                          color: _autoDeleteDays == 30
+                              ? colorScheme.onPrimaryContainer
+                              : colorScheme.onSurface,
+                        ),
                         onPressed: () => _saveAutoDeleteDays(30),
                         backgroundColor: _autoDeleteDays == 30 
                             ? colorScheme.primaryContainer 
-                            : null,
+                            : colorScheme.surfaceVariant,
                       ),
                       ActionChip(
-                        label: const Text('90 days'),
-                        avatar: const Icon(Icons.calendar_today, size: 18),
+                        label: Text(
+                          '90 days',
+                          style: TextStyle(
+                            color: _autoDeleteDays == 90
+                                ? colorScheme.onPrimaryContainer
+                                : colorScheme.onSurface,
+                          ),
+                        ),
+                        avatar: Icon(
+                          Icons.calendar_today,
+                          size: 18,
+                          color: _autoDeleteDays == 90
+                              ? colorScheme.onPrimaryContainer
+                              : colorScheme.onSurface,
+                        ),
                         onPressed: () => _saveAutoDeleteDays(90),
                         backgroundColor: _autoDeleteDays == 90 
                             ? colorScheme.primaryContainer 
-                            : null,
+                            : colorScheme.surfaceVariant,
                       ),
                       ActionChip(
-                        label: const Text('1 year'),
-                        avatar: const Icon(Icons.event, size: 18),
+                        label: Text(
+                          '1 year',
+                          style: TextStyle(
+                            color: _autoDeleteDays == 365
+                                ? colorScheme.onPrimaryContainer
+                                : colorScheme.onSurface,
+                          ),
+                        ),
+                        avatar: Icon(
+                          Icons.event,
+                          size: 18,
+                          color: _autoDeleteDays == 365
+                              ? colorScheme.onPrimaryContainer
+                              : colorScheme.onSurface,
+                        ),
                         onPressed: () => _saveAutoDeleteDays(365),
                         backgroundColor: _autoDeleteDays == 365 
                             ? colorScheme.primaryContainer 
-                            : null,
+                            : colorScheme.surfaceVariant,
                       ),
                     ],
                   ),
@@ -306,6 +362,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
           
           // Info Card
           Card(
+            color: colorScheme.surfaceContainerHighest,
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(

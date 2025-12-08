@@ -133,7 +133,7 @@ class AnimatedBadge extends StatelessWidget {
             child: Text(
               count > 99 ? '99+' : count.toString(),
               style: TextStyle(
-                color: textColor ?? Colors.white,
+                color: textColor ?? Theme.of(context).colorScheme.onError,
                 fontSize: isSmall ? 10 : AppThemeConstants.fontSizeCaption,
                 fontWeight: FontWeight.bold,
                 height: 1.0,
@@ -171,7 +171,7 @@ class UnreadBadgeOverlay extends StatelessWidget {
         constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
-          color: Colors.red,
+          color: Theme.of(context).colorScheme.error,
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
             color: borderColor ?? AppThemeConstants.contextPanelBackground,
@@ -180,8 +180,8 @@ class UnreadBadgeOverlay extends StatelessWidget {
         ),
         child: Text(
           count > 99 ? '99+' : '$count',
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onError,
             fontSize: 10,
             fontWeight: FontWeight.bold,
             height: 1.0,

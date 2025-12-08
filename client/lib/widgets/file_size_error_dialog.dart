@@ -40,7 +40,7 @@ class FileSizeErrorDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.grey[100],
+                color: Theme.of(context).colorScheme.surfaceVariant,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
@@ -59,7 +59,7 @@ class FileSizeErrorDialog extends StatelessWidget {
                   Text(
                     'Size: ${FileTransferConfig.formatFileSize(fileSize)}',
                     style: TextStyle(
-                      color: Colors.grey[700],
+                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                       fontSize: 13,
                     ),
                   ),
@@ -76,17 +76,17 @@ class FileSizeErrorDialog extends StatelessWidget {
                 style: const TextStyle(fontSize: 14),
               ),
               const SizedBox(height: 12),
-              _buildLimitInfo('Maximum allowed', maxSize, Colors.red),
-              _buildLimitInfo('Your file', fileSize, Colors.red),
+              _buildLimitInfo(context, 'Maximum allowed', maxSize, Colors.red),
+              _buildLimitInfo(context, 'Your file', fileSize, Colors.red),
             ] else ...[
               Text(
                 'This file is larger than recommended and may cause performance issues.',
                 style: const TextStyle(fontSize: 14),
               ),
               const SizedBox(height: 12),
-              _buildLimitInfo('Recommended size', recommendedSize, Colors.orange),
-              _buildLimitInfo('Your file', fileSize, Colors.orange),
-              _buildLimitInfo('Maximum allowed', maxSize, Colors.grey[700]!),
+              _buildLimitInfo(context, 'Recommended size', recommendedSize, Colors.orange),
+              _buildLimitInfo(context, 'Your file', fileSize, Colors.orange),
+              _buildLimitInfo(context, 'Maximum allowed', maxSize, Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
             ],
             
             const SizedBox(height: 16),
@@ -95,33 +95,33 @@ class FileSizeErrorDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue[50],
+                color: Theme.of(context).colorScheme.primaryContainer,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue[200]!),
+                border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.3)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.lightbulb, size: 18, color: Colors.blue[700]),
+                      Icon(Icons.lightbulb, size: 18, color: Theme.of(context).colorScheme.primary),
                       const SizedBox(width: 8),
                       Text(
                         'Suggestions:',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Colors.blue[900],
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  _buildSuggestion('Compress the file (ZIP, RAR)'),
-                  _buildSuggestion('Split into smaller parts'),
+                  _buildSuggestion(context, 'Compress the file (ZIP, RAR)'),
+                  _buildSuggestion(context, 'Split into smaller parts'),
                   if (fileSize > maxSize)
-                    _buildSuggestion('Use desktop app for large files'),
+                    _buildSuggestion(context, 'Use desktop app for large files'),
                   if (isOverRecommended)
-                    _buildSuggestion('Transfer may take several minutes'),
+                    _buildSuggestion(context, 'Transfer may take several minutes'),
                 ],
               ),
             ),
@@ -131,7 +131,7 @@ class FileSizeErrorDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.grey[100],
+                color: Theme.of(context).colorScheme.surfaceVariant,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
@@ -139,22 +139,22 @@ class FileSizeErrorDialog extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
+                      Icon(Icons.info_outline, size: 16, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
                       const SizedBox(width: 6),
                       Text(
                         'Platform Limits:',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: Colors.grey[700],
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 6),
-                  _buildPlatformLimit('Web', FileTransferConfig.MAX_FILE_SIZE_WEB),
-                  _buildPlatformLimit('Mobile', FileTransferConfig.MAX_FILE_SIZE_MOBILE),
-                  _buildPlatformLimit('Desktop', FileTransferConfig.MAX_FILE_SIZE_DESKTOP),
+                  _buildPlatformLimit(context, 'Web', FileTransferConfig.MAX_FILE_SIZE_WEB),
+                  _buildPlatformLimit(context, 'Mobile', FileTransferConfig.MAX_FILE_SIZE_MOBILE),
+                  _buildPlatformLimit(context, 'Desktop', FileTransferConfig.MAX_FILE_SIZE_DESKTOP),
                 ],
               ),
             ),
@@ -184,7 +184,7 @@ class FileSizeErrorDialog extends StatelessWidget {
     );
   }
   
-  Widget _buildLimitInfo(String label, int size, Color color) {
+  Widget _buildLimitInfo(BuildContext context, String label, int size, Color color) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -194,7 +194,7 @@ class FileSizeErrorDialog extends StatelessWidget {
             '$label:',
             style: TextStyle(
               fontSize: 13,
-              color: Colors.grey[700],
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
             ),
           ),
           Text(
@@ -210,13 +210,13 @@ class FileSizeErrorDialog extends StatelessWidget {
     );
   }
   
-  Widget _buildSuggestion(String text) {
+  Widget _buildSuggestion(BuildContext context, String text) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('• ', style: TextStyle(color: Colors.blue[700])),
+          Text('• ', style: TextStyle(color: Theme.of(context).colorScheme.primary)),
           Expanded(
             child: Text(
               text,
@@ -228,7 +228,7 @@ class FileSizeErrorDialog extends StatelessWidget {
     );
   }
   
-  Widget _buildPlatformLimit(String platform, int size) {
+  Widget _buildPlatformLimit(BuildContext context, String platform, int size) {
     final currentPlatform = FileTransferConfig.getPlatformName();
     final isCurrent = platform == currentPlatform;
     
@@ -241,7 +241,7 @@ class FileSizeErrorDialog extends StatelessWidget {
             '$platform:',
             style: TextStyle(
               fontSize: 11,
-              color: isCurrent ? Colors.blue[700] : Colors.grey[600],
+              color: isCurrent ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
               fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
             ),
           ),
@@ -249,7 +249,7 @@ class FileSizeErrorDialog extends StatelessWidget {
             FileTransferConfig.formatFileSize(size),
             style: TextStyle(
               fontSize: 11,
-              color: isCurrent ? Colors.blue[700] : Colors.grey[600],
+              color: isCurrent ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
               fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
             ),
           ),

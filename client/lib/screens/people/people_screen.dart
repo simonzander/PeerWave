@@ -404,8 +404,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
             ),
             child: TextField(
               controller: _searchController,
+              style: TextStyle(color: colorScheme.onSurface),
               decoration: InputDecoration(
                 hintText: 'Search people by name or @username...',
+                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
                 prefixIcon: Icon(Icons.search, color: colorScheme.onSurfaceVariant),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(

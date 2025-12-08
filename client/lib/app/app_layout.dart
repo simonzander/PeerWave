@@ -358,6 +358,7 @@ class _AppLayoutState extends State<AppLayout> {
     if (_showServerError && !kIsWeb) {
       final colorScheme = Theme.of(context).colorScheme;
       return Scaffold(
+        backgroundColor: colorScheme.surface,
         body: Row(
           children: [
             // Keep server panel visible so user can switch servers
@@ -431,6 +432,7 @@ class _AppLayoutState extends State<AppLayout> {
       if (layoutType == LayoutType.desktop || layoutType == LayoutType.tablet) {
         // Desktop/Tablet: Navigation Sidebar + Content
         return Scaffold(
+          backgroundColor: Theme.of(context).colorScheme.surface,
           body: Row(
             children: [
               // Navigation Sidebar (60px)
@@ -491,6 +493,7 @@ class _AppLayoutState extends State<AppLayout> {
       
       if (layoutType == LayoutType.desktop || layoutType == LayoutType.tablet) {
         return Scaffold(
+          backgroundColor: Theme.of(context).colorScheme.surface,
           body: Row(
             children: [
               // Server Panel (far left, 72px) - Always visible on native

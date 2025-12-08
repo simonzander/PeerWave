@@ -340,9 +340,9 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
                           gridPadding: EdgeInsets.zero,
                           recentsLimit: 28,
                         ),
-                        skinToneConfig: const SkinToneConfig(
+                        skinToneConfig: SkinToneConfig(
                           enabled: true,
-                          dialogBackgroundColor: Colors.white,
+                          dialogBackgroundColor: Theme.of(context).colorScheme.surface,
                         ),
                         categoryViewConfig: CategoryViewConfig(
                           backgroundColor: Theme.of(context).colorScheme.surface,
@@ -439,7 +439,7 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
+                        color: Theme.of(context).colorScheme.shadow.withOpacity(0.3),
                         blurRadius: 8,
                         offset: const Offset(0, 4),
                       ),
@@ -1217,7 +1217,7 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
+                  color: theme.colorScheme.surfaceVariant,
                   borderRadius: BorderRadius.circular(24),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1227,9 +1227,13 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
                       child: TextField(
                         controller: _controller,
                         focusNode: _focusNode,
-                        decoration: const InputDecoration(
+                        style: TextStyle(color: theme.colorScheme.onSurface),
+                        decoration: InputDecoration(
                           hintText: 'Type message...',
+                          hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                           border: InputBorder.none,
+                          filled: false,
+                          fillColor: Colors.transparent,
                           contentPadding: EdgeInsets.symmetric(vertical: 10),
                         ),
                         maxLines: 5,

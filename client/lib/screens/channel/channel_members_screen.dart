@@ -89,6 +89,11 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
               DropdownButtonFormField<Role>(
                 value: selectedRole,
                 hint: const Text('Select Role'),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                  border: const OutlineInputBorder(),
+                ),
                 items: _availableRoles.map((role) {
                   return DropdownMenuItem(value: role, child: Text(role.name));
                 }).toList(),
@@ -102,7 +107,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                 const SizedBox(height: 16),
                 Text(
                   'Permissions: ${selectedRole!.permissions.join(", ")}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
                 ),
               ],
             ],
@@ -153,8 +158,8 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(context).colorScheme.tertiary,
+              foregroundColor: Theme.of(context).colorScheme.onTertiary,
             ),
             child: const Text('Remove'),
           ),
@@ -180,7 +185,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(content: Text(message), backgroundColor: Theme.of(context).colorScheme.error),
     );
   }
 
@@ -209,10 +214,15 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 TextField(
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Search Users',
                     hintText: 'Enter name or email',
-                    prefixIcon: Icon(Icons.search),
+                    prefixIcon: const Icon(Icons.search),
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                   onChanged: (value) async {
                     searchQuery = value;
@@ -288,6 +298,11 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                   DropdownButtonFormField<Role>(
                     value: selectedRole,
                     hint: const Text('Select Role'),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                      border: const OutlineInputBorder(),
+                    ),
                     items: _availableRoles.map((role) {
                       return DropdownMenuItem(
                         value: role,
@@ -355,8 +370,8 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(context).colorScheme.tertiary,
+              foregroundColor: Theme.of(context).colorScheme.onTertiary,
             ),
             child: const Text('Leave'),
           ),
@@ -396,8 +411,8 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
             ),
             child: const Text('Delete'),
           ),
@@ -435,8 +450,8 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
             ),
             child: const Text('Remove'),
           ),
@@ -499,6 +514,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
     debugPrint('[ChannelMembers] isOwner: $isOwner');
 
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: Text('${widget.channelName} - Members'),
         actions: [
@@ -519,7 +535,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
               icon: const Icon(Icons.delete),
               onPressed: _showDeleteChannelDialog,
               tooltip: 'Delete Channel',
-              color: Colors.red,
+              color: Theme.of(context).colorScheme.error,
             ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData),
         ],
@@ -531,7 +547,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
               padding: const EdgeInsets.all(16.0),
               child: Text(
                 _errorMessage!,
-                style: const TextStyle(color: Colors.red),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
           if (_isLoading)
@@ -561,10 +577,10 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                             : 'Member',
                         style: TextStyle(
                           color: member.isOwner
-                              ? Colors.purple
+                              ? Theme.of(context).colorScheme.primary
                               : member.isModerator
-                              ? Colors.blue
-                              : Colors.grey,
+                              ? Theme.of(context).colorScheme.tertiary
+                              : Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
                         ),
                       ),
                       trailing: Row(
@@ -581,7 +597,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                               icon: const Icon(Icons.person_remove),
                               onPressed: () => _showKickUserDialog(member),
                               tooltip: 'Remove from Channel',
-                              color: Colors.red,
+                              color: Theme.of(context).colorScheme.error,
                             ),
                         ],
                       ),
@@ -600,14 +616,14 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                                 role.permissions.join(', '),
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: Colors.grey[600],
+                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                                 ),
                               ),
                               trailing: canManageRoles && !role.standard
                                   ? IconButton(
-                                      icon: const Icon(
+                                      icon: Icon(
                                         Icons.remove_circle,
-                                        color: Colors.red,
+                                        color: Theme.of(context).colorScheme.error,
                                       ),
                                       onPressed: () =>
                                           _showRemoveRoleDialog(member, role),
@@ -615,8 +631,13 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                                     )
                                   : role.standard
                                   ? Chip(
-                                      label: const Text('Standard'),
-                                      backgroundColor: Colors.grey[300],
+                                      label: Text(
+                                        'Standard',
+                                        style: TextStyle(
+                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                      backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
                                     )
                                   : null,
                             );

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../services/notification_service.dart';
 import '../../services/sound_service.dart';
-import '../../theme/theme_provider.dart';
 
 /// Notification Settings Page
 ///
@@ -126,10 +125,10 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
+      backgroundColor: colorScheme.surface,
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
@@ -423,7 +422,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                   child: Text(
                     '🌙 Do Not Disturb is active',
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.orange,
+                      color: colorScheme.tertiary,
                       fontStyle: FontStyle.italic,
                     ),
                   ),
@@ -440,8 +439,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
               children: [
                 Card(
                   color: _hasPermission
-                      ? Colors.green.withOpacity(0.1)
-                      : Colors.orange.withOpacity(0.1),
+                      ? colorScheme.primaryContainer
+                      : colorScheme.tertiaryContainer,
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -454,8 +453,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                                   ? Icons.check_circle
                                   : Icons.warning,
                               color: _hasPermission
-                                  ? Colors.green
-                                  : Colors.orange,
+                                  ? colorScheme.primary
+                                  : colorScheme.tertiary,
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -495,15 +494,13 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
 
           // Info card
           Card(
-            color: isDark
-                ? Colors.blue.shade900.withOpacity(0.2)
-                : Colors.blue.shade50,
+            color: colorScheme.secondaryContainer,
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.info_outline, color: Colors.blue.shade700),
+                  Icon(Icons.info_outline, color: colorScheme.onSecondaryContainer),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -513,14 +510,14 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                           'About Notifications',
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w600,
-                            color: Colors.blue.shade700,
+                            color: colorScheme.onSecondaryContainer,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           'Video sounds are subtle in-app feedback only. Message and activity notifications include system notifications and sounds.',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: Colors.blue.shade700,
+                            color: colorScheme.onSecondaryContainer,
                           ),
                         ),
                       ],
@@ -574,11 +571,13 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
     bool indent = false,
   }) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final isDisabled = onChanged == null;
 
     return Padding(
       padding: EdgeInsets.only(left: indent ? 16 : 0, bottom: 8),
       child: Card(
+        color: colorScheme.surfaceContainerHighest,
         child: SwitchListTile(
           title: Text(
             title,

@@ -54,6 +54,7 @@ class _SystemTraySettingsPageState extends State<SystemTraySettingsPage> {
   Widget build(BuildContext context) {
     if (kIsWeb) {
       return Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(
           title: const Text('System Tray Settings'),
         ),
@@ -64,6 +65,7 @@ class _SystemTraySettingsPageState extends State<SystemTraySettingsPage> {
     }
 
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: const Text('System Tray Settings'),
       ),
@@ -73,6 +75,7 @@ class _SystemTraySettingsPageState extends State<SystemTraySettingsPage> {
               padding: const EdgeInsets.all(16),
               children: [
                 Card(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   child: Column(
                     children: [
                       ListTile(
@@ -91,6 +94,7 @@ class _SystemTraySettingsPageState extends State<SystemTraySettingsPage> {
                 ),
                 const SizedBox(height: 16),
                 Card(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(

@@ -56,11 +56,9 @@ class PeopleContextPanel extends StatelessWidget {
       return !starredUuids.contains(uuid) && unreadCount == 0;
     }).toList();
     
-    return Container(
-      color: AppThemeConstants.contextPanelBackground,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
   
           const Divider(height: 1),
           
@@ -126,7 +124,6 @@ class PeopleContextPanel extends StatelessWidget {
                   ),
           ),
         ],
-      ),
     );
   }
 
@@ -201,17 +198,17 @@ class PeopleContextPanel extends StatelessWidget {
       cursor: SystemMouseCursors.click,
       child: Material(
         color: isActive 
-            ? AppThemeConstants.activeChannelBackground // Highlight active conversation
+            ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
             : Colors.transparent,
         child: InkWell(
           onTap: onTap,
           hoverColor: isActive 
-              ? AppThemeConstants.activeChannelBackground
-              : const Color(0xFF1A1E24), // Lighter grey for hover
-          splashColor: const Color(0xFF252A32),
+              ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
+              : Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+          splashColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
           highlightColor: isActive
-              ? AppThemeConstants.activeChannelBackground
-              : const Color(0xFF1F242B),
+              ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
+              : Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
@@ -271,7 +268,7 @@ class PeopleContextPanel extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: AppThemeConstants.textPrimary,
+                                color: Theme.of(context).colorScheme.onSurface,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -284,7 +281,7 @@ class PeopleContextPanel extends StatelessWidget {
                                 '@$atName',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: AppThemeConstants.textSecondary,
+                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -293,10 +290,10 @@ class PeopleContextPanel extends StatelessWidget {
                           ],
                           if (showStar) ...[
                             const SizedBox(width: 4),
-                            const Icon(
+                            Icon(
                               Icons.star,
                               size: 14,
-                              color: Colors.amber,
+                              color: Theme.of(context).colorScheme.tertiary,
                             ),
                           ],
                         ],
@@ -309,7 +306,7 @@ class PeopleContextPanel extends StatelessWidget {
                           lastMessage,
                           style: TextStyle(
                             fontSize: 12,
-                            color: AppThemeConstants.textSecondary.withOpacity(0.8),
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

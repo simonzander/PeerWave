@@ -406,9 +406,11 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
                 // Server Name
                 TextField(
                   controller: _serverNameController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Server Name',
-                    border: OutlineInputBorder(),
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                    border: const OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 32),
@@ -423,9 +425,11 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
                 // Registration Mode Dropdown
                 DropdownButtonFormField<String>(
                   value: _registrationMode,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Registration Mode',
-                    border: OutlineInputBorder(),
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                    border: const OutlineInputBorder(),
                   ),
                   items: const [
                     DropdownMenuItem(
@@ -456,12 +460,14 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
                 if (_registrationMode == 'email_suffix') ...[
                   TextField(
                     controller: _emailSuffixesController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Allowed Email Suffixes',
                       hintText: 'example.com, company.org',
                       helperText:
                           'Comma-separated list of allowed email domains',
-                      border: OutlineInputBorder(),
+                      filled: true,
+                      fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -518,10 +524,12 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
                       Expanded(
                         child: TextField(
                           controller: _inviteEmailController,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Email Address',
                             hintText: 'user@example.com',
-                            border: OutlineInputBorder(),
+                            filled: true,
+                            fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                            border: const OutlineInputBorder(),
                           ),
                           keyboardType: TextInputType.emailAddress,
                         ),

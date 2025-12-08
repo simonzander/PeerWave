@@ -161,11 +161,11 @@ class _CallOverlayState extends State<CallOverlay> {
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: Colors.black,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.5),
+            color: Theme.of(context).colorScheme.shadow.withOpacity(0.5),
             blurRadius: 10,
             spreadRadius: 2,
           ),
@@ -318,8 +318,8 @@ class _CallOverlayState extends State<CallOverlay> {
 
   Widget _buildVideoGrid(VideoConferenceService service) {
     if (service.room == null) {
-      return const Center(
-        child: CircularProgressIndicator(color: Colors.white),
+      return Center(
+        child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
       );
     }
 
@@ -486,7 +486,7 @@ class _CallOverlayState extends State<CallOverlay> {
         Expanded(
           flex: 6,
           child: Container(
-            color: Colors.black,
+            color: Theme.of(context).colorScheme.surface,
             child: screenShareTrack != null
                 ? VideoTrackRenderer(
                     screenShareTrack,
@@ -495,7 +495,7 @@ class _CallOverlayState extends State<CallOverlay> {
                 : Center(
                     child: Icon(
                       Icons.screen_share,
-                      color: Colors.white.withOpacity(0.5),
+                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
                       size: 32,
                     ),
                   ),
@@ -568,12 +568,12 @@ class _CallOverlayState extends State<CallOverlay> {
       width: 28,
       height: 28,
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.6),
+        color: Theme.of(context).colorScheme.surface.withOpacity(0.9),
         borderRadius: BorderRadius.circular(14),
       ),
       child: IconButton(
         padding: EdgeInsets.zero,
-        icon: Icon(icon, color: Colors.white, size: 16),
+        icon: Icon(icon, color: Theme.of(context).colorScheme.onSurface, size: 16),
         onPressed: onPressed,
       ),
     );

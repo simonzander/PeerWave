@@ -365,7 +365,12 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                       ),
                       trailing: role.standard
                           ? Chip(
-                              label: const Text('Standard'),
+                              label: Text(
+                                'Standard',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                ),
+                              ),
                               backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                             )
                           : PopupMenuButton(

@@ -667,7 +667,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         Expanded(
           flex: 8,
           child: Container(
-            color: Colors.black,
+            color: Theme.of(context).colorScheme.surface,
             child: _buildScreenShareTile(screenShareParticipant),
           ),
         ),
@@ -726,7 +726,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         // Screen share - 80% height
         Expanded(
           child: Container(
-            color: Colors.black,
+            color: Theme.of(context).colorScheme.surface,
             width: double.infinity,
             child: _buildScreenShareTile(screenShareParticipant),
           ),
@@ -811,7 +811,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                 Text(
                   label,
                   style: TextStyle(
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onPrimary,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -856,9 +856,11 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
     return Stack(
       children: [
-        GridView.builder(
-          padding: const EdgeInsets.all(8),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        Container(
+          color: Theme.of(context).colorScheme.surface,
+          child: GridView.builder(
+            padding: const EdgeInsets.all(8),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
             childAspectRatio: 16 / 9,
             crossAxisSpacing: 8,
@@ -872,6 +874,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
             return _buildVideoTile(participant: participant, isLocal: isLocal);
           },
+          ),
         ),
 
         // Hidden participants badge
@@ -1122,7 +1125,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to toggle screen share: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -1142,6 +1145,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
       showModalBottomSheet(
         context: context,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         builder: (context) => Container(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -1150,7 +1154,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             children: [
               Text(
                 'Select Microphone',
-                style: Theme.of(context).textTheme.titleLarge,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
               ),
               const SizedBox(height: 16),
               if (microphones.isEmpty)
@@ -1161,8 +1167,8 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
               else
                 ...microphones.map((device) {
                   return ListTile(
-                    leading: const Icon(Icons.mic),
-                    title: Text(device.label),
+                    leading: Icon(Icons.mic, color: Theme.of(context).colorScheme.onSurface),
+                    title: Text(device.label, style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                     onTap: () async {
                       Navigator.pop(context);
                       try {
@@ -1180,10 +1186,11 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                           '[VideoConferenceView] Error switching microphone: $e',
                         );
                         if (mounted) {
+                          final theme = Theme.of(context);
                           scaffoldMessenger.showSnackBar(
-                            const SnackBar(
-                              content: Text('Failed to switch microphone'),
-                              backgroundColor: Colors.red,
+                            SnackBar(
+                              content: const Text('Failed to switch microphone'),
+                              backgroundColor: theme.colorScheme.error,
                             ),
                           );
                         }
@@ -1213,6 +1220,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
       showModalBottomSheet(
         context: context,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         builder: (context) => Container(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -1221,7 +1229,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             children: [
               Text(
                 'Select Camera',
-                style: Theme.of(context).textTheme.titleLarge,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
               ),
               const SizedBox(height: 16),
               if (cameras.isEmpty)
@@ -1232,8 +1242,8 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
               else
                 ...cameras.map((device) {
                   return ListTile(
-                    leading: const Icon(Icons.videocam),
-                    title: Text(device.label),
+                    leading: Icon(Icons.videocam, color: Theme.of(context).colorScheme.onSurface),
+                    title: Text(device.label, style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                     onTap: () async {
                       Navigator.pop(context);
                       try {
@@ -1251,10 +1261,11 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                           '[VideoConferenceView] Error switching camera: $e',
                         );
                         if (mounted) {
+                          final theme = Theme.of(context);
                           scaffoldMessenger.showSnackBar(
-                            const SnackBar(
-                              content: Text('Failed to switch camera'),
-                              backgroundColor: Colors.red,
+                            SnackBar(
+                              content: const Text('Failed to switch camera'),
+                              backgroundColor: theme.colorScheme.error,
                             ),
                           );
                         }
@@ -1308,7 +1319,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                       ? Theme.of(
                           context,
                         ).colorScheme.onSurface.withOpacity(0.38)
-                      : Theme.of(context).colorScheme.onPrimary,
+                      : (isActive
+                          ? Theme.of(context).colorScheme.onPrimary
+                          : Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ),
             ),

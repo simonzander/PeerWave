@@ -278,10 +278,10 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: widget.isOwnMessage ? primaryColor.withOpacity(0.15) : Colors.grey[850],
+        color: widget.isOwnMessage ? primaryColor.withOpacity(0.15) : theme.colorScheme.surfaceVariant,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: widget.isOwnMessage ? primaryColor.withOpacity(0.3) : Colors.grey[700]!,
+          color: widget.isOwnMessage ? primaryColor.withOpacity(0.3) : theme.colorScheme.outline,
           width: 1,
         ),
       ),
@@ -299,16 +299,16 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                 shape: BoxShape.circle,
               ),
               child: _isLoading
-                  ? const Padding(
-                      padding: EdgeInsets.all(10),
+                  ? Padding(
+                      padding: const EdgeInsets.all(10),
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Colors.white,
+                        color: theme.colorScheme.onPrimary,
                       ),
                     )
                   : Icon(
                       _isPlaying ? Icons.pause : Icons.play_arrow,
-                      color: Colors.white,
+                      color: theme.colorScheme.onPrimary,
                     ),
             ),
           ),
@@ -329,7 +329,7 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                           ? _formatDuration(_currentPosition)
                           : _formatDuration(displayDuration),
                       style: TextStyle(
-                        color: widget.isOwnMessage ? theme.colorScheme.primary : Colors.grey[300],
+                        color: widget.isOwnMessage ? theme.colorScheme.primary : theme.colorScheme.onSurface.withOpacity(0.9),
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
@@ -337,7 +337,7 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                     Text(
                       ' / ${_formatDuration(displayDuration)}',
                       style: TextStyle(
-                        color: widget.isOwnMessage ? theme.colorScheme.primary.withOpacity(0.7) : Colors.grey[500],
+                        color: widget.isOwnMessage ? theme.colorScheme.primary.withOpacity(0.7) : theme.colorScheme.onSurface.withOpacity(0.6),
                         fontSize: 12,
                       ),
                     ),
@@ -345,13 +345,13 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                       Text(
                         ' • ',
                         style: TextStyle(
-                          color: widget.isOwnMessage ? theme.colorScheme.primary.withOpacity(0.5) : Colors.grey[600],
+                          color: widget.isOwnMessage ? theme.colorScheme.primary.withOpacity(0.5) : theme.colorScheme.onSurface.withOpacity(0.5),
                         ),
                       ),
                       Text(
                         '${(widget.sizeBytes! / 1024).toStringAsFixed(1)} KB',
                         style: TextStyle(
-                          color: widget.isOwnMessage ? theme.colorScheme.primary.withOpacity(0.7) : Colors.grey[500],
+                          color: widget.isOwnMessage ? theme.colorScheme.primary.withOpacity(0.7) : theme.colorScheme.onSurface.withOpacity(0.6),
                           fontSize: 12,
                         ),
                       ),
@@ -392,7 +392,7 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                 decoration: BoxDecoration(
                   color: isPlayed
                       ? (widget.isOwnMessage ? primaryColor : primaryColor)
-                      : (widget.isOwnMessage ? primaryColor.withOpacity(0.3) : Colors.grey[600]),
+                      : (widget.isOwnMessage ? primaryColor.withOpacity(0.3) : theme.colorScheme.onSurface.withOpacity(0.3)),
                   borderRadius: BorderRadius.circular(2),
                 ),
                 height: 30 * height,

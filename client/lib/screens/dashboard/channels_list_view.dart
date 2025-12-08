@@ -419,6 +419,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       body: Column(
         children: [
           // Search Bar
@@ -435,8 +436,10 @@ class _ChannelsListViewState extends State<ChannelsListView>
                 Expanded(
                   child: TextField(
                     controller: _searchController,
+                    style: TextStyle(color: colorScheme.onSurface),
                     decoration: InputDecoration(
                       hintText: 'Search channels...',
+                      hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
                       prefixIcon: Icon(
                         Icons.search,
                         color: colorScheme.onSurfaceVariant,
@@ -490,7 +493,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
                     label: 'Live',
                     value: 'live',
                     icon: Icons.circle,
-                    iconColor: Colors.red,
+                    iconColor: Theme.of(context).colorScheme.error,
                   ),
                   const SizedBox(width: 8),
                   _buildFilterChip(
@@ -733,8 +736,8 @@ class _ChannelsListViewState extends State<ChannelsListView>
             opacity: _liveAnimation,
             child: AppThemeConstants.squaredIconContainer(
               icon: Icons.videocam,
-              backgroundColor: Colors.red.withOpacity(0.2),
-              iconColor: Colors.red,
+              backgroundColor: Theme.of(context).colorScheme.error.withOpacity(0.2),
+              iconColor: Theme.of(context).colorScheme.error,
               size: 40,
             ),
           )
@@ -757,10 +760,10 @@ class _ChannelsListViewState extends State<ChannelsListView>
             child: Container(
               padding: const EdgeInsets.all(2),
               decoration: BoxDecoration(
-                color: Colors.red,
+                color: Theme.of(context).colorScheme.error,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.circle, size: 8, color: Colors.white),
+              child: Icon(Icons.circle, size: 8, color: Theme.of(context).colorScheme.onError),
             ),
           ),
         ],
@@ -783,13 +786,13 @@ class _ChannelsListViewState extends State<ChannelsListView>
                 constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.red,
+                  color: Theme.of(context).colorScheme.error,
                   borderRadius: BorderRadius.circular(5),
                 ),
                 child: Text(
                   unreadCount > 99 ? '99+' : '$unreadCount',
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onError,
                     fontSize: 9,
                     fontWeight: FontWeight.bold,
                     height: 1.0,
@@ -811,7 +814,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
           fontWeight: hasUnread ? FontWeight.bold : FontWeight.w500,
           color: hasUnread
               ? Theme.of(context).colorScheme.primary
-              : AppThemeConstants.textPrimary,
+              : Theme.of(context).colorScheme.onSurface,
         ),
       ),
       subtitle: _buildChannelSubtitle(channel),
@@ -821,7 +824,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
           IconButton(
             icon: Icon(
               isStarred ? Icons.star : Icons.star_border,
-              color: isStarred ? Colors.amber : Colors.grey,
+              color: isStarred ? Theme.of(context).colorScheme.tertiary : Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
               size: 20,
             ),
             onPressed: () => _toggleStar(uuid),
@@ -867,7 +870,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
           if (description.isNotEmpty)
             Text(
               description,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -876,7 +879,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
                 ? '${participants.length} ${participants.length == 1 ? 'participant' : 'participants'} • LIVE'
                 : 'Video channel • No active participants',
             style: TextStyle(
-              color: isLive ? Colors.red : Colors.grey[600],
+              color: isLive ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
               fontSize: 12,
             ),
           ),
@@ -884,7 +887,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
       );
     } else {
       // Signal channel
-      final lastMessage = channel['lastMessage'] as String? ?? 'No messages';
+      final lastMessage = channel['lastMessage'] as String? ?? '';
       final lastMessageTime = channel['lastMessageTime'] as String? ?? '';
 
       return Column(
@@ -896,30 +899,40 @@ class _ChannelsListViewState extends State<ChannelsListView>
               description,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: AppThemeConstants.fontSizeCaption,
-                color: AppThemeConstants.textSecondary,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                 fontStyle: FontStyle.italic,
               ),
             ),
-          Text(
-            lastMessage.length > 50
-                ? '${lastMessage.substring(0, 50)}...'
-                : lastMessage,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: AppThemeConstants.fontSizeCaption,
-              color: AppThemeConstants.textSecondary,
+          if (lastMessage.isNotEmpty) ...[
+            Text(
+              lastMessage.length > 50
+                  ? '${lastMessage.substring(0, 50)}...'
+                  : lastMessage,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              ),
             ),
-          ),
-          Text(
-            _formatTime(lastMessageTime),
-            style: const TextStyle(
-              fontSize: 10,
-              color: AppThemeConstants.textSecondary,
+            if (lastMessageTime.isNotEmpty)
+              Text(
+                _formatTime(lastMessageTime),
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                ),
+              ),
+          ] else
+            Text(
+              'Text channel',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              ),
             ),
-          ),
         ],
       );
     }
@@ -943,6 +956,9 @@ class _ChannelsListViewState extends State<ChannelsListView>
         description.isNotEmpty ? description : 'Public channel',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+        ),
       ),
       trailing: SizedBox(
         width: 80,
@@ -996,7 +1012,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
               content: Text(
                 'Failed to join channel: ${resp.data['message'] ?? 'Unknown error'}',
               ),
-              backgroundColor: Colors.red,
+              backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
         }
@@ -1007,7 +1023,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error joining channel: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -1036,7 +1052,14 @@ class _ChannelsListViewState extends State<ChannelsListView>
                 : (iconColor ?? theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(width: 6),
-          Text(label),
+          Text(
+            label,
+            style: TextStyle(
+              color: isSelected
+                  ? theme.colorScheme.onSecondaryContainer
+                  : theme.colorScheme.onSurface,
+            ),
+          ),
         ],
       ),
       selected: isSelected,
@@ -1058,26 +1081,27 @@ class _ChannelsListViewState extends State<ChannelsListView>
   }
 
   Widget _buildEmptyState(String title, String message) {
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.all(32.0),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.inbox_outlined, size: 80, color: Colors.grey[400]),
+            Icon(Icons.inbox_outlined, size: 80, color: theme.colorScheme.onSurface.withOpacity(0.4)),
             const SizedBox(height: 16),
             Text(
               title,
               style: TextStyle(
                 fontSize: 18,
-                color: Colors.grey[600],
+                color: theme.colorScheme.onSurface.withOpacity(0.6),
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
             Text(
               message,
-              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+              style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface.withOpacity(0.5)),
               textAlign: TextAlign.center,
             ),
           ],
@@ -1243,9 +1267,9 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
             if (isLoadingRoles)
               const Center(child: CircularProgressIndicator())
             else if (availableRoles.isEmpty)
-              const Text(
+              Text(
                 'No standard roles available',
-                style: TextStyle(color: Colors.grey),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5)),
               )
             else
               DropdownButton<Role>(

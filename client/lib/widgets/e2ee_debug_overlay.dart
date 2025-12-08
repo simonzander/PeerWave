@@ -30,7 +30,7 @@ class E2EEDebugOverlay extends StatelessWidget {
       top: 80,
       right: 16,
       child: Material(
-        color: Colors.black87,
+        color: Theme.of(context).colorScheme.surface.withOpacity(0.95),
         borderRadius: BorderRadius.circular(8),
         elevation: 4,
         child: Container(
@@ -49,66 +49,67 @@ class E2EEDebugOverlay extends StatelessWidget {
                     size: 16,
                   ),
                   const SizedBox(width: 8),
-                  const Text(
+                  Text(
                     'E2EE Debug',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
                     ),
                   ),
                 ],
               ),
-              const Divider(color: Colors.grey),
+              Divider(color: Theme.of(context).colorScheme.outline),
               
               // Browser Info
-              _buildInfoRow('Browser', '${browserInfo['name']} ${browserInfo['version']}'),
+              _buildInfoRow(context, 'Browser', '${browserInfo['name']} ${browserInfo['version']}'),
               _buildInfoRow(
+                context,
                 'Insertable Streams',
                 browserInfo['insertableStreamsSupported'] ? '✅ Supported' : '❌ Not Supported',
               ),
               const SizedBox(height: 8),
               
               // Encryption Stats
-              const Text(
+              Text(
                 'Encryption Stats:',
                 style: TextStyle(
-                  color: Colors.white70,
+                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                   fontWeight: FontWeight.bold,
                   fontSize: 12,
                 ),
               ),
               const SizedBox(height: 4),
-              _buildInfoRow('Encrypted Frames', '${stats['encryptedFrames']}'),
-              _buildInfoRow('Decrypted Frames', '${stats['decryptedFrames']}'),
-              _buildInfoRow('Encryption Errors', '${stats['encryptionErrors']}',
+              _buildInfoRow(context, 'Encrypted Frames', '${stats['encryptedFrames']}'),
+              _buildInfoRow(context, 'Decrypted Frames', '${stats['decryptedFrames']}'),
+              _buildInfoRow(context, 'Encryption Errors', '${stats['encryptionErrors']}',
                   valueColor: stats['encryptionErrors'] > 0 ? Colors.red : Colors.green),
-              _buildInfoRow('Decryption Errors', '${stats['decryptionErrors']}',
+              _buildInfoRow(context, 'Decryption Errors', '${stats['decryptionErrors']}',
                   valueColor: stats['decryptionErrors'] > 0 ? Colors.red : Colors.green),
-              _buildInfoRow('Peer Count', '${stats['peerCount']}'),
+              _buildInfoRow(context, 'Peer Count', '${stats['peerCount']}'),
               
               // Insertable Streams Stats
               if (insertableStats != null) ...[
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'Insertable Streams:',
                   style: TextStyle(
-                    color: Colors.white70,
+                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
                   ),
                 ),
                 const SizedBox(height: 4),
-                _buildInfoRow('Transformed Frames', '${insertableStats['transformedFrames']}'),
-                _buildInfoRow('Errors', '${insertableStats['errors']}',
+                _buildInfoRow(context, 'Transformed Frames', '${insertableStats['transformedFrames']}'),
+                _buildInfoRow(context, 'Errors', '${insertableStats['errors']}',
                     valueColor: insertableStats['errors'] > 0 ? Colors.red : Colors.green),
-                _buildInfoRow('Worker Status', insertableStats['workerReady'] ? '✅ Ready' : '⏳ Initializing'),
+                _buildInfoRow(context, 'Worker Status', insertableStats['workerReady'] ? '✅ Ready' : '⏳ Initializing'),
               ],
               
               // Key Info
               if (stats['keyGeneratedAt'] != null) ...[
                 const SizedBox(height: 8),
-                _buildInfoRow('Key Generated', _formatTimestamp(stats['keyGeneratedAt'])),
+                _buildInfoRow(context, 'Key Generated', _formatTimestamp(stats['keyGeneratedAt'])),
               ],
             ],
           ),
@@ -117,7 +118,7 @@ class E2EEDebugOverlay extends StatelessWidget {
     );
   }
   
-  Widget _buildInfoRow(String label, String value, {Color? valueColor}) {
+  Widget _buildInfoRow(BuildContext context, String label, String value, {Color? valueColor}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -125,8 +126,8 @@ class E2EEDebugOverlay extends StatelessWidget {
         children: [
           Text(
             '$label:',
-            style: const TextStyle(
-              color: Colors.white70,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
               fontSize: 11,
             ),
           ),
@@ -135,7 +136,7 @@ class E2EEDebugOverlay extends StatelessWidget {
             child: Text(
               value,
               style: TextStyle(
-                color: valueColor ?? Colors.white,
+                color: valueColor ?? Theme.of(context).colorScheme.onSurface,
                 fontSize: 11,
                 fontWeight: FontWeight.w500,
               ),

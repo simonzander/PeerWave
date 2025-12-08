@@ -41,8 +41,10 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
         title: const Text('Voice & Video'),
       ),
@@ -113,6 +115,7 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
 
   Widget _buildVideoSettingsCard(ThemeData theme) {
     return Card(
+      color: theme.colorScheme.surfaceContainerHighest,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -201,6 +204,7 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
 
   Widget _buildAudioSettingsCard(ThemeData theme) {
     return Card(
+      color: theme.colorScheme.surfaceContainerHighest,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -293,6 +297,7 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
 
   Widget _buildAudioProcessingCard(ThemeData theme) {
     return Card(
+      color: theme.colorScheme.surfaceContainerHighest,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -440,9 +445,11 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
           value: value,
           items: items,
           onChanged: onChanged,
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Theme.of(context).colorScheme.surfaceVariant,
+            border: const OutlineInputBorder(),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           ),
           isExpanded: true,
         ),

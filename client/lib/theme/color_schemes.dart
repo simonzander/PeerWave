@@ -35,6 +35,7 @@ class AppColorSchemes {
         // Layout-spezifische Surfaces
         surface: Color(0xFF181C21),           // Main View Background
         onSurface: Color.fromRGBO(255, 255, 255, 0.85), // Items 85% Weiß
+        surfaceVariant: Color(0xFF5A6269),
         surfaceContainerHighest: Color(0xFF14181D), // Context Panel Background
         onSurfaceVariant: Color.fromRGBO(255, 255, 255, 0.6), // Überschriften 60% Grau
         
@@ -72,6 +73,7 @@ class AppColorSchemes {
         
         surface: Color(0xFFFAFAFA),
         onSurface: Colors.black,
+        surfaceVariant: Color(0xFFE8E8E8),
         surfaceContainerHighest: Color(0xFFEEEEEE),
         onSurfaceVariant: Color(0xFF424242),
         
@@ -113,6 +115,7 @@ class AppColorSchemes {
         
         surface: Color(0xFF1A1A1A),           // Sehr Dunkelgrau
         onSurface: Colors.white,
+        surfaceVariant: Color(0xFF585858),
         surfaceContainerHighest: Color(0xFF2A2A2A),
         onSurfaceVariant: Color(0xFFE0E0E0),
         
@@ -156,6 +159,7 @@ class AppColorSchemes {
         
         surface: Color(0xFFFFFBFE),           // Weiß
         onSurface: Colors.black,
+        surfaceVariant: Color(0xFFE8E8E8),
         surfaceContainerHighest: Color(0xFFEEEEEE),
         onSurfaceVariant: Color(0xFF424242),
         
@@ -201,6 +205,7 @@ class AppColorSchemes {
         
         surface: Color(0xFF1E1E1E),
         onSurface: Colors.white,
+        surfaceVariant: Color(0xFF5A6269),
         surfaceContainerHighest: Color(0xFF2A2A2A),
         onSurfaceVariant: Color(0xFFE0E0E0),
         
@@ -234,6 +239,7 @@ class AppColorSchemes {
         
         surface: Color(0xFFFAFAFA),
         onSurface: Colors.black,
+        surfaceVariant: Color(0xFFE8E8E8),
         surfaceContainerHighest: Color(0xFFEEEEEE),
         onSurfaceVariant: Color(0xFF424242),
         
@@ -246,7 +252,7 @@ class AppColorSchemes {
     }
   }
 
-  /// Sunset Orange - Orange/Rot Theme
+  /// Sunset Orange - Warme Orange-Töne
   static ColorScheme sunsetOrange(Brightness brightness) {
     const primaryOrange = Color(0xFFFF6F00);
     
@@ -274,6 +280,7 @@ class AppColorSchemes {
         
         surface: Color(0xFF1E1E1E),
         onSurface: Colors.white,
+        surfaceVariant: Color(0xFF5A6269),
         surfaceContainerHighest: Color(0xFF2A2A2A),
         onSurfaceVariant: Color(0xFFE0E0E0),
         
@@ -307,6 +314,7 @@ class AppColorSchemes {
         
         surface: Color(0xFFFAFAFA),
         onSurface: Colors.black,
+        surfaceVariant: Color(0xFFE8E8E8),
         surfaceContainerHighest: Color(0xFFEEEEEE),
         onSurfaceVariant: Color(0xFF424242),
         
@@ -319,7 +327,7 @@ class AppColorSchemes {
     }
   }
 
-  /// Lavender Purple - Lila/Pink Theme
+  /// Lavender Purple - Sanfte Lila-Töne
   static ColorScheme lavenderPurple(Brightness brightness) {
     const primaryPurple = Color(0xFFAB47BC);
     
@@ -347,6 +355,7 @@ class AppColorSchemes {
         
         surface: Color(0xFF1E1E1E),
         onSurface: Colors.white,
+        surfaceVariant: Color(0xFF5A6269),
         surfaceContainerHighest: Color(0xFF2A2A2A),
         onSurfaceVariant: Color(0xFFE0E0E0),
         
@@ -380,6 +389,7 @@ class AppColorSchemes {
         
         surface: Color(0xFFFAFAFA),
         onSurface: Colors.black,
+        surfaceVariant: Color(0xFFE8E8E8),
         surfaceContainerHighest: Color(0xFFEEEEEE),
         onSurfaceVariant: Color(0xFF424242),
         
@@ -392,7 +402,7 @@ class AppColorSchemes {
     }
   }
 
-  /// Forest Green - Dunkelgrün Theme
+  /// Forest Green - Natürliche Grüntöne
   static ColorScheme forestGreen(Brightness brightness) {
     const primaryGreen = Color(0xFF2E7D32);
     
@@ -420,6 +430,7 @@ class AppColorSchemes {
         
         surface: Color(0xFF1E1E1E),
         onSurface: Colors.white,
+        surfaceVariant: Color(0xFF5A6269),
         surfaceContainerHighest: Color(0xFF2A2A2A),
         onSurfaceVariant: Color(0xFFE0E0E0),
         
@@ -453,6 +464,7 @@ class AppColorSchemes {
         
         surface: Color(0xFFFAFAFA),
         onSurface: Colors.black,
+        surfaceVariant: Color(0xFFE8E8E8),
         surfaceContainerHighest: Color(0xFFEEEEEE),
         onSurfaceVariant: Color(0xFF424242),
         
@@ -465,7 +477,7 @@ class AppColorSchemes {
     }
   }
 
-  /// Cherry Red - Rot/Rosa Theme
+  /// Cherry Red - Lebhafte Rot-Töne
   static ColorScheme cherryRed(Brightness brightness) {
     const primaryRed = Color(0xFFE53935);
     
@@ -493,6 +505,7 @@ class AppColorSchemes {
         
         surface: Color(0xFF1E1E1E),
         onSurface: Colors.white,
+        surfaceVariant: Color(0xFF5A6269),
         surfaceContainerHighest: Color(0xFF2A2A2A),
         onSurfaceVariant: Color(0xFFE0E0E0),
         
@@ -526,6 +539,7 @@ class AppColorSchemes {
         
         surface: Color(0xFFFAFAFA),
         onSurface: Colors.black,
+        surfaceVariant: Color(0xFFE8E8E8),
         surfaceContainerHighest: Color(0xFFEEEEEE),
         onSurfaceVariant: Color(0xFF424242),
         
