@@ -27,7 +27,12 @@ import '../../views/video_conference_prejoin_view.dart';
 import '../../views/video_conference_view.dart';
 
 /// Whitelist of message types that should be displayed in UI
-const Set<String> DISPLAYABLE_MESSAGE_TYPES = {'message', 'file'};
+const Set<String> DISPLAYABLE_MESSAGE_TYPES = {
+  'message',
+  'file',
+  'image',
+  'voice',
+};
 
 /// Screen for Signal Group Chats (encrypted group conversations)
 class SignalGroupChatScreen extends StatefulWidget {
