@@ -153,6 +153,14 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       setState(() => _isJoining = false);
       debugPrint('[VideoConferenceView] Successfully joined channel');
 
+      // Calculate initial visibility and set up states
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _updateVisibility();
+          _updateParticipantStates();
+        }
+      });
+
       // Ensure we're in full-view mode after joining (not overlay mode)
       _service!.enterFullView();
 
@@ -222,6 +230,12 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   /// Load channel details to determine ownership
   Future<void> _loadChannelDetails() async {
     if (widget.host == null) return;
+    
+    // Skip if this is actually a meeting (not a channel)
+    if (widget.channelId.startsWith('mtg_') || widget.channelId.startsWith('call_')) {
+      debugPrint('[VIDEO_CONFERENCE] Skipping channel details - this is a meeting');
+      return;
+    }
 
     try {
       ApiService.init();

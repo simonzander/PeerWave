@@ -15,6 +15,11 @@ import '../providers/unread_messages_provider.dart';
 import '../providers/role_provider.dart';
 import '../providers/file_transfer_stats_provider.dart';
 import 'storage/database_helper.dart';
+// Meeting and Call services
+import 'meeting_service.dart';
+import 'call_service.dart';
+import 'presence_service.dart';
+import 'external_participant_service.dart';
 // P2P imports
 import 'file_transfer/storage_interface.dart';
 import 'file_transfer/encryption_service.dart';
@@ -93,7 +98,7 @@ class PostLoginInitService {
     debugPrint('[POST_LOGIN_INIT] ========================================');
 
     try {
-      final totalSteps = 15;
+      final totalSteps = 16; // Updated from 15 to include meeting/call services
       var currentStep = 0;
 
       // ========================================
@@ -279,6 +284,64 @@ class PostLoginInitService {
       debugPrint('[POST_LOGIN_INIT] ✓ Activities service ready');
 
       // ========================================
+      // PHASE 4.5: Meeting & Call Services (PARALLEL)
+      // ========================================
+
+      currentStep++;
+      onProgress?.call('Initializing meetings and calls...', currentStep, totalSteps);
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing meeting/call services (parallel)...',
+      );
+
+      await Future.wait([
+        // Meeting service
+        Future(() async {
+          try {
+            final meetingService = MeetingService();
+            meetingService.initializeListeners();
+            debugPrint('[POST_LOGIN_INIT]   ✓ Meeting service initialized');
+          } catch (e) {
+            debugPrint('[POST_LOGIN_INIT]   ⚠️ Meeting service error: $e');
+          }
+        }),
+
+        // Call service
+        Future(() async {
+          try {
+            final callService = CallService();
+            callService.initializeListeners();
+            debugPrint('[POST_LOGIN_INIT]   ✓ Call service initialized');
+          } catch (e) {
+            debugPrint('[POST_LOGIN_INIT]   ⚠️ Call service error: $e');
+          }
+        }),
+
+        // Presence service (starts heartbeat)
+        Future(() async {
+          try {
+            final presenceService = PresenceService();
+            presenceService.initialize();
+            debugPrint('[POST_LOGIN_INIT]   ✓ Presence service initialized (heartbeat started)');
+          } catch (e) {
+            debugPrint('[POST_LOGIN_INIT]   ⚠️ Presence service error: $e');
+          }
+        }),
+
+        // External participant service
+        Future(() async {
+          try {
+            final externalService = ExternalParticipantService();
+            externalService.initializeListeners();
+            debugPrint('[POST_LOGIN_INIT]   ✓ External participant service initialized');
+          } catch (e) {
+            debugPrint('[POST_LOGIN_INIT]   ⚠️ External participant service error: $e');
+          }
+        }),
+      ]);
+
+      debugPrint('[POST_LOGIN_INIT] ✓ Meeting/call services ready');
+
+      // ========================================
       // PHASE 5: P2P File Transfer (SEQUENTIAL)
       // ========================================
 
@@ -451,6 +514,14 @@ class PostLoginInitService {
     debugPrint('[POST_LOGIN_INIT] Resetting state...');
     _isInitialized = false;
     _isInitializing = false;
+
+    // Stop presence heartbeat
+    try {
+      PresenceService().stopHeartbeat();
+      debugPrint('[POST_LOGIN_INIT] ✓ Presence heartbeat stopped');
+    } catch (e) {
+      debugPrint('[POST_LOGIN_INIT] ⚠️ Error stopping presence heartbeat: $e');
+    }
 
     // Clear P2P services
     _fileStorage = null;

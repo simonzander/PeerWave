@@ -85,6 +85,11 @@ import 'app/views/messages_view_page.dart';
 import 'app/views/channels_view_page.dart';
 import 'app/views/people_view_page.dart';
 import 'app/views/files_view_page.dart';
+// Meetings and Calls
+import 'screens/meetings_screen.dart';
+import 'views/external_prejoin_view.dart';
+import 'views/meeting_prejoin_view.dart';
+import 'views/meeting_video_conference_view.dart';
 // Native server selection
 import 'screens/server_selection_screen.dart';
 import 'services/server_config_web.dart'
@@ -525,6 +530,50 @@ class _MyAppState extends State<MyApp> {
               path: '/signal-setup',
               builder: (context, state) => const SignalSetupScreen(),
             ),
+            // ========================================
+            // External Participant (Guest) Route
+            // ========================================
+            GoRoute(
+              path: '/join/:token',
+              builder: (context, state) {
+                final token = state.pathParameters['token'];
+                if (token == null || token.isEmpty) {
+                  return Scaffold(
+                    body: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error, size: 64, color: Colors.red),
+                          const SizedBox(height: 16),
+                          const Text('Invalid invitation link'),
+                          const SizedBox(height: 16),
+                          TextButton(
+                            onPressed: () => context.go('/login'),
+                            child: const Text('Go to Login'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                return ExternalPreJoinView(
+                  invitationToken: token,
+                  onAdmitted: () {
+                    // TODO: Navigate to video conference view
+                    debugPrint('[EXTERNAL] Guest admitted, navigating to conference...');
+                  },
+                  onDeclined: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Your request to join was declined'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
             ShellRoute(
               builder: (context, state, child) => AppLayout(child: child),
               routes: [
@@ -647,6 +696,33 @@ class _MyAppState extends State<MyApp> {
                         final host = snapshot.data ?? 'localhost:3000';
                         return FilesViewPage(host: host);
                       },
+                    );
+                  },
+                ),
+                // ========================================
+                // Meetings & Calls
+                // ========================================
+                GoRoute(
+                  path: '/app/meetings',
+                  builder: (context, state) => const MeetingsScreen(),
+                ),
+                GoRoute(
+                  path: '/meeting/prejoin/:meetingId',
+                  builder: (context, state) {
+                    final meetingId = state.pathParameters['meetingId']!;
+                    return MeetingPreJoinView(meetingId: meetingId);
+                  },
+                ),
+                GoRoute(
+                  path: '/meeting/video/:meetingId',
+                  builder: (context, state) {
+                    final meetingId = state.pathParameters['meetingId']!;
+                    final extra = state.extra as Map<String, dynamic>?;
+                    return MeetingVideoConferenceView(
+                      meetingId: meetingId,
+                      meetingTitle: extra?['meetingTitle'] ?? 'Meeting',
+                      selectedCamera: extra?['selectedCamera'],
+                      selectedMicrophone: extra?['selectedMicrophone'],
                     );
                   },
                 ),
@@ -932,6 +1008,30 @@ class _MyAppState extends State<MyApp> {
                     final server = ServerConfigService.getActiveServer();
                     return FilesViewPage(
                       host: server?.serverUrl ?? 'localhost:3000',
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: '/app/meetings',
+                  builder: (context, state) => const MeetingsScreen(),
+                ),
+                GoRoute(
+                  path: '/meeting/prejoin/:meetingId',
+                  builder: (context, state) {
+                    final meetingId = state.pathParameters['meetingId']!;
+                    return MeetingPreJoinView(meetingId: meetingId);
+                  },
+                ),
+                GoRoute(
+                  path: '/meeting/video/:meetingId',
+                  builder: (context, state) {
+                    final meetingId = state.pathParameters['meetingId']!;
+                    final extra = state.extra as Map<String, dynamic>?;
+                    return MeetingVideoConferenceView(
+                      meetingId: meetingId,
+                      meetingTitle: extra?['meetingTitle'] ?? 'Meeting',
+                      selectedCamera: extra?['selectedCamera'],
+                      selectedMicrophone: extra?['selectedMicrophone'],
                     );
                   },
                 ),

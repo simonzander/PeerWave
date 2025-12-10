@@ -7,6 +7,7 @@ import 'preferences_service.dart';
 /// Used for non-intrusive audio feedback during video calls:
 /// - Participant joined/left
 /// - Screen share started/stopped
+/// - Incoming call ringtone (looping)
 ///
 /// Does NOT show system notifications - just plays sounds
 class SoundService {
@@ -16,8 +17,10 @@ class SoundService {
   SoundService._internal();
 
   final AudioPlayer _player = AudioPlayer();
+  final AudioPlayer _ringtonePlayer = AudioPlayer();
   bool _enabled = true;
   bool _initialized = false;
+  bool _isPlayingRingtone = false;
 
   /// Initialize and load preferences
   Future<void> initialize() async {
@@ -80,8 +83,40 @@ class SoundService {
     }
   }
 
+  /// Play ringtone (loops until stopped)
+  Future<void> playRingtone() async {
+    if (_isPlayingRingtone) return;
+
+    try {
+      // Set looping mode
+      await _ringtonePlayer.setReleaseMode(ReleaseMode.loop);
+      
+      // Play ringtone from assets
+      await _ringtonePlayer.play(AssetSource('sounds/ringtone.mp3'));
+      
+      _isPlayingRingtone = true;
+      debugPrint('[SoundService] 🔔 Ringtone started');
+    } catch (e) {
+      debugPrint('[SoundService] ❌ Error playing ringtone: $e');
+    }
+  }
+
+  /// Stop ringtone
+  Future<void> stopRingtone() async {
+    if (!_isPlayingRingtone) return;
+
+    try {
+      await _ringtonePlayer.stop();
+      _isPlayingRingtone = false;
+      debugPrint('[SoundService] 🔇 Ringtone stopped');
+    } catch (e) {
+      debugPrint('[SoundService] ❌ Error stopping ringtone: $e');
+    }
+  }
+
   /// Dispose resources
   void dispose() {
     _player.dispose();
+    _ringtonePlayer.dispose();
   }
 }

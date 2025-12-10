@@ -40,9 +40,15 @@ class _CallOverlayState extends State<CallOverlay> {
         _updateParticipantStates(service);
 
         // Hide overlay if: not in call, overlay hidden, OR in full-view mode
+        // For meetings, always hide overlay when in full-view
         if (!service.isInCall ||
             !service.isOverlayVisible ||
-            service.isInFullView) {
+            (service.isInFullView && service.isMeeting)) {
+          return const SizedBox.shrink();
+        }
+        
+        // For channels, hide when in full-view
+        if (service.isInFullView && !service.isMeeting) {
           return const SizedBox.shrink();
         }
 

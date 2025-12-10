@@ -41,6 +41,34 @@ class UserProfileService {
   final Map<String, List<void Function(Map<String, dynamic>?)>> _pendingCallbacks = {};
   
   bool _isInitialLoading = false;
+  
+  /// Get current user's UUID (from own profile cache)
+  /// Returns null if own profile not loaded yet
+  String? get currentUserUuid {
+    debugPrint('[UserProfileService] currentUserUuid getter called. Cache size: ${_cache.length}');
+    
+    // Find own profile in cache by checking for the profile that matches current user
+    // The own profile is cached during loadOwnProfile()
+    for (final entry in _cache.entries) {
+      final profile = entry.value.data;
+      debugPrint('[UserProfileService] Checking profile UUID: ${entry.key}, isOwnProfile: ${profile['isOwnProfile']}');
+      
+      if (profile['isOwnProfile'] == true) {
+        debugPrint('[UserProfileService] Found own profile: ${entry.key}');
+        return entry.key;
+      }
+    }
+    
+    // Fallback: check if we have exactly one profile cached (likely our own)
+    if (_cache.length == 1) {
+      final uuid = _cache.keys.first;
+      debugPrint('[UserProfileService] Using fallback (single profile): $uuid');
+      return uuid;
+    }
+    
+    debugPrint('[UserProfileService] No own profile found in cache');
+    return null;
+  }
 
   /// Initialize profiles: Load own profile + recent conversation partners
   Future<void> initProfiles() async {
@@ -257,6 +285,7 @@ class UserProfileService {
       'displayName': data['displayName'] ?? uuid,
       'atName': data['atName'] ?? data['displayName'] ?? uuid,
       'picture': pictureData,
+      'isOwnProfile': data['isOwnProfile'], // Preserve isOwnProfile marker
     };
     
     _cache[uuid] = _CachedProfile(profileData, DateTime.now());
@@ -450,9 +479,17 @@ class UserProfileService {
         final data = resp.data;
         final uuid = data['uuid'] as String?;
         
+        debugPrint('[UserProfileService] loadOwnProfile response: uuid=$uuid');
+        
         if (uuid != null) {
-          _cacheProfile(uuid, Map<String, dynamic>.from(data));
-          debugPrint('[UserProfileService] ✓ Cached own profile: $uuid');
+          // Mark as own profile for currentUserUuid getter
+          final profileData = Map<String, dynamic>.from(data);
+          profileData['isOwnProfile'] = true;
+          debugPrint('[UserProfileService] Setting isOwnProfile=true for uuid=$uuid');
+          _cacheProfile(uuid, profileData);
+          debugPrint('[UserProfileService] ✓ Cached own profile: $uuid with isOwnProfile=${profileData['isOwnProfile']}');
+        } else {
+          debugPrint('[UserProfileService] ✗ No uuid in profile response');
         }
       } else {
         throw Exception('Failed to load own profile: ${resp.statusCode}');

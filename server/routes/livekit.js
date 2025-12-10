@@ -147,6 +147,136 @@ router.post('/token', verifyAuthEither, async (req, res) => {
 });
 
 /**
+ * Generate LiveKit access token for a meeting
+ * POST /api/livekit/meeting-token
+ * 
+ * Body:
+ * - meetingId: The meeting to join (room name will be based on meeting_id)
+ * 
+ * Returns:
+ * - token: JWT token for LiveKit
+ * - url: LiveKit server URL
+ * - roomName: Room identifier (meeting ID)
+ */
+router.post('/meeting-token', verifyAuthEither, async (req, res) => {
+  try {
+    // Load LiveKit SDK dynamically
+    const AccessToken = await livekitWrapper.getAccessToken();
+    const meetingService = require('../services/meetingService');
+    
+    const userId = req.userId;
+    const username = req.username || req.session?.userinfo?.username || req.session?.email || 'Unknown';
+    
+    if (!userId) {
+      console.log('[LiveKit Meeting] Unauthorized - No user ID found');
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const { meetingId } = req.body;
+
+    if (!meetingId) {
+      return res.status(400).json({ error: 'meetingId required' });
+    }
+
+    console.log(`[LiveKit Meeting] Token request: userId=${userId}, meetingId=${meetingId}`);
+
+    // Get meeting from hybrid storage (memory + DB)
+    const meeting = await meetingService.getMeeting(meetingId);
+
+    if (!meeting) {
+      console.log('[LiveKit Meeting] Meeting not found:', meetingId);
+      return res.status(404).json({ error: 'Meeting not found' });
+    }
+
+    // Check if user is creator, participant, or invited
+    const isOwner = meeting.created_by === userId;
+    const isParticipant = meeting.participants && meeting.participants.some(p => p.uuid === userId);
+    const isInvited = meeting.invited_participants && meeting.invited_participants.includes(userId);
+
+    if (!isOwner && !isParticipant && !isInvited) {
+      console.log('[LiveKit Meeting] User not authorized:', userId);
+      return res.status(403).json({ error: 'Not authorized for this meeting' });
+    }
+
+    console.log(`[LiveKit Meeting] User authorized:`, {
+      userId,
+      meetingId,
+      isOwner,
+      isParticipant,
+      isInvited
+    });
+
+    // Get LiveKit configuration from environment
+    const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
+    const apiSecret = process.env.LIVEKIT_API_SECRET || 'secret';
+    const livekitUrl = process.env.LIVEKIT_URL || 'ws://localhost:7880';
+
+    // Create access token
+    const token = new AccessToken(apiKey, apiSecret, {
+      identity: `${userId}`,
+      name: username,
+      metadata: JSON.stringify({
+        userId,
+        username,
+        meetingId,
+        meetingTitle: meeting.title,
+        isOwner
+      })
+    });
+
+    // Room name is the meeting ID itself
+    const roomName = meetingId;
+
+    // Grant permissions
+    const canPublish = true; // All participants can publish
+    const canSubscribe = true;
+
+    // Add room grants
+    token.addGrant({
+      room: roomName,
+      roomJoin: true,
+      canPublish: canPublish,
+      canSubscribe: canSubscribe,
+      canPublishData: true,
+      
+      // Room admin capabilities (for meeting owner)
+      ...(isOwner && {
+        roomAdmin: true,
+        roomList: true,
+        roomRecord: false,
+      })
+    });
+
+    // Generate JWT
+    const jwt = await token.toJwt();
+
+    // Return token and connection info
+    res.json({
+      token: jwt,
+      url: livekitUrl.replace('peerwave-livekit', 'localhost'),
+      roomName: roomName,
+      identity: `${userId}`,
+      metadata: {
+        userId,
+        username,
+        meetingId,
+        meetingTitle: meeting.title,
+        isOwner,
+        permissions: {
+          canPublish,
+          canSubscribe,
+          isOwner
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('LiveKit meeting token generation error:', error);
+    res.status(500).json({ error: 'Failed to generate meeting token' });
+  }
+});
+
+/**
  * Get LiveKit ICE Servers for P2P connections
  * GET /api/livekit/ice-config
  * 

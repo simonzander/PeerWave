@@ -100,6 +100,39 @@ function safeEmitToDevice(io, userId, deviceId, event, data) {
   return true;
 }
 
+/**
+ * Emits an event to all connected devices for a given userId
+ * @param {Object} io - Socket.IO server instance
+ * @param {string} userId - Target user ID
+ * @param {string} event - Event name to emit
+ * @param {Object} data - Event payload
+ * @returns {number} Number of devices the event was emitted to
+ */
+function emitToUser(io, userId, event, data) {
+  let emittedCount = 0;
+  
+  // Iterate through all device connections and find matching userId
+  deviceSockets.forEach((socketId, deviceKey) => {
+    // deviceKey format: "userId:deviceId"
+    if (deviceKey.startsWith(userId + ':')) {
+      const targetSocket = io.sockets.sockets.get(socketId);
+      
+      if (targetSocket && targetSocket.clientReady) {
+        targetSocket.emit(event, data);
+        emittedCount++;
+      }
+    }
+  });
+  
+  if (emittedCount === 0) {
+    console.log(`[EMIT_TO_USER] User ${userId} has no connected devices for event: ${event}`);
+  } else {
+    console.log(`[EMIT_TO_USER] Emitted '${event}' to ${emittedCount} device(s) for user ${userId}`);
+  }
+  
+  return emittedCount;
+}
+
 // 🚀 Flush pending messages when client becomes ready
 function flushPendingMessages(io, socket, userId, deviceId) {
   const deviceKey = `${userId}:${deviceId}`;
@@ -147,6 +180,12 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
         // Send to each device
         for (const client of clients) {
           try {
+            // Validate device_id exists
+            if (!client.device_id) {
+              console.log(`[SIGNAL] ⚠️ Skipping client with missing device_id for user ${userId}`);
+              continue;
+            }
+            
             const recipientDeviceId = client.device_id.toString();
             
             // Create Signal message payload
@@ -189,7 +228,7 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
             }
             
           } catch (err) {
-            console.error(`[SIGNAL] Failed to send to device ${client.deviceId}:`, err);
+            console.error(`[SIGNAL] Failed to send to device ${recipientDeviceId || 'unknown'}:`, err);
           }
         }
         
@@ -224,12 +263,20 @@ app.use(sessionMiddleware);
   const groupItemRoutes = require('./routes/groupItems');
   const senderKeyRoutes = require('./routes/senderKeys');
   const livekitRoutes = require('./routes/livekit');
+  const meetingRoutes = require('./routes/meetings');
+  const callRoutes = require('./routes/calls');
+  const presenceRoutes = require('./routes/presence');
+  const externalRoutes = require('./routes/external');
 
   app.use(clientRoutes);
   app.use('/api', roleRoutes);
   app.use('/api/group-items', groupItemRoutes);
   app.use('/api/sender-keys', senderKeyRoutes);
   app.use('/api/livekit', livekitRoutes);
+  app.use('/api', meetingRoutes);
+  app.use('/api', callRoutes);
+  app.use('/api', presenceRoutes);
+  app.use('/api', externalRoutes);
 
   // Run HMAC auth database migration
   const { migrate: migrateHmacAuth } = require('./migrations/add_hmac_auth');
@@ -247,6 +294,12 @@ app.use(sessionMiddleware);
   const { up: migrateServerSettings } = require('./migrations/add_server_settings');
   migrateServerSettings().catch(err => {
     console.error('Failed to run server settings migration:', err);
+  });
+
+  // Run meetings system migration
+  const { up: migrateMeetingsSystem } = require('./migrations/add_meetings_system');
+  migrateMeetingsSystem().catch(err => {
+    console.error('Failed to run meetings system migration:', err);
   });
 
   // License info endpoint
@@ -393,6 +446,12 @@ io.sockets.on("connection", socket => {
   const getClientId = () => socket.data.clientId || socket.handshake.session.clientId;
   const isAuthenticated = () => socket.data.sessionAuth || socket.handshake.session.authenticated === true;
 
+  // Service imports for meetings & calls
+  const meetingService = require('./services/meetingService');
+  const presenceService = require('./services/presenceService');
+  const externalParticipantService = require('./services/externalParticipantService');
+  const meetingCleanupService = require('./services/meetingCleanupService');
+
   socket.on("authenticate", async (authData) => {
     // Support both cookie-based (web) and HMAC-based (native) authentication
     try {
@@ -517,7 +576,7 @@ io.sockets.on("connection", socket => {
         console.log(`[SIGNAL SERVER] Device registered: ${deviceKey} -> ${socket.id}`);
         console.log(`[SIGNAL SERVER] Total devices online: ${deviceSockets.size}`);
         
-        // Store userId in socket.data for mediasoup
+        // Store userId in socket.data for video conferencing
         socket.data.userId = socket.handshake.session.uuid;
         socket.data.deviceId = socket.handshake.session.deviceId;
         
@@ -630,10 +689,6 @@ io.sockets.on("connection", socket => {
       socket.emit("fetchPendingMessagesError", { error: error.message });
     }
   });
-
-  // Setup mediasoup signaling routes
-  const { setupMediasoupSignaling } = require('./routes/mediasoup.signaling');
-  setupMediasoupSignaling(socket, io);
 
   // SIGNAL HANDLE START
 
@@ -2662,38 +2717,82 @@ io.sockets.on("connection", socket => {
         return;
       }
 
-      // Check if user is member of channel
-      const membership = await ChannelMembers.findOne({
-        where: {
-          userId: userId,
-          channelId: channelId
+      // Check if this is a meeting (starts with mtg_ or call_)
+      const isMeeting = channelId.startsWith('mtg_') || channelId.startsWith('call_');
+      
+      if (isMeeting) {
+        // For meetings: verify meeting exists and user is participant
+        const meeting = await meetingService.getMeeting(channelId);
+        
+        if (!meeting) {
+          console.error('[VIDEO PARTICIPANTS] Meeting not found:', channelId);
+          socket.emit("video:participants-info", { error: "Meeting not found" });
+          return;
         }
-      });
+        
+        // Check if user is creator, participant, or invited
+        const isCreator = meeting.created_by === userId;
+        const isParticipant = meeting.participants && meeting.participants.some(p => p.uuid === userId);
+        const isInvited = meeting.invited_participants && meeting.invited_participants.includes(userId);
+        
+        if (!isCreator && !isParticipant && !isInvited) {
+          console.error('[VIDEO PARTICIPANTS] User not authorized for meeting:', channelId);
+          socket.emit("video:participants-info", { error: "Not authorized for this meeting" });
+          return;
+        }
+        
+        // Get active participants from memory (participants who have joined video)
+        const participants = getVideoParticipants(channelId);
+        
+        // Filter out requesting user from count (they're not "in" yet)
+        const otherParticipants = participants.filter(p => p.userId !== userId);
+        
+        console.log(`[VIDEO PARTICIPANTS] Check for meeting ${channelId}: ${otherParticipants.length} active participants`);
+        
+        socket.emit("video:participants-info", {
+          channelId: channelId,
+          participantCount: otherParticipants.length,
+          isFirstParticipant: otherParticipants.length === 0,
+          participants: otherParticipants.map(p => ({
+            userId: p.userId,
+            joinedAt: p.joinedAt,
+            hasE2EEKey: p.hasE2EEKey
+          }))
+        });
+      } else {
+        // For channels: check channel membership
+        const membership = await ChannelMembers.findOne({
+          where: {
+            userId: userId,
+            channelId: channelId
+          }
+        });
 
-      if (!membership) {
-        console.error('[VIDEO PARTICIPANTS] User not member of channel');
-        socket.emit("video:participants-info", { error: "Not a member of this channel" });
-        return;
+        if (!membership) {
+          console.error('[VIDEO PARTICIPANTS] User not member of channel');
+          socket.emit("video:participants-info", { error: "Not a member of this channel" });
+          return;
+        }
+
+        // Get active participants
+        const participants = getVideoParticipants(channelId);
+        
+        // Filter out requesting user from count (they're not "in" yet)
+        const otherParticipants = participants.filter(p => p.userId !== userId);
+        
+        console.log(`[VIDEO PARTICIPANTS] Check for channel ${channelId}: ${otherParticipants.length} active participants`);
+
+        socket.emit("video:participants-info", {
+          channelId: channelId,
+          participantCount: otherParticipants.length,
+          isFirstParticipant: otherParticipants.length === 0,
+          participants: otherParticipants.map(p => ({
+            userId: p.userId,
+            joinedAt: p.joinedAt,
+            hasE2EEKey: p.hasE2EEKey
+          }))
+        });
       }
-
-      // Get active participants
-      const participants = getVideoParticipants(channelId);
-      
-      // Filter out requesting user from count (they're not "in" yet)
-      const otherParticipants = participants.filter(p => p.userId !== userId);
-      
-      console.log(`[VIDEO PARTICIPANTS] Check for channel ${channelId}: ${otherParticipants.length} active participants`);
-
-      socket.emit("video:participants-info", {
-        channelId: channelId,
-        participantCount: otherParticipants.length,
-        isFirstParticipant: otherParticipants.length === 0,
-        participants: otherParticipants.map(p => ({
-          userId: p.userId,
-          joinedAt: p.joinedAt,
-          hasE2EEKey: p.hasE2EEKey
-        }))
-      });
     } catch (error) {
       console.error('[VIDEO PARTICIPANTS] Error checking participants:', error);
       socket.emit("video:participants-info", { error: "Internal server error" });
@@ -2702,6 +2801,7 @@ io.sockets.on("connection", socket => {
 
   /**
    * Register as participant (called by PreJoin screen after device selection)
+   * Supports both channels and meetings
    * Client says: "I'm about to join, add me to the list"
    */
   socket.on("video:register-participant", async (data) => {
@@ -2711,31 +2811,70 @@ io.sockets.on("connection", socket => {
         return;
       }
 
-      const { channelId } = data;
+      const { channelId } = data; // Can be actual channelId or meetingId
       const userId = getUserId();
+      const deviceId = getDeviceId();
 
       if (!channelId) {
-        console.error('[VIDEO PARTICIPANTS] Missing channelId');
+        console.error('[VIDEO PARTICIPANTS] Missing channelId/meetingId');
         return;
       }
 
-      // Verify channel membership
-      const membership = await ChannelMembers.findOne({
-        where: {
-          userId: userId,
-          channelId: channelId
+      // Check if it's a meeting ID (starts with mtg_ or call_)
+      const isMeeting = channelId.startsWith('mtg_') || channelId.startsWith('call_');
+
+      if (isMeeting) {
+        // Meeting/call participant registration
+        const meeting = await meetingService.getMeeting(channelId);
+        
+        if (!meeting) {
+          console.error('[VIDEO PARTICIPANTS] Meeting not found:', channelId);
+          return;
         }
-      });
 
-      if (!membership) {
-        console.error('[VIDEO PARTICIPANTS] User not member of channel');
-        return;
+        // Check if user is participant
+        const isParticipant = meeting.created_by === userId ||
+                             meeting.participants?.some(p => p.user_id === userId) ||
+                             meeting.invited_participants?.includes(userId);
+
+        if (!isParticipant) {
+          console.error('[VIDEO PARTICIPANTS] User not participant of meeting');
+          return;
+        }
+
+        // Add to memory store
+        await meetingService.addParticipant(channelId, {
+          user_id: userId,
+          device_id: deviceId,
+          role: meeting.created_by === userId ? 'meeting_owner' : 'meeting_member'
+        });
+
+        // Mark LiveKit room as active
+        meetingService.updateLiveKitRoom(channelId, true, [userId]);
+
+        console.log(`[VIDEO PARTICIPANTS] User ${userId} registered for meeting ${channelId}`);
+
+      } else {
+        // Channel video call registration
+        const membership = await ChannelMembers.findOne({
+          where: {
+            userId: userId,
+            channelId: channelId
+          }
+        });
+
+        if (!membership) {
+          console.error('[VIDEO PARTICIPANTS] User not member of channel');
+          return;
+        }
+
+        console.log(`[VIDEO PARTICIPANTS] User ${userId} registered for channel ${channelId}`);
       }
 
-      // Add to active participants
+      // Add to Socket.IO room tracking (for both channels and meetings)
       addVideoParticipant(channelId, userId, socket.id);
 
-      // Join Socket.IO room for this channel
+      // Join Socket.IO room
       socket.join(channelId);
 
       // Notify other participants
@@ -2744,7 +2883,6 @@ io.sockets.on("connection", socket => {
         joinedAt: Date.now()
       });
 
-      console.log(`[VIDEO PARTICIPANTS] User ${userId} registered for channel ${channelId}`);
     } catch (error) {
       console.error('[VIDEO PARTICIPANTS] Error registering participant:', error);
     }
@@ -2784,7 +2922,8 @@ io.sockets.on("connection", socket => {
   });
 
   /**
-   * Leave channel (called when user closes video call)
+   * Leave channel or meeting (called when user closes video call)
+   * Supports both channels and meetings
    * Client says: "I'm leaving the call"
    */
   socket.on("video:leave-channel", async (data) => {
@@ -2796,13 +2935,28 @@ io.sockets.on("connection", socket => {
 
       const { channelId } = data;
       const userId = getUserId();
+      const deviceId = getDeviceId();
 
       if (!channelId) {
         console.error('[VIDEO PARTICIPANTS] Missing channelId');
         return;
       }
 
-      // Remove from active participants
+      // Check if it's a meeting
+      const isMeeting = channelId.startsWith('mtg_') || channelId.startsWith('call_');
+
+      if (isMeeting) {
+        // Remove from meeting memory store
+        const result = await meetingService.removeParticipant(channelId, userId, deviceId);
+        
+        if (result.isEmpty) {
+          // Last participant left, mark room as inactive
+          meetingService.updateLiveKitRoom(channelId, false, []);
+          console.log(`[VIDEO PARTICIPANTS] Meeting ${channelId} now empty`);
+        }
+      }
+
+      // Remove from Socket.IO tracking
       removeVideoParticipant(channelId, socket.id);
 
       // Leave Socket.IO room
@@ -2813,7 +2967,7 @@ io.sockets.on("connection", socket => {
         userId: userId
       });
 
-      console.log(`[VIDEO PARTICIPANTS] User ${userId} left channel ${channelId}`);
+      console.log(`[VIDEO PARTICIPANTS] User ${userId} left ${isMeeting ? 'meeting' : 'channel'} ${channelId}`);
     } catch (error) {
       console.error('[VIDEO PARTICIPANTS] Error leaving channel:', error);
     }
@@ -3133,11 +3287,179 @@ io.sockets.on("connection", socket => {
     }
   });
 
+  // ==================== MEETINGS & CALLS SOCKET.IO EVENTS ====================
+  // 
+  // NOTE: For operations requiring immediate responses (create, update, delete),
+  // use HTTP REST API routes instead (see /api/meetings, /api/calls, /api/external).
+  // Socket.IO events below are for real-time notifications and presence only.
+  //
+  // ============================================================================
+
+  /**
+   * Presence: Update heartbeat (called every 60 seconds from client)
+   * Real-time presence tracking - broadcasts online status to other users
+   */
+  socket.on('presence:heartbeat', async () => {
+    try {
+      const userId = getUserId();
+      if (!userId) return;
+
+      await presenceService.updateHeartbeat(userId, socket.id);
+      
+      // Broadcast status update to relevant users
+      socket.broadcast.emit('presence:update', {
+        user_id: userId,
+        status: 'online',
+        last_heartbeat: new Date()
+      });
+    } catch (error) {
+      console.error('[PRESENCE] Error updating heartbeat:', error);
+    }
+  });
+
+  /**
+   * Meeting: Participant left
+   * Real-time notification only - broadcasts to other participants
+   */
+  socket.on('meeting:leave', async (data) => {
+    try {
+      const userId = getUserId();
+      if (!userId) return;
+
+      const { meeting_id } = data;
+      
+      // Leave meeting room
+      socket.leave(`meeting:${meeting_id}`);
+
+      // Notify other participants
+      socket.to(`meeting:${meeting_id}`).emit('meeting:participant_left', {
+        meeting_id,
+        user_id: userId
+      });
+    } catch (error) {
+      console.error('[MEETING] Error handling participant leave:', error);
+    }
+  });
+
+  /**
+   * Call: Send incoming call notification (phone-style ringtone)
+   * Real-time notification - triggers ringtone on recipient devices
+   */
+  socket.on('call:notify', async (data) => {
+    try {
+      const userId = getUserId();
+      if (!userId) return;
+
+      const { meeting_id, recipient_ids } = data;
+
+      // Send call notification to each recipient
+      for (const recipientId of recipient_ids) {
+        // Check if user is online
+        const isOnline = await presenceService.isOnline(recipientId);
+        
+        if (isOnline) {
+          // Update participant status to ringing
+          await meetingService.updateParticipantStatus(meeting_id, recipientId, 'ringing');
+
+          // TODO: Encrypt caller info with Signal Protocol
+          emitToUser(io, recipientId, 'call:incoming', {
+            meeting_id,
+            caller_id: userId,
+            caller_name: 'Caller', // Get from user profile
+            timestamp: new Date()
+          });
+
+          // Notify caller that user is ringing
+          socket.emit('call:ringing', {
+            meeting_id,
+            user_id: recipientId
+          });
+        }
+      }
+    } catch (error) {
+      console.error('[CALL] Error notifying call:', error);
+    }
+  });
+
+  /**
+   * Call: Accept incoming call
+   * Real-time notification - broadcasts acceptance to caller
+   */
+  socket.on('call:accept', async (data) => {
+    try {
+      const userId = getUserId();
+      if (!userId) return;
+
+      const { meeting_id } = data;
+
+      // Notify caller and other participants
+      const meeting = await meetingService.getMeeting(meeting_id);
+      for (const p of meeting.participants) {
+        emitToUser(io, p.user_id, 'call:accepted', {
+          meeting_id,
+          user_id: userId
+        });
+      }
+    } catch (error) {
+      console.error('[CALL] Error accepting call:', error);
+    }
+  });
+
+  /**
+   * Call: Decline incoming call
+   * Real-time notification - broadcasts decline to caller
+   */
+  socket.on('call:decline', async (data) => {
+    try {
+      const userId = getUserId();
+      if (!userId) return;
+
+      const { meeting_id } = data;
+
+      // Notify caller
+      const meeting = await meetingService.getMeeting(meeting_id);
+      emitToUser(io, meeting.created_by, 'call:declined', {
+        meeting_id,
+        user_id: userId
+      });
+    } catch (error) {
+      console.error('[CALL] Error declining call:', error);
+    }
+  });
+
+  // ==================== END MEETINGS & CALLS EVENTS ====================
+
   socket.on("disconnect", () => {
     const userId = socket.handshake.session?.uuid;
     const deviceId = socket.handshake.session?.deviceId;
     
     console.log(`[SOCKET] Client disconnected: ${socket.id} (User: ${userId}, Device: ${deviceId})`);
+    
+    // Handle meeting/call participant disconnect
+    if (userId) {
+      // Update presence to offline
+      presenceService.markOffline(userId).catch(err => {
+        console.error('[PRESENCE] Error marking user offline:', err);
+      });
+      
+      // Broadcast offline status
+      socket.broadcast.emit('presence:user_disconnected', {
+        user_id: userId,
+        last_seen: new Date()
+      });
+      
+      // Handle instant call cleanup (WebSocket-based)
+      meetingCleanupService.handleParticipantDisconnect(userId).catch(err => {
+        console.error('[MEETING CLEANUP] Error handling disconnect:', err);
+      });
+      
+      // Handle external participant disconnect
+      if (socket.data.externalSessionId) {
+        externalParticipantService.markLeft(socket.data.externalSessionId).catch(err => {
+          console.error('[EXTERNAL] Error marking session left:', err);
+        });
+      }
+    }
     
     if(userId && deviceId) {
       const deviceKey = `${userId}:${deviceId}`;
@@ -3497,24 +3819,19 @@ app.get('*', (req, res) => {
 initCleanupJob();
 runCleanup();
 
-// Initialize mediasoup (async - starts in background)
-const { initializeMediasoup } = require('./lib/mediasoup');
-initializeMediasoup()
-  .then(() => {
-    console.log('[mediasoup] ✓ Video conferencing system ready');
-  })
-  .catch((error) => {
-    console.error('[mediasoup] ✗ Failed to initialize video conferencing:', error);
-    console.error('[mediasoup] Server will continue without video conferencing support');
-  });
+// Initialize meeting services
+const meetingCleanupService = require('./services/meetingCleanupService');
+const presenceService = require('./services/presenceService');
+
+meetingCleanupService.start();
+presenceService.start();
+console.log('✓ Meeting and presence services initialized');
 
 // Graceful shutdown handler
 process.on('SIGTERM', async () => {
   console.log('\n🛑 SIGTERM received, shutting down gracefully...');
   
   try {
-    const { shutdownMediasoup } = require('./lib/mediasoup');
-    await shutdownMediasoup();
     process.exit(0);
   } catch (error) {
     console.error('Error during shutdown:', error);
@@ -3526,8 +3843,6 @@ process.on('SIGINT', async () => {
   console.log('\n🛑 SIGINT received, shutting down gracefully...');
   
   try {
-    const { shutdownMediasoup } = require('./lib/mediasoup');
-    await shutdownMediasoup();
     process.exit(0);
   } catch (error) {
     console.error('Error during shutdown:', error);

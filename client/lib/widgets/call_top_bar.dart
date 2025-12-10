@@ -70,7 +70,13 @@ class _CallTopBarState extends State<CallTopBar> {
     return Consumer<VideoConferenceService>(
       builder: (context, service, _) {
         // Show TopBar only when in call AND not in full-view mode
-        if (!service.isInCall || service.isInFullView) {
+        // For meetings, hide the top bar when in full-view
+        if (!service.isInCall || (service.isInFullView && service.isMeeting)) {
+          return const SizedBox.shrink();
+        }
+        
+        // For channels, hide when in full-view
+        if (service.isInFullView && !service.isMeeting) {
           return const SizedBox.shrink();
         }
 
@@ -227,16 +233,24 @@ class _CallTopBarState extends State<CallTopBar> {
                         final navigatorContext =
                             MyApp.rootNavigatorKey.currentContext;
                         if (navigatorContext != null) {
-                          GoRouter.of(
-                            navigatorContext,
-                          ).go(
-                            '/app/channels/$channelId',
-                            extra: {
-                              'host': 'localhost:3000',
-                              'name': channelName ?? 'Channel',
-                              'type': 'webrtc',
-                            },
-                          );
+                          // Navigate to meeting or channel view based on type
+                          if (service.isMeeting) {
+                            GoRouter.of(navigatorContext).go(
+                              '/meeting/video/$channelId',
+                              extra: {
+                                'meetingTitle': channelName ?? 'Meeting',
+                              },
+                            );
+                          } else {
+                            GoRouter.of(navigatorContext).go(
+                              '/app/channels/$channelId',
+                              extra: {
+                                'host': 'localhost:3000',
+                                'name': channelName ?? 'Channel',
+                                'type': 'webrtc',
+                              },
+                            );
+                          }
                         } else {
                           debugPrint(
                             '[CallTopBar] Navigator key has no context',

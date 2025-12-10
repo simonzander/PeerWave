@@ -5,6 +5,7 @@ import '../screens/messages/direct_messages_screen.dart';
 import '../screens/messages/signal_group_chat_screen.dart';
 import '../screens/file_transfer/file_manager_screen.dart';
 import '../screens/activities/activities_view.dart';
+import '../screens/meetings_screen.dart';
 import '../screens/dashboard/messages_list_view.dart';
 import '../screens/dashboard/channels_list_view.dart';
 import '../screens/people/people_screen.dart';
@@ -482,7 +483,7 @@ class _DashboardPageState extends State<DashboardPage> {
         _activeDirectMessageUuid = null;
         _activeDirectMessageDisplayName = null;
       }
-      if (index != 1) {
+      if (index != 2) { // Changed from 1 to 2 (People moved)
         _activeChannelUuid = null;
         _activeChannelName = null;
         _activeChannelType = null;
@@ -528,35 +529,43 @@ class _DashboardPageState extends State<DashboardPage> {
                     tooltip: 'Activity',
                   ),
                   const SizedBox(height: 4),
+                  // Meetings Icon
+                  _buildIconButton(
+                    icon: Icons.today,
+                    isSelected: _selectedIndex == 1,
+                    onTap: () => _onNavigationSelected(1),
+                    tooltip: 'Meetings',
+                  ),
+                  const SizedBox(height: 4),
                   // People Icon
                   _buildIconButton(
                     icon: Icons.people,
-                    isSelected: _selectedIndex == 1,
-                    onTap: () => _onNavigationSelected(1),
+                    isSelected: _selectedIndex == 2,
+                    onTap: () => _onNavigationSelected(2),
                     tooltip: 'People',
                   ),
                   const SizedBox(height: 4),
                   // Files Icon
                   _buildIconButton(
                     icon: Icons.folder,
-                    isSelected: _selectedIndex == 2,
-                    onTap: () => _onNavigationSelected(2),
+                    isSelected: _selectedIndex == 3,
+                    onTap: () => _onNavigationSelected(3),
                     tooltip: 'Files',
                   ),
                   const SizedBox(height: 4),
                   // Channels Icon
                   _buildIconButton(
                     icon: Icons.tag,
-                    isSelected: _selectedIndex == 3,
-                    onTap: () => _onNavigationSelected(3),
+                    isSelected: _selectedIndex == 4,
+                    onTap: () => _onNavigationSelected(4),
                     tooltip: 'Channels',
                   ),
                   const SizedBox(height: 4),
                   // Messages Icon
                   _buildIconButton(
                     icon: Icons.message,
-                    isSelected: _selectedIndex == 4,
-                    onTap: () => _onNavigationSelected(4),
+                    isSelected: _selectedIndex == 5,
+                    onTap: () => _onNavigationSelected(5),
                     tooltip: 'Messages',
                   ),
                   const Spacer(),
@@ -734,7 +743,7 @@ class _DashboardPageState extends State<DashboardPage> {
     
     // Map index based on device type
     // Mobile: 0=Activities, 1=Channels, 2=Messages, 3=Files
-    // Tablet/Desktop: 0=Activities, 1=People, 2=Files, 3=Channels, 4=Messages
+    // Tablet/Desktop: 0=Activities, 1=Meetings, 2=People, 3=Files, 4=Channels, 5=Messages
     
     String viewType;
     if (layoutType == LayoutType.mobile) {
@@ -761,15 +770,18 @@ class _DashboardPageState extends State<DashboardPage> {
           viewType = 'activities';
           break;
         case 1:
-          viewType = 'people';
+          viewType = 'meetings';
           break;
         case 2:
-          viewType = 'files';
+          viewType = 'people';
           break;
         case 3:
-          viewType = 'channels';
+          viewType = 'files';
           break;
         case 4:
+          viewType = 'channels';
+          break;
+        case 5:
           viewType = 'messages';
           break;
         default:
@@ -785,6 +797,9 @@ class _DashboardPageState extends State<DashboardPage> {
           onDirectMessageTap: _onDirectMessageTap,
           onChannelTap: _onChannelTap,
         );
+      
+      case 'meetings':
+        return const MeetingsScreen();
         
       case 'messages':
         // Desktop: Always show messages list view when Messages tab is selected

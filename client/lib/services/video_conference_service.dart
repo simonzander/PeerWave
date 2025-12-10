@@ -118,6 +118,8 @@ class VideoConferenceService extends ChangeNotifier {
   bool get isInCall => _isInCall;
   String? get channelName => _channelName;
   DateTime? get callStartTime => _callStartTime;
+  bool get isMeeting => _currentChannelId != null && 
+      (_currentChannelId!.startsWith('mtg_') || _currentChannelId!.startsWith('call_'));
   bool get isOverlayVisible => _isOverlayVisible;
   bool get isInFullView => _isInFullView;
   double get overlayPositionX => _overlayPositionX;
@@ -867,10 +869,15 @@ class VideoConferenceService extends ChangeNotifier {
       }
 
       // Get LiveKit token from server (credentials are automatically included)
-      debugPrint('[VideoConf] Requesting token for channel: $channelId');
+      // For meetings (ID starts with mtg_ or call_), use meeting-token endpoint
+      final isMeeting = channelId.startsWith('mtg_') || channelId.startsWith('call_');
+      final tokenEndpoint = isMeeting ? '/api/livekit/meeting-token' : '/api/livekit/token';
+      final requestData = isMeeting ? {'meetingId': channelId} : {'channelId': channelId};
+      
+      debugPrint('[VideoConf] Requesting token for ${isMeeting ? 'meeting' : 'channel'}: $channelId');
       final response = await ApiService.post(
-        '/api/livekit/token',
-        data: {'channelId': channelId},
+        tokenEndpoint,
+        data: requestData,
       );
 
       debugPrint('[VideoConf] Token response status: ${response.statusCode}');

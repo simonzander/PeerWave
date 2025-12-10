@@ -76,7 +76,7 @@ class _AppLayoutState extends State<AppLayout> {
     final layoutType = LayoutConfig.getLayoutType(width);
     
     if (layoutType == LayoutType.mobile) {
-      // Mobile: 0=Activities, 1=Channels, 2=Messages, 3=Files
+      // Mobile: 0=Activities, 1=Channels, 2=Messages, 3=Files (Meetings in burger menu)
       if (location.startsWith('/app/activities')) {
         newIndex = 0;
       } else if (location.startsWith('/app/channels')) {
@@ -87,17 +87,19 @@ class _AppLayoutState extends State<AppLayout> {
         newIndex = 3;
       }
     } else {
-      // Tablet/Desktop: 0=Activities, 1=People, 2=Files, 3=Channels, 4=Messages
+      // Tablet/Desktop: 0=Activities, 1=Meetings, 2=People, 3=Files, 4=Channels, 5=Messages
       if (location.startsWith('/app/activities')) {
         newIndex = 0;
-      } else if (location.startsWith('/app/people')) {
+      } else if (location.startsWith('/app/meetings')) {
         newIndex = 1;
-      } else if (location.startsWith('/app/files')) {
+      } else if (location.startsWith('/app/people')) {
         newIndex = 2;
-      } else if (location.startsWith('/app/channels')) {
+      } else if (location.startsWith('/app/files')) {
         newIndex = 3;
-      } else if (location.startsWith('/app/messages')) {
+      } else if (location.startsWith('/app/channels')) {
         newIndex = 4;
+      } else if (location.startsWith('/app/messages')) {
+        newIndex = 5;
       }
     }
     
@@ -134,18 +136,21 @@ class _AppLayoutState extends State<AppLayout> {
           break;
       }
     } else {
-      // Tablet/Desktop navigation: Activities, People, Files, Channels, Messages
+      // Tablet/Desktop navigation: Activities, Meetings, People, Files, Channels, Messages
       switch (index) {
         case 0:
           context.go('/app/activities');
           break;
         case 1:
-          context.go('/app/people');
+          context.go('/app/meetings');
           break;
         case 2:
-          context.go('/app/files');
+          context.go('/app/people');
           break;
         case 3:
+          context.go('/app/files');
+          break;
+        case 4:
           context.go('/app/channels');
           break;
         case 4:
@@ -214,7 +219,7 @@ class _AppLayoutState extends State<AppLayout> {
       ];
     }
     
-    // Tablet & Desktop: Activities, People, Files, Channels, Messages (5 items)
+    // Tablet & Desktop: Activities, Meetings, People, Files, Channels, Messages (6 items)
     return [
       NavigationDestination(
         icon: NavigationBadge(
@@ -227,6 +232,18 @@ class _AppLayoutState extends State<AppLayout> {
           selected: true,
         ),
         label: 'Activity',
+      ),
+      NavigationDestination(
+        icon: NavigationBadge(
+          icon: Icons.today_outlined,
+          type: NavigationBadgeType.meetings,
+        ),
+        selectedIcon: NavigationBadge(
+          icon: Icons.today,
+          type: NavigationBadgeType.meetings,
+          selected: true,
+        ),
+        label: 'Meetings',
       ),
       NavigationDestination(
         icon: NavigationBadge(
@@ -315,6 +332,14 @@ class _AppLayoutState extends State<AppLayout> {
             onTap: () {
               Navigator.pop(context);
               context.go('/app/people');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.today_outlined),
+            title: const Text('Meetings'),
+            onTap: () {
+              Navigator.pop(context);
+              context.go('/app/meetings');
             },
           ),
           ListTile(

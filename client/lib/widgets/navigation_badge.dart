@@ -174,6 +174,10 @@ class NavigationBadge extends StatelessWidget {
       
       case NavigationBadgeType.people:
         return 0;
+      
+      case NavigationBadgeType.meetings:
+        // TODO: Implement meeting notification tracking (upcoming meetings, waiting guests)
+        return 0;
     }
   }
 }
@@ -185,6 +189,7 @@ enum NavigationBadgeType {
   files,
   activities,
   people,
+  meetings,
 }
 
 /// Label with badge for navigation items
@@ -239,6 +244,9 @@ class NavigationLabelWithBadge extends StatelessWidget {
         return notificationProvider.totalUnreadCount;
       
       case NavigationBadgeType.people:
+        return 0;
+      
+      case NavigationBadgeType.meetings:
         return 0;
     }
   }

@@ -29,14 +29,16 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
     int newIndex = 0;
     if (location.startsWith('/app/activities')) {
       newIndex = 0;
-    } else if (location.startsWith('/app/people')) {
+    } else if (location.startsWith('/app/meetings')) {
       newIndex = 1;
-    } else if (location.startsWith('/app/files')) {
+    } else if (location.startsWith('/app/people')) {
       newIndex = 2;
-    } else if (location.startsWith('/app/channels')) {
+    } else if (location.startsWith('/app/files')) {
       newIndex = 3;
-    } else if (location.startsWith('/app/messages')) {
+    } else if (location.startsWith('/app/channels')) {
       newIndex = 4;
+    } else if (location.startsWith('/app/messages')) {
+      newIndex = 5;
     }
     
     if (newIndex != _selectedIndex) {
@@ -57,15 +59,18 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
         context.go('/app/activities');
         break;
       case 1:
-        context.go('/app/people');
+        context.go('/app/meetings');
         break;
       case 2:
-        context.go('/app/files');
+        context.go('/app/people');
         break;
       case 3:
-        context.go('/app/channels');
+        context.go('/app/files');
         break;
       case 4:
+        context.go('/app/channels');
+        break;
+      case 5:
         context.go('/app/messages');
         break;
     }
@@ -93,15 +98,28 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
           ),
           const SizedBox(height: 4),
           
+          // Meetings Icon
+          _buildIconButton(
+            badge: NavigationBadge(
+              icon: Icons.today,
+              type: NavigationBadgeType.meetings,
+              selected: _selectedIndex == 1,
+            ),
+            isSelected: _selectedIndex == 1,
+            onTap: () => _onNavigationSelected(1),
+            tooltip: 'Meetings',
+          ),
+          const SizedBox(height: 4),
+          
           // People Icon
           _buildIconButton(
             badge: NavigationBadge(
               icon: Icons.people,
               type: NavigationBadgeType.people,
-              selected: _selectedIndex == 1,
+              selected: _selectedIndex == 2,
             ),
-            isSelected: _selectedIndex == 1,
-            onTap: () => _onNavigationSelected(1),
+            isSelected: _selectedIndex == 2,
+            onTap: () => _onNavigationSelected(2),
             tooltip: 'People',
           ),
           const SizedBox(height: 4),
@@ -111,10 +129,10 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
             badge: NavigationBadge(
               icon: Icons.folder,
               type: NavigationBadgeType.files,
-              selected: _selectedIndex == 2,
+              selected: _selectedIndex == 3,
             ),
-            isSelected: _selectedIndex == 2,
-            onTap: () => _onNavigationSelected(2),
+            isSelected: _selectedIndex == 3,
+            onTap: () => _onNavigationSelected(3),
             tooltip: 'Files',
           ),
           const SizedBox(height: 4),
@@ -124,10 +142,10 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
             badge: NavigationBadge(
               icon: Icons.tag,
               type: NavigationBadgeType.channels,
-              selected: _selectedIndex == 3,
+              selected: _selectedIndex == 4,
             ),
-            isSelected: _selectedIndex == 3,
-            onTap: () => _onNavigationSelected(3),
+            isSelected: _selectedIndex == 4,
+            onTap: () => _onNavigationSelected(4),
             tooltip: 'Channels',
           ),
           const SizedBox(height: 4),
@@ -137,10 +155,10 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
             badge: NavigationBadge(
               icon: Icons.message,
               type: NavigationBadgeType.messages,
-              selected: _selectedIndex == 4,
+              selected: _selectedIndex == 5,
             ),
-            isSelected: _selectedIndex == 4,
-            onTap: () => _onNavigationSelected(4),
+            isSelected: _selectedIndex == 5,
+            onTap: () => _onNavigationSelected(5),
             tooltip: 'Messages',
           ),
           

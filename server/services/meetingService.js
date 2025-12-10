@@ -1,0 +1,589 @@
+const { sequelize } = require('../db/model');
+const { v4: uuidv4 } = require('uuid');
+const { Op } = require('sequelize');
+const writeQueue = require('../db/writeQueue');
+const meetingMemoryStore = require('./meetingMemoryStore');
+
+/**
+ * MeetingService - Hybrid Storage (Database + Memory)
+ * 
+ * Database: Persistent scheduled meetings
+ * Memory: All runtime state + instant calls
+ * 
+ * Key principle:
+ * - Scheduled meetings: DB (persistent) + Memory (runtime state)
+ * - Instant calls: Memory only (no DB writes)
+ */
+class MeetingService {
+  
+  /**
+   * Create a new meeting or instant call
+   * @param {Object} data - Meeting data
+   * @param {string} data.title - Meeting title
+   * @param {string} data.created_by - User UUID who created the meeting
+   * @param {Date} data.start_time - Start time
+   * @param {Date} data.end_time - End time
+   * @param {boolean} data.is_instant_call - True for instant calls (memory only), false for scheduled (DB + memory)
+   * @param {string} data.description - Optional description
+   * @param {Array<string>} data.invited_participants - Array of UUIDs and/or emails (for scheduled meetings)
+   * @param {string} data.source_channel_id - Optional channel ID (for instant calls from channels)
+   * @param {string} data.source_user_id - Optional user ID (for 1:1 instant calls)
+   * @param {boolean} data.allow_external - Allow external participants
+   * @param {boolean} data.voice_only - Voice-only mode
+   * @param {boolean} data.mute_on_join - Mute participants on join
+   * @param {number} data.max_participants - Max participants limit (runtime only)
+   * @returns {Promise<Object>} Created meeting object
+   */
+  async createMeeting(data) {
+    const {
+      title,
+      created_by,
+      start_time,
+      end_time,
+      is_instant_call = false,
+      description = null,
+      invited_participants = [],
+      source_channel_id = null,
+      source_user_id = null,
+      allow_external = false,
+      voice_only = false,
+      mute_on_join = false,
+      max_participants = null
+    } = data;
+
+    // Generate meeting ID with appropriate prefix
+    const prefix = is_instant_call ? 'call_' : 'mtg_';
+    const meeting_id = prefix + uuidv4().replace(/-/g, '').substring(0, 12);
+
+    // Generate invitation token if external participants allowed
+    const invitation_token = allow_external ? uuidv4().replace(/-/g, '') : null;
+
+    const meeting = {
+      meeting_id,
+      title,
+      description,
+      created_by,
+      start_time,
+      end_time,
+      is_instant_call,
+      allow_external,
+      invitation_token,
+      voice_only,
+      mute_on_join,
+      // Runtime state
+      source_channel_id,
+      source_user_id,
+      max_participants,
+      participants: [],
+      participant_count: 0,
+      livekit_room_active: false,
+      created_at: new Date(),
+      updated_at: new Date()
+    };
+
+    try {
+      if (is_instant_call) {
+        // Instant call: Memory only, no DB write
+        console.log(`[Meeting] Creating instant call ${meeting_id} (memory only)`);
+        meetingMemoryStore.set(meeting_id, meeting);
+        
+        // Add creator as participant
+        await this.addParticipant(meeting_id, {
+          user_id: created_by,
+          role: 'meeting_owner'
+        });
+
+      } else {
+        // Scheduled meeting: Save to DB
+        console.log(`[Meeting] Creating scheduled meeting ${meeting_id} (DB + memory)`);
+        
+        await writeQueue.enqueue(
+          () => sequelize.query(`
+            INSERT INTO meetings (
+              meeting_id, title, description, created_by, start_time, end_time,
+              is_instant_call, allow_external, invitation_token, invited_participants,
+              voice_only, mute_on_join
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, {
+            replacements: [
+              meeting_id, title, description, created_by, start_time, end_time,
+              false, // is_instant_call always false for DB records
+              allow_external, invitation_token, JSON.stringify(invited_participants),
+              voice_only, mute_on_join
+            ]
+          }),
+          'createMeeting'
+        );
+
+        // Also add to memory for runtime state
+        meetingMemoryStore.set(meeting_id, meeting);
+
+        // Add creator as participant (memory only)
+        await this.addParticipant(meeting_id, {
+          user_id: created_by,
+          role: 'meeting_owner'
+        });
+      }
+
+      return this.getMeeting(meeting_id);
+    } catch (error) {
+      console.error('Error creating meeting:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get meeting by ID (hybrid: memory first, then DB)
+   * @param {string} meeting_id - Meeting ID
+   * @returns {Promise<Object|null>} Meeting object with runtime state or null
+   */
+  async getMeeting(meeting_id) {
+    try {
+      // 1. Check memory first (instant calls + active meetings)
+      let meeting = meetingMemoryStore.getWithStatus(meeting_id);
+      
+      if (meeting) {
+        console.log(`[Meeting] ${meeting_id} found in memory (${meeting.is_instant_call ? 'instant' : 'scheduled'})`);
+        return meeting;
+      }
+
+      // 2. Check database for scheduled meetings
+      const [meetings] = await sequelize.query(`
+        SELECT * FROM meetings WHERE meeting_id = ?
+      `, {
+        replacements: [meeting_id]
+      });
+
+      if (meetings.length === 0) {
+        return null;
+      }
+
+      // 3. Load from DB and add to memory with runtime state
+      const dbMeeting = meetings[0];
+      
+      // Parse JSON invited_participants
+      if (dbMeeting.invited_participants) {
+        try {
+          dbMeeting.invited_participants = JSON.parse(dbMeeting.invited_participants);
+        } catch (e) {
+          dbMeeting.invited_participants = [];
+        }
+      }
+
+      // Add runtime state
+      const meetingWithRuntime = {
+        ...dbMeeting,
+        participants: [],
+        participant_count: 0,
+        livekit_room_active: false,
+        source_channel_id: null,
+        source_user_id: null,
+        max_participants: null
+      };
+
+      meetingMemoryStore.set(meeting_id, meetingWithRuntime);
+      
+      console.log(`[Meeting] ${meeting_id} loaded from DB into memory`);
+      
+      return meetingMemoryStore.getWithStatus(meeting_id);
+
+    } catch (error) {
+      console.error('Error getting meeting:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update meeting details (scheduled meetings only)
+   * @param {string} meeting_id - Meeting ID
+   * @param {Object} updates - Fields to update
+   * @returns {Promise<Object>} Updated meeting object
+   */
+  async updateMeeting(meeting_id, updates) {
+    const meeting = await this.getMeeting(meeting_id);
+    
+    if (!meeting) {
+      throw new Error('Meeting not found');
+    }
+
+    if (meeting.is_instant_call) {
+      throw new Error('Cannot update instant calls');
+    }
+
+    const allowedFields = [
+      'title', 'description', 'start_time', 'end_time',
+      'voice_only', 'mute_on_join', 'allow_external', 'invited_participants'
+    ];
+
+    const fields = [];
+    const values = [];
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (allowedFields.includes(key)) {
+        if (key === 'invited_participants') {
+          fields.push(`${key} = ?`);
+          values.push(JSON.stringify(value));
+        } else {
+          fields.push(`${key} = ?`);
+          values.push(value);
+        }
+      }
+    }
+
+    if (fields.length === 0) {
+      throw new Error('No valid fields to update');
+    }
+
+    // Add updated_at
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(meeting_id);
+
+    try {
+      await writeQueue.enqueue(
+        () => sequelize.query(`
+          UPDATE meetings SET ${fields.join(', ')} WHERE meeting_id = ?
+        `, {
+          replacements: values
+        }),
+        'updateMeeting'
+      );
+
+      // Update memory if present
+      if (meetingMemoryStore.has(meeting_id)) {
+        const memoryMeeting = meetingMemoryStore.get(meeting_id);
+        Object.assign(memoryMeeting, updates);
+        meetingMemoryStore.set(meeting_id, memoryMeeting);
+      }
+
+      return await this.getMeeting(meeting_id);
+    } catch (error) {
+      console.error('Error updating meeting:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete meeting/call
+   * @param {string} meeting_id - Meeting ID
+   * @returns {Promise<boolean>} Success status
+   */
+  async deleteMeeting(meeting_id) {
+    const meeting = await this.getMeeting(meeting_id);
+    
+    if (!meeting) {
+      return true; // Already deleted
+    }
+
+    try {
+      // Delete from memory first
+      meetingMemoryStore.delete(meeting_id);
+
+      // Delete from DB if scheduled meeting
+      if (!meeting.is_instant_call) {
+        await writeQueue.enqueue(
+          () => sequelize.query(`
+            DELETE FROM meetings WHERE meeting_id = ?
+          `, {
+            replacements: [meeting_id]
+          }),
+          'deleteMeeting'
+        );
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error deleting meeting:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Bulk delete meetings/calls
+   * @param {string[]} meeting_ids - Array of meeting IDs
+   * @param {string} user_id - User requesting deletion (must be owner or admin)
+   * @param {boolean} is_admin - Whether user is admin
+   * @returns {Promise<Object>} Deletion results
+   */
+  async bulkDeleteMeetings(meeting_ids, user_id, is_admin = false) {
+    const results = {
+      deleted: 0,
+      failed: 0,
+      errors: []
+    };
+
+    for (const meeting_id of meeting_ids) {
+      try {
+        // Check ownership
+        const meeting = await this.getMeeting(meeting_id);
+        
+        if (!meeting) {
+          results.failed++;
+          results.errors.push({ meeting_id, reason: 'Meeting not found' });
+          continue;
+        }
+
+        if (!is_admin && meeting.created_by !== user_id) {
+          results.failed++;
+          results.errors.push({ meeting_id, reason: 'Not owner' });
+          continue;
+        }
+
+        await this.deleteMeeting(meeting_id);
+        results.deleted++;
+      } catch (error) {
+        results.failed++;
+        results.errors.push({ meeting_id, reason: error.message });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * List meetings with filters
+   * @param {Object} filters - Query filters
+   * @param {string} filters.user_id - Filter by user (created or invited)
+   * @param {string} filters.status - Filter by status
+   * @param {boolean} filters.is_instant_call - Filter by type
+   * @param {Date} filters.start_after - Start time after
+   * @param {Date} filters.end_before - End time before
+   * List meetings with filters (hybrid: memory + DB)
+   * @param {Object} filters - Filter options
+   * @param {string} filters.user_id - Filter by user (creator or participant)
+   * @param {string} filters.status - Filter by status
+   * @param {boolean} filters.is_instant_call - Filter by type
+   * @param {Date} filters.start_after - Filter by start time after
+   * @param {Date} filters.end_before - Filter by end time before
+   * @returns {Promise<Array>} List of meetings with runtime state
+   */
+  async listMeetings(filters = {}) {
+    try {
+      // 1. Get all meetings from memory (instant calls + active meetings)
+      const memoryMeetings = meetingMemoryStore.getAllWithStatus();
+
+      // 2. Get scheduled meetings from DB
+      const conditions = [];
+      const replacements = [];
+
+      // Filter for scheduled meetings only (instant calls are memory-only)
+      conditions.push('is_instant_call = 0');
+
+      if (filters.user_id) {
+        conditions.push('created_by = ?');
+        replacements.push(filters.user_id);
+      }
+
+      if (filters.start_after) {
+        conditions.push('start_time > ?');
+        replacements.push(filters.start_after);
+      }
+
+      if (filters.end_before) {
+        conditions.push('end_time < ?');
+        replacements.push(filters.end_before);
+      }
+
+      const whereClause = 'WHERE ' + conditions.join(' AND ');
+
+      const [dbMeetings] = await sequelize.query(`
+        SELECT * FROM meetings ${whereClause} ORDER BY start_time DESC
+      `, {
+        replacements
+      });
+
+      // Parse JSON fields
+      dbMeetings.forEach(m => {
+        if (m.invited_participants) {
+          try {
+            m.invited_participants = JSON.parse(m.invited_participants);
+          } catch (e) {
+            m.invited_participants = [];
+          }
+        }
+      });
+
+      // 3. Merge: Check if DB meetings are in memory, if not load with runtime state
+      const allMeetings = [...memoryMeetings];
+      
+      for (const dbMeeting of dbMeetings) {
+        const inMemory = memoryMeetings.find(m => m.meeting_id === dbMeeting.meeting_id);
+        
+        if (!inMemory) {
+          // Not in memory yet, add runtime state and calculate status
+          const withRuntime = {
+            ...dbMeeting,
+            participants: [],
+            participant_count: 0,
+            livekit_room_active: false,
+            source_channel_id: null,
+            source_user_id: null,
+            max_participants: null
+          };
+          
+          meetingMemoryStore.set(dbMeeting.meeting_id, withRuntime);
+          const withStatus = meetingMemoryStore.getWithStatus(dbMeeting.meeting_id);
+          allMeetings.push(withStatus);
+        }
+      }
+
+      // 4. Apply filters on merged data
+      let filtered = allMeetings;
+
+      if (filters.user_id) {
+        filtered = filtered.filter(m => {
+          // Creator or participant
+          const isCreator = m.created_by === filters.user_id;
+          const isParticipant = m.participants?.some(p => p.user_id === filters.user_id);
+          const isInvited = m.invited_participants?.includes(filters.user_id);
+          return isCreator || isParticipant || isInvited;
+        });
+      }
+
+      if (filters.status) {
+        filtered = filtered.filter(m => m.status === filters.status);
+      }
+
+      if (filters.is_instant_call !== undefined) {
+        filtered = filtered.filter(m => m.is_instant_call === filters.is_instant_call);
+      }
+
+      // Sort by start_time descending
+      filtered.sort((a, b) => {
+        const aTime = a.start_time ? new Date(a.start_time) : new Date(0);
+        const bTime = b.start_time ? new Date(b.start_time) : new Date(0);
+        return bTime - aTime;
+      });
+
+      return filtered;
+
+    } catch (error) {
+      console.error('Error listing meetings:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Add participant to meeting (memory only)
+   * @param {string} meeting_id - Meeting ID
+   * @param {Object} participant - Participant data
+   * @param {string} participant.user_id - User UUID
+   * @param {number} participant.device_id - Device ID
+   * @param {string} participant.role - Role (default: meeting_member)
+   * @returns {Promise<Object>} Updated meeting object
+   */
+  async addParticipant(meeting_id, participant) {
+    try {
+      const meeting = await meetingMemoryStore.addParticipant(meeting_id, participant);
+      if (!meeting) {
+        // Meeting not in memory, load it first
+        await this.getMeeting(meeting_id);
+        return await meetingMemoryStore.addParticipant(meeting_id, participant);
+      }
+      return meeting;
+    } catch (error) {
+      console.error('Error adding participant:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Remove participant from meeting (memory only)
+   * @param {string} meeting_id - Meeting ID
+   * @param {string} user_id - User UUID
+   * @param {number} device_id - Device ID (optional)
+   * @returns {Promise<Object>} Result with isEmpty flag
+   */
+  async removeParticipant(meeting_id, user_id, device_id) {
+    try {
+      const result = meetingMemoryStore.removeParticipant(meeting_id, user_id, device_id);
+      
+      if (!result) {
+        console.warn(`[Meeting] removeParticipant: Meeting ${meeting_id} not found`);
+        return { isEmpty: true };
+      }
+
+      // If instant call and now empty, delete immediately
+      if (result.isEmpty && result.meeting.is_instant_call) {
+        console.log(`[Meeting] Instant call ${meeting_id} empty, deleting from memory`);
+        meetingMemoryStore.delete(meeting_id);
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error removing participant:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update LiveKit room state (called by Socket.IO handlers)
+   * @param {string} meeting_id - Meeting ID
+   * @param {boolean} active - Room active status
+   * @param {Array<string>} participants - Array of user IDs in room
+   */
+  updateLiveKitRoom(meeting_id, active, participants = []) {
+    meetingMemoryStore.setLiveKitRoom(meeting_id, active, participants);
+  }
+
+  /**
+   * Generate new external invitation link (scheduled meetings only)
+   * @param {string} meeting_id - Meeting ID
+   * @returns {Promise<string>} New invitation token
+   */
+  async generateInvitationLink(meeting_id) {
+    const meeting = await this.getMeeting(meeting_id);
+    
+    if (!meeting) {
+      throw new Error('Meeting not found');
+    }
+
+    if (meeting.is_instant_call) {
+      throw new Error('Cannot generate invitation link for instant calls');
+    }
+
+    const invitation_token = uuidv4().replace(/-/g, '');
+
+    try {
+      await writeQueue.enqueue(
+        () => sequelize.query(`
+          UPDATE meetings SET invitation_token = ?, allow_external = 1 WHERE meeting_id = ?
+        `, {
+          replacements: [invitation_token, meeting_id]
+        }),
+        'generateInvitationLink'
+      );
+
+      // Update memory
+      const memoryMeeting = meetingMemoryStore.get(meeting_id);
+      if (memoryMeeting) {
+        memoryMeeting.invitation_token = invitation_token;
+        memoryMeeting.allow_external = true;
+        meetingMemoryStore.set(meeting_id, memoryMeeting);
+      }
+
+      return invitation_token;
+    } catch (error) {
+      console.error('Error generating invitation link:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if any participant has joined
+   * @param {string} meeting_id - Meeting ID
+   * @returns {Promise<boolean>} True if at least one participant present
+   */
+  async hasActiveParticipants(meeting_id) {
+    const meeting = meetingMemoryStore.get(meeting_id);
+    return meeting ? (meeting.participant_count || 0) > 0 : false;
+  }
+
+  /**
+   * Get memory store statistics
+   */
+  getMemoryStats() {
+    return meetingMemoryStore.getStats();
+  }
+}
+
+module.exports = new MeetingService();
