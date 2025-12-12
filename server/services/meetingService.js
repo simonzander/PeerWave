@@ -1,4 +1,4 @@
-const { sequelize } = require('../db/model');
+const { sequelize, MeetingInvitation } = require('../db/model');
 const { v4: uuidv4 } = require('uuid');
 const { Op } = require('sequelize');
 const writeQueue = require('../db/writeQueue');
@@ -168,6 +168,14 @@ class MeetingService {
         } catch (e) {
           dbMeeting.invited_participants = [];
         }
+      }
+      
+      // Fix CURRENT_TIMESTAMP strings (convert to actual dates)
+      if (dbMeeting.created_at === 'CURRENT_TIMESTAMP') {
+        dbMeeting.created_at = new Date();
+      }
+      if (dbMeeting.updated_at === 'CURRENT_TIMESTAMP') {
+        dbMeeting.updated_at = new Date();
       }
 
       // Add runtime state
@@ -400,6 +408,14 @@ class MeetingService {
             m.invited_participants = [];
           }
         }
+        
+        // Fix CURRENT_TIMESTAMP strings (convert to actual dates)
+        if (m.created_at === 'CURRENT_TIMESTAMP') {
+          m.created_at = new Date();
+        }
+        if (m.updated_at === 'CURRENT_TIMESTAMP') {
+          m.updated_at = new Date();
+        }
       });
 
       // 3. Merge: Check if DB meetings are in memory, if not load with runtime state
@@ -526,11 +542,53 @@ class MeetingService {
   }
 
   /**
+   * Update participant status (memory only)
+   * @param {string} meeting_id - Meeting ID
+   * @param {string} user_id - User UUID
+   * @param {number} device_id - Device ID
+   * @param {string} status - New status (e.g., 'invited', 'joined', 'left')
+   * @returns {Promise<boolean>} Success
+   */
+  async updateParticipantStatus(meeting_id, user_id, device_id, status) {
+    try {
+      const meeting = meetingMemoryStore.get(meeting_id);
+      if (!meeting) {
+        console.warn(`[Meeting] updateParticipantStatus: Meeting ${meeting_id} not found`);
+        return false;
+      }
+
+      // Find and update participant
+      const participant = meeting.participants?.find(p => 
+        p.user_id === user_id && (device_id === undefined || p.device_id === device_id)
+      );
+
+      if (participant) {
+        participant.status = status;
+        if (status === 'joined' && !participant.joined_at) {
+          participant.joined_at = new Date().toISOString();
+        }
+        meetingMemoryStore.set(meeting_id, meeting);
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.error('Error updating participant status:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Generate new external invitation link (scheduled meetings only)
    * @param {string} meeting_id - Meeting ID
-   * @returns {Promise<string>} New invitation token
+   * @param {Object} options - Optional settings
+   * @param {string} options.label - Optional label for the invitation
+   * @param {Date} options.expires_at - Optional expiration date
+   * @param {number} options.max_uses - Optional max uses
+   * @param {string} options.created_by - User who created the invitation
+   * @returns {Promise<Object>} New invitation object with token
    */
-  async generateInvitationLink(meeting_id) {
+  async generateInvitationLink(meeting_id, options = {}) {
     const meeting = await this.getMeeting(meeting_id);
     
     if (!meeting) {
@@ -541,29 +599,141 @@ class MeetingService {
       throw new Error('Cannot generate invitation link for instant calls');
     }
 
-    const invitation_token = uuidv4().replace(/-/g, '');
+    const token = uuidv4().replace(/-/g, '');
+    const { label, expires_at, max_uses, created_by } = options;
 
     try {
+      // Create invitation in the new table using writeQueue
+      const invitation = await writeQueue.enqueue(
+        () => MeetingInvitation.create({
+          meeting_id,
+          token,
+          label: label || null,
+          created_by: created_by || meeting.created_by,
+          expires_at: expires_at || null,
+          max_uses: max_uses || null,
+          use_count: 0,
+          is_active: true
+        }),
+        'createMeetingInvitation'
+      );
+
+      // Ensure allow_external is set on meeting
       await writeQueue.enqueue(
         () => sequelize.query(`
-          UPDATE meetings SET invitation_token = ?, allow_external = 1 WHERE meeting_id = ?
+          UPDATE meetings SET allow_external = 1 WHERE meeting_id = ?
         `, {
-          replacements: [invitation_token, meeting_id]
+          replacements: [meeting_id]
         }),
-        'generateInvitationLink'
+        'enableExternalAccess'
       );
 
       // Update memory
       const memoryMeeting = meetingMemoryStore.get(meeting_id);
       if (memoryMeeting) {
-        memoryMeeting.invitation_token = invitation_token;
         memoryMeeting.allow_external = true;
         meetingMemoryStore.set(meeting_id, memoryMeeting);
       }
 
-      return invitation_token;
+      console.log(`[Meeting] Generated invitation token for ${meeting_id}: ${token.substring(0, 8)}...`);
+      return invitation.toJSON();
     } catch (error) {
       console.error('Error generating invitation link:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all invitation tokens for a meeting
+   * @param {string} meeting_id - Meeting ID
+   * @returns {Promise<Array>} Array of invitation objects
+   */
+  async getInvitationTokens(meeting_id) {
+    try {
+      // Reads don't need writeQueue
+      const invitations = await MeetingInvitation.findAll({
+        where: { meeting_id, is_active: true },
+        order: [['created_at', 'DESC']]
+      });
+      return invitations.map(i => i.toJSON());
+    } catch (error) {
+      console.error('Error getting invitation tokens:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Revoke (deactivate) an invitation token
+   * @param {string} token - The invitation token to revoke
+   * @returns {Promise<boolean>} Success status
+   */
+  async revokeInvitationToken(token) {
+    try {
+      const [updated] = await writeQueue.enqueue(
+        () => MeetingInvitation.update(
+          { is_active: false },
+          { where: { token } }
+        ),
+        'revokeInvitationToken'
+      );
+      if (updated > 0) {
+        console.log(`[Meeting] Revoked invitation token: ${token.substring(0, 8)}...`);
+      }
+      return updated > 0;
+    } catch (error) {
+      console.error('Error revoking invitation token:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete an invitation token permanently
+   * @param {string} token - The invitation token to delete
+   * @returns {Promise<boolean>} Success status
+   */
+  async deleteInvitationToken(token) {
+    try {
+      const deleted = await writeQueue.enqueue(
+        () => MeetingInvitation.destroy({ where: { token } }),
+        'deleteInvitationToken'
+      );
+      if (deleted > 0) {
+        console.log(`[Meeting] Deleted invitation token: ${token.substring(0, 8)}...`);
+      }
+      return deleted > 0;
+    } catch (error) {
+      console.error('Error deleting invitation token:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Increment use count for an invitation token
+   * @param {string} token - The invitation token
+   * @returns {Promise<Object|null>} Updated invitation or null if max uses reached
+   */
+  async incrementInvitationUseCount(token) {
+    try {
+      const invitation = await MeetingInvitation.findOne({ where: { token } });
+      
+      if (!invitation) {
+        return null;
+      }
+
+      // Check if max uses reached
+      if (invitation.max_uses !== null && invitation.use_count >= invitation.max_uses) {
+        return null;
+      }
+
+      invitation.use_count += 1;
+      await writeQueue.enqueue(
+        () => invitation.save(),
+        'incrementInvitationUseCount'
+      );
+
+      return invitation.toJSON();
+    } catch (error) {
+      console.error('Error incrementing invitation use count:', error);
       throw error;
     }
   }

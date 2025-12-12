@@ -92,7 +92,16 @@ class SocketService {
       });
       
       _socket!.on('connect', (_) async {
-        debugPrint('[SOCKET SERVICE] Socket connected event');
+        debugPrint('[SOCKET SERVICE] ==========================================');
+        debugPrint('[SOCKET SERVICE] 🔌 Socket connected event fired');
+        debugPrint('[SOCKET SERVICE]    Socket object exists: ${_socket != null}');
+        debugPrint('[SOCKET SERVICE]    Socket ID: ${_socket?.id}');
+        debugPrint('[SOCKET SERVICE]    Stored listeners count: ${_listeners.length}');
+        debugPrint('[SOCKET SERVICE] ==========================================');
+        
+        // Re-register all stored listeners on connect
+        _reregisterAllListeners();
+        
         await _authenticate();
       });
       
@@ -228,11 +237,46 @@ class SocketService {
   }
 
   void registerListener(String event, Function(dynamic) callback) {
+    debugPrint('[SOCKET SERVICE] 🔍 registerListener called for event: $event');
+    debugPrint('[SOCKET SERVICE]    Socket exists: ${_socket != null}, connected: ${_socket?.connected}');
+    
     final callbacks = _listeners.putIfAbsent(event, () => []);
     if (!callbacks.contains(callback)) {
       callbacks.add(callback);
-      _socket?.on(event, callback);
+      debugPrint('[SOCKET SERVICE]    ✅ Callback stored in _listeners map (total for $event: ${callbacks.length})');
+      
+      // Only register immediately if socket is connected
+      if (_socket?.connected ?? false) {
+        _socket!.on(event, callback);
+        debugPrint('[SOCKET SERVICE]    ✅ Callback registered on socket immediately');
+      } else {
+        debugPrint('[SOCKET SERVICE]    ⏳ Socket not connected, callback stored for later registration');
+      }
+    } else {
+      debugPrint('[SOCKET SERVICE]    ⚠️  Callback already registered for event: $event');
     }
+  }
+  
+  /// Re-register all stored listeners on the socket
+  /// Called when socket connects/reconnects
+  void _reregisterAllListeners() {
+    if (_socket == null) {
+      debugPrint('[SOCKET SERVICE] ⚠️  Cannot re-register listeners - socket is null');
+      return;
+    }
+    
+    debugPrint('[SOCKET SERVICE] 🔄 Re-registering ${_listeners.length} event listeners...');
+    int totalCallbacks = 0;
+    
+    _listeners.forEach((event, callbacks) {
+      debugPrint('[SOCKET SERVICE]    Re-registering $event (${callbacks.length} callbacks)');
+      for (final callback in callbacks) {
+        _socket!.on(event, callback);
+        totalCallbacks++;
+      }
+    });
+    
+    debugPrint('[SOCKET SERVICE] ✅ Re-registered $totalCallbacks total callbacks across ${_listeners.length} events');
   }
   
   void notifyClientReady() {

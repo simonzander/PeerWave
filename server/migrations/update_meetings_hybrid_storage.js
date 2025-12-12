@@ -20,13 +20,23 @@ async function up() {
 
   try {
     // 1. Add invited_participants column (JSON array of UUIDs and emails)
-    await queryInterface.addColumn('meetings', 'invited_participants', {
-      type: sequelize.Sequelize.TEXT, // SQLite stores JSON as TEXT
-      allowNull: true,
-      defaultValue: '[]',
-      comment: 'JSON array of invited user UUIDs and email addresses'
-    });
-    console.log('[Migration] ✓ Added invited_participants column');
+    const tableInfo = await sequelize.query(
+      "PRAGMA table_info(meetings)",
+      { type: sequelize.QueryTypes.SELECT }
+    );
+    const hasInvitedParticipants = tableInfo.some(col => col.name === 'invited_participants');
+    
+    if (!hasInvitedParticipants) {
+      await queryInterface.addColumn('meetings', 'invited_participants', {
+        type: sequelize.Sequelize.TEXT, // SQLite stores JSON as TEXT
+        allowNull: true,
+        defaultValue: '[]',
+        comment: 'JSON array of invited user UUIDs and email addresses'
+      });
+      console.log('[Migration] ✓ Added invited_participants column');
+    } else {
+      console.log('[Migration] - invited_participants column already exists');
+    }
 
     // 2. Remove runtime-only columns
     const columnsToRemove = ['status', 'max_participants', 'source_channel_id', 'source_user_id'];

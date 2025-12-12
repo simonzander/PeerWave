@@ -178,6 +178,17 @@ if ($mode -eq "docker" -or $mode -eq "full") {
         Write-Host " Start failed!" -ForegroundColor Red
         exit 1
     }
+    
+    Write-Host ""
+    Write-Host " [DB] Running database migrations..." -ForegroundColor Yellow
+    Set-Location server
+    node migrations/migrate.js
+    Set-Location ..
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host " Migrations failed (non-fatal, continuing)..." -ForegroundColor Yellow
+    } else {
+        Write-Host " Migrations completed" -ForegroundColor Green
+    }
 }
 
 Write-Host ""

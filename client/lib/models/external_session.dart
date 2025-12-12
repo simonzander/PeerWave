@@ -31,20 +31,26 @@ class ExternalSession {
 
   factory ExternalSession.fromJson(Map<String, dynamic> json) {
     return ExternalSession(
-      sessionId: json['session_id'] as String,
-      meetingId: json['meeting_id'] as String,
-      displayName: json['display_name'] as String,
-      admissionStatus: json['admission_status'] as String,
+      sessionId: json['session_id'] as String? ?? '',
+      meetingId: json['meeting_id'] as String? ?? '',
+      displayName: json['display_name'] as String? ?? 'Guest',
+      admissionStatus: json['admission_status'] as String? ?? 'waiting',
       admittedBy: json['admitted_by'] as String?,
       admittedAt: json['admitted_at'] != null
-          ? DateTime.parse(json['admitted_at'] as String)
+          ? DateTime.tryParse(json['admitted_at'] as String)
           : null,
       e2eeIdentityKey: json['e2ee_identity_key'] as String?,
       e2eeSignedPreKey: json['e2ee_signed_pre_key'] as String?,
       e2eePreKeySignature: json['e2ee_pre_key_signature'] as String?,
-      expiresAt: DateTime.parse(json['expires_at'] as String),
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      expiresAt: json['expires_at'] != null 
+          ? DateTime.tryParse(json['expires_at'] as String) ?? DateTime.now().add(const Duration(hours: 24))
+          : DateTime.now().add(const Duration(hours: 24)),
+      createdAt: json['created_at'] != null 
+          ? DateTime.tryParse(json['created_at'] as String) ?? DateTime.now()
+          : DateTime.now(),
+      updatedAt: json['updated_at'] != null 
+          ? DateTime.tryParse(json['updated_at'] as String) ?? DateTime.now()
+          : DateTime.now(),
     );
   }
 

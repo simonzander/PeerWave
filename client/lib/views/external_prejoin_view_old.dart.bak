@@ -1,0 +1,1208 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:go_router/go_router.dart';
+import 'dart:async';
+import '../utils/html_stub.dart'
+    if (dart.library.html) 'dart:html' as html;
+import 'dart:convert';
+import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart' as signal;
+import '../models/external_session.dart';
+import '../services/external_participant_service.dart';
+import '../services/api_service.dart';
+import '../widgets/video_prejoin_widget.dart';
+
+/// Unified External PreJoin View
+/// 
+/// Combines key generation and pre-join into a single view:
+/// 1. Signal key generation (progress bar)
+/// 2. Display name entry
+/// 3. Device selection
+/// 4. E2EE key exchange with server participants
+/// 5. Join button (enabled when keys + E2EE ready)
+/// 6. Wait for admission after joining
+class ExternalPreJoinView extends StatefulWidget {
+  final String invitationToken;
+  final VoidCallback onAdmitted;
+  final VoidCallback onDeclined;
+
+  const ExternalPreJoinView({
+    super.key,
+    required this.invitationToken,
+    required this.onAdmitted,
+    required this.onDeclined,
+  });
+
+  @override
+  State<ExternalPreJoinView> createState() => _ExternalPreJoinViewState();
+}
+
+class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _externalService = ExternalParticipantService();
+  final GlobalKey<VideoPreJoinWidgetState> _prejoinKey = GlobalKey<VideoPreJoinWidgetState>();
+
+  // Key Generation State
+  bool _isGeneratingKeys = true;
+  String _keyGenStep = 'Initializing...';
+  double _keyGenProgress = 0.0;
+  bool _keysReady = false;
+  String? _keyGenError;
+
+  // Session State
+  ExternalSession? _session;
+  bool _isRegistering = false;
+  
+  // E2EE Key Exchange State
+  bool _isFirstParticipant = false;
+  int _participantCount = 0;
+  bool _isCheckingParticipants = false;
+  bool _hasE2EEKey = false;
+  bool _isExchangingKey = false;
+  String? _keyExchangeError;
+  
+  // Meeting Info
+  String? _meetingTitle;
+  String? _meetingDescription;
+  DateTime? _meetingStartTime;
+  DateTime? _meetingEndTime;
+  String? _meetingId;
+  bool _isLoadingMeetingInfo = true;
+  bool _hasServerParticipants = false;
+
+  // Joining State
+  bool _isJoining = false;
+  bool _isWaitingAdmission = false;
+  
+  // Timers
+  StreamSubscription? _admittedSubscription;
+  StreamSubscription? _declinedSubscription;
+  Timer? _pollingTimer;
+  Timer? _preKeyMonitorTimer;
+  Timer? _serverUserCheckTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (kIsWeb) {
+      _externalService.initializeListeners();
+      _setupListeners();
+      _initialize();
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _admittedSubscription?.cancel();
+    _declinedSubscription?.cancel();
+    _pollingTimer?.cancel();
+    _preKeyMonitorTimer?.cancel();
+    _serverUserCheckTimer?.cancel();
+    super.dispose();
+  }
+
+  void _setupListeners() {
+    _admittedSubscription = _externalService.onGuestAdmitted.listen((session) {
+      if (mounted && session.sessionId == _session?.sessionId) {
+        _pollingTimer?.cancel();
+        widget.onAdmitted();
+      }
+    });
+
+    _declinedSubscription = _externalService.onGuestDeclined.listen((session) {
+      if (mounted && session.sessionId == _session?.sessionId) {
+        _pollingTimer?.cancel();
+        widget.onDeclined();
+      }
+    });
+  }
+
+  /// Initialize everything
+  Future<void> _initialize() async {
+    // Start key generation and meeting info loading in parallel
+    await Future.wait([
+      _generateSignalKeys(),
+      _loadMeetingInfo(),
+    ]);
+    
+    // After keys are ready and meeting info loaded, check participants
+    if (_keysReady && _meetingId != null) {
+      await _checkServerParticipants();
+    }
+  }
+
+  // ========================================
+  // Meeting Info
+  // ========================================
+
+  Future<void> _loadMeetingInfo() async {
+    try {
+      setState(() => _isLoadingMeetingInfo = true);
+
+      final response = await ApiService.get(
+        '/api/meetings/external/join/${widget.invitationToken}',
+      );
+
+      if (response.data != null && response.data['meeting'] != null) {
+        final meeting = response.data['meeting'];
+        setState(() {
+          _meetingId = meeting['meeting_id'];
+          _meetingTitle = meeting['title'];
+          _meetingDescription = meeting['description'];
+          _meetingStartTime = meeting['start_time'] != null 
+            ? DateTime.parse(meeting['start_time']) 
+            : null;
+          _meetingEndTime = meeting['end_time'] != null
+            ? DateTime.parse(meeting['end_time'])
+            : null;
+          _hasServerParticipants = meeting['has_active_participants'] ?? false;
+          _isLoadingMeetingInfo = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[ExternalPreJoin] Error loading meeting info: $e');
+      setState(() => _isLoadingMeetingInfo = false);
+    }
+  }
+
+  // ========================================
+  // Signal Key Generation
+  // ========================================
+
+  Future<void> _generateSignalKeys() async {
+    try {
+      setState(() {
+        _isGeneratingKeys = true;
+        _keyGenError = null;
+        _keyGenStep = 'Checking existing keys...';
+        _keyGenProgress = 0.1;
+      });
+
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      final storage = html.window.sessionStorage;
+      final storedIdentity = storage['external_identity_key_public'];
+      final storedSignedPre = storage['external_signed_pre_key'];
+      final storedPreKeys = storage['external_pre_keys'];
+
+      bool needNewIdentity = storedIdentity == null;
+      bool needNewSignedPre = false;
+      bool needNewPreKeys = false;
+
+      // Check signed pre-key age (7 days max)
+      if (storedSignedPre != null) {
+        try {
+          final signedPreJson = jsonDecode(storedSignedPre);
+          final timestamp = signedPreJson['timestamp'] as int;
+          final age = DateTime.now().millisecondsSinceEpoch - timestamp;
+          final daysSinceCreation = age / (1000 * 60 * 60 * 24);
+          needNewSignedPre = daysSinceCreation > 7;
+        } catch (e) {
+          needNewSignedPre = true;
+        }
+      } else {
+        needNewSignedPre = true;
+      }
+
+      // Check pre-keys count
+      if (storedPreKeys != null) {
+        try {
+          final preKeysJson = jsonDecode(storedPreKeys) as List;
+          needNewPreKeys = preKeysJson.length < 30;
+        } catch (e) {
+          needNewPreKeys = true;
+        }
+      } else {
+        needNewPreKeys = true;
+      }
+
+      // Step 2: Generate identity key if needed
+      if (needNewIdentity) {
+        setState(() {
+          _keyGenStep = 'Generating identity keys...';
+          _keyGenProgress = 0.25;
+        });
+        await Future.delayed(const Duration(milliseconds: 150));
+        await _generateIdentityKey(storage);
+      } else {
+        setState(() {
+          _keyGenStep = 'Identity keys found...';
+          _keyGenProgress = 0.25;
+        });
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+
+      // Step 3: Generate signed pre-key if needed
+      if (needNewSignedPre) {
+        setState(() {
+          _keyGenStep = 'Generating signed pre-key...';
+          _keyGenProgress = 0.45;
+        });
+        await Future.delayed(const Duration(milliseconds: 150));
+        await _generateSignedPreKey(storage);
+      } else {
+        setState(() {
+          _keyGenStep = 'Signed pre-key valid...';
+          _keyGenProgress = 0.45;
+        });
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+
+      // Step 4: Generate pre-keys if needed
+      if (needNewPreKeys) {
+        setState(() {
+          _keyGenStep = 'Generating pre-keys (0/30)...';
+          _keyGenProgress = 0.6;
+        });
+        await Future.delayed(const Duration(milliseconds: 100));
+        await _generatePreKeys(storage);
+      } else {
+        setState(() {
+          _keyGenStep = 'Pre-keys valid...';
+          _keyGenProgress = 0.85;
+        });
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+
+      // Complete
+      setState(() {
+        _keyGenStep = 'Keys ready!';
+        _keyGenProgress = 1.0;
+        _isGeneratingKeys = false;
+        _keysReady = true;
+      });
+
+    } catch (e) {
+      debugPrint('[ExternalPreJoin] Key generation error: $e');
+      setState(() {
+        _isGeneratingKeys = false;
+        _keysReady = false;
+        _keyGenError = 'Failed to generate encryption keys: $e';
+      });
+    }
+  }
+
+  Future<void> _generateIdentityKey(dynamic storage) async {
+    final identityKeyPair = signal.generateIdentityKeyPair();
+    final publicKey = base64Encode(identityKeyPair.getPublicKey().serialize());
+    final privateKey = base64Encode(identityKeyPair.getPrivateKey().serialize());
+    storage['external_identity_key_public'] = publicKey;
+    storage['external_identity_key_private'] = privateKey;
+  }
+
+  Future<void> _generateSignedPreKey(dynamic storage) async {
+    final identityPublic = storage['external_identity_key_public']!;
+    final identityPrivate = storage['external_identity_key_private']!;
+    final publicKeyBytes = base64Decode(identityPublic);
+    final privateKeyBytes = base64Decode(identityPrivate);
+    final publicKey = signal.Curve.decodePoint(publicKeyBytes, 0);
+    final privateKey = signal.Curve.decodePrivatePoint(privateKeyBytes);
+    final identityKeyPair = signal.IdentityKeyPair(signal.IdentityKey(publicKey), privateKey);
+    final signedPreKey = signal.generateSignedPreKey(identityKeyPair, 1);
+
+    final signedPreKeyData = {
+      'id': 1,
+      'publicKey': base64Encode(signedPreKey.getKeyPair().publicKey.serialize()),
+      'privateKey': base64Encode(signedPreKey.getKeyPair().privateKey.serialize()),
+      'signature': base64Encode(signedPreKey.signature),
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+    storage['external_signed_pre_key'] = jsonEncode(signedPreKeyData);
+  }
+
+  Future<void> _generatePreKeys(dynamic storage) async {
+    final nextIdStr = storage['external_next_pre_key_id'] ?? '0';
+    final startId = int.parse(nextIdStr);
+    final preKeys = signal.generatePreKeys(startId, startId + 29);
+
+    final preKeysJson = preKeys.map((pk) {
+      return {
+        'id': pk.id,
+        'publicKey': base64Encode(pk.getKeyPair().publicKey.serialize()),
+        'privateKey': base64Encode(pk.getKeyPair().privateKey.serialize()),
+      };
+    }).toList();
+
+    for (int i = 0; i < preKeysJson.length; i++) {
+      if (mounted) {
+        setState(() {
+          _keyGenStep = 'Generating pre-keys (${i + 1}/30)...';
+          _keyGenProgress = 0.6 + ((i + 1) / 30) * 0.25;
+        });
+        await Future.delayed(const Duration(milliseconds: 30));
+      }
+    }
+
+    storage['external_pre_keys'] = jsonEncode(preKeysJson);
+    storage['external_next_pre_key_id'] = (startId + 30).toString();
+  }
+
+  // ========================================
+  // Server Participant Check & E2EE Exchange
+  // ========================================
+
+  Future<void> _checkServerParticipants() async {
+    if (_meetingId == null) return;
+
+    try {
+      setState(() => _isCheckingParticipants = true);
+
+      final response = await ApiService.get(
+        '/api/meetings/$_meetingId/participants',
+        queryParameters: {
+          'status': 'joined',
+          'exclude_external': 'true',
+        },
+      );
+
+      final participants = response.data['participants'] as List? ?? [];
+      
+      setState(() {
+        _participantCount = participants.length;
+        _isFirstParticipant = participants.isEmpty;
+        _hasServerParticipants = participants.isNotEmpty;
+        _isCheckingParticipants = false;
+      });
+
+      if (_hasServerParticipants) {
+        // Try to exchange E2EE keys with server participants
+        await _exchangeE2EEKeys();
+      }
+
+    } catch (e) {
+      debugPrint('[ExternalPreJoin] Error checking participants: $e');
+      setState(() {
+        _isCheckingParticipants = false;
+        _keyExchangeError = 'Failed to check participants';
+      });
+    }
+  }
+
+  Future<void> _exchangeE2EEKeys() async {
+    try {
+      setState(() {
+        _isExchangingKey = true;
+        _keyExchangeError = null;
+      });
+
+      // For external guests, we need to:
+      // 1. Register session with server (upload our Signal keys)
+      // 2. Get E2EE meeting key from an existing participant
+      
+      // First register our session if not already done
+      if (_session == null) {
+        await _registerSession();
+      }
+
+      // TODO: Implement actual E2EE key exchange with server participants
+      // For now, we'll mark it as ready since auto-admission is enabled
+      // In the future, this would involve:
+      // - Requesting meeting E2EE key from a participant
+      // - Receiving encrypted key via Signal session
+      // - Decrypting and storing meeting key
+
+      // Simulating key exchange for now
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      setState(() {
+        _hasE2EEKey = true;
+        _isExchangingKey = false;
+      });
+
+    } catch (e) {
+      debugPrint('[ExternalPreJoin] E2EE key exchange error: $e');
+      setState(() {
+        _isExchangingKey = false;
+        _hasE2EEKey = false;
+        _keyExchangeError = 'Key exchange failed: $e';
+      });
+    }
+  }
+
+  Future<void> _retryKeyExchange() async {
+    await _checkServerParticipants();
+  }
+
+  // ========================================
+  // Session Registration
+  // ========================================
+
+  Future<void> _registerSession() async {
+    if (!kIsWeb) return;
+
+    try {
+      setState(() => _isRegistering = true);
+
+      final storage = html.window.sessionStorage;
+      final identityPublic = storage['external_identity_key_public'];
+      final signedPreKeyStr = storage['external_signed_pre_key'];
+      final preKeysStr = storage['external_pre_keys'];
+
+      if (identityPublic == null || signedPreKeyStr == null || preKeysStr == null) {
+        throw Exception('E2EE keys not found');
+      }
+
+      final signedPreKey = jsonDecode(signedPreKeyStr);
+      final preKeys = jsonDecode(preKeysStr) as List;
+
+      final displayName = _nameController.text.trim().isNotEmpty 
+          ? _nameController.text.trim() 
+          : 'Guest';
+
+      final session = await _externalService.joinMeeting(
+        invitationToken: widget.invitationToken,
+        displayName: displayName,
+        identityKeyPublic: identityPublic,
+        signedPreKey: signedPreKey,
+        preKeys: preKeys,
+      );
+
+      storage['external_session_id'] = session.sessionId;
+      storage['external_meeting_id'] = session.meetingId;
+      storage['external_display_name'] = session.displayName;
+
+      setState(() {
+        _session = session;
+        _isRegistering = false;
+      });
+
+    } catch (e) {
+      debugPrint('[ExternalPreJoin] Session registration error: $e');
+      setState(() => _isRegistering = false);
+      rethrow;
+    }
+  }
+
+  // ========================================
+  // Join Meeting
+  // ========================================
+
+  Future<void> _handleJoin() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (!_keysReady || !_hasE2EEKey) return;
+
+    final prejoinState = _prejoinKey.currentState;
+    if (prejoinState != null && prejoinState.isLoadingDevices) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please wait for devices to load...'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isJoining = true);
+
+    try {
+      // Register session if not already done
+      if (_session == null) {
+        await _registerSession();
+      } else {
+        // Update display name if changed
+        final newName = _nameController.text.trim();
+        if (newName.isNotEmpty && newName != _session!.displayName) {
+          await _updateDisplayName(newName);
+        }
+      }
+
+      // Move to waiting for admission
+      setState(() {
+        _isJoining = false;
+        _isWaitingAdmission = true;
+      });
+
+      // Start pre-key monitoring
+      _startPreKeyMonitoring();
+
+      // Check if already admitted
+      if (_session!.isAdmitted) {
+        widget.onAdmitted();
+      } else if (_session!.isDeclined) {
+        widget.onDeclined();
+      } else {
+        _startPolling();
+      }
+
+    } catch (e) {
+      debugPrint('[ExternalPreJoin] Join error: $e');
+      setState(() {
+        _isJoining = false;
+        _isWaitingAdmission = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to join: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateDisplayName(String newName) async {
+    if (_session == null) return;
+    try {
+      final storage = html.window.sessionStorage;
+      await ApiService.patch(
+        '/api/meetings/external/session/${_session!.sessionId}',
+        data: {'display_name': newName},
+      );
+      storage['external_display_name'] = newName;
+    } catch (e) {
+      debugPrint('[ExternalPreJoin] Error updating display name: $e');
+    }
+  }
+
+  void _startPolling() {
+    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      if (_session == null || !mounted) {
+        timer.cancel();
+        return;
+      }
+
+      try {
+        final updatedSession = await _externalService.getSessionStatus(_session!.sessionId);
+        if (mounted) {
+          if (updatedSession.isAdmitted) {
+            timer.cancel();
+            widget.onAdmitted();
+          } else if (updatedSession.isDeclined) {
+            timer.cancel();
+            widget.onDeclined();
+          }
+        }
+      } catch (e) {
+        debugPrint('Polling error: $e');
+      }
+    });
+  }
+
+  void _startPreKeyMonitoring() {
+    if (!kIsWeb) return;
+    _preKeyMonitorTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
+      if (_session == null || !mounted) {
+        timer.cancel();
+        return;
+      }
+      try {
+        final result = await _externalService.getRemainingPreKeys(_session!.sessionId);
+        final count = result['count'] as int;
+        if (count < 10) {
+          await _replenishPreKeys();
+        }
+      } catch (e) {
+        debugPrint('[ExternalPreJoin] Pre-key check error: $e');
+      }
+    });
+  }
+
+  Future<void> _replenishPreKeys() async {
+    if (!kIsWeb || _session == null) return;
+    try {
+      final storage = html.window.sessionStorage;
+      final nextIdStr = storage['external_next_pre_key_id'] ?? '30';
+      int nextId = int.parse(nextIdStr);
+
+      final newPreKeys = signal.generatePreKeys(nextId, nextId + 29);
+      final newPreKeysJson = newPreKeys.map((pk) => {
+        'id': pk.id,
+        'publicKey': base64Encode(pk.getKeyPair().publicKey.serialize()),
+        'privateKey': base64Encode(pk.getKeyPair().privateKey.serialize()),
+      }).toList();
+
+      await _externalService.replenishPreKeys(
+        sessionId: _session!.sessionId,
+        preKeys: newPreKeysJson,
+      );
+      storage['external_next_pre_key_id'] = (nextId + 30).toString();
+
+      final existingKeysStr = storage['external_pre_keys'];
+      if (existingKeysStr != null) {
+        final existingKeys = jsonDecode(existingKeysStr) as List;
+        final allKeys = [...existingKeys, ...newPreKeysJson];
+        storage['external_pre_keys'] = jsonEncode(allKeys);
+      }
+    } catch (e) {
+      debugPrint('[ExternalPreJoin] Pre-key replenish error: $e');
+    }
+  }
+
+  // ========================================
+  // Build Methods
+  // ========================================
+
+  @override
+  Widget build(BuildContext context) {
+    if (!kIsWeb) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text('Guest join is only available on web'),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Go Back'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_isWaitingAdmission) {
+      return _buildWaitingAdmissionView();
+    }
+
+    return _buildPreJoinView();
+  }
+
+  Widget _buildPreJoinView() {
+    final canJoin = _keysReady && _hasE2EEKey && !_isGeneratingKeys && !_isExchangingKey;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Join Meeting'),
+        elevation: 0,
+      ),
+      body: _isLoadingMeetingInfo
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Meeting info card
+                        if (_meetingTitle != null) _buildMeetingInfoCard(),
+                        const SizedBox(height: 16),
+
+                        // Signal Key Generation Progress
+                        _buildKeyGenerationCard(),
+                        const SizedBox(height: 16),
+
+                        // Device Selection
+                        _buildDeviceSelectionCard(),
+                        const SizedBox(height: 16),
+
+                        // E2EE Key Exchange Status
+                        _buildE2EEStatusCard(),
+                        const SizedBox(height: 16),
+
+                        // Name Entry
+                        _buildNameEntryCard(),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Join Button (fixed at bottom)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, -2),
+                      ),
+                    ],
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: FilledButton.icon(
+                      onPressed: canJoin && !_isJoining ? _handleJoin : null,
+                      icon: _isJoining
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.video_call),
+                      label: Text(
+                        _getJoinButtonText(),
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  String _getJoinButtonText() {
+    if (_isJoining) return 'Joining...';
+    if (_isGeneratingKeys) return 'Generating Keys...';
+    if (!_keysReady) return 'Keys Not Ready';
+    if (!_hasServerParticipants) return 'Waiting for Host...';
+    if (_isExchangingKey) return 'Exchanging Keys...';
+    if (!_hasE2EEKey) return 'Key Exchange Failed';
+    return 'Join Meeting';
+  }
+
+  Widget _buildMeetingInfoCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.videocam, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _meetingTitle!,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+            if (_meetingDescription != null && _meetingDescription!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                _meetingDescription!,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+              ),
+            ],
+            if (_meetingStartTime != null) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(Icons.schedule, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 8),
+                  Text(
+                    _formatDateTime(_meetingStartTime!),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKeyGenerationCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  _keysReady ? Icons.check_circle : Icons.key,
+                  color: _keysReady 
+                      ? Colors.green 
+                      : (_keyGenError != null ? Colors.red : Theme.of(context).colorScheme.primary),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Signal Protocol Keys',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const Spacer(),
+                if (_keysReady)
+                  const Chip(
+                    label: Text('Ready', style: TextStyle(fontSize: 12)),
+                    backgroundColor: Colors.green,
+                    labelStyle: TextStyle(color: Colors.white),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_keyGenError != null) ...[
+              Text(
+                _keyGenError!,
+                style: TextStyle(color: Colors.red[700]),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _generateSignalKeys,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ] else if (_isGeneratingKeys) ...[
+              LinearProgressIndicator(value: _keyGenProgress),
+              const SizedBox(height: 8),
+              Text(
+                _keyGenStep,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+              ),
+            ] else ...[
+              Text(
+                'End-to-end encryption keys generated',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeviceSelectionCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.settings, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Device Setup',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 300,
+              child: VideoPreJoinWidget(
+                key: _prejoinKey,
+                showE2EEStatus: false, // We show E2EE status separately
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildE2EEStatusCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  _hasE2EEKey ? Icons.lock : Icons.lock_open,
+                  color: _hasE2EEKey 
+                      ? Colors.green 
+                      : (_keyExchangeError != null ? Colors.red : Theme.of(context).colorScheme.primary),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'E2EE Key Exchange',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const Spacer(),
+                if (_hasE2EEKey)
+                  const Chip(
+                    label: Text('Ready', style: TextStyle(fontSize: 12)),
+                    backgroundColor: Colors.green,
+                    labelStyle: TextStyle(color: Colors.white),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _buildE2EEStatusContent(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildE2EEStatusContent() {
+    if (_isCheckingParticipants) {
+      return Row(
+        children: [
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'Checking meeting participants...',
+            style: TextStyle(color: Colors.grey[600]),
+          ),
+        ],
+      );
+    }
+
+    if (!_hasServerParticipants) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.schedule, color: Colors.orange[700], size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Waiting for host to join',
+                style: TextStyle(color: Colors.orange[700]),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'A meeting participant must join first to establish encryption.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey[600],
+                ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _checkServerParticipants,
+            icon: const Icon(Icons.refresh, size: 16),
+            label: const Text('Check Again'),
+          ),
+        ],
+      );
+    }
+
+    if (_isExchangingKey) {
+      return Row(
+        children: [
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Exchanging encryption keys with $_participantCount participant${_participantCount == 1 ? '' : 's'}...',
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (_keyExchangeError != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.error, color: Colors.red[700], size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _keyExchangeError!,
+                  style: TextStyle(color: Colors.red[700]),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _retryKeyExchange,
+            icon: const Icon(Icons.refresh, size: 16),
+            label: const Text('Retry'),
+          ),
+        ],
+      );
+    }
+
+    if (_hasE2EEKey) {
+      return Row(
+        children: [
+          Icon(Icons.check, color: Colors.green[700], size: 20),
+          const SizedBox(width: 8),
+          Text(
+            'Encryption keys exchanged securely',
+            style: TextStyle(color: Colors.green[700]),
+          ),
+        ],
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildNameEntryCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.person, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Your Name',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  hintText: 'Enter your display name',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter your name';
+                  }
+                  if (value.trim().length < 2) {
+                    return 'Name must be at least 2 characters';
+                  }
+                  return null;
+                },
+                textInputAction: TextInputAction.done,
+                onFieldSubmitted: (_) {
+                  if (_keysReady && _hasE2EEKey) {
+                    _handleJoin();
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWaitingAdmissionView() {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: 1.0),
+                duration: const Duration(seconds: 2),
+                builder: (context, value, child) {
+                  return Transform.scale(
+                    scale: 0.8 + (value * 0.2),
+                    child: child,
+                  );
+                },
+                onEnd: () {
+                  if (mounted) setState(() {});
+                },
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.hourglass_empty,
+                    size: 60,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+              Text(
+                'Waiting for admission',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'The meeting host will admit you shortly',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.person, color: Colors.grey[600]),
+                    const SizedBox(width: 8),
+                    Text(
+                      _nameController.text.isNotEmpty ? _nameController.text : 'Guest',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+              const CircularProgressIndicator(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatDateTime(DateTime dt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    final dateOnly = DateTime(dt.year, dt.month, dt.day);
+
+    String dateStr;
+    if (dateOnly == today) {
+      dateStr = 'Today';
+    } else if (dateOnly == tomorrow) {
+      dateStr = 'Tomorrow';
+    } else {
+      dateStr = '${dt.month}/${dt.day}/${dt.year}';
+    }
+
+    final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final period = dt.hour >= 12 ? 'PM' : 'AM';
+    return '$dateStr at $hour:$minute $period';
+  }
+}

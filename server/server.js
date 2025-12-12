@@ -266,7 +266,8 @@ app.use(sessionMiddleware);
   const meetingRoutes = require('./routes/meetings');
   const callRoutes = require('./routes/calls');
   const presenceRoutes = require('./routes/presence');
-  const externalRoutes = require('./routes/external');
+  // External routes need io instance for notifications
+  const createExternalRoutes = require('./routes/external');
 
   app.use(clientRoutes);
   app.use('/api', roleRoutes);
@@ -276,7 +277,18 @@ app.use(sessionMiddleware);
   app.use('/api', meetingRoutes);
   app.use('/api', callRoutes);
   app.use('/api', presenceRoutes);
-  app.use('/api', externalRoutes);
+  // Initialize external routes with io (will be set after Socket.IO is initialized)
+  let externalRoutes;
+  app.use('/api', (req, res, next) => {
+    if (!externalRoutes && global.io) {
+      externalRoutes = createExternalRoutes(global.io);
+    }
+    if (externalRoutes) {
+      externalRoutes(req, res, next);
+    } else {
+      next();
+    }
+  });
 
   // Run HMAC auth database migration
   const { migrate: migrateHmacAuth } = require('./migrations/add_hmac_auth');
@@ -300,6 +312,12 @@ app.use(sessionMiddleware);
   const { up: migrateMeetingsSystem } = require('./migrations/add_meetings_system');
   migrateMeetingsSystem().catch(err => {
     console.error('Failed to run meetings system migration:', err);
+  });
+
+  // Run meeting invitations migration
+  const { up: migrateMeetingInvitations } = require('./migrations/add_meeting_invitations');
+  migrateMeetingInvitations().catch(err => {
+    console.error('Failed to run meeting invitations migration:', err);
   });
 
   // License info endpoint
@@ -328,6 +346,74 @@ app.use(sessionMiddleware);
     }
   });
 
+  // Public meeting join page - auth check and Flutter web serving
+  app.get('/join/meeting/:token', async (req, res) => {
+    const { token } = req.params;
+    
+    // Validate token format (32 char UUID without dashes)
+    if (!token || token.length !== 32) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Invalid Link - PeerWave</title>
+          <style>
+            body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f5f5; }
+            .container { text-align: center; padding: 40px; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            h1 { color: #d32f2f; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>Invalid Meeting Link</h1>
+            <p>The meeting link you're trying to access is invalid.</p>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+
+    // Check if user is authenticated
+    const hasSessionHeaders = req.headers['x-client-id'] && req.headers['x-signature'];
+    const hasWebSession = req.session && req.session.uuid;
+    
+    if (hasSessionHeaders || hasWebSession) {
+      // Authenticated user - redirect to meetings overview
+      console.log(`[Guest Join] Authenticated user detected, redirecting to /app/meetings`);
+      return res.redirect('/app/meetings');
+    }
+
+    // Unauthenticated user - serve Flutter web app
+    console.log(`[Guest Join] Guest user detected, serving Flutter web app for token: ${token}`);
+    const flutterWebPath = path.join(__dirname, '../client/build/web/index.html');
+    res.sendFile(flutterWebPath, (err) => {
+      if (err) {
+        console.error('[Guest Join] Failed to serve Flutter web app:', err);
+        res.status(500).send(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Error - PeerWave</title>
+            <style>
+              body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f5f5; }
+              .container { text-align: center; padding: 40px; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+              h1 { color: #d32f2f; }
+              p { color: #666; margin-top: 10px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>Service Unavailable</h1>
+              <p>Flutter web app not found. Please build the client first:</p>
+              <code style="background: #f5f5f5; padding: 8px; border-radius: 4px; display: inline-block; margin-top: 10px;">cd client && flutter build web</code>
+            </div>
+          </body>
+          </html>
+        `);
+      }
+    });
+  });
+
   //SOCKET.IO
 const rooms = {};
 const port = config.port || 4000;
@@ -335,9 +421,20 @@ const port = config.port || 4000;
 const server = http.createServer(app);
 const io = require("socket.io")(server);
 
+// Make io globally available for routes that need it (e.g., external guest notifications)
+global.io = io;
+
 io.use(sharedSession(sessionMiddleware, { autoSave: true }));
 
+// Initialize external guest namespace for unauthenticated guest connections
+const initializeExternalNamespace = require('./namespaces/external');
+initializeExternalNamespace(io);
+console.log('[SERVER] ✓ External guest namespace initialized');
+
 const deviceSockets = new Map(); // Key: userId:deviceId, Value: socket.id
+
+// Make deviceSockets globally available for guest message routing
+global.deviceSockets = deviceSockets;
 
 // ============================================
 // VIDEO CONFERENCE PARTICIPANT TRACKING (RAM)
@@ -3318,18 +3415,66 @@ io.sockets.on("connection", socket => {
   });
 
   /**
+   * Meeting: Join room for real-time events
+   * Required for receiving admission notifications
+   */
+  socket.on('meeting:join-room', async (data) => {
+    try {
+      console.log('[MEETING:JOIN-ROOM] Event received:', data);
+      console.log('[MEETING:JOIN-ROOM] Socket authenticated:', isAuthenticated());
+      
+      const userId = getUserId();
+      console.log('[MEETING:JOIN-ROOM] User ID:', userId);
+      
+      if (!userId) {
+        console.error('[MEETING:JOIN-ROOM] ❌ No user ID - authentication failed');
+        return;
+      }
+
+      const { meeting_id } = data;
+      if (!meeting_id) {
+        console.error('[MEETING:JOIN-ROOM] ❌ No meeting_id in data');
+        return;
+      }
+
+      // Join the meeting socket room
+      socket.join(`meeting:${meeting_id}`);
+      console.log(`[MEETING:JOIN-ROOM] ✓ User ${userId} joined room: meeting:${meeting_id}`);
+      
+      // List all rooms this socket is in
+      console.log('[MEETING:JOIN-ROOM] Socket rooms:', Array.from(socket.rooms));
+
+      // Notify other participants
+      socket.to(`meeting:${meeting_id}`).emit('meeting:participant_joined', {
+        meeting_id,
+        user_id: userId
+      });
+    } catch (error) {
+      console.error('[MEETING:JOIN-ROOM] ❌ Error joining meeting room:', error);
+    }
+  });
+
+  /**
    * Meeting: Participant left
    * Real-time notification only - broadcasts to other participants
    */
-  socket.on('meeting:leave', async (data) => {
+  const handleMeetingLeave = async (data) => {
     try {
       const userId = getUserId();
-      if (!userId) return;
+      if (!userId) {
+        console.error('[MEETING:LEAVE] ❌ No user ID');
+        return;
+      }
 
       const { meeting_id } = data;
+      if (!meeting_id) {
+        console.error('[MEETING:LEAVE] ❌ No meeting_id');
+        return;
+      }
       
       // Leave meeting room
       socket.leave(`meeting:${meeting_id}`);
+      console.log(`[MEETING:LEAVE] ✓ User ${userId} left room: meeting:${meeting_id}`);
 
       // Notify other participants
       socket.to(`meeting:${meeting_id}`).emit('meeting:participant_left', {
@@ -3337,7 +3482,74 @@ io.sockets.on("connection", socket => {
         user_id: userId
       });
     } catch (error) {
-      console.error('[MEETING] Error handling participant leave:', error);
+      console.error('[MEETING:LEAVE] ❌ Error handling participant leave:', error);
+    }
+  };
+  
+  socket.on('meeting:leave', handleMeetingLeave);
+  socket.on('meeting:leave-room', handleMeetingLeave); // Alias for consistency
+
+  /**
+   * Participant: Send E2EE key response to guest
+   * Participant responds to guest's key request with encrypted E2EE key
+   */
+  socket.on('participant:send_e2ee_key_to_guest', async (data) => {
+    try {
+      const userId = getUserId();
+      const deviceId = getDeviceId();
+      if (!userId || !deviceId) {
+        console.error('[PARTICIPANT] No userId/deviceId for E2EE key response');
+        return;
+      }
+
+      const { guest_session_id, encrypted_e2ee_key, request_id, meeting_id } = data;
+
+      console.log(`[PARTICIPANT] ${userId}:${deviceId} sending E2EE key to guest ${guest_session_id}`);
+
+      // Send directly to guest with meeting-specific event name
+      io.of('/external').to(`guest:${guest_session_id}`).emit(`guest:response_e2ee_key:${meeting_id}`, {
+        participant_user_id: userId,
+        participant_device_id: deviceId,
+        encrypted_e2ee_key,
+        request_id,
+        timestamp: Date.now()
+      });
+
+      console.log(`[PARTICIPANT] ✓ E2EE key sent to guest:${guest_session_id}`);
+    } catch (error) {
+      console.error('[PARTICIPANT] Error sending E2EE key to guest:', error);
+    }
+  });
+
+  /**
+   * Participant: Send Signal message to guest
+   * For Signal protocol session establishment
+   */
+  socket.on('participant:signal_message_to_guest', async (data) => {
+    try {
+      const userId = getUserId();
+      const deviceId = getDeviceId();
+      if (!userId || !deviceId) {
+        console.error('[PARTICIPANT] No userId/deviceId for Signal message');
+        return;
+      }
+
+      const { guest_session_id, encrypted_message, message_type } = data;
+
+      console.log(`[PARTICIPANT] ${userId}:${deviceId} sending Signal message (${message_type}) to guest ${guest_session_id}`);
+
+      // Send directly to guest's personal room
+      io.of('/external').to(`guest:${guest_session_id}`).emit('participant:signal_message', {
+        participant_user_id: userId,
+        participant_device_id: deviceId,
+        encrypted_message,
+        message_type,
+        timestamp: Date.now()
+      });
+
+      console.log(`[PARTICIPANT] ✓ Signal message sent to guest:${guest_session_id}`);
+    } catch (error) {
+      console.error('[PARTICIPANT] Error sending Signal message to guest:', error);
     }
   });
 
@@ -3850,8 +4062,11 @@ process.on('SIGINT', async () => {
   }
 });
 
-server.listen(port, () => {
+server.listen(port, async () => {
   console.log(`Server is running on port ${port}`);
+  
+  // Database migrations removed from server startup
+  // Run migrations manually with: node migrations/migrate.js
   
   // Start HMAC session auth cleanup jobs
   const { cleanupNonces, cleanupSessions } = require('./middleware/sessionAuth');

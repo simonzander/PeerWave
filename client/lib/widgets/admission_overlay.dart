@@ -4,7 +4,7 @@ import '../models/external_session.dart';
 import '../services/external_participant_service.dart';
 
 /// Admission overlay - shows waiting guests to meeting participants
-/// 
+///
 /// Features:
 /// - List of waiting guests
 /// - Admit/Decline buttons for each guest
@@ -14,10 +14,7 @@ import '../services/external_participant_service.dart';
 class AdmissionOverlay extends StatefulWidget {
   final String meetingId;
 
-  const AdmissionOverlay({
-    super.key,
-    required this.meetingId,
-  });
+  const AdmissionOverlay({super.key, required this.meetingId});
 
   @override
   State<AdmissionOverlay> createState() => _AdmissionOverlayState();
@@ -29,8 +26,10 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
   StreamSubscription? _guestWaitingSubscription;
   StreamSubscription? _guestAdmittedSubscription;
   StreamSubscription? _guestDeclinedSubscription;
+  StreamSubscription? _admissionRequestSubscription;
   bool _isExpanded = false;
   bool _isLoading = true;
+  final Set<String> _processedSessions = {}; // Track already processed sessions
 
   @override
   void initState() {
@@ -45,11 +44,14 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
     _guestWaitingSubscription?.cancel();
     _guestAdmittedSubscription?.cancel();
     _guestDeclinedSubscription?.cancel();
+    _admissionRequestSubscription?.cancel();
     super.dispose();
   }
 
   void _setupListeners() {
-    _guestWaitingSubscription = _externalService.onGuestWaiting.listen((session) {
+    _guestWaitingSubscription = _externalService.onGuestWaiting.listen((
+      session,
+    ) {
       if (mounted && session.meetingId == widget.meetingId) {
         setState(() {
           _waitingGuests.add(session);
@@ -57,7 +59,9 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
       }
     });
 
-    _guestAdmittedSubscription = _externalService.onGuestAdmitted.listen((session) {
+    _guestAdmittedSubscription = _externalService.onGuestAdmitted.listen((
+      session,
+    ) {
       if (mounted && session.meetingId == widget.meetingId) {
         setState(() {
           _waitingGuests.removeWhere((g) => g.sessionId == session.sessionId);
@@ -65,13 +69,50 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
       }
     });
 
-    _guestDeclinedSubscription = _externalService.onGuestDeclined.listen((session) {
+    _guestDeclinedSubscription = _externalService.onGuestDeclined.listen((
+      session,
+    ) {
       if (mounted && session.meetingId == widget.meetingId) {
         setState(() {
           _waitingGuests.removeWhere((g) => g.sessionId == session.sessionId);
+          _processedSessions.add(session.sessionId);
         });
       }
     });
+
+    // NEW: Listen for admission requests (new event from redesign)
+    _admissionRequestSubscription = _externalService.onGuestAdmissionRequest
+        .listen((data) {
+          if (mounted && data['meeting_id'] == widget.meetingId) {
+            final sessionId = data['session_id'] as String?;
+            final displayName = data['display_name'] as String?;
+
+            if (sessionId != null && displayName != null) {
+              // Play notification sound
+              _playNotificationSound();
+
+              // Create ExternalSession from admission request data
+              final now = DateTime.now();
+              final session = ExternalSession(
+                sessionId: sessionId,
+                meetingId: widget.meetingId,
+                displayName: displayName,
+                createdAt: now,
+                updatedAt: now,
+                expiresAt: now.add(const Duration(hours: 24)),
+                admissionStatus: 'waiting',
+              );
+
+              // Add to waiting list if not already there
+              setState(() {
+                if (!_waitingGuests.any((g) => g.sessionId == sessionId)) {
+                  _waitingGuests.add(session);
+                  _isExpanded = true; // Auto-expand when new request arrives
+                }
+              });
+            }
+          }
+        });
   }
 
   Future<void> _loadWaitingGuests() async {
@@ -93,49 +134,131 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
     }
   }
 
-  Future<void> _admitGuest(ExternalSession guest) async {
+  void _playNotificationSound() {
+    // Simple beep sound using HTML audio API (web only)
+    // For native apps, you would use audioplayers package
     try {
-      await _externalService.admitGuest(guest.sessionId);
+      // Create a simple notification beep with AudioContext
+      // This is a placeholder - in production, use an actual audio file
+      debugPrint('[ADMISSION] 🔔 Guest admission request notification');
 
+      // TODO: Implement actual audio notification
+      // For web: use dart:html AudioElement
+      // For native: use audioplayers package
+    } catch (e) {
+      debugPrint('Failed to play notification sound: $e');
+    }
+  }
+
+  Future<void> _admitGuest(ExternalSession guest) async {
+    // Check if already processed by another participant
+    if (_processedSessions.contains(guest.sessionId)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Admitted ${guest.displayName}'),
+            content: Text(
+              '${guest.displayName} was already admitted by another participant',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      await _externalService.admitGuest(
+        guest.sessionId,
+        meetingId: widget.meetingId,
+      );
+
+      if (mounted) {
+        setState(() => _processedSessions.add(guest.sessionId));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✓ Admitted ${guest.displayName}'),
             backgroundColor: Colors.green,
           ),
         );
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to admit guest: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      final errorMessage = e.toString();
+      if (errorMessage.contains('already admitted') ||
+          errorMessage.contains('already declined')) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${guest.displayName} was already processed by another participant',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to admit guest: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }
 
   Future<void> _declineGuest(ExternalSession guest) async {
-    try {
-      await _externalService.declineGuest(guest.sessionId);
-
+    // Check if already processed by another participant
+    if (_processedSessions.contains(guest.sessionId)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Declined ${guest.displayName}'),
+            content: Text(
+              '${guest.displayName} was already processed by another participant',
+            ),
+            backgroundColor: Colors.orange,
           ),
         );
       }
-    } catch (e) {
+      return;
+    }
+
+    try {
+      await _externalService.declineGuest(
+        guest.sessionId,
+        meetingId: widget.meetingId,
+      );
+
       if (mounted) {
+        setState(() => _processedSessions.add(guest.sessionId));
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to decline guest: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Declined ${guest.displayName}')),
         );
+      }
+    } catch (e) {
+      final errorMessage = e.toString();
+      if (errorMessage.contains('already admitted') ||
+          errorMessage.contains('already declined')) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${guest.displayName} was already processed by another participant',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to decline guest: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }
@@ -155,9 +278,7 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           width: _isExpanded ? 320 : 200,
-          constraints: BoxConstraints(
-            maxHeight: _isExpanded ? 400 : 60,
-          ),
+          constraints: BoxConstraints(maxHeight: _isExpanded ? 400 : 60),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(12),
@@ -197,9 +318,9 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
             Expanded(
               child: Text(
                 'Waiting Guests',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
               ),
             ),
             // Badge count
@@ -283,14 +404,14 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
                     Text(
                       guest.displayName,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     Text(
                       _formatWaitTime(guest.createdAt),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.grey[600],
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
                     ),
                   ],
                 ),

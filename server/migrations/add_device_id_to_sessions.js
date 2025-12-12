@@ -11,19 +11,26 @@ async function up() {
   console.log('Adding device_id column to client_sessions table...');
   
   try {
-    // Add device_id column
-    await sequelize.query(`
-      ALTER TABLE client_sessions 
-      ADD COLUMN device_id INTEGER
-    `);
-    console.log('✓ device_id column added to client_sessions');
-  } catch (error) {
-    // If column already exists, that's fine
-    if (error.message && error.message.includes('duplicate column')) {
-      console.log('✓ device_id column already exists');
+    // Check if column already exists
+    const tableInfo = await sequelize.query(
+      "PRAGMA table_info(client_sessions)",
+      { type: sequelize.QueryTypes.SELECT }
+    );
+    const hasDeviceId = tableInfo.some(col => col.name === 'device_id');
+    
+    if (!hasDeviceId) {
+      // Add device_id column
+      await sequelize.query(`
+        ALTER TABLE client_sessions 
+        ADD COLUMN device_id INTEGER
+      `);
+      console.log('✓ device_id column added to client_sessions');
     } else {
-      throw error;
+      console.log('✓ device_id column already exists');
     }
+  } catch (error) {
+    console.error('Error adding device_id column:', error);
+    throw error;
   }
 }
 

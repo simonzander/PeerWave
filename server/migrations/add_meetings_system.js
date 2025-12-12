@@ -21,6 +21,18 @@ async function up() {
     }
   };
 
+  // Helper function to check if column exists
+  const columnExists = async (tableName, columnName) => {
+    try {
+      const [results] = await sequelize.query(
+        `PRAGMA table_info(${tableName})`
+      );
+      return results.some(col => col.name === columnName);
+    } catch (error) {
+      return false;
+    }
+  };
+
   // Create meetings table (stores both scheduled meetings and instant calls)
   if (!(await tableExists('meetings'))) {
     await queryInterface.createTable('meetings', {
@@ -110,20 +122,24 @@ async function up() {
   }
 
   // Create indexes for meetings (with existence checks)
-  if (!(await indexExists('meetings', 'meetings_created_by'))) {
-    await queryInterface.addIndex('meetings', ['created_by'], { name: 'meetings_created_by' });
-  }
-  if (!(await indexExists('meetings', 'meetings_start_time'))) {
-    await queryInterface.addIndex('meetings', ['start_time'], { name: 'meetings_start_time' });
-  }
-  if (!(await indexExists('meetings', 'meetings_end_time'))) {
-    await queryInterface.addIndex('meetings', ['end_time'], { name: 'meetings_end_time' });
-  }
-  if (!(await indexExists('meetings', 'meetings_status'))) {
-    await queryInterface.addIndex('meetings', ['status'], { name: 'meetings_status' });
-  }
-  if (!(await indexExists('meetings', 'meetings_is_instant_call'))) {
-    await queryInterface.addIndex('meetings', ['is_instant_call'], { name: 'meetings_is_instant_call' });
+  // Check if table exists before creating indexes
+  if (await tableExists('meetings')) {
+    if (!(await indexExists('meetings', 'meetings_created_by'))) {
+      await queryInterface.addIndex('meetings', ['created_by'], { name: 'meetings_created_by' });
+    }
+    if (!(await indexExists('meetings', 'meetings_start_time'))) {
+      await queryInterface.addIndex('meetings', ['start_time'], { name: 'meetings_start_time' });
+    }
+    if (!(await indexExists('meetings', 'meetings_end_time'))) {
+      await queryInterface.addIndex('meetings', ['end_time'], { name: 'meetings_end_time' });
+    }
+    // Only create status index if column still exists (removed by hybrid storage migration)
+    if ((await columnExists('meetings', 'status')) && !(await indexExists('meetings', 'meetings_status'))) {
+      await queryInterface.addIndex('meetings', ['status'], { name: 'meetings_status' });
+    }
+    if (!(await indexExists('meetings', 'meetings_is_instant_call'))) {
+      await queryInterface.addIndex('meetings', ['is_instant_call'], { name: 'meetings_is_instant_call' });
+    }
   }
 
   // Create meeting_participants table

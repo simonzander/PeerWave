@@ -236,6 +236,9 @@ const SignalSignedPreKey = sequelize.define('SignalSignedPreKey', {
     primaryKey: false // (wird ignoriert, aber keine einzelne Spalte ist PK)
 });
 
+// SignalSenderKey - Stores sender keys for TEXT/VIDEO CHANNELS ONLY
+// NOTE: Meetings and instant calls do NOT use this table
+// They use 1:1 Signal sessions for encryption (peer-to-peer key exchange)
 const SignalSenderKey = sequelize.define('SignalSenderKey', {
     channel: {
         type: DataTypes.UUID,
@@ -659,6 +662,123 @@ const OTP = temporaryStorage.define('OTP', {
     }
 });
 
+// External participant sessions (guests joining meetings) - stored in memory
+const ExternalSession = temporaryStorage.define('ExternalSession', {
+    session_id: {
+        type: DataTypes.STRING,
+        primaryKey: true,
+        allowNull: false
+    },
+    meeting_id: {
+        type: DataTypes.STRING,
+        allowNull: false
+    },
+    display_name: {
+        type: DataTypes.STRING,
+        allowNull: false
+    },
+    identity_key_public: {
+        type: DataTypes.TEXT,
+        allowNull: false
+    },
+    signed_pre_key: {
+        type: DataTypes.TEXT,
+        allowNull: false
+    },
+    pre_keys: {
+        type: DataTypes.TEXT,
+        allowNull: false
+    },
+    admitted: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: null
+        // null: not requesting or declined (can retry)
+        // false: actively requesting admission
+        // true: admitted and can join
+    },
+    last_admission_request: {
+        type: DataTypes.DATE,
+        allowNull: true
+        // Tracks last admission request for cooldown enforcement
+    },
+    admitted_by: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    joined_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    left_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    expires_at: {
+        type: DataTypes.DATE,
+        allowNull: false
+    }
+});
+
+// Meeting invitation tokens - persistent storage for external guest invitations
+// One meeting can have multiple invitation tokens
+const MeetingInvitation = sequelize.define('MeetingInvitation', {
+    id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true
+    },
+    meeting_id: {
+        type: DataTypes.STRING,
+        allowNull: false
+    },
+    token: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true
+    },
+    label: {
+        type: DataTypes.STRING,
+        allowNull: true
+        // Optional label like "Guest Link 1", "Partner Invite"
+    },
+    created_by: {
+        type: DataTypes.STRING,
+        allowNull: false
+    },
+    expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+        // null = never expires
+    },
+    max_uses: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+        // null = unlimited uses
+    },
+    use_count: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0
+    },
+    is_active: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true
+    }
+}, {
+    timestamps: true,
+    underscored: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
+    tableName: 'meeting_invitations',
+    indexes: [
+        { fields: ['meeting_id'] },
+        { fields: ['token'], unique: true },
+        { fields: ['is_active'] }
+    ]
+});
+
 // Client Sessions table for HMAC authentication (native clients)
 const ClientSession = sequelize.define('ClientSession', {
     client_id: {
@@ -720,7 +840,7 @@ Channel.belongsTo(User, { foreignKey: 'owner', as: 'Owner' });
 Client.hasMany(SignalSignedPreKey, { foreignKey: 'client' });
 Client.hasMany(SignalPreKey, { foreignKey: 'client' });
 
-// Signal Sender Key associations for Group Chats
+// Signal Sender Key associations for Group Chats (text channels only)
 Channel.hasMany(SignalSenderKey, { foreignKey: 'channel' });
 SignalSenderKey.belongsTo(Channel, { foreignKey: 'channel' });
 Client.hasMany(SignalSenderKey, { foreignKey: 'client' });
@@ -991,6 +1111,8 @@ const Invitation = sequelize.define('Invitation', {
 module.exports = {
     User,
     OTP,
+    ExternalSession,
+    MeetingInvitation,
     Client,
     Item,
     SignalSignedPreKey,
@@ -1007,5 +1129,6 @@ module.exports = {
     NonceCache,
     ServerSettings,
     Invitation,
-    sequelize
+    sequelize,
+    temporaryStorage
 };

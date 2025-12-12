@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/meeting.dart';
 import '../models/meeting_participant.dart';
 import 'api_service.dart';
-import 'socket_service.dart';
+import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 
 /// Meeting service - handles HTTP API calls and Socket.IO real-time notifications
 /// 

@@ -18,6 +18,7 @@ class VideoGridLayout extends StatelessWidget {
   final Map<String, String> profilePictureCache;
   final int maxVisibleParticipants;
   final Function(String participantId, bool isPinned)? onShowParticipantMenu;
+  final List<Map<String, dynamic>>? pendingParticipants;
 
   const VideoGridLayout({
     Key? key,
@@ -30,6 +31,7 @@ class VideoGridLayout extends StatelessWidget {
     required this.profilePictureCache,
     required this.maxVisibleParticipants,
     this.onShowParticipantMenu,
+    this.pendingParticipants,
   }) : super(key: key);
 
   @override
@@ -51,6 +53,18 @@ class VideoGridLayout extends StatelessWidget {
     }
     for (final remote in remoteParticipants) {
       cameraParticipants.add({'participant': remote, 'isLocal': false});
+    }
+    
+    // Add pending participants (not yet joined)
+    if (pendingParticipants != null) {
+      for (final pending in pendingParticipants!) {
+        cameraParticipants.add({
+          'participant': null,
+          'isLocal': false,
+          'isPending': true,
+          'pendingData': pending,
+        });
+      }
     }
 
     if (hasScreenShare && screenShareParticipantId != null) {
@@ -117,6 +131,8 @@ class VideoGridLayout extends StatelessWidget {
                     context: context,
                     participant: item['participant'],
                     isLocal: item['isLocal'],
+                    isPending: item['isPending'] == true,
+                    pendingData: item['pendingData'] as Map<String, dynamic>?,
                   ),
                 ),
               );
@@ -151,6 +167,8 @@ class VideoGridLayout extends StatelessWidget {
                     context: context,
                     participant: item['participant'],
                     isLocal: item['isLocal'],
+                    isPending: item['isPending'] == true,
+                    pendingData: item['pendingData'] as Map<String, dynamic>?,
                   ),
                 ),
               );
@@ -313,11 +331,15 @@ class VideoGridLayout extends StatelessWidget {
               final item = visibleParticipants[index];
               final participant = item['participant'];
               final isLocal = item['isLocal'] as bool;
+              final isPending = item['isPending'] == true;
+              final pendingData = item['pendingData'] as Map<String, dynamic>?;
 
               return _buildVideoTile(
                 context: context,
                 participant: participant,
                 isLocal: isLocal,
+                isPending: isPending,
+                pendingData: pendingData,
               );
             },
           ),
@@ -341,7 +363,88 @@ class VideoGridLayout extends StatelessWidget {
     required BuildContext context,
     required dynamic participant,
     required bool isLocal,
+    bool isPending = false,
+    Map<String, dynamic>? pendingData,
   }) {
+    // Handle pending participants (invited but not joined yet)
+    if (isPending && pendingData != null) {
+      final displayName = pendingData['displayName'] as String? ?? 'Unknown';
+      final profilePicture = pendingData['picture'] as String?;
+      
+      return Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceVariant,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+          ),
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Greyed background with profile picture or initial
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+              ),
+              child: Center(
+                child: CircleAvatar(
+                  radius: 40,
+                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                  child: Text(
+                    displayName.substring(0, 1).toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 32,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.5),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // Overlay with waiting message
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: Colors.black.withOpacity(0.6),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.person_add,
+                      size: 48,
+                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      displayName,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Waiting for participant to join...',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                        fontSize: 12,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final userId = participant.identity;
 
     // Get display name and profile picture from cache

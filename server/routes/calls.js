@@ -176,11 +176,15 @@ router.post('/calls/:callId/generate-link', verifyAuthEither, async (req, res) =
       return res.status(403).json({ error: 'Must be call participant to generate link' });
     }
 
-    const invitationToken = await meetingService.generateInvitationLink(callId);
+    const invitation = await meetingService.generateInvitationLink(callId, {
+      created_by: userId,
+      label: 'Call invite'
+    });
     
     res.json({
-      invitation_token: invitationToken,
-      invitation_url: `${req.protocol}://${req.get('host')}/join/meeting/${invitationToken}`
+      invitation,
+      invitation_token: invitation.token,
+      invitation_url: `${req.protocol}://${req.get('host')}/#/join/meeting/${invitation.token}`
     });
   } catch (error) {
     console.error('Error generating call link:', error);

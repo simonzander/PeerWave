@@ -24,8 +24,13 @@ void setSocketUnauthorizedHandler(SocketUnauthorizedCallback callback) {
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
-  factory SocketService() => _instance;
-  SocketService._internal();
+  factory SocketService() {
+    debugPrint('[SOCKET SERVICE] 🏭 Factory constructor called, returning instance: ${_instance.hashCode}');
+    return _instance;
+  }
+  SocketService._internal() {
+    debugPrint('[SOCKET SERVICE] 🏗️ Private constructor called, creating NEW instance');
+  }
 
   IO.Socket? _socket;
   final Map<String, List<void Function(dynamic)>> _listeners = {};
@@ -39,7 +44,21 @@ class SocketService {
   bool get isReady => _listenersRegistered && (_socket?.connected ?? false);
   
   Future<void> connect() async {
-    if (_socket != null && _socket!.connected) return;
+    // Check if socket exists and is truly connected
+    if (_socket != null) {
+      if (_socket!.connected) {
+        debugPrint('[SOCKET SERVICE] Socket already connected (id: ${_socket!.id})');
+        return;
+      } else {
+        // Socket exists but not connected - dispose and recreate
+        debugPrint('[SOCKET SERVICE] ⚠️ Socket exists but disconnected - disposing and reconnecting');
+        debugPrint('[SOCKET SERVICE] Stack trace: ${StackTrace.current}');
+        _socket?.disconnect();
+        _socket?.dispose();
+        _socket = null;
+      }
+    }
+    
     if (_connecting) return;
     _connecting = true;
     try {
@@ -56,11 +75,19 @@ class SocketService {
         'withCredentials': true, // Send cookies for session management
       });
       _socket!.on('connect', (_) {
-        debugPrint('[SOCKET SERVICE] Socket connected');
+        debugPrint('[SOCKET SERVICE] ==========================================');
+        debugPrint('[SOCKET SERVICE] 🔌 Socket connected event fired');
+        debugPrint('[SOCKET SERVICE]    Socket object exists: ${_socket != null}');
+        debugPrint('[SOCKET SERVICE]    Socket ID: ${_socket?.id}');
+        debugPrint('[SOCKET SERVICE]    Stored listeners count: ${_listeners.length}');
+        debugPrint('[SOCKET SERVICE] ==========================================');
+        
         // ✅ Report successful socket connection (only on native)
         if (!kIsWeb) {
           ServerConnectionService.instance.reportSuccess();
         }
+        // Re-register all stored listeners on connect
+        _reregisterAllListeners();
         // Authenticate with the server after connection
         _authenticateSocket();
       });
@@ -102,6 +129,8 @@ class SocketService {
       _socket!.on('reconnect', (_) {
         debugPrint('[SOCKET SERVICE] Socket reconnected');
         resetReadyState(); // Reset ready state on reconnect
+        // Re-register all stored listeners
+        _reregisterAllListeners();
         // Re-authenticate after reconnection
         _authenticateSocket();
       });
@@ -154,19 +183,55 @@ class SocketService {
   }
 
   void disconnect() {
+    debugPrint('[SOCKET SERVICE] ⚠️ disconnect() called - setting socket to null');
+    debugPrint('[SOCKET SERVICE] Stack trace: ${StackTrace.current}');
     resetReadyState(); // Reset ready state before disconnect
     _socket?.disconnect();
     _socket = null;
   }
 
   void registerListener(String event, Function(dynamic) callback) {
+    // Debug: Check socket state  
+    debugPrint('[SOCKET SERVICE] 🔍 registerListener($event) called - socket: ${_socket != null ? "EXISTS (id=${_socket!.id})" : "NULL"}');
+    
     final callbacks = _listeners.putIfAbsent(event, () => []);
     if (!callbacks.contains(callback)) {
       callbacks.add(callback);
-      if (_socket != null) {
+      
+      // Check socket state and register accordingly
+      if (_socket == null) {
+        // Socket doesn't exist yet - store for later registration
+        debugPrint('[SOCKET SERVICE] 📦 Socket is null, listener for $event stored (will register on connect)');
+      } else {
+        // Socket exists - register immediately regardless of connection state
         _socket!.on(event, callback);
+        if (_socket!.connected) {
+          debugPrint('[SOCKET SERVICE] ✅ Registered listener for $event (socket connected)');
+        } else {
+          debugPrint('[SOCKET SERVICE] 📝 Registered listener for $event (socket connecting...)');
+        }
       }
+    } else {
+      debugPrint('[SOCKET SERVICE] ℹ️ Listener for $event already exists');
     }
+  }
+
+  /// Re-register all stored listeners (called after reconnect or initial connect)
+  void _reregisterAllListeners() {
+    if (_socket == null) {
+      debugPrint('[SOCKET SERVICE] Cannot re-register listeners - socket is null');
+      return;
+    }
+    
+    debugPrint('[SOCKET SERVICE] 🔄 Re-registering ${_listeners.length} event listeners');
+    int count = 0;
+    _listeners.forEach((event, callbacks) {
+      for (final callback in callbacks) {
+        _socket!.on(event, callback);
+        count++;
+      }
+    });
+    debugPrint('[SOCKET SERVICE] ✅ Re-registered $count listeners');
   }
   
   /// Notify server that all listeners are registered and client is ready

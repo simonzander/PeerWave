@@ -1,26 +1,65 @@
-const { sequelize } = require('../db/model');
+const { sequelize, ExternalSession, MeetingInvitation } = require('../db/model');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
-const writeQueue = require('../db/writeQueue');
 
 /**
  * ExternalParticipantService - Manages external guest sessions for meetings
+ * 
+ * Sessions are stored in-memory using Sequelize's temporaryStorage (SQLite :memory:)
+ * This means sessions are cleared on server restart, which is appropriate for
+ * temporary guest access.
+ * 
+ * Invitation tokens are stored persistently in the MeetingInvitation table,
+ * with cascade deletion when meetings are deleted.
  */
 class ExternalParticipantService {
   
   /**
-   * Validate invitation token and check time window
-   * Valid: ±1 hour from meeting start time
+   * Validate invitation token and check constraints
+   * Checks: token exists, is active, not expired, max uses not reached
    * @param {string} token - Invitation token
-   * @returns {Promise<Object|null>} Meeting object or null if invalid
+   * @returns {Promise<Object|null>} Meeting object with invitation info or null if invalid
    */
   async validateInvitationToken(token) {
     try {
+      // First check the new MeetingInvitation table
+      const invitation = await MeetingInvitation.findOne({
+        where: { token, is_active: true }
+      });
+
+      if (invitation) {
+        // Check expiration
+        if (invitation.expires_at && new Date() > new Date(invitation.expires_at)) {
+          return { error: 'token_expired', invitation: invitation.toJSON() };
+        }
+
+        // Check max uses
+        if (invitation.max_uses !== null && invitation.use_count >= invitation.max_uses) {
+          return { error: 'max_uses_reached', invitation: invitation.toJSON() };
+        }
+
+        // Get meeting details
+        const [meetings] = await sequelize.query(`
+          SELECT * FROM meetings WHERE meeting_id = ? AND allow_external = 1
+        `, {
+          replacements: [invitation.meeting_id]
+        });
+
+        if (meetings.length === 0) {
+          return null;
+        }
+
+        return { 
+          meeting: meetings[0],
+          invitation: invitation.toJSON()
+        };
+      }
+
+      // Fallback: Check legacy invitation_token on meetings table (for backwards compatibility)
       const [meetings] = await sequelize.query(`
         SELECT * FROM meetings
         WHERE invitation_token = ?
         AND allow_external = 1
-        AND status != 'cancelled'
       `, {
         replacements: [token]
       });
@@ -29,22 +68,61 @@ class ExternalParticipantService {
         return null;
       }
 
-      const meeting = meetings[0];
-      const now = new Date();
-      const startTime = new Date(meeting.start_time);
-      
-      // Check if within ±1 hour window
-      const oneHourBefore = new Date(startTime.getTime() - 60 * 60 * 1000);
-      const oneHourAfter = new Date(startTime.getTime() + 60 * 60 * 1000);
-
-      if (now < oneHourBefore || now > oneHourAfter) {
-        return { error: 'outside_time_window', meeting };
-      }
-
-      return { meeting };
+      return { meeting: meetings[0] };
     } catch (error) {
       console.error('Error validating invitation token:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Validate that token matches the meeting
+   * Used for security on guest endpoints
+   * @param {string} token - Invitation token
+   * @param {string} meetingId - Meeting ID to validate against
+   * @returns {Promise<boolean>} True if valid
+   */
+  async validateTokenForMeeting(token, meetingId) {
+    try {
+      const result = await this.validateInvitationToken(token);
+      
+      if (!result || result.error) {
+        return false;
+      }
+      
+      return result.meeting.meeting_id === meetingId;
+    } catch (error) {
+      console.error('Error validating token for meeting:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if session is within cooldown period
+   * @param {string} session_id - Session ID
+   * @returns {Promise<number|null>} Seconds remaining in cooldown, or null if no cooldown
+   */
+  async checkAdmissionCooldown(session_id) {
+    try {
+      const session = await ExternalSession.findByPk(session_id, {
+        attributes: ['last_admission_request']
+      });
+      
+      if (!session || !session.last_admission_request) {
+        return null; // No previous request
+      }
+      
+      const timeSinceLastRequest = Date.now() - new Date(session.last_admission_request).getTime();
+      const COOLDOWN_MS = 5000; // 5 seconds
+      
+      if (timeSinceLastRequest < COOLDOWN_MS) {
+        return Math.ceil((COOLDOWN_MS - timeSinceLastRequest) / 1000);
+      }
+      
+      return null; // Cooldown expired
+    } catch (error) {
+      console.error('Error checking cooldown:', error);
+      return null;
     }
   }
 
@@ -69,37 +147,66 @@ class ExternalParticipantService {
 
     const session_id = uuidv4().replace(/-/g, '');
     
-    // Calculate expiration: min(meeting end + 24h, now + 24h)
+    // Calculate expiration: 24 hours from now
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours from now
+    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
     try {
-      await writeQueue.enqueue(
-        () => sequelize.query(`
-          INSERT INTO external_participants (
-            session_id, meeting_id, display_name,
-            identity_key_public, signed_pre_key, pre_keys,
-            admission_status, expires_at
-          ) VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?)
-        `, {
-          replacements: [
-            session_id,
-            meeting_id,
-            display_name,
-            identity_key_public,
-            signed_pre_key,
-            JSON.stringify(pre_keys),
-            expiresAt
-          ]
-        }),
-        'createExternalSession'
-      );
+      // Ensure signed_pre_key and pre_keys are stored as JSON strings
+      const signedPreKeyStr = typeof signed_pre_key === 'string' 
+        ? signed_pre_key 
+        : JSON.stringify(signed_pre_key);
+      const preKeysStr = typeof pre_keys === 'string'
+        ? pre_keys
+        : JSON.stringify(pre_keys);
 
-      return await this.getSession(session_id);
+      const session = await ExternalSession.create({
+        session_id,
+        meeting_id,
+        display_name,
+        identity_key_public,
+        signed_pre_key: signedPreKeyStr,
+        pre_keys: preKeysStr,
+        admitted: null,
+        last_admission_request: null,
+        expires_at: expiresAt
+      });
+
+      console.log(`[EXTERNAL] Created session ${session_id} for meeting ${meeting_id}`);
+      return this._formatSession(session);
     } catch (error) {
       console.error('Error creating external session:', error);
       throw error;
     }
+  }
+
+  /**
+   * Format session for API response
+   */
+  _formatSession(session) {
+    if (!session) return null;
+    
+    const data = session.toJSON ? session.toJSON() : session;
+    
+    // Parse pre_keys if string
+    if (typeof data.pre_keys === 'string') {
+      try {
+        data.pre_keys = JSON.parse(data.pre_keys);
+      } catch (e) {
+        // Keep as-is if not valid JSON
+      }
+    }
+    
+    // Parse signed_pre_key if string
+    if (typeof data.signed_pre_key === 'string') {
+      try {
+        data.signed_pre_key = JSON.parse(data.signed_pre_key);
+      } catch (e) {
+        // Keep as-is if not valid JSON
+      }
+    }
+    
+    return data;
   }
 
   /**
@@ -109,23 +216,8 @@ class ExternalParticipantService {
    */
   async getSession(session_id) {
     try {
-      const [sessions] = await sequelize.query(`
-        SELECT * FROM external_participants WHERE session_id = ?
-      `, {
-        replacements: [session_id]
-      });
-
-      if (sessions.length === 0) {
-        return null;
-      }
-
-      const session = sessions[0];
-      // Parse pre_keys JSON
-      if (session.pre_keys) {
-        session.pre_keys = JSON.parse(session.pre_keys);
-      }
-
-      return session;
+      const session = await ExternalSession.findByPk(session_id);
+      return this._formatSession(session);
     } catch (error) {
       console.error('Error getting external session:', error);
       throw error;
@@ -135,31 +227,34 @@ class ExternalParticipantService {
   /**
    * Update session admission status
    * @param {string} session_id - Session ID
-   * @param {string} status - New status ('admitted' or 'declined')
-   * @param {string} by_user_id - User who admitted/declined
+   * @param {boolean|null} admitted - Admission status (null/false/true)
+   * @param {string|Date} by_user_or_timestamp - User who admitted/declined OR timestamp for request
    * @returns {Promise<Object>} Updated session object
    */
-  async updateAdmissionStatus(session_id, status, by_user_id) {
-    const validStatuses = ['waiting', 'admitted', 'declined'];
-    
-    if (!validStatuses.includes(status)) {
-      throw new Error(`Invalid admission status: ${status}`);
-    }
-
+  async updateAdmissionStatus(session_id, admitted, by_user_or_timestamp) {
     try {
-      const timestamp = status === 'admitted' ? 'joined_at = CURRENT_TIMESTAMP,' : '';
+      const updateData = {};
       
-      await writeQueue.enqueue(
-        () => sequelize.query(`
-          UPDATE external_participants
-          SET admission_status = ?, ${timestamp} admitted_by = ?
-          WHERE session_id = ?
-        `, {
-          replacements: [status, by_user_id, session_id]
-        }),
-        'updateAdmissionStatus'
-      );
+      if (admitted === true) {
+        // Guest admitted
+        updateData.admitted = true;
+        updateData.admitted_by = by_user_or_timestamp; // User UUID
+        updateData.joined_at = new Date();
+      } else if (admitted === false) {
+        // Guest requesting admission
+        updateData.admitted = false;
+        updateData.last_admission_request = by_user_or_timestamp; // Timestamp
+      } else {
+        // Guest declined (reset to null for retry)
+        updateData.admitted = null;
+        updateData.admitted_by = by_user_or_timestamp; // User who declined
+      }
 
+      await ExternalSession.update(updateData, {
+        where: { session_id }
+      });
+
+      console.log(`[EXTERNAL] Updated session ${session_id} admitted=${admitted}`);
       return await this.getSession(session_id);
     } catch (error) {
       console.error('Error updating admission status:', error);
@@ -174,16 +269,11 @@ class ExternalParticipantService {
    */
   async markLeft(session_id) {
     try {
-      await writeQueue.enqueue(
-        () => sequelize.query(`
-          UPDATE external_participants
-          SET left_at = CURRENT_TIMESTAMP
-          WHERE session_id = ?
-        `, {
-          replacements: [session_id]
-        }),
-        'markSessionLeft'
+      await ExternalSession.update(
+        { left_at: new Date() },
+        { where: { session_id } }
       );
+      console.log(`[EXTERNAL] Marked session ${session_id} as left`);
     } catch (error) {
       console.error('Error marking session as left:', error);
       throw error;
@@ -197,19 +287,39 @@ class ExternalParticipantService {
    */
   async deleteSession(session_id) {
     try {
-      await writeQueue.enqueue(
-        () => sequelize.query(`
-          DELETE FROM external_participants WHERE session_id = ?
-        `, {
-          replacements: [session_id]
-        }),
-        'deleteExternalSession'
-      );
-
+      await ExternalSession.destroy({ where: { session_id } });
+      console.log(`[EXTERNAL] Deleted session ${session_id}`);
       return true;
     } catch (error) {
       console.error('Error deleting external session:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Delete all waiting external sessions for a meeting
+   * Used to kick duplicate sessions when same invitation is reused
+   * @param {string} meeting_id - Meeting ID
+   * @param {string} invitation_token - Invitation token (unused, for API compatibility)
+   * @returns {Promise<number>} Number of sessions deleted
+   */
+  async deleteSessionsByToken(meeting_id, invitation_token) {
+    try {
+      const deleted = await ExternalSession.destroy({
+        where: {
+          meeting_id,
+          left_at: null,
+          admitted: null
+        }
+      });
+
+      if (deleted > 0) {
+        console.log(`[EXTERNAL] Deleted ${deleted} duplicate waiting session(s) for meeting ${meeting_id}`);
+      }
+      return deleted;
+    } catch (error) {
+      console.error('Error deleting sessions by token:', error);
+      return 0; // Don't throw - cleanup shouldn't block registration
     }
   }
 
@@ -220,22 +330,15 @@ class ExternalParticipantService {
    */
   async getMeetingExternalParticipants(meeting_id) {
     try {
-      const [sessions] = await sequelize.query(`
-        SELECT * FROM external_participants
-        WHERE meeting_id = ?
-        AND left_at IS NULL
-        ORDER BY created_at ASC
-      `, {
-        replacements: [meeting_id]
+      const sessions = await ExternalSession.findAll({
+        where: {
+          meeting_id,
+          left_at: null
+        },
+        order: [['createdAt', 'ASC']]
       });
 
-      // Parse pre_keys for each session
-      return sessions.map(s => {
-        if (s.pre_keys) {
-          s.pre_keys = JSON.parse(s.pre_keys);
-        }
-        return s;
-      });
+      return sessions.map(s => this._formatSession(s));
     } catch (error) {
       console.error('Error getting meeting external participants:', error);
       throw error;
@@ -249,18 +352,17 @@ class ExternalParticipantService {
    */
   async getWaitingParticipants(meeting_id) {
     try {
-      const [sessions] = await sequelize.query(`
-        SELECT session_id, display_name, created_at
-        FROM external_participants
-        WHERE meeting_id = ?
-        AND admission_status = 'waiting'
-        AND left_at IS NULL
-        ORDER BY created_at ASC
-      `, {
-        replacements: [meeting_id]
+      const sessions = await ExternalSession.findAll({
+        where: {
+          meeting_id,
+          admitted: false,
+          left_at: null
+        },
+        attributes: ['session_id', 'display_name', 'createdAt'],
+        order: [['createdAt', 'ASC']]
       });
 
-      return sessions;
+      return sessions.map(s => s.toJSON());
     } catch (error) {
       console.error('Error getting waiting participants:', error);
       throw error;
@@ -274,18 +376,15 @@ class ExternalParticipantService {
    */
   async isSessionExpired(session_id) {
     try {
-      const [results] = await sequelize.query(`
-        SELECT expires_at FROM external_participants WHERE session_id = ?
-      `, {
-        replacements: [session_id]
+      const session = await ExternalSession.findByPk(session_id, {
+        attributes: ['expires_at']
       });
 
-      if (results.length === 0) {
+      if (!session) {
         return true; // Session doesn't exist
       }
 
-      const expiresAt = new Date(results[0].expires_at);
-      return new Date() > expiresAt;
+      return new Date() > new Date(session.expires_at);
     } catch (error) {
       console.error('Error checking session expiration:', error);
       return true;
@@ -298,13 +397,9 @@ class ExternalParticipantService {
    * @returns {Object} Generated keys
    */
   generateTemporaryKeys() {
-    // Generate identity key pair
     const identityKeyPublic = crypto.randomBytes(32).toString('base64');
-    
-    // Generate signed pre-key
     const signedPreKey = crypto.randomBytes(32).toString('base64');
     
-    // Generate multiple one-time pre-keys
     const preKeys = [];
     for (let i = 0; i < 10; i++) {
       preKeys.push({
@@ -318,6 +413,179 @@ class ExternalParticipantService {
       signedPreKey,
       preKeys
     };
+  }
+
+  /**
+   * Consume a one-time pre-key (delete after use)
+   * @param {string} session_id - Session ID
+   * @param {number} pre_key_id - Pre-key ID to consume
+   * @returns {Promise<Object>} Remaining count and keys
+   */
+  async consumePreKey(session_id, pre_key_id) {
+    try {
+      const session = await this.getSession(session_id);
+      
+      if (!session || !session.pre_keys) {
+        throw new Error('Session or pre-keys not found');
+      }
+
+      const preKeys = Array.isArray(session.pre_keys) 
+        ? session.pre_keys 
+        : JSON.parse(session.pre_keys);
+      const filteredKeys = preKeys.filter(k => k.id !== pre_key_id);
+
+      await ExternalSession.update(
+        { pre_keys: JSON.stringify(filteredKeys) },
+        { where: { session_id } }
+      );
+
+      return {
+        remainingCount: filteredKeys.length,
+        preKeys: filteredKeys
+      };
+    } catch (error) {
+      console.error('Error consuming pre-key:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Replenish one-time pre-keys
+   * @param {string} session_id - Session ID
+   * @param {Array} new_pre_keys - Array of new pre-key objects
+   * @returns {Promise<Object>} Updated count and keys
+   */
+  async replenishPreKeys(session_id, new_pre_keys) {
+    try {
+      const session = await this.getSession(session_id);
+      
+      if (!session) {
+        throw new Error('Session not found');
+      }
+
+      const existingKeys = Array.isArray(session.pre_keys) 
+        ? session.pre_keys 
+        : [];
+      const allKeys = [...existingKeys, ...new_pre_keys];
+
+      await ExternalSession.update(
+        { pre_keys: JSON.stringify(allKeys) },
+        { where: { session_id } }
+      );
+
+      return {
+        totalCount: allKeys.length,
+        preKeys: allKeys
+      };
+    } catch (error) {
+      console.error('Error replenishing pre-keys:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get remaining pre-key count
+   * @param {string} session_id - Session ID
+   * @returns {Promise<Object>} Count and keys
+   */
+  async getRemainingPreKeys(session_id) {
+    try {
+      const session = await this.getSession(session_id);
+      
+      if (!session) {
+        throw new Error('Session not found');
+      }
+
+      const preKeys = Array.isArray(session.pre_keys) 
+        ? session.pre_keys 
+        : [];
+
+      return {
+        count: preKeys.length,
+        preKeys: preKeys
+      };
+    } catch (error) {
+      console.error('Error getting remaining pre-keys:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get external participant's E2EE keys for establishing Signal session
+   * @param {string} session_id - Session ID
+   * @returns {Promise<Object>} Identity key, signed pre-key, and one available pre-key
+   */
+  async getKeysForSession(session_id) {
+    try {
+      const session = await this.getSession(session_id);
+      
+      if (!session) {
+        throw new Error('Session not found');
+      }
+
+      const preKeys = Array.isArray(session.pre_keys) 
+        ? session.pre_keys 
+        : [];
+      
+      // Get one available pre-key (first one)
+      const availablePreKey = preKeys.length > 0 ? preKeys[0] : null;
+
+      return {
+        identityKeyPublic: session.identity_key_public,
+        signedPreKey: session.signed_pre_key,
+        preKey: availablePreKey,
+        sessionId: session_id
+      };
+    } catch (error) {
+      console.error('Error getting keys for session:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update session display name
+   * @param {string} session_id - Session ID
+   * @param {string} display_name - New display name
+   * @returns {Promise<boolean>}
+   */
+  async updateSessionDisplayName(session_id, display_name) {
+    try {
+      await ExternalSession.update(
+        { display_name },
+        { where: { session_id } }
+      );
+      
+      console.log(`[EXTERNAL] Updated display name for session ${session_id} to: ${display_name}`);
+      return true;
+    } catch (error) {
+      console.error('Error updating session display name:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up expired sessions
+   * @returns {Promise<number>} Number of sessions deleted
+   */
+  async cleanupExpiredSessions() {
+    try {
+      const { Op } = require('sequelize');
+      const deleted = await ExternalSession.destroy({
+        where: {
+          expires_at: {
+            [Op.lt]: new Date()
+          }
+        }
+      });
+
+      if (deleted > 0) {
+        console.log(`[EXTERNAL] Cleaned up ${deleted} expired session(s)`);
+      }
+      return deleted;
+    } catch (error) {
+      console.error('Error cleaning up expired sessions:', error);
+      return 0;
+    }
   }
 }
 

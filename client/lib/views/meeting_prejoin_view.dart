@@ -60,6 +60,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
   /// Load meeting details
   Future<void> _loadMeeting() async {
     try {
+      if (!mounted) return;
       setState(() {
         _isLoadingMeeting = true;
         _loadError = null;
@@ -67,6 +68,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       
       final meeting = await _meetingService.getMeeting(widget.meetingId);
       
+      if (!mounted) return;
       setState(() {
         _meeting = meeting;
         _isLoadingMeeting = false;
@@ -75,6 +77,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       debugPrint('[MeetingPreJoin] Loaded meeting: ${meeting.title}');
     } catch (e) {
       debugPrint('[MeetingPreJoin] Error loading meeting: $e');
+      if (!mounted) return;
       setState(() {
         _isLoadingMeeting = false;
         _loadError = 'Failed to load meeting: $e';
@@ -122,6 +125,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       }
     } catch (e) {
       debugPrint('[MeetingPreJoin] E2EE initialization error: $e');
+      if (!mounted) return;
       setState(() {
         _keyExchangeError = 'E2EE initialization failed: $e';
       });
@@ -131,6 +135,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
   /// Check participant status
   Future<void> _checkParticipantStatus() async {
     try {
+      if (!mounted) return;
       setState(() => _isCheckingParticipants = true);
       
       final completer = Completer<Map<String, dynamic>>();
@@ -158,6 +163,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         throw Exception(result['error']);
       }
       
+      if (!mounted) return;
       setState(() {
         _isFirstParticipant = result['isFirstParticipant'] ?? false;
         _participantCount = result['participantCount'] ?? 0;
@@ -167,6 +173,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       debugPrint('[MeetingPreJoin] Is first: $_isFirstParticipant, Count: $_participantCount');
     } catch (e) {
       debugPrint('[MeetingPreJoin] Error checking participants: $e');
+      if (!mounted) return;
       setState(() {
         _isCheckingParticipants = false;
         _keyExchangeError = 'Failed to check participants: $e';
@@ -213,6 +220,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
   /// Generate E2EE key (first participant)
   Future<void> _generateE2EEKey() async {
     try {
+      if (!mounted) return;
       setState(() {
         _isExchangingKey = true;
         _keyExchangeError = null;
@@ -220,6 +228,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       
       final success = await VideoConferenceService.generateE2EEKeyInPreJoin(_meeting!.meetingId);
       
+      if (!mounted) return;
       setState(() {
         _hasE2EEKey = success;
         _isExchangingKey = false;
@@ -227,6 +236,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       });
     } catch (e) {
       debugPrint('[MeetingPreJoin] Error generating E2EE key: $e');
+      if (!mounted) return;
       setState(() {
         _hasE2EEKey = false;
         _isExchangingKey = false;
@@ -238,6 +248,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
   /// Request E2EE key from existing participants
   Future<void> _requestE2EEKey() async {
     try {
+      if (!mounted) return;
       setState(() {
         _isExchangingKey = true;
         _keyExchangeError = null;
@@ -245,6 +256,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       
       final success = await VideoConferenceService.requestE2EEKey(_meeting!.meetingId);
       
+      if (!mounted) return;
       setState(() {
         _hasE2EEKey = success;
         _isExchangingKey = false;
@@ -252,6 +264,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       });
     } catch (e) {
       debugPrint('[MeetingPreJoin] Error requesting E2EE key: $e');
+      if (!mounted) return;
       setState(() {
         _hasE2EEKey = false;
         _isExchangingKey = false;

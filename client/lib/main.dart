@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'utils/html_stub.dart' if (dart.library.html) 'dart:html' as html;
 import 'auth/auth_layout_web.dart'
     if (dart.library.io) 'auth/auth_layout_native.dart';
 import 'auth/magic_link_web.dart'
@@ -21,7 +22,9 @@ import 'services/device_identity_service.dart';
 import 'services/logout_service.dart';
 import 'services/preferences_service.dart';
 import 'services/api_service.dart' show setGlobalUnauthorizedHandler;
-import 'services/socket_service.dart' show setSocketUnauthorizedHandler;
+import 'services/socket_service_web_export.dart'
+    if (dart.library.io) 'services/socket_service_native_export.dart'
+    show setSocketUnauthorizedHandler;
 import 'app/app_layout.dart';
 import 'app/dashboard_page.dart';
 import 'app/settings_sidebar.dart';
@@ -42,7 +45,8 @@ import 'services/auth_service_web.dart'
 import 'services/api_service.dart';
 import 'auth/backup_recover_web.dart'
     if (dart.library.io) 'auth/backup_recover_web_native.dart';
-import 'services/socket_service.dart';
+import 'services/socket_service_web_export.dart'
+    if (dart.library.io) 'services/socket_service_native_export.dart';
 import 'services/server_connection_service.dart';
 import 'widgets/server_unavailable_overlay.dart';
 // Role management imports
@@ -88,6 +92,7 @@ import 'app/views/files_view_page.dart';
 // Meetings and Calls
 import 'screens/meetings_screen.dart';
 import 'views/external_prejoin_view.dart';
+// external_key_setup_view removed - unified into external_prejoin_view
 import 'views/meeting_prejoin_view.dart';
 import 'views/meeting_video_conference_view.dart';
 // Native server selection
@@ -531,10 +536,11 @@ class _MyAppState extends State<MyApp> {
               builder: (context, state) => const SignalSetupScreen(),
             ),
             // ========================================
-            // External Participant (Guest) Route
+            // External Participant (Guest) Routes
             // ========================================
+            // Unified guest join - key generation + pre-join in one view
             GoRoute(
-              path: '/join/:token',
+              path: '/join/meeting/:token',
               builder: (context, state) {
                 final token = state.pathParameters['token'];
                 if (token == null || token.isEmpty) {
@@ -560,8 +566,34 @@ class _MyAppState extends State<MyApp> {
                 return ExternalPreJoinView(
                   invitationToken: token,
                   onAdmitted: () {
-                    // TODO: Navigate to video conference view
                     debugPrint('[EXTERNAL] Guest admitted, navigating to conference...');
+                    
+                    // Get meeting ID from session storage (web only)
+                    if (kIsWeb) {
+                      try {
+                        final storage = html.window.sessionStorage;
+                        final meetingId = storage['external_meeting_id'];
+                        final displayName = storage['external_display_name'] ?? 'Guest';
+                        
+                        if (meetingId != null && meetingId.isNotEmpty) {
+                          debugPrint('[EXTERNAL] Navigating to meeting video: $meetingId');
+                          context.go('/meeting/video/$meetingId', extra: {
+                            'meetingTitle': displayName,
+                            'isExternal': true,
+                          });
+                        } else {
+                          debugPrint('[EXTERNAL] ERROR: No meeting ID in session storage');
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Error: Missing meeting information'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        debugPrint('[EXTERNAL] ERROR getting meeting ID: $e');
+                      }
+                    }
                   },
                   onDeclined: () {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1520,6 +1552,13 @@ class _MyAppState extends State<MyApp> {
         }
         if (kIsWeb && loggedIn && fromParam == 'magic-link') {
           return '/magic-link';
+        }
+        
+        // Allow guest join routes (external participants) without authentication
+        debugPrint('[ROUTER] Checking guest routes - location: $location');
+        if (kIsWeb && !loggedIn && location.startsWith('/join/')) {
+          debugPrint('[ROUTER] 🔓 Guest access allowed for: $location');
+          return null;
         }
         // Allow registration flow even when not logged in
         if (kIsWeb && !loggedIn && !location.startsWith('/register/')) {

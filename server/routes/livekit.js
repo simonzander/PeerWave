@@ -250,6 +250,16 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
     // Generate JWT
     const jwt = await token.toJwt();
 
+    // Update participant status to "joined" in memory
+    try {
+      const deviceId = req.session?.device_id || req.deviceId || 0;
+      await meetingService.updateParticipantStatus(meetingId, userId, deviceId, 'joined');
+      console.log(`[LiveKit Meeting] Updated participant ${userId} status to joined`);
+    } catch (statusError) {
+      console.error('[LiveKit Meeting] Failed to update participant status:', statusError);
+      // Don't fail the token generation if status update fails
+    }
+
     // Return token and connection info
     res.json({
       token: jwt,

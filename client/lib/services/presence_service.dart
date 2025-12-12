@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/user_presence.dart';
 import 'api_service.dart';
-import 'socket_service.dart';
+import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 
 /// Presence service - tracks online/offline status of users
 /// 

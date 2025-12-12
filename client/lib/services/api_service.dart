@@ -350,6 +350,15 @@ class ApiService {
     return dio.delete(url, data: data, options: options);
   }
 
+  static Future<Response> patch(String url, {dynamic data, Options? options}) {
+    options ??= Options();
+    options = options.copyWith(
+      contentType: 'application/json',
+      extra: {...?options.extra, 'withCredentials': true},
+    );
+    return dio.patch(url, data: data, options: options);
+  }
+
   // ========================================================================
   // EVENT BUS INTEGRATION
   // ========================================================================

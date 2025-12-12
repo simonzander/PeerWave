@@ -6,8 +6,14 @@ import 'dart:async';
 import '../services/video_conference_service.dart';
 import '../services/message_listener_service.dart';
 import '../services/user_profile_service.dart';
+import '../services/api_service.dart';
+import '../services/meeting_service.dart';
+import '../services/socket_service.dart' if (dart.library.io) '../services/socket_service_native.dart';
+import '../services/external_participant_service.dart';
+import '../services/signal_service.dart';
 import '../widgets/video_grid_layout.dart';
 import '../widgets/video_controls_bar.dart';
+import '../widgets/admission_overlay.dart';
 import '../models/participant_audio_state.dart';
 import '../extensions/snackbar_extensions.dart';
 
@@ -49,6 +55,9 @@ class _MeetingVideoConferenceViewState
   // Profile cache
   final Map<String, String> _displayNameCache = {};
   final Map<String, String> _profilePictureCache = {};
+  
+  // Pending participants (invited but not yet joined)
+  final List<Map<String, dynamic>> _pendingParticipants = [];
 
   @override
   void initState() {
@@ -108,6 +117,30 @@ class _MeetingVideoConferenceViewState
     try {
       debugPrint('[MeetingVideo] Joining meeting: ${widget.meetingId}');
 
+      // Initialize external participant service listeners for admission overlay
+      ExternalParticipantService().initializeListeners();
+      
+      // Register meeting-specific E2EE key request listener
+      ExternalParticipantService().registerMeetingE2EEListener(widget.meetingId);
+      
+      // Set up guest E2EE key request handler
+      _setupGuestE2EEKeyRequestHandler();
+
+      // Join socket room for meeting events (admission notifications, etc.)
+      debugPrint('[MeetingVideo] Attempting to join socket room: meeting:${widget.meetingId}');
+      debugPrint('[MeetingVideo] Socket connected: ${SocketService().isConnected}');
+      
+      if (!SocketService().isConnected) {
+        debugPrint('[MeetingVideo] ⚠️ Socket not connected, waiting...');
+        // Wait a bit for socket to connect
+        await Future.delayed(const Duration(seconds: 1));
+      }
+      
+      SocketService().emit('meeting:join-room', {
+        'meeting_id': widget.meetingId,
+      });
+      debugPrint('[MeetingVideo] ✓ Emitted meeting:join-room event');
+
       // Join LiveKit room (room name = meeting ID)
       await _service!.joinRoom(
         widget.meetingId, // Use meeting ID as room identifier
@@ -138,10 +171,69 @@ class _MeetingVideoConferenceViewState
     }
   }
 
+  StreamSubscription? _guestE2EEKeyRequestSubscription;
+
+  /// Set up listener for guest E2EE key requests
+  void _setupGuestE2EEKeyRequestHandler() {
+    debugPrint('[MeetingVideo] Setting up guest E2EE key request handler for meeting ${widget.meetingId}');
+    
+    _guestE2EEKeyRequestSubscription?.cancel();
+    _guestE2EEKeyRequestSubscription =
+        ExternalParticipantService().onGuestE2EEKeyRequest.listen((data) async {
+      try {
+        debugPrint('[MeetingVideo] 🔑 Received guest E2EE key request: $data');
+
+        final guestSessionId = data['guest_session_id'] as String?;
+        final meetingId = data['meeting_id'] as String?;
+        final requestId = data['request_id'] as String?;
+
+        if (guestSessionId == null || meetingId != widget.meetingId) {
+          debugPrint('[MeetingVideo] Invalid request or wrong meeting');
+          return;
+        }
+
+        // Get the E2EE key from the video conference service
+        if (_service == null || _service!.channelSharedKey == null) {
+          debugPrint('[MeetingVideo] No E2EE key available yet');
+          return;
+        }
+
+        final e2eeKey = _service!.channelSharedKey!;
+        debugPrint(
+            '[MeetingVideo] Sending E2EE key to guest $guestSessionId (${e2eeKey.length} bytes)');
+
+        // Get our user ID and device ID from SignalService
+        final userId = SignalService.instance.currentUserId;
+        final deviceId = SignalService.instance.currentDeviceId;
+
+        // TODO: Encrypt the E2EE key with Signal protocol before sending
+        // For now, send it directly (this is a security issue - needs Signal encryption)
+        SocketService().emit('participant:send_e2ee_key_to_guest', {
+          'guest_session_id': guestSessionId,
+          'meeting_id': widget.meetingId,
+          'encrypted_e2ee_key': e2eeKey.toList(), // Convert Uint8List to List for JSON
+          'request_id': requestId,
+          'sender_user_id': userId, // Add sender info for guest
+          'sender_device_id': deviceId,
+        });
+
+        debugPrint('[MeetingVideo] ✓ E2EE key sent to guest (from $userId:$deviceId)');
+      } catch (e) {
+        debugPrint('[MeetingVideo] Error handling guest E2EE key request: $e');
+      }
+    });
+  }
+
   Future<void> _leaveMeeting() async {
     if (_service == null) return;
 
     try {
+      // Leave Socket.IO meeting room before leaving LiveKit
+      debugPrint('[MeetingVideo] Leaving socket room: meeting:${widget.meetingId}');
+      SocketService().emit('meeting:leave-room', {
+        'meeting_id': widget.meetingId,
+      });
+      
       await _service!.leaveRoom();
 
       // Navigate back to meetings list
@@ -155,6 +247,12 @@ class _MeetingVideoConferenceViewState
 
   @override
   void dispose() {
+    // Unregister meeting-specific E2EE listener
+    ExternalParticipantService().unregisterMeetingE2EEListener(widget.meetingId);
+    
+    // Clean up guest E2EE key request subscription
+    _guestE2EEKeyRequestSubscription?.cancel();
+    
     // Clean up subscriptions
     for (final sub in _audioSubscriptions.values) {
       sub.cancel();
@@ -313,6 +411,313 @@ class _MeetingVideoConferenceViewState
     });
   }
 
+  Future<void> _showAddParticipantsDialog() async {
+    final TextEditingController searchController = TextEditingController();
+    List<Map<String, dynamic>> searchResults = [];
+    bool isSearching = false;
+    bool isValidEmail = false;
+    String emailAddress = '';
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          bool _isValidEmail(String email) {
+            final emailRegex = RegExp(
+              r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+            );
+            return emailRegex.hasMatch(email);
+          }
+
+          Future<void> searchUsers(String query) async {
+            // Check if it's a valid email
+            final isEmail = _isValidEmail(query);
+            
+            if (query.length < 2) {
+              setDialogState(() {
+                searchResults = [];
+                isSearching = false;
+                isValidEmail = false;
+                emailAddress = '';
+              });
+              return;
+            }
+
+            setDialogState(() {
+              isSearching = true;
+              isValidEmail = isEmail;
+              emailAddress = isEmail ? query : '';
+            });
+
+            try {
+              final response = await ApiService.get('/people/list');
+              if (response.statusCode == 200) {
+                final users = response.data is List ? response.data as List : [];
+                final results = <Map<String, dynamic>>[];
+
+                for (final user in users) {
+                  final displayName = user['displayName'] ?? '';
+                  final atName = user['atName'] ?? '';
+                  final email = user['email'] ?? '';
+                  final uuid = user['uuid'] ?? '';
+
+                  if (displayName.toLowerCase().contains(query.toLowerCase()) ||
+                      atName.toLowerCase().contains(query.toLowerCase()) ||
+                      email.toLowerCase().contains(query.toLowerCase())) {
+                    results.add({
+                      'uuid': uuid,
+                      'displayName': displayName,
+                      'atName': atName,
+                      'email': email,
+                      'picture': user['picture'],
+                      'isOnline': user['isOnline'] ?? false,
+                    });
+                  }
+                }
+
+                setDialogState(() {
+                  searchResults = results;
+                  isSearching = false;
+                });
+              }
+            } catch (e) {
+              debugPrint('[AddParticipants] Search error: $e');
+              setDialogState(() => isSearching = false);
+            }
+          }
+
+          Future<void> sendEmailInvitation(String email) async {
+            try {
+              await ApiService.post(
+                '/api/meetings/${widget.meetingId}/invite-email',
+                data: {'email': email},
+              );
+              if (mounted) {
+                context.showSuccessSnackBar(
+                  'Invitation sent to $email',
+                );
+                Navigator.of(context).pop();
+              }
+            } catch (e) {
+              debugPrint('[AddParticipants] Error sending invitation: $e');
+              if (mounted) {
+                context.showErrorSnackBar('Failed to send invitation');
+              }
+            }
+          }
+
+          Future<void> addParticipant(Map<String, dynamic> user) async {
+            try {
+              await MeetingService().addParticipant(
+                widget.meetingId,
+                user['uuid'] as String,
+              );
+              
+              // Add to pending participants list if user is online
+              if (user['isOnline'] == true) {
+                setState(() {
+                  _pendingParticipants.add({
+                    'uuid': user['uuid'],
+                    'displayName': user['displayName'],
+                    'picture': user['picture'],
+                  });
+                });
+                // TODO: Emit socket event to notify the user
+                debugPrint('[AddParticipants] Sending call notification to online user: ${user['uuid']}');
+              }
+              
+              if (mounted) {
+                context.showSuccessSnackBar(
+                  '${user['displayName']} added to meeting',
+                );
+                Navigator.of(context).pop();
+              }
+            } catch (e) {
+              debugPrint('[AddParticipants] Error adding participant: $e');
+              if (mounted) {
+                context.showErrorSnackBar('Failed to add participant');
+              }
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Add Participants'),
+            content: SizedBox(
+              width: 400,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: searchController,
+                    decoration: const InputDecoration(
+                      labelText: 'Search by name, @name, or email',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: searchUsers,
+                  ),
+                  const SizedBox(height: 16),
+                  if (isSearching)
+                    const Center(child: CircularProgressIndicator())
+                  else if (isValidEmail && emailAddress.isNotEmpty)
+                    // Show email invitation option
+                    SizedBox(
+                      height: 300,
+                      child: Column(
+                        children: [
+                          ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                              child: Icon(
+                                Icons.email,
+                                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                              ),
+                            ),
+                            title: Text(emailAddress),
+                            subtitle: const Text('Send email invitation'),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.add),
+                              onPressed: () => sendEmailInvitation(emailAddress),
+                            ),
+                          ),
+                          if (searchResults.isNotEmpty) ...[
+                            const Divider(),
+                            const Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: Text(
+                                'Or select from users:',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            Expanded(
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                itemCount: searchResults.length,
+                                itemBuilder: (context, index) {
+                                  final user = searchResults[index];
+                                  final isOnline = user['isOnline'] == true;
+                                  return ListTile(
+                                    leading: Stack(
+                                      children: [
+                                        CircleAvatar(
+                                          child: Text(
+                                            (user['displayName'] as String)
+                                                .substring(0, 1)
+                                                .toUpperCase(),
+                                          ),
+                                        ),
+                                        if (isOnline)
+                                          Positioned(
+                                            right: 0,
+                                            bottom: 0,
+                                            child: Container(
+                                              width: 12,
+                                              height: 12,
+                                              decoration: BoxDecoration(
+                                                color: Colors.green,
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: Theme.of(context).colorScheme.surface,
+                                                  width: 2,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    title: Text(user['displayName'] as String),
+                                    subtitle: Text(
+                                      user['atName'] as String? ?? 
+                                      user['email'] as String? ?? '',
+                                    ),
+                                    trailing: IconButton(
+                                      icon: const Icon(Icons.add),
+                                      onPressed: () => addParticipant(user),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    )
+                  else if (searchResults.isNotEmpty)
+                    SizedBox(
+                      height: 300,
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: searchResults.length,
+                        itemBuilder: (context, index) {
+                          final user = searchResults[index];
+                          final isOnline = user['isOnline'] == true;
+                          return ListTile(
+                            leading: Stack(
+                              children: [
+                                CircleAvatar(
+                                  child: Text(
+                                    (user['displayName'] as String)
+                                        .substring(0, 1)
+                                        .toUpperCase(),
+                                  ),
+                                ),
+                                if (isOnline)
+                                  Positioned(
+                                    right: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      width: 12,
+                                      height: 12,
+                                      decoration: BoxDecoration(
+                                        color: Colors.green,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Theme.of(context).colorScheme.surface,
+                                          width: 2,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            title: Text(user['displayName'] as String),
+                            subtitle: Text(
+                              user['atName'] as String? ?? 
+                              user['email'] as String? ?? '',
+                            ),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.add),
+                              onPressed: () => addParticipant(user),
+                            ),
+                          );
+                        },
+                      ),
+                    )
+                  else if (searchController.text.length >= 2)
+                    const Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: Text('No users found'),
+                    )
+                  else
+                    const Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: Text('Enter at least 2 characters to search'),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -355,6 +760,12 @@ class _MeetingVideoConferenceViewState
                 ),
               ),
             ),
+          ),
+          // Add participants button
+          IconButton(
+            icon: const Icon(Icons.person_add),
+            onPressed: _showAddParticipantsDialog,
+            tooltip: 'Add Participants',
           ),
           // Leave button
           IconButton(
@@ -411,15 +822,22 @@ class _MeetingVideoConferenceViewState
 
     return Consumer<VideoConferenceService>(
       builder: (context, service, child) {
-        return VideoGridLayout(
-          room: service.room,
-          hasScreenShare: service.hasActiveScreenShare,
-          screenShareParticipantId: service.currentScreenShareParticipantId,
-          participantStates: _participantStates,
-          speakingNotifiers: _speakingNotifiers,
-          displayNameCache: _displayNameCache,
-          profilePictureCache: _profilePictureCache,
-          maxVisibleParticipants: _maxVisibleParticipants,
+        return Stack(
+          children: [
+            VideoGridLayout(
+              room: service.room,
+              hasScreenShare: service.hasActiveScreenShare,
+              screenShareParticipantId: service.currentScreenShareParticipantId,
+              participantStates: _participantStates,
+              speakingNotifiers: _speakingNotifiers,
+              displayNameCache: _displayNameCache,
+              profilePictureCache: _profilePictureCache,
+              maxVisibleParticipants: _maxVisibleParticipants,
+              pendingParticipants: _pendingParticipants,
+            ),
+            // Admission overlay for waiting guests
+            AdmissionOverlay(meetingId: widget.meetingId),
+          ],
         );
       },
     );

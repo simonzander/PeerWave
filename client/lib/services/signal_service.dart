@@ -63,6 +63,14 @@ class SignalService {
   // Key format: "type:channel" (e.g., "message:channel-uuid-456")
   final Map<String, List<Function(Map<String, dynamic>)>>
   _receiveItemChannelCallbacks = {};
+
+  // Meeting E2EE key exchange callbacks (via 1-to-1 Signal messages)
+  // Keyed by meeting ID to allow multiple meetings
+  final Map<String, Function(Map<String, dynamic>)>
+  _meetingE2EEKeyRequestCallbacks = {};
+  final Map<String, Function(Map<String, dynamic>)>
+  _meetingE2EEKeyResponseCallbacks = {};
+
   late PermanentIdentityKeyStore identityStore;
   late PermanentSessionStore sessionStore;
   late PermanentPreKeyStore preKeyStore;
@@ -2041,7 +2049,7 @@ class SignalService {
         );
 
         final reinforcementSuccess = await _forceServerKeyReinforcement();
-        
+
         if (reinforcementSuccess) {
           debugPrint(
             '[SIGNAL SERVICE][DEEP-VALIDATION] ✅ Auto-recovery completed - keys uploaded',
@@ -2151,7 +2159,7 @@ class SignalService {
         '[SIGNAL SERVICE][REINFORCEMENT] Reinforcement operation completed (flag cleared)',
       );
     }
-    
+
     return success;
   }
 
@@ -2401,6 +2409,39 @@ class SignalService {
         '[SIGNAL SERVICE] Removed all receiveItemChannel callbacks for $key',
       );
     }
+  }
+
+  /// Register callback for meeting E2EE key requests (via 1-to-1 Signal messages)
+  /// Called when someone in the meeting requests the E2EE key
+  void registerMeetingE2EEKeyRequestCallback(
+    String meetingId,
+    Function(Map<String, dynamic>) callback,
+  ) {
+    _meetingE2EEKeyRequestCallbacks[meetingId] = callback;
+    debugPrint(
+      '[SIGNAL SERVICE] Registered meeting E2EE key request callback for $meetingId',
+    );
+  }
+
+  /// Register callback for meeting E2EE key responses (via 1-to-1 Signal messages)
+  /// Called when someone sends us the E2EE key
+  void registerMeetingE2EEKeyResponseCallback(
+    String meetingId,
+    Function(Map<String, dynamic>) callback,
+  ) {
+    _meetingE2EEKeyResponseCallbacks[meetingId] = callback;
+    debugPrint(
+      '[SIGNAL SERVICE] Registered meeting E2EE key response callback for $meetingId',
+    );
+  }
+
+  /// Unregister meeting E2EE callbacks (call when leaving meeting)
+  void unregisterMeetingE2EECallbacks(String meetingId) {
+    _meetingE2EEKeyRequestCallbacks.remove(meetingId);
+    _meetingE2EEKeyResponseCallbacks.remove(meetingId);
+    debugPrint(
+      '[SIGNAL SERVICE] Unregistered meeting E2EE callbacks for $meetingId',
+    );
   }
 
   /// Reset service state on logout
@@ -2841,6 +2882,14 @@ class SignalService {
     } else if (type == 'delivery_receipt') {
       await _handleDeliveryReceipt(data);
       isSystemMessage = true;
+    } else if (type == 'meeting_e2ee_key_request') {
+      // Meeting E2EE key request via 1-to-1 Signal message
+      await _handleMeetingE2EEKeyRequest(item);
+      isSystemMessage = true;
+    } else if (type == 'meeting_e2ee_key_response') {
+      // Meeting E2EE key response via 1-to-1 Signal message
+      await _handleMeetingE2EEKeyResponse(item);
+      isSystemMessage = true;
     }
 
     // ✅ Update unread count for non-system messages (only 'message' and 'file' types)
@@ -3077,6 +3126,111 @@ class SignalService {
     } catch (e, stack) {
       debugPrint('[SIGNAL_SERVICE] ❌ Error handling read receipt: $e');
       debugPrint('[SIGNAL_SERVICE] Stack trace: $stack');
+    }
+  }
+
+  /// Handle meeting E2EE key request (via 1-to-1 Signal message)
+  /// Called when someone in the meeting requests the E2EE key from us
+  Future<void> _handleMeetingE2EEKeyRequest(Map<String, dynamic> item) async {
+    try {
+      debugPrint('[SIGNAL SERVICE] 📨 Meeting E2EE key REQUEST received');
+      debugPrint('[SIGNAL SERVICE] Item: $item');
+
+      // Parse the decrypted message content
+      final messageJson = jsonDecode(item['message'] as String);
+      final meetingId = messageJson['meetingId'] as String?;
+      final requesterId = messageJson['requesterId'] as String?;
+      final timestamp = messageJson['timestamp'] as int?;
+
+      debugPrint('[SIGNAL SERVICE] Meeting ID: $meetingId');
+      debugPrint('[SIGNAL SERVICE] Requester: $requesterId');
+      debugPrint('[SIGNAL SERVICE] Timestamp: $timestamp');
+
+      if (meetingId == null || requesterId == null) {
+        debugPrint(
+          '[SIGNAL SERVICE] ⚠️ Missing meetingId or requesterId in key request',
+        );
+        return;
+      }
+
+      // Trigger registered callback for this meeting
+      final callback = _meetingE2EEKeyRequestCallbacks[meetingId];
+      if (callback != null) {
+        callback({
+          'meetingId': meetingId,
+          'requesterId': requesterId,
+          'senderId': item['sender'],
+          'senderDeviceId': item['senderDeviceId'],
+          'timestamp': timestamp,
+        });
+        debugPrint(
+          '[SIGNAL SERVICE] ✓ Meeting E2EE key request callback triggered',
+        );
+      } else {
+        debugPrint(
+          '[SIGNAL SERVICE] ⚠️ No callback registered for meeting: $meetingId',
+        );
+      }
+    } catch (e, stack) {
+      debugPrint(
+        '[SIGNAL SERVICE] ❌ Error handling meeting E2EE key request: $e',
+      );
+      debugPrint('[SIGNAL SERVICE] Stack trace: $stack');
+    }
+  }
+
+  /// Handle meeting E2EE key response (via 1-to-1 Signal message)
+  /// Called when someone sends us the E2EE key for a meeting
+  Future<void> _handleMeetingE2EEKeyResponse(Map<String, dynamic> item) async {
+    try {
+      debugPrint('[SIGNAL SERVICE] 🔑 Meeting E2EE key RESPONSE received');
+      debugPrint('[SIGNAL SERVICE] Item: $item');
+
+      // Parse the decrypted message content
+      final messageJson = jsonDecode(item['message'] as String);
+      final meetingId = messageJson['meetingId'] as String?;
+      final encryptedKey = messageJson['encryptedKey'] as String?;
+      final timestamp = messageJson['timestamp'] as int?;
+      final targetUserId = messageJson['targetUserId'] as String?;
+
+      debugPrint('[SIGNAL SERVICE] Meeting ID: $meetingId');
+      debugPrint('[SIGNAL SERVICE] Target User: $targetUserId');
+      debugPrint('[SIGNAL SERVICE] Timestamp: $timestamp');
+      debugPrint(
+        '[SIGNAL SERVICE] Key Length: ${encryptedKey?.length ?? 0} chars (base64)',
+      );
+
+      if (meetingId == null || encryptedKey == null || timestamp == null) {
+        debugPrint(
+          '[SIGNAL SERVICE] ⚠️ Missing required fields in key response',
+        );
+        return;
+      }
+
+      // Trigger registered callback for this meeting
+      final callback = _meetingE2EEKeyResponseCallbacks[meetingId];
+      if (callback != null) {
+        callback({
+          'meetingId': meetingId,
+          'encryptedKey': encryptedKey,
+          'timestamp': timestamp,
+          'targetUserId': targetUserId,
+          'senderId': item['sender'],
+          'senderDeviceId': item['senderDeviceId'],
+        });
+        debugPrint(
+          '[SIGNAL SERVICE] ✓ Meeting E2EE key response callback triggered',
+        );
+      } else {
+        debugPrint(
+          '[SIGNAL SERVICE] ⚠️ No callback registered for meeting: $meetingId',
+        );
+      }
+    } catch (e, stack) {
+      debugPrint(
+        '[SIGNAL SERVICE] ❌ Error handling meeting E2EE key response: $e',
+      );
+      debugPrint('[SIGNAL SERVICE] Stack trace: $stack');
     }
   }
 
@@ -3651,6 +3805,10 @@ class SignalService {
       'fileKeyResponse',
       'senderKeyDistribution',
       'read_receipt', // Already handled separately
+      'meeting_e2ee_key_request', // Meeting E2EE key exchange - not stored
+      'meeting_e2ee_key_response', // Meeting E2EE key exchange - not stored
+      'video_e2ee_key_request', // Video channel E2EE key exchange - not stored
+      'video_e2ee_key_response', // Video channel E2EE key exchange - not stored
     };
 
     // Store sent message in local storage for persistence after refresh
@@ -4628,7 +4786,22 @@ class SignalService {
 
       debugPrint('[SIGNAL_SERVICE] Created sender key for group $groupId');
 
-      // Store sender key on server for backup/retrieval
+      // Check if this is a meeting or instant call
+      // Meetings and calls use 1:1 Signal sessions, not SenderKey protocol
+      final isMeeting = groupId.startsWith('mtg_') || groupId.startsWith('call_');
+      
+      if (isMeeting) {
+        debugPrint(
+          '[SIGNAL_SERVICE] Meeting/call detected ($groupId) - skipping server SenderKey storage',
+        );
+        debugPrint(
+          '[SIGNAL_SERVICE] Meetings use 1:1 Signal sessions for encryption, not group SenderKeys',
+        );
+        // Return early - no server storage or broadcast needed for meetings
+        return serialized;
+      }
+
+      // Store sender key on server for backup/retrieval (CHANNELS ONLY)
       // Skip if serialized is empty (key already existed)
       if (serialized.isNotEmpty) {
         try {
@@ -4638,7 +4811,7 @@ class SignalService {
             'senderKey': senderKeyBase64,
           });
           debugPrint(
-            '[SIGNAL_SERVICE] Stored sender key on server for group $groupId',
+            '[SIGNAL_SERVICE] Stored sender key on server for channel $groupId',
           );
         } catch (e) {
           debugPrint(
@@ -4648,7 +4821,7 @@ class SignalService {
         }
       }
 
-      // Broadcast distribution message to all group members
+      // Broadcast distribution message to all group members (CHANNELS ONLY)
       // Skip if serialized is empty (key already existed)
       if (broadcastDistribution && serialized.isNotEmpty) {
         try {
@@ -4660,7 +4833,7 @@ class SignalService {
             'distributionMessage': base64Encode(serialized),
           });
           debugPrint(
-            '[SIGNAL_SERVICE] ✓ Sender key distribution message broadcast to group',
+            '[SIGNAL_SERVICE] ✓ Sender key distribution message broadcast to channel',
           );
         } catch (e) {
           debugPrint(
@@ -4699,6 +4872,155 @@ class SignalService {
     debugPrint(
       '[SIGNAL_SERVICE] Processed sender key from $senderId:$senderDeviceId for group $groupId',
     );
+  }
+
+  /// Distribute meeting sender key to external guest
+  ///
+  /// Establishes Signal session with guest and sends encrypted sender key
+  /// so they can decrypt group messages (receive-only, cannot create keys)
+  Future<void> distributeKeyToExternalGuest({
+    required String guestSessionId,
+    required String meetingId,
+  }) async {
+    try {
+      debugPrint(
+        '[SIGNAL] Distributing sender key to guest $guestSessionId for meeting $meetingId',
+      );
+
+      if (_currentUserId == null || _currentDeviceId == null) {
+        throw Exception('User info not set. Call setCurrentUserInfo first.');
+      }
+
+      // 1. Fetch guest's Signal keys
+      final response = await ApiService.get(
+        '/api/meetings/external/keys/$guestSessionId',
+      );
+      final keys = response.data as Map<String, dynamic>;
+
+      final identityKeyPublic = keys['identityKeyPublic'] as String?;
+      final signedPreKeyData = keys['signedPreKey'];
+      final preKeyData = keys['preKey'];
+
+      if (identityKeyPublic == null ||
+          signedPreKeyData == null ||
+          preKeyData == null) {
+        throw Exception('Incomplete keys for guest $guestSessionId');
+      }
+
+      // Parse signed pre-key
+      final signedPreKey = signedPreKeyData is String
+          ? jsonDecode(signedPreKeyData)
+          : signedPreKeyData as Map<String, dynamic>;
+
+      final preKey = preKeyData is String
+          ? jsonDecode(preKeyData)
+          : preKeyData as Map<String, dynamic>;
+
+      debugPrint('[SIGNAL] Fetched guest keys - preKeyId: ${preKey['id']}');
+
+      // 2. Build PreKeyBundle
+      final guestAddress = SignalProtocolAddress(
+        guestSessionId,
+        1,
+      ); // Device 1 for guests
+
+      final preKeyBytes = base64Decode(preKey['publicKey'] as String);
+      final signedPreKeyBytes = base64Decode(
+        signedPreKey['publicKey'] as String,
+      );
+      final identityKeyBytes = base64Decode(identityKeyPublic);
+
+      final preKeyBundle = PreKeyBundle(
+        0, // registrationId not used for external guests
+        1, // deviceId
+        preKey['id'] as int,
+        Curve.decodePoint(preKeyBytes, 0),
+        signedPreKey['id'] as int,
+        Curve.decodePoint(signedPreKeyBytes, 0),
+        base64Decode(signedPreKey['signature'] as String? ?? ''),
+        IdentityKey(Curve.decodePoint(identityKeyBytes, 0)),
+      );
+
+      debugPrint('[SIGNAL] Built PreKeyBundle for guest');
+
+      // 3. Establish session
+      final sessionBuilder = SessionBuilder(
+        sessionStore,
+        preKeyStore,
+        signedPreKeyStore,
+        identityStore,
+        guestAddress,
+      );
+
+      await sessionBuilder.processPreKeyBundle(preKeyBundle);
+      debugPrint('[SIGNAL] Session established with guest');
+
+      // 4. Consume the pre-key on server
+      try {
+        await ApiService.post(
+          '/api/meetings/external/session/$guestSessionId/consume-prekey',
+          data: {'pre_key_id': preKey['id']},
+        );
+        debugPrint('[SIGNAL] Consumed pre-key ${preKey['id']}');
+      } catch (e) {
+        debugPrint('[SIGNAL] Warning: Failed to consume pre-key: $e');
+        // Continue - session is established locally
+      }
+
+      // 5. Get meeting sender key
+      final senderAddress = SignalProtocolAddress(
+        _currentUserId!,
+        _currentDeviceId!,
+      );
+      final senderKeyName = SenderKeyName(meetingId, senderAddress);
+
+      final hasSenderKey = await senderKeyStore.containsSenderKey(
+        senderKeyName,
+      );
+      if (!hasSenderKey) {
+        throw Exception(
+          'No sender key found for meeting $meetingId. Create sender key first.',
+        );
+      }
+
+      final senderKeyRecord = await senderKeyStore.loadSenderKey(senderKeyName);
+      final senderKeyBytes = senderKeyRecord.serialize();
+      debugPrint(
+        '[SIGNAL] Loaded sender key, size: ${senderKeyBytes.length} bytes',
+      );
+
+      // 6. Encrypt sender key for guest
+      final sessionCipher = SessionCipher(
+        sessionStore,
+        preKeyStore,
+        signedPreKeyStore,
+        identityStore,
+        guestAddress,
+      );
+
+      final encryptedSenderKey = await sessionCipher.encrypt(senderKeyBytes);
+      final encryptedBase64 = base64Encode(encryptedSenderKey.serialize());
+
+      debugPrint(
+        '[SIGNAL] Encrypted sender key, type: ${encryptedSenderKey.getType()}',
+      );
+
+      // 7. Send via Socket.IO
+      SocketService().emit('meeting:distributeSenderKeyToGuest', {
+        'meetingId': meetingId,
+        'guestSessionId': guestSessionId,
+        'senderDeviceId': _currentDeviceId,
+        'encryptedSenderKey': encryptedBase64,
+        'messageType': encryptedSenderKey
+            .getType(), // PreKey or Whisper message
+      });
+
+      debugPrint('[SIGNAL] Encrypted sender key sent to guest via Socket.IO');
+    } catch (e, stack) {
+      debugPrint('[SIGNAL] Error distributing key to guest: $e');
+      debugPrint('[SIGNAL] Stack trace: $stack');
+      rethrow;
+    }
   }
 
   /// Encrypt message for group using sender key
