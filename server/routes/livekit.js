@@ -308,7 +308,7 @@ router.post('/guest-token', async (req, res) => {
     // Load LiveKit SDK dynamically
     const AccessToken = await livekitWrapper.getAccessToken();
     const meetingService = require('../services/meetingService');
-    const db = require('../db');
+    const { ExternalSession } = require('../db/model');
     
     const { meetingId, sessionId } = req.body;
 
@@ -319,32 +319,38 @@ router.post('/guest-token', async (req, res) => {
     console.log(`[LiveKit Guest] Token request: sessionId=${sessionId}, meetingId=${meetingId}`);
 
     // 1. Validate guest session exists and get participant info
-    const guestResult = await db.query(
-      `SELECT emp.*, m.title as meeting_title, m.livekit_room_name
-       FROM external_meeting_participants emp
-       LEFT JOIN meetings m ON m.meeting_id = emp.meeting_id
-       WHERE emp.session_id = $1 AND emp.meeting_id = $2`,
-      [sessionId, meetingId]
-    );
+    const guest = await ExternalSession.findOne({
+      where: { 
+        session_id: sessionId,
+        meeting_id: meetingId
+      }
+    });
 
-    if (guestResult.rows.length === 0) {
+    if (!guest) {
       console.log('[LiveKit Guest] Invalid session or meeting');
       return res.status(403).json({ error: 'Invalid guest session' });
     }
 
-    const guest = guestResult.rows[0];
-
     // 2. Check if participant is admitted
-    if (guest.status !== 'admitted') {
-      console.log('[LiveKit Guest] Guest not admitted:', guest.status);
+    if (guest.admitted !== true) {
+      console.log('[LiveKit Guest] Guest not admitted:', guest.admitted);
       return res.status(403).json({ error: 'Guest not admitted to meeting' });
+    }
+
+    // 3. Get meeting details via meetingService
+    const meeting = await meetingService.getMeeting(meetingId);
+
+    if (!meeting) {
+      console.log('[LiveKit Guest] Meeting not found:', meetingId);
+      return res.status(404).json({ error: 'Meeting not found' });
     }
 
     console.log(`[LiveKit Guest] Guest authorized:`, {
       sessionId,
       displayName: guest.display_name,
-      status: guest.status,
-      meetingId
+      admitted: guest.admitted,
+      meetingId,
+      meetingTitle: meeting.title
     });
 
     // Get LiveKit configuration from environment
@@ -360,13 +366,13 @@ router.post('/guest-token', async (req, res) => {
         sessionId,
         displayName: guest.display_name,
         meetingId,
-        meetingTitle: guest.meeting_title,
+        meetingTitle: meeting.title,
         isGuest: true
       })
     });
 
     // Room name is either custom or the meeting ID
-    const roomName = guest.livekit_room_name || meetingId;
+    const roomName = meeting.livekit_room_name || meetingId;
 
     // Grant guest permissions
     token.addGrant({
