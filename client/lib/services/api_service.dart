@@ -9,7 +9,7 @@ import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
 import 'session_auth_service.dart';
 import 'server_config_web.dart'
     if (dart.library.io) 'server_config_native.dart';
-import 'clientid_native.dart' if (dart.library.js) 'clientid_web_stub.dart';
+import 'clientid_native.dart' if (dart.library.js) 'clientid_web.dart';
 import 'server_connection_service.dart';
 
 /// Callback for handling 401 Unauthorized responses

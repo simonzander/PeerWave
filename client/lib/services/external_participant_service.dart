@@ -110,35 +110,40 @@ class ExternalParticipantService {
     });
 
     debugPrint('[EXTERNAL SERVICE] Socket.IO listeners initialized');
-    debugPrint('[EXTERNAL SERVICE] Note: Meeting-specific listeners (guest:request_e2ee_key:meetingId) are registered per-meeting');
+    debugPrint('[EXTERNAL SERVICE] Note: DEPRECATED plaintext listeners are disabled - use Signal Protocol');
   }
 
-  /// Register meeting-specific E2EE key request listener
-  /// Call this when joining a meeting to listen for guest E2EE key requests
+  /// DEPRECATED: Register meeting-specific E2EE key request listener - DO NOT USE
+  /// This uses insecure plaintext Socket.IO events. Use Signal Protocol instead.
+  @Deprecated('Use Signal Protocol encrypted message handlers instead')
   void registerMeetingE2EEListener(String meetingId) {
-    final eventName = 'guest:request_e2ee_key:$meetingId';
-    
-    debugPrint('[EXTERNAL SERVICE] 🎧 Registering listener for $eventName');
-    debugPrint('[EXTERNAL SERVICE] Socket connected: ${_socketService.isConnected}');
-    
-    _socketService.registerListener(eventName, (data) {
-      debugPrint('[EXTERNAL SERVICE] 🔔 Received $eventName: $data');
-      try {
-        _guestE2EEKeyRequestController.add(data as Map<String, dynamic>);
-      } catch (e) {
-        debugPrint('[EXTERNAL SERVICE] Error parsing $eventName: $e');
-      }
-    });
-    
-    debugPrint('[EXTERNAL SERVICE] ✅ Listener registered for $eventName');
+    debugPrint('[EXTERNAL SERVICE] ⚠️ DEPRECATED: registerMeetingE2EEListener called - this is insecure!');
+    debugPrint('[EXTERNAL SERVICE] ⚠️ Use Signal Protocol guest:meeting_e2ee_key_request handler instead');
+    // COMMENTED OUT - DO NOT USE PLAINTEXT KEY EXCHANGE
+    // final eventName = 'guest:request_e2ee_key:$meetingId';
+    // 
+    // debugPrint('[EXTERNAL SERVICE] 🎧 Registering listener for $eventName');
+    // debugPrint('[EXTERNAL SERVICE] Socket connected: ${_socketService.isConnected}');
+    // 
+    // _socketService.registerListener(eventName, (data) {
+    //   debugPrint('[EXTERNAL SERVICE] 🔔 Received $eventName: $data');
+    //   try {
+    //     _guestE2EEKeyRequestController.add(data as Map<String, dynamic>);
+    //   } catch (e) {
+    //     debugPrint('[EXTERNAL SERVICE] Error parsing $eventName: $e');
+    //   }
+    // });
+    // 
+    // debugPrint('[EXTERNAL SERVICE] ✅ Listener registered for $eventName');
   }
 
-  /// Unregister meeting-specific E2EE key request listener
+  /// DEPRECATED: Unregister meeting-specific E2EE key request listener - DO NOT USE
+  @Deprecated('Use Signal Protocol encrypted message handlers instead')
   void unregisterMeetingE2EEListener(String meetingId) {
-    final eventName = 'guest:request_e2ee_key:$meetingId';
-    // Note: Socket.IO client doesn't support removing all listeners for an event
-    // The listener will remain but won't affect other meetings
-    debugPrint('[EXTERNAL SERVICE] Meeting E2EE listener for $eventName will be cleaned up on disconnect');
+    debugPrint('[EXTERNAL SERVICE] ⚠️ DEPRECATED: unregisterMeetingE2EEListener called');
+    // COMMENTED OUT - NO LONGER NEEDED
+    // final eventName = 'guest:request_e2ee_key:$meetingId';
+    // debugPrint('[EXTERNAL SERVICE] Meeting E2EE listener for $eventName will be cleaned up on disconnect');
   }
 
   /// Dispose resources

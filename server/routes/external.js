@@ -184,6 +184,84 @@ router.get('/meetings/external/keys/:sessionId', async (req, res) => {
 });
 
 /**
+ * Get participant's Signal Protocol keybundle (for guest → participant E2EE)
+ * GET /api/meetings/external/:sessionId/participant/:userId/:deviceId/keys
+ * Used by guest to fetch authenticated participant's Signal keys
+ * Requires valid session ID
+ */
+router.get('/meetings/external/:sessionId/participant/:userId/:deviceId/keys', async (req, res) => {
+  try {
+    const { sessionId, userId, deviceId } = req.params;
+
+    // Validate session exists
+    const session = await externalParticipantService.getSession(sessionId);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Check rate limit (3 fetches/min per participant per guest)
+    const rateLimitKey = `${session.meeting_id}:${userId}:${deviceId}`;
+    const allowed = await externalParticipantService.checkKeybundleRateLimit(rateLimitKey);
+    if (!allowed) {
+      return res.status(429).json({ 
+        error: 'Rate limit exceeded',
+        message: 'Maximum 3 keybundle fetches per minute per participant'
+      });
+    }
+
+    // Get participant's keybundle from database
+    const keybundle = await externalParticipantService.getParticipantKeybundle(
+      session.meeting_id,
+      userId,
+      deviceId
+    );
+
+    if (!keybundle) {
+      return res.status(404).json({ error: 'Participant keys not found' });
+    }
+
+    res.json(keybundle);
+  } catch (error) {
+    console.error('[EXTERNAL] Error getting participant keybundle:', error);
+    res.status(500).json({ error: 'Failed to get participant keys' });
+  }
+});
+
+/**
+ * Get guest's Signal Protocol keybundle (for participant → guest E2EE)
+ * GET /api/meetings/:meetingId/external/:sessionId/keys
+ * Used by authenticated participant to fetch guest's Signal keys
+ * Requires authentication (called by authenticated users only)
+ */
+router.get('/meetings/:meetingId/external/:sessionId/keys', async (req, res) => {
+  try {
+    const { meetingId, sessionId } = req.params;
+
+    // Validate session exists and belongs to meeting
+    const session = await externalParticipantService.getSession(sessionId);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    if (session.meeting_id !== meetingId) {
+      return res.status(403).json({ error: 'Session does not belong to this meeting' });
+    }
+
+    // Get guest's keybundle and consume one pre-key
+    const keybundle = await externalParticipantService.getGuestKeybundle(sessionId);
+
+    if (!keybundle) {
+      return res.status(404).json({ error: 'Guest keys not found' });
+    }
+
+    res.json(keybundle);
+  } catch (error) {
+    console.error('[EXTERNAL] Error getting guest keybundle:', error);
+    res.status(500).json({ error: 'Failed to get guest keys' });
+  }
+});
+
+/**
  * Get LiveKit room participants (authenticated users only)
  * GET /api/meetings/:meetingId/livekit-participants?token=xxx
  * Requires valid guest invitation token

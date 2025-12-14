@@ -607,9 +607,13 @@ class SignalService {
       Uint8List.fromList(utf8.encode('Hello Mixin🤣')),
     );
     // ignore: avoid_debugPrint
-    debugPrint('Ciphertext: $ciphertext');
+    if (kDebugMode) {
+      debugPrint('Ciphertext: $ciphertext');
+    }
     // ignore: avoid_debugPrint
-    debugPrint('Ciphertext serialized: ${ciphertext.serialize()}');
+    if (kDebugMode) {
+      debugPrint('Ciphertext serialized: ${ciphertext.serialize()}');
+    }
     //deliver(ciphertext);
 
     // Bob decrypts using his real stores (not a new empty store!)
@@ -626,7 +630,9 @@ class SignalService {
         ciphertext as PreKeySignalMessage,
         (plaintext) {
           // ignore: avoid_print
-          debugPrint('Bob decrypted: ${utf8.decode(plaintext)}');
+          if (kDebugMode) {
+            debugPrint('Bob decrypted: ${utf8.decode(plaintext)}');
+          }
         },
       );
     } else if (ciphertext.getType() == CiphertextMessage.whisperType) {
@@ -634,7 +640,9 @@ class SignalService {
         ciphertext as SignalMessage,
       );
       // ignore: avoid_print
-      debugPrint('Bob decrypted: ${utf8.decode(plaintext)}');
+      if (kDebugMode) {
+        debugPrint('Bob decrypted: ${utf8.decode(plaintext)}');
+      }
     }
   }
 
@@ -6364,6 +6372,331 @@ class SignalService {
       rethrow;
     } finally {
       _handlingIdentityFor.remove(addressKey);
+    }
+  }
+
+  /// ==========================================================================
+  /// GUEST E2EE SUPPORT - Signal Protocol for External Participants
+  /// ==========================================================================
+
+  /// Send encrypted Signal item to a guest participant (participant → guest)
+  /// Uses participant's authenticated SignalService to encrypt message
+  /// Routes through Socket.IO 'participant:meeting_e2ee_key_response' event
+  Future<void> sendItemToGuest({
+    required String meetingId,
+    required String guestSessionId,
+    required String type,
+    required dynamic payload,
+  }) async {
+    try {
+      debugPrint('[SIGNAL SERVICE] Sending Signal item to guest: $guestSessionId');
+
+      // Get or create Signal session with guest
+      final session = await _getOrCreateGuestSession(
+        meetingId: meetingId,
+        guestSessionId: guestSessionId,
+      );
+
+      // Prepare payload for encryption
+      String payloadString;
+      if (payload is String) {
+        payloadString = payload;
+      } else {
+        payloadString = jsonEncode(payload);
+      }
+
+      // Encrypt using Signal Protocol
+      final ciphertext = await _encryptForGuest(
+        session: session,
+        plaintext: payloadString,
+      );
+
+      if (kDebugMode) {
+        debugPrint('[SIGNAL SERVICE] 🔒 Encrypted ${payloadString.length} bytes for guest');
+      }
+
+      // Emit via Socket.IO to guest
+      final messageData = {
+        'guest_session_id': guestSessionId, // Server expects snake_case
+        'meeting_id': meetingId, // Server expects snake_case
+        'type': type,
+        'ciphertext': ciphertext['ciphertext'],
+        'messageType': ciphertext['type'], // 3 = PreKey, 1 = Signal
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+
+      SocketService().emit('participant:meeting_e2ee_key_response', messageData);
+      debugPrint('[SIGNAL SERVICE] ✓ Sent encrypted item to guest via Signal');
+    } catch (e) {
+      debugPrint('[SIGNAL SERVICE] ✗ Error sending item to guest: $e');
+      rethrow;
+    }
+  }
+
+  /// Receive encrypted Signal item from authenticated participant (participant → guest)
+  /// Decrypts using guest's sessionStorage-based Signal session
+  /// Called from external_guest_socket_service.dart listener
+  Future<Map<String, dynamic>> receiveItemFromParticipant({
+    required String meetingId,
+    required String participantUserId,
+    required int participantDeviceId,
+    required String ciphertextBase64,
+    required int messageType,
+    required String type,
+  }) async {
+    try {
+      debugPrint('[SIGNAL SERVICE] Receiving Signal item from participant: $participantUserId:$participantDeviceId');
+
+      // Get or create Signal session with participant
+      final session = await _getOrCreateParticipantSession(
+        meetingId: meetingId,
+        participantUserId: participantUserId,
+        participantDeviceId: participantDeviceId,
+      );
+
+      // Decrypt using Signal Protocol
+      final plaintext = await _decryptFromParticipant(
+        session: session,
+        ciphertextBase64: ciphertextBase64,
+        messageType: messageType,
+      );
+
+      if (kDebugMode) {
+        debugPrint('[SIGNAL SERVICE] 🔓 Decrypted ${plaintext.length} bytes from participant');
+      }
+
+      // Parse and return decrypted data
+      final decryptedData = jsonDecode(plaintext);
+      return {
+        'type': type,
+        'payload': decryptedData,
+        'sender': participantUserId,
+        'senderDeviceId': participantDeviceId,
+      };
+    } catch (e) {
+      debugPrint('[SIGNAL SERVICE] ✗ Error receiving item from participant: $e');
+      rethrow;
+    }
+  }
+
+  /// Get or create Signal session with guest (for participant → guest encryption)
+  /// Fetches guest's keybundle from server and establishes session
+  Future<SignalProtocolAddress> _getOrCreateGuestSession({
+    required String meetingId,
+    required String guestSessionId,
+  }) async {
+    // Create address for guest (using session ID as "user ID")
+    final address = SignalProtocolAddress('guest_$guestSessionId', 0);
+
+    // Check if session already exists
+    if (await sessionStore.containsSession(address)) {
+      debugPrint('[SIGNAL SERVICE] ✓ Using existing guest session: $guestSessionId');
+      return address;
+    }
+
+    debugPrint('[SIGNAL SERVICE] Creating new guest session, fetching keybundle...');
+
+    // Fetch guest's Signal keybundle from server
+    final response = await ApiService.get(
+      '/api/meetings/$meetingId/external/$guestSessionId/keys',
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to fetch guest keybundle: ${response.statusCode}');
+    }
+
+    final keybundle = response.data is String
+        ? jsonDecode(response.data)
+        : response.data;
+
+    // Build PreKeyBundle
+    final identityKey = IdentityKey(
+      Curve.decodePoint(
+        Uint8List.fromList(base64Decode(keybundle['identity_key'])),
+        0,
+      ),
+    );
+
+    final signedPreKey = keybundle['signed_pre_key'];
+    final oneTimePreKey = keybundle['one_time_pre_key'];
+
+    final bundle = PreKeyBundle(
+      0, // Registration ID (not used for guests)
+      0, // Device ID
+      oneTimePreKey != null ? oneTimePreKey['keyId'] : null,
+      oneTimePreKey != null
+          ? Curve.decodePoint(
+              Uint8List.fromList(base64Decode(oneTimePreKey['publicKey'])),
+              0,
+            )
+          : null,
+      signedPreKey['keyId'],
+      Curve.decodePoint(
+        Uint8List.fromList(base64Decode(signedPreKey['publicKey'])),
+        0,
+      ),
+      Uint8List.fromList(base64Decode(signedPreKey['signature'])),
+      identityKey,
+    );
+
+    // Process bundle to create session
+    final sessionBuilder = SessionBuilder(
+      sessionStore,
+      preKeyStore,
+      signedPreKeyStore,
+      identityStore,
+      address,
+    );
+
+    await sessionBuilder.processPreKeyBundle(bundle);
+    debugPrint('[SIGNAL SERVICE] ✓ Created new guest session: $guestSessionId');
+
+    return address;
+  }
+
+  /// Get or create Signal session with participant (for guest → participant encryption)
+  /// Fetches participant's keybundle from server and establishes session
+  Future<SignalProtocolAddress> _getOrCreateParticipantSession({
+    required String meetingId,
+    required String participantUserId,
+    required int participantDeviceId,
+  }) async {
+    // Create address for participant
+    final address = SignalProtocolAddress(participantUserId, participantDeviceId);
+
+    // Check if session already exists
+    if (await sessionStore.containsSession(address)) {
+      debugPrint('[SIGNAL SERVICE] ✓ Using existing participant session: $participantUserId:$participantDeviceId');
+      return address;
+    }
+
+    debugPrint('[SIGNAL SERVICE] Creating new participant session, fetching keybundle...');
+
+    // For guests: we need sessionStorage-based fetch since we don't have authentication
+    // The external_guest_socket_service.dart will need to inject sessionId/token
+    final sessionId = ''; // TODO: Get from sessionStorage or ExternalParticipantService
+    final response = await ApiService.get(
+      '/api/meetings/external/$sessionId/participant/$participantUserId/$participantDeviceId/keys',
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to fetch participant keybundle: ${response.statusCode}');
+    }
+
+    final keybundle = response.data is String
+        ? jsonDecode(response.data)
+        : response.data;
+
+    // Build PreKeyBundle
+    final identityKey = IdentityKey(
+      Curve.decodePoint(
+        Uint8List.fromList(base64Decode(keybundle['identity_key'])),
+        0,
+      ),
+    );
+
+    final signedPreKey = keybundle['signed_pre_key'];
+    final oneTimePreKey = keybundle['one_time_pre_key'];
+
+    final bundle = PreKeyBundle(
+      0, // Registration ID
+      participantDeviceId,
+      oneTimePreKey != null ? oneTimePreKey['keyId'] : null,
+      oneTimePreKey != null
+          ? Curve.decodePoint(
+              Uint8List.fromList(base64Decode(oneTimePreKey['publicKey'])),
+              0,
+            )
+          : null,
+      signedPreKey['keyId'],
+      Curve.decodePoint(
+        Uint8List.fromList(base64Decode(signedPreKey['publicKey'])),
+        0,
+      ),
+      Uint8List.fromList(base64Decode(signedPreKey['signature'])),
+      identityKey,
+    );
+
+    // Process bundle to create session
+    final sessionBuilder = SessionBuilder(
+      sessionStore,
+      preKeyStore,
+      signedPreKeyStore,
+      identityStore,
+      address,
+    );
+
+    await sessionBuilder.processPreKeyBundle(bundle);
+    debugPrint('[SIGNAL SERVICE] ✓ Created new participant session: $participantUserId:$participantDeviceId');
+
+    return address;
+  }
+
+  /// Encrypt message for guest using Signal Protocol
+  Future<Map<String, dynamic>> _encryptForGuest({
+    required SignalProtocolAddress session,
+    required String plaintext,
+  }) async {
+    final sessionCipher = SessionCipher(
+      sessionStore,
+      preKeyStore,
+      signedPreKeyStore,
+      identityStore,
+      session,
+    );
+
+    final ciphertext = await sessionCipher.encrypt(
+      Uint8List.fromList(utf8.encode(plaintext)),
+    );
+
+    return {
+      'ciphertext': base64Encode(ciphertext.serialize()),
+      'type': ciphertext.getType(), // 3 = PreKeySignalMessage, 1 = SignalMessage
+    };
+  }
+
+  /// Decrypt message from participant using Signal Protocol
+  Future<String> _decryptFromParticipant({
+    required SignalProtocolAddress session,
+    required String ciphertextBase64,
+    required int messageType,
+  }) async {
+    final sessionCipher = SessionCipher(
+      sessionStore,
+      preKeyStore,
+      signedPreKeyStore,
+      identityStore,
+      session,
+    );
+
+    final ciphertextBytes = base64Decode(ciphertextBase64);
+    Uint8List plaintext;
+
+    if (messageType == 3) {
+      // PreKeySignalMessage
+      final preKeyMessage = PreKeySignalMessage(ciphertextBytes);
+      plaintext = await sessionCipher.decrypt(preKeyMessage);
+    } else {
+      // SignalMessage
+      final signalMessage = SignalMessage.fromSerialized(ciphertextBytes);
+      plaintext = await sessionCipher.decryptFromSignal(signalMessage);
+    }
+
+    return utf8.decode(plaintext);
+  }
+
+  /// Clear guest Signal sessions when meeting ends (security cleanup)
+  Future<void> clearGuestSessions(String meetingId) async {
+    try {
+      // Delete all sessions with addresses starting with "guest_"
+      final allSessions = await sessionStore.getSubDeviceSessions('guest_');
+      for (final deviceId in allSessions) {
+        final address = SignalProtocolAddress('guest_', deviceId);
+        await sessionStore.deleteSession(address);
+      }
+      debugPrint('[SIGNAL SERVICE] ✓ Cleared all guest sessions for meeting: $meetingId');
+    } catch (e) {
+      debugPrint('[SIGNAL SERVICE] ✗ Error clearing guest sessions: $e');
     }
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:async';
+import 'dart:typed_data';
 import '../utils/html_stub.dart' if (dart.library.html) 'dart:html' as html;
 import 'dart:convert';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart' as signal;
@@ -91,6 +92,12 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
   Map<String, bool> _keyExchangeStatus = {}; // userId -> success/failure
   Timer? _keyExchangeTimeout;
   final Set<String> _receivedKeyResponses = {};
+
+  // === Signal Protocol Stores (sessionStorage-based for guests) ===
+  signal.InMemorySessionStore? _guestSessionStore;
+  signal.InMemoryPreKeyStore? _guestPreKeyStore;
+  signal.InMemorySignedPreKeyStore? _guestSignedPreKeyStore;
+  signal.InMemoryIdentityKeyStore? _guestIdentityStore;
 
   // === Admission Request ===
   DateTime? _lastAdmissionRequest;
@@ -308,16 +315,14 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     );
     final signedPreKey = signal.generateSignedPreKey(identityKeyPair, 1);
 
+    // Store the serialized record for later reconstruction
     final signedPreKeyData = {
-      'id': 1,
+      'keyId': 1, // Use 'keyId' to match server format
+      'serialized': base64Encode(signedPreKey.serialize()), // Store serialized record
       'publicKey': base64Encode(
         signedPreKey.getKeyPair().publicKey.serialize(),
       ),
-      'privateKey': base64Encode(
-        signedPreKey.getKeyPair().privateKey.serialize(),
-      ),
       'signature': base64Encode(signedPreKey.signature),
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
     };
     storage['external_signed_pre_key'] = jsonEncode(signedPreKeyData);
   }
@@ -329,9 +334,9 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
 
     final preKeysJson = preKeys.map((pk) {
       return {
-        'id': pk.id,
+        'keyId': pk.id, // Use 'keyId' for consistency
+        'serialized': base64Encode(pk.serialize()), // Store serialized for reconstruction
         'publicKey': base64Encode(pk.getKeyPair().publicKey.serialize()),
-        'privateKey': base64Encode(pk.getKeyPair().privateKey.serialize()),
       };
     }).toList();
 
@@ -386,6 +391,7 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
       storage['external_session_id'] = session.sessionId;
       storage['external_meeting_id'] = session.meetingId;
       storage['external_display_name'] = session.displayName;
+      storage['external_is_external'] = 'true';
 
       setState(() {
         _session = session;
@@ -414,10 +420,11 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
         meetingId: _meetingId!,
       );
 
-      // Listen for participant E2EE key responses (meeting-specific event)
-      _guestSocket.onParticipantE2EEKeyForMeeting(_meetingId!, (data) {
-        _handleParticipantKeyResponse(data);
+      // Signal Protocol encrypted E2EE key response listener
+      _guestSocket.onParticipantE2EEKeySignal((data) async {
+        await _handleSignalE2EEKeyResponse(data);
       });
+      debugPrint('[GuestPreJoin] ✓ Registered Signal Protocol E2EE key listener');
 
       _guestSocket.onAdmissionGranted((data) {
         debugPrint('[GuestPreJoin] Admission granted!');
@@ -518,7 +525,7 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
   // KEY EXCHANGE
   // ========================================
 
-  void _startKeyExchange() {
+  void _startKeyExchange() async {
     _transitionTo(GuestFlowState.keyExchange);
 
     // Initialize key exchange status
@@ -531,11 +538,18 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
       }
     }
 
-    // Request E2EE key from all participants
-    final displayName = _nameController.text.trim().isNotEmpty
-        ? _nameController.text.trim()
-        : 'Guest';
-    _guestSocket.requestE2EEKey(displayName);
+    // Signal Protocol E2EE key request
+    try {
+      await _sendSignalE2EEKeyRequest();
+      debugPrint('[GuestPreJoin] ✓ Signal Protocol E2EE key request sent');
+    } catch (e) {
+      debugPrint('[GuestPreJoin] ✗ Failed to send Signal E2EE key request: $e');
+      setState(() {
+        _errorMessage = 'Failed to request E2EE keys: $e';
+      });
+      _transitionTo(GuestFlowState.keyExchangeFailed);
+      return;
+    }
 
     // Set 30-second timeout
     _keyExchangeTimeout = Timer(const Duration(seconds: 30), () {
@@ -543,6 +557,369 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     });
   }
 
+  // ========================================
+  // SIGNAL PROTOCOL E2EE KEY EXCHANGE
+  // ========================================
+
+  /// Send Signal Protocol encrypted E2EE key request to first participant
+  Future<void> _sendSignalE2EEKeyRequest() async {
+    if (!kIsWeb) {
+      throw Exception('Signal Protocol E2EE is only supported on web');
+    }
+
+    if (_participants.isEmpty) {
+      throw Exception('No participants available for key exchange');
+    }
+
+    // Get first participant
+    final firstParticipant = _participants.first;
+    final participantUserId = firstParticipant['userId'] ?? firstParticipant['user_id'];
+    
+    // Parse device_id - server returns it as int
+    final deviceIdRaw = firstParticipant['deviceId'] ?? firstParticipant['device_id'];
+    final participantDeviceId = (deviceIdRaw is int) ? deviceIdRaw : 
+                                 (deviceIdRaw is String) ? int.tryParse(deviceIdRaw) ?? 0 : 
+                                 0;
+
+    if (participantUserId == null) {
+      throw Exception('Participant userId is null');
+    }
+
+    debugPrint('[GuestPreJoin] Participant data: ${firstParticipant.toString()}');
+    debugPrint('[GuestPreJoin] Requesting E2EE key from $participantUserId:$participantDeviceId');
+
+    // Fetch participant's Signal keybundle
+    final keybundle = await _fetchParticipantKeybundle(participantUserId, participantDeviceId);
+
+    // Establish Signal session with participant
+    final session = await _establishSignalSession(
+      participantUserId: participantUserId,
+      participantDeviceId: participantDeviceId,
+      keybundle: keybundle,
+    );
+
+    // Create request payload
+    final requestPayload = jsonEncode({
+      'requesterId': _sessionId,
+      'meetingId': _meetingId,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+
+    // Encrypt request with Signal Protocol
+    final encrypted = await _encryptWithSignal(session, requestPayload);
+
+    // Send Signal-encrypted request via Socket.IO
+    _guestSocket.requestE2EEKeySignal(
+      participantUserId: participantUserId,
+      participantDeviceId: participantDeviceId,
+      ciphertext: encrypted['ciphertext'] as String,
+      messageType: encrypted['messageType'] as int,
+    );
+
+    debugPrint('[GuestPreJoin] Sent Signal-encrypted E2EE key request');
+  }
+
+  /// Fetch participant's Signal Protocol keybundle from server
+  Future<Map<String, dynamic>> _fetchParticipantKeybundle(
+    String participantUserId,
+    int participantDeviceId,
+  ) async {
+    if (!kIsWeb) {
+      throw Exception('Session storage only available on web');
+    }
+
+    final storage = html.window.sessionStorage;
+    final sessionId = storage['external_session_id'];
+    final token = widget.invitationToken;
+
+    if (sessionId == null) {
+      throw Exception('Session ID not found in session storage');
+    }
+
+    debugPrint('[GuestPreJoin] Fetching keybundle for $participantUserId:$participantDeviceId');
+
+    final response = await ApiService.get(
+      '/api/meetings/external/$sessionId/participant/$participantUserId/$participantDeviceId/keys',
+      queryParameters: {'token': token},
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to fetch participant keybundle: ${response.statusCode}');
+    }
+
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// Establish Signal Protocol session with participant using sessionStorage
+  Future<signal.SignalProtocolAddress> _establishSignalSession({
+    required String participantUserId,
+    required int participantDeviceId,
+    required Map<String, dynamic> keybundle,
+  }) async {
+    if (!kIsWeb) {
+      throw Exception('Session storage only available on web');
+    }
+
+    final storage = html.window.sessionStorage;
+
+    // Get guest's identity key from session storage
+    final identityPublic = storage['external_identity_key_public'];
+    final identityPrivate = storage['external_identity_key_private'];
+
+    if (identityPublic == null || identityPrivate == null) {
+      throw Exception('Guest identity keys not found in session storage');
+    }
+
+    // Create Signal stores using session storage (not IndexedDB)
+    // For guests, we use in-memory/sessionStorage stores
+    final privateKeyBytes = Uint8List.fromList(base64Decode(identityPrivate));
+    final publicKeyPoint = signal.Curve.decodePoint(
+      Uint8List.fromList(base64Decode(identityPublic)),
+      0,
+    );
+    final privateKeyPoint = signal.Curve.decodePrivatePoint(privateKeyBytes);
+
+    final identityKeyPair = signal.IdentityKeyPair(
+      signal.IdentityKey(publicKeyPoint),
+      privateKeyPoint,
+    );
+
+    // Create temporary stores for guest session
+    final sessionStore = await signal.InMemorySessionStore();
+    final preKeyStore = signal.InMemoryPreKeyStore();
+    final signedPreKeyStore = signal.InMemorySignedPreKeyStore();
+    final identityStore = signal.InMemoryIdentityKeyStore(identityKeyPair, 0);
+
+    // Load guest's own signed pre-key into the store for decrypting participant's response
+    // When participant encrypts their response, they use the guest's public key from the keybundle
+    // The guest needs the EXACT same signed pre-key (with private key) to decrypt
+    final signedPreKeyJson = storage['external_signed_pre_key'];
+    if (signedPreKeyJson != null) {
+      final signedPreKeyData = jsonDecode(signedPreKeyJson);
+      
+      // Deserialize the exact signed pre-key we generated and uploaded to server
+      final serializedBytes = base64Decode(signedPreKeyData['serialized']);
+      final guestSignedPreKey = signal.SignedPreKeyRecord.fromSerialized(serializedBytes);
+      
+      await signedPreKeyStore.storeSignedPreKey(
+        signedPreKeyData['keyId'] as int,
+        guestSignedPreKey,
+      );
+      debugPrint('[GuestPreJoin] ✓ Loaded guest signed pre-key (ID: ${signedPreKeyData['keyId']}) from sessionStorage');
+    }
+
+    // Load guest's own pre-keys into the store for decrypting participant's response
+    // The participant uses one of these one-time pre-keys when encrypting their first message
+    final preKeysJson = storage['external_pre_keys'];
+    if (preKeysJson != null) {
+      final preKeysData = jsonDecode(preKeysJson) as List;
+      for (final preKeyData in preKeysData) {
+        final serializedBytes = base64Decode(preKeyData['serialized']);
+        final preKeyRecord = signal.PreKeyRecord.fromBuffer(serializedBytes);
+        await preKeyStore.storePreKey(preKeyData['keyId'] as int, preKeyRecord);
+      }
+      debugPrint('[GuestPreJoin] ✓ Loaded ${preKeysData.length} guest pre-keys from sessionStorage');
+    }
+
+    // Build participant's PreKeyBundle
+    final identityKey = signal.IdentityKey(
+      signal.Curve.decodePoint(
+        Uint8List.fromList(base64Decode(keybundle['identity_key'])),
+        0,
+      ),
+    );
+
+    final signedPreKey = keybundle['signed_pre_key'];
+    final oneTimePreKey = keybundle['one_time_pre_key'];
+
+    final bundle = signal.PreKeyBundle(
+      0, // Registration ID
+      participantDeviceId,
+      oneTimePreKey != null ? oneTimePreKey['keyId'] as int : null,
+      oneTimePreKey != null
+          ? signal.Curve.decodePoint(
+              Uint8List.fromList(base64Decode(oneTimePreKey['publicKey'])),
+              0,
+            )
+          : null,
+      signedPreKey['keyId'] as int,
+      signal.Curve.decodePoint(
+        Uint8List.fromList(base64Decode(signedPreKey['publicKey'])),
+        0,
+      ),
+      Uint8List.fromList(base64Decode(signedPreKey['signature'])),
+      identityKey,
+    );
+
+    // Create session address
+    final address = signal.SignalProtocolAddress(participantUserId, participantDeviceId);
+
+    // Build session
+    final sessionBuilder = signal.SessionBuilder(
+      sessionStore,
+      preKeyStore,
+      signedPreKeyStore,
+      identityStore,
+      address,
+    );
+
+    await sessionBuilder.processPreKeyBundle(bundle);
+
+    // Store session stores in class variables for reuse
+    _guestSessionStore = sessionStore;
+    _guestPreKeyStore = preKeyStore;
+    _guestSignedPreKeyStore = signedPreKeyStore;
+    _guestIdentityStore = identityStore;
+
+    debugPrint('[GuestPreJoin] ✓ Established Signal session with $participantUserId:$participantDeviceId');
+
+    return address;
+  }
+
+  /// Encrypt message with Signal Protocol
+  Future<Map<String, dynamic>> _encryptWithSignal(
+    signal.SignalProtocolAddress address,
+    String plaintext,
+  ) async {
+    if (_guestSessionStore == null ||
+        _guestPreKeyStore == null ||
+        _guestSignedPreKeyStore == null ||
+        _guestIdentityStore == null) {
+      throw Exception('Signal stores not initialized');
+    }
+
+    final sessionCipher = signal.SessionCipher(
+      _guestSessionStore!,
+      _guestPreKeyStore!,
+      _guestSignedPreKeyStore!,
+      _guestIdentityStore!,
+      address,
+    );
+
+    final ciphertextMessage = await sessionCipher.encrypt(
+      Uint8List.fromList(utf8.encode(plaintext)),
+    );
+
+    return {
+      'ciphertext': base64Encode(ciphertextMessage.serialize()),
+      'messageType': ciphertextMessage.getType(), // 3=PreKey, 1=Whisper
+    };
+  }
+
+  /// Decrypt message with Signal Protocol
+  Future<String> _decryptWithSignal(
+    signal.SignalProtocolAddress address,
+    String ciphertextBase64,
+    int messageType,
+  ) async {
+    if (_guestSessionStore == null ||
+        _guestPreKeyStore == null ||
+        _guestSignedPreKeyStore == null ||
+        _guestIdentityStore == null) {
+      throw Exception('Signal stores not initialized');
+    }
+
+    final sessionCipher = signal.SessionCipher(
+      _guestSessionStore!,
+      _guestPreKeyStore!,
+      _guestSignedPreKeyStore!,
+      _guestIdentityStore!,
+      address,
+    );
+
+    final ciphertextBytes = base64Decode(ciphertextBase64);
+    Uint8List plaintext;
+
+    if (messageType == signal.CiphertextMessage.prekeyType) {
+      final preKeyMsg = signal.PreKeySignalMessage(ciphertextBytes);
+      plaintext = await sessionCipher.decryptWithCallback(preKeyMsg, (pt) {});
+    } else if (messageType == signal.CiphertextMessage.whisperType) {
+      final signalMsg = signal.SignalMessage.fromSerialized(ciphertextBytes);
+      plaintext = await sessionCipher.decryptFromSignal(signalMsg);
+    } else {
+      throw Exception('Unknown message type: $messageType');
+    }
+
+    return utf8.decode(plaintext);
+  }
+
+  /// Handle Signal Protocol encrypted E2EE key response from participant
+  Future<void> _handleSignalE2EEKeyResponse(Map<String, dynamic> data) async {
+    try {
+      final participantUserId = data['participant_user_id'] as String?;
+      final participantDeviceId = data['participant_device_id'] as int?;
+      final ciphertext = data['ciphertext'] as String?;
+      final messageType = data['messageType'] as int?;
+
+      if (participantUserId == null ||
+          participantDeviceId == null ||
+          ciphertext == null ||
+          messageType == null) {
+        debugPrint('[GuestPreJoin] ✗ Invalid Signal E2EE key response: missing fields');
+        return;
+      }
+
+      debugPrint('[GuestPreJoin] Received Signal-encrypted E2EE key from $participantUserId:$participantDeviceId');
+
+      // Decrypt with Signal Protocol
+      final address = signal.SignalProtocolAddress(participantUserId, participantDeviceId);
+      final decryptedJson = await _decryptWithSignal(address, ciphertext, messageType);
+
+      // Parse decrypted payload
+      final payload = jsonDecode(decryptedJson) as Map<String, dynamic>;
+      final encryptedKey = payload['encryptedKey'] as String?;
+
+      if (encryptedKey == null) {
+        debugPrint('[GuestPreJoin] ✗ No encryptedKey in decrypted payload');
+        _transitionTo(GuestFlowState.keyExchangeFailed);
+        return;
+      }
+
+      // Store LiveKit E2EE key in session storage
+      await _storeLivekitE2EEKey(encryptedKey, participantUserId);
+
+      // Mark key as received
+      setState(() {
+        _keyExchangeStatus[participantUserId] = true;
+      });
+
+      // Check if all keys received
+      _checkKeyExchangeComplete();
+    } catch (e) {
+      debugPrint('[GuestPreJoin] ✗ Error handling Signal E2EE key response: $e');
+      _transitionTo(GuestFlowState.keyExchangeFailed);
+    }
+  }
+
+  /// Store LiveKit E2EE key in session storage
+  Future<void> _storeLivekitE2EEKey(String encryptedKey, String fromUserId) async {
+    if (!kIsWeb) return;
+
+    final storage = html.window.sessionStorage;
+    storage['livekit_e2ee_key'] = encryptedKey;
+    storage['livekit_e2ee_key_from'] = fromUserId;
+    storage['livekit_e2ee_key_timestamp'] = DateTime.now().toIso8601String();
+
+    debugPrint('[GuestPreJoin] ✓ Stored LiveKit E2EE key in session storage (from $fromUserId)');
+  }
+
+  /// Check if key exchange is complete
+  void _checkKeyExchangeComplete() {
+    final allReceived = _keyExchangeStatus.values.every((received) => received);
+
+    if (allReceived) {
+      _keyExchangeTimeout?.cancel();
+      debugPrint('[GuestPreJoin] ✓ All E2EE keys received!');
+      _transitionTo(GuestFlowState.readyToJoin);
+    } else {
+      final receivedCount = _keyExchangeStatus.values.where((r) => r).length;
+      debugPrint('[GuestPreJoin] Progress: $receivedCount/${_keyExchangeStatus.length} keys received');
+    }
+  }
+
+  // DEPRECATED: Handler for insecure plaintext E2EE key responses - DO NOT USE
+  // Use Signal Protocol handlers instead
+  // ignore: unused_element
   void _handleParticipantKeyResponse(Map<String, dynamic> data) {
     final senderUserId = data['participant_user_id'] ?? data['sender_user_id'] ?? data['from_user_id'];
     if (senderUserId == null) {
@@ -646,6 +1023,7 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     }
   }
 
+  // ignore: unused_element
   void _handleDeclined() {
     setState(() => _lastAdmissionRequest = null); // Reset cooldown
     _transitionTo(GuestFlowState.admissionDeclined);

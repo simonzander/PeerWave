@@ -587,6 +587,182 @@ class ExternalParticipantService {
       return 0;
     }
   }
+
+  /**
+   * Rate limiting for keybundle fetches
+   * In-memory Map: key -> { count, resetAt }
+   * Limit: 3 fetches per minute per participant per guest
+   */
+  _rateLimitMap = new Map();
+
+  /**
+   * Check rate limit for keybundle fetch
+   * @param {string} key - Rate limit key (format: "meeting_id:user_id:device_id")
+   * @returns {Promise<boolean>} True if allowed, false if rate limited
+   */
+  async checkKeybundleRateLimit(key) {
+    const now = Date.now();
+    const limit = 3; // 3 fetches
+    const window = 60 * 1000; // 1 minute
+
+    if (!this._rateLimitMap.has(key)) {
+      this._rateLimitMap.set(key, { count: 1, resetAt: now + window });
+      return true;
+    }
+
+    const entry = this._rateLimitMap.get(key);
+
+    // Reset if window expired
+    if (now > entry.resetAt) {
+      this._rateLimitMap.set(key, { count: 1, resetAt: now + window });
+      return true;
+    }
+
+    // Check if under limit
+    if (entry.count < limit) {
+      entry.count++;
+      return true;
+    }
+
+    // Rate limited
+    return false;
+  }
+
+  /**
+   * Get authenticated participant's Signal Protocol keybundle
+   * @param {string} meetingId - Meeting ID
+   * @param {string} userId - User UUID
+   * @param {string} deviceId - Device ID (clientid)
+   * @returns {Promise<Object|null>} Keybundle with identity_key, signed_pre_key, one_time_pre_key
+   */
+  async getParticipantKeybundle(meetingId, userId, deviceId) {
+    try {
+      const { Client, SignalSignedPreKey, SignalPreKey } = require('../db/model');
+
+      console.log(`[EXTERNAL] getParticipantKeybundle called: userId=${userId}, deviceId=${deviceId} (${typeof deviceId})`);
+
+      // Get identity key from Clients table (using device_id INTEGER, not clientid UUID)
+      const client = await Client.findOne({
+        where: {
+          owner: userId,
+          device_id: parseInt(deviceId) // device_id is INTEGER in database
+        }
+      });
+
+      console.log(`[EXTERNAL] Client query result:`, client ? `found clientid=${client.clientid}, has_key=${!!client.public_key}` : 'NOT FOUND');
+
+      if (!client || !client.public_key) {
+        console.log(`[EXTERNAL] No client found for user ${userId}, device ${deviceId}`);
+        return null;
+      }
+
+      // Get latest signed pre-key (using client UUID, not device_id)
+      const signedPreKey = await SignalSignedPreKey.findOne({
+        where: {
+          owner: userId,
+          client: client.clientid // Use the UUID clientid from found client
+        },
+        order: [['createdAt', 'DESC']]
+      });
+
+      if (!signedPreKey) {
+        console.log(`[EXTERNAL] No signed pre-key found for user ${userId}, device ${deviceId}`);
+        return null;
+      }
+
+      // Get one available one-time pre-key (using client UUID, not device_id)
+      const preKey = await SignalPreKey.findOne({
+        where: {
+          owner: userId,
+          client: client.clientid // Use the UUID clientid from found client
+        },
+        order: [['prekey_id', 'ASC']]
+      });
+
+      // Delete the consumed pre-key (one-time use)
+      if (preKey) {
+        await preKey.destroy();
+      }
+
+      return {
+        identity_key: client.public_key,
+        registration_id: client.registration_id,
+        signed_pre_key: {
+          keyId: signedPreKey.signed_prekey_id,
+          publicKey: signedPreKey.signed_prekey_data,
+          signature: signedPreKey.signed_prekey_signature
+        },
+        one_time_pre_key: preKey ? {
+          keyId: preKey.prekey_id,
+          publicKey: preKey.prekey_data
+        } : null
+      };
+    } catch (error) {
+      console.error('[EXTERNAL] Error getting participant keybundle:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get guest's Signal Protocol keybundle and consume one pre-key
+   * @param {string} sessionId - External session ID
+   * @returns {Promise<Object|null>} Keybundle with identity_key, signed_pre_key, one_time_pre_key
+   */
+  async getGuestKeybundle(sessionId) {
+    try {
+      const session = await this.getSession(sessionId);
+      if (!session) {
+        return null;
+      }
+
+      // Parse pre_keys array
+      let preKeys = session.pre_keys;
+      if (typeof preKeys === 'string') {
+        try {
+          preKeys = JSON.parse(preKeys);
+        } catch (e) {
+          console.error('[EXTERNAL] Failed to parse guest pre_keys:', e);
+          return null;
+        }
+      }
+
+      if (!Array.isArray(preKeys) || preKeys.length === 0) {
+        console.warn('[EXTERNAL] Guest has no available pre-keys');
+        return null;
+      }
+
+      // Get first available pre-key
+      const oneTimePreKey = preKeys[0];
+
+      // Remove consumed pre-key from session
+      const remainingKeys = preKeys.slice(1);
+      await ExternalSession.update(
+        { pre_keys: JSON.stringify(remainingKeys) },
+        { where: { session_id: sessionId } }
+      );
+
+      console.log(`[EXTERNAL] Consumed guest pre-key ${oneTimePreKey.keyId}, ${remainingKeys.length} remaining`);
+
+      // Parse signed_pre_key if needed
+      let signedPreKey = session.signed_pre_key;
+      if (typeof signedPreKey === 'string') {
+        try {
+          signedPreKey = JSON.parse(signedPreKey);
+        } catch (e) {
+          // Keep as-is
+        }
+      }
+
+      return {
+        identity_key: session.identity_key_public,
+        signed_pre_key: signedPreKey,
+        one_time_pre_key: oneTimePreKey
+      };
+    } catch (error) {
+      console.error('[EXTERNAL] Error getting guest keybundle:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new ExternalParticipantService();

@@ -3490,34 +3490,48 @@ io.sockets.on("connection", socket => {
   socket.on('meeting:leave-room', handleMeetingLeave); // Alias for consistency
 
   /**
-   * Participant: Send E2EE key response to guest
-   * Participant responds to guest's key request with encrypted E2EE key
+   * REMOVED: Old insecure participant:send_e2ee_key_to_guest handler
+   * Replaced with Signal Protocol encrypted handler: participant:meeting_e2ee_key_response
    */
-  socket.on('participant:send_e2ee_key_to_guest', async (data) => {
+
+  /**
+   * NEW: Participant: Send E2EE key response via Signal Protocol encrypted message
+   * Participant encrypts LiveKit E2EE key with Signal and sends to guest
+   * Uses Signal Protocol for end-to-end encryption (replaces plaintext socket.io)
+   */
+  socket.on('participant:meeting_e2ee_key_response', async (data) => {
     try {
       const userId = getUserId();
       const deviceId = getDeviceId();
       if (!userId || !deviceId) {
-        console.error('[PARTICIPANT] No userId/deviceId for E2EE key response');
+        console.error('[PARTICIPANT] No userId/deviceId for Signal E2EE key response');
         return;
       }
 
-      const { guest_session_id, encrypted_e2ee_key, request_id, meeting_id } = data;
+      const { 
+        guest_session_id, 
+        meeting_id,
+        ciphertext, // Signal Protocol encrypted LiveKit E2EE key
+        messageType, // 3 = PreKey, 1 = Signal
+        request_id 
+      } = data;
 
-      console.log(`[PARTICIPANT] ${userId}:${deviceId} sending E2EE key to guest ${guest_session_id}`);
+      console.log(`[PARTICIPANT] ${userId}:${deviceId} sending Signal-encrypted E2EE key to guest ${guest_session_id}`);
 
-      // Send directly to guest with meeting-specific event name
-      io.of('/external').to(`guest:${guest_session_id}`).emit(`guest:response_e2ee_key:${meeting_id}`, {
+      // Send encrypted response to guest's personal room on /external namespace
+      io.of('/external').to(`guest:${guest_session_id}`).emit('participant:meeting_e2ee_key_response', {
         participant_user_id: userId,
         participant_device_id: deviceId,
-        encrypted_e2ee_key,
-        request_id,
+        meeting_id: meeting_id,
+        ciphertext: ciphertext,
+        messageType: messageType,
+        request_id: request_id,
         timestamp: Date.now()
       });
 
-      console.log(`[PARTICIPANT] ✓ E2EE key sent to guest:${guest_session_id}`);
+      console.log(`[PARTICIPANT] ✓ Signal-encrypted E2EE key sent to guest:${guest_session_id}`);
     } catch (error) {
-      console.error('[PARTICIPANT] Error sending E2EE key to guest:', error);
+      console.error('[PARTICIPANT] Error sending Signal E2EE key to guest:', error);
     }
   });
 

@@ -83,40 +83,14 @@ module.exports = function(io) {
       });
 
       // Log registered event listeners for debugging
-      const listenerEventName = `guest:request_e2ee_key:${meeting_id}`;
-      console.log(`[EXTERNAL WS] Setting up listener for: ${listenerEventName}`);
+      console.log(`[EXTERNAL WS] Guest ${session_id} authenticated and ready`);
 
       // ==================== GUEST EVENT HANDLERS ====================
 
       /**
-       * Guest requests E2EE key from participant
-       * Broadcasts to all participants in meeting room
-       * Event name is meeting-specific: guest:request_e2ee_key:${meetingId}
+       * REMOVED: Old insecure guest:request_e2ee_key handler
+       * Replaced with Signal Protocol encrypted handler: guest:meeting_e2ee_key_request
        */
-      socket.on(listenerEventName, async (data) => {
-        try {
-          const { participant_user_id, participant_device_id, request_id } = data;
-
-          console.log(`[EXTERNAL WS] Guest ${session_id} requesting E2EE key from ${participant_user_id || 'all'}:${participant_device_id || 'all'} participants`);
-
-          // Broadcast to meeting room on MAIN namespace (where participants are)
-          // Guests are on /external namespace, participants are on / (root) namespace
-          io.to(`meeting:${meeting_id}`).emit(`guest:request_e2ee_key:${meeting_id}`, {
-            guest_session_id: session_id,
-            guest_display_name: session.display_name,
-            meeting_id: meeting_id,
-            participant_user_id: participant_user_id || null,
-            participant_device_id: participant_device_id || null,
-            request_id: request_id || `${session_id}_${Date.now()}`,
-            timestamp: Date.now()
-          });
-
-          console.log(`[EXTERNAL WS] ✓ E2EE key request emitted to meeting ${meeting_id} (main namespace)`);
-        } catch (error) {
-          console.error('[EXTERNAL WS] Error handling E2EE key request:', error);
-          socket.emit('error', { message: 'Failed to request E2EE key' });
-        }
-      });
 
       /**
        * Guest sends Signal encrypted message to participant
@@ -152,6 +126,44 @@ module.exports = function(io) {
         } catch (error) {
           console.error('[EXTERNAL WS] Error handling Signal message:', error);
           socket.emit('error', { message: 'Failed to send Signal message' });
+        }
+      });
+
+      /**
+       * NEW: Guest requests E2EE key via Signal Protocol encrypted message
+       * Broadcasts to participants in meeting for encrypted response
+       * Guest initiates: guest → participant (encrypted with Signal)
+       */
+      socket.on('guest:meeting_e2ee_key_request', async (data) => {
+        try {
+          const { 
+            participant_user_id, 
+            participant_device_id,
+            ciphertext, // Signal Protocol encrypted request
+            messageType, // 3 = PreKey, 1 = Signal
+            request_id 
+          } = data;
+
+          console.log(`[EXTERNAL WS] Guest ${session_id} requesting E2EE key via Signal from ${participant_user_id}:${participant_device_id}`);
+
+          // Broadcast to meeting participants on MAIN namespace
+          // Participants will decrypt and respond with encrypted LiveKit E2EE key
+          io.to(`meeting:${meeting_id}`).emit('guest:meeting_e2ee_key_request', {
+            guest_session_id: session_id,
+            guest_display_name: session.display_name,
+            meeting_id: meeting_id,
+            participant_user_id: participant_user_id,
+            participant_device_id: participant_device_id,
+            ciphertext: ciphertext,
+            messageType: messageType,
+            request_id: request_id || `${session_id}_${Date.now()}`,
+            timestamp: Date.now()
+          });
+
+          console.log(`[EXTERNAL WS] ✓ Signal E2EE key request broadcasted to meeting ${meeting_id}`);
+        } catch (error) {
+          console.error('[EXTERNAL WS] Error handling Signal E2EE key request:', error);
+          socket.emit('error', { message: 'Failed to request E2EE key' });
         }
       });
 

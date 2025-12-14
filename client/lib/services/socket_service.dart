@@ -6,7 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../web_config.dart';
 import 'signal_service.dart';
 import 'session_auth_service.dart';
-import 'clientid_native.dart' if (dart.library.js) 'clientid_web_stub.dart';
+import 'clientid_native.dart' if (dart.library.js) 'clientid_web.dart';
 import 'server_connection_service.dart';
 // Import auth service conditionally
 import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';

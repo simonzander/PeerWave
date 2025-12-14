@@ -3,10 +3,11 @@ import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:async';
+import 'dart:convert';
 import '../services/video_conference_service.dart';
+import '../services/api_service.dart';
 import '../services/message_listener_service.dart';
 import '../services/user_profile_service.dart';
-import '../services/api_service.dart';
 import '../services/meeting_service.dart';
 import '../services/socket_service.dart' if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/external_participant_service.dart';
@@ -17,7 +18,7 @@ import '../widgets/admission_overlay.dart';
 import '../models/participant_audio_state.dart';
 import '../extensions/snackbar_extensions.dart';
 
-/// Video conference view for meetings
+/// Video conference view for meetings (authenticated users only)
 /// Uses meetingId as the room identifier (not channelId)
 class MeetingVideoConferenceView extends StatefulWidget {
   final String meetingId;
@@ -68,6 +69,63 @@ class _MeetingVideoConferenceViewState
       const Duration(milliseconds: 500),
       (_) => _updateVisibility(),
     );
+
+    // Listen for guest E2EE key requests via Signal Protocol Socket.IO events
+    _setupGuestE2EEKeyRequestSocketListener();
+  }
+
+  /// Set up Socket.IO listener for guest E2EE key requests (via Signal Protocol)
+  /// Guests request LiveKit E2EE key via Socket.IO (since they don't have userId for standard Signal routing)
+  void _setupGuestE2EEKeyRequestSocketListener() {
+    SocketService().socket?.on('guest:meeting_e2ee_key_request', (data) async {
+      try {
+        debugPrint('[MeetingVideo] 🔐 Received E2EE key request from guest via Socket.IO');
+        
+        // Validate data structure
+        if (data is! Map) {
+          debugPrint('[MeetingVideo] ⚠️ Invalid request data format');
+          return;
+        }
+        
+        final Map<String, dynamic> requestData = Map<String, dynamic>.from(data);
+        final guestSessionId = requestData['guest_session_id'] as String?;
+        final meetingId = requestData['meeting_id'] as String?;
+        
+        if (guestSessionId == null || meetingId == null || meetingId != widget.meetingId) {
+          debugPrint('[MeetingVideo] ⚠️ Missing session ID or wrong meeting');
+          return;
+        }
+        
+        debugPrint('[MeetingVideo] Guest $guestSessionId requesting E2EE key for meeting $meetingId');
+        
+        // Get the VideoConferenceService instance
+        if (_service == null || _service!.channelSharedKey == null) {
+          debugPrint('[MeetingVideo] ⚠️ No E2EE key available to share with guest');
+          return;
+        }
+        
+        debugPrint('[MeetingVideo] ✓ Responding to guest with encrypted LiveKit E2EE key...');
+        
+        // Send encrypted response via Signal Protocol
+        // SignalService will encrypt the LiveKit key and send it to the guest
+        await SignalService.instance.sendItemToGuest(
+          meetingId: meetingId,
+          guestSessionId: guestSessionId,
+          type: 'meeting_e2ee_key_response',
+          payload: {
+            'meetingId': meetingId,
+            'encryptedKey': base64.encode(_service!.channelSharedKey!),
+            'timestamp': DateTime.now().millisecondsSinceEpoch,
+          },
+        );
+        
+        debugPrint('[MeetingVideo] ✓ Sent encrypted LiveKit E2EE key to guest $guestSessionId');
+      } catch (e, stack) {
+        debugPrint('[MeetingVideo] ✗ Error handling guest E2EE key request: $e');
+        debugPrint('[MeetingVideo] Stack trace: $stack');
+      }
+    });
+    debugPrint('[MeetingVideo] ✓ Registered Socket.IO listener for guest:meeting_e2ee_key_request');
   }
 
   @override
@@ -119,14 +177,8 @@ class _MeetingVideoConferenceViewState
 
       // Initialize external participant service listeners for admission overlay
       ExternalParticipantService().initializeListeners();
-      
-      // Register meeting-specific E2EE key request listener
-      ExternalParticipantService().registerMeetingE2EEListener(widget.meetingId);
-      
-      // Set up guest E2EE key request handler
-      _setupGuestE2EEKeyRequestHandler();
 
-      // Join socket room for meeting events (admission notifications, etc.)
+      // Join socket room for meeting events (admission notifications, guest E2EE requests, etc.)
       debugPrint('[MeetingVideo] Attempting to join socket room: meeting:${widget.meetingId}');
       debugPrint('[MeetingVideo] Socket connected: ${SocketService().isConnected}');
       
@@ -171,59 +223,6 @@ class _MeetingVideoConferenceViewState
     }
   }
 
-  StreamSubscription? _guestE2EEKeyRequestSubscription;
-
-  /// Set up listener for guest E2EE key requests
-  void _setupGuestE2EEKeyRequestHandler() {
-    debugPrint('[MeetingVideo] Setting up guest E2EE key request handler for meeting ${widget.meetingId}');
-    
-    _guestE2EEKeyRequestSubscription?.cancel();
-    _guestE2EEKeyRequestSubscription =
-        ExternalParticipantService().onGuestE2EEKeyRequest.listen((data) async {
-      try {
-        debugPrint('[MeetingVideo] 🔑 Received guest E2EE key request: $data');
-
-        final guestSessionId = data['guest_session_id'] as String?;
-        final meetingId = data['meeting_id'] as String?;
-        final requestId = data['request_id'] as String?;
-
-        if (guestSessionId == null || meetingId != widget.meetingId) {
-          debugPrint('[MeetingVideo] Invalid request or wrong meeting');
-          return;
-        }
-
-        // Get the E2EE key from the video conference service
-        if (_service == null || _service!.channelSharedKey == null) {
-          debugPrint('[MeetingVideo] No E2EE key available yet');
-          return;
-        }
-
-        final e2eeKey = _service!.channelSharedKey!;
-        debugPrint(
-            '[MeetingVideo] Sending E2EE key to guest $guestSessionId (${e2eeKey.length} bytes)');
-
-        // Get our user ID and device ID from SignalService
-        final userId = SignalService.instance.currentUserId;
-        final deviceId = SignalService.instance.currentDeviceId;
-
-        // TODO: Encrypt the E2EE key with Signal protocol before sending
-        // For now, send it directly (this is a security issue - needs Signal encryption)
-        SocketService().emit('participant:send_e2ee_key_to_guest', {
-          'guest_session_id': guestSessionId,
-          'meeting_id': widget.meetingId,
-          'encrypted_e2ee_key': e2eeKey.toList(), // Convert Uint8List to List for JSON
-          'request_id': requestId,
-          'sender_user_id': userId, // Add sender info for guest
-          'sender_device_id': deviceId,
-        });
-
-        debugPrint('[MeetingVideo] ✓ E2EE key sent to guest (from $userId:$deviceId)');
-      } catch (e) {
-        debugPrint('[MeetingVideo] Error handling guest E2EE key request: $e');
-      }
-    });
-  }
-
   Future<void> _leaveMeeting() async {
     if (_service == null) return;
 
@@ -247,11 +246,14 @@ class _MeetingVideoConferenceViewState
 
   @override
   void dispose() {
-    // Unregister meeting-specific E2EE listener
-    ExternalParticipantService().unregisterMeetingE2EEListener(widget.meetingId);
+    // Remove Socket.IO listener for guest E2EE requests
+    SocketService().socket?.off('guest:meeting_e2ee_key_request');
+    debugPrint('[MeetingVideo] ✓ Removed Socket.IO listener for guest:meeting_e2ee_key_request');
     
-    // Clean up guest E2EE key request subscription
-    _guestE2EEKeyRequestSubscription?.cancel();
+    // SECURITY: Clear guest Signal sessions when meeting ends
+    // This prevents session keys from persisting in sessionStorage
+    SignalService.instance.clearGuestSessions(widget.meetingId);
+    debugPrint('[MeetingVideo] ✓ Cleared guest Signal sessions for security');
     
     // Clean up subscriptions
     for (final sub in _audioSubscriptions.values) {

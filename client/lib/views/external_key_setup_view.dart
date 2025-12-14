@@ -338,6 +338,7 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
     storage['external_session_id'] = session.sessionId;
     storage['external_meeting_id'] = session.meetingId;
     storage['external_display_name'] = session.displayName;
+    storage['external_is_external'] = 'true';
 
     debugPrint('[KeySetup] Session registered: ${session.sessionId}');
   }

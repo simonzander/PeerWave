@@ -211,12 +211,16 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
     const apiSecret = process.env.LIVEKIT_API_SECRET || 'secret';
     const livekitUrl = process.env.LIVEKIT_URL || 'ws://localhost:7880';
 
+    // Get device ID for identity (needed for E2EE guest key exchange)
+    const deviceId = req.session?.device_id || req.deviceId || 0;
+
     // Create access token
     const token = new AccessToken(apiKey, apiSecret, {
-      identity: `${userId}`,
+      identity: `${userId}:${deviceId}`, // Include device ID for E2EE keybundle routing
       name: username,
       metadata: JSON.stringify({
         userId,
+        deviceId, // Add device ID to metadata too
         username,
         meetingId,
         meetingTitle: meeting.title,
@@ -252,9 +256,9 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
 
     // Update participant status to "joined" in memory
     try {
-      const deviceId = req.session?.device_id || req.deviceId || 0;
+      // Device ID already obtained above for LiveKit identity
       await meetingService.updateParticipantStatus(meetingId, userId, deviceId, 'joined');
-      console.log(`[LiveKit Meeting] Updated participant ${userId} status to joined`);
+      console.log(`[LiveKit Meeting] Updated participant ${userId}:${deviceId} status to joined`);
     } catch (statusError) {
       console.error('[LiveKit Meeting] Failed to update participant status:', statusError);
       // Don't fail the token generation if status update fails
@@ -283,6 +287,119 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
   } catch (error) {
     console.error('LiveKit meeting token generation error:', error);
     res.status(500).json({ error: 'Failed to generate meeting token' });
+  }
+});
+
+/**
+ * Generate LiveKit access token for external guest
+ * POST /api/livekit/guest-token
+ * 
+ * Body:
+ * - meetingId: The meeting to join
+ * - sessionId: Guest session ID from external_meeting_participants
+ * 
+ * Returns:
+ * - token: JWT token for LiveKit
+ * - url: LiveKit server URL
+ * - roomName: Room identifier
+ */
+router.post('/guest-token', async (req, res) => {
+  try {
+    // Load LiveKit SDK dynamically
+    const AccessToken = await livekitWrapper.getAccessToken();
+    const meetingService = require('../services/meetingService');
+    const db = require('../db');
+    
+    const { meetingId, sessionId } = req.body;
+
+    if (!meetingId || !sessionId) {
+      return res.status(400).json({ error: 'meetingId and sessionId required' });
+    }
+
+    console.log(`[LiveKit Guest] Token request: sessionId=${sessionId}, meetingId=${meetingId}`);
+
+    // 1. Validate guest session exists and get participant info
+    const guestResult = await db.query(
+      `SELECT emp.*, m.title as meeting_title, m.livekit_room_name
+       FROM external_meeting_participants emp
+       LEFT JOIN meetings m ON m.meeting_id = emp.meeting_id
+       WHERE emp.session_id = $1 AND emp.meeting_id = $2`,
+      [sessionId, meetingId]
+    );
+
+    if (guestResult.rows.length === 0) {
+      console.log('[LiveKit Guest] Invalid session or meeting');
+      return res.status(403).json({ error: 'Invalid guest session' });
+    }
+
+    const guest = guestResult.rows[0];
+
+    // 2. Check if participant is admitted
+    if (guest.status !== 'admitted') {
+      console.log('[LiveKit Guest] Guest not admitted:', guest.status);
+      return res.status(403).json({ error: 'Guest not admitted to meeting' });
+    }
+
+    console.log(`[LiveKit Guest] Guest authorized:`, {
+      sessionId,
+      displayName: guest.display_name,
+      status: guest.status,
+      meetingId
+    });
+
+    // Get LiveKit configuration from environment
+    const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
+    const apiSecret = process.env.LIVEKIT_API_SECRET || 'secret';
+    const livekitUrl = process.env.LIVEKIT_URL || 'ws://localhost:7880';
+
+    // Create access token for guest
+    const token = new AccessToken(apiKey, apiSecret, {
+      identity: `guest_${sessionId}`, // Unique identity for guest
+      name: guest.display_name || 'Guest',
+      metadata: JSON.stringify({
+        sessionId,
+        displayName: guest.display_name,
+        meetingId,
+        meetingTitle: guest.meeting_title,
+        isGuest: true
+      })
+    });
+
+    // Room name is either custom or the meeting ID
+    const roomName = guest.livekit_room_name || meetingId;
+
+    // Grant guest permissions
+    token.addGrant({
+      room: roomName,
+      roomJoin: true,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+      // Guests are NOT room admins
+      roomAdmin: false,
+    });
+
+    // Generate JWT
+    const jwt = await token.toJwt();
+
+    console.log(`[LiveKit Guest] Token generated for ${guest.display_name} in ${meetingId}`);
+
+    res.json({
+      token: jwt,
+      url: livekitUrl.replace('peerwave-livekit', 'localhost'),
+      roomName: roomName,
+      identity: `guest_${sessionId}`,
+      metadata: {
+        sessionId,
+        displayName: guest.display_name,
+        meetingId,
+        isGuest: true
+      }
+    });
+
+  } catch (error) {
+    console.error('[LiveKit Guest] Token generation error:', error);
+    res.status(500).json({ error: 'Failed to generate guest token' });
   }
 });
 

@@ -963,6 +963,8 @@ class VideoConferenceService extends ChangeNotifier {
     MediaDevice? cameraDevice, // NEW: Optional pre-selected camera
     MediaDevice? microphoneDevice, // NEW: Optional pre-selected microphone
     String? channelName, // NEW: Channel name for display
+    bool isExternalGuest = false, // NEW: Skip Signal Protocol for external guests
+    String? guestSessionId, // NEW: Guest session ID for token request
   }) async {
     if (_isConnecting || _isConnected) {
       debugPrint('[VideoConf] Already connecting or connected');
@@ -984,33 +986,39 @@ class VideoConferenceService extends ChangeNotifier {
       debugPrint('[VideoConf] Joining room for channel: $channelId');
 
       // CRITICAL: Signal Service must be initialized for E2EE key exchange
-      if (!SignalService.instance.isInitialized) {
+      // Skip for external guests who don't have Signal Protocol
+      if (!isExternalGuest && !SignalService.instance.isInitialized) {
         throw Exception(
           'Signal Service must be initialized before joining video call. '
           'Key exchange requires Signal Protocol encryption.',
         );
       }
-      debugPrint('[VideoConf] ✓ Signal Service ready for E2EE key exchange');
+      
+      if (!isExternalGuest) {
+        debugPrint('[VideoConf] ✓ Signal Service ready for E2EE key exchange');
 
-      // For meetings: Register callbacks for E2EE key exchange via 1-to-1 Signal messages
-      if (_isMeetingChannel(channelId)) {
-        debugPrint(
-          '[VideoConf] 📝 Registering meeting E2EE callbacks for: $channelId',
-        );
-        SignalService.instance.registerMeetingE2EEKeyRequestCallback(
-          channelId,
-          (data) => _handleMeetingE2EEKeyRequest(data),
-        );
-        SignalService.instance.registerMeetingE2EEKeyResponseCallback(
-          channelId,
-          (data) => _handleMeetingE2EEKeyResponse(data),
-        );
-        debugPrint('[VideoConf] ✓ Meeting E2EE callbacks registered');
+        // For meetings: Register callbacks for E2EE key exchange via 1-to-1 Signal messages
+        if (_isMeetingChannel(channelId)) {
+          debugPrint(
+            '[VideoConf] 📝 Registering meeting E2EE callbacks for: $channelId',
+          );
+          SignalService.instance.registerMeetingE2EEKeyRequestCallback(
+            channelId,
+            (data) => _handleMeetingE2EEKeyRequest(data),
+          );
+          SignalService.instance.registerMeetingE2EEKeyResponseCallback(
+            channelId,
+            (data) => _handleMeetingE2EEKeyResponse(data),
+          );
+          debugPrint('[VideoConf] ✓ Meeting E2EE callbacks registered');
+        }
+      } else {
+        debugPrint('[VideoConf] 🔓 External guest mode - skipping Signal Protocol setup');
       }
 
-      // Initialize E2EE ONLY if we don't already have a key
+      // Initialize E2EE ONLY if we don't already have a key AND not an external guest
       // (non-first participants receive key in PreJoin before joining)
-      if (_keyTimestamp == null) {
+      if (!isExternalGuest && _keyTimestamp == null) {
         debugPrint(
           '[VideoConf] No existing E2EE key - initializing as first participant',
         );
@@ -1068,20 +1076,33 @@ class VideoConferenceService extends ChangeNotifier {
         }
       }
 
-      // Get LiveKit token from server (credentials are automatically included)
+      // Get LiveKit token from server
+      // For external guests, use guest endpoint with session ID
       // For meetings (ID starts with mtg_ or call_), use meeting-token endpoint
       final isMeeting =
           channelId.startsWith('mtg_') || channelId.startsWith('call_');
-      final tokenEndpoint = isMeeting
-          ? '/api/livekit/meeting-token'
-          : '/api/livekit/token';
-      final requestData = isMeeting
-          ? {'meetingId': channelId}
-          : {'channelId': channelId};
+      
+      String tokenEndpoint;
+      Map<String, dynamic> requestData;
+      
+      if (isExternalGuest && guestSessionId != null) {
+        // Guest token endpoint
+        tokenEndpoint = '/api/livekit/guest-token';
+        requestData = {
+          'meetingId': channelId,
+          'sessionId': guestSessionId,
+        };
+        debugPrint('[VideoConf] Requesting GUEST token for meeting: $channelId (session: $guestSessionId)');
+      } else if (isMeeting) {
+        tokenEndpoint = '/api/livekit/meeting-token';
+        requestData = {'meetingId': channelId};
+        debugPrint('[VideoConf] Requesting token for meeting: $channelId');
+      } else {
+        tokenEndpoint = '/api/livekit/token';
+        requestData = {'channelId': channelId};
+        debugPrint('[VideoConf] Requesting token for channel: $channelId');
+      }
 
-      debugPrint(
-        '[VideoConf] Requesting token for ${isMeeting ? 'meeting' : 'channel'}: $channelId',
-      );
       final response = await ApiService.post(tokenEndpoint, data: requestData);
 
       debugPrint('[VideoConf] Token response status: ${response.statusCode}');
