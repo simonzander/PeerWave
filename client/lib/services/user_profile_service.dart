@@ -10,8 +10,10 @@ import 'storage/sqlite_group_message_store.dart';
 class _CachedProfile {
   final Map<String, dynamic> data;
   final DateTime loadedAt;
+  String? presenceStatus; // 'online', 'busy', or 'offline'
+  DateTime? lastSeen;
   
-  _CachedProfile(this.data, this.loadedAt);
+  _CachedProfile(this.data, this.loadedAt, {this.presenceStatus, this.lastSeen});
   
   bool get isStale {
     return DateTime.now().difference(loadedAt) > const Duration(hours: 24);
@@ -280,6 +282,22 @@ class UserProfileService {
       pictureData = picture['data'] as String?;
     }
     
+    // Extract presence data
+    String? presenceStatus;
+    DateTime? lastSeen;
+    if (data['presence'] != null && data['presence'] is Map) {
+      final presence = data['presence'] as Map<String, dynamic>;
+      presenceStatus = presence['status'] as String?;
+      final lastSeenStr = presence['last_seen'] as String?;
+      if (lastSeenStr != null) {
+        try {
+          lastSeen = DateTime.parse(lastSeenStr);
+        } catch (e) {
+          debugPrint('[UserProfileService] Error parsing last_seen: $e');
+        }
+      }
+    }
+    
     final profileData = {
       'uuid': uuid,
       'displayName': data['displayName'] ?? uuid,
@@ -288,7 +306,12 @@ class UserProfileService {
       'isOwnProfile': data['isOwnProfile'], // Preserve isOwnProfile marker
     };
     
-    _cache[uuid] = _CachedProfile(profileData, DateTime.now());
+    _cache[uuid] = _CachedProfile(
+      profileData, 
+      DateTime.now(),
+      presenceStatus: presenceStatus,
+      lastSeen: lastSeen,
+    );
     
     // Notify any pending callbacks
     final callbacks = _pendingCallbacks.remove(uuid);
@@ -445,6 +468,46 @@ class UserProfileService {
       return getProfile(uuid);
     }
     return null;
+  }
+  
+  /// Get presence status for a UUID ('online', 'busy', 'offline')
+  /// Returns cached presence if available, null otherwise
+  String? getPresenceStatus(String uuid) {
+    final cached = _cache[uuid];
+    if (cached == null || cached.isStale) return null;
+    return cached.presenceStatus ?? 'offline';
+  }
+  
+  /// Get last seen timestamp for a UUID
+  /// Returns null if not available or user is currently online
+  DateTime? getLastSeen(String uuid) {
+    final cached = _cache[uuid];
+    if (cached == null || cached.isStale) return null;
+    return cached.lastSeen;
+  }
+  
+  /// Check if a user is online (online or busy)
+  /// Returns false if not cached or offline
+  bool isUserOnline(String uuid) {
+    final status = getPresenceStatus(uuid);
+    return status == 'online' || status == 'busy';
+  }
+  
+  /// Check if a user is busy (in a call)
+  /// Returns false if not cached or not busy
+  bool isUserBusy(String uuid) {
+    final status = getPresenceStatus(uuid);
+    return status == 'busy';
+  }
+  
+  /// Update presence status for a user (called from PresenceService real-time updates)
+  void updatePresenceStatus(String uuid, String status, DateTime? lastSeen) {
+    final cached = _cache[uuid];
+    if (cached != null) {
+      cached.presenceStatus = status;
+      cached.lastSeen = lastSeen;
+      debugPrint('[UserProfileService] Updated presence for $uuid: $status');
+    }
   }
   
   /// Load current user's own profile and cache it

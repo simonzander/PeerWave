@@ -12,6 +12,7 @@ import '../services/meeting_service.dart';
 import '../services/socket_service.dart' if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/external_participant_service.dart';
 import '../services/signal_service.dart';
+import '../services/call_service.dart';
 import '../widgets/video_grid_layout.dart';
 import '../widgets/video_controls_bar.dart';
 import '../widgets/admission_overlay.dart';
@@ -59,6 +60,10 @@ class _MeetingVideoConferenceViewState
   
   // Pending participants (invited but not yet joined)
   final List<Map<String, dynamic>> _pendingParticipants = [];
+  
+  // Track invited vs joined for missed call notifications
+  final Set<String> _invitedUserIds = {};
+  final Set<String> _joinedUserIds = {};
 
   @override
   void initState() {
@@ -227,6 +232,12 @@ class _MeetingVideoConferenceViewState
     if (_service == null) return;
 
     try {
+      // For instant call meetings, send missed call notifications
+      final isInstantCall = widget.meetingId.startsWith('call_');
+      if (isInstantCall && _invitedUserIds.isNotEmpty) {
+        await _sendMissedCallNotifications();
+      }
+      
       // Leave Socket.IO meeting room before leaving LiveKit
       debugPrint('[MeetingVideo] Leaving socket room: meeting:${widget.meetingId}');
       SocketService().emit('meeting:leave-room', {
@@ -340,6 +351,14 @@ class _MeetingVideoConferenceViewState
       final remoteId = remote.identity;
       allParticipantIds.add(remoteId);
 
+      // Remove from pending list if they joined
+      _pendingParticipants.removeWhere((p) => p['userId'] == remoteId);
+      
+      // Track that they joined (for missed call notifications)
+      if (_invitedUserIds.contains(remoteId)) {
+        _joinedUserIds.add(remoteId);
+      }
+
       if (!_participantStates.containsKey(remoteId)) {
         _participantStates[remoteId] = ParticipantAudioState(
           participantId: remoteId,
@@ -413,7 +432,52 @@ class _MeetingVideoConferenceViewState
     });
   }
 
+  /// Send missed call notifications to users who were invited but didn't join
+  Future<void> _sendMissedCallNotifications() async {
+    // Get users who were invited but never joined
+    final missedUsers = _invitedUserIds.difference(_joinedUserIds);
+    
+    if (missedUsers.isEmpty) {
+      debugPrint('[MeetingVideo] No missed call notifications to send');
+      return;
+    }
+    
+    debugPrint('[MeetingVideo] Sending missed call notifications to ${missedUsers.length} users');
+    
+    // Get current user info for the notification
+    final currentUserId = UserProfileService.instance.currentUserUuid;
+    if (currentUserId == null) {
+      debugPrint('[MeetingVideo] Cannot send missed call: current user ID is null');
+      return;
+    }
+    
+    // Prepare missed call payload
+    final payload = {
+      'callerId': currentUserId,
+      'meetingId': widget.meetingId,
+      'meetingTitle': widget.meetingTitle,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    
+    // Send missed_call Signal message to each user who didn't join
+    for (final userId in missedUsers) {
+      try {
+        await SignalService.instance.sendItem(
+          recipientUserId: userId,
+          type: 'missingcall', // Note: using 'missingcall' to match existing activity type
+          payload: payload,
+        );
+        debugPrint('[MeetingVideo] Sent missed call notification to $userId');
+      } catch (e) {
+        debugPrint('[MeetingVideo] Error sending missed call to $userId: $e');
+      }
+    }
+  }
+
   Future<void> _showAddParticipantsDialog() async {
+    // Check if this is an instant call (meeting IDs start with 'call_')
+    final isInstantCall = widget.meetingId.startsWith('call_');
+    
     final TextEditingController searchController = TextEditingController();
     List<Map<String, dynamic>> searchResults = [];
     bool isSearching = false;
@@ -515,22 +579,29 @@ class _MeetingVideoConferenceViewState
                 user['uuid'] as String,
               );
               
-              // Add to pending participants list if user is online
-              if (user['isOnline'] == true) {
-                setState(() {
-                  _pendingParticipants.add({
-                    'uuid': user['uuid'],
-                    'displayName': user['displayName'],
-                    'picture': user['picture'],
-                  });
+              final userId = user['uuid'] as String;
+              final isOnline = user['isOnline'] == true;
+              
+              // Add to pending participants list
+              setState(() {
+                _pendingParticipants.add({
+                  'userId': userId,
+                  'displayName': user['displayName'],
+                  'picture': user['picture'],
                 });
-                // TODO: Emit socket event to notify the user
-                debugPrint('[AddParticipants] Sending call notification to online user: ${user['uuid']}');
+              });
+              
+              // If user is online, send call notification
+              if (isOnline) {
+                final callService = CallService();
+                callService.notifyRecipients(widget.meetingId, [userId]);
               }
               
               if (mounted) {
                 context.showSuccessSnackBar(
-                  '${user['displayName']} added to meeting',
+                  isOnline
+                      ? 'Calling ${user['displayName']}...'
+                      : '${user['displayName']} added to meeting',
                 );
                 Navigator.of(context).pop();
               }
@@ -543,7 +614,7 @@ class _MeetingVideoConferenceViewState
           }
 
           return AlertDialog(
-            title: const Text('Add Participants'),
+            title: Text(isInstantCall ? 'Invite Participants' : 'Add Participants'),
             content: SizedBox(
               width: 400,
               child: Column(
@@ -551,17 +622,19 @@ class _MeetingVideoConferenceViewState
                 children: [
                   TextField(
                     controller: searchController,
-                    decoration: const InputDecoration(
-                      labelText: 'Search by name, @name, or email',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: isInstantCall
+                          ? 'Search by name or @name'
+                          : 'Search by name, @name, or email',
+                      prefixIcon: const Icon(Icons.search),
+                      border: const OutlineInputBorder(),
                     ),
                     onChanged: searchUsers,
                   ),
                   const SizedBox(height: 16),
                   if (isSearching)
                     const Center(child: CircularProgressIndicator())
-                  else if (isValidEmail && emailAddress.isNotEmpty)
+                  else if (!isInstantCall && isValidEmail && emailAddress.isNotEmpty)
                     // Show email invitation option
                     SizedBox(
                       height: 300,

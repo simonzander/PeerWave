@@ -782,12 +782,25 @@ clientRoutes.get("/people/profiles", verifyAuthEither, async (req, res) => {
             where: { uuid: uuids }
         });
         
-        // Convert picture BLOB to base64 string
+        // Get presence data for all users
+        const presenceService = require('../services/presenceService');
+        const presenceData = await presenceService.getPresence(uuids);
+        const presenceMap = new Map(presenceData.map(p => [p.user_id, p]));
+        
+        // Convert picture BLOB to base64 string and add presence data
         const profiles = users.map(user => {
             const userData = user.toJSON();
             if (userData.picture && Buffer.isBuffer(userData.picture)) {
                 userData.picture = `data:image/png;base64,${userData.picture.toString('base64')}`;
             }
+            
+            // Add presence data
+            const presence = presenceMap.get(userData.uuid);
+            userData.presence = {
+                status: presence?.status || 'offline',
+                last_seen: presence?.last_heartbeat || presence?.updated_at || null
+            };
+            
             return userData;
         });
         

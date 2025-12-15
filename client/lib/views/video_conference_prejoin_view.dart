@@ -3,6 +3,7 @@ import 'package:livekit_client/livekit_client.dart';
 import '../services/video_conference_service.dart';
 import '../services/signal_service.dart';
 import '../services/api_service.dart';
+import '../services/call_service.dart';
 import '../services/socket_service.dart' if (dart.library.io) '../services/socket_service_native.dart';
 import '../extensions/snackbar_extensions.dart';
 import 'dart:async';
@@ -13,12 +14,22 @@ class VideoConferencePreJoinView extends StatefulWidget {
   final String channelId;
   final String channelName;
   final Function(Map<String, dynamic>)? onJoinReady;  // Callback when ready to join
+  
+  // Instant call parameters
+  final bool isInstantCall;
+  final String? sourceChannelId;  // For channel calls
+  final String? sourceUserId;     // For 1:1 calls
+  final bool isInitiator;         // True if caller, false if recipient
 
   const VideoConferencePreJoinView({
     Key? key,
     required this.channelId,
     required this.channelName,
     this.onJoinReady,
+    this.isInstantCall = false,
+    this.sourceChannelId,
+    this.sourceUserId,
+    this.isInitiator = false,
   }) : super(key: key);  @override
   State<VideoConferencePreJoinView> createState() => _VideoConferencePreJoinViewState();
 }
@@ -116,15 +127,30 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       // Step 2: Load available media devices
       await _loadMediaDevices();
       
-      // Step 3: Register as participant (enters "waiting room")
-      await _registerAsParticipant();
+      // For 1:1 instant calls as initiator, skip participant checking and sender key loading
+      // The call doesn't exist yet, so we're always first
+      final is1v1CallInitiator = widget.isInstantCall && 
+                                  widget.isInitiator && 
+                                  widget.sourceUserId != null;
       
-      // Step 4: Check if first participant
-      await _checkParticipantStatus();
-      
-      // Step 4.5: Pre-load sender keys for this channel (CRITICAL for decryption)
-      // This ensures we can decrypt video key responses from other participants
-      await _loadChannelSenderKeys();
+      if (is1v1CallInitiator) {
+        debugPrint('[PreJoin] 1:1 call initiator - skipping participant check');
+        setState(() {
+          _isFirstParticipant = true;
+          _participantCount = 0;
+          _isCheckingParticipants = false;
+        });
+      } else {
+        // Step 3: Register as participant (enters "waiting room")
+        await _registerAsParticipant();
+        
+        // Step 4: Check if first participant
+        await _checkParticipantStatus();
+        
+        // Step 4.5: Pre-load sender keys for this channel (CRITICAL for decryption)
+        // This ensures we can decrypt video key responses from other participants
+        await _loadChannelSenderKeys();
+      }
       
       // Step 5: Handle E2EE key exchange
       if (_isFirstParticipant) {
@@ -462,17 +488,48 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
     }
     
     try {
+      String meetingId = widget.channelId;
+      
+      // If this is an instant call and user is initiator, create call first
+      if (widget.isInstantCall && widget.isInitiator) {
+        debugPrint('[PreJoin] Creating instant call...');
+        
+        final callService = CallService();
+        
+        if (widget.sourceChannelId != null) {
+          // Channel call
+          meetingId = await callService.startChannelCall(
+            channelId: widget.sourceChannelId!,
+            channelName: widget.channelName,
+          );
+          debugPrint('[PreJoin] Created channel call: $meetingId');
+        } else if (widget.sourceUserId != null) {
+          // 1:1 call
+          meetingId = await callService.startDirectCall(
+            userId: widget.sourceUserId!,
+            userName: widget.channelName,
+          );
+          debugPrint('[PreJoin] Created 1:1 call: $meetingId');
+        }
+        
+        // Note: For channel calls, we'll notify members AFTER joining LiveKit
+        // For 1:1 calls, startDirectCall already sent notification
+      }
+      
       // Confirm E2EE key status to server
       SocketService().emit('video:confirm-e2ee-key', {
-        'channelId': widget.channelId,
+        'channelId': meetingId,
       });
       
       final joinData = {
-        'channelId': widget.channelId,
+        'channelId': meetingId,
         'channelName': widget.channelName,
         'selectedCamera': _selectedCamera,
         'selectedMicrophone': _selectedMicrophone,
         'hasE2EEKey': true,
+        'isInstantCall': widget.isInstantCall,
+        'sourceChannelId': widget.sourceChannelId,
+        'isInitiator': widget.isInitiator,
       };
       
       // If callback provided (embedded mode like dashboard), use callback

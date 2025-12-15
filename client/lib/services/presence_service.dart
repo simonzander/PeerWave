@@ -3,33 +3,32 @@ import 'package:flutter/foundation.dart';
 import '../models/user_presence.dart';
 import 'api_service.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
+import 'user_profile_service.dart';
 
-/// Presence service - tracks online/offline status of users
+/// Presence service - tracks online/busy/offline status of users
 /// 
 /// Features:
-/// - Automatic heartbeat every 60 seconds (emits presence:heartbeat)
+/// - Socket connection-based presence (no heartbeat polling)
 /// - Real-time presence updates via Socket.IO
-/// - Local cache of user presence status
+/// - Integration with UserProfileService for cached presence
 /// - Streams for UI updates
+/// - Pre-call online status validation
 /// 
 /// Socket.IO events:
-/// - presence:heartbeat (emit) - Send heartbeat every 60s
-/// - presence:update (listen) - Receive status updates
+/// - presence:update (listen) - Receive status updates (online/busy/offline)
 /// - presence:user_connected (listen) - User came online
 /// - presence:user_disconnected (listen) - User went offline
+/// 
+/// Status values:
+/// - 'online': User has at least one socket connection
+/// - 'busy': User is in a LiveKit room (call/meeting)
+/// - 'offline': User has no socket connections
 class PresenceService {
   static final PresenceService _instance = PresenceService._internal();
   factory PresenceService() => _instance;
   PresenceService._internal();
 
   final _socketService = SocketService();
-
-  // Heartbeat timer
-  Timer? _heartbeatTimer;
-  static const _heartbeatInterval = Duration(seconds: 60);
-
-  // Local presence cache
-  final Map<String, UserPresence> _presenceCache = {};
 
   // Stream controllers
   final _presenceUpdateController = StreamController<UserPresence>.broadcast();
@@ -42,12 +41,10 @@ class PresenceService {
   Stream<String> get onUserDisconnected => _userDisconnectedController.stream;
 
   bool _listenersRegistered = false;
-  bool _heartbeatStarted = false;
 
   /// Initialize Socket.IO listeners and start heartbeat
   void initialize() {
     _initializeListeners();
-    startHeartbeat();
   }
 
   /// Initialize Socket.IO listeners for presence updates
@@ -56,20 +53,36 @@ class PresenceService {
     _listenersRegistered = true;
 
     _socketService.registerListener('presence:update', (data) {
-      debugPrint('[PRESENCE SERVICE] Received presence:update: $data');
+      debugPrint('[PRESENCE SERVICE] ========== Received presence:update ==========');
+      debugPrint('[PRESENCE SERVICE] Raw data: $data');
       try {
         final map = data as Map<String, dynamic>;
         final userId = map['user_id'] as String;
-        final lastHeartbeat = DateTime.parse(map['last_heartbeat'] as String);
+        final status = map['status'] as String?;
+        final lastSeenStr = map['last_seen'] as String?;
+        
+        debugPrint('[PRESENCE SERVICE] Parsed: user_id=$userId, status=$status');
+        
+        DateTime? lastSeen;
+        if (lastSeenStr != null) {
+          try {
+            lastSeen = DateTime.parse(lastSeenStr);
+          } catch (e) {
+            debugPrint('[PRESENCE SERVICE] Error parsing last_seen: $e');
+          }
+        }
 
+        // Update UserProfileService cache
+        UserProfileService.instance.updatePresenceStatus(userId, status ?? 'offline', lastSeen);
+        debugPrint('[PRESENCE SERVICE] Updated UserProfileService cache for $userId');
+        
         final presence = UserPresence(
           userId: userId,
-          lastHeartbeat: lastHeartbeat,
+          lastHeartbeat: lastSeen ?? DateTime.now(),
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         );
 
-        _presenceCache[userId] = presence;
         _presenceUpdateController.add(presence);
       } catch (e) {
         debugPrint('[PRESENCE SERVICE] Error parsing presence:update: $e');
@@ -81,16 +94,27 @@ class PresenceService {
       try {
         final map = data as Map<String, dynamic>;
         final userId = map['user_id'] as String;
-        final lastSeen = DateTime.parse(map['last_seen'] as String);
+        final lastSeenStr = map['last_seen'] as String?;
+        
+        DateTime? lastSeen;
+        if (lastSeenStr != null) {
+          try {
+            lastSeen = DateTime.parse(lastSeenStr);
+          } catch (e) {
+            debugPrint('[PRESENCE SERVICE] Error parsing last_seen: $e');
+          }
+        }
 
+        // Update UserProfileService cache
+        UserProfileService.instance.updatePresenceStatus(userId, 'online', lastSeen);
+        
         final presence = UserPresence(
           userId: userId,
-          lastHeartbeat: lastSeen,
+          lastHeartbeat: lastSeen ?? DateTime.now(),
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         );
 
-        _presenceCache[userId] = presence;
         _userConnectedController.add(userId);
       } catch (e) {
         debugPrint('[PRESENCE SERVICE] Error parsing presence:user_connected: $e');
@@ -102,16 +126,20 @@ class PresenceService {
       try {
         final map = data as Map<String, dynamic>;
         final userId = map['user_id'] as String;
-        final lastSeen = DateTime.parse(map['last_seen'] as String);
+        final lastSeenStr = map['last_seen'] as String?;
+        
+        DateTime? lastSeen;
+        if (lastSeenStr != null) {
+          try {
+            lastSeen = DateTime.parse(lastSeenStr);
+          } catch (e) {
+            debugPrint('[PRESENCE SERVICE] Error parsing last_seen: $e');
+          }
+        }
 
-        final presence = UserPresence(
-          userId: userId,
-          lastHeartbeat: lastSeen,
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        );
-
-        _presenceCache[userId] = presence;
+        // Update UserProfileService cache
+        UserProfileService.instance.updatePresenceStatus(userId, 'offline', lastSeen);
+        
         _userDisconnectedController.add(userId);
       } catch (e) {
         debugPrint('[PRESENCE SERVICE] Error parsing presence:user_disconnected: $e');
@@ -121,118 +149,74 @@ class PresenceService {
     debugPrint('[PRESENCE SERVICE] Socket.IO listeners initialized');
   }
 
-  /// Start heartbeat timer (emits every 60 seconds)
-  void startHeartbeat() {
-    if (_heartbeatStarted) return;
-    _heartbeatStarted = true;
-
-    // Send initial heartbeat immediately
-    _sendHeartbeat();
-
-    // Start periodic timer
-    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
-      _sendHeartbeat();
-    });
-
-    debugPrint('[PRESENCE SERVICE] Heartbeat timer started (interval: ${_heartbeatInterval.inSeconds}s)');
-  }
-
-  /// Stop heartbeat timer
-  void stopHeartbeat() {
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
-    _heartbeatStarted = false;
-    debugPrint('[PRESENCE SERVICE] Heartbeat timer stopped');
-  }
-
-  /// Send heartbeat to server
-  void _sendHeartbeat() {
-    if (!_socketService.socket!.connected) {
-      debugPrint('[PRESENCE SERVICE] Socket not connected, skipping heartbeat');
-      return;
-    }
-
-    _socketService.emit('presence:heartbeat', {});
-    debugPrint('[PRESENCE SERVICE] Sent heartbeat');
-  }
-
   // ============================================================================
   // HTTP API Methods
   // ============================================================================
 
-  /// Get presence for a specific user
-  Future<UserPresence?> getUserPresence(String userId) async {
-    // Return cached presence if available and fresh (< 2 minutes old)
-    if (_presenceCache.containsKey(userId)) {
-      final cached = _presenceCache[userId]!;
-      final age = DateTime.now().difference(cached.updatedAt);
-      if (age.inMinutes < 2) {
-        return cached;
-      }
-    }
-
+  /// Check online status for multiple users (bulk check via API)
+  /// Returns Map<userId, status> where status is 'online', 'busy', or 'offline'
+  /// 
+  /// Use this before initiating instant calls to verify recipients are online
+  Future<Map<String, String>> checkOnlineStatus(List<String> userIds) async {
+    if (userIds.isEmpty) return {};
+    
     try {
-      final response = await ApiService.get('/api/presence/$userId');
-      final presence = UserPresence.fromJson(response.data as Map<String, dynamic>);
-      _presenceCache[userId] = presence;
-      return presence;
-    } catch (e) {
-      debugPrint('[PRESENCE SERVICE] Error fetching presence for $userId: $e');
-      return null;
-    }
-  }
-
-  /// Get presence for multiple users
-  Future<List<UserPresence>> getBulkPresence(List<String> userIds) async {
-    try {
-      final response = await ApiService.post('/api/presence/bulk', data: {
-        'user_ids': userIds,
-      });
+      final userIdsParam = userIds.join(',');
+      debugPrint('[PRESENCE SERVICE] Calling /api/presence/bulk?user_ids=$userIdsParam');
+      final response = await ApiService.get('/api/presence/bulk?user_ids=$userIdsParam');
+      debugPrint('[PRESENCE SERVICE] Response: ${response.data}');
+      
       final List<dynamic> data = response.data as List<dynamic>;
-      final presences = data
-          .map((json) => UserPresence.fromJson(json as Map<String, dynamic>))
-          .toList();
-
-      // Update cache
-      for (final presence in presences) {
-        _presenceCache[presence.userId] = presence;
+      final statusMap = <String, String>{};
+      
+      for (final item in data) {
+        if (item is Map<String, dynamic>) {
+          final userId = item['user_id'] as String?;
+          final status = item['status'] as String?;
+          if (userId != null) {
+            statusMap[userId] = status ?? 'offline';
+            
+            // Update UserProfileService cache
+            final lastSeenStr = item['last_heartbeat'] as String? ?? item['updated_at'] as String?;
+            DateTime? lastSeen;
+            if (lastSeenStr != null) {
+              try {
+                lastSeen = DateTime.parse(lastSeenStr);
+              } catch (e) {
+                debugPrint('[PRESENCE SERVICE] Error parsing timestamp: $e');
+              }
+            }
+            UserProfileService.instance.updatePresenceStatus(userId, status ?? 'offline', lastSeen);
+          }
+        }
       }
-
-      return presences;
+      
+      return statusMap;
     } catch (e) {
-      debugPrint('[PRESENCE SERVICE] Error fetching bulk presence: $e');
-      return [];
+      debugPrint('[PRESENCE SERVICE] Error checking online status: $e');
+      return {};
     }
   }
 
-  /// Check if a user is online (from cache or fetch)
+  /// Check if specific user is online via API
   Future<bool> isUserOnline(String userId) async {
-    final presence = await getUserPresence(userId);
-    return presence?.isOnline ?? false;
+    debugPrint('[PRESENCE SERVICE] Checking if user $userId is online...');
+    final result = await checkOnlineStatus([userId]);
+    final status = result[userId];
+    final isOnline = status == 'online' || status == 'busy';
+    debugPrint('[PRESENCE SERVICE] User $userId status: $status, isOnline: $isOnline');
+    return isOnline;
   }
 
-  /// Get cached presence (synchronous, returns null if not cached)
-  UserPresence? getCachedPresence(String userId) {
-    return _presenceCache[userId];
-  }
-
-  /// Get cached online status (synchronous)
+  /// Get cached online status from UserProfileService (synchronous)
   bool getCachedOnlineStatus(String userId) {
-    return _presenceCache[userId]?.isOnline ?? false;
-  }
-
-  /// Clear presence cache
-  void clearCache() {
-    _presenceCache.clear();
-    debugPrint('[PRESENCE SERVICE] Cache cleared');
+    return UserProfileService.instance.isUserOnline(userId);
   }
 
   /// Dispose resources
   void dispose() {
-    stopHeartbeat();
     _presenceUpdateController.close();
     _userConnectedController.close();
     _userDisconnectedController.close();
-    _presenceCache.clear();
   }
 }

@@ -1,47 +1,59 @@
 const { sequelize } = require('../db/model');
-const cron = require('node-cron');
 const writeQueue = require('../db/writeQueue');
 
 /**
- * PresenceService - Tracks online status with 1-minute heartbeat
+ * PresenceService - Tracks online/busy/offline status based on socket connections
+ * 
+ * Status Logic:
+ * - online: At least one socket connection exists for user
+ * - busy: At least one socket connection exists AND user is in a LiveKit room
+ * - offline: No socket connections exist for user
  */
 class PresenceService {
   
   constructor() {
-    this.cleanupJob = null;
-    this.heartbeatTimeout = 2 * 60 * 1000; // 2 minutes (2x heartbeat interval)
+    // Track socket connections per user: userId -> Set<socketId>
+    this.userConnections = new Map();
+    
+    // Track users in LiveKit rooms: userId -> Set<roomId>
+    this.usersInRooms = new Map();
   }
 
   /**
-   * Start the presence cleanup job (runs every minute)
+   * Start the presence service (no-op, kept for compatibility)
    */
   start() {
-    this.cleanupJob = cron.schedule('* * * * *', async () => {
-      await this.cleanupStaleConnections();
-    });
-
-    console.log('✓ Presence service started (cleanup every minute)');
+    console.log('✓ Presence service started (socket-based tracking)');
   }
 
   /**
-   * Stop the presence cleanup job
+   * Stop the presence service (no-op, kept for compatibility)
    */
   stop() {
-    if (this.cleanupJob) {
-      this.cleanupJob.stop();
-      console.log('✓ Presence service stopped');
-    }
+    console.log('✓ Presence service stopped');
   }
 
   /**
-   * Update user heartbeat
+   * Register a socket connection for a user
    * @param {string} user_id - User UUID
-   * @param {string} connection_id - Socket.IO connection ID
-   * @returns {Promise<Object>} Updated presence object
+   * @param {string} socket_id - Socket.IO connection ID
+   * @returns {Promise<void>}
    */
-  async updateHeartbeat(user_id, connection_id) {
+  async onSocketConnected(user_id, socket_id) {
     try {
-      // Check if presence exists
+      console.log(`[PRESENCE] onSocketConnected called for user ${user_id}, socket ${socket_id}`);
+      
+      // Add to in-memory tracking
+      if (!this.userConnections.has(user_id)) {
+        this.userConnections.set(user_id, new Set());
+      }
+      this.userConnections.get(user_id).add(socket_id);
+
+      // Determine status
+      const status = this._getUserStatus(user_id);
+      console.log(`[PRESENCE] Calculated status for ${user_id}: ${status}`);
+
+      // Update database
       const [existing] = await sequelize.query(`
         SELECT * FROM user_presence WHERE user_id = ?
       `, {
@@ -49,70 +61,209 @@ class PresenceService {
       });
 
       if (existing.length > 0) {
-        // Update existing
         await writeQueue.enqueue(
           () => sequelize.query(`
             UPDATE user_presence
-            SET status = 'online', last_heartbeat = CURRENT_TIMESTAMP, connection_id = ?, updated_at = CURRENT_TIMESTAMP
+            SET status = ?, last_heartbeat = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
             WHERE user_id = ?
           `, {
-            replacements: [connection_id, user_id]
+            replacements: [status, user_id]
           }),
-          'updateHeartbeat'
+          'updatePresenceOnConnect'
         );
+        console.log(`[PRESENCE] Updated existing record for ${user_id}: status=${status}`);
       } else {
-        // Insert new
         await writeQueue.enqueue(
           () => sequelize.query(`
-            INSERT INTO user_presence (user_id, status, last_heartbeat, connection_id)
-            VALUES (?, 'online', CURRENT_TIMESTAMP, ?)
+            INSERT INTO user_presence (user_id, status, last_heartbeat)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
           `, {
-            replacements: [user_id, connection_id]
+            replacements: [user_id, status]
           }),
-          'insertPresence'
+          'insertPresenceOnConnect'
         );
+        console.log(`[PRESENCE] Created new record for ${user_id}: status=${status}`);
       }
 
-      const [updated] = await sequelize.query(`
-        SELECT * FROM user_presence WHERE user_id = ?
-      `, {
-        replacements: [user_id]
-      });
-
-      return updated[0];
+      console.log(`[PRESENCE] User ${user_id} connected (socket ${socket_id}), status: ${status}`);
+      return status;
     } catch (error) {
-      console.error('Error updating heartbeat:', error);
+      console.error('[PRESENCE] Error on socket connected:', error);
       throw error;
     }
   }
 
   /**
-   * Mark user as offline
+   * Unregister a socket connection for a user
    * @param {string} user_id - User UUID
+   * @param {string} socket_id - Socket.IO connection ID
    * @returns {Promise<void>}
    */
-  async markOffline(user_id) {
+  async onSocketDisconnected(user_id, socket_id) {
     try {
+      // Remove from in-memory tracking
+      const connections = this.userConnections.get(user_id);
+      if (connections) {
+        connections.delete(socket_id);
+        
+        // If no more connections, mark offline
+        if (connections.size === 0) {
+          this.userConnections.delete(user_id);
+          
+          await writeQueue.enqueue(
+            () => sequelize.query(`
+              UPDATE user_presence
+              SET status = 'offline', updated_at = CURRENT_TIMESTAMP
+              WHERE user_id = ?
+            `, {
+              replacements: [user_id]
+            }),
+            'markOfflineOnDisconnect'
+          );
+
+          console.log(`[PRESENCE] User ${user_id} disconnected (all sockets closed), status: offline`);
+          return 'offline';
+        } else {
+          // Still has other connections, recalculate status
+          const status = this._getUserStatus(user_id);
+          
+          await writeQueue.enqueue(
+            () => sequelize.query(`
+              UPDATE user_presence
+              SET status = ?, updated_at = CURRENT_TIMESTAMP
+              WHERE user_id = ?
+            `, {
+              replacements: [status, user_id]
+            }),
+            'updatePresenceOnDisconnect'
+          );
+
+          console.log(`[PRESENCE] User ${user_id} disconnected one socket (${connections.size} remaining), status: ${status}`);
+          return status;
+        }
+      }
+
+      return 'offline';
+    } catch (error) {
+      console.error('[PRESENCE] Error on socket disconnected:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Mark user as in a LiveKit room (sets status to 'busy')
+   * @param {string} user_id - User UUID
+   * @param {string} room_id - LiveKit room ID
+   * @returns {Promise<void>}
+   */
+  async onUserJoinedRoom(user_id, room_id) {
+    try {
+      if (!this.usersInRooms.has(user_id)) {
+        this.usersInRooms.set(user_id, new Set());
+      }
+      this.usersInRooms.get(user_id).add(room_id);
+
+      // Update status to busy
       await writeQueue.enqueue(
         () => sequelize.query(`
           UPDATE user_presence
-          SET status = 'offline', updated_at = CURRENT_TIMESTAMP
+          SET status = 'busy', updated_at = CURRENT_TIMESTAMP
           WHERE user_id = ?
         `, {
           replacements: [user_id]
         }),
-        'markOffline'
+        'markBusyOnRoomJoin'
       );
+
+      console.log(`[PRESENCE] User ${user_id} joined room ${room_id}, status: busy`);
+      return 'busy';
     } catch (error) {
-      console.error('Error marking user offline:', error);
+      console.error('[PRESENCE] Error on user joined room:', error);
       throw error;
     }
+  }
+
+  /**
+   * Mark user as left a LiveKit room (recalculates status)
+   * @param {string} user_id - User UUID
+   * @param {string} room_id - LiveKit room ID
+   * @returns {Promise<void>}
+   */
+  async onUserLeftRoom(user_id, room_id) {
+    try {
+      const rooms = this.usersInRooms.get(user_id);
+      if (rooms) {
+        rooms.delete(room_id);
+        
+        if (rooms.size === 0) {
+          this.usersInRooms.delete(user_id);
+        }
+      }
+
+      // Recalculate status
+      const status = this._getUserStatus(user_id);
+
+      await writeQueue.enqueue(
+        () => sequelize.query(`
+          UPDATE user_presence
+          SET status = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE user_id = ?
+        `, {
+          replacements: [status, user_id]
+        }),
+        'updatePresenceOnRoomLeave'
+      );
+
+      console.log(`[PRESENCE] User ${user_id} left room ${room_id}, status: ${status}`);
+      return status;
+    } catch (error) {
+      console.error('[PRESENCE] Error on user left room:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Calculate user status based on connections and room participation
+   * @private
+   * @param {string} user_id - User UUID
+   * @returns {string} Status: 'online', 'busy', or 'offline'
+   */
+  _getUserStatus(user_id) {
+    const hasConnections = this.userConnections.has(user_id) && this.userConnections.get(user_id).size > 0;
+    const inRoom = this.usersInRooms.has(user_id) && this.usersInRooms.get(user_id).size > 0;
+
+    if (!hasConnections) {
+      return 'offline';
+    }
+
+    if (inRoom) {
+      return 'busy';
+    }
+
+    return 'online';
+  }
+
+  /**
+   * DEPRECATED: Legacy method for backward compatibility
+   */
+  async markOffline(user_id) {
+    console.warn('[PRESENCE] markOffline() is deprecated, use onSocketDisconnected()');
+    return await writeQueue.enqueue(
+      () => sequelize.query(`
+        UPDATE user_presence
+        SET status = 'offline', updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = ?
+      `, {
+        replacements: [user_id]
+      }),
+      'markOffline'
+    );
   }
 
   /**
    * Get presence for specific users
    * @param {string[]} user_ids - Array of user UUIDs
-   * @returns {Promise<Array>} Array of presence objects
+   * @returns {Promise<Array>} Array of presence objects with {user_id, status, last_heartbeat}
    */
   async getPresence(user_ids) {
     if (!user_ids || user_ids.length === 0) {
@@ -120,25 +271,33 @@ class PresenceService {
     }
 
     try {
+      console.log(`[PRESENCE] getPresence called for users: ${user_ids.join(', ')}`);
       const placeholders = user_ids.map(() => '?').join(',');
       const [results] = await sequelize.query(`
-        SELECT * FROM user_presence WHERE user_id IN (${placeholders})
+        SELECT user_id, status, last_heartbeat, updated_at FROM user_presence 
+        WHERE user_id IN (${placeholders})
       `, {
         replacements: user_ids
       });
 
+      console.log(`[PRESENCE] Database query returned ${results.length} results:`, results);
+
       // Return all user_ids, defaulting to offline if not found
-      return user_ids.map(user_id => {
+      const finalResults = user_ids.map(user_id => {
         const found = results.find(r => r.user_id === user_id);
-        return found || {
+        const result = found || {
           user_id,
           status: 'offline',
           last_heartbeat: null,
-          connection_id: null
+          updated_at: null
         };
+        console.log(`[PRESENCE] User ${user_id}: ${result.status}`);
+        return result;
       });
+      
+      return finalResults;
     } catch (error) {
-      console.error('Error getting presence:', error);
+      console.error('[PRESENCE] Error getting presence:', error);
       throw error;
     }
   }
@@ -166,54 +325,22 @@ class PresenceService {
   }
 
   /**
-   * Cleanup stale connections (last heartbeat > 2 minutes ago)
-   * Runs every minute via cron job
+   * Cleanup stale connections - DEPRECATED (no longer needed with socket-based tracking)
    */
   async cleanupStaleConnections() {
-    try {
-      const cutoffTime = new Date(Date.now() - this.heartbeatTimeout);
-      
-      const [staleUsers] = await sequelize.query(`
-        SELECT user_id FROM user_presence
-        WHERE status = 'online'
-        AND last_heartbeat < ?
-      `, {
-        replacements: [cutoffTime]
-      });
-
-      if (staleUsers.length > 0) {
-        console.log(`[PRESENCE] Marking ${staleUsers.length} users as offline (stale heartbeat)`);
-        
-        await writeQueue.enqueue(
-          () => sequelize.query(`
-            UPDATE user_presence
-            SET status = 'offline', updated_at = CURRENT_TIMESTAMP
-            WHERE last_heartbeat < ?
-          `, {
-            replacements: [cutoffTime]
-          }),
-          'cleanupStaleConnections'
-        );
-
-        // Return user_ids that were marked offline for Socket.IO broadcast
-        return staleUsers.map(u => u.user_id);
-      }
-
-      return [];
-    } catch (error) {
-      console.error('[PRESENCE] Error cleaning up stale connections:', error);
-      return [];
-    }
+    console.warn('[PRESENCE] cleanupStaleConnections() is deprecated');
+    return [];
   }
 
   /**
-   * Get all online users
+   * Get all online users (online or busy)
    * @returns {Promise<Array>} Array of online user_ids
    */
   async getOnlineUsers() {
     try {
       const [results] = await sequelize.query(`
-        SELECT user_id FROM user_presence WHERE status = 'online'
+        SELECT user_id FROM user_presence 
+        WHERE status IN ('online', 'busy')
       `);
 
       return results.map(r => r.user_id);
@@ -224,9 +351,9 @@ class PresenceService {
   }
 
   /**
-   * Check if user is online
+   * Check if user is online (online or busy)
    * @param {string} user_id - User UUID
-   * @returns {Promise<boolean>} True if online
+   * @returns {Promise<boolean>} True if online or busy
    */
   async isOnline(user_id) {
     try {
@@ -237,12 +364,15 @@ class PresenceService {
       });
 
       if (results.length === 0) {
+        console.log(`[PRESENCE] isOnline check for ${user_id}: NO RECORD (returning false)`);
         return false;
       }
 
-      return results[0].status === 'online';
+      const isOnline = results[0].status === 'online' || results[0].status === 'busy';
+      console.log(`[PRESENCE] isOnline check for ${user_id}: status=${results[0].status}, result=${isOnline}`);
+      return isOnline;
     } catch (error) {
-      console.error('Error checking online status:', error);
+      console.error('[PRESENCE] Error checking online status:', error);
       return false;
     }
   }

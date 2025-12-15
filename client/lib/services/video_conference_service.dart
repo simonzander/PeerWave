@@ -205,35 +205,45 @@ class VideoConferenceService extends ChangeNotifier {
     String meetingId,
   ) async {
     try {
+      debugPrint('[VideoConf] 🔍 Getting participants with E2EE key for: $meetingId');
       final completer = Completer<List<String>>();
 
       void listener(dynamic data) {
+        debugPrint('[VideoConf] 📥 Received video:participants-info: $data');
         if (data['channelId'] == meetingId) {
           final participants = data['participants'] as List<dynamic>? ?? [];
+          debugPrint('[VideoConf] All participants: ${participants.length}');
           final withKey = participants
               .where((p) => p['hasE2EEKey'] == true)
               .map((p) => p['userId'] as String)
               .toList();
+          debugPrint('[VideoConf] ✓ Participants with E2EE key: ${withKey.length} - $withKey');
           completer.complete(withKey);
+        } else {
+          debugPrint('[VideoConf] ⚠️ Ignoring participants-info for different channel: ${data['channelId']}');
         }
       }
 
       SocketService().registerListener('video:participants-info', listener);
 
+      debugPrint('[VideoConf] 📤 Emitting video:check-participants for: $meetingId');
       SocketService().emit('video:check-participants', {
         'channelId': meetingId,
       });
 
       final result = await completer.future.timeout(
         const Duration(seconds: 5),
-        onTimeout: () => <String>[],
+        onTimeout: () {
+          debugPrint('[VideoConf] ⏱️ Timeout waiting for participants info');
+          return <String>[];
+        },
       );
 
       SocketService().unregisterListener('video:participants-info', listener);
 
       return result;
     } catch (e) {
-      debugPrint('[VideoConf] Error getting meeting participants: $e');
+      debugPrint('[VideoConf] ❌ Error getting meeting participants: $e');
       return [];
     }
   }

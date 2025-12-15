@@ -92,7 +92,7 @@ class SoundService {
       await _ringtonePlayer.setReleaseMode(ReleaseMode.loop);
       
       // Play ringtone from assets
-      await _ringtonePlayer.play(AssetSource('sounds/ringtone.mp3'));
+      await _ringtonePlayer.play(AssetSource('sounds/incoming_call.mp3'));
       
       _isPlayingRingtone = true;
       debugPrint('[SoundService] 🔔 Ringtone started');

@@ -645,6 +645,20 @@ io.sockets.on("connection", socket => {
         
         console.log(`[SIGNAL SERVER] ✓ Native client authenticated: ${deviceKey}`);
         
+        // Register user as online in presence service
+        presenceService.onSocketConnected(session.user_id, socket.id).then(status => {
+          console.log(`[PRESENCE] User ${session.user_id} connected with status: ${status}`);
+          // Broadcast online status to other users
+          socket.broadcast.emit('presence:update', {
+            user_id: session.user_id,
+            status: status,
+            last_seen: new Date()
+          });
+          console.log(`[PRESENCE] Broadcasted presence:update for ${session.user_id}`);
+        }).catch(err => {
+          console.error('[PRESENCE] Error registering socket connection:', err);
+        });
+        
         return socket.emit("authenticated", { 
           authenticated: true,
           uuid: session.user_id,
@@ -676,6 +690,20 @@ io.sockets.on("connection", socket => {
         // Store userId in socket.data for video conferencing
         socket.data.userId = socket.handshake.session.uuid;
         socket.data.deviceId = socket.handshake.session.deviceId;
+        
+        // Register user as online in presence service
+        presenceService.onSocketConnected(socket.handshake.session.uuid, socket.id).then(status => {
+          console.log(`[PRESENCE] User ${socket.handshake.session.uuid} connected with status: ${status}`);
+          // Broadcast online status to other users
+          socket.broadcast.emit('presence:update', {
+            user_id: socket.handshake.session.uuid,
+            status: status,
+            last_seen: new Date()
+          });
+          console.log(`[PRESENCE] Broadcasted presence:update for ${socket.handshake.session.uuid}`);
+        }).catch(err => {
+          console.error('[PRESENCE] Error registering socket connection:', err);
+        });
         
         socket.emit("authenticated", { 
           authenticated: true,
@@ -2827,13 +2855,20 @@ io.sockets.on("connection", socket => {
           return;
         }
         
-        // Check if user is creator, participant, or invited
+        // Check if user is creator, participant, invited, or the source_user (person being called in 1:1)
         const isCreator = meeting.created_by === userId;
         const isParticipant = meeting.participants && meeting.participants.some(p => p.uuid === userId);
         const isInvited = meeting.invited_participants && meeting.invited_participants.includes(userId);
+        const isSourceUser = meeting.source_user_id === userId; // Person being called in 1:1 instant call
         
-        if (!isCreator && !isParticipant && !isInvited) {
-          console.error('[VIDEO PARTICIPANTS] User not authorized for meeting:', channelId);
+        if (!isCreator && !isParticipant && !isInvited && !isSourceUser) {
+          console.error('[VIDEO PARTICIPANTS] User not authorized for meeting:', channelId, 'userId:', userId);
+          console.error('[VIDEO PARTICIPANTS] Meeting details:', {
+            created_by: meeting.created_by,
+            source_user_id: meeting.source_user_id,
+            participants: meeting.participants?.map(p => p.uuid),
+            invited: meeting.invited_participants
+          });
           socket.emit("video:participants-info", { error: "Not authorized for this meeting" });
           return;
         }
@@ -2948,6 +2983,17 @@ io.sockets.on("connection", socket => {
 
         // Mark LiveKit room as active
         meetingService.updateLiveKitRoom(channelId, true, [userId]);
+        
+        // Mark user as busy in presence service
+        presenceService.onUserJoinedRoom(userId, channelId).then(status => {
+          socket.broadcast.emit('presence:update', {
+            user_id: userId,
+            status: status,
+            last_seen: new Date()
+          });
+        }).catch(err => {
+          console.error('[PRESENCE] Error marking user as busy:', err);
+        });
 
         console.log(`[VIDEO PARTICIPANTS] User ${userId} registered for meeting ${channelId}`);
 
@@ -3051,6 +3097,17 @@ io.sockets.on("connection", socket => {
           meetingService.updateLiveKitRoom(channelId, false, []);
           console.log(`[VIDEO PARTICIPANTS] Meeting ${channelId} now empty`);
         }
+        
+        // Mark user as no longer in room (recalculate presence)
+        presenceService.onUserLeftRoom(userId, channelId).then(status => {
+          socket.broadcast.emit('presence:update', {
+            user_id: userId,
+            status: status,
+            last_seen: new Date()
+          });
+        }).catch(err => {
+          console.error('[PRESENCE] Error updating presence after leaving room:', err);
+        });
       }
 
       // Remove from Socket.IO tracking
@@ -3393,28 +3450,6 @@ io.sockets.on("connection", socket => {
   // ============================================================================
 
   /**
-   * Presence: Update heartbeat (called every 60 seconds from client)
-   * Real-time presence tracking - broadcasts online status to other users
-   */
-  socket.on('presence:heartbeat', async () => {
-    try {
-      const userId = getUserId();
-      if (!userId) return;
-
-      await presenceService.updateHeartbeat(userId, socket.id);
-      
-      // Broadcast status update to relevant users
-      socket.broadcast.emit('presence:update', {
-        user_id: userId,
-        status: 'online',
-        last_heartbeat: new Date()
-      });
-    } catch (error) {
-      console.error('[PRESENCE] Error updating heartbeat:', error);
-    }
-  });
-
-  /**
    * Meeting: Join room for real-time events
    * Required for receiving admission notifications
    */
@@ -3574,26 +3609,89 @@ io.sockets.on("connection", socket => {
   socket.on('call:notify', async (data) => {
     try {
       const userId = getUserId();
+      const deviceId = getDeviceId();
       if (!userId) return;
 
       const { meeting_id, recipient_ids } = data;
+      
+      // Get meeting details for context
+      const meeting = await meetingService.getMeeting(meeting_id);
+      if (!meeting) {
+        console.error('[CALL] Meeting not found:', meeting_id);
+        return;
+      }
+
+      // Get caller profile
+      const caller = await User.findOne({ where: { uuid: userId } });
+      const callerName = caller?.displayName || 'Unknown';
 
       // Send call notification to each recipient
       for (const recipientId of recipient_ids) {
+        console.log(`[CALL] Processing notification for recipient: ${recipientId}`);
+        
         // Check if user is online
         const isOnline = await presenceService.isOnline(recipientId);
+        console.log(`[CALL] Recipient ${recipientId} online status: ${isOnline}`);
         
         if (isOnline) {
           // Update participant status to ringing
           await meetingService.updateParticipantStatus(meeting_id, recipientId, 'ringing');
 
-          // TODO: Encrypt caller info with Signal Protocol
-          emitToUser(io, recipientId, 'call:incoming', {
-            meeting_id,
-            caller_id: userId,
-            caller_name: 'Caller', // Get from user profile
-            timestamp: new Date()
+          // Create call notification payload
+          const notificationPayload = {
+            callerId: userId,
+            callerName: callerName,
+            meetingId: meeting_id,
+            callType: meeting.is_instant_call ? 'instant' : 'scheduled',
+            channelId: meeting.channel_id || null,
+            channelName: meeting.title || 'Call',
+            timestamp: new Date().toISOString(),
+          };
+          
+          // Get all recipient devices
+          const recipientClients = await Client.findAll({
+            where: { owner: recipientId }
           });
+          
+          // Send encrypted notification to each device
+          for (const client of recipientClients) {
+            const itemId = `call_${meeting_id}_${recipientId}_${client.device_id}_${Date.now()}`;
+            
+            try {
+              // Store notification in database as a system message
+              await writeQueue.enqueue(async () => {
+                return await Item.create({
+                  sender: userId,
+                  deviceSender: deviceId,
+                  receiver: recipientId,
+                  deviceReceiver: client.device_id,
+                  type: 'call_notification',
+                  payload: JSON.stringify(notificationPayload),
+                  cipherType: 0, // System message, not encrypted
+                  itemId: itemId
+                });
+              }, `callNotify-${itemId}`);
+              
+              // Send to device if online
+              const success = safeEmitToDevice(io, recipientId, client.device_id, "receiveItem", {
+                sender: userId,
+                senderDeviceId: deviceId,
+                recipient: recipientId,
+                type: 'call_notification',
+                payload: JSON.stringify(notificationPayload),
+                cipherType: 0,
+                itemId: itemId,
+              });
+              
+              if (success) {
+                console.log(`[CALL] ✓ Sent call notification to ${recipientId}:${client.device_id}`);
+              } else {
+                console.log(`[CALL] ✗ Failed to send call notification to ${recipientId}:${client.device_id} (device not connected)`);
+              }
+            } catch (e) {
+              console.error(`[CALL] Error sending notification to ${recipientId}:${client.device_id}:`, e);
+            }
+          }
 
           // Notify caller that user is ringing
           socket.emit('call:ringing', {
@@ -3640,13 +3738,14 @@ io.sockets.on("connection", socket => {
       const userId = getUserId();
       if (!userId) return;
 
-      const { meeting_id } = data;
+      const { meeting_id, reason } = data;
 
       // Notify caller
       const meeting = await meetingService.getMeeting(meeting_id);
       emitToUser(io, meeting.created_by, 'call:declined', {
         meeting_id,
-        user_id: userId
+        user_id: userId,
+        reason: reason || 'declined' // Forward the decline reason (timeout vs manual)
       });
     } catch (error) {
       console.error('[CALL] Error declining call:', error);
@@ -3663,15 +3762,23 @@ io.sockets.on("connection", socket => {
     
     // Handle meeting/call participant disconnect
     if (userId) {
-      // Update presence to offline
-      presenceService.markOffline(userId).catch(err => {
-        console.error('[PRESENCE] Error marking user offline:', err);
-      });
-      
-      // Broadcast offline status
-      socket.broadcast.emit('presence:user_disconnected', {
-        user_id: userId,
-        last_seen: new Date()
+      // Unregister socket from presence service
+      presenceService.onSocketDisconnected(userId, socket.id).then(status => {
+        // Broadcast status update
+        if (status === 'offline') {
+          socket.broadcast.emit('presence:user_disconnected', {
+            user_id: userId,
+            last_seen: new Date()
+          });
+        } else {
+          socket.broadcast.emit('presence:update', {
+            user_id: userId,
+            status: status,
+            last_seen: new Date()
+          });
+        }
+      }).catch(err => {
+        console.error('[PRESENCE] Error unregistering socket:', err);
       });
       
       // Handle instant call cleanup (WebSocket-based)

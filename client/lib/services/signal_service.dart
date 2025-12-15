@@ -2874,8 +2874,35 @@ class SignalService {
     // ✅ PHASE 3: Identify system messages for cleanup
     bool isSystemMessage = false;
 
+    // Handle call notification type (cipherType 0 - unencrypted)
+    if (type == 'call_notification') {
+      debugPrint('[SIGNAL SERVICE] Received call_notification - triggering callbacks');
+      
+      // Trigger all registered callbacks for this type
+      if (_itemTypeCallbacks.containsKey(type)) {
+        final callbackItem = {
+          'type': type,
+          'payload': message, // Already decrypted (or plain for cipherType 0)
+          'sender': sender,
+          'itemId': itemId,
+        };
+        
+        for (final callback in _itemTypeCallbacks[type]!) {
+          try {
+            debugPrint('[SIGNAL SERVICE] Calling callback for call_notification');
+            callback(callbackItem);
+          } catch (e) {
+            debugPrint('[SIGNAL SERVICE] Error in call_notification callback: $e');
+          }
+        }
+      } else {
+        debugPrint('[SIGNAL SERVICE] No callbacks registered for call_notification');
+      }
+      
+      isSystemMessage = true;
+    }
     // Handle read_receipt type
-    if (type == 'read_receipt') {
+    else if (type == 'read_receipt') {
       debugPrint(
         '[SIGNAL_SERVICE] receiveItem detected read_receipt type, calling _handleReadReceipt',
       );
@@ -4255,9 +4282,16 @@ class SignalService {
 
   Future<String> decryptItem({
     required SignalProtocolAddress senderAddress,
-    required String payload, // base64-encoded serialized message
-    required int cipherType, // 3 = PreKey, 1 = SignalMessage
+    required String payload, // base64-encoded serialized message OR plain JSON for cipherType 0
+    required int cipherType, // 3 = PreKey, 1 = SignalMessage, 0 = Unencrypted system message
   }) async {
+    // Handle unencrypted system messages (cipherType 0)
+    if (cipherType == 0) {
+      debugPrint('[SIGNAL SERVICE] Processing unencrypted system message (cipherType 0)');
+      // Payload is already the plain message (JSON string), no decryption needed
+      return payload;
+    }
+    
     // 1. SessionCipher für den Absender holen/erstellen
     try {
       final sessionCipher = SessionCipher(

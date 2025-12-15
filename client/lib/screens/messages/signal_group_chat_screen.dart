@@ -1214,9 +1214,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         foregroundColor: colorScheme.onSurface,
         elevation: 1,
         actions: [
-          // Video Call Button - Navigate to PreJoin screen
+          // Phone Call Button - Navigate to PreJoin screen for instant call
           IconButton(
-            icon: const Icon(Icons.videocam),
+            icon: const Icon(Icons.phone),
+            tooltip: 'Start Call',
             onPressed: () async {
               // Open PreJoin screen for device selection and E2EE key exchange
               final result = await Navigator.push(
@@ -1225,6 +1226,9 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                   builder: (context) => VideoConferencePreJoinView(
                     channelId: widget.channelUuid,
                     channelName: widget.channelName,
+                    isInstantCall: true,
+                    sourceChannelId: widget.channelUuid,
+                    isInitiator: true,
                     // No callback needed - will return via Navigator.pop
                   ),
                 ),
@@ -1249,7 +1253,6 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                 }
               }
             },
-            tooltip: 'Join Video Call',
           ),
           IconButton(
             icon: const Icon(Icons.people),

@@ -4,21 +4,40 @@ const presenceService = require('../services/presenceService');
 const { verifySessionAuth, verifyAuthEither } = require('../middleware/sessionAuth');
 
 /**
- * Update heartbeat
- * POST /api/presence/heartbeat
+ * Get presence for specific users (bulk check - GET with query params)
+ * GET /api/presence/bulk?user_ids=uuid1,uuid2,uuid3
+ * Used before initiating instant calls to check if recipients are online
  */
-router.post('/presence/heartbeat', verifyAuthEither, async (req, res) => {
+router.get('/presence/bulk', verifyAuthEither, async (req, res) => {
   try {
-    const userId = req.userId;
-    const connectionId = req.body.connection_id || req.session.id;
+    const userIdsParam = req.query.user_ids;
+    
+    if (!userIdsParam) {
+      return res.status(400).json({ error: 'user_ids query parameter required' });
+    }
 
-    const presence = await presenceService.updateHeartbeat(userId, connectionId);
+    const userIds = userIdsParam.split(',').map(id => id.trim()).filter(Boolean);
+    
+    if (userIds.length === 0) {
+      return res.status(400).json({ error: 'user_ids must contain at least one ID' });
+    }
+
+    const presence = await presenceService.getPresence(userIds);
     
     res.json(presence);
   } catch (error) {
-    console.error('Error updating heartbeat:', error);
-    res.status(500).json({ error: 'Failed to update heartbeat' });
+    console.error('Error getting bulk presence:', error);
+    res.status(500).json({ error: 'Failed to get presence' });
   }
+});
+
+/**
+ * DEPRECATED: Update heartbeat (no longer needed with socket-based tracking)
+ * POST /api/presence/heartbeat
+ */
+router.post('/presence/heartbeat', verifyAuthEither, async (req, res) => {
+  console.warn('[PRESENCE] /api/presence/heartbeat is deprecated');
+  res.json({ status: 'deprecated', message: 'Heartbeat no longer required' });
 });
 
 /**

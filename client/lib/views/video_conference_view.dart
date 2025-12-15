@@ -11,6 +11,7 @@ import '../services/message_listener_service.dart';
 import '../services/user_profile_service.dart';
 import '../services/api_service.dart';
 import '../services/signal_service.dart';
+import '../services/socket_service.dart';
 import '../screens/channel/channel_members_screen.dart';
 import '../screens/channel/channel_settings_screen.dart';
 import '../widgets/animated_widgets.dart';
@@ -37,6 +38,7 @@ class VideoConferenceView extends StatefulWidget {
   final String? host; // For settings and API calls
   final lk.MediaDevice? selectedCamera; // NEW: Pre-selected from PreJoin
   final lk.MediaDevice? selectedMicrophone; // NEW: Pre-selected from PreJoin
+  final List<String>? invitedUserIds; // For instant calls - track who was invited
 
   const VideoConferenceView({
     super.key,
@@ -45,6 +47,7 @@ class VideoConferenceView extends StatefulWidget {
     this.host,
     this.selectedCamera, // NEW
     this.selectedMicrophone, // NEW
+    this.invitedUserIds, // NEW: For missed call tracking
   });
 
   @override
@@ -72,9 +75,23 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   final Map<String, String> _displayNameCache = {};
   final Map<String, String> _profilePictureCache = {};
 
+  // Track invited/joined users for missed call notifications (instant calls only)
+  Set<String> _invitedUserIds = {};
+  Set<String> _joinedUserIds = {};
+  Set<String> _declinedUserIds = {}; // Track users who declined/timed out
+
   @override
   void initState() {
     super.initState();
+    
+    // Initialize invited users for instant calls
+    if (widget.invitedUserIds != null) {
+      _invitedUserIds = widget.invitedUserIds!.toSet();
+      debugPrint('[VideoConferenceView] Tracking ${_invitedUserIds.length} invited users for missed calls');
+    }
+    
+    // Set up call decline listener for instant calls
+    _setupCallDeclineListener();
 
     // Load channel details if host is available
     if (widget.host != null) {
@@ -106,6 +123,17 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           '[VideoConferenceView] Registered VideoConferenceService with MessageListener',
         );
 
+        // Listen for participant joined events to track who actually joined
+        _service!.onParticipantJoined.listen((participant) {
+          final userId = participant.identity;
+          if (userId.isNotEmpty && _invitedUserIds.isNotEmpty) {
+            setState(() {
+              _joinedUserIds.add(userId);
+            });
+            debugPrint('[VideoConferenceView] User $userId joined, removing from missed call list');
+          }
+        });
+        
         // Schedule join for after build completes (only if not already in call)
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && !(_service?.isInCall ?? false)) {
@@ -127,6 +155,37 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
     // Full-view mode is already set by navigateToCurrentChannelFullView() before navigation
     // So we don't need to call enterFullView() here anymore
+  }
+  
+  /// Listen for call:declined socket events to handle timeouts
+  void _setupCallDeclineListener() {
+    final isInstantCall = widget.channelId.startsWith('call_');
+    if (!isInstantCall) return;
+    
+    // Listen for decline events from the socket
+    SocketService().registerListener('call:declined', (data) async {
+      try {
+        final declineData = data as Map<String, dynamic>;
+        final userId = declineData['user_id'] as String?;
+        final reason = declineData['reason'] as String?;
+        
+        if (userId == null) return;
+        
+        debugPrint('[VideoConferenceView] User $userId declined call with reason: $reason');
+        
+        // Track declined user
+        setState(() {
+          _declinedUserIds.add(userId);
+        });
+        
+        // If timeout, send missed call notification immediately
+        if (reason == 'timeout') {
+          await _sendMissedCallNotification(userId);
+        }
+      } catch (e) {
+        debugPrint('[VideoConferenceView] Error handling decline event: $e');
+      }
+    });
   }
 
   Future<void> _joinChannel() async {
@@ -178,6 +237,12 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     if (_service == null) return;
 
     try {
+      // Send missed call notifications to offline users (instant calls only)
+      final isInstantCall = widget.channelId.startsWith('call_');
+      if (isInstantCall && _invitedUserIds.isNotEmpty) {
+        await _sendMissedCallNotificationsToOfflineUsers();
+      }
+      
       await _service!.leaveRoom();
 
       // Navigate back to channels view
@@ -264,6 +329,53 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       }
     } catch (e) {
       debugPrint('[VIDEO_CONFERENCE] Error loading channel details: $e');
+    }
+  }
+  
+  /// Send missed call notification to a specific user via Signal
+  Future<void> _sendMissedCallNotification(String userId) async {
+    try {
+      final currentUserId = UserProfileService.instance.currentUserUuid;
+      if (currentUserId == null) {
+        debugPrint('[VideoConferenceView] Cannot send missed call: current user ID is null');
+        return;
+      }
+      
+      final payload = {
+        'callerId': currentUserId,
+        'channelId': widget.channelId,
+        'channelName': widget.channelName,
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+      
+      await SignalService.instance.sendItem(
+        recipientUserId: userId,
+        type: 'missingcall',
+        payload: payload,
+      );
+      
+      debugPrint('[VideoConferenceView] Sent missed call notification to $userId');
+    } catch (e) {
+      debugPrint('[VideoConferenceView] Error sending missed call to $userId: $e');
+    }
+  }
+  
+  /// Send missed call notifications to users who were offline and never got notified
+  Future<void> _sendMissedCallNotificationsToOfflineUsers() async {
+    // Calculate users who never joined or declined (assumed offline)
+    final offlineUsers = _invitedUserIds
+        .difference(_joinedUserIds)
+        .difference(_declinedUserIds);
+    
+    if (offlineUsers.isEmpty) {
+      debugPrint('[VideoConferenceView] No offline users to notify');
+      return;
+    }
+    
+    debugPrint('[VideoConferenceView] Sending missed call notifications to ${offlineUsers.length} offline users');
+    
+    for (final userId in offlineUsers) {
+      await _sendMissedCallNotification(userId);
     }
   }
 

@@ -605,6 +605,64 @@ roleRoutes.get('/channels/:channelId/members', verifyAuthEither, requireAuth, as
     }
 });
 
+// GET /api/channels/:channelId/online-members - Get online channel members for instant calls
+roleRoutes.get('/channels/:channelId/online-members', verifyAuthEither, requireAuth, async (req, res) => {
+    try {
+        const { channelId } = req.params;
+        const currentUserId = req.session.uuid;
+        
+        // Check if user is a member of this channel
+        const isMember = await ChannelMembers.findOne({
+            where: { 
+                channelId,
+                userId: currentUserId
+            }
+        });
+        
+        if (!isMember) {
+            return res.status(403).json({ error: 'Forbidden: Not a channel member' });
+        }
+        
+        // Get all channel members
+        const channelMembers = await ChannelMembers.findAll({
+            where: { channelId },
+            include: [{
+                model: User,
+                attributes: ['uuid', 'displayName']
+            }]
+        });
+        
+        // Filter by online status (excluding current user)
+        const presenceService = require('../services/presenceService');
+        const onlineMembers = [];
+        
+        for (const member of channelMembers) {
+            if (!member.User) continue;
+            
+            const userId = member.User.uuid;
+            
+            // Skip current user
+            if (userId === currentUserId) continue;
+            
+            // Check online status
+            const isOnline = await presenceService.isOnline(userId);
+            if (isOnline) {
+                onlineMembers.push({
+                    user_id: userId,
+                    display_name: member.User.displayName
+                });
+            }
+        }
+        
+        res.json({
+            online_members: onlineMembers
+        });
+    } catch (error) {
+        console.error('Error fetching online channel members:', error);
+        res.status(500).json({ error: 'Failed to fetch online members' });
+    }
+});
+
 // POST /api/channels/:channelId/members - Add user to channel
 roleRoutes.post('/channels/:channelId/members', verifyAuthEither, requireAuth, async (req, res) => {
     try {

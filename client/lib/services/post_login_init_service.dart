@@ -316,12 +316,12 @@ class PostLoginInitService {
           }
         }),
 
-        // Presence service (starts heartbeat)
+        // Presence service
         Future(() async {
           try {
             final presenceService = PresenceService();
             presenceService.initialize();
-            debugPrint('[POST_LOGIN_INIT]   ✓ Presence service initialized (heartbeat started)');
+            debugPrint('[POST_LOGIN_INIT]   ✓ Presence service initialized');
           } catch (e) {
             debugPrint('[POST_LOGIN_INIT]   ⚠️ Presence service error: $e');
           }
@@ -514,14 +514,6 @@ class PostLoginInitService {
     debugPrint('[POST_LOGIN_INIT] Resetting state...');
     _isInitialized = false;
     _isInitializing = false;
-
-    // Stop presence heartbeat
-    try {
-      PresenceService().stopHeartbeat();
-      debugPrint('[POST_LOGIN_INIT] ✓ Presence heartbeat stopped');
-    } catch (e) {
-      debugPrint('[POST_LOGIN_INIT] ⚠️ Error stopping presence heartbeat: $e');
-    }
 
     // Clear P2P services
     _fileStorage = null;

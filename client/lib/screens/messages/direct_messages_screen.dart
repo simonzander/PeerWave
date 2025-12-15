@@ -18,6 +18,9 @@ import '../../services/event_bus.dart';
 import '../../models/file_message.dart';
 import '../../extensions/snackbar_extensions.dart';
 import '../../providers/unread_messages_provider.dart';
+import '../../views/video_conference_prejoin_view.dart';
+import '../../views/video_conference_view.dart';
+import '../../widgets/animated_widgets.dart';
 
 /// Whitelist of message types that should be displayed in UI
 const Set<String> DISPLAYABLE_MESSAGE_TYPES = {
@@ -855,6 +858,51 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         backgroundColor: colorScheme.surfaceContainerHighest,
         foregroundColor: colorScheme.onSurface,
         elevation: 1,
+        actions: [
+          // Phone Call Button - Start instant 1:1 call
+          IconButton(
+            icon: const Icon(Icons.phone),
+            tooltip: 'Start Call',
+            onPressed: () async {
+              // For 1:1 calls, use a placeholder ID - actual call ID created in PreJoin
+              // The channelId will be replaced with the real meeting ID after creation
+              final placeholderCallId = 'call_pending_${widget.recipientUuid}';
+              
+              // Navigate to PreJoin for instant 1:1 call
+              final result = await Navigator.push(
+                context,
+                SlidePageRoute(
+                  builder: (context) => VideoConferencePreJoinView(
+                    channelId: placeholderCallId, // Will be replaced in PreJoin
+                    channelName: '1:1 Call with ${widget.recipientDisplayName}',
+                    isInstantCall: true,
+                    sourceUserId: widget.recipientUuid,
+                    isInitiator: true,
+                  ),
+                ),
+              );
+              
+              // If user completed PreJoin, navigate to video conference
+              if (result != null &&
+                  result is Map &&
+                  result['hasE2EEKey'] == true) {
+                if (mounted) {
+                  Navigator.push(
+                    context,
+                    SlidePageRoute(
+                      builder: (context) => VideoConferenceView(
+                        channelId: result['channelId'],
+                        channelName: result['channelName'],
+                        selectedCamera: result['selectedCamera'],
+                        selectedMicrophone: result['selectedMicrophone'],
+                      ),
+                    ),
+                  );
+                }
+              }
+            },
+          ),
+        ],
       ),
       backgroundColor: colorScheme.surface,
       body: Column(

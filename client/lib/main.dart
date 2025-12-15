@@ -74,6 +74,7 @@ import 'services/file_transfer/chunking_service.dart';
 import 'services/video_conference_service.dart';
 import 'widgets/call_top_bar.dart';
 import 'widgets/call_overlay.dart';
+import 'widgets/incoming_call_listener.dart';
 import 'widgets/custom_window_title_bar.dart';
 import 'screens/file_transfer/file_upload_screen.dart';
 import 'screens/file_transfer/file_manager_screen.dart';
@@ -408,18 +409,20 @@ class _MyAppState extends State<MyApp> {
                     child: child ?? const SizedBox(),
                   );
 
-            return Stack(
-              children: [
-                Column(
-                  children: [
-                    const CallTopBar(),
-                    Expanded(child: contentWithTitleBar),
-                  ],
-                ),
-                const CallOverlay(),
-                // Server unavailable overlay (native only)
-                const ServerUnavailableOverlay(),
-              ],
+            return IncomingCallListener(
+              child: Stack(
+                children: [
+                  Column(
+                    children: [
+                      const CallTopBar(),
+                      Expanded(child: contentWithTitleBar),
+                    ],
+                  ),
+                  const CallOverlay(),
+                  // Server unavailable overlay (native only)
+                  const ServerUnavailableOverlay(),
+                ],
+              ),
             );
           },
         );

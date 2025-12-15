@@ -1,16 +1,20 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/meeting.dart';
 import 'api_service.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'meeting_service.dart';
 import 'sound_service.dart';
+import 'signal_service.dart';
+import 'presence_service.dart';
 
 /// Call service - handles instant call creation and notifications
 /// 
 /// Use HTTP routes for:
-/// - Creating instant calls (POST /api/calls)
+/// - Creating instant calls (POST /api/calls/instant)
 /// - Same endpoints as meetings (calls are meetings with is_instant_call=true)
+/// - Pre-call validation (GET /api/presence/bulk for online status)
 /// 
 /// Use Socket.IO for real-time notifications:
 /// - call:notify (emit) - Send ringtone notification to recipients
@@ -50,17 +54,53 @@ class CallService {
     if (_listenersRegistered) return;
     _listenersRegistered = true;
 
-    _socketService.registerListener('call:incoming', (data) {
-      debugPrint('[CALL SERVICE] Received call:incoming: $data');
+    // Register Signal callback for call notifications (from any sender)
+    // Backend sends call data via Signal protocol (encrypted)
+    SignalService.instance.registerItemCallback('call_notification', (data) {
+      debugPrint('[CALL SERVICE] Received call_notification via Signal: $data');
       try {
-        final callData = data as Map<String, dynamic>;
+        // Data structure: {type, payload, sender, itemId}
+        // payload is a JSON string that needs to be parsed
+        final itemData = data as Map<String, dynamic>;
+        final payloadStr = itemData['payload'] as String;
+        final callData = jsonDecode(payloadStr) as Map<String, dynamic>;
         
-        // Play ringtone for incoming call
+        // Extract call information (already decrypted)
+        final String meetingId = callData['meetingId'] as String;
+        final String? channelId = callData['channelId'] as String?;
+        final String? channelName = callData['channelName'] as String?;
+        final String? callerName = callData['callerName'] as String?;
+        final String? callerId = callData['callerId'] as String?;
+        final String? callerAvatar = callData['callerAvatar'] as String?;
+        final bool isDirectCall = callData['isDirectCall'] as bool? ?? false;
+        
+        debugPrint(
+          '[CALL SERVICE] Incoming call - meetingId: $meetingId, '
+          'channel: ${channelName ?? 'Direct Call'}, caller: $callerName',
+        );
+        
+        // Play ringtone
         _soundService.playRingtone();
         
-        _incomingCallController.add(callData);
-      } catch (e) {
-        debugPrint('[CALL SERVICE] Error parsing call:incoming: $e');
+        // Add to stream
+        _incomingCallController.add({
+          'meetingId': meetingId,
+          'channelId': channelId,
+          'channelName': channelName,
+          'callerName': callerName,
+          'callerId': callerId,
+          'callerAvatar': callerAvatar,
+          'isDirectCall': isDirectCall,
+        });
+        
+      } catch (e, stackTrace) {
+        debugPrint('[CALL SERVICE] Error parsing call notification: $e');
+        debugPrint('[CALL SERVICE] Stack trace: $stackTrace');
+        // Still notify UI with error state
+        _incomingCallController.add({
+          'error': true,
+          'message': 'Failed to parse call data',
+        });
       }
     });
 
@@ -76,10 +116,13 @@ class CallService {
     _socketService.registerListener('call:accepted', (data) {
       debugPrint('[CALL SERVICE] Received call:accepted: $data');
       try {
-        // Stop ringtone when call is accepted
+        final acceptData = data as Map<String, dynamic>;
+        
+        // Stop ringtone when call is accepted (could be on another device)
         _soundService.stopRingtone();
         
-        _callAcceptedController.add(data as Map<String, dynamic>);
+        // Notify stream (will dismiss overlay on other devices)
+        _callAcceptedController.add(acceptData);
       } catch (e) {
         debugPrint('[CALL SERVICE] Error parsing call:accepted: $e');
       }
@@ -130,19 +173,20 @@ class CallService {
   /// Create an instant call (uses meetings API with is_instant_call=true)
   Future<Meeting> createCall({
     String? title,
-    String? channelId,
+    String? sourceChannelId,
+    String? sourceUserId,
     bool allowExternal = false,
     bool voiceOnly = false,
   }) async {
     final now = DateTime.now();
     final endTime = now.add(const Duration(hours: 24));
 
-    final response = await ApiService.post('/api/calls', data: {
+    final response = await ApiService.post('/api/calls/instant', data: {
       'title': title ?? 'Instant Call',
       'start_time': now.toIso8601String(),
       'end_time': endTime.toIso8601String(),
-      'is_instant_call': true,
-      'channel_id': channelId,
+      'source_channel_id': sourceChannelId,
+      'source_user_id': sourceUserId,
       'allow_external': allowExternal,
       'voice_only': voiceOnly,
     });
@@ -156,6 +200,106 @@ class CallService {
       status: 'in_progress',
       isInstantCall: true,
     );
+  }
+
+  /// Start instant call from channel
+  /// Returns meeting ID for joining LiveKit room
+  /// Validates that at least one member is online before creating call
+  Future<String> startChannelCall({
+    required String channelId,
+    required String channelName,
+  }) async {
+    debugPrint('[CALL SERVICE] Starting channel call: $channelName ($channelId)');
+    
+    // Pre-call validation: Check if any members are online
+    // Get online members via API (server already has this logic)
+    try {
+      final response = await ApiService.get('/api/channels/$channelId/online-members');
+      final List<dynamic> onlineMembers = response.data as List<dynamic>;
+      
+      if (onlineMembers.isEmpty) {
+        throw Exception('No channel members are currently online');
+      }
+      
+      debugPrint('[CALL SERVICE] Found ${onlineMembers.length} online members');
+    } catch (e) {
+      debugPrint('[CALL SERVICE] Error checking online members: $e');
+      throw Exception('Failed to verify online members');
+    }
+    
+    final meeting = await createCall(
+      title: '$channelName Call',
+      sourceChannelId: channelId,
+      allowExternal: false, // No external guests for instant calls
+      voiceOnly: false,
+    );
+    
+    return meeting.meetingId;
+  }
+
+  /// Start 1:1 instant call
+  /// Returns meeting ID for joining LiveKit room
+  /// Validates that recipient is online before creating call
+  Future<String> startDirectCall({
+    required String userId,
+    required String userName,
+  }) async {
+    debugPrint('[CALL SERVICE] Starting 1:1 call with $userName ($userId)');
+    
+    // Pre-call validation: Check if recipient is online
+    debugPrint('[CALL SERVICE] Pre-call check: Verifying $userName ($userId) is online');
+    final presenceService = PresenceService();
+    final isOnline = await presenceService.isUserOnline(userId);
+    debugPrint('[CALL SERVICE] Pre-call check result: isOnline=$isOnline');
+    
+    if (!isOnline) {
+      debugPrint('[CALL SERVICE] ERROR: $userName is offline, cannot start call');
+      throw Exception('$userName is currently offline');
+    }
+    
+    debugPrint('[CALL SERVICE] Recipient is online, creating call');
+    
+    final meeting = await createCall(
+      title: '1:1 Call with $userName',
+      sourceUserId: userId,
+      allowExternal: false,
+      voiceOnly: false,
+    );
+    
+    // Immediately notify the single recipient
+    notifyRecipients(meeting.meetingId, [userId]);
+    
+    return meeting.meetingId;
+  }
+
+  /// Notify online channel members after initiator joins LiveKit room
+  /// Called AFTER successful join to avoid notifying if join fails
+  /// Returns list of invited user IDs
+  Future<List<String>> notifyChannelMembers({
+    required String meetingId,
+    required String channelId,
+  }) async {
+    try {
+      debugPrint('[CALL SERVICE] Getting online members for channel $channelId');
+      
+      // Get online members from server
+      final response = await ApiService.get('/api/channels/$channelId/online-members');
+      final onlineMembers = (response.data['online_members'] as List)
+          .map((m) => m['user_id'] as String)
+          .toList();
+      
+      debugPrint('[CALL SERVICE] Found ${onlineMembers.length} online members');
+      
+      if (onlineMembers.isNotEmpty) {
+        // Send call:notify event to all online members
+        notifyRecipients(meetingId, onlineMembers);
+      }
+      
+      return onlineMembers;
+    } catch (e) {
+      debugPrint('[CALL SERVICE] Error notifying channel members: $e');
+      rethrow;
+    }
   }
 
   // ============================================================================
