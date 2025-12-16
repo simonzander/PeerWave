@@ -9,7 +9,7 @@ import '../services/server_config_web.dart'
     if (dart.library.io) '../services/server_config_native.dart';
 
 /// Dialog for creating or editing meetings
-/// 
+///
 /// Features:
 /// - Title and description fields
 /// - Date and time pickers for start/end
@@ -20,10 +20,7 @@ import '../services/server_config_web.dart'
 class MeetingDialog extends StatefulWidget {
   final Meeting? meeting; // null for create, non-null for edit
 
-  const MeetingDialog({
-    super.key,
-    this.meeting,
-  });
+  const MeetingDialog({super.key, this.meeting});
 
   @override
   State<MeetingDialog> createState() => _MeetingDialogState();
@@ -32,42 +29,46 @@ class MeetingDialog extends StatefulWidget {
 class _MeetingDialogState extends State<MeetingDialog> {
   final _formKey = GlobalKey<FormState>();
   final _meetingService = MeetingService();
-  
+
   late TextEditingController _titleController;
   late TextEditingController _descriptionController;
   late TextEditingController _participantSearchController;
   late TextEditingController _emailController;
-  
+
   late DateTime _startDate;
   late TimeOfDay _startTime;
   late DateTime _endDate;
   late TimeOfDay _endTime;
-  
+
   bool _allowExternal = false;
   bool _voiceOnly = false;
   bool _muteOnJoin = false;
   bool _isSubmitting = false;
-  
+
   // Participant management
   List<Map<String, String>> _selectedParticipants = [];
   List<Map<String, String>> _searchResults = [];
   bool _isSearching = false;
-  
+
   // External email invitations
   List<String> _emailInvitations = [];
 
   @override
   void initState() {
     super.initState();
-    
+
     final meeting = widget.meeting;
-    
+
     _titleController = TextEditingController(text: meeting?.title ?? '');
-    _descriptionController = TextEditingController(text: meeting?.description ?? '');
+    _descriptionController = TextEditingController(
+      text: meeting?.description ?? '',
+    );
     _participantSearchController = TextEditingController();
     _emailController = TextEditingController();
-    
-    if (meeting != null && meeting.scheduledStart != null && meeting.scheduledEnd != null) {
+
+    if (meeting != null &&
+        meeting.scheduledStart != null &&
+        meeting.scheduledEnd != null) {
       // Edit mode - scheduled meeting
       _startDate = meeting.scheduledStart!;
       _startTime = TimeOfDay.fromDateTime(meeting.scheduledStart!);
@@ -76,6 +77,9 @@ class _MeetingDialogState extends State<MeetingDialog> {
       _allowExternal = meeting.allowExternal;
       _voiceOnly = meeting.voiceOnly;
       _muteOnJoin = meeting.muteOnJoin;
+
+      // Load existing participants
+      _loadExistingParticipants();
     } else {
       // Create mode - default to 1 hour from now
       final now = DateTime.now();
@@ -83,6 +87,66 @@ class _MeetingDialogState extends State<MeetingDialog> {
       _startTime = TimeOfDay(hour: _startDate.hour, minute: 0);
       _endDate = _startDate.add(const Duration(hours: 1));
       _endTime = TimeOfDay(hour: _endDate.hour, minute: 0);
+    }
+  }
+
+  Future<void> _loadExistingParticipants() async {
+    try {
+      final participants = await _meetingService.getParticipants(
+        widget.meeting!.meetingId,
+      );
+
+      // Fetch user details for each participant
+      for (final participant in participants) {
+        // Get API server
+        String? apiServer;
+        if (kIsWeb) {
+          apiServer = await loadWebApiServer();
+        } else {
+          final activeServer = ServerConfigService.getActiveServer();
+          if (activeServer != null) {
+            apiServer = activeServer.serverUrl;
+          }
+        }
+
+        if (apiServer == null || apiServer.isEmpty) {
+          continue;
+        }
+
+        String urlString = apiServer;
+        if (!urlString.startsWith('http://') &&
+            !urlString.startsWith('https://')) {
+          urlString = 'https://$urlString';
+        }
+
+        // Fetch user info
+        try {
+          final response = await ApiService.get('$urlString/people/list');
+          if (response.statusCode == 200) {
+            final users = response.data is List ? response.data as List : [];
+            final user = users.firstWhere(
+              (u) => u['uuid'] == participant.userId,
+              orElse: () => null,
+            );
+
+            if (user != null) {
+              setState(() {
+                _selectedParticipants.add({
+                  'id': user['uuid'],
+                  'name': user['displayName'] ?? '',
+                  'email': user['email'] ?? '',
+                });
+              });
+            }
+          }
+        } catch (e) {
+          debugPrint(
+            '[MEETING_DIALOG] Error fetching user ${participant.userId}: $e',
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[MEETING_DIALOG] Error loading participants: $e');
     }
   }
 
@@ -118,7 +182,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.meeting != null;
-    
+
     return Dialog(
       child: Container(
         width: 600,
@@ -128,7 +192,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
           children: [
             // Header
             _buildHeader(isEdit),
-            
+
             // Content
             Expanded(
               child: SingleChildScrollView(
@@ -150,7 +214,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
                 ),
               ),
             ),
-            
+
             // Footer
             _buildFooter(isEdit),
           ],
@@ -163,16 +227,11 @@ class _MeetingDialogState extends State<MeetingDialog> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: Colors.grey[300]!),
-        ),
+        border: Border(bottom: BorderSide(color: Colors.grey[300]!)),
       ),
       child: Row(
         children: [
-          Icon(
-            isEdit ? Icons.edit : Icons.add,
-            size: 28,
-          ),
+          Icon(isEdit ? Icons.edit : Icons.add, size: 28),
           const SizedBox(width: 12),
           Text(
             isEdit ? 'Edit Meeting' : 'Create Meeting',
@@ -226,12 +285,12 @@ class _MeetingDialogState extends State<MeetingDialog> {
       children: [
         Text(
           'Schedule',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-        
+
         // Start date/time
         Row(
           children: [
@@ -253,7 +312,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
           ],
         ),
         const SizedBox(height: 12),
-        
+
         // End date/time
         Row(
           children: [
@@ -274,17 +333,14 @@ class _MeetingDialogState extends State<MeetingDialog> {
             ),
           ],
         ),
-        
+
         // Validation message
         if (_combinedEndDateTime.isBefore(_combinedStartDateTime))
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
               'End time must be after start time',
-              style: TextStyle(
-                color: Colors.red[700],
-                fontSize: 12,
-              ),
+              style: TextStyle(color: Colors.red[700], fontSize: 12),
             ),
           ),
       ],
@@ -351,37 +407,37 @@ class _MeetingDialogState extends State<MeetingDialog> {
       children: [
         Text(
           'Settings',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-        
+
         SwitchListTile(
           title: const Text('Voice Only'),
           subtitle: const Text('Disable video, audio only'),
           value: _voiceOnly,
           onChanged: (value) => setState(() => _voiceOnly = value),
         ),
-        
+
         SwitchListTile(
           title: const Text('Mute on Join'),
           subtitle: const Text('Participants join muted'),
           value: _muteOnJoin,
           onChanged: (value) => setState(() => _muteOnJoin = value),
         ),
-        
+
         SwitchListTile(
           title: const Text('Allow External Guests'),
           subtitle: const Text('Generate invitation link for non-users'),
           value: _allowExternal,
           onChanged: (value) => setState(() => _allowExternal = value),
         ),
-        
+
         const SizedBox(height: 24),
-        
+
         _buildParticipantsSection(),
-        
+
         if (_allowExternal) ...[
           const SizedBox(height: 24),
           _buildEmailInvitationsSection(),
@@ -389,26 +445,26 @@ class _MeetingDialogState extends State<MeetingDialog> {
       ],
     );
   }
-  
+
   Widget _buildParticipantsSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'Participants',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
         Text(
           'Search and add participants to this meeting',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Colors.grey[600],
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
         ),
         const SizedBox(height: 12),
-        
+
         // Search field
         TextFormField(
           controller: _participantSearchController,
@@ -430,7 +486,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
           ),
           onChanged: _searchUsers,
         ),
-        
+
         // Search results
         if (_searchResults.isNotEmpty) ...[
           const SizedBox(height: 8),
@@ -445,9 +501,10 @@ class _MeetingDialogState extends State<MeetingDialog> {
               itemCount: _searchResults.length,
               itemBuilder: (context, index) {
                 final user = _searchResults[index];
-                final isSelected = _selectedParticipants
-                    .any((p) => p['id'] == user['id']);
-                    
+                final isSelected = _selectedParticipants.any(
+                  (p) => p['id'] == user['id'],
+                );
+
                 return ListTile(
                   leading: CircleAvatar(
                     child: Text(user['name']![0].toUpperCase()),
@@ -463,7 +520,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
             ),
           ),
         ],
-        
+
         // Selected participants
         if (_selectedParticipants.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -484,26 +541,26 @@ class _MeetingDialogState extends State<MeetingDialog> {
       ],
     );
   }
-  
+
   Widget _buildEmailInvitationsSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'External Email Invitations',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
         Text(
           'Send meeting invitations to external guests via email',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Colors.grey[600],
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
         ),
         const SizedBox(height: 12),
-        
+
         // Email input
         Row(
           children: [
@@ -519,7 +576,9 @@ class _MeetingDialogState extends State<MeetingDialog> {
                 keyboardType: TextInputType.emailAddress,
                 validator: (value) {
                   if (value != null && value.isNotEmpty) {
-                    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                    final emailRegex = RegExp(
+                      r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                    );
                     if (!emailRegex.hasMatch(value)) {
                       return 'Invalid email address';
                     }
@@ -537,7 +596,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
             ),
           ],
         ),
-        
+
         // Email list
         if (_emailInvitations.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -548,7 +607,8 @@ class _MeetingDialogState extends State<MeetingDialog> {
               return Chip(
                 avatar: const Icon(Icons.email, size: 16),
                 label: Text(email),
-                onDeleted: () => setState(() => _emailInvitations.remove(email)),
+                onDeleted: () =>
+                    setState(() => _emailInvitations.remove(email)),
               );
             }).toList(),
           ),
@@ -556,7 +616,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
       ],
     );
   }
-  
+
   void _searchUsers(String query) async {
     if (query.length < 2) {
       setState(() {
@@ -565,9 +625,9 @@ class _MeetingDialogState extends State<MeetingDialog> {
       });
       return;
     }
-    
+
     setState(() => _isSearching = true);
-    
+
     try {
       // Get server URL
       String? apiServer;
@@ -579,22 +639,23 @@ class _MeetingDialogState extends State<MeetingDialog> {
           apiServer = activeServer.serverUrl;
         }
       }
-      
+
       if (apiServer == null || apiServer.isEmpty) {
         throw Exception('No API server configured');
       }
-      
+
       String urlString = apiServer;
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      
+
       // Search users
       final response = await ApiService.get('$urlString/people/list');
       if (response.statusCode == 200) {
         final users = response.data is List ? response.data as List : [];
         final results = <Map<String, String>>[];
-        
+
         for (final user in users) {
           final displayName = user['displayName'] ?? '';
           final email = user['email'] ?? '';
@@ -607,7 +668,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
             });
           }
         }
-        
+
         setState(() {
           _searchResults = results;
           _isSearching = false;
@@ -618,10 +679,12 @@ class _MeetingDialogState extends State<MeetingDialog> {
       setState(() => _isSearching = false);
     }
   }
-  
+
   void _toggleParticipant(Map<String, String> user) {
     setState(() {
-      final index = _selectedParticipants.indexWhere((p) => p['id'] == user['id']);
+      final index = _selectedParticipants.indexWhere(
+        (p) => p['id'] == user['id'],
+      );
       if (index >= 0) {
         _selectedParticipants.removeAt(index);
       } else {
@@ -629,13 +692,13 @@ class _MeetingDialogState extends State<MeetingDialog> {
       }
     });
   }
-  
+
   void _addEmailInvitation() {
     if (_emailController.text.isEmpty) return;
-    
+
     final email = _emailController.text.trim();
     final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    
+
     if (!emailRegex.hasMatch(email)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -645,7 +708,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
       );
       return;
     }
-    
+
     if (_emailInvitations.contains(email)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -655,7 +718,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
       );
       return;
     }
-    
+
     setState(() {
       _emailInvitations.add(email);
       _emailController.clear();
@@ -666,9 +729,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: Colors.grey[300]!),
-        ),
+        border: Border(top: BorderSide(color: Colors.grey[300]!)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
@@ -714,15 +775,18 @@ class _MeetingDialogState extends State<MeetingDialog> {
 
     try {
       final meeting = widget.meeting;
-      
+
       // Extract participant IDs
-      final participantIds = _selectedParticipants
+      final newParticipantIds = _selectedParticipants
           .map((p) => p['id']!)
-          .toList();
+          .toSet();
+
+      String meetingId;
+      Set<String> oldParticipantIds = {};
 
       if (meeting == null) {
-        // Create new meeting
-        await _meetingService.createMeeting(
+        // Create new meeting (without participants initially)
+        final createdMeeting = await _meetingService.createMeeting(
           title: _titleController.text.trim(),
           description: _descriptionController.text.trim().isEmpty
               ? null
@@ -732,15 +796,10 @@ class _MeetingDialogState extends State<MeetingDialog> {
           allowExternal: _allowExternal,
           voiceOnly: _voiceOnly,
           muteOnJoin: _muteOnJoin,
-          participantIds: participantIds,
           emailInvitations: _emailInvitations,
         );
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Meeting created successfully')),
-          );
-        }
+        meetingId = createdMeeting.meetingId;
       } else {
         // Update existing meeting
         await _meetingService.updateMeeting(
@@ -756,14 +815,55 @@ class _MeetingDialogState extends State<MeetingDialog> {
           muteOnJoin: _muteOnJoin,
         );
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Meeting updated successfully')),
+        meetingId = meeting.meetingId;
+
+        // Get existing participants to compare
+        try {
+          final existingParticipants = await _meetingService.getParticipants(
+            meetingId,
+          );
+          oldParticipantIds = existingParticipants.map((p) => p.userId).toSet();
+        } catch (e) {
+          debugPrint(
+            '[MEETING_DIALOG] Error fetching existing participants: $e',
           );
         }
       }
 
+      // Add new participants
+      final toAdd = newParticipantIds.difference(oldParticipantIds);
+      for (final userId in toAdd) {
+        try {
+          await _meetingService.addParticipant(meetingId, userId);
+        } catch (e) {
+          debugPrint('[MEETING_DIALOG] Error adding participant $userId: $e');
+        }
+      }
+
+      // Remove participants (only in edit mode)
+      if (meeting != null) {
+        final toRemove = oldParticipantIds.difference(newParticipantIds);
+        for (final userId in toRemove) {
+          try {
+            await _meetingService.removeParticipant(meetingId, userId);
+          } catch (e) {
+            debugPrint(
+              '[MEETING_DIALOG] Error removing participant $userId: $e',
+            );
+          }
+        }
+      }
+
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              meeting == null
+                  ? 'Meeting created successfully'
+                  : 'Meeting updated successfully',
+            ),
+          ),
+        );
         Navigator.of(context).pop(true); // Return true to indicate success
       }
     } catch (e) {

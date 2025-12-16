@@ -38,14 +38,27 @@ class MeetingAuthorizationService {
       final url = '$serverUrl/api/meetings/$meetingId';
       debugPrint('[MEETING_AUTH] Fetching meeting details: $url');
 
-      // Get client ID
-      final clientId = await ClientIdService.getClientId();
-
-      // Generate auth headers
-      final headers = await SessionAuthService().generateAuthHeaders(
-        clientId: clientId,
-        requestPath: '/api/meetings/$meetingId',
-      );
+      // Different auth for web vs native
+      Map<String, String> headers = {};
+      
+      if (!kIsWeb) {
+        // Native: Use HMAC session auth
+        final clientId = await ClientIdService.getClientId();
+        debugPrint('[CLIENT_ID] Found current client ID: $clientId');
+        
+        // Check if session exists before trying to use it
+        final hasSession = await SessionAuthService().hasSession(clientId);
+        if (!hasSession) {
+          debugPrint('[MEETING_AUTH] ⚠️ No session secret found, skipping HMAC auth');
+          // For web or when no session, cookies will be used automatically
+        } else {
+          headers = await SessionAuthService().generateAuthHeaders(
+            clientId: clientId,
+            requestPath: '/api/meetings/$meetingId',
+          );
+        }
+      }
+      // Web: Cookies are automatically included by http client
 
       final response = await http.get(
         Uri.parse(url),

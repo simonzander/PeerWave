@@ -6,14 +6,14 @@ import 'api_service.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 
 /// Meeting service - handles HTTP API calls and Socket.IO real-time notifications
-/// 
+///
 /// Use HTTP routes for:
 /// - Creating meetings (POST /api/meetings)
 /// - Updating meetings (PATCH /api/meetings/:id)
 /// - Deleting meetings (DELETE /api/meetings/:id)
 /// - Adding/removing participants
 /// - Generating invitation links
-/// 
+///
 /// Use Socket.IO listeners for real-time notifications:
 /// - meeting:created
 /// - meeting:updated
@@ -33,18 +33,24 @@ class MeetingService {
   final _meetingUpdatedController = StreamController<Meeting>.broadcast();
   final _meetingStartedController = StreamController<String>.broadcast();
   final _meetingCancelledController = StreamController<String>.broadcast();
-  final _participantJoinedController = StreamController<MeetingParticipant>.broadcast();
-  final _participantLeftController = StreamController<Map<String, String>>.broadcast();
-  final _firstParticipantJoinedController = StreamController<String>.broadcast();
+  final _participantJoinedController =
+      StreamController<MeetingParticipant>.broadcast();
+  final _participantLeftController =
+      StreamController<Map<String, String>>.broadcast();
+  final _firstParticipantJoinedController =
+      StreamController<String>.broadcast();
 
   // Public streams
   Stream<Meeting> get onMeetingCreated => _meetingCreatedController.stream;
   Stream<Meeting> get onMeetingUpdated => _meetingUpdatedController.stream;
   Stream<String> get onMeetingStarted => _meetingStartedController.stream;
   Stream<String> get onMeetingCancelled => _meetingCancelledController.stream;
-  Stream<MeetingParticipant> get onParticipantJoined => _participantJoinedController.stream;
-  Stream<Map<String, String>> get onParticipantLeft => _participantLeftController.stream;
-  Stream<String> get onFirstParticipantJoined => _firstParticipantJoinedController.stream;
+  Stream<MeetingParticipant> get onParticipantJoined =>
+      _participantJoinedController.stream;
+  Stream<Map<String, String>> get onParticipantLeft =>
+      _participantLeftController.stream;
+  Stream<String> get onFirstParticipantJoined =>
+      _firstParticipantJoinedController.stream;
 
   bool _listenersRegistered = false;
 
@@ -76,7 +82,8 @@ class MeetingService {
     _socketService.registerListener('meeting:started', (data) {
       debugPrint('[MEETING SERVICE] Received meeting:started: $data');
       try {
-        final meetingId = (data as Map<String, dynamic>)['meeting_id'] as String;
+        final meetingId =
+            (data as Map<String, dynamic>)['meeting_id'] as String;
         _meetingStartedController.add(meetingId);
       } catch (e) {
         debugPrint('[MEETING SERVICE] Error parsing meeting:started: $e');
@@ -86,7 +93,8 @@ class MeetingService {
     _socketService.registerListener('meeting:cancelled', (data) {
       debugPrint('[MEETING SERVICE] Received meeting:cancelled: $data');
       try {
-        final meetingId = (data as Map<String, dynamic>)['meeting_id'] as String;
+        final meetingId =
+            (data as Map<String, dynamic>)['meeting_id'] as String;
         _meetingCancelledController.add(meetingId);
       } catch (e) {
         debugPrint('[MEETING SERVICE] Error parsing meeting:cancelled: $e');
@@ -94,12 +102,18 @@ class MeetingService {
     });
 
     _socketService.registerListener('meeting:participant_joined', (data) {
-      debugPrint('[MEETING SERVICE] Received meeting:participant_joined: $data');
+      debugPrint(
+        '[MEETING SERVICE] Received meeting:participant_joined: $data',
+      );
       try {
-        final participant = MeetingParticipant.fromJson(data as Map<String, dynamic>);
+        final participant = MeetingParticipant.fromJson(
+          data as Map<String, dynamic>,
+        );
         _participantJoinedController.add(participant);
       } catch (e) {
-        debugPrint('[MEETING SERVICE] Error parsing meeting:participant_joined: $e');
+        debugPrint(
+          '[MEETING SERVICE] Error parsing meeting:participant_joined: $e',
+        );
       }
     });
 
@@ -112,17 +126,24 @@ class MeetingService {
           'user_id': map['user_id'] as String,
         });
       } catch (e) {
-        debugPrint('[MEETING SERVICE] Error parsing meeting:participant_left: $e');
+        debugPrint(
+          '[MEETING SERVICE] Error parsing meeting:participant_left: $e',
+        );
       }
     });
 
     _socketService.registerListener('meeting:first_participant_joined', (data) {
-      debugPrint('[MEETING SERVICE] Received meeting:first_participant_joined: $data');
+      debugPrint(
+        '[MEETING SERVICE] Received meeting:first_participant_joined: $data',
+      );
       try {
-        final meetingId = (data as Map<String, dynamic>)['meeting_id'] as String;
+        final meetingId =
+            (data as Map<String, dynamic>)['meeting_id'] as String;
         _firstParticipantJoinedController.add(meetingId);
       } catch (e) {
-        debugPrint('[MEETING SERVICE] Error parsing meeting:first_participant_joined: $e');
+        debugPrint(
+          '[MEETING SERVICE] Error parsing meeting:first_participant_joined: $e',
+        );
       }
     });
 
@@ -156,17 +177,20 @@ class MeetingService {
     List<String>? participantIds,
     List<String>? emailInvitations,
   }) async {
-    final response = await ApiService.post('/api/meetings', data: {
-      'title': title,
-      'description': description,
-      'start_time': startTime.toIso8601String(),
-      'end_time': endTime.toIso8601String(),
-      'allow_external': allowExternal,
-      'voice_only': voiceOnly,
-      'mute_on_join': muteOnJoin,
-      'participant_ids': participantIds,
-      'email_invitations': emailInvitations,
-    });
+    final response = await ApiService.post(
+      '/api/meetings',
+      data: {
+        'title': title,
+        'description': description,
+        'start_time': startTime.toIso8601String(),
+        'end_time': endTime.toIso8601String(),
+        'allow_external': allowExternal,
+        'voice_only': voiceOnly,
+        'mute_on_join': muteOnJoin,
+        'participant_ids': participantIds,
+        'email_invitations': emailInvitations,
+      },
+    );
 
     return Meeting.fromJson(response.data as Map<String, dynamic>);
   }
@@ -182,30 +206,41 @@ class MeetingService {
     if (isInstantCall != null) queryParams['is_instant_call'] = isInstantCall;
     if (channelId != null) queryParams['channel_id'] = channelId;
 
-    final response = await ApiService.get('/api/meetings', queryParameters: queryParams);
+    final response = await ApiService.get(
+      '/api/meetings',
+      queryParameters: queryParams,
+    );
     final List<dynamic> data = response.data as List<dynamic>;
-    return data.map((json) => Meeting.fromJson(json as Map<String, dynamic>)).toList();
+    return data
+        .map((json) => Meeting.fromJson(json as Map<String, dynamic>))
+        .toList();
   }
 
   /// Get upcoming meetings
   Future<List<Meeting>> getUpcomingMeetings() async {
     final response = await ApiService.get('/api/meetings/upcoming');
     final List<dynamic> data = response.data as List<dynamic>;
-    return data.map((json) => Meeting.fromJson(json as Map<String, dynamic>)).toList();
+    return data
+        .map((json) => Meeting.fromJson(json as Map<String, dynamic>))
+        .toList();
   }
 
   /// Get past meetings
   Future<List<Meeting>> getPastMeetings() async {
     final response = await ApiService.get('/api/meetings/past');
     final List<dynamic> data = response.data as List<dynamic>;
-    return data.map((json) => Meeting.fromJson(json as Map<String, dynamic>)).toList();
+    return data
+        .map((json) => Meeting.fromJson(json as Map<String, dynamic>))
+        .toList();
   }
 
   /// Get user's meetings (where user is participant)
   Future<List<Meeting>> getMyMeetings() async {
     final response = await ApiService.get('/api/meetings/my');
     final List<dynamic> data = response.data as List<dynamic>;
-    return data.map((json) => Meeting.fromJson(json as Map<String, dynamic>)).toList();
+    return data
+        .map((json) => Meeting.fromJson(json as Map<String, dynamic>))
+        .toList();
   }
 
   /// Get a specific meeting by ID
@@ -236,7 +271,10 @@ class MeetingService {
     if (muteOnJoin != null) updates['mute_on_join'] = muteOnJoin;
     if (maxParticipants != null) updates['max_participants'] = maxParticipants;
 
-    final response = await ApiService.post('/api/meetings/$meetingId', data: updates);
+    final response = await ApiService.patch(
+      '/api/meetings/$meetingId',
+      data: updates,
+    );
     return Meeting.fromJson(response.data as Map<String, dynamic>);
   }
 
@@ -245,16 +283,29 @@ class MeetingService {
     await ApiService.delete('/api/meetings/$meetingId');
   }
 
+  /// Get participants for a meeting
+  Future<List<MeetingParticipant>> getParticipants(String meetingId) async {
+    final response = await ApiService.get(
+      '/api/meetings/$meetingId/participants',
+    );
+    final List<dynamic> data = response.data as List<dynamic>;
+    return data
+        .map(
+          (json) => MeetingParticipant.fromJson(json as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
   /// Add a participant to a meeting
   Future<MeetingParticipant> addParticipant(
     String meetingId,
     String userId, {
     String role = 'meeting_member',
   }) async {
-    final response = await ApiService.post('/api/meetings/$meetingId/participants', data: {
-      'user_id': userId,
-      'role': role,
-    });
+    final response = await ApiService.post(
+      '/api/meetings/$meetingId/participants',
+      data: {'user_id': userId, 'role': role},
+    );
     return MeetingParticipant.fromJson(response.data as Map<String, dynamic>);
   }
 

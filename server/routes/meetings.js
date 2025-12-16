@@ -163,10 +163,23 @@ router.get('/meetings/my', verifyAuthEither, async (req, res) => {
 router.get('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
   try {
     const { meetingId } = req.params;
+    const userId = req.userId;
+    
     const meeting = await meetingService.getMeeting(meetingId);
 
     if (!meeting) {
       return res.status(404).json({ error: 'Meeting not found' });
+    }
+
+    // Check if user is authorized to view this meeting
+    // User must be: owner, participant, or invited (for source_user_id in instant calls)
+    const isParticipant = meeting.participants.some(p => p.user_id === userId);
+    const isSourceUser = meeting.source_user_id === userId;
+    const isCreator = meeting.created_by === userId;
+    
+    if (!isParticipant && !isSourceUser && !isCreator) {
+      console.log(`[MEETING] User ${userId} not authorized for meeting ${meetingId}`);
+      return res.status(403).json({ error: 'Not authorized to access this meeting' });
     }
 
     res.json(meeting);

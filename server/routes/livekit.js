@@ -188,12 +188,13 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
       return res.status(404).json({ error: 'Meeting not found' });
     }
 
-    // Check if user is creator, participant, or invited
+    // Check if user is creator, participant, invited, or source_user (for instant calls)
     const isOwner = meeting.created_by === userId;
     const isParticipant = meeting.participants && meeting.participants.some(p => p.uuid === userId);
     const isInvited = meeting.invited_participants && meeting.invited_participants.includes(userId);
+    const isSourceUser = meeting.source_user_id === userId; // For instant calls (recipient)
 
-    if (!isOwner && !isParticipant && !isInvited) {
+    if (!isOwner && !isParticipant && !isInvited && !isSourceUser) {
       console.log('[LiveKit Meeting] User not authorized:', userId);
       return res.status(403).json({ error: 'Not authorized for this meeting' });
     }
@@ -203,7 +204,8 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
       meetingId,
       isOwner,
       isParticipant,
-      isInvited
+      isInvited,
+      isSourceUser
     });
 
     // Get LiveKit configuration from environment
