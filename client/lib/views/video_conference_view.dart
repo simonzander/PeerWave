@@ -11,7 +11,6 @@ import '../services/message_listener_service.dart';
 import '../services/user_profile_service.dart';
 import '../services/api_service.dart';
 import '../services/signal_service.dart';
-import '../services/socket_service.dart';
 import '../services/call_service.dart';
 import '../screens/channel/channel_members_screen.dart';
 import '../screens/channel/channel_settings_screen.dart';
@@ -92,6 +91,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   Set<String> _joinedUserIds = {};
   Set<String> _declinedUserIds = {}; // Track users who declined/timed out
 
+  bool _autoLeaving = false;
+
+  StreamSubscription<Map<String, dynamic>>? _callDeclinedSub;
+
   @override
   void initState() {
     super.initState();
@@ -139,7 +142,11 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
         // Listen for participant joined events to track who actually joined
         _service!.onParticipantJoined.listen((participant) {
-          final userId = participant.identity;
+          // LiveKit identity is "userId:deviceId" in this app.
+          final identity = participant.identity;
+          final userId = identity.contains(':')
+              ? identity.split(':').first
+              : identity;
           if (userId.isNotEmpty && _invitedUserIds.isNotEmpty) {
             setState(() {
               _joinedUserIds.add(userId);
@@ -175,35 +182,96 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
   /// Listen for call:declined socket events to handle timeouts
   void _setupCallDeclineListener() {
-    final isInstantCall = widget.channelId.startsWith('call_');
+    final isInstantCall =
+        widget.isInstantCall || widget.channelId.startsWith('call_');
     if (!isInstantCall) return;
 
-    // Listen for decline events from the socket
-    SocketService().registerListener('call:declined', (data) async {
+    // IMPORTANT: SocketService.registerListener currently only allows one
+    // listener per event key. CallService is the canonical receiver and
+    // forwards events via a stream.
+    CallService().initializeListeners();
+    _callDeclinedSub?.cancel();
+    _callDeclinedSub = CallService().onCallDeclined.listen((declineData) async {
       try {
-        final declineData = data as Map<String, dynamic>;
+        final meetingId = declineData['meeting_id'] as String?;
         final userId = declineData['user_id'] as String?;
         final reason = declineData['reason'] as String?;
 
+        // Only react to declines for THIS call
+        if (meetingId == null || meetingId != widget.channelId) return;
         if (userId == null) return;
+
+        // Dedupe (server/caller devices can emit duplicates)
+        if (_declinedUserIds.contains(userId)) return;
 
         debugPrint(
           '[VideoConferenceView] User $userId declined call with reason: $reason',
         );
 
         // Track declined user
-        setState(() {
+        if (mounted) {
+          setState(() {
+            _declinedUserIds.add(userId);
+          });
+        } else {
           _declinedUserIds.add(userId);
-        });
+        }
+
+        // Snackbars (UX)
+        final displayName =
+            UserProfileService.instance.getDisplayName(userId) ?? userId;
+
+        if (mounted) {
+          if (reason == 'timeout') {
+            if (widget.sourceChannelId != null) {
+              context.showInfoSnackBar("$displayName doesn't respond.");
+            } else {
+              context.showInfoSnackBar("$displayName didn't respond.");
+            }
+          } else {
+            context.showInfoSnackBar('$displayName declined the call.');
+          }
+        }
 
         // If timeout, send missed call notification immediately
         if (reason == 'timeout') {
           await _sendMissedCallNotification(userId);
         }
+
+        // Auto-leave behavior (initiator only)
+        if (!mounted || !widget.isInitiator) return;
+
+        // 1:1: leave immediately on decline/timeout
+        if (widget.sourceUserId != null) {
+          await _autoLeaveNow();
+          return;
+        }
+
+        // Group: leave only after ALL invited recipients declined/timed out
+        if (widget.sourceChannelId != null) {
+          final allDeclined =
+              _invitedUserIds.isNotEmpty &&
+              _declinedUserIds.containsAll(_invitedUserIds) &&
+              _joinedUserIds.isEmpty;
+
+          if (allDeclined) {
+            await _autoLeaveNow();
+          }
+        }
       } catch (e) {
         debugPrint('[VideoConferenceView] Error handling decline event: $e');
       }
     });
+  }
+
+  Future<void> _autoLeaveNow() async {
+    if (_autoLeaving) return;
+    _autoLeaving = true;
+    try {
+      await _leaveChannel();
+    } finally {
+      _autoLeaving = false;
+    }
   }
 
   Future<void> _joinChannel() async {
@@ -298,9 +366,13 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
       await _service!.leaveRoom();
 
-      // Navigate back to channels view
+      // Prefer returning to the previous screen (calls are usually started from chat)
       if (mounted) {
-        context.go('/app/channels');
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        } else {
+          context.go('/app/channels');
+        }
       }
     } catch (e) {
       debugPrint('[VideoConferenceView] Leave error: $e');
@@ -309,6 +381,8 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
   @override
   void dispose() {
+    _callDeclinedSub?.cancel();
+
     // Clean up audio subscriptions
     for (final sub in _audioSubscriptions.values) {
       sub.cancel();
