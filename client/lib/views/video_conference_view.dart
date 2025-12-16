@@ -12,6 +12,7 @@ import '../services/user_profile_service.dart';
 import '../services/api_service.dart';
 import '../services/signal_service.dart';
 import '../services/socket_service.dart';
+import '../services/call_service.dart';
 import '../screens/channel/channel_members_screen.dart';
 import '../screens/channel/channel_settings_screen.dart';
 import '../widgets/animated_widgets.dart';
@@ -38,7 +39,14 @@ class VideoConferenceView extends StatefulWidget {
   final String? host; // For settings and API calls
   final lk.MediaDevice? selectedCamera; // NEW: Pre-selected from PreJoin
   final lk.MediaDevice? selectedMicrophone; // NEW: Pre-selected from PreJoin
-  final List<String>? invitedUserIds; // For instant calls - track who was invited
+  final List<String>?
+  invitedUserIds; // For instant calls - track who was invited
+
+  // Instant call metadata (used to notify recipients after initiator joins)
+  final bool isInstantCall;
+  final bool isInitiator;
+  final String? sourceChannelId;
+  final String? sourceUserId;
 
   const VideoConferenceView({
     super.key,
@@ -48,6 +56,10 @@ class VideoConferenceView extends StatefulWidget {
     this.selectedCamera, // NEW
     this.selectedMicrophone, // NEW
     this.invitedUserIds, // NEW: For missed call tracking
+    this.isInstantCall = false,
+    this.isInitiator = false,
+    this.sourceChannelId,
+    this.sourceUserId,
   });
 
   @override
@@ -83,13 +95,15 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   @override
   void initState() {
     super.initState();
-    
+
     // Initialize invited users for instant calls
     if (widget.invitedUserIds != null) {
       _invitedUserIds = widget.invitedUserIds!.toSet();
-      debugPrint('[VideoConferenceView] Tracking ${_invitedUserIds.length} invited users for missed calls');
+      debugPrint(
+        '[VideoConferenceView] Tracking ${_invitedUserIds.length} invited users for missed calls',
+      );
     }
-    
+
     // Set up call decline listener for instant calls
     _setupCallDeclineListener();
 
@@ -130,10 +144,12 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
             setState(() {
               _joinedUserIds.add(userId);
             });
-            debugPrint('[VideoConferenceView] User $userId joined, removing from missed call list');
+            debugPrint(
+              '[VideoConferenceView] User $userId joined, removing from missed call list',
+            );
           }
         });
-        
+
         // Schedule join for after build completes (only if not already in call)
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && !(_service?.isInCall ?? false)) {
@@ -156,28 +172,30 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     // Full-view mode is already set by navigateToCurrentChannelFullView() before navigation
     // So we don't need to call enterFullView() here anymore
   }
-  
+
   /// Listen for call:declined socket events to handle timeouts
   void _setupCallDeclineListener() {
     final isInstantCall = widget.channelId.startsWith('call_');
     if (!isInstantCall) return;
-    
+
     // Listen for decline events from the socket
     SocketService().registerListener('call:declined', (data) async {
       try {
         final declineData = data as Map<String, dynamic>;
         final userId = declineData['user_id'] as String?;
         final reason = declineData['reason'] as String?;
-        
+
         if (userId == null) return;
-        
-        debugPrint('[VideoConferenceView] User $userId declined call with reason: $reason');
-        
+
+        debugPrint(
+          '[VideoConferenceView] User $userId declined call with reason: $reason',
+        );
+
         // Track declined user
         setState(() {
           _declinedUserIds.add(userId);
         });
-        
+
         // If timeout, send missed call notification immediately
         if (reason == 'timeout') {
           await _sendMissedCallNotification(userId);
@@ -223,6 +241,41 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       // Ensure we're in full-view mode after joining (not overlay mode)
       _service!.enterFullView();
 
+      // Instant-call notifications: notify recipients only AFTER successful join.
+      // This matches the 1:1 behavior you expect (no ringing if initiator fails to join).
+      if (widget.isInstantCall && widget.isInitiator) {
+        final callService = CallService();
+
+        if (widget.sourceUserId != null) {
+          debugPrint(
+            '[VideoConferenceView] Notifying 1:1 recipient after join: ${widget.sourceUserId}',
+          );
+          callService.notifyRecipients(widget.channelId, [
+            widget.sourceUserId!,
+          ]);
+          setState(() {
+            _invitedUserIds = {widget.sourceUserId!};
+          });
+        } else if (widget.sourceChannelId != null) {
+          debugPrint(
+            '[VideoConferenceView] Notifying channel members after join: ${widget.sourceChannelId}',
+          );
+          try {
+            final invited = await callService.notifyChannelMembers(
+              meetingId: widget.channelId,
+              channelId: widget.sourceChannelId!,
+            );
+            setState(() {
+              _invitedUserIds = invited.toSet();
+            });
+          } catch (e) {
+            debugPrint(
+              '[VideoConferenceView] Failed to notify channel members after join: $e',
+            );
+          }
+        }
+      }
+
       // Stay in full-view mode - overlay will show when user navigates away
     } catch (e) {
       debugPrint('[VideoConferenceView] Join error: $e');
@@ -242,7 +295,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       if (isInstantCall && _invitedUserIds.isNotEmpty) {
         await _sendMissedCallNotificationsToOfflineUsers();
       }
-      
+
       await _service!.leaveRoom();
 
       // Navigate back to channels view
@@ -295,10 +348,13 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   /// Load channel details to determine ownership
   Future<void> _loadChannelDetails() async {
     if (widget.host == null) return;
-    
+
     // Skip if this is actually a meeting (not a channel)
-    if (widget.channelId.startsWith('mtg_') || widget.channelId.startsWith('call_')) {
-      debugPrint('[VIDEO_CONFERENCE] Skipping channel details - this is a meeting');
+    if (widget.channelId.startsWith('mtg_') ||
+        widget.channelId.startsWith('call_')) {
+      debugPrint(
+        '[VIDEO_CONFERENCE] Skipping channel details - this is a meeting',
+      );
       return;
     }
 
@@ -331,49 +387,57 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       debugPrint('[VIDEO_CONFERENCE] Error loading channel details: $e');
     }
   }
-  
+
   /// Send missed call notification to a specific user via Signal
   Future<void> _sendMissedCallNotification(String userId) async {
     try {
       final currentUserId = UserProfileService.instance.currentUserUuid;
       if (currentUserId == null) {
-        debugPrint('[VideoConferenceView] Cannot send missed call: current user ID is null');
+        debugPrint(
+          '[VideoConferenceView] Cannot send missed call: current user ID is null',
+        );
         return;
       }
-      
+
       final payload = {
         'callerId': currentUserId,
         'channelId': widget.channelId,
         'channelName': widget.channelName,
         'timestamp': DateTime.now().toIso8601String(),
       };
-      
+
       await SignalService.instance.sendItem(
         recipientUserId: userId,
         type: 'missingcall',
         payload: payload,
       );
-      
-      debugPrint('[VideoConferenceView] Sent missed call notification to $userId');
+
+      debugPrint(
+        '[VideoConferenceView] Sent missed call notification to $userId',
+      );
     } catch (e) {
-      debugPrint('[VideoConferenceView] Error sending missed call to $userId: $e');
+      debugPrint(
+        '[VideoConferenceView] Error sending missed call to $userId: $e',
+      );
     }
   }
-  
+
   /// Send missed call notifications to users who were offline and never got notified
   Future<void> _sendMissedCallNotificationsToOfflineUsers() async {
     // Calculate users who never joined or declined (assumed offline)
     final offlineUsers = _invitedUserIds
         .difference(_joinedUserIds)
         .difference(_declinedUserIds);
-    
+
     if (offlineUsers.isEmpty) {
       debugPrint('[VideoConferenceView] No offline users to notify');
       return;
     }
-    
-    debugPrint('[VideoConferenceView] Sending missed call notifications to ${offlineUsers.length} offline users');
-    
+
+    debugPrint(
+      '[VideoConferenceView] Sending missed call notifications to ${offlineUsers.length} offline users',
+    );
+
     for (final userId in offlineUsers) {
       await _sendMissedCallNotification(userId);
     }
@@ -987,19 +1051,22 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           child: GridView.builder(
             padding: const EdgeInsets.all(8),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            childAspectRatio: 16 / 9,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
-          ),
-          itemCount: totalVisible,
-          itemBuilder: (context, index) {
-            final item = visibleParticipants[index];
-            final participant = item['participant'];
-            final isLocal = item['isLocal'] as bool;
+              crossAxisCount: columns,
+              childAspectRatio: 16 / 9,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+            ),
+            itemCount: totalVisible,
+            itemBuilder: (context, index) {
+              final item = visibleParticipants[index];
+              final participant = item['participant'];
+              final isLocal = item['isLocal'] as bool;
 
-            return _buildVideoTile(participant: participant, isLocal: isLocal);
-          },
+              return _buildVideoTile(
+                participant: participant,
+                isLocal: isLocal,
+              );
+            },
           ),
         ),
 
@@ -1293,8 +1360,16 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
               else
                 ...microphones.map((device) {
                   return ListTile(
-                    leading: Icon(Icons.mic, color: Theme.of(context).colorScheme.onSurface),
-                    title: Text(device.label, style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+                    leading: Icon(
+                      Icons.mic,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                    title: Text(
+                      device.label,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
                     onTap: () async {
                       Navigator.pop(context);
                       try {
@@ -1315,7 +1390,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                           final theme = Theme.of(context);
                           scaffoldMessenger.showSnackBar(
                             SnackBar(
-                              content: const Text('Failed to switch microphone'),
+                              content: const Text(
+                                'Failed to switch microphone',
+                              ),
                               backgroundColor: theme.colorScheme.error,
                             ),
                           );
@@ -1368,8 +1445,16 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
               else
                 ...cameras.map((device) {
                   return ListTile(
-                    leading: Icon(Icons.videocam, color: Theme.of(context).colorScheme.onSurface),
-                    title: Text(device.label, style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+                    leading: Icon(
+                      Icons.videocam,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                    title: Text(
+                      device.label,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
                     onTap: () async {
                       Navigator.pop(context);
                       try {
@@ -1446,8 +1531,8 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                           context,
                         ).colorScheme.onSurface.withOpacity(0.38)
                       : (isActive
-                          ? Theme.of(context).colorScheme.onPrimary
-                          : Theme.of(context).colorScheme.onSurfaceVariant),
+                            ? Theme.of(context).colorScheme.onPrimary
+                            : Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ),
             ),

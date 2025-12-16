@@ -274,8 +274,9 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           );
           // Show warning but don't block completely
           if (mounted) {
-            final warningColor = Theme.of(context).brightness == Brightness.dark 
-                ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
+            final warningColor = Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFFFFA726)
+                : const Color(0xFFFF8F00);
             context.showCustomSnackBar(
               'Signal Protocol initialization incomplete. Some features may not work.',
               backgroundColor: warningColor,
@@ -341,8 +342,9 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                 ? ' and ${failedKeys.length - 3} more'
                 : '';
 
-            final warningColor = Theme.of(context).brightness == Brightness.dark 
-                ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
+            final warningColor = Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFFFFA726)
+                : const Color(0xFFFF8F00);
             context.showCustomSnackBar(
               'Cannot decrypt messages from: $memberList$remaining',
               backgroundColor: warningColor,
@@ -365,8 +367,9 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           if (errorMsg.contains('Failed to load') &&
               errorMsg.contains('sender key')) {
             // Partial failure - some member keys missing
-            final warningColor = Theme.of(context).brightness == Brightness.dark 
-                ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
+            final warningColor = Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFFFFA726)
+                : const Color(0xFFFF8F00);
             context.showCustomSnackBar(
               loadError.toString().replaceAll('Exception: ', ''),
               backgroundColor: warningColor,
@@ -374,8 +377,9 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
             );
           } else if (errorMsg.contains('HTTP') || errorMsg.contains('server')) {
             // Server error
-            final warningColor = Theme.of(context).brightness == Brightness.dark 
-                ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
+            final warningColor = Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFFFFA726)
+                : const Color(0xFFFF8F00);
             context.showCustomSnackBar(
               'Failed to load member encryption keys. You may not be able to read all messages.',
               backgroundColor: warningColor,
@@ -389,8 +393,9 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       debugPrint('[SIGNAL_GROUP] Error initializing group channel: $e');
       // Show error but don't block the UI completely
       if (mounted) {
-        final warningColor = Theme.of(context).brightness == Brightness.dark 
-            ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
+        final warningColor = Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFFFFA726)
+            : const Color(0xFFFF8F00);
         context.showCustomSnackBar(
           'Failed to initialize group chat: $e',
           backgroundColor: warningColor,
@@ -1033,8 +1038,9 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         } catch (keyError) {
           // Show warning but allow retry
           if (mounted) {
-            final warningColor = Theme.of(context).brightness == Brightness.dark 
-                ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
+            final warningColor = Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFFFFA726)
+                : const Color(0xFFFF8F00);
             context.showCustomSnackBar(
               'Sender key creation failed. Retrying may work: $keyError',
               backgroundColor: warningColor,
@@ -1081,8 +1087,9 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         );
 
         if (mounted) {
-          final warningColor = Theme.of(context).brightness == Brightness.dark 
-              ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
+          final warningColor = Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFFFFA726)
+              : const Color(0xFFFF8F00);
           context.showCustomSnackBar(
             'Not connected. Message queued and will be sent when reconnected.',
             backgroundColor: warningColor,
@@ -1165,8 +1172,9 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       // STEP 4: Better error messages based on error type
       String errorMessage = 'Failed to send message';
       final theme = Theme.of(context);
-      final warningColor = theme.brightness == Brightness.dark 
-          ? const Color(0xFFFFA726) : const Color(0xFFFF8F00);
+      final warningColor = theme.brightness == Brightness.dark
+          ? const Color(0xFFFFA726)
+          : const Color(0xFFFF8F00);
       Color errorColor = theme.colorScheme.error;
 
       if (e.toString().contains('No sender key found')) {
@@ -1247,6 +1255,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                         channelName: result['channelName'],
                         selectedCamera: result['selectedCamera'],
                         selectedMicrophone: result['selectedMicrophone'],
+                        isInstantCall: result['isInstantCall'] == true,
+                        isInitiator: result['isInitiator'] == true,
+                        sourceChannelId: result['sourceChannelId'] as String?,
+                        sourceUserId: result['sourceUserId'] as String?,
                       ),
                     ),
                   );
@@ -1282,8 +1294,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                     channelType: 'signal',
                     channelDescription: _channelData?['description'] as String?,
                     isPrivate: _channelData?['private'] as bool? ?? false,
-                    defaultJoinRole:
-                        _channelData?['defaultRoleId'] as String?,
+                    defaultJoinRole: _channelData?['defaultRoleId'] as String?,
                     host: widget.host,
                     isOwner: _isOwner,
                   ),

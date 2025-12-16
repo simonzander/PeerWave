@@ -867,7 +867,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
               // For 1:1 calls, use a placeholder ID - actual call ID created in PreJoin
               // The channelId will be replaced with the real meeting ID after creation
               final placeholderCallId = 'call_pending_${widget.recipientUuid}';
-              
+
               // Navigate to PreJoin for instant 1:1 call
               final result = await Navigator.push(
                 context,
@@ -881,7 +881,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                   ),
                 ),
               );
-              
+
               // If user completed PreJoin, navigate to video conference
               if (result != null &&
                   result is Map &&
@@ -895,6 +895,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                         channelName: result['channelName'],
                         selectedCamera: result['selectedCamera'],
                         selectedMicrophone: result['selectedMicrophone'],
+                        isInstantCall: result['isInstantCall'] == true,
+                        isInitiator: result['isInitiator'] == true,
+                        sourceChannelId: result['sourceChannelId'] as String?,
+                        sourceUserId: result['sourceUserId'] as String?,
                       ),
                     ),
                   );

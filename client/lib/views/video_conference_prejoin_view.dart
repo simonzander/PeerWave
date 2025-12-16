@@ -511,9 +511,9 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
           );
           debugPrint('[PreJoin] Created 1:1 call: $meetingId');
         }
-        
-        // Note: For channel calls, we'll notify members AFTER joining LiveKit
-        // For 1:1 calls, startDirectCall already sent notification
+
+        // Note: For instant calls, we notify recipients AFTER joining LiveKit
+        // to avoid ringing if the initiator fails to join.
       }
       
       // Confirm E2EE key status to server
@@ -529,6 +529,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
         'hasE2EEKey': true,
         'isInstantCall': widget.isInstantCall,
         'sourceChannelId': widget.sourceChannelId,
+        'sourceUserId': widget.sourceUserId,
         'isInitiator': widget.isInitiator,
       };
       

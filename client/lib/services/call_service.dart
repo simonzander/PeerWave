@@ -287,9 +287,6 @@ class CallService {
       voiceOnly: false,
     );
 
-    // Immediately notify the single recipient
-    notifyRecipients(meeting.meetingId, [userId]);
-
     return meeting.meetingId;
   }
 
