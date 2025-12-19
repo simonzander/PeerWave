@@ -56,7 +56,7 @@ class NavigationBadge extends StatelessWidget {
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: Theme.of(context).colorScheme.shadow.withOpacity(0.2),
+                              color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.2),
                               blurRadius: 2,
                             ),
                           ],

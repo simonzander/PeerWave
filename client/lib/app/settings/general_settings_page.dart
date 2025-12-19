@@ -153,7 +153,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                       suffixText: 'days',
                       prefixIcon: const Icon(Icons.calendar_today),
                       filled: true,
-                      fillColor: colorScheme.surfaceVariant,
+                      fillColor: colorScheme.surfaceContainerHighest,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -204,7 +204,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                         onPressed: () => _saveAutoDeleteDays(0),
                         backgroundColor: _autoDeleteDays == 0 
                             ? colorScheme.primaryContainer 
-                            : colorScheme.surfaceVariant,
+                            : colorScheme.surfaceContainerHighest,
                       ),
                       ActionChip(
                         label: Text(
@@ -225,7 +225,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                         onPressed: () => _saveAutoDeleteDays(30),
                         backgroundColor: _autoDeleteDays == 30 
                             ? colorScheme.primaryContainer 
-                            : colorScheme.surfaceVariant,
+                            : colorScheme.surfaceContainerHighest,
                       ),
                       ActionChip(
                         label: Text(
@@ -246,7 +246,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                         onPressed: () => _saveAutoDeleteDays(90),
                         backgroundColor: _autoDeleteDays == 90 
                             ? colorScheme.primaryContainer 
-                            : colorScheme.surfaceVariant,
+                            : colorScheme.surfaceContainerHighest,
                       ),
                       ActionChip(
                         label: Text(
@@ -267,7 +267,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                         onPressed: () => _saveAutoDeleteDays(365),
                         backgroundColor: _autoDeleteDays == 365 
                             ? colorScheme.primaryContainer 
-                            : colorScheme.surfaceVariant,
+                            : colorScheme.surfaceContainerHighest,
                       ),
                     ],
                   ),

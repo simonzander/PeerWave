@@ -409,7 +409,7 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
                   decoration: InputDecoration(
                     labelText: 'Server Name',
                     filled: true,
-                    fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                    fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                     border: const OutlineInputBorder(),
                   ),
                 ),
@@ -428,7 +428,7 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
                   decoration: InputDecoration(
                     labelText: 'Registration Mode',
                     filled: true,
-                    fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                    fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                     border: const OutlineInputBorder(),
                   ),
                   items: const [
@@ -466,7 +466,7 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
                       helperText:
                           'Comma-separated list of allowed email domains',
                       filled: true,
-                      fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                      fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                       border: const OutlineInputBorder(),
                     ),
                   ),
@@ -528,7 +528,7 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
                             labelText: 'Email Address',
                             hintText: 'user@example.com',
                             filled: true,
-                            fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                            fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                             border: const OutlineInputBorder(),
                           ),
                           keyboardType: TextInputType.emailAddress,

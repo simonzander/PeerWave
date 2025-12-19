@@ -168,7 +168,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
           _buildIconButton(
             badge: Icon(
               Icons.settings,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
               size: 24,
             ),
             isSelected: false,
@@ -181,7 +181,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
           _buildIconButton(
             badge: Icon(
               Icons.logout,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
               size: 24,
             ),
             isSelected: false,
@@ -213,7 +213,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
           height: 48,
           decoration: BoxDecoration(
             color: isSelected 
-                ? colorScheme.primary.withOpacity(0.15)
+                ? colorScheme.primary.withValues(alpha: 0.15)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             border: isSelected

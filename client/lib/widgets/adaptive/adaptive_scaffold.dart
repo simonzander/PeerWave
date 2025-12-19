@@ -387,7 +387,7 @@ class AdaptiveNestedScaffold extends StatelessWidget {
         // Secondary navigation tabs
         Container(
           height: 48,
-          color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: secondaryDestinations!.length,

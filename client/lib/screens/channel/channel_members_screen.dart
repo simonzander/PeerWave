@@ -91,7 +91,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                 hint: const Text('Select Role'),
                 decoration: InputDecoration(
                   filled: true,
-                  fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                   border: const OutlineInputBorder(),
                 ),
                 items: _availableRoles.map((role) {
@@ -107,7 +107,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                 const SizedBox(height: 16),
                 Text(
                   'Permissions: ${selectedRole!.permissions.join(", ")}',
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                 ),
               ],
             ],
@@ -219,7 +219,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                     hintText: 'Enter name or email',
                     prefixIcon: const Icon(Icons.search),
                     filled: true,
-                    fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                    fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -300,7 +300,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                     hint: const Text('Select Role'),
                     decoration: InputDecoration(
                       filled: true,
-                      fillColor: Theme.of(context).colorScheme.surfaceVariant,
+                      fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                       border: const OutlineInputBorder(),
                     ),
                     items: _availableRoles.map((role) {
@@ -580,7 +580,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                               ? Theme.of(context).colorScheme.primary
                               : member.isModerator
                               ? Theme.of(context).colorScheme.tertiary
-                              : Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                         ),
                       ),
                       trailing: Row(
@@ -616,7 +616,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                                 role.permissions.join(', '),
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                                 ),
                               ),
                               trailing: canManageRoles && !role.standard
@@ -637,7 +637,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                                         ),
                                       ),
-                                      backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+                                      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                                     )
                                   : null,
                             );

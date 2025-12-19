@@ -172,7 +172,7 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
                           '$callerName is calling',
                           style:
                               Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Colors.white.withOpacity(0.9),
+                                    color: Colors.white.withValues(alpha: 0.9),
                                   ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -182,7 +182,7 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
                           'Auto-dismiss in $_remainingSeconds seconds',
                           style:
                               Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.white.withOpacity(0.7),
+                                    color: Colors.white.withValues(alpha: 0.7),
                                   ),
                         ),
                       ],
@@ -237,7 +237,7 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               shape: BoxShape.circle,
             ),
             child: Icon(

@@ -205,7 +205,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
         color: colorScheme.surface,
         border: Border(
           right: BorderSide(
-            color: colorScheme.outlineVariant.withOpacity(0.5),
+            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
             width: 1,
           ),
         ),
@@ -251,7 +251,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
           
           // Trailing (footer)
           if (widget.trailing != null) ...[
-            Divider(color: colorScheme.outlineVariant.withOpacity(0.5)),
+            Divider(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: widget.trailing,
@@ -280,7 +280,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
-        selectedTileColor: colorScheme.secondaryContainer.withOpacity(0.5),
+        selectedTileColor: colorScheme.secondaryContainer.withValues(alpha: 0.5),
         onTap: onTap,
       ),
     );
@@ -632,7 +632,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
             if (isLoadingRoles)
               const Center(child: CircularProgressIndicator())
             else if (availableRoles.isEmpty)
-              Text('No standard roles available', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5)))
+              Text('No standard roles available', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)))
             else
               DropdownButton<Role>(
                 isExpanded: true,

@@ -120,7 +120,7 @@ class FilesContextPanel extends StatelessWidget {
             Container(
               width: 1,
               height: 40,
-              color: colorScheme.outline.withOpacity(0.3),
+              color: colorScheme.outline.withValues(alpha: 0.3),
             ),
             _buildSummaryItem(
               context,
@@ -202,7 +202,7 @@ class FilesContextPanel extends StatelessWidget {
         height: 100,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          border: Border.all(color: colorScheme.outline.withOpacity(0.3)),
+          border: Border.all(color: colorScheme.outline.withValues(alpha: 0.3)),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Text(
@@ -223,7 +223,7 @@ class FilesContextPanel extends StatelessWidget {
             horizontalInterval: 1,
             getDrawingHorizontalLine: (value) {
               return FlLine(
-                color: colorScheme.outline.withOpacity(0.1),
+                color: colorScheme.outline.withValues(alpha: 0.1),
                 strokeWidth: 1,
               );
             },
@@ -231,7 +231,7 @@ class FilesContextPanel extends StatelessWidget {
           titlesData: FlTitlesData(show: false),
           borderData: FlBorderData(
             show: true,
-            border: Border.all(color: colorScheme.outline.withOpacity(0.3)),
+            border: Border.all(color: colorScheme.outline.withValues(alpha: 0.3)),
           ),
           minX: 0,
           maxX: (history.length - 1).toDouble(),
@@ -252,7 +252,7 @@ class FilesContextPanel extends StatelessWidget {
               dotData: FlDotData(show: false),
               belowBarData: BarAreaData(
                 show: true,
-                color: color.withOpacity(0.2),
+                color: color.withValues(alpha: 0.2),
               ),
             ),
           ],
@@ -282,9 +282,9 @@ class FilesContextPanel extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(8.0),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
+          color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withOpacity(0.3)),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -312,7 +312,7 @@ class FilesContextPanel extends StatelessWidget {
             const SizedBox(height: 4),
             LinearProgressIndicator(
               value: transfer.progress,
-              backgroundColor: colorScheme.surfaceVariant,
+              backgroundColor: colorScheme.surfaceContainerHighest,
               valueColor: AlwaysStoppedAnimation(color),
             ),
             const SizedBox(height: 4),

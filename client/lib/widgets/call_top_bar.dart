@@ -363,7 +363,7 @@ class _CallTopBarState extends State<CallTopBar> {
       decoration: BoxDecoration(
         color: colorScheme.primaryContainer,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: colorScheme.outline.withOpacity(0.3), width: 1),
+        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.3), width: 1),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(3),

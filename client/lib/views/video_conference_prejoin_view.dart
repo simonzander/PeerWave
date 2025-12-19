@@ -575,7 +575,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
   /// Build video preview section
   Widget _buildVideoPreview() {
     return Container(
-      color: Theme.of(context).colorScheme.surfaceVariant,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: _previewTrack != null && _isCameraEnabled
           ? VideoTrackRenderer(_previewTrack!)
           : Center(

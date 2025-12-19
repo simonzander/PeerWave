@@ -40,7 +40,7 @@ class FileSizeErrorDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceVariant,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
@@ -59,7 +59,7 @@ class FileSizeErrorDialog extends StatelessWidget {
                   Text(
                     'Size: ${FileTransferConfig.formatFileSize(fileSize)}',
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                       fontSize: 13,
                     ),
                   ),
@@ -86,7 +86,7 @@ class FileSizeErrorDialog extends StatelessWidget {
               const SizedBox(height: 12),
               _buildLimitInfo(context, 'Recommended size', recommendedSize, Colors.orange),
               _buildLimitInfo(context, 'Your file', fileSize, Colors.orange),
-              _buildLimitInfo(context, 'Maximum allowed', maxSize, Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
+              _buildLimitInfo(context, 'Maximum allowed', maxSize, Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)),
             ],
             
             const SizedBox(height: 16),
@@ -97,7 +97,7 @@ class FileSizeErrorDialog extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.primaryContainer,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.3)),
+                border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -131,7 +131,7 @@ class FileSizeErrorDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceVariant,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
@@ -139,14 +139,14 @@ class FileSizeErrorDialog extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.info_outline, size: 16, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+                      Icon(Icons.info_outline, size: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                       const SizedBox(width: 6),
                       Text(
                         'Platform Limits:',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                         ),
                       ),
                     ],
@@ -194,7 +194,7 @@ class FileSizeErrorDialog extends StatelessWidget {
             '$label:',
             style: TextStyle(
               fontSize: 13,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
             ),
           ),
           Text(
@@ -241,7 +241,7 @@ class FileSizeErrorDialog extends StatelessWidget {
             '$platform:',
             style: TextStyle(
               fontSize: 11,
-              color: isCurrent ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              color: isCurrent ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
               fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
             ),
           ),
@@ -249,7 +249,7 @@ class FileSizeErrorDialog extends StatelessWidget {
             FileTransferConfig.formatFileSize(size),
             style: TextStyle(
               fontSize: 11,
-              color: isCurrent ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              color: isCurrent ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
               fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
             ),
           ),

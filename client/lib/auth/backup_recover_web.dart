@@ -115,7 +115,7 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
                 decoration: InputDecoration(
                   hintText: 'your backup code',
                   filled: true,
-                  fillColor: colorScheme.surfaceVariant,
+                  fillColor: colorScheme.surfaceContainerHighest,
                   border: const OutlineInputBorder(),
                 ),
                 style: TextStyle(color: colorScheme.onSurface),

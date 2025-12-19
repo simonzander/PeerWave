@@ -220,7 +220,7 @@ class VideoGridLayout extends StatelessWidget {
           )
         else
           Container(
-            color: Theme.of(context).colorScheme.surfaceVariant,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -248,7 +248,7 @@ class VideoGridLayout extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.scrim.withOpacity(0.7),
+              color: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.7),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Row(
@@ -373,10 +373,10 @@ class VideoGridLayout extends StatelessWidget {
       
       return Container(
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceVariant,
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+            color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
           ),
         ),
         child: Stack(
@@ -386,7 +386,7 @@ class VideoGridLayout extends StatelessWidget {
             Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
-                color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
               ),
               child: Center(
                 child: CircleAvatar(
@@ -396,7 +396,7 @@ class VideoGridLayout extends StatelessWidget {
                     displayName.substring(0, 1).toUpperCase(),
                     style: TextStyle(
                       fontSize: 32,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.5),
+                      color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.5),
                     ),
                   ),
                 ),
@@ -406,7 +406,7 @@ class VideoGridLayout extends StatelessWidget {
             Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
-                color: Colors.black.withOpacity(0.6),
+                color: Colors.black.withValues(alpha: 0.6),
               ),
               child: Center(
                 child: Column(
@@ -415,7 +415,7 @@ class VideoGridLayout extends StatelessWidget {
                     Icon(
                       Icons.person_add,
                       size: 48,
-                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -431,7 +431,7 @@ class VideoGridLayout extends StatelessWidget {
                     Text(
                       'Waiting for participant to join...',
                       style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                         fontSize: 12,
                       ),
                       textAlign: TextAlign.center,

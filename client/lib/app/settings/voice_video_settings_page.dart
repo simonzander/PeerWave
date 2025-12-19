@@ -447,7 +447,7 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
           onChanged: onChanged,
           decoration: InputDecoration(
             filled: true,
-            fillColor: Theme.of(context).colorScheme.surfaceVariant,
+            fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
             border: const OutlineInputBorder(),
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           ),

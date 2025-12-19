@@ -137,7 +137,7 @@ class _CallOverlayState extends State<CallOverlay> {
                       width: 32,
                       height: 32,
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.6),
+                        color: Colors.black.withValues(alpha: 0.6),
                         borderRadius: const BorderRadius.only(
                           topLeft: Radius.circular(8),
                           bottomRight: Radius.circular(8),
@@ -145,7 +145,7 @@ class _CallOverlayState extends State<CallOverlay> {
                       ),
                       child: Icon(
                         Icons.open_in_full,
-                        color: Colors.white.withOpacity(0.7),
+                        color: Colors.white.withValues(alpha: 0.7),
                         size: 16,
                       ),
                     ),
@@ -171,7 +171,7 @@ class _CallOverlayState extends State<CallOverlay> {
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: Theme.of(context).colorScheme.shadow.withOpacity(0.5),
+            color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.5),
             blurRadius: 10,
             spreadRadius: 2,
           ),
@@ -220,7 +220,7 @@ class _CallOverlayState extends State<CallOverlay> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.6),
+                  color: Colors.black.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Row(
@@ -229,13 +229,13 @@ class _CallOverlayState extends State<CallOverlay> {
                     Icon(
                       Icons.drag_indicator,
                       size: 16,
-                      color: Colors.white.withOpacity(0.7),
+                      color: Colors.white.withValues(alpha: 0.7),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       service.channelName ?? 'Video Call',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.9),
+                        color: Colors.white.withValues(alpha: 0.9),
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                       ),
@@ -381,7 +381,7 @@ class _CallOverlayState extends State<CallOverlay> {
       return Center(
         child: Icon(
           Icons.videocam_off,
-          color: Colors.white.withOpacity(0.5),
+          color: Colors.white.withValues(alpha: 0.5),
           size: 48,
         ),
       );
@@ -501,7 +501,7 @@ class _CallOverlayState extends State<CallOverlay> {
                 : Center(
                     child: Icon(
                       Icons.screen_share,
-                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                       size: 32,
                     ),
                   ),
@@ -574,7 +574,7 @@ class _CallOverlayState extends State<CallOverlay> {
       width: 28,
       height: 28,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withOpacity(0.9),
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(14),
       ),
       child: IconButton(

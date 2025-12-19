@@ -366,14 +366,14 @@ class _MessagesListViewState extends State<MessagesListView> {
           Icon(
             Icons.message_outlined,
             size: 80,
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
           ),
           const SizedBox(height: 16),
           Text(
             'No conversations yet',
             style: TextStyle(
               fontSize: 18,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -382,7 +382,7 @@ class _MessagesListViewState extends State<MessagesListView> {
             'Tap + to start a conversation',
             style: TextStyle(
               fontSize: 14,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
             ),
           ),
         ],

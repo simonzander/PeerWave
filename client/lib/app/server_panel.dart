@@ -358,7 +358,7 @@ class _ServerIcon extends StatelessWidget {
               child: CircleAvatar(
                 radius: 28,
                 backgroundColor: server.hasServerError 
-                    ? Theme.of(context).colorScheme.error.withOpacity(0.3) 
+                    ? Theme.of(context).colorScheme.error.withValues(alpha: 0.3) 
                     : Theme.of(context).colorScheme.primary,
                 child: Icon(Icons.cloud, color: Theme.of(context).colorScheme.onPrimary),
               ),

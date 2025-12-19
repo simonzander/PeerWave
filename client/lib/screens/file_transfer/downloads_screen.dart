@@ -78,20 +78,20 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           Icon(
             Icons.download_done,
             size: 64,
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
           ),
           const SizedBox(height: 16),
           Text(
             'No downloads',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
           ),
           const SizedBox(height: 8),
           Text(
             'Browse files to start downloading',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
           ),
           const SizedBox(height: 24),
@@ -175,7 +175,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                   LinearProgressIndicator(
                     value: task.progress / 100,
                     minHeight: 8,
-                    backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+                    backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                   ),
                   const SizedBox(height: 8),
                 ],
@@ -192,7 +192,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                         '${task.downloadedChunks} / ${task.chunkCount} chunks',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                       if (task.status == DownloadStatus.downloading)
@@ -200,7 +200,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                           _formatSpeed(task.speed),
                           style: TextStyle(
                             fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                           ),
                         ),
                     ],
@@ -212,7 +212,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                     _formatETA(task.estimatedTimeRemaining),
                     style: TextStyle(
                       fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -273,7 +273,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -302,7 +302,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         'No seeders connected',
         style: TextStyle(
           fontSize: 12,
-          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
         ),
       );
     }
@@ -327,7 +327,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           ),
           visualDensity: VisualDensity.compact,
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         ),
       );
     }
@@ -345,7 +345,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           ),
           visualDensity: VisualDensity.compact,
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         ),
       );
     }

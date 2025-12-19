@@ -383,7 +383,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
               color: Theme.of(context).colorScheme.surface,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
+                  color: Colors.black.withValues(alpha: 0.1),
                   blurRadius: 4,
                   offset: const Offset(0, -2),
                 ),
@@ -418,7 +418,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         color: Theme.of(context).colorScheme.primaryContainer,
         border: Border(
           bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+            color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
           ),
         ),
       ),
@@ -438,7 +438,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
             Text(
               _meeting!.description!,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.8),
+                color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
               ),
             ),
           ],
@@ -487,7 +487,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withOpacity(0.5),
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(

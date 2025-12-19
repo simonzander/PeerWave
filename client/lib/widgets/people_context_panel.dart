@@ -157,16 +157,16 @@ class PeopleContextPanel extends StatelessWidget {
                 'Load more',
                 style: TextStyle(
                   fontSize: 12,
-                  color: AppThemeConstants.textSecondary.withOpacity(0.9),
+                  color: AppThemeConstants.textSecondary.withValues(alpha: 0.9),
                   decoration: TextDecoration.underline,
-                  decorationColor: AppThemeConstants.textSecondary.withOpacity(0.4),
+                  decorationColor: AppThemeConstants.textSecondary.withValues(alpha: 0.4),
                 ),
               ),
               const SizedBox(width: 4),
               Icon(
                 Icons.arrow_forward_ios,
                 size: 10,
-                color: AppThemeConstants.textSecondary.withOpacity(0.7),
+                color: AppThemeConstants.textSecondary.withValues(alpha: 0.7),
               ),
             ],
           ),
@@ -198,17 +198,17 @@ class PeopleContextPanel extends StatelessWidget {
       cursor: SystemMouseCursors.click,
       child: Material(
         color: isActive 
-            ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
+            ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
             : Colors.transparent,
         child: InkWell(
           onTap: onTap,
           hoverColor: isActive 
-              ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
-              : Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-          splashColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+              ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
+              : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          splashColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
           highlightColor: isActive
-              ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
-              : Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+              ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
+              : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
@@ -281,7 +281,7 @@ class PeopleContextPanel extends StatelessWidget {
                                 '@$atName',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -306,7 +306,7 @@ class PeopleContextPanel extends StatelessWidget {
                           lastMessage,
                           style: TextStyle(
                             fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -436,7 +436,7 @@ class _RelativeTimeWidgetState extends State<_RelativeTimeWidget> {
       _formattedTime,
       style: TextStyle(
         fontSize: 11,
-        color: AppThemeConstants.textSecondary.withOpacity(0.7),
+        color: AppThemeConstants.textSecondary.withValues(alpha: 0.7),
       ),
     );
   }

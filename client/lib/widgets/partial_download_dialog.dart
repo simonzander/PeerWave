@@ -79,7 +79,7 @@ class PartialDownloadDialog extends StatelessWidget {
               Expanded(
                 child: LinearProgressIndicator(
                   value: chunkQuality / 100,
-                  backgroundColor: theme.colorScheme.surfaceVariant,
+                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
                   valueColor: AlwaysStoppedAnimation<Color>(warningColor),
                   minHeight: 8,
                 ),
@@ -101,10 +101,10 @@ class PartialDownloadDialog extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: warningColor.withOpacity(0.1),
+              color: warningColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: warningColor.withOpacity(0.3),
+                color: warningColor.withValues(alpha: 0.3),
               ),
             ),
             child: Column(

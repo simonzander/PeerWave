@@ -212,17 +212,17 @@ class ChannelsContextPanel extends StatelessWidget {
       cursor: SystemMouseCursors.click,
       child: Material(
         color: isActive 
-            ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
+            ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
             : Colors.transparent,
         child: InkWell(
           onTap: onTap,
           hoverColor: isActive 
-              ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
-              : Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-          splashColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+              ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
+              : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          splashColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
           highlightColor: isActive
-              ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
-              : Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+              ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
+              : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
@@ -239,8 +239,8 @@ class ChannelsContextPanel extends StatelessWidget {
                             ? Icons.lock 
                             : (type == 'webrtc' ? Icons.videocam : Icons.tag),
                         backgroundColor: isLive 
-                            ? Theme.of(context).colorScheme.error.withOpacity(0.2)
-                            : Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                            ? Theme.of(context).colorScheme.error.withValues(alpha: 0.2)
+                            : Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                         iconColor: isLive 
                             ? Theme.of(context).colorScheme.error
                             : Theme.of(context).colorScheme.primary,
@@ -304,7 +304,7 @@ class ChannelsContextPanel extends StatelessWidget {
                           lastMessage,
                           style: TextStyle(
                             fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -314,7 +314,7 @@ class ChannelsContextPanel extends StatelessWidget {
                           description,
                           style: TextStyle(
                             fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -324,7 +324,7 @@ class ChannelsContextPanel extends StatelessWidget {
                           type == 'webrtc' ? 'Video channel' : 'Text channel',
                           style: TextStyle(
                             fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
                           ),
                         ),
                     ],

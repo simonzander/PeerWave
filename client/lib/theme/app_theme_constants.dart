@@ -297,7 +297,7 @@ class AppThemeConstants {
   /// Hover Effect für ListTiles
   static Color getHoverColor(bool isHovered, Color primaryColor) {
     return isHovered 
-        ? primaryColor.withOpacity(0.05) 
+        ? primaryColor.withValues(alpha: 0.05) 
         : Colors.transparent;
   }
   

@@ -278,10 +278,10 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: widget.isOwnMessage ? primaryColor.withOpacity(0.15) : theme.colorScheme.surfaceVariant,
+        color: widget.isOwnMessage ? primaryColor.withValues(alpha: 0.15) : theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: widget.isOwnMessage ? primaryColor.withOpacity(0.3) : theme.colorScheme.outline,
+          color: widget.isOwnMessage ? primaryColor.withValues(alpha: 0.3) : theme.colorScheme.outline,
           width: 1,
         ),
       ),
@@ -329,7 +329,7 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                           ? _formatDuration(_currentPosition)
                           : _formatDuration(displayDuration),
                       style: TextStyle(
-                        color: widget.isOwnMessage ? theme.colorScheme.primary : theme.colorScheme.onSurface.withOpacity(0.9),
+                        color: widget.isOwnMessage ? theme.colorScheme.primary : theme.colorScheme.onSurface.withValues(alpha: 0.9),
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
@@ -337,7 +337,7 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                     Text(
                       ' / ${_formatDuration(displayDuration)}',
                       style: TextStyle(
-                        color: widget.isOwnMessage ? theme.colorScheme.primary.withOpacity(0.7) : theme.colorScheme.onSurface.withOpacity(0.6),
+                        color: widget.isOwnMessage ? theme.colorScheme.primary.withValues(alpha: 0.7) : theme.colorScheme.onSurface.withValues(alpha: 0.6),
                         fontSize: 12,
                       ),
                     ),
@@ -345,13 +345,13 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                       Text(
                         ' • ',
                         style: TextStyle(
-                          color: widget.isOwnMessage ? theme.colorScheme.primary.withOpacity(0.5) : theme.colorScheme.onSurface.withOpacity(0.5),
+                          color: widget.isOwnMessage ? theme.colorScheme.primary.withValues(alpha: 0.5) : theme.colorScheme.onSurface.withValues(alpha: 0.5),
                         ),
                       ),
                       Text(
                         '${(widget.sizeBytes! / 1024).toStringAsFixed(1)} KB',
                         style: TextStyle(
-                          color: widget.isOwnMessage ? theme.colorScheme.primary.withOpacity(0.7) : theme.colorScheme.onSurface.withOpacity(0.6),
+                          color: widget.isOwnMessage ? theme.colorScheme.primary.withValues(alpha: 0.7) : theme.colorScheme.onSurface.withValues(alpha: 0.6),
                           fontSize: 12,
                         ),
                       ),
@@ -392,7 +392,7 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                 decoration: BoxDecoration(
                   color: isPlayed
                       ? (widget.isOwnMessage ? primaryColor : primaryColor)
-                      : (widget.isOwnMessage ? primaryColor.withOpacity(0.3) : theme.colorScheme.onSurface.withOpacity(0.3)),
+                      : (widget.isOwnMessage ? primaryColor.withValues(alpha: 0.3) : theme.colorScheme.onSurface.withValues(alpha: 0.3)),
                   borderRadius: BorderRadius.circular(2),
                 ),
                 height: 30 * height,

@@ -418,7 +418,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                       )
                     : null,
                 filled: true,
-                fillColor: colorScheme.surfaceVariant,
+                fillColor: colorScheme.surfaceContainerHighest,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -455,7 +455,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
             Icon(
               Icons.people_outline,
               size: 80,
-              color: colorScheme.onSurfaceVariant.withOpacity(0.5),
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
             ),
             const SizedBox(height: 16),
             Text(
@@ -473,7 +473,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                   : 'Check back later',
               style: TextStyle(
                 fontSize: 14,
-                color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
               ),
             ),
           ],
@@ -713,7 +713,7 @@ class _UserCardState extends State<_UserCard> {
           boxShadow: _isHovered
               ? [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
+                    color: Colors.black.withValues(alpha: 0.3),
                     blurRadius: 12,
                     offset: const Offset(0, 6),
                   ),
@@ -784,7 +784,7 @@ class _UserCardState extends State<_UserCard> {
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
+                                color: Colors.black.withValues(alpha: 0.2),
                                 blurRadius: 4,
                                 offset: const Offset(0, 2),
                               ),
@@ -848,7 +848,7 @@ class _UserCardState extends State<_UserCard> {
                                   ' • $_formattedTime',
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: widget.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                                    color: widget.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                                   ),
                                 ),
                               ],
@@ -893,7 +893,7 @@ class _UserCardState extends State<_UserCard> {
           end: Alignment.bottomRight,
           colors: [
             color,
-            color.withOpacity(0.8),
+            color.withValues(alpha: 0.8),
           ],
         ),
       ),

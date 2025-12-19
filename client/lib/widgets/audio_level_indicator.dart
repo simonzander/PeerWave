@@ -56,7 +56,7 @@ class _AudioLevelIndicatorState extends State<AudioLevelIndicator>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final activeColor = widget.activeColor ?? theme.colorScheme.primary;
-    final inactiveColor = widget.inactiveColor ?? theme.colorScheme.surfaceVariant;
+    final inactiveColor = widget.inactiveColor ?? theme.colorScheme.surfaceContainerHighest;
 
     return AnimatedBuilder(
       animation: _controller,
@@ -155,7 +155,7 @@ class AudioLevelBars extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final activeColor = this.activeColor ?? theme.colorScheme.primary;
-    final inactiveColor = this.inactiveColor ?? theme.colorScheme.surfaceVariant;
+    final inactiveColor = this.inactiveColor ?? theme.colorScheme.surfaceContainerHighest;
 
     final activeBars = (barCount * level).round();
 
@@ -170,7 +170,7 @@ class AudioLevelBars extends StatelessWidget {
           height: barHeight,
           margin: const EdgeInsets.symmetric(horizontal: 1),
           decoration: BoxDecoration(
-            color: isActive ? activeColor : inactiveColor.withOpacity(0.3),
+            color: isActive ? activeColor : inactiveColor.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(2),
           ),
         );

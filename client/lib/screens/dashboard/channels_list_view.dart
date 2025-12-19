@@ -454,7 +454,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
                             )
                           : null,
                       filled: true,
-                      fillColor: colorScheme.surfaceVariant,
+                      fillColor: colorScheme.surfaceContainerHighest,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
@@ -736,7 +736,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
             opacity: _liveAnimation,
             child: AppThemeConstants.squaredIconContainer(
               icon: Icons.videocam,
-              backgroundColor: Theme.of(context).colorScheme.error.withOpacity(0.2),
+              backgroundColor: Theme.of(context).colorScheme.error.withValues(alpha: 0.2),
               iconColor: Theme.of(context).colorScheme.error,
               size: 40,
             ),
@@ -824,7 +824,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
           IconButton(
             icon: Icon(
               isStarred ? Icons.star : Icons.star_border,
-              color: isStarred ? Theme.of(context).colorScheme.tertiary : Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+              color: isStarred ? Theme.of(context).colorScheme.tertiary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
               size: 20,
             ),
             onPressed: () => _toggleStar(uuid),
@@ -870,7 +870,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
           if (description.isNotEmpty)
             Text(
               description,
-              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -879,7 +879,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
                 ? '${participants.length} ${participants.length == 1 ? 'participant' : 'participants'} • LIVE'
                 : 'Video channel • No active participants',
             style: TextStyle(
-              color: isLive ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              color: isLive ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
               fontSize: 12,
             ),
           ),
@@ -901,7 +901,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                 fontStyle: FontStyle.italic,
               ),
             ),
@@ -914,7 +914,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ),
             if (lastMessageTime.isNotEmpty)
@@ -922,7 +922,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
                 _formatTime(lastMessageTime),
                 style: TextStyle(
                   fontSize: 10,
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
               ),
           ] else
@@ -930,7 +930,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
               'Text channel',
               style: TextStyle(
                 fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ),
         ],
@@ -957,7 +957,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
         ),
       ),
       trailing: SizedBox(
@@ -1088,20 +1088,20 @@ class _ChannelsListViewState extends State<ChannelsListView>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.inbox_outlined, size: 80, color: theme.colorScheme.onSurface.withOpacity(0.4)),
+            Icon(Icons.inbox_outlined, size: 80, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
             const SizedBox(height: 16),
             Text(
               title,
               style: TextStyle(
                 fontSize: 18,
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
             Text(
               message,
-              style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface.withOpacity(0.5)),
+              style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
               textAlign: TextAlign.center,
             ),
           ],
@@ -1269,7 +1269,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
             else if (availableRoles.isEmpty)
               Text(
                 'No standard roles available',
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5)),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
               )
             else
               DropdownButton<Role>(

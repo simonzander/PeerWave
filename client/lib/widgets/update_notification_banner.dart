@@ -55,7 +55,7 @@ class UpdateNotificationBanner extends StatelessWidget {
                         'Veröffentlicht am ${_formatDate(update.releaseDate)}',
                         style: TextStyle(
                           fontSize: 12,
-                          color: theme.colorScheme.onPrimaryContainer.withOpacity(0.7),
+                          color: theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
                         ),
                       ),
                     ],
@@ -223,7 +223,7 @@ class UpdateDetailsDialog extends StatelessWidget {
             child: Text(
               label,
               style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withOpacity(0.7),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
               ),
             ),
           ),
@@ -274,7 +274,7 @@ class UpdateDetailsDialog extends StatelessWidget {
                   Text(
                     url.split('/').last,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),

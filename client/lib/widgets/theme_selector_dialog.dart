@@ -224,7 +224,7 @@ class ThemeSelectorDialog extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
+                      color: Colors.black.withValues(alpha: 0.1),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
@@ -277,7 +277,7 @@ class ThemeSelectorDialog extends StatelessWidget {
                       scheme.description,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: isSelected 
-                          ? colorScheme.onPrimaryContainer.withOpacity(0.7)
+                          ? colorScheme.onPrimaryContainer.withValues(alpha: 0.7)
                           : colorScheme.onSurfaceVariant,
                       ),
                       maxLines: 1,

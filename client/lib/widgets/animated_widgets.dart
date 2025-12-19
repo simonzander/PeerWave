@@ -51,7 +51,7 @@ class _AnimatedSelectionTileState extends State<AnimatedSelectionTile> {
           color: widget.selected 
               ? AppThemeConstants.activeChannelBackground
               : (_isHovered 
-                  ? highlightColor.withOpacity(0.05) 
+                  ? highlightColor.withValues(alpha: 0.05) 
                   : Colors.transparent),
           borderRadius: AppThemeConstants.borderRadiusStandard,
           border: widget.selected
@@ -320,7 +320,7 @@ class _HoverAnimatedContainerState extends State<HoverAnimatedContainer> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final hoverColor = widget.hoverColor ?? colorScheme.primary.withOpacity(0.05);
+    final hoverColor = widget.hoverColor ?? colorScheme.primary.withValues(alpha: 0.05);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -337,7 +337,7 @@ class _HoverAnimatedContainerState extends State<HoverAnimatedContainer> {
           onTap: widget.onTap,
           borderRadius: widget.borderRadius ?? AppThemeConstants.borderRadiusStandard,
           hoverColor: Colors.transparent, // Wir behandeln Hover selbst
-          splashColor: colorScheme.primary.withOpacity(0.1),
+          splashColor: colorScheme.primary.withValues(alpha: 0.1),
           child: widget.child,
         ),
       ),

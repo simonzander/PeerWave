@@ -116,7 +116,7 @@ class AppAboutDialog extends StatelessWidget {
                 child: Text(
                   row.label,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.7),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
               ),
@@ -163,7 +163,7 @@ class AppAboutDialog extends StatelessWidget {
             Icon(
               Icons.open_in_new,
               size: 16,
-              color: theme.colorScheme.onSurface.withOpacity(0.5),
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
             ),
           ],
         ),

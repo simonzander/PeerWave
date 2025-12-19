@@ -285,7 +285,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                           ),
                           child: ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: user.active ? null : Theme.of(context).colorScheme.surfaceVariant,
+                              backgroundColor: user.active ? null : Theme.of(context).colorScheme.surfaceContainerHighest,
                               child: Text(
                                 (user.displayName ?? user.email)
                                     .substring(0, 1)

@@ -80,7 +80,7 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
                 decoration: InputDecoration(
                   hintText: 'your magic key',
                   filled: true,
-                  fillColor: colorScheme.surfaceVariant,
+                  fillColor: colorScheme.surfaceContainerHighest,
                   border: const OutlineInputBorder(),
                 ),
                 style: TextStyle(color: colorScheme.onSurface),

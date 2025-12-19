@@ -159,7 +159,7 @@ class _MessageInputState extends State<MessageInput> {
               child: Builder(
                 builder: (context) {
                   final theme = Theme.of(context);
-                  final iconColor = theme.colorScheme.onSurface.withOpacity(0.7);
+                  final iconColor = theme.colorScheme.onSurface.withValues(alpha: 0.7);
                   return Row(
                     children: [
                       IconButton(
@@ -228,15 +228,15 @@ class _MessageInputState extends State<MessageInput> {
                 builder: (context) {
                   final theme = Theme.of(context);
                   return PopupMenuButton<String>(
-                    icon: Icon(Icons.add_circle_outline, color: theme.colorScheme.onSurface.withOpacity(0.7)),
-                    color: theme.colorScheme.surfaceVariant,
+                    icon: Icon(Icons.add_circle_outline, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
+                    color: theme.colorScheme.surfaceContainerHighest,
                     tooltip: 'Attach',
                 onSelected: (value) {
                   debugPrint('[MESSAGE_INPUT] Selected attachment type: $value');
                 },
                     itemBuilder: (context) {
                       final theme = Theme.of(context);
-                      final iconColor = theme.colorScheme.onSurface.withOpacity(0.7);
+                      final iconColor = theme.colorScheme.onSurface.withValues(alpha: 0.7);
                       final textColor = theme.colorScheme.onSurface;
                       return [
                         PopupMenuItem(
@@ -287,9 +287,9 @@ class _MessageInputState extends State<MessageInput> {
                       keyboardType: TextInputType.multiline,
                       decoration: InputDecoration(
                         hintText: 'Type a message...',
-                        hintStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5)),
+                        hintStyle: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
                         filled: true,
-                        fillColor: theme.colorScheme.surfaceVariant,
+                        fillColor: theme.colorScheme.surfaceContainerHighest,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
                           borderSide: BorderSide.none,
@@ -307,7 +307,7 @@ class _MessageInputState extends State<MessageInput> {
               Builder(
                 builder: (context) {
                   final theme = Theme.of(context);
-                  final iconColor = theme.colorScheme.onSurface.withOpacity(0.7);
+                  final iconColor = theme.colorScheme.onSurface.withValues(alpha: 0.7);
                   return IconButton(
                     icon: Icon(
                       _showFormatting ? Icons.format_clear : Icons.format_size,
@@ -327,7 +327,7 @@ class _MessageInputState extends State<MessageInput> {
                 link: _emojiLayerLink,
                 child: Builder(
                   builder: (context) {
-                    final iconColor = Theme.of(context).colorScheme.onSurface.withOpacity(0.7);
+                    final iconColor = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7);
                     return IconButton(
                       icon: Icon(Icons.emoji_emotions_outlined, color: iconColor),
                       tooltip: 'Emoji',
@@ -345,7 +345,7 @@ class _MessageInputState extends State<MessageInput> {
               // Mention button
               Builder(
                 builder: (context) {
-                  final iconColor = Theme.of(context).colorScheme.onSurface.withOpacity(0.7);
+                  final iconColor = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7);
                   return IconButton(
                     icon: Icon(Icons.alternate_email, color: iconColor),
                     tooltip: 'Mention',
@@ -437,7 +437,7 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceVariant,
+              color: theme.colorScheme.surfaceContainerHighest,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
@@ -449,8 +449,8 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
                   child: TextField(
                     decoration: InputDecoration(
                       hintText: 'Search emojis...',
-                      hintStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 14),
-                      prefixIcon: Icon(Icons.search, color: theme.colorScheme.onSurface.withOpacity(0.5), size: 20),
+                      hintStyle: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.5), fontSize: 14),
+                      prefixIcon: Icon(Icons.search, color: theme.colorScheme.onSurface.withValues(alpha: 0.5), size: 20),
                       filled: true,
                       fillColor: theme.colorScheme.surface,
                       border: OutlineInputBorder(
@@ -470,7 +470,7 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  icon: Icon(Icons.close, color: theme.colorScheme.onSurface.withOpacity(0.7)),
+                  icon: Icon(Icons.close, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
                   iconSize: 20,
                   onPressed: widget.onClose,
                   padding: EdgeInsets.zero,
@@ -482,7 +482,7 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
           // Category tabs
           Container(
             height: 40,
-            color: theme.colorScheme.surfaceVariant,
+            color: theme.colorScheme.surfaceContainerHighest,
             child: ListView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -504,7 +504,7 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
                     child: Text(
                       category,
                       style: TextStyle(
-                        color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withOpacity(0.7),
+                        color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withValues(alpha: 0.7),
                         fontSize: 13,
                         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                       ),
@@ -533,7 +533,7 @@ class _EmojiPickerWidgetState extends State<_EmojiPickerWidget> {
                   borderRadius: BorderRadius.circular(6),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceVariant,
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Center(

@@ -141,10 +141,10 @@ class _SyncProgressBannerState extends State<SyncProgressBanner> with SingleTick
         decoration: BoxDecoration(
           color: _hasError 
               ? colorScheme.errorContainer 
-              : (isComplete ? colorScheme.primaryContainer : colorScheme.surfaceVariant),
+              : (isComplete ? colorScheme.primaryContainer : colorScheme.surfaceContainerHighest),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withValues(alpha: 0.1),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),
@@ -207,7 +207,7 @@ class _SyncProgressBannerState extends State<SyncProgressBanner> with SingleTick
                             '$_current of $_total messages',
                             style: TextStyle(
                               fontSize: 12,
-                              color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+                              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                             ),
                           ),
                         if (_hasError && _errorMessage != null)
@@ -215,7 +215,7 @@ class _SyncProgressBannerState extends State<SyncProgressBanner> with SingleTick
                             _errorMessage!,
                             style: TextStyle(
                               fontSize: 12,
-                              color: colorScheme.onErrorContainer.withOpacity(0.7),
+                              color: colorScheme.onErrorContainer.withValues(alpha: 0.7),
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,

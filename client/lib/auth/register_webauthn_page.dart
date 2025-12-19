@@ -1,26 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:go_router/go_router.dart';
-import 'package:js/js.dart';
-import 'package:js/js_util.dart';
+import 'dart:js_interop';
 import '../services/api_service.dart';
 import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
 import '../extensions/snackbar_extensions.dart';
 
 @JS('window.localStorage.getItem')
-external String localStorageGetItem(String key);
+external JSString? localStorageGetItem(JSString key);
 
 @JS('webauthnRegister')
-external Object _webauthnRegister(String serverUrl, String email);
+external JSPromise _webauthnRegister(JSString serverUrl, JSString email);
 
 Future<bool> webauthnRegister(String serverUrl, String email) async {
   if (!kIsWeb) {
     throw UnsupportedError('WebAuthn is only supported on web platform');
   }
   try {
-    final result = await promiseToFuture(_webauthnRegister(serverUrl, email));
-    return result == true;
+    final result = await _webauthnRegister(serverUrl.toJS, email.toJS).toDart;
+    return result.dartify() == true;
   } catch (e) {
     return false;
   }
@@ -88,7 +87,7 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
       if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final email = localStorageGetItem('email');
+      final email = localStorageGetItem('email'.toJS)?.toDart ?? '';
       final success = await webauthnRegister(urlString, email);
       if (success) {
         await _loadWebauthnCredentials();
@@ -172,7 +171,7 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: colorScheme.shadow.withOpacity(0.1),
+                        color: colorScheme.shadow.withValues(alpha: 0.1),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),

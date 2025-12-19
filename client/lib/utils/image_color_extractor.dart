@@ -63,9 +63,9 @@ class ImageColorExtractor {
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
       colors: [
-        color.withOpacity(0.6),
-        color.withOpacity(0.3),
-        color.darken(0.2).withOpacity(0.4),
+        color.withValues(alpha: 0.6),
+        color.withValues(alpha: 0.3),
+        color.darken(0.2).withValues(alpha: 0.4),
       ],
     );
   }

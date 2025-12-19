@@ -439,7 +439,7 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Theme.of(context).colorScheme.shadow.withOpacity(0.3),
+                        color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.3),
                         blurRadius: 8,
                         offset: const Offset(0, 4),
                       ),
@@ -1217,7 +1217,7 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceVariant,
+                  color: theme.colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(24),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 16),

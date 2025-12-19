@@ -239,7 +239,7 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
                             )
                           : null,
                       filled: true,
-                      fillColor: colorScheme.surfaceVariant,
+                      fillColor: colorScheme.surfaceContainerHighest,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
@@ -548,7 +548,7 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
             Icon(
               Icons.chat_bubble_outline,
               size: 80,
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
             ),
             const SizedBox(height: 24),
             Text(

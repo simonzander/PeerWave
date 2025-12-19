@@ -186,9 +186,9 @@ class _OtpWebPageState extends State<OtpWebPage> {
                         labelText: 'Enter OTP Code',
                         labelStyle: TextStyle(color: colorScheme.onSurfaceVariant),
                         hintText: '00000',
-                        hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withOpacity(0.5)),
+                        hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
                         filled: true,
-                        fillColor: colorScheme.surfaceVariant,
+                        fillColor: colorScheme.surfaceContainerHighest,
                         border: const OutlineInputBorder(),
                       ),
                       style: TextStyle(

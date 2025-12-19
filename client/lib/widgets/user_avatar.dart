@@ -131,7 +131,7 @@ class _UserAvatarState extends State<UserAvatar> {
                 width: widget.size / 4,
                 height: widget.size / 4,
                 decoration: BoxDecoration(
-                  color: widget.isOnline ? Colors.green : colorScheme.onSurface.withOpacity(0.3),
+                  color: widget.isOnline ? Colors.green : colorScheme.onSurface.withValues(alpha: 0.3),
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: colorScheme.surface,
@@ -372,7 +372,7 @@ class _SquareUserAvatarState extends State<SquareUserAvatar> {
                 width: widget.size / 4,
                 height: widget.size / 4,
                 decoration: BoxDecoration(
-                  color: widget.isOnline ? Colors.green : colorScheme.onSurface.withOpacity(0.3),
+                  color: widget.isOnline ? Colors.green : colorScheme.onSurface.withValues(alpha: 0.3),
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: colorScheme.surface,

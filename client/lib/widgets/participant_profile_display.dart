@@ -91,8 +91,8 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Colors.teal.withOpacity(0.6),
-                  Colors.teal.withOpacity(0.3),
+                  Colors.teal.withValues(alpha: 0.6),
+                  Colors.teal.withValues(alpha: 0.3),
                 ],
               ),
       ),
@@ -123,7 +123,7 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Theme.of(context).colorScheme.shadow.withOpacity(0.3),
+              color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.3),
               blurRadius: 20,
               spreadRadius: 5,
             ),
@@ -156,11 +156,11 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
       width: widget.size,
       height: widget.size,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceVariant,
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Theme.of(context).colorScheme.shadow.withOpacity(0.3),
+            color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.3),
             blurRadius: 20,
             spreadRadius: 5,
           ),

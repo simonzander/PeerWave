@@ -255,14 +255,14 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
           Icon(
             Icons.notifications_none,
             size: 64,
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
           ),
           const SizedBox(height: 16),
           Text(
             'No notifications',
             style: TextStyle(
               fontSize: 18,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
             ),
           ),
           const SizedBox(height: 8),
@@ -270,7 +270,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
             'You\'re all caught up!',
             style: TextStyle(
               fontSize: 14,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
             ),
           ),
         ],
@@ -306,12 +306,12 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
         }
       },
       child: Container(
-        color: notification.isRead ? null : colorScheme.primaryContainer.withOpacity(0.1),
+        color: notification.isRead ? null : colorScheme.primaryContainer.withValues(alpha: 0.1),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
-              color: colorScheme.outlineVariant.withOpacity(0.5),
+              color: colorScheme.outlineVariant.withValues(alpha: 0.5),
               width: 1,
             ),
           ),
@@ -346,7 +346,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
                           notification.title,
                           style: TextStyle(
                             fontSize: 13,
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                           ),
                         ),
                       ),
@@ -368,7 +368,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
                     _formatTimestamp(notification.timestamp),
                     style: TextStyle(
                       fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                 ],
@@ -432,7 +432,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
         break;
       case NotificationType.call:
         icon = Icons.videocam;
-        backgroundColor = Colors.green.withOpacity(0.2);
+        backgroundColor = Colors.green.withValues(alpha: 0.2);
         iconColor = Colors.green.shade700;
         break;
       case NotificationType.mention:

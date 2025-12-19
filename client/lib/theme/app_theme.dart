@@ -107,8 +107,8 @@ class AppTheme {
       
       // Splash & Highlight
       splashFactory: InkRipple.splashFactory,
-      highlightColor: scheme.primary.withOpacity(0.12),
-      splashColor: scheme.primary.withOpacity(0.12),
+      highlightColor: scheme.primary.withValues(alpha: 0.12),
+      splashColor: scheme.primary.withValues(alpha: 0.12),
     );
   }
 
@@ -148,8 +148,8 @@ class AppTheme {
       
       // Splash & Highlight
       splashFactory: InkRipple.splashFactory,
-      highlightColor: scheme.primary.withOpacity(0.12),
-      splashColor: scheme.primary.withOpacity(0.12),
+      highlightColor: scheme.primary.withValues(alpha: 0.12),
+      splashColor: scheme.primary.withValues(alpha: 0.12),
     );
   }
 
@@ -638,7 +638,7 @@ class AppTheme {
     return ChipThemeData(
       backgroundColor: AppThemeConstants.inputBackground,
       deleteIconColor: AppThemeConstants.textSecondary,
-      disabledColor: scheme.onSurface.withOpacity(0.12),
+      disabledColor: scheme.onSurface.withValues(alpha: 0.12),
       selectedColor: scheme.secondaryContainer,
       secondarySelectedColor: scheme.secondaryContainer,
       labelPadding: EdgeInsets.symmetric(horizontal: AppThemeConstants.spacingXs),
@@ -661,7 +661,7 @@ class AppTheme {
 
   static DividerThemeData _dividerTheme(ColorScheme scheme) {
     return DividerThemeData(
-      color: scheme.outlineVariant.withOpacity(0.1), // Sehr subtil
+      color: scheme.outlineVariant.withValues(alpha: 0.1), // Sehr subtil
       thickness: 1,
       space: 1,
       indent: 0,

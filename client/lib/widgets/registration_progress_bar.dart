@@ -50,7 +50,7 @@ class RegistrationProgressBar extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.surfaceVariant,
+              color: isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.surfaceContainerHighest,
               shape: BoxShape.circle,
               border: Border.all(
                 color: isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline,
@@ -76,7 +76,7 @@ class RegistrationProgressBar extends StatelessWidget {
                   : Text(
                       step.toString(),
                       style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
                       ),
@@ -87,7 +87,7 @@ class RegistrationProgressBar extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: isActive ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+              color: isActive ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
               fontSize: 12,
               fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
             ),

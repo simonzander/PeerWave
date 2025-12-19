@@ -157,7 +157,7 @@ class _MessageListState extends State<MessageList> {
               'Read by all',
               style: TextStyle(
                 fontSize: 11,
-                color: theme.colorScheme.onSurface.withOpacity(0.5),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
               ),
             ),
           ],
@@ -171,14 +171,14 @@ class _MessageListState extends State<MessageList> {
             Icon(
               Icons.done_all,
               size: 16,
-              color: theme.colorScheme.onSurface.withOpacity(0.5),
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
             ),
             const SizedBox(width: 4),
             Text(
               'Read by $readCount of $totalCount',
               style: TextStyle(
                 fontSize: 11,
-                color: theme.colorScheme.onSurface.withOpacity(0.5),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
               ),
             ),
           ],
@@ -192,14 +192,14 @@ class _MessageListState extends State<MessageList> {
             Icon(
               Icons.done_all,
               size: 16,
-              color: theme.colorScheme.onSurface.withOpacity(0.5),
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
             ),
             const SizedBox(width: 4),
             Text(
               'Delivered to all',
               style: TextStyle(
                 fontSize: 11,
-                color: theme.colorScheme.onSurface.withOpacity(0.5),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
               ),
             ),
           ],
@@ -213,14 +213,14 @@ class _MessageListState extends State<MessageList> {
             Icon(
               Icons.check,
               size: 16,
-              color: theme.colorScheme.onSurface.withOpacity(0.5),
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
             ),
             const SizedBox(width: 4),
             Text(
               'Delivered to $deliveredCount of $totalCount',
               style: TextStyle(
                 fontSize: 11,
-                color: theme.colorScheme.onSurface.withOpacity(0.5),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
               ),
             ),
           ],
@@ -231,7 +231,7 @@ class _MessageListState extends State<MessageList> {
         return Icon(
           Icons.check,
           size: 16,
-          color: theme.colorScheme.onSurface.withOpacity(0.5),
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
         );
       }
     }
@@ -245,7 +245,7 @@ class _MessageListState extends State<MessageList> {
           height: 14,
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            color: theme.colorScheme.onSurface.withOpacity(0.5),
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
           ),
         );
       case 'sent':
@@ -253,13 +253,13 @@ class _MessageListState extends State<MessageList> {
         return Icon(
           Icons.check,
           size: 16,
-          color: theme.colorScheme.onSurface.withOpacity(0.5),
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
         );
       case 'delivered':
         return Icon(
           Icons.check,
           size: 16,
-          color: theme.colorScheme.onSurface.withOpacity(0.5),
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
         );
       case 'read':
         return Icon(Icons.done_all, size: 16, color: theme.colorScheme.primary);
@@ -285,13 +285,13 @@ class _MessageListState extends State<MessageList> {
             Icon(
               Icons.chat_bubble_outline,
               size: 64,
-              color: theme.colorScheme.onSurface.withOpacity(0.3),
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
             ),
             const SizedBox(height: 16),
             Text(
               'No messages yet',
               style: TextStyle(
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 fontSize: 18,
               ),
             ),
@@ -348,7 +348,7 @@ class _MessageListState extends State<MessageList> {
                   children: [
                     Expanded(
                       child: Divider(
-                        color: theme.colorScheme.onSurface.withOpacity(0.2),
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
                         thickness: 1,
                       ),
                     ),
@@ -357,7 +357,7 @@ class _MessageListState extends State<MessageList> {
                       child: Text(
                         _getDateDividerText(msgTime),
                         style: TextStyle(
-                          color: theme.colorScheme.onSurface.withOpacity(0.5),
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                         ),
@@ -365,7 +365,7 @@ class _MessageListState extends State<MessageList> {
                     ),
                     Expanded(
                       child: Divider(
-                        color: theme.colorScheme.onSurface.withOpacity(0.2),
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
                         thickness: 1,
                       ),
                     ),
@@ -512,10 +512,10 @@ class _MessageListState extends State<MessageList> {
             decoration: BoxDecoration(
               color: Theme.of(
                 context,
-              ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
               ),
             ),
             child: Row(
@@ -595,8 +595,8 @@ class _MessageListState extends State<MessageList> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: warningColor.withOpacity(0.15),
-        border: Border.all(color: warningColor.withOpacity(0.5), width: 1.5),
+        color: warningColor.withValues(alpha: 0.15),
+        border: Border.all(color: warningColor.withValues(alpha: 0.5), width: 1.5),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -619,7 +619,7 @@ class _MessageListState extends State<MessageList> {
                 Text(
                   '$sender\'s security code changed. This happens when they reinstall the app or switch devices. Messages are still secure.',
                   style: TextStyle(
-                    color: theme.colorScheme.onSurface.withOpacity(0.8),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.8),
                     fontSize: 13,
                   ),
                 ),
@@ -667,7 +667,7 @@ class _MessageListState extends State<MessageList> {
                   border: Border.all(
                     color: Theme.of(
                       context,
-                    ).colorScheme.outline.withOpacity(0.5),
+                    ).colorScheme.outline.withValues(alpha: 0.5),
                     width: 1,
                   ),
                 ),
@@ -685,7 +685,7 @@ class _MessageListState extends State<MessageList> {
                             size: 48,
                             color: Theme.of(
                               context,
-                            ).colorScheme.onSurface.withOpacity(0.4),
+                            ).colorScheme.onSurface.withValues(alpha: 0.4),
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -693,7 +693,7 @@ class _MessageListState extends State<MessageList> {
                             style: TextStyle(
                               color: Theme.of(
                                 context,
-                              ).colorScheme.onSurface.withOpacity(0.5),
+                              ).colorScheme.onSurface.withValues(alpha: 0.5),
                             ),
                           ),
                         ],
@@ -710,7 +710,7 @@ class _MessageListState extends State<MessageList> {
                 style: TextStyle(
                   color: Theme.of(
                     context,
-                  ).colorScheme.onSurface.withOpacity(0.5),
+                  ).colorScheme.onSurface.withValues(alpha: 0.5),
                   fontSize: 12,
                 ),
               ),
@@ -844,10 +844,10 @@ class _MessageListState extends State<MessageList> {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.6),
+          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: theme.colorScheme.outline.withOpacity(0.25),
+            color: theme.colorScheme.outline.withValues(alpha: 0.25),
           ),
         ),
         child: Row(
@@ -882,7 +882,7 @@ class _MessageListState extends State<MessageList> {
                     Text(
                       when,
                       style: TextStyle(
-                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                         fontSize: 12,
                       ),
                     ),
@@ -948,18 +948,18 @@ class _MessageListState extends State<MessageList> {
           decoration: TextDecoration.lineThrough,
         ),
         code: TextStyle(
-          backgroundColor: markdownTheme.colorScheme.surfaceVariant,
+          backgroundColor: markdownTheme.colorScheme.surfaceContainerHighest,
           color: markdownTheme.colorScheme.primary,
           fontFamily: 'monospace',
         ),
         codeblockDecoration: BoxDecoration(
-          color: markdownTheme.colorScheme.surfaceVariant.withOpacity(0.5),
+          color: markdownTheme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: markdownTheme.colorScheme.outline),
         ),
         codeblockPadding: const EdgeInsets.all(12),
         blockquote: TextStyle(
-          color: markdownTheme.colorScheme.onSurface.withOpacity(0.6),
+          color: markdownTheme.colorScheme.onSurface.withValues(alpha: 0.6),
           fontStyle: FontStyle.italic,
         ),
         blockquoteDecoration: BoxDecoration(
@@ -1043,7 +1043,7 @@ class _FullscreenImageViewer extends StatelessWidget {
             child: IconButton(
               icon: const Icon(Icons.close, color: Colors.white, size: 32),
               style: IconButton.styleFrom(
-                backgroundColor: Colors.black.withOpacity(0.5),
+                backgroundColor: Colors.black.withValues(alpha: 0.5),
                 padding: const EdgeInsets.all(8),
               ),
               onPressed: () => Navigator.of(context).pop(),
@@ -1063,7 +1063,7 @@ class _FullscreenImageViewer extends StatelessWidget {
                 ),
                 margin: const EdgeInsets.symmetric(horizontal: 20),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
+                  color: Colors.black.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
@@ -1085,7 +1085,7 @@ class _FullscreenImageViewer extends StatelessWidget {
                         style: TextStyle(
                           color: Theme.of(
                             context,
-                          ).colorScheme.onSurface.withOpacity(0.7),
+                          ).colorScheme.onSurface.withValues(alpha: 0.7),
                           fontSize: 12,
                         ),
                       ),

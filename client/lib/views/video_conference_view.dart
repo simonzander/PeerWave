@@ -1032,7 +1032,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           )
         else
           Container(
-            color: Theme.of(context).colorScheme.surfaceVariant,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -1060,7 +1060,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.scrim.withOpacity(0.7),
+              color: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.7),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Row(
@@ -1236,7 +1236,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
               decoration: BoxDecoration(
                 color: Theme.of(
                   context,
-                ).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                ).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -1582,10 +1582,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         final buttonColor =
             color ??
             (isDisabled
-                ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5)
+                ? Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
                 : isActive
                 ? Theme.of(context).colorScheme.primary
-                : Theme.of(context).colorScheme.surfaceVariant);
+                : Theme.of(context).colorScheme.surfaceContainerHighest);
 
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -1603,7 +1603,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                   color: isDisabled
                       ? Theme.of(
                           context,
-                        ).colorScheme.onSurface.withOpacity(0.38)
+                        ).colorScheme.onSurface.withValues(alpha: 0.38)
                       : (isActive
                             ? Theme.of(context).colorScheme.onPrimary
                             : Theme.of(context).colorScheme.onSurfaceVariant),

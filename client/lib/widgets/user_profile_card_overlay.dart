@@ -62,7 +62,7 @@ class UserProfileCardOverlay extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: AppThemeConstants.textSecondary.withOpacity(0.2),
+              color: AppThemeConstants.textSecondary.withValues(alpha: 0.2),
               width: 1,
             ),
             gradient: LinearGradient(
@@ -70,7 +70,7 @@ class UserProfileCardOverlay extends StatelessWidget {
               end: Alignment.bottomRight,
               colors: [
                 AppThemeConstants.contextPanelBackground,
-                AppThemeConstants.contextPanelBackground.withOpacity(0.95),
+                AppThemeConstants.contextPanelBackground.withValues(alpha: 0.95),
               ],
             ),
           ),
@@ -112,7 +112,7 @@ class UserProfileCardOverlay extends StatelessWidget {
                         '@$atName',
                         style: TextStyle(
                           fontSize: 14,
-                          color: AppThemeConstants.textSecondary.withOpacity(0.8),
+                          color: AppThemeConstants.textSecondary.withValues(alpha: 0.8),
                         ),
                       ),
                     ],
@@ -122,7 +122,7 @@ class UserProfileCardOverlay extends StatelessWidget {
                     // Divider
                     Container(
                       height: 1,
-                      color: AppThemeConstants.textSecondary.withOpacity(0.2),
+                      color: AppThemeConstants.textSecondary.withValues(alpha: 0.2),
                     ),
                     
                     const SizedBox(height: 12),
@@ -160,7 +160,7 @@ class UserProfileCardOverlay extends StatelessWidget {
                           Icon(
                             Icons.access_time,
                             size: 14,
-                            color: AppThemeConstants.textSecondary.withOpacity(0.7),
+                            color: AppThemeConstants.textSecondary.withValues(alpha: 0.7),
                           ),
                           const SizedBox(width: 6),
                           Expanded(
@@ -168,7 +168,7 @@ class UserProfileCardOverlay extends StatelessWidget {
                               'Last seen ${_formatLastSeen(lastSeen!)}',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: AppThemeConstants.textSecondary.withOpacity(0.7),
+                                color: AppThemeConstants.textSecondary.withValues(alpha: 0.7),
                               ),
                             ),
                           ),

@@ -108,7 +108,7 @@ class ThemeSettingsPage extends StatelessWidget {
             Text(
               currentScheme.description,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onPrimaryContainer.withOpacity(0.8),
+                color: colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
               ),
             ),
           ],
@@ -128,7 +128,7 @@ class ThemeSettingsPage extends StatelessWidget {
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.2),
+              color: Colors.black.withValues(alpha: 0.2),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),

@@ -75,7 +75,7 @@ class CustomWindowTitleBar extends StatelessWidget {
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w400,
-                                    color: textColor.withOpacity(0.6),
+                                    color: textColor.withValues(alpha: 0.6),
                                     decoration: TextDecoration.none,
                                   ),
                                 ),
@@ -104,8 +104,8 @@ class WindowButtons extends StatelessWidget {
     final theme = Theme.of(context);
     final buttonColors = WindowButtonColors(
       iconNormal: theme.colorScheme.onSurface,
-      mouseOver: theme.colorScheme.surfaceVariant,
-      mouseDown: theme.colorScheme.surfaceVariant.withOpacity(0.8),
+      mouseOver: theme.colorScheme.surfaceContainerHighest,
+      mouseDown: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
       iconMouseOver: theme.colorScheme.onSurface,
       iconMouseDown: theme.colorScheme.onSurface,
     );

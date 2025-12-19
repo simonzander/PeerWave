@@ -549,7 +549,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Icon(icon, size: 32, color: color),
@@ -583,7 +583,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -629,7 +629,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -651,7 +651,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -676,7 +676,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: color.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color, width: 1),
       ),
@@ -699,7 +699,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -730,10 +730,10 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: colorScheme.outline.withOpacity(0.2),
+          color: colorScheme.outline.withValues(alpha: 0.2),
         ),
       ),
       child: Column(
@@ -768,7 +768,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer.withOpacity(0.5),
+                  color: colorScheme.primaryContainer.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Row(
@@ -1776,7 +1776,7 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
                 padding: const EdgeInsets.all(24.0),
                 child: Text(
                   'Type at least 2 characters to search',
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                 ),
               )
             else if (_searchResults.isEmpty)
@@ -1784,11 +1784,11 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
                 padding: const EdgeInsets.all(24.0),
                 child: Column(
                   children: [
-                    Icon(Icons.search_off, size: 48, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4)),
+                    Icon(Icons.search_off, size: 48, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)),
                     const SizedBox(height: 12),
                     Text(
                       'No users or channels found',
-                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                     ),
                   ],
                 ),

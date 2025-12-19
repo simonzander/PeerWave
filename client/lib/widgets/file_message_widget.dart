@@ -48,10 +48,10 @@ class FileMessageWidget extends StatelessWidget {
             decoration: BoxDecoration(
               color: isOwnMessage 
                   ? theme.colorScheme.primaryContainer
-                  : theme.colorScheme.surfaceVariant,
+                  : theme.colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: theme.colorScheme.outline.withOpacity(0.2),
+                color: theme.colorScheme.outline.withValues(alpha: 0.2),
               ),
             ),
             padding: const EdgeInsets.all(12),
@@ -122,7 +122,7 @@ class FileMessageWidget extends StatelessWidget {
                       children: [
                         LinearProgressIndicator(
                           value: downloadProgress,
-                          backgroundColor: theme.colorScheme.surfaceVariant,
+                          backgroundColor: theme.colorScheme.surfaceContainerHighest,
                           valueColor: AlwaysStoppedAnimation<Color>(
                             theme.colorScheme.primary,
                           ),
@@ -219,10 +219,10 @@ class FileMessageWidget extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: badgeColor.withOpacity(0.15),
+        color: badgeColor.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: badgeColor.withOpacity(0.4),
+          color: badgeColor.withValues(alpha: 0.4),
           width: 1,
         ),
       ),

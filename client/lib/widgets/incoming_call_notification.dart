@@ -59,7 +59,7 @@ class IncomingCallNotification extends StatelessWidget {
                       Text(
                         '$inviterName invited you to "$meetingTitle"',
                         style: TextStyle(
-                          color: colorScheme.onPrimaryContainer.withOpacity(0.8),
+                          color: colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
                           fontSize: 12,
                         ),
                         maxLines: 1,

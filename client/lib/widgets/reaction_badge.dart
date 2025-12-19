@@ -33,7 +33,7 @@ class ReactionBadge extends StatelessWidget {
           border: Border.all(
             color: isActive 
                 ? colorScheme.primary
-                : colorScheme.outline.withOpacity(0.3),
+                : colorScheme.outline.withValues(alpha: 0.3),
             width: isActive ? 1.5 : 1,
           ),
         ),

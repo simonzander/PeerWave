@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
-import 'package:js/js.dart';
-import 'package:js/js_util.dart';
+import 'dart:js_interop';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../web_config.dart';
 import 'package:go_router/go_router.dart';
@@ -10,13 +9,13 @@ import '../services/api_service.dart';
 import '../services/device_identity_service.dart';
 
 @JS('window.localStorage.getItem')
-external String localStorageGetItem(String key);
+external JSString? localStorageGetItem(JSString key);
 @JS('webauthnRegister')
-external Object _webauthnRegister(String serverUrl, String email);
+external JSPromise _webauthnRegister(JSString serverUrl, JSString email);
 
 Future<bool> webauthnRegister(String serverUrl, String email) async {
-  final result = await promiseToFuture(_webauthnRegister(serverUrl, email));
-  return result == true;
+  final result = await _webauthnRegister(serverUrl.toJS, email.toJS).toDart;
+  return result.dartify() == true;
 }
 
 class WebauthnPage extends StatefulWidget {
@@ -123,7 +122,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
 
   // Existing methods
   Future<void> _confirmAndRegenerateBackupCodes() async {
-    final confirmed = await showDialog<bool>(
+    await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Regenerate Backup Codes?'),
@@ -351,7 +350,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
     if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
       urlString = 'https://$urlString';
     }
-    final email = localStorageGetItem('email');
+    final email = localStorageGetItem('email'.toJS)?.toDart ?? '';
     await webauthnRegister(urlString, email);
     await _loadWebauthnCredentials();
   }
@@ -802,7 +801,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
                               color: isCurrentDevice
                                   ? Theme.of(
                                       context,
-                                    ).colorScheme.onSurface.withOpacity(0.3)
+                                    ).colorScheme.onSurface.withValues(alpha: 0.3)
                                   : Theme.of(context).colorScheme.error,
                             ),
                             onPressed: isCurrentDevice

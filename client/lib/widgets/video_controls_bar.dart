@@ -318,10 +318,10 @@ class VideoControlsBar extends StatelessWidget {
     final buttonColor =
         color ??
         (isDisabled
-            ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5)
+            ? Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
             : isActive
             ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.surfaceVariant);
+            : Theme.of(context).colorScheme.surfaceContainerHighest);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -337,7 +337,7 @@ class VideoControlsBar extends StatelessWidget {
             child: Icon(
               icon,
               color: isDisabled
-                  ? Theme.of(context).colorScheme.onSurface.withOpacity(0.38)
+                  ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)
                   : (isActive
                       ? Theme.of(context).colorScheme.onPrimary
                       : Theme.of(context).colorScheme.onSurfaceVariant),

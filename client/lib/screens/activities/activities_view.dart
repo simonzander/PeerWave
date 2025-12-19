@@ -559,11 +559,11 @@ class _ActivitiesViewState extends State<ActivitiesView>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.notifications_none, size: 64, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4)),
+            Icon(Icons.notifications_none, size: 64, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)),
             const SizedBox(height: 16),
             Text(
               'No notifications',
-              style: TextStyle(fontSize: 18, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+              style: TextStyle(fontSize: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
             ),
           ],
         ),
@@ -750,13 +750,13 @@ class _ActivitiesViewState extends State<ActivitiesView>
                         Text(
                           subtitle,
                           style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                             fontSize: 12,
                           ),
                         ),
                       Text(
                         _formatLastMessageTime(conv['lastMessageTime'] ?? ''),
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6), fontSize: 12),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 12),
                       ),
                     ],
                   ),
@@ -927,7 +927,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -943,7 +943,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
                 const SizedBox(height: 2),
                 Text(
                   timestamp,
-                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                 ),
               ],
             ),
@@ -1082,7 +1082,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
             if (timeAgo.isNotEmpty)
               Text(
                 timeAgo,
-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
               ),
           ],
         ),

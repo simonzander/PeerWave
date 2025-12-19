@@ -140,7 +140,7 @@ class _VideoParticipantTileState extends State<VideoParticipantTile> {
               _cachedProfileWidget!
             else
               Container(
-                color: Theme.of(context).colorScheme.surfaceVariant,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 child: const Center(
                   child: Icon(
                     Icons.videocam_off,
@@ -175,7 +175,7 @@ class _VideoParticipantTileState extends State<VideoParticipantTile> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.scrim.withOpacity(0.6),
+                  color: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Row(
@@ -240,7 +240,7 @@ class _ProfileDisplaySection extends StatelessWidget {
     }
 
     return Container(
-      color: Theme.of(context).colorScheme.surfaceVariant,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: const Center(
         child: Icon(
           Icons.videocam_off,

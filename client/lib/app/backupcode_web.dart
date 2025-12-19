@@ -1,11 +1,11 @@
 
 import 'dart:convert';
+import 'dart:js_interop';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:web/web.dart' as web;
-import 'package:js/js_util.dart' as js_util;
 import '../services/api_service.dart';
 import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
@@ -88,7 +88,7 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
                       decoration: InputDecoration(
                         hintText: 'your backup codes',
                         filled: true,
-                        fillColor: colorScheme.surfaceVariant,
+                        fillColor: colorScheme.surfaceContainerHighest,
                         border: const OutlineInputBorder(),
                       ),
                       style: TextStyle(color: colorScheme.onSurface),
@@ -114,24 +114,15 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
                       onPressed: () {
                         final text = backupCodesController.text;
                         final bytes = utf8.encode(text);
-                        final jsArray = js_util.jsify([bytes]);
-                        final blob = web.Blob(jsArray);
-                        final url = js_util.callMethod(
-                          js_util.getProperty(web.window, 'URL'),
-                          'createObjectURL',
-                          [blob],
-                        ) as String;
+                        final blob = web.Blob([bytes.toJS].toJS);
+                        final url = web.URL.createObjectURL(blob);
                         final anchor = web.document.createElement('a') as web.HTMLAnchorElement;
                         anchor.href = url;
                         anchor.download = 'backup_codes.txt';
                         web.document.body!.append(anchor);
                         anchor.click();
                         anchor.remove();
-                        js_util.callMethod(
-                          js_util.getProperty(web.window, 'URL'),
-                          'revokeObjectURL',
-                          [url],
-                        );
+                        web.URL.revokeObjectURL(url);
                       },
                       child: const Text('Download as .txt'),
                     ),
