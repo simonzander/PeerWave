@@ -574,13 +574,15 @@ class _MeetingVideoConferenceViewState
 
           Future<void> addParticipant(Map<String, dynamic> user) async {
             try {
-              await MeetingService().addParticipant(
+              final userId = (user['uuid'] ?? '').toString();
+              if (userId.isEmpty) {
+                throw Exception('Missing user id');
+              }
+
+              final isOnline = await MeetingService().addParticipant(
                 widget.meetingId,
-                user['uuid'] as String,
+                userId,
               );
-              
-              final userId = user['uuid'] as String;
-              final isOnline = user['isOnline'] == true;
               
               // Add to pending participants list
               setState(() {

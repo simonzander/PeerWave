@@ -111,6 +111,32 @@ const User = sequelize.define('User', {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: true
+    },
+    // Per-user notification settings (server-side)
+    meeting_invite_email_enabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true
+    },
+    meeting_rsvp_email_to_organizer_enabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true
+    },
+    meeting_update_email_enabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true
+    },
+    meeting_cancel_email_enabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true
+    },
+    meeting_self_invite_email_enabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
     }
 });
 
@@ -779,6 +805,47 @@ const MeetingInvitation = sequelize.define('MeetingInvitation', {
     ]
 });
 
+// Meeting RSVP status - persistent per-invitee status for scheduled meetings
+const MeetingRsvp = sequelize.define('MeetingRsvp', {
+    id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true
+    },
+    meeting_id: {
+        type: DataTypes.STRING,
+        allowNull: false
+    },
+    invitee_user_id: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    invitee_email: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    status: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: 'invited'
+    },
+    responded_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    }
+}, {
+    timestamps: true,
+    underscored: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
+    tableName: 'meeting_rsvps',
+    indexes: [
+        { fields: ['meeting_id'] },
+        { fields: ['meeting_id', 'invitee_user_id'], unique: true },
+        { fields: ['meeting_id', 'invitee_email'], unique: true }
+    ]
+});
+
 // Client Sessions table for HMAC authentication (native clients)
 const ClientSession = sequelize.define('ClientSession', {
     client_id: {
@@ -1113,6 +1180,7 @@ module.exports = {
     OTP,
     ExternalSession,
     MeetingInvitation,
+        MeetingRsvp,
     Client,
     Item,
     SignalSignedPreKey,

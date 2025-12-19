@@ -6,6 +6,706 @@ const { verifySessionAuth, verifyAuthEither } = require('../middleware/sessionAu
 const { hasServerPermission } = require('../db/roleHelpers');
 const nodemailer = require('nodemailer');
 const config = require('../config/config');
+const writeQueue = require('../db/writeQueue');
+const { MeetingRsvp, User, ServerSettings } = require('../db/model');
+const emailService = require('../services/emailService');
+const { createRsvpToken, verifyRsvpToken } = require('../services/meetingRsvpTokenService');
+
+const RSVP_STATUSES = new Set(['accepted', 'tentative', 'declined']);
+
+const isEmailLike = (value) => {
+  if (!value) return false;
+  const s = String(value).trim();
+  return s.includes('@') && isValidEmail(s);
+};
+
+const uniqLower = (values) => {
+  const out = [];
+  const seen = new Set();
+  for (const v of values || []) {
+    const k = normalizeInviteeKey(v);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(v);
+  }
+  return out;
+};
+
+function diffInvitees(oldList, newList) {
+  const oldKeys = new Set((oldList || []).map(normalizeInviteeKey).filter(Boolean));
+  const newKeys = new Set((newList || []).map(normalizeInviteeKey).filter(Boolean));
+
+  const added = [];
+  const removed = [];
+
+  for (const v of newList || []) {
+    const k = normalizeInviteeKey(v);
+    if (!k) continue;
+    if (!oldKeys.has(k)) added.push(v);
+  }
+  for (const v of oldList || []) {
+    const k = normalizeInviteeKey(v);
+    if (!k) continue;
+    if (!newKeys.has(k)) removed.push(v);
+  }
+
+  return { added: uniqLower(added), removed: uniqLower(removed) };
+}
+
+async function loadServerName() {
+  const settings = await ServerSettings.findOne({ where: { id: 1 } });
+  return settings?.server_name || 'PeerWave Server';
+}
+
+function buildMeetingUrls(req, meetingId) {
+  const baseUrl = getBaseUrl(req);
+  return {
+    baseUrl,
+    openMeetingsUrl: `${baseUrl}/#/app/meetings`,
+    prejoinUrl: `${baseUrl}/#/meeting/prejoin/${encodeURIComponent(meetingId)}`,
+  };
+}
+
+function buildRsvpUrls(req, meetingId, normalizedEmail) {
+  const rsvpToken = createRsvpToken({ meetingId, email: normalizedEmail });
+  const baseUrl = getBaseUrl(req);
+  const rsvpBase = `${baseUrl}/api/meetings/${meetingId}/rsvp`;
+  return {
+    rsvpToken,
+    accepted: `${rsvpBase}/accepted?email=${encodeURIComponent(normalizedEmail)}&token=${encodeURIComponent(rsvpToken)}`,
+    tentative: `${rsvpBase}/tentative?email=${encodeURIComponent(normalizedEmail)}&token=${encodeURIComponent(rsvpToken)}`,
+    declined: `${rsvpBase}/declined?email=${encodeURIComponent(normalizedEmail)}&token=${encodeURIComponent(rsvpToken)}`,
+  };
+}
+
+function buildIcsUid(meeting, meetingId, serverName) {
+  const uidDomain = String(serverName || 'PeerWave').replace(/\s/g, '');
+  const stableId = meeting?.meeting_id || meeting?.meetingId || meetingId || meeting?.id || 'meeting';
+  return `${stableId}@${uidDomain}`;
+}
+
+function buildIcsSequence(meeting, fallback = 1) {
+  const updated = meeting.updated_at || meeting.updatedAt || meeting.updatedAt;
+  const dt = updated ? new Date(updated) : null;
+  if (!dt || Number.isNaN(dt.getTime())) return fallback;
+  return Math.max(1, Math.floor(dt.getTime() / 1000));
+}
+
+async function sendInternalInviteEmail({ req, meeting, meetingId, user, inviterUsername, serverName }) {
+  if (!user?.email) return;
+  if (!config.smtp?.auth?.user) throw new Error('SMTP is not configured');
+  if (user.meeting_invite_email_enabled !== true) return;
+
+  const email = String(user.email).trim();
+  if (!isValidEmail(email)) return;
+
+  const normalizedEmail = email.toLowerCase();
+  const urls = buildMeetingUrls(req, meetingId);
+  const rsvp = buildRsvpUrls(req, meetingId, normalizedEmail);
+
+  const startTime = new Date(meeting.start_time);
+  const endTime = new Date(meeting.end_time);
+  const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  const timeOptions = { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' };
+
+  const uid = buildIcsUid(meeting, meetingId, serverName);
+
+  const icsContent = `BEGIN:VCALENDAR
+PRODID:-//PeerWave//Meeting Invite//EN
+VERSION:2.0
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:${uid}
+DTSTAMP:${formatICalDateUtc(new Date())}
+DTSTART:${formatICalDateUtc(startTime)}
+DTEND:${formatICalDateUtc(endTime)}
+SUMMARY:${meeting.title}
+DESCRIPTION:${meeting.description || ''}\n\nOpen Meetings: ${urls.openMeetingsUrl}\nJoin: ${urls.prejoinUrl}
+ORGANIZER;CN=${inviterUsername}:mailto:${config.smtp.auth.user}
+ATTENDEE;CN=${email};ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:${email}
+LOCATION:${urls.prejoinUrl}
+STATUS:CONFIRMED
+SEQUENCE:0
+END:VEVENT
+END:VCALENDAR`.trim();
+
+  await emailService.sendEmail({
+    smtpConfig: config.smtp,
+    message: {
+      from: config.smtp.auth.user,
+      to: email,
+      subject: `${inviterUsername} invited you to "${meeting.title}" on ${serverName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">You're Invited to a Meeting!</h2>
+          <p><strong>${inviterUsername}</strong> invited you to a meeting on ${serverName}.</p>
+          <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="margin-top: 0; color: #555;">Meeting Details</h3>
+            <p><strong>Title:</strong> ${meeting.title}</p>
+            ${meeting.description ? `<p><strong>Description:</strong> ${meeting.description}</p>` : ''}
+            <p><strong>Date:</strong> ${startTime.toLocaleDateString('en-US', dateOptions)}</p>
+            <p><strong>Time:</strong> ${startTime.toLocaleTimeString('en-US', timeOptions)} - ${endTime.toLocaleTimeString('en-US', timeOptions)}</p>
+          </div>
+          <div style="margin: 24px 0;">
+            <a href="${urls.openMeetingsUrl}" style="background-color:#4CAF50; color:white; padding:12px 18px; text-decoration:none; border-radius:6px; display:inline-block; margin-right: 8px;">Open Meetings</a>
+            <a href="${urls.prejoinUrl}" style="background-color:#1976D2; color:white; padding:12px 18px; text-decoration:none; border-radius:6px; display:inline-block;">Join</a>
+          </div>
+          <div style="margin: 24px 0;">
+            <p style="margin: 0 0 10px 0;"><strong>RSVP:</strong></p>
+            <a href="${rsvp.accepted}" style="background-color:#2e7d32; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block; margin-right:8px;">Accept</a>
+            <a href="${rsvp.tentative}" style="background-color:#f9a825; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block; margin-right:8px;">Tentative</a>
+            <a href="${rsvp.declined}" style="background-color:#c62828; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block;">Decline</a>
+            <p style="color:#666; font-size: 13px; margin-top: 10px;">These links expire in 30 days.</p>
+          </div>
+          <p style="color:#999; font-size: 12px;">Sent from ${serverName}</p>
+        </div>
+      `,
+      alternatives: [
+        {
+          contentType: 'text/calendar; method=REQUEST; charset=UTF-8',
+          content: icsContent,
+        },
+      ],
+      attachments: [
+        {
+          filename: 'invite.ics',
+          content: icsContent,
+          contentType: 'text/calendar; charset=UTF-8; method=REQUEST',
+        },
+      ],
+    },
+  });
+}
+
+async function sendMeetingUpdateEmail({ req, meeting, meetingId, recipientEmail, recipientLabel, inviterUsername, serverName, isInternalUser }) {
+  if (!recipientEmail || !isValidEmail(recipientEmail)) return;
+  if (!config.smtp?.auth?.user) throw new Error('SMTP is not configured');
+
+  const normalizedEmail = String(recipientEmail).toLowerCase();
+  const urls = buildMeetingUrls(req, meetingId);
+  const rsvp = buildRsvpUrls(req, meetingId, normalizedEmail);
+
+  const startTime = new Date(meeting.start_time);
+  const endTime = new Date(meeting.end_time);
+  const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  const timeOptions = { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' };
+
+  const uid = buildIcsUid(meeting, meetingId, serverName);
+  const sequence = buildIcsSequence(meeting, 1);
+
+  const icsContent = `BEGIN:VCALENDAR
+PRODID:-//PeerWave//Meeting Update//EN
+VERSION:2.0
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:${uid}
+DTSTAMP:${formatICalDateUtc(new Date())}
+DTSTART:${formatICalDateUtc(startTime)}
+DTEND:${formatICalDateUtc(endTime)}
+SUMMARY:${meeting.title}
+DESCRIPTION:${meeting.description || ''}\n\nOpen Meetings: ${urls.openMeetingsUrl}\nJoin: ${urls.prejoinUrl}
+ORGANIZER;CN=${inviterUsername}:mailto:${config.smtp.auth.user}
+ATTENDEE;CN=${recipientLabel || recipientEmail};ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:${recipientEmail}
+LOCATION:${urls.prejoinUrl}
+STATUS:CONFIRMED
+SEQUENCE:${sequence}
+END:VEVENT
+END:VCALENDAR`.trim();
+
+  const actionUrl = isInternalUser ? urls.openMeetingsUrl : urls.prejoinUrl;
+  const actionLabel = isInternalUser ? 'Open Meetings' : 'Join Meeting';
+
+  await emailService.sendEmail({
+    smtpConfig: config.smtp,
+    message: {
+      from: config.smtp.auth.user,
+      to: recipientEmail,
+      subject: `Updated: "${meeting.title}" on ${serverName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color:#333;">Meeting Updated</h2>
+          <p>The meeting <strong>${meeting.title}</strong> was updated.</p>
+          <div style="background-color:#f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <p><strong>Date:</strong> ${startTime.toLocaleDateString('en-US', dateOptions)}</p>
+            <p><strong>Time:</strong> ${startTime.toLocaleTimeString('en-US', timeOptions)} - ${endTime.toLocaleTimeString('en-US', timeOptions)}</p>
+          </div>
+          <div style="margin: 24px 0;">
+            <a href="${actionUrl}" style="background-color:#1976D2; color:white; padding:12px 18px; text-decoration:none; border-radius:6px; display:inline-block;">${actionLabel}</a>
+          </div>
+          <div style="margin: 24px 0;">
+            <p style="margin: 0 0 10px 0;"><strong>RSVP:</strong></p>
+            <a href="${rsvp.accepted}" style="background-color:#2e7d32; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block; margin-right:8px;">Accept</a>
+            <a href="${rsvp.tentative}" style="background-color:#f9a825; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block; margin-right:8px;">Tentative</a>
+            <a href="${rsvp.declined}" style="background-color:#c62828; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block;">Decline</a>
+            <p style="color:#666; font-size: 13px; margin-top: 10px;">These links expire in 30 days.</p>
+          </div>
+          <p style="color:#999; font-size: 12px;">Sent from ${serverName}</p>
+        </div>
+      `,
+      alternatives: [
+        {
+          contentType: 'text/calendar; method=REQUEST; charset=UTF-8',
+          content: icsContent,
+        },
+      ],
+      attachments: [
+        {
+          filename: 'update.ics',
+          content: icsContent,
+          contentType: 'text/calendar; charset=UTF-8; method=REQUEST',
+        },
+      ],
+    },
+  });
+}
+
+async function sendMeetingCancelEmail({ meeting, meetingId, attendeeEmail, organizerLabel, serverName }) {
+  if (!attendeeEmail || !isValidEmail(attendeeEmail)) return;
+  if (!config.smtp?.auth?.user) return;
+
+  const startTime = new Date(meeting.start_time);
+  const endTime = new Date(meeting.end_time);
+
+  const uid = buildIcsUid(meeting, meetingId, serverName);
+  const icsCancelContent = `BEGIN:VCALENDAR
+PRODID:-//PeerWave//Meeting Cancel//EN
+VERSION:2.0
+CALSCALE:GREGORIAN
+METHOD:CANCEL
+BEGIN:VEVENT
+UID:${uid}
+DTSTAMP:${formatICalDateUtc(new Date())}
+DTSTART:${formatICalDateUtc(startTime)}
+DTEND:${formatICalDateUtc(endTime)}
+SUMMARY:${meeting.title}
+DESCRIPTION:${meeting.description || ''}
+ORGANIZER;CN=${organizerLabel}:mailto:${config.smtp.auth.user}
+ATTENDEE;CN=${attendeeEmail};ROLE=REQ-PARTICIPANT:mailto:${attendeeEmail}
+STATUS:CANCELLED
+SEQUENCE:${buildIcsSequence(meeting, 1)}
+END:VEVENT
+END:VCALENDAR`.trim();
+
+  await emailService.sendEmail({
+    smtpConfig: config.smtp,
+    message: {
+      from: config.smtp.auth.user,
+      to: attendeeEmail,
+      subject: `Cancelled: "${meeting.title}" on ${serverName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color:#333;">Meeting Cancelled</h2>
+          <p><strong>${meeting.title}</strong> was cancelled or you were removed from the invite list.</p>
+          <p style="color:#999; font-size: 12px;">Sent from ${serverName}</p>
+        </div>
+      `,
+      alternatives: [
+        {
+          contentType: 'text/calendar; method=CANCEL; charset=UTF-8',
+          content: icsCancelContent,
+        },
+      ],
+      attachments: [
+        {
+          filename: 'cancel.ics',
+          content: icsCancelContent,
+          contentType: 'text/calendar; charset=UTF-8; method=CANCEL',
+        },
+      ],
+    },
+  });
+}
+
+async function resolveUsersForIds(userIds) {
+  const ids = (userIds || []).filter(Boolean);
+  if (ids.length === 0) return new Map();
+  const rows = await User.findAll({
+    where: { uuid: ids },
+    attributes: [
+      'uuid',
+      'email',
+      'displayName',
+      'atName',
+      'meeting_invite_email_enabled',
+      'meeting_update_email_enabled',
+      'meeting_cancel_email_enabled',
+      'meeting_self_invite_email_enabled',
+    ],
+  });
+  const map = new Map();
+  for (const u of rows) map.set(u.uuid, u);
+  return map;
+}
+
+const normalizeInviteeKey = (value) => {
+  if (value == null) return '';
+  return String(value).trim().toLowerCase();
+};
+
+const parseInviteesFromRequest = ({ participant_ids, email_invitations, invited_participants }) => {
+  const out = [];
+
+  const pushUnique = (v) => {
+    const key = normalizeInviteeKey(v);
+    if (!key) return;
+    if (out.some((x) => normalizeInviteeKey(x) === key)) return;
+    out.push(v);
+  };
+
+  if (Array.isArray(invited_participants)) {
+    invited_participants.forEach(pushUnique);
+  }
+
+  if (Array.isArray(participant_ids)) {
+    participant_ids.forEach(pushUnique);
+  }
+
+  if (Array.isArray(email_invitations)) {
+    email_invitations
+      .map((e) => String(e).trim())
+      .filter((e) => e && isValidEmail(e))
+      .forEach((e) => pushUnique(e.toLowerCase()));
+  }
+
+  return out;
+};
+
+async function buildRsvpIndexForMeetings(meetingIds) {
+  if (!Array.isArray(meetingIds) || meetingIds.length === 0) return new Map();
+  const rows = await MeetingRsvp.findAll({
+    where: { meeting_id: meetingIds },
+    attributes: ['meeting_id', 'invitee_user_id', 'invitee_email', 'status'],
+  });
+
+  const byMeeting = new Map();
+  for (const row of rows) {
+    const meetingId = row.meeting_id;
+    const key = row.invitee_user_id || row.invitee_email;
+    if (!key) continue;
+    const normKey = normalizeInviteeKey(key);
+    if (!byMeeting.has(meetingId)) byMeeting.set(meetingId, new Map());
+    byMeeting.get(meetingId).set(normKey, String(row.status || '').toLowerCase());
+  }
+  return byMeeting;
+}
+
+function attachRsvpSummary(meeting, statusIndex = new Map()) {
+  const invited = Array.isArray(meeting.invited_participants) ? meeting.invited_participants : [];
+  const summary = { invited: 0, accepted: 0, tentative: 0, declined: 0 };
+  const invitedStatuses = {};
+
+  for (const invitee of invited) {
+    const key = normalizeInviteeKey(invitee);
+    if (!key) continue;
+    const status = statusIndex.get(key) || 'invited';
+    invitedStatuses[key] = status;
+
+    if (status === 'accepted') summary.accepted += 1;
+    else if (status === 'tentative') summary.tentative += 1;
+    else if (status === 'declined') summary.declined += 1;
+    else summary.invited += 1;
+  }
+
+  meeting.rsvp_summary = summary;
+  meeting.invited_rsvp_statuses = invitedStatuses;
+  return meeting;
+}
+
+const isValidEmail = (email) => {
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  return emailRegex.test(email);
+};
+
+const formatICalDateUtc = (date) => {
+  return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+};
+
+const getBaseUrl = (req) => {
+  return config.app?.url || `${req.protocol}://${req.get('host')}`;
+};
+
+async function sendExternalInviteEmail({ req, meeting, meetingId, email, inviterUserId, inviterUsername }) {
+  if (!email || !isValidEmail(email)) {
+    throw new Error('Invalid email format');
+  }
+
+  if (!config.smtp?.auth?.user) {
+    throw new Error('SMTP is not configured');
+  }
+
+  if (meeting?.allow_external !== true) {
+    throw new Error('External guests are not enabled for this meeting');
+  }
+
+  // Generate invitation link with label for email recipient
+  const invitation = await meetingService.generateInvitationLink(meetingId, {
+    label: `Email invite: ${email}`,
+    created_by: inviterUserId,
+  });
+  const invitationToken = invitation.token;
+  const invitationUrl = `${req.protocol}://${req.get('host')}/#/join/meeting/${invitationToken}`;
+
+  // Ensure invited_participants contains this email for tracking
+  const normalizedEmail = String(email).toLowerCase();
+  if (Array.isArray(meeting.invited_participants)) {
+    const alreadyInvited = meeting.invited_participants
+      .map((v) => String(v).toLowerCase())
+      .includes(normalizedEmail);
+    if (!alreadyInvited) {
+      const updatedInvited = [...meeting.invited_participants, normalizedEmail];
+      await meetingService.updateMeeting(meetingId, { invited_participants: updatedInvited });
+      meeting.invited_participants = updatedInvited;
+    }
+  }
+
+  // Get server settings for server name
+  const settings = await ServerSettings.findOne({ where: { id: 1 } });
+  const serverName = settings?.server_name || 'PeerWave Server';
+
+  // Format meeting time
+  const startTime = new Date(meeting.start_time);
+  const endTime = new Date(meeting.end_time);
+  const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  const timeOptions = { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' };
+
+  // RSVP action URLs (tokenized, 30d expiry, reusable across actions)
+  const rsvpToken = createRsvpToken({ meetingId, email: normalizedEmail });
+  const baseUrl = getBaseUrl(req);
+  const rsvpBase = `${baseUrl}/api/meetings/${meetingId}/rsvp`;
+  const rsvpAcceptedUrl = `${rsvpBase}/accepted?email=${encodeURIComponent(normalizedEmail)}&token=${encodeURIComponent(rsvpToken)}`;
+  const rsvpTentativeUrl = `${rsvpBase}/tentative?email=${encodeURIComponent(normalizedEmail)}&token=${encodeURIComponent(rsvpToken)}`;
+  const rsvpDeclinedUrl = `${rsvpBase}/declined?email=${encodeURIComponent(normalizedEmail)}&token=${encodeURIComponent(rsvpToken)}`;
+
+  // Create iCal event for calendar integration
+  const icsContent = `BEGIN:VCALENDAR
+PRODID:-//PeerWave//Meeting Invite//EN
+VERSION:2.0
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:${meeting.id}@${serverName.replace(/\s/g, '')}
+DTSTAMP:${formatICalDateUtc(new Date())}
+DTSTART:${formatICalDateUtc(startTime)}
+DTEND:${formatICalDateUtc(endTime)}
+SUMMARY:${meeting.title}
+DESCRIPTION:${meeting.description || 'Join meeting at: ' + invitationUrl}\n\nJoin URL: ${invitationUrl}
+ORGANIZER;CN=${inviterUsername}:mailto:${config.smtp.auth.user}
+ATTENDEE;CN=${email};ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:${email}
+LOCATION:${invitationUrl}
+STATUS:CONFIRMED
+SEQUENCE:0
+END:VEVENT
+END:VCALENDAR`.trim();
+
+  await emailService.sendEmail({
+    smtpConfig: config.smtp,
+    message: {
+      from: config.smtp.auth.user,
+      to: email,
+      subject: `${inviterUsername} invited you to "${meeting.title}" on ${serverName}`,
+      html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #333;">You're Invited to a Meeting!</h2>
+            
+            <p><strong>${inviterUsername}</strong> has invited you to join a meeting on ${serverName}.</p>
+            
+            <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <h3 style="margin-top: 0; color: #555;">Meeting Details</h3>
+              <p><strong>Title:</strong> ${meeting.title}</p>
+              ${meeting.description ? `<p><strong>Description:</strong> ${meeting.description}</p>` : ''}
+              <p><strong>Date:</strong> ${startTime.toLocaleDateString('en-US', dateOptions)}</p>
+              <p><strong>Time:</strong> ${startTime.toLocaleTimeString('en-US', timeOptions)} - ${endTime.toLocaleTimeString('en-US', timeOptions)}</p>
+            </div>
+            
+            <div style="margin: 30px 0;">
+              <a href="${invitationUrl}" 
+                 style="background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
+                Join Meeting
+              </a>
+            </div>
+
+            <div style="margin: 24px 0;">
+              <p style="margin: 0 0 10px 0;"><strong>RSVP:</strong></p>
+              <a href="${rsvpAcceptedUrl}" style="background-color:#2e7d32; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block; margin-right:8px;">Accept</a>
+              <a href="${rsvpTentativeUrl}" style="background-color:#f9a825; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block; margin-right:8px;">Tentative</a>
+              <a href="${rsvpDeclinedUrl}" style="background-color:#c62828; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block;">Decline</a>
+              <p style="color:#666; font-size: 13px; margin-top: 10px;">These links expire in 30 days.</p>
+            </div>
+            
+            <p style="color: #666; font-size: 14px;">
+              Or copy and paste this link into your browser:<br>
+              <a href="${invitationUrl}">${invitationUrl}</a>
+            </p>
+            
+            <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+            
+            <p style="color: #999; font-size: 12px;">
+              This invitation was sent from ${serverName}. If you received this email in error, please ignore it.
+            </p>
+          </div>
+        `,
+      alternatives: [
+        {
+          contentType: 'text/calendar; method=REQUEST; charset=UTF-8',
+          content: icsContent,
+        },
+      ],
+      attachments: [
+        {
+          filename: 'invite.ics',
+          content: icsContent,
+          contentType: 'text/calendar; charset=UTF-8; method=REQUEST',
+        },
+      ],
+    },
+  });
+
+  return { invitationToken, invitationUrl };
+}
+
+async function upsertRsvpForUser(meetingId, userId, status) {
+  const now = new Date();
+  await writeQueue.enqueue(async () => {
+    const existing = await MeetingRsvp.findOne({
+      where: { meeting_id: meetingId, invitee_user_id: userId },
+    });
+    if (existing) {
+      await existing.update({ status, responded_at: now });
+      return;
+    }
+    await MeetingRsvp.create({
+      meeting_id: meetingId,
+      invitee_user_id: userId,
+      status,
+      responded_at: now,
+    });
+  });
+}
+
+async function upsertRsvpForEmail(meetingId, email, status) {
+  const now = new Date();
+  const normalizedEmail = String(email).toLowerCase();
+  await writeQueue.enqueue(async () => {
+    const existing = await MeetingRsvp.findOne({
+      where: { meeting_id: meetingId, invitee_email: normalizedEmail },
+    });
+    if (existing) {
+      await existing.update({ status, responded_at: now });
+      return;
+    }
+    await MeetingRsvp.create({
+      meeting_id: meetingId,
+      invitee_email: normalizedEmail,
+      status,
+      responded_at: now,
+    });
+  });
+}
+
+async function removeFromInvitedParticipants(meeting, meetingId, valueToRemove) {
+  if (!Array.isArray(meeting.invited_participants)) return;
+  const needle = String(valueToRemove).toLowerCase();
+  const updated = meeting.invited_participants.filter((v) => {
+    return String(v).toLowerCase() !== needle;
+  });
+  if (updated.length === meeting.invited_participants.length) return;
+  await meetingService.updateMeeting(meetingId, { invited_participants: updated });
+}
+
+async function maybeEmailOrganizerOnRsvp({ meeting, responderLabel, status }) {
+  try {
+    const organizer = await User.findByPk(meeting.created_by);
+    if (!organizer?.email) return;
+    if (organizer.meeting_rsvp_email_to_organizer_enabled !== true) return;
+
+    const settings = await ServerSettings.findOne({ where: { id: 1 } });
+    const serverName = settings?.server_name || 'PeerWave Server';
+
+    await emailService.sendEmail({
+      smtpConfig: config.smtp,
+      message: {
+        from: config.smtp.auth.user,
+        to: organizer.email,
+        subject: `RSVP: ${responderLabel} responded ${status} to "${meeting.title}"`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color:#333;">Meeting RSVP Updated</h2>
+            <p><strong>${responderLabel}</strong> responded: <strong>${status}</strong></p>
+            <p><strong>Meeting:</strong> ${meeting.title}</p>
+            <p style="color:#999; font-size:12px;">Sent from ${serverName}</p>
+          </div>
+        `,
+      },
+    });
+  } catch (e) {
+    console.warn('[MEETING_RSVP] Failed to email organizer:', e?.message || e);
+  }
+}
+
+async function maybeSendAttendeeCancelEmail({ meeting, attendeeEmail, username, serverName }) {
+  try {
+    if (!config.smtp?.auth?.user) return;
+
+    const startTime = new Date(meeting.start_time);
+    const endTime = new Date(meeting.end_time);
+    const baseUrl = config.app?.url || '';
+
+    const uidDomain = String(serverName || 'PeerWave').replace(/\s/g, '');
+    const uid = `${meeting.id}@${uidDomain}`;
+
+    const icsCancelContent = `BEGIN:VCALENDAR
+PRODID:-//PeerWave//Meeting RSVP//EN
+VERSION:2.0
+CALSCALE:GREGORIAN
+METHOD:CANCEL
+BEGIN:VEVENT
+UID:${uid}
+DTSTAMP:${formatICalDateUtc(new Date())}
+DTSTART:${formatICalDateUtc(startTime)}
+DTEND:${formatICalDateUtc(endTime)}
+SUMMARY:${meeting.title}
+DESCRIPTION:${meeting.description || ''}
+ORGANIZER;CN=${username}:mailto:${config.smtp.auth.user}
+ATTENDEE;CN=${attendeeEmail};ROLE=REQ-PARTICIPANT:mailto:${attendeeEmail}
+STATUS:CANCELLED
+SEQUENCE:1
+END:VEVENT
+END:VCALENDAR`.trim();
+
+    await emailService.sendEmail({
+      smtpConfig: config.smtp,
+      message: {
+        from: config.smtp.auth.user,
+        to: attendeeEmail,
+        subject: `Cancelled (per your decline): "${meeting.title}"`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color:#333;">Meeting Removed From Your Calendar</h2>
+            <p>You declined <strong>${meeting.title}</strong>. This email updates your calendar entry.</p>
+            ${baseUrl ? `<p style="color:#666; font-size:14px;">PeerWave: <a href="${baseUrl}">${baseUrl}</a></p>` : ''}
+          </div>
+        `,
+        alternatives: [
+          {
+            contentType: 'text/calendar; method=CANCEL; charset=UTF-8',
+            content: icsCancelContent,
+          },
+        ],
+        attachments: [
+          {
+            filename: 'cancel.ics',
+            content: icsCancelContent,
+            contentType: 'text/calendar; charset=UTF-8; method=CANCEL',
+          },
+        ],
+      },
+    });
+  } catch (e) {
+    console.warn('[MEETING_RSVP] Failed to send attendee CANCEL email:', e?.message || e);
+  }
+}
 
 /**
  * Create a new meeting
@@ -21,10 +721,18 @@ router.post('/meetings', verifyAuthEither, async (req, res) => {
       allow_external,
       voice_only,
       mute_on_join,
-      max_participants
+      max_participants,
+      participant_ids,
+      email_invitations,
+      invited_participants
     } = req.body;
 
     const created_by = req.userId;
+
+    // If we were asked to email external guests, ensure the meeting allows it.
+    if (Array.isArray(email_invitations) && email_invitations.length > 0 && allow_external !== true) {
+      return res.status(400).json({ error: 'External guests are not enabled for this meeting' });
+    }
 
     // Validation
     if (!title || !start_time || !end_time) {
@@ -41,8 +749,62 @@ router.post('/meetings', verifyAuthEither, async (req, res) => {
       allow_external: allow_external || false,
       voice_only: voice_only || false,
       mute_on_join: mute_on_join || false,
-      max_participants: max_participants || null
+      max_participants: max_participants || null,
+      invited_participants: parseInviteesFromRequest({ participant_ids, email_invitations, invited_participants }),
     });
+
+    const inviterUsername = req.username || req.session?.userinfo?.username || 'A user';
+    const serverName = await loadServerName();
+
+    // Send invite emails to internal users (respecting their settings)
+    const invitees = Array.isArray(meeting.invited_participants) ? meeting.invited_participants : [];
+    const internalUserIds = invitees.filter((v) => v && !isEmailLike(v));
+    const usersById = await resolveUsersForIds(internalUserIds);
+
+    // Optional: organizer can receive an invite mail for their own meetings
+    const organizer = await User.findByPk(created_by, {
+      attributes: ['uuid', 'email', 'meeting_self_invite_email_enabled', 'meeting_invite_email_enabled'],
+    });
+    const shouldEmailOrganizerSelfInvite = organizer?.meeting_self_invite_email_enabled === true;
+
+    for (const userId of internalUserIds) {
+      if (!userId) continue;
+      if (userId === created_by && !shouldEmailOrganizerSelfInvite) continue;
+      const user = usersById.get(userId);
+      if (!user) continue;
+      try {
+        await sendInternalInviteEmail({
+          req,
+          meeting,
+          meetingId: meeting.meeting_id,
+          user,
+          inviterUsername,
+          serverName,
+        });
+      } catch (e) {
+        console.warn('[MEETING_CREATE] Failed to send internal invite email:', userId, e?.message || e);
+      }
+    }
+
+    // Auto-send external email invitations if provided (best-effort).
+    if (Array.isArray(email_invitations) && email_invitations.length > 0) {
+      for (const rawEmail of email_invitations) {
+        const email = String(rawEmail || '').trim();
+        if (!email) continue;
+        try {
+          await sendExternalInviteEmail({
+            req,
+            meeting,
+            meetingId: meeting.meeting_id,
+            email,
+            inviterUserId: created_by,
+            inviterUsername,
+          });
+        } catch (e) {
+          console.warn('[MEETING_CREATE] Failed to send external invite email:', email, e?.message || e);
+        }
+      }
+    }
 
     res.status(201).json(meeting);
   } catch (error) {
@@ -83,7 +845,16 @@ router.get('/meetings', verifyAuthEither, async (req, res) => {
     }
 
     const meetings = await meetingService.listMeetings(filters);
-    res.json(meetings);
+
+    const meetingIds = meetings.map((m) => m.meeting_id).filter(Boolean);
+    const rsvpByMeeting = await buildRsvpIndexForMeetings(meetingIds);
+
+    const withSummaries = meetings.map((m) => {
+      const idx = rsvpByMeeting.get(m.meeting_id) || new Map();
+      return attachRsvpSummary(m, idx);
+    });
+
+    res.json(withSummaries);
   } catch (error) {
     console.error('Error listing meetings:', error);
     res.status(500).json({ error: 'Failed to list meetings' });
@@ -182,7 +953,9 @@ router.get('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to access this meeting' });
     }
 
-    res.json(meeting);
+    const rsvpByMeeting = await buildRsvpIndexForMeetings([meetingId]);
+    const idx = rsvpByMeeting.get(meetingId) || new Map();
+    res.json(attachRsvpSummary(meeting, idx));
   } catch (error) {
     console.error('Error getting meeting:', error);
     res.status(500).json({ error: 'Failed to get meeting' });
@@ -203,17 +976,326 @@ router.patch('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
       return res.status(404).json({ error: 'Meeting not found' });
     }
 
-    // Check if user is owner or manager
-    const participant = meeting.participants.find(p => p.user_id === userId);
-    if (!participant || (participant.role !== 'meeting_owner' && participant.role !== 'meeting_manager')) {
+    // Check if user is owner, manager, or admin.
+    // Note: scheduled meetings can be loaded from DB with an empty runtime participants list.
+    const isOwner = meeting.created_by === userId;
+    const participant = meeting.participants?.find(p => p.user_id === userId);
+    const isManager = participant?.role === 'meeting_manager' || participant?.role === 'meeting_owner';
+    const isAdmin = await hasServerPermission(userId, 'server.manage');
+
+    if (!isOwner && !isManager && !isAdmin) {
       return res.status(403).json({ error: 'Only owner or manager can update meeting' });
     }
 
-    const updated = await meetingService.updateMeeting(meetingId, req.body);
+    const before = meeting;
+    const beforeInvited = Array.isArray(before.invited_participants) ? before.invited_participants : [];
+
+    // Normalize invitee fields if client sent participant_ids/email_invitations.
+    const updatePayload = { ...req.body };
+    if (
+      updatePayload.participant_ids !== undefined ||
+      updatePayload.email_invitations !== undefined ||
+      updatePayload.invited_participants !== undefined
+    ) {
+      const allowExternalNext = updatePayload.allow_external ?? before.allow_external;
+      const hasExternal = Array.isArray(updatePayload.email_invitations) && updatePayload.email_invitations.length > 0;
+      if (hasExternal && allowExternalNext !== true) {
+        return res.status(400).json({ error: 'External guests are not enabled for this meeting' });
+      }
+      updatePayload.invited_participants = parseInviteesFromRequest({
+        participant_ids: updatePayload.participant_ids,
+        email_invitations: updatePayload.email_invitations,
+        invited_participants: updatePayload.invited_participants,
+      });
+      delete updatePayload.participant_ids;
+      delete updatePayload.email_invitations;
+    }
+
+    const updated = await meetingService.updateMeeting(meetingId, updatePayload);
+
+    const inviterUsername = req.username || req.session?.userinfo?.username || 'A user';
+    const serverName = await loadServerName();
+
+    const afterInvited = Array.isArray(updated.invited_participants) ? updated.invited_participants : [];
+    const { added, removed } = diffInvitees(beforeInvited, afterInvited);
+
+    // Send invite emails for newly added invitees
+    if (added.length > 0) {
+      const addedInternal = added.filter((v) => v && !isEmailLike(v));
+      const usersById = await resolveUsersForIds(addedInternal);
+      for (const userIdToInvite of addedInternal) {
+        const u = usersById.get(userIdToInvite);
+        if (!u) continue;
+        try {
+          // Respect organizer self-invite setting
+          if (userIdToInvite === updated.created_by && u.meeting_self_invite_email_enabled !== true) continue;
+          await sendInternalInviteEmail({
+            req,
+            meeting: updated,
+            meetingId,
+            user: u,
+            inviterUsername,
+            serverName,
+          });
+        } catch (e) {
+          console.warn('[MEETING_UPDATE] Failed to send internal invite email:', userIdToInvite, e?.message || e);
+        }
+      }
+
+      const addedExternal = added.filter((v) => isEmailLike(v));
+      if (addedExternal.length > 0 && updated.allow_external === true) {
+        for (const email of addedExternal) {
+          try {
+            await sendExternalInviteEmail({
+              req,
+              meeting: updated,
+              meetingId,
+              email,
+              inviterUserId: updated.created_by,
+              inviterUsername,
+            });
+          } catch (e) {
+            console.warn('[MEETING_UPDATE] Failed to send external invite email:', email, e?.message || e);
+          }
+        }
+      }
+    }
+
+    // Send cancel emails for removed invitees
+    if (removed.length > 0) {
+      const removedInternal = removed.filter((v) => v && !isEmailLike(v));
+      const usersById = await resolveUsersForIds(removedInternal);
+      for (const removedUserId of removedInternal) {
+        const u = usersById.get(removedUserId);
+        if (!u?.email) continue;
+        if (u.meeting_cancel_email_enabled !== true) continue;
+        try {
+          await sendMeetingCancelEmail({
+            meeting: before,
+            meetingId,
+            attendeeEmail: u.email,
+            organizerLabel: inviterUsername,
+            serverName,
+          });
+        } catch (e) {
+          console.warn('[MEETING_UPDATE] Failed to send internal cancel email:', removedUserId, e?.message || e);
+        }
+      }
+
+      const removedExternal = removed.filter((v) => isEmailLike(v));
+      for (const email of removedExternal) {
+        try {
+          await sendMeetingCancelEmail({
+            meeting: before,
+            meetingId,
+            attendeeEmail: String(email),
+            organizerLabel: inviterUsername,
+            serverName,
+          });
+        } catch (e) {
+          console.warn('[MEETING_UPDATE] Failed to send external cancel email:', email, e?.message || e);
+        }
+      }
+    }
+
+    // Send update emails if schedule/details changed
+    const scheduleChanged =
+      (updatePayload.start_time && String(updatePayload.start_time) !== String(before.start_time)) ||
+      (updatePayload.end_time && String(updatePayload.end_time) !== String(before.end_time)) ||
+      (updatePayload.title && String(updatePayload.title) !== String(before.title)) ||
+      (updatePayload.description !== undefined && String(updatePayload.description || '') !== String(before.description || ''));
+
+    if (scheduleChanged) {
+      const rsvpByMeeting = await buildRsvpIndexForMeetings([meetingId]);
+      const idx = rsvpByMeeting.get(meetingId) || new Map();
+
+      const recipients = afterInvited;
+      const internalIds = recipients.filter((v) => v && !isEmailLike(v));
+      const usersById = await resolveUsersForIds(internalIds);
+      for (const recipientId of internalIds) {
+        const u = usersById.get(recipientId);
+        if (!u?.email) continue;
+        if (u.meeting_update_email_enabled !== true) continue;
+        const status = idx.get(normalizeInviteeKey(recipientId)) || 'invited';
+        if (status === 'declined') continue;
+        if (recipientId === updated.created_by && u.meeting_self_invite_email_enabled !== true) continue;
+        try {
+          await sendMeetingUpdateEmail({
+            req,
+            meeting: updated,
+            meetingId,
+            recipientEmail: u.email,
+            recipientLabel: u.displayName || u.atName || u.email,
+            inviterUsername,
+            serverName,
+            isInternalUser: true,
+          });
+        } catch (e) {
+          console.warn('[MEETING_UPDATE] Failed to send internal update email:', recipientId, e?.message || e);
+        }
+      }
+
+      const externalEmails = recipients.filter((v) => isEmailLike(v));
+      for (const email of externalEmails) {
+        const status = idx.get(normalizeInviteeKey(email)) || 'invited';
+        if (status === 'declined') continue;
+        try {
+          await sendMeetingUpdateEmail({
+            req,
+            meeting: updated,
+            meetingId,
+            recipientEmail: String(email),
+            recipientLabel: String(email),
+            inviterUsername,
+            serverName,
+            isInternalUser: false,
+          });
+        } catch (e) {
+          console.warn('[MEETING_UPDATE] Failed to send external update email:', email, e?.message || e);
+        }
+      }
+    }
+
     res.json(updated);
   } catch (error) {
     console.error('Error updating meeting:', error);
     res.status(500).json({ error: 'Failed to update meeting' });
+  }
+});
+
+/**
+ * RSVP to a meeting (authenticated)
+ * PATCH /api/meetings/:meetingId/rsvp
+ * Body: { status: 'accepted' | 'tentative' | 'declined' }
+ */
+router.patch('/meetings/:meetingId/rsvp', verifyAuthEither, async (req, res) => {
+  try {
+    const { meetingId } = req.params;
+    const userId = req.userId;
+    const status = String(req.body?.status || '').toLowerCase();
+
+    if (!RSVP_STATUSES.has(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    const meeting = await meetingService.getMeeting(meetingId);
+    if (!meeting) {
+      return res.status(404).json({ error: 'Meeting not found' });
+    }
+
+    const isInvited = meeting.invited_participants?.includes(userId);
+    const isParticipant = meeting.participants?.some(p => p.user_id === userId);
+    const isCreator = meeting.created_by === userId;
+
+    if (!isInvited && !isParticipant && !isCreator) {
+      return res.status(403).json({ error: 'Not authorized to RSVP' });
+    }
+
+    await upsertRsvpForUser(meetingId, userId, status);
+
+    const responderUser = await User.findByPk(userId);
+    const responderLabel = responderUser?.displayName || responderUser?.atName || responderUser?.email || req.username || 'A user';
+    await maybeEmailOrganizerOnRsvp({ meeting, responderLabel, status });
+
+    res.json({ success: true, meetingId, status });
+  } catch (error) {
+    console.error('[MEETING_RSVP] Error (auth):', error);
+    res.status(500).json({ error: 'Failed to RSVP' });
+  }
+});
+
+/**
+ * RSVP to a meeting (unauthenticated, email action buttons)
+ * GET /api/meetings/:meetingId/rsvp/:status?email=...&token=...&format=json
+ */
+router.get('/meetings/:meetingId/rsvp/:status', async (req, res) => {
+  try {
+    const { meetingId, status: statusRaw } = req.params;
+    const status = String(statusRaw || '').toLowerCase();
+    const email = String(req.query.email || '').trim();
+    const token = String(req.query.token || '').trim();
+    const format = String(req.query.format || '').toLowerCase();
+
+    if (!RSVP_STATUSES.has(status)) {
+      return res.status(400).send('Invalid RSVP status');
+    }
+
+    if (!email || !isValidEmail(email)) {
+      return res.status(400).send('Invalid email');
+    }
+
+    const meeting = await meetingService.getMeeting(meetingId);
+    if (!meeting) {
+      return res.status(404).send('Meeting not found');
+    }
+
+    const verification = verifyRsvpToken({ token, meetingId, email });
+    if (!verification.valid) {
+      if (format === 'json' || req.accepts('json')) {
+        return res.status(403).json({ success: false, error: verification.error });
+      }
+      return res.status(403).send('Invalid or expired token');
+    }
+
+    await upsertRsvpForEmail(meetingId, email, status);
+
+    const settings = await ServerSettings.findOne({ where: { id: 1 } });
+    const serverName = settings?.server_name || 'PeerWave Server';
+    const username = req.username || req.session?.userinfo?.username || 'A user';
+
+    // Optional: attendee-only CANCEL email on decline (calendar cleanup)
+    if (status === 'declined') {
+      await maybeSendAttendeeCancelEmail({
+        meeting,
+        attendeeEmail: email,
+        username,
+        serverName,
+      });
+    }
+
+    // Optional: email organizer on RSVP if enabled
+    await maybeEmailOrganizerOnRsvp({ meeting, responderLabel: email, status });
+
+    if (format === 'json' || req.accepts('json')) {
+      return res.json({
+        success: true,
+        meetingId,
+        status,
+        meetingTitle: meeting.title,
+        startTime: meeting.start_time,
+        endTime: meeting.end_time,
+      });
+    }
+
+    const baseUrl = getBaseUrl(req);
+    const openAppUrl = `${baseUrl}/#/meeting/rsvp?meetingId=${encodeURIComponent(meetingId)}&status=${encodeURIComponent(status)}&email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RSVP Confirmation</title>
+</head>
+<body style="font-family: Arial, sans-serif; background: #f7f7f7; padding: 24px;">
+  <div style="max-width: 640px; margin: 0 auto; background: white; padding: 24px; border-radius: 12px;">
+    <h2 style="margin-top: 0; color: #333;">RSVP Confirmed</h2>
+    <p style="color:#444;">You responded: <strong>${status}</strong></p>
+    <div style="background:#f5f5f5; padding:16px; border-radius:8px;">
+      <p style="margin:0;"><strong>Meeting:</strong> ${meeting.title}</p>
+      <p style="margin:8px 0 0 0; color:#666; font-size: 14px;">${serverName}</p>
+    </div>
+    <div style="margin-top: 20px;">
+      <a href="${openAppUrl}" style="display:inline-block; padding: 12px 18px; background:#4CAF50; color:white; text-decoration:none; border-radius:6px;">Open PeerWave</a>
+    </div>
+    <p style="margin-top: 24px; color:#999; font-size: 12px;">This page does not require login.</p>
+  </div>
+</body>
+</html>`);
+  } catch (error) {
+    console.error('[MEETING_RSVP] Error (unauth):', error);
+    res.status(500).send('Failed to record RSVP');
   }
 });
 
@@ -237,6 +1319,42 @@ router.delete('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
       if (!isAdmin) {
         return res.status(403).json({ error: 'Only owner can delete meeting' });
       }
+    }
+
+    // Best-effort: email cancellations to invitees (respecting settings)
+    try {
+      const inviterUsername = req.username || req.session?.userinfo?.username || 'A user';
+      const serverName = await loadServerName();
+
+      const invitees = Array.isArray(meeting.invited_participants) ? meeting.invited_participants : [];
+      const internalIds = invitees.filter((v) => v && !isEmailLike(v));
+      const usersById = await resolveUsersForIds(internalIds);
+      for (const id of internalIds) {
+        const u = usersById.get(id);
+        if (!u?.email) continue;
+        if (u.meeting_cancel_email_enabled !== true) continue;
+        if (id === meeting.created_by && u.meeting_self_invite_email_enabled !== true) continue;
+        await sendMeetingCancelEmail({
+          meeting,
+          meetingId,
+          attendeeEmail: u.email,
+          organizerLabel: inviterUsername,
+          serverName,
+        });
+      }
+
+      const externalEmails = invitees.filter((v) => isEmailLike(v));
+      for (const email of externalEmails) {
+        await sendMeetingCancelEmail({
+          meeting,
+          meetingId,
+          attendeeEmail: String(email),
+          organizerLabel: inviterUsername,
+          serverName,
+        });
+      }
+    } catch (e) {
+      console.warn('[MEETING_DELETE] Failed to send cancellation emails:', e?.message || e);
     }
 
     await meetingService.deleteMeeting(meetingId);
@@ -363,7 +1481,7 @@ router.post('/meetings/:meetingId/participants', verifyAuthEither, async (req, r
     });
 
     // Get user online status for notification
-    const isOnline = await presenceService.isUserOnline(user_id);
+    const isOnline = await presenceService.isOnline(user_id);
 
     res.status(201).json({
       participant,
@@ -399,7 +1517,28 @@ router.delete('/meetings/:meetingId/participants/:userId', verifyAuthEither, asy
       return res.status(403).json({ error: 'Not authorized to remove participant' });
     }
 
+    // Best-effort: send cancellation email to removed user if enabled.
+    try {
+      const removedUser = await User.findByPk(userId, {
+        attributes: ['uuid', 'email', 'meeting_cancel_email_enabled'],
+      });
+      if (removedUser?.email && removedUser.meeting_cancel_email_enabled === true) {
+        const inviterUsername = req.username || req.session?.userinfo?.username || 'A user';
+        const serverName = await loadServerName();
+        await sendMeetingCancelEmail({
+          meeting,
+          meetingId,
+          attendeeEmail: removedUser.email,
+          organizerLabel: inviterUsername,
+          serverName,
+        });
+      }
+    } catch (e) {
+      console.warn('[MEETING_PARTICIPANT_REMOVE] Failed to send cancel email:', e?.message || e);
+    }
+
     await meetingService.removeParticipant(meetingId, userId);
+    await removeFromInvitedParticipants(meeting, meetingId, userId);
 
     res.json({ status: 'ok', message: 'Participant removed' });
   } catch (error) {
@@ -457,8 +1596,12 @@ router.post('/meetings/:meetingId/generate-link', verifyAuthEither, async (req, 
     }
 
     // Check permissions
-    const participant = meeting.participants.find(p => p.user_id === userId);
-    if (!participant || (participant.role !== 'meeting_owner' && participant.role !== 'meeting_manager')) {
+    const isOwner = meeting.created_by === userId;
+    const participant = meeting.participants?.find(p => p.user_id === userId);
+    const isManager = participant?.role === 'meeting_manager' || participant?.role === 'meeting_owner';
+    const isAdmin = await hasServerPermission(userId, 'server.manage');
+
+    if (!isOwner && !isManager && !isAdmin) {
       return res.status(403).json({ error: 'Only owner or manager can generate invitation link' });
     }
 
@@ -496,8 +1639,7 @@ router.post('/meetings/:meetingId/invite-email', verifyAuthEither, async (req, r
     }
 
     // Validate email format
-    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    if (!emailRegex.test(email)) {
+    if (!isValidEmail(email)) {
       return res.status(400).json({ error: 'Invalid email format' });
     }
 
@@ -515,113 +1657,14 @@ router.post('/meetings/:meetingId/invite-email', verifyAuthEither, async (req, r
       return res.status(403).json({ error: 'Only owner or manager can send invitations' });
     }
 
-    // Generate invitation link with label for email recipient
-    const invitation = await meetingService.generateInvitationLink(meetingId, {
-      label: `Email invite: ${email}`,
-      created_by: userId
+    await sendExternalInviteEmail({
+      req,
+      meeting,
+      meetingId,
+      email,
+      inviterUserId: userId,
+      inviterUsername: username,
     });
-    const invitationToken = invitation.token;
-    const invitationUrl = `${req.protocol}://${req.get('host')}/#/join/meeting/${invitationToken}`;
-
-    // Get server settings for server name
-    const { ServerSettings } = require('../db/model');
-    const settings = await ServerSettings.findOne({ where: { id: 1 } });
-    const serverName = settings?.server_name || 'PeerWave Server';
-
-    // Format meeting time
-    const startTime = new Date(meeting.start_time);
-    const endTime = new Date(meeting.end_time);
-    const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    const timeOptions = { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' };
-
-    // Helper function to format date for iCalendar (UTC)
-    const formatICalDate = (date) => {
-      return date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-    };
-
-    // Create iCal event for calendar integration
-    const icsContent = `BEGIN:VCALENDAR
-PRODID:-//PeerWave//Meeting Invite//EN
-VERSION:2.0
-CALSCALE:GREGORIAN
-METHOD:REQUEST
-BEGIN:VEVENT
-UID:${meeting.id}@${serverName.replace(/\s/g, '')}
-DTSTAMP:${formatICalDate(new Date())}
-DTSTART:${formatICalDate(startTime)}
-DTEND:${formatICalDate(endTime)}
-SUMMARY:${meeting.title}
-DESCRIPTION:${meeting.description || 'Join meeting at: ' + invitationUrl}\\n\\nJoin URL: ${invitationUrl}
-ORGANIZER;CN=${username}:mailto:${config.smtp.auth.user}
-ATTENDEE;CN=${email};ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:${email}
-LOCATION:${invitationUrl}
-STATUS:CONFIRMED
-SEQUENCE:0
-END:VEVENT
-END:VCALENDAR`.trim();
-
-    // Send email
-    console.log('[MEETING_INVITE] Configuring email transporter...');
-    const transporter = nodemailer.createTransport(config.smtp);
-    
-    console.log('[MEETING_INVITE] Sending invitation to:', email);
-    await transporter.sendMail({
-      from: config.smtp.auth.user,
-      to: email,
-      subject: `${username} invited you to "${meeting.title}" on ${serverName}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #333;">You're Invited to a Meeting!</h2>
-          
-          <p><strong>${username}</strong> has invited you to join a meeting on ${serverName}.</p>
-          
-          <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h3 style="margin-top: 0; color: #555;">Meeting Details</h3>
-            <p><strong>Title:</strong> ${meeting.title}</p>
-            ${meeting.description ? `<p><strong>Description:</strong> ${meeting.description}</p>` : ''}
-            <p><strong>Date:</strong> ${startTime.toLocaleDateString('en-US', dateOptions)}</p>
-            <p><strong>Time:</strong> ${startTime.toLocaleTimeString('en-US', timeOptions)} - ${endTime.toLocaleTimeString('en-US', timeOptions)}</p>
-          </div>
-          
-          <div style="margin: 30px 0;">
-            <a href="${invitationUrl}" 
-               style="background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
-              Join Meeting
-            </a>
-          </div>
-          
-          <p style="color: #666; font-size: 14px;">
-            Or copy and paste this link into your browser:<br>
-            <a href="${invitationUrl}">${invitationUrl}</a>
-          </p>
-          
-          <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
-          
-          <p style="color: #999; font-size: 12px;">
-            This invitation was sent from ${serverName}. If you received this email in error, please ignore it.
-          </p>
-        </div>
-      `,
-      
-      // Add calendar invite as alternative content (displayed by email clients as calendar event)
-      alternatives: [
-        {
-          contentType: "text/calendar; method=REQUEST; charset=UTF-8",
-          content: icsContent
-        }
-      ],
-      
-      // Also attach as .ics file (allows manual import if needed)
-      attachments: [
-        {
-          filename: "invite.ics",
-          content: icsContent,
-          contentType: "text/calendar; charset=UTF-8; method=REQUEST"
-        }
-      ]
-    });
-
-    console.log(`[MEETING_INVITE] Successfully sent invitation to ${email} for meeting ${meetingId}`);
     
     res.json({
       status: 'ok',

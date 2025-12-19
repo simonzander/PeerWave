@@ -745,15 +745,37 @@ clientRoutes.get("/people/list", verifyAuthEither, async (req, res) => {
     try {
         console.log(`[PEOPLE_LIST] Fetching users for sessionUuid: ${sessionUuid}`);
         const users = await User.findAll({
-            attributes: ['uuid', 'displayName', 'picture'],
+            attributes: ['uuid', 'displayName', 'email', 'picture'],
             where: { 
                 uuid: { [Op.ne]: sessionUuid }, // Exclude the current user
                 active: true, // Only show active users
                 verified: true // Only show verified users who completed registration
             }
         });
-        console.log(`[PEOPLE_LIST] Found ${users.length} verified users`);
-        res.status(200).json(users);
+
+        // Add presence/online info (best-effort)
+        let usersJson = users.map(u => u.toJSON());
+        try {
+            const presenceService = require('../services/presenceService');
+            const userIds = usersJson.map(u => u.uuid).filter(Boolean);
+            const presenceData = await presenceService.getPresence(userIds);
+            const presenceMap = new Map(presenceData.map(p => [p.user_id, p]));
+
+            usersJson = usersJson.map(u => {
+                const presence = presenceMap.get(u.uuid);
+                const status = presence?.status || 'offline';
+                return {
+                    ...u,
+                    isOnline: status === 'online' || status === 'busy',
+                };
+            });
+        } catch (e) {
+            console.warn('[PEOPLE_LIST] Failed to attach presence info:', e?.message || e);
+            // Fall back to returning users without presence
+        }
+
+        console.log(`[PEOPLE_LIST] Found ${usersJson.length} verified users`);
+        res.status(200).json(usersJson);
     } catch (error) {
         console.error('Error fetching users:', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
@@ -2494,6 +2516,7 @@ clientRoutes.post("/api/server/settings", bodyParser.json({ limit: '5mb' }), ver
 clientRoutes.post("/api/server/invitations/send", verifyAuthEither, async (req, res) => {
     try {
         const userUuid = req.userId || req.session.uuid;
+        const emailService = require('../services/emailService');
         
         console.log('[INVITATION] POST received, body:', JSON.stringify(req.body));
         console.log('[INVITATION] User UUID:', userUuid);
@@ -2542,22 +2565,24 @@ clientRoutes.post("/api/server/invitations/send", verifyAuthEither, async (req, 
         
         // Send email
         console.log('[INVITATION] Configuring email transporter...');
-        const transporter = nodemailer.createTransport(config.smtp);
         const { ServerSettings } = require('../db/model');
         const settings = await ServerSettings.findOne({ where: { id: 1 } });
         const serverName = settings?.server_name || 'PeerWave Server';
         
         console.log('[INVITATION] Sending email to:', email);
-        await transporter.sendMail({
-            from: config.smtp.auth.user,
-            to: email,
-            subject: `You're Invited to Join ${serverName}`,
-            html: `
-                <h2>You've been invited to join ${serverName}!</h2>
-                <p>Your invitation code: <strong>${token}</strong></p>
-                <p>This invitation expires in 48 hours.</p>
-                <p>To register, visit the server and enter your email and invitation code.</p>
-            `
+        await emailService.sendEmail({
+            smtpConfig: config.smtp,
+            message: {
+                from: config.smtp.auth.user,
+                to: email,
+                subject: `You're Invited to Join ${serverName}`,
+                html: `
+                    <h2>You've been invited to join ${serverName}!</h2>
+                    <p>Your invitation code: <strong>${token}</strong></p>
+                    <p>This invitation expires in 48 hours.</p>
+                    <p>To register, visit the server and enter your email and invitation code.</p>
+                `
+            }
         });
         
         console.log(`[INVITATION] Successfully sent to ${email} by ${userUuid}, token: ${token}`);

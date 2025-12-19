@@ -68,6 +68,7 @@ class MeetingService {
       is_instant_call,
       allow_external,
       invitation_token,
+      invited_participants,
       voice_only,
       mute_on_join,
       // Runtime state

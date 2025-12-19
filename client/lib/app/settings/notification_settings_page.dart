@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../services/notification_service.dart';
 import '../../services/sound_service.dart';
+import '../../services/user_notification_settings_service.dart';
 
 /// Notification Settings Page
 ///
@@ -49,6 +50,13 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   // Do Not Disturb
   bool _dndEnabled = false;
 
+  // Meeting email settings (server-backed)
+  bool _meetingInviteEmailEnabled = true;
+  bool _meetingRsvpEmailToOrganizerEnabled = true;
+  bool _meetingUpdateEmailEnabled = true;
+  bool _meetingCancelEmailEnabled = true;
+  bool _meetingSelfInviteEmailEnabled = false;
+
   // Platform-specific
   bool _hasPermission = false;
 
@@ -56,6 +64,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   void initState() {
     super.initState();
     _loadSettings();
+    _loadServerMeetingEmailSettings();
   }
 
   void _loadSettings() {
@@ -99,7 +108,67 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
 
       // DND
       _dndEnabled = notifService.dndEnabled;
+
+      // Meeting Emails
+      _meetingInviteEmailEnabled = notifService.meetingInviteEmailEnabled;
+      _meetingRsvpEmailToOrganizerEnabled =
+          notifService.meetingRsvpEmailToOrganizerEnabled;
+        _meetingUpdateEmailEnabled = notifService.meetingUpdateEmailEnabled;
+        _meetingCancelEmailEnabled = notifService.meetingCancelEmailEnabled;
+        _meetingSelfInviteEmailEnabled =
+          notifService.meetingSelfInviteEmailEnabled;
     });
+  }
+
+  Future<void> _loadServerMeetingEmailSettings() async {
+    try {
+      final serverSettings = await UserNotificationSettingsService.fetch();
+
+      await NotificationService.instance.setMeetingInviteEmailEnabled(
+        serverSettings.meetingInviteEmailEnabled,
+      );
+      await NotificationService.instance.setMeetingRsvpEmailToOrganizerEnabled(
+        serverSettings.meetingRsvpEmailToOrganizerEnabled,
+      );
+      await NotificationService.instance.setMeetingUpdateEmailEnabled(
+        serverSettings.meetingUpdateEmailEnabled,
+      );
+      await NotificationService.instance.setMeetingCancelEmailEnabled(
+        serverSettings.meetingCancelEmailEnabled,
+      );
+      await NotificationService.instance.setMeetingSelfInviteEmailEnabled(
+        serverSettings.meetingSelfInviteEmailEnabled,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _meetingInviteEmailEnabled = serverSettings.meetingInviteEmailEnabled;
+        _meetingRsvpEmailToOrganizerEnabled =
+            serverSettings.meetingRsvpEmailToOrganizerEnabled;
+        _meetingUpdateEmailEnabled = serverSettings.meetingUpdateEmailEnabled;
+        _meetingCancelEmailEnabled = serverSettings.meetingCancelEmailEnabled;
+        _meetingSelfInviteEmailEnabled =
+            serverSettings.meetingSelfInviteEmailEnabled;
+      });
+    } catch (_) {
+      // Ignore (e.g. not logged in yet, server unreachable). Local defaults remain.
+    }
+  }
+
+  Future<void> _updateServerMeetingEmailSettings({
+    bool? meetingInviteEmailEnabled,
+    bool? meetingRsvpEmailToOrganizerEnabled,
+    bool? meetingUpdateEmailEnabled,
+    bool? meetingCancelEmailEnabled,
+    bool? meetingSelfInviteEmailEnabled,
+  }) async {
+    await UserNotificationSettingsService.update(
+      meetingInviteEmailEnabled: meetingInviteEmailEnabled,
+      meetingRsvpEmailToOrganizerEnabled: meetingRsvpEmailToOrganizerEnabled,
+      meetingUpdateEmailEnabled: meetingUpdateEmailEnabled,
+      meetingCancelEmailEnabled: meetingCancelEmailEnabled,
+      meetingSelfInviteEmailEnabled: meetingSelfInviteEmailEnabled,
+    );
   }
 
   Future<void> _requestPermission() async {
@@ -500,7 +569,10 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.info_outline, color: colorScheme.onSecondaryContainer),
+                  Icon(
+                    Icons.info_outline,
+                    color: colorScheme.onSecondaryContainer,
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -514,6 +586,186 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                           ),
                         ),
                         const SizedBox(height: 4),
+
+                        // Meeting Emails
+                        _buildSection(
+                          title: 'Meeting Emails',
+                          subtitle: 'Email invites and RSVP notifications',
+                          children: [
+                            _buildSwitchTile(
+                              title: 'Email Meeting Invites',
+                              subtitle:
+                                  'Send an email when you are invited to a meeting',
+                              value: _meetingInviteEmailEnabled,
+                              onChanged: (value) async {
+                                final previous = _meetingInviteEmailEnabled;
+                                setState(
+                                  () => _meetingInviteEmailEnabled = value,
+                                );
+                                await NotificationService.instance
+                                    .setMeetingInviteEmailEnabled(value);
+                                try {
+                                  await _updateServerMeetingEmailSettings(
+                                    meetingInviteEmailEnabled: value,
+                                  );
+                                } catch (e) {
+                                  await NotificationService.instance
+                                      .setMeetingInviteEmailEnabled(previous);
+                                  if (!mounted) return;
+                                  setState(
+                                    () => _meetingInviteEmailEnabled = previous,
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Failed to update meeting email settings',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                            _buildSwitchTile(
+                              title: 'Email Organizer When I RSVP',
+                              subtitle:
+                                  'Send organizer an email when you respond',
+                              value: _meetingRsvpEmailToOrganizerEnabled,
+                              onChanged: (value) async {
+                                final previous =
+                                    _meetingRsvpEmailToOrganizerEnabled;
+                                setState(
+                                  () => _meetingRsvpEmailToOrganizerEnabled =
+                                      value,
+                                );
+                                await NotificationService.instance
+                                    .setMeetingRsvpEmailToOrganizerEnabled(
+                                      value,
+                                    );
+                                try {
+                                  await _updateServerMeetingEmailSettings(
+                                    meetingRsvpEmailToOrganizerEnabled: value,
+                                  );
+                                } catch (e) {
+                                  await NotificationService.instance
+                                      .setMeetingRsvpEmailToOrganizerEnabled(
+                                        previous,
+                                      );
+                                  if (!mounted) return;
+                                  setState(
+                                    () => _meetingRsvpEmailToOrganizerEnabled =
+                                        previous,
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Failed to update meeting email settings',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                            _buildSwitchTile(
+                              title: 'Email Meeting Updates',
+                              subtitle:
+                                  'Send an email when meeting details or schedule change',
+                              value: _meetingUpdateEmailEnabled,
+                              onChanged: (value) async {
+                                final previous = _meetingUpdateEmailEnabled;
+                                setState(
+                                  () => _meetingUpdateEmailEnabled = value,
+                                );
+                                await NotificationService.instance
+                                    .setMeetingUpdateEmailEnabled(value);
+                                try {
+                                  await _updateServerMeetingEmailSettings(
+                                    meetingUpdateEmailEnabled: value,
+                                  );
+                                } catch (e) {
+                                  await NotificationService.instance
+                                      .setMeetingUpdateEmailEnabled(previous);
+                                  if (!mounted) return;
+                                  setState(
+                                    () => _meetingUpdateEmailEnabled = previous,
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Failed to update meeting email settings',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                            _buildSwitchTile(
+                              title: 'Email Meeting Cancellations',
+                              subtitle:
+                                  'Send an email when a meeting is canceled or you are removed',
+                              value: _meetingCancelEmailEnabled,
+                              onChanged: (value) async {
+                                final previous = _meetingCancelEmailEnabled;
+                                setState(
+                                  () => _meetingCancelEmailEnabled = value,
+                                );
+                                await NotificationService.instance
+                                    .setMeetingCancelEmailEnabled(value);
+                                try {
+                                  await _updateServerMeetingEmailSettings(
+                                    meetingCancelEmailEnabled: value,
+                                  );
+                                } catch (e) {
+                                  await NotificationService.instance
+                                      .setMeetingCancelEmailEnabled(previous);
+                                  if (!mounted) return;
+                                  setState(
+                                    () => _meetingCancelEmailEnabled = previous,
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Failed to update meeting email settings',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                            _buildSwitchTile(
+                              title: 'Email Me My Own Meeting Invites',
+                              subtitle:
+                                  'Send an invite email to you when you create a meeting',
+                              value: _meetingSelfInviteEmailEnabled,
+                              onChanged: (value) async {
+                                final previous = _meetingSelfInviteEmailEnabled;
+                                setState(
+                                  () => _meetingSelfInviteEmailEnabled = value,
+                                );
+                                await NotificationService.instance
+                                    .setMeetingSelfInviteEmailEnabled(value);
+                                try {
+                                  await _updateServerMeetingEmailSettings(
+                                    meetingSelfInviteEmailEnabled: value,
+                                  );
+                                } catch (e) {
+                                  await NotificationService.instance
+                                      .setMeetingSelfInviteEmailEnabled(previous);
+                                  if (!mounted) return;
+                                  setState(
+                                    () => _meetingSelfInviteEmailEnabled = previous,
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Failed to update meeting email settings',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          ],
+                        ),
                         Text(
                           'Video sounds are subtle in-app feedback only. Message and activity notifications include system notifications and sounds.',
                           style: theme.textTheme.bodySmall?.copyWith(

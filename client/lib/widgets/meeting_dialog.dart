@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
+import 'dart:convert';
 import '../models/meeting.dart';
 import '../services/meeting_service.dart';
 import '../services/api_service.dart';
-import '../web_config.dart';
-import '../services/server_config_web.dart'
-    if (dart.library.io) '../services/server_config_native.dart';
+import '../services/signal_service.dart';
 
 /// Dialog for creating or editing meetings
 ///
@@ -50,6 +48,9 @@ class _MeetingDialogState extends State<MeetingDialog> {
   List<Map<String, String>> _searchResults = [];
   bool _isSearching = false;
 
+  // RSVP status tracking by normalized key (userId or email)
+  final Map<String, String> _inviteeStatusByKey = {};
+
   // External email invitations
   List<String> _emailInvitations = [];
 
@@ -78,8 +79,8 @@ class _MeetingDialogState extends State<MeetingDialog> {
       _voiceOnly = meeting.voiceOnly;
       _muteOnJoin = meeting.muteOnJoin;
 
-      // Load existing participants
-      _loadExistingParticipants();
+      // Load existing invitees (persisted in invited_participants)
+      _loadExistingInvitees();
     } else {
       // Create mode - default to 1 hour from now
       final now = DateTime.now();
@@ -90,63 +91,68 @@ class _MeetingDialogState extends State<MeetingDialog> {
     }
   }
 
-  Future<void> _loadExistingParticipants() async {
+  String _normalizeInviteeKey(String value) => value.trim().toLowerCase();
+
+  bool _isValidEmail(String value) {
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,}$');
+    return emailRegex.hasMatch(value.trim());
+  }
+
+  Future<void> _loadExistingInvitees() async {
     try {
-      final participants = await _meetingService.getParticipants(
+      final meeting = await _meetingService.getMeeting(
         widget.meeting!.meetingId,
       );
 
-      // Fetch user details for each participant
-      for (final participant in participants) {
-        // Get API server
-        String? apiServer;
-        if (kIsWeb) {
-          apiServer = await loadWebApiServer();
-        } else {
-          final activeServer = ServerConfigService.getActiveServer();
-          if (activeServer != null) {
-            apiServer = activeServer.serverUrl;
-          }
-        }
+      final invited = meeting.invitedParticipants;
+      final invitedStatuses = meeting.invitedRsvpStatuses ?? const {};
 
-        if (apiServer == null || apiServer.isEmpty) {
+      // Fetch all users once and map by uuid
+      final response = await ApiService.get('/people/list');
+      final users = response.data is List ? response.data as List : [];
+      final byId = <String, Map<String, dynamic>>{};
+      for (final u in users) {
+        final id = (u['uuid'] ?? '').toString();
+        if (id.isNotEmpty) {
+          byId[id] = (u as Map).cast<String, dynamic>();
+        }
+      }
+
+      final selected = <Map<String, String>>[];
+      final emails = <String>[];
+      final statusByKey = <String, String>{};
+
+      for (final raw in invited) {
+        final key = _normalizeInviteeKey(raw);
+        if (key.isEmpty) continue;
+        final status = (invitedStatuses[key] ?? 'invited')
+            .toString()
+            .toLowerCase();
+        statusByKey[key] = status;
+
+        if (raw.contains('@')) {
+          emails.add(key);
           continue;
         }
 
-        String urlString = apiServer;
-        if (!urlString.startsWith('http://') &&
-            !urlString.startsWith('https://')) {
-          urlString = 'https://$urlString';
-        }
-
-        // Fetch user info
-        try {
-          final response = await ApiService.get('$urlString/people/list');
-          if (response.statusCode == 200) {
-            final users = response.data is List ? response.data as List : [];
-            final user = users.firstWhere(
-              (u) => u['uuid'] == participant.userId,
-              orElse: () => null,
-            );
-
-            if (user != null) {
-              setState(() {
-                _selectedParticipants.add({
-                  'id': user['uuid'],
-                  'name': user['displayName'] ?? '',
-                  'email': user['email'] ?? '',
-                });
-              });
-            }
-          }
-        } catch (e) {
-          debugPrint(
-            '[MEETING_DIALOG] Error fetching user ${participant.userId}: $e',
-          );
-        }
+        final user = byId[raw];
+        selected.add({
+          'id': raw,
+          'name': (user?['displayName'] ?? '').toString(),
+          'email': (user?['email'] ?? '').toString(),
+        });
       }
+
+      if (!mounted) return;
+      setState(() {
+        _selectedParticipants = selected;
+        _emailInvitations = emails;
+        _inviteeStatusByKey
+          ..clear()
+          ..addAll(statusByKey);
+      });
     } catch (e) {
-      debugPrint('[MEETING_DIALOG] Error loading participants: $e');
+      debugPrint('[MEETING_DIALOG] Error loading invitees: $e');
     }
   }
 
@@ -437,11 +443,6 @@ class _MeetingDialogState extends State<MeetingDialog> {
         const SizedBox(height: 24),
 
         _buildParticipantsSection(),
-
-        if (_allowExternal) ...[
-          const SizedBox(height: 24),
-          _buildEmailInvitationsSection(),
-        ],
       ],
     );
   }
@@ -485,7 +486,46 @@ class _MeetingDialogState extends State<MeetingDialog> {
                 : null,
           ),
           onChanged: _searchUsers,
+          onFieldSubmitted: (value) {
+            if (!_allowExternal) return;
+            final email = value.trim();
+            if (_isValidEmail(email)) {
+              _addEmailInvitationFromValue(email);
+              _participantSearchController.clear();
+              setState(() => _searchResults = []);
+            }
+          },
         ),
+
+        if (_allowExternal) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Invite External by Email',
+                    hintText: 'guest@example.com',
+                    prefixIcon: Icon(Icons.email),
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  onFieldSubmitted: (value) =>
+                      _addEmailInvitationFromValue(value),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () =>
+                    _addEmailInvitationFromValue(_emailController.text),
+                icon: const Icon(Icons.add_circle),
+                iconSize: 32,
+                color: Theme.of(context).primaryColor,
+              ),
+            ],
+          ),
+        ],
 
         // Search results
         if (_searchResults.isNotEmpty) ...[
@@ -522,97 +562,90 @@ class _MeetingDialogState extends State<MeetingDialog> {
         ],
 
         // Selected participants
-        if (_selectedParticipants.isNotEmpty) ...[
+        if (_selectedParticipants.isNotEmpty ||
+            _emailInvitations.isNotEmpty) ...[
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _selectedParticipants.map((participant) {
-              return Chip(
-                avatar: CircleAvatar(
-                  child: Text(participant['name']![0].toUpperCase()),
-                ),
-                label: Text(participant['name']!),
-                onDeleted: () => _toggleParticipant(participant),
-              );
-            }).toList(),
-          ),
+          _buildInviteeBuckets(),
         ],
       ],
     );
   }
 
-  Widget _buildEmailInvitationsSection() {
+  Widget _buildInviteeBuckets() {
+    Widget buildSection(String title, List<Widget> chips) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          if (chips.isEmpty)
+            Text(
+              'None',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+            )
+          else
+            Wrap(spacing: 8, runSpacing: 8, children: chips),
+          const SizedBox(height: 12),
+        ],
+      );
+    }
+
+    String statusForKey(String key) =>
+        _inviteeStatusByKey[_normalizeInviteeKey(key)] ?? 'invited';
+
+    List<Widget> userChipsFor(String status) {
+      return _selectedParticipants
+          .where((p) => statusForKey(p['id'] ?? '') == status)
+          .map((participant) {
+            final name = (participant['name'] ?? '').trim();
+            final email = (participant['email'] ?? '').trim();
+            final label = name.isNotEmpty
+                ? name
+                : (email.isNotEmpty ? email : (participant['id'] ?? 'User'));
+            return Chip(
+              avatar: CircleAvatar(
+                child: Text(label.isNotEmpty ? label[0].toUpperCase() : '?'),
+              ),
+              label: Text(label),
+              onDeleted: () => _toggleParticipant(participant),
+            );
+          })
+          .toList();
+    }
+
+    List<Widget> emailChipsFor(String status) {
+      return _emailInvitations.where((e) => statusForKey(e) == status).map((
+        email,
+      ) {
+        return Chip(
+          avatar: const Icon(Icons.email, size: 16),
+          label: Text(email),
+          onDeleted: () => setState(() {
+            _inviteeStatusByKey.remove(_normalizeInviteeKey(email));
+            _emailInvitations.remove(email);
+          }),
+        );
+      }).toList();
+    }
+
+    List<Widget> chipsFor(String status) {
+      return [...userChipsFor(status), ...emailChipsFor(status)];
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'External Email Invitations',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Send meeting invitations to external guests via email',
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
-        ),
-        const SizedBox(height: 12),
-
-        // Email input
-        Row(
-          children: [
-            Expanded(
-              child: TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(
-                  labelText: 'Email Address',
-                  hintText: 'guest@example.com',
-                  prefixIcon: Icon(Icons.email),
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value != null && value.isNotEmpty) {
-                    final emailRegex = RegExp(
-                      r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                    );
-                    if (!emailRegex.hasMatch(value)) {
-                      return 'Invalid email address';
-                    }
-                  }
-                  return null;
-                },
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: _addEmailInvitation,
-              icon: const Icon(Icons.add_circle),
-              iconSize: 32,
-              color: Theme.of(context).primaryColor,
-            ),
-          ],
-        ),
-
-        // Email list
-        if (_emailInvitations.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _emailInvitations.map((email) {
-              return Chip(
-                avatar: const Icon(Icons.email, size: 16),
-                label: Text(email),
-                onDeleted: () =>
-                    setState(() => _emailInvitations.remove(email)),
-              );
-            }).toList(),
-          ),
-        ],
+        buildSection('Invited', chipsFor('invited')),
+        buildSection('Accepted', chipsFor('accepted')),
+        buildSection('Tentative', chipsFor('tentative')),
+        buildSection('Declined', chipsFor('declined')),
       ],
     );
   }
@@ -629,29 +662,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
     setState(() => _isSearching = true);
 
     try {
-      // Get server URL
-      String? apiServer;
-      if (kIsWeb) {
-        apiServer = await loadWebApiServer();
-      } else {
-        final activeServer = ServerConfigService.getActiveServer();
-        if (activeServer != null) {
-          apiServer = activeServer.serverUrl;
-        }
-      }
-
-      if (apiServer == null || apiServer.isEmpty) {
-        throw Exception('No API server configured');
-      }
-
-      String urlString = apiServer;
-      if (!urlString.startsWith('http://') &&
-          !urlString.startsWith('https://')) {
-        urlString = 'https://$urlString';
-      }
-
-      // Search users
-      final response = await ApiService.get('$urlString/people/list');
+      final response = await ApiService.get('/people/list');
       if (response.statusCode == 200) {
         final users = response.data is List ? response.data as List : [];
         final results = <Map<String, String>>[];
@@ -687,19 +698,19 @@ class _MeetingDialogState extends State<MeetingDialog> {
       );
       if (index >= 0) {
         _selectedParticipants.removeAt(index);
+        _inviteeStatusByKey.remove(_normalizeInviteeKey(user['id'] ?? ''));
       } else {
         _selectedParticipants.add(user);
+        _inviteeStatusByKey[_normalizeInviteeKey(user['id'] ?? '')] = 'invited';
       }
     });
   }
 
-  void _addEmailInvitation() {
-    if (_emailController.text.isEmpty) return;
+  void _addEmailInvitationFromValue(String value) {
+    final email = value.trim().toLowerCase();
+    if (email.isEmpty) return;
 
-    final email = _emailController.text.trim();
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-
-    if (!emailRegex.hasMatch(email)) {
+    if (!_isValidEmail(email)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please enter a valid email address'),
@@ -721,6 +732,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
 
     setState(() {
       _emailInvitations.add(email);
+      _inviteeStatusByKey[_normalizeInviteeKey(email)] = 'invited';
       _emailController.clear();
     });
   }
@@ -776,13 +788,46 @@ class _MeetingDialogState extends State<MeetingDialog> {
     try {
       final meeting = widget.meeting;
 
-      // Extract participant IDs
-      final newParticipantIds = _selectedParticipants
+      final participantIds = _selectedParticipants
           .map((p) => p['id']!)
-          .toSet();
+          .toList();
+      final invitedParticipants = <String>{
+        ...participantIds,
+        ..._emailInvitations.map((e) => e.trim().toLowerCase()),
+      }.where((e) => e.isNotEmpty).toList();
 
-      String meetingId;
-      Set<String> oldParticipantIds = {};
+      Future<void> sendInviteMessagesTo(
+        List<String> userIds,
+        Meeting meeting,
+      ) async {
+        if (userIds.isEmpty) return;
+
+        final signal = SignalService.instance;
+        final senderId = signal.currentUserId;
+        if (senderId == null || senderId.isEmpty) return;
+
+        final meetingTitle = meeting.title;
+        final payload = jsonEncode({
+          'meetingId': meeting.meetingId,
+          'title': meetingTitle,
+          'startTime': meeting.scheduledStart?.toIso8601String(),
+        });
+
+        for (final uid in userIds) {
+          if (uid.isEmpty) continue;
+          if (uid == senderId) continue;
+          try {
+            await signal.sendItem(
+              recipientUserId: uid,
+              type: 'system:meetingInvite',
+              payload: payload,
+            );
+          } catch (e) {
+            // Best-effort only: meeting save must still succeed.
+            debugPrint('[MEETING INVITE] Failed to send invite DM to $uid: $e');
+          }
+        }
+      }
 
       if (meeting == null) {
         // Create new meeting (without participants initially)
@@ -796,13 +841,26 @@ class _MeetingDialogState extends State<MeetingDialog> {
           allowExternal: _allowExternal,
           voiceOnly: _voiceOnly,
           muteOnJoin: _muteOnJoin,
+          participantIds: participantIds,
           emailInvitations: _emailInvitations,
         );
 
-        meetingId = createdMeeting.meetingId;
+        // In-app invite notification as 1:1 DM (best-effort)
+        await sendInviteMessagesTo(participantIds, createdMeeting);
       } else {
         // Update existing meeting
-        await _meetingService.updateMeeting(
+        final previousInternalInvites = meeting.invitedParticipants
+            .where((v) => v.contains('-'))
+            .map((v) => v.toLowerCase())
+            .toSet();
+        final nextInternalInvites = participantIds
+            .map((v) => v.toLowerCase())
+            .toSet();
+        final newlyAdded = nextInternalInvites
+            .difference(previousInternalInvites)
+            .toList();
+
+        final updatedMeeting = await _meetingService.updateMeeting(
           meeting.meetingId,
           title: _titleController.text.trim(),
           description: _descriptionController.text.trim().isEmpty
@@ -813,45 +871,11 @@ class _MeetingDialogState extends State<MeetingDialog> {
           allowExternal: _allowExternal,
           voiceOnly: _voiceOnly,
           muteOnJoin: _muteOnJoin,
+          invitedParticipants: invitedParticipants,
         );
 
-        meetingId = meeting.meetingId;
-
-        // Get existing participants to compare
-        try {
-          final existingParticipants = await _meetingService.getParticipants(
-            meetingId,
-          );
-          oldParticipantIds = existingParticipants.map((p) => p.userId).toSet();
-        } catch (e) {
-          debugPrint(
-            '[MEETING_DIALOG] Error fetching existing participants: $e',
-          );
-        }
-      }
-
-      // Add new participants
-      final toAdd = newParticipantIds.difference(oldParticipantIds);
-      for (final userId in toAdd) {
-        try {
-          await _meetingService.addParticipant(meetingId, userId);
-        } catch (e) {
-          debugPrint('[MEETING_DIALOG] Error adding participant $userId: $e');
-        }
-      }
-
-      // Remove participants (only in edit mode)
-      if (meeting != null) {
-        final toRemove = oldParticipantIds.difference(newParticipantIds);
-        for (final userId in toRemove) {
-          try {
-            await _meetingService.removeParticipant(meetingId, userId);
-          } catch (e) {
-            debugPrint(
-              '[MEETING_DIALOG] Error removing participant $userId: $e',
-            );
-          }
-        }
+        // In-app invite notification as 1:1 DM (best-effort, only newly added)
+        await sendInviteMessagesTo(newlyAdded, updatedMeeting);
       }
 
       if (mounted) {

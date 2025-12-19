@@ -128,6 +128,114 @@ roleRoutes.get('/user/roles', verifyAuthEither, requireAuth, async (req, res) =>
     }
 });
 
+// GET /api/user/notification-settings - Get current user's notification settings
+roleRoutes.get('/user/notification-settings', verifyAuthEither, requireAuth, async (req, res) => {
+    try {
+        const userId = req.session.uuid;
+
+        const user = await User.findByPk(userId, {
+            attributes: [
+                'meeting_invite_email_enabled',
+                'meeting_rsvp_email_to_organizer_enabled',
+                'meeting_update_email_enabled',
+                'meeting_cancel_email_enabled',
+                'meeting_self_invite_email_enabled'
+            ]
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json({
+            meetingInviteEmailEnabled: user.meeting_invite_email_enabled ?? true,
+            meetingRsvpEmailToOrganizerEnabled: user.meeting_rsvp_email_to_organizer_enabled ?? true,
+            meetingUpdateEmailEnabled: user.meeting_update_email_enabled ?? true,
+            meetingCancelEmailEnabled: user.meeting_cancel_email_enabled ?? true,
+            meetingSelfInviteEmailEnabled: user.meeting_self_invite_email_enabled ?? false
+        });
+    } catch (error) {
+        console.error('Error getting notification settings:', error);
+        res.status(500).json({ error: 'Failed to get notification settings' });
+    }
+});
+
+// PATCH /api/user/notification-settings - Update current user's notification settings
+roleRoutes.patch('/user/notification-settings', verifyAuthEither, requireAuth, async (req, res) => {
+    try {
+        const userId = req.session.uuid;
+        const user = await User.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const normalizeBool = (value) => {
+            if (value === undefined || value === null) return undefined;
+            if (typeof value === 'boolean') return value;
+            if (typeof value === 'number') return value === 1;
+            if (typeof value === 'string') {
+                const v = value.trim().toLowerCase();
+                if (v === 'true' || v === '1') return true;
+                if (v === 'false' || v === '0') return false;
+            }
+            return undefined;
+        };
+
+        const meetingInviteEmailEnabled = normalizeBool(
+            req.body.meetingInviteEmailEnabled ?? req.body.meeting_invite_email_enabled
+        );
+        const meetingRsvpEmailToOrganizerEnabled = normalizeBool(
+            req.body.meetingRsvpEmailToOrganizerEnabled ?? req.body.meeting_rsvp_email_to_organizer_enabled
+        );
+        const meetingUpdateEmailEnabled = normalizeBool(
+            req.body.meetingUpdateEmailEnabled ?? req.body.meeting_update_email_enabled
+        );
+        const meetingCancelEmailEnabled = normalizeBool(
+            req.body.meetingCancelEmailEnabled ?? req.body.meeting_cancel_email_enabled
+        );
+        const meetingSelfInviteEmailEnabled = normalizeBool(
+            req.body.meetingSelfInviteEmailEnabled ?? req.body.meeting_self_invite_email_enabled
+        );
+
+        const updates = {};
+        if (meetingInviteEmailEnabled !== undefined) {
+            updates.meeting_invite_email_enabled = meetingInviteEmailEnabled;
+        }
+        if (meetingRsvpEmailToOrganizerEnabled !== undefined) {
+            updates.meeting_rsvp_email_to_organizer_enabled = meetingRsvpEmailToOrganizerEnabled;
+        }
+        if (meetingUpdateEmailEnabled !== undefined) {
+            updates.meeting_update_email_enabled = meetingUpdateEmailEnabled;
+        }
+        if (meetingCancelEmailEnabled !== undefined) {
+            updates.meeting_cancel_email_enabled = meetingCancelEmailEnabled;
+        }
+        if (meetingSelfInviteEmailEnabled !== undefined) {
+            updates.meeting_self_invite_email_enabled = meetingSelfInviteEmailEnabled;
+        }
+
+        if (Object.keys(updates).length === 0) {
+            return res.status(400).json({ error: 'No valid settings provided' });
+        }
+
+        await writeQueue.enqueue(async () => {
+            await user.update(updates);
+        });
+
+        res.json({
+            success: true,
+            meetingInviteEmailEnabled: user.meeting_invite_email_enabled,
+            meetingRsvpEmailToOrganizerEnabled: user.meeting_rsvp_email_to_organizer_enabled,
+            meetingUpdateEmailEnabled: user.meeting_update_email_enabled,
+            meetingCancelEmailEnabled: user.meeting_cancel_email_enabled,
+            meetingSelfInviteEmailEnabled: user.meeting_self_invite_email_enabled
+        });
+    } catch (error) {
+        console.error('Error updating notification settings:', error);
+        res.status(500).json({ error: 'Failed to update notification settings' });
+    }
+});
+
 // GET /api/roles - Get all roles by scope
 roleRoutes.get('/roles', verifyAuthEither, requireAuth, async (req, res) => {
     try {

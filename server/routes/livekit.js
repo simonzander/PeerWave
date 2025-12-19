@@ -214,7 +214,30 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
     const livekitUrl = process.env.LIVEKIT_URL || 'ws://localhost:7880';
 
     // Get device ID for identity (needed for E2EE guest key exchange)
-    const deviceId = req.session?.device_id || req.deviceId || 0;
+    let deviceId = req.session?.device_id || req.deviceId;
+    
+    // If device_id not in session, look it up from Clients table by clientId
+    if (!deviceId && req.session?.clientId) {
+      const { Client } = require('../db/model');
+      const client = await Client.findOne({ 
+        where: { clientid: req.session.clientId, owner: userId },
+        attributes: ['device_id']
+      });
+      if (client) {
+        deviceId = client.device_id;
+        req.session.device_id = deviceId; // Cache in session for future requests
+        console.log(`[LiveKit Meeting] Loaded device_id ${deviceId} from database for clientId ${req.session.clientId}`);
+      }
+    }
+    
+    // Final fallback: if still no device_id, this is an error condition
+    if (!deviceId) {
+      console.error(`[LiveKit Meeting] ERROR: No device_id found for user ${userId}. Session deviceId: ${req.session?.device_id}, clientId: ${req.session?.clientId}`);
+      return res.status(400).json({ 
+        error: 'Device not registered',
+        message: 'Please refresh the page and log in again to register your device.'
+      });
+    }
 
     // Create access token
     const token = new AccessToken(apiKey, apiSecret, {

@@ -322,24 +322,34 @@ router.get('/meetings/:meetingId/livekit-participants', async (req, res) => {
     const participantList = await Promise.all(
       authenticatedParticipants.map(async (p) => {
         // Parse identity (format: "userId:deviceId")
-        const [userId, deviceId] = p.identity.split(':');
+        const [userId, deviceIdStr] = p.identity.split(':');
+        
+        // Parse device ID - if missing or invalid, log warning
+        const deviceId = parseInt(deviceIdStr);
+        if (!deviceIdStr || isNaN(deviceId)) {
+          console.warn(`[EXTERNAL] ⚠️ Invalid LiveKit identity format: "${p.identity}" (expected "userId:deviceId")`);
+          return null; // Skip participants with malformed identities
+        }
         
         // Get user info from database
         const user = await User.findOne({ where: { uuid: userId } });
         
         return {
           user_id: userId,
-          device_id: parseInt(deviceId) || 0,
+          device_id: deviceId,
           display_name: user?.displayName || 'Unknown',
           livekit_identity: p.identity
         };
       })
     );
     
+    // Filter out null entries (participants with invalid identities)
+    const validParticipants = participantList.filter(p => p !== null);
+    
     res.json({
-      participants: participantList,
-      count: participantList.length,
-      room_active: participantList.length > 0,
+      participants: validParticipants,
+      count: validParticipants.length,
+      room_active: validParticipants.length > 0,
       meeting_end_time: meetings[0]?.end_time || null
     });
   } catch (error) {
@@ -530,7 +540,7 @@ router.get('/meetings/:meetingId/external/waiting', async (req, res) => {
 
     const waiting = await externalParticipantService.getWaitingParticipants(meetingId);
 
-    res.json(waiting);
+    res.json({ waiting });
   } catch (error) {
     console.error('Error getting waiting participants:', error);
     res.status(500).json({ error: 'Failed to get waiting participants' });

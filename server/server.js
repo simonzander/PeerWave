@@ -320,6 +320,24 @@ app.use(sessionMiddleware);
     console.error('Failed to run meeting invitations migration:', err);
   });
 
+  // Run meeting RSVP storage migration
+  const { up: migrateMeetingRsvps } = require('./migrations/add_meeting_rsvps');
+  migrateMeetingRsvps().catch(err => {
+    console.error('Failed to run meeting RSVP migration:', err);
+  });
+
+  // Run user meeting email notification settings migration
+  const { up: migrateUserMeetingEmailNotificationSettings } = require('./migrations/add_user_meeting_email_notification_settings');
+  migrateUserMeetingEmailNotificationSettings().catch(err => {
+    console.error('Failed to run user meeting email notification settings migration:', err);
+  });
+
+  // Run user meeting notification settings v2 migration
+  const { up: migrateUserMeetingNotificationSettingsV2 } = require('./migrations/add_user_meeting_notification_settings_v2');
+  migrateUserMeetingNotificationSettingsV2().catch(err => {
+    console.error('Failed to run user meeting notification settings v2 migration:', err);
+  });
+
   // License info endpoint
   app.get('/api/license-info', async (req, res) => {
     const license = await licenseValidator.validate();

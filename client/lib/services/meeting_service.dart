@@ -260,6 +260,7 @@ class MeetingService {
     bool? voiceOnly,
     bool? muteOnJoin,
     int? maxParticipants,
+    List<String>? invitedParticipants,
   }) async {
     final updates = <String, dynamic>{};
     if (title != null) updates['title'] = title;
@@ -270,6 +271,8 @@ class MeetingService {
     if (voiceOnly != null) updates['voice_only'] = voiceOnly;
     if (muteOnJoin != null) updates['mute_on_join'] = muteOnJoin;
     if (maxParticipants != null) updates['max_participants'] = maxParticipants;
+    if (invitedParticipants != null)
+      updates['invited_participants'] = invitedParticipants;
 
     final response = await ApiService.patch(
       '/api/meetings/$meetingId',
@@ -296,8 +299,14 @@ class MeetingService {
         .toList();
   }
 
-  /// Add a participant to a meeting
-  Future<MeetingParticipant> addParticipant(
+  /// Add a participant to a meeting (runtime/in-call invite)
+  ///
+  /// Server response shape is:
+  /// `{ participant: <meeting or participant>, isOnline: bool }`
+  /// (older servers may return just the participant/meeting object).
+  ///
+  /// Returns whether the user is currently online (best-effort).
+  Future<bool> addParticipant(
     String meetingId,
     String userId, {
     String role = 'meeting_member',
@@ -306,7 +315,14 @@ class MeetingService {
       '/api/meetings/$meetingId/participants',
       data: {'user_id': userId, 'role': role},
     );
-    return MeetingParticipant.fromJson(response.data as Map<String, dynamic>);
+
+    final data = response.data;
+    if (data is Map) {
+      final isOnline = data['isOnline'];
+      return isOnline == true;
+    }
+
+    return false;
   }
 
   /// Remove a participant from a meeting
@@ -337,6 +353,15 @@ class MeetingService {
       data: {'expires_in_hours': expiresInHours},
     );
     return response.data as Map<String, dynamic>;
+  }
+
+  /// RSVP to a meeting (authenticated)
+  /// PATCH /api/meetings/:meetingId/rsvp
+  Future<void> rsvpMeeting(String meetingId, String status) async {
+    await ApiService.patch(
+      '/api/meetings/$meetingId/rsvp',
+      data: {'status': status},
+    );
   }
 
   // ============================================================================

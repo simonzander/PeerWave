@@ -45,6 +45,13 @@ class NotificationService {
   bool _permissionChangeNotificationsEnabled = true;
   bool _dndEnabled = false;
 
+  // Meeting email preferences (server-backed; cached locally)
+  bool _meetingInviteEmailEnabled = true;
+  bool _meetingRsvpEmailToOrganizerEnabled = true;
+  bool _meetingUpdateEmailEnabled = true;
+  bool _meetingCancelEmailEnabled = true;
+  bool _meetingSelfInviteEmailEnabled = false;
+
   /// Initialize the notification service
   Future<void> initialize() async {
     if (_initialized) return;
@@ -91,6 +98,14 @@ class NotificationService {
     _permissionChangeNotificationsEnabled = await prefs
         .loadPermissionChangeNotificationsEnabled();
     _dndEnabled = await prefs.loadDndEnabled();
+
+    _meetingInviteEmailEnabled = await prefs.loadMeetingInviteEmailEnabled();
+    _meetingRsvpEmailToOrganizerEnabled = await prefs
+        .loadMeetingRsvpEmailToOrganizerEnabled();
+    _meetingUpdateEmailEnabled = await prefs.loadMeetingUpdateEmailEnabled();
+    _meetingCancelEmailEnabled = await prefs.loadMeetingCancelEmailEnabled();
+    _meetingSelfInviteEmailEnabled = await prefs
+      .loadMeetingSelfInviteEmailEnabled();
     debugPrint('[NotificationService] Preferences loaded');
   }
 
@@ -193,6 +208,13 @@ class NotificationService {
       _permissionChangeNotificationsEnabled;
   bool get dndEnabled => _dndEnabled;
 
+  bool get meetingInviteEmailEnabled => _meetingInviteEmailEnabled;
+  bool get meetingRsvpEmailToOrganizerEnabled =>
+      _meetingRsvpEmailToOrganizerEnabled;
+  bool get meetingUpdateEmailEnabled => _meetingUpdateEmailEnabled;
+  bool get meetingCancelEmailEnabled => _meetingCancelEmailEnabled;
+  bool get meetingSelfInviteEmailEnabled => _meetingSelfInviteEmailEnabled;
+
   // Preference setters
   Future<void> setDirectMessageNotificationsEnabled(bool enabled) async {
     _directMessageNotificationsEnabled = enabled;
@@ -237,6 +259,31 @@ class NotificationService {
   Future<void> setReactionNotificationsEnabled(bool enabled) async {
     _reactionNotificationsEnabled = enabled;
     await PreferencesService().saveReactionNotificationsEnabled(enabled);
+  }
+
+  Future<void> setMeetingInviteEmailEnabled(bool enabled) async {
+    _meetingInviteEmailEnabled = enabled;
+    await PreferencesService().saveMeetingInviteEmailEnabled(enabled);
+  }
+
+  Future<void> setMeetingRsvpEmailToOrganizerEnabled(bool enabled) async {
+    _meetingRsvpEmailToOrganizerEnabled = enabled;
+    await PreferencesService().saveMeetingRsvpEmailToOrganizerEnabled(enabled);
+  }
+
+  Future<void> setMeetingUpdateEmailEnabled(bool enabled) async {
+    _meetingUpdateEmailEnabled = enabled;
+    await PreferencesService().saveMeetingUpdateEmailEnabled(enabled);
+  }
+
+  Future<void> setMeetingCancelEmailEnabled(bool enabled) async {
+    _meetingCancelEmailEnabled = enabled;
+    await PreferencesService().saveMeetingCancelEmailEnabled(enabled);
+  }
+
+  Future<void> setMeetingSelfInviteEmailEnabled(bool enabled) async {
+    _meetingSelfInviteEmailEnabled = enabled;
+    await PreferencesService().saveMeetingSelfInviteEmailEnabled(enabled);
   }
 
   Future<void> setMissedCallNotificationsEnabled(bool enabled) async {

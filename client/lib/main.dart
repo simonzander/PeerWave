@@ -98,6 +98,7 @@ import 'views/meeting_prejoin_view.dart';
 import 'views/meeting_video_conference_view.dart';
 import 'views/guest_meeting_video_view.dart';
 import 'services/meeting_authorization_service.dart';
+import 'screens/meeting_rsvp_confirmation_screen.dart';
 // Native server selection
 import 'screens/server_selection_screen.dart';
 import 'services/server_config_web.dart'
@@ -284,22 +285,26 @@ class _MyAppState extends State<MyApp> {
   @override
   void reassemble() {
     super.reassemble();
-    
+
     // Hot reload detected - reset database and storage caches
-    debugPrint('[HOT_RELOAD] 🔥 Hot reload detected - resetting storage caches');
-    
+    debugPrint(
+      '[HOT_RELOAD] 🔥 Hot reload detected - resetting storage caches',
+    );
+
     // Close all cached IndexedDB connections
     DeviceScopedStorageService.instance.closeAllDatabases();
-    
+
     // Reset SQLite database helper (prevents "database_closed" errors)
     DatabaseHelper.reset();
-    
+
     // Reset IndexedDB factory for native platforms
     if (!kIsWeb) {
       resetIdbFactoryNative();
     }
-    
-    debugPrint('[HOT_RELOAD] ✅ Storage caches reset - ready for new connections');
+
+    debugPrint(
+      '[HOT_RELOAD] ✅ Storage caches reset - ready for new connections',
+    );
   }
 
   @override
@@ -571,27 +576,40 @@ class _MyAppState extends State<MyApp> {
                 return ExternalPreJoinView(
                   invitationToken: token,
                   onAdmitted: () {
-                    debugPrint('[EXTERNAL] Guest admitted, navigating to conference...');
-                    
+                    debugPrint(
+                      '[EXTERNAL] Guest admitted, navigating to conference...',
+                    );
+
                     // Get meeting ID from session storage (web only)
                     if (kIsWeb) {
                       try {
                         final storage = html.window.sessionStorage;
                         final meetingId = storage['external_meeting_id'];
-                        final displayName = storage['external_display_name'] ?? 'Guest';
-                        
+                        final displayName =
+                            storage['external_display_name'] ?? 'Guest';
+
                         if (meetingId != null && meetingId.isNotEmpty) {
-                          final isExternal = storage['external_is_external'] == 'true';
-                          debugPrint('[EXTERNAL] Navigating to meeting video: $meetingId (isExternal: $isExternal)');
-                          context.go('/meeting/video/$meetingId?external=true', extra: {
-                            'meetingTitle': displayName,
-                            'isExternal': isExternal,
-                          });
+                          final isExternal =
+                              storage['external_is_external'] == 'true';
+                          debugPrint(
+                            '[EXTERNAL] Navigating to meeting video: $meetingId (isExternal: $isExternal)',
+                          );
+                          context.go(
+                            '/meeting/video/$meetingId?external=true',
+                            extra: {
+                              'meetingTitle': displayName,
+                              'isExternal': isExternal,
+                            },
+                          );
                         } else {
-                          debugPrint('[EXTERNAL] ERROR: No meeting ID in session storage');
+                          debugPrint(
+                            '[EXTERNAL] ERROR: No meeting ID in session storage',
+                          );
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Error: Missing meeting information'),
+                              content: Text(
+                                'Error: Missing meeting information',
+                              ),
                               backgroundColor: Colors.red,
                             ),
                           );
@@ -612,6 +630,33 @@ class _MyAppState extends State<MyApp> {
                 );
               },
             ),
+
+            GoRoute(
+              path: '/meeting/rsvp',
+              builder: (context, state) {
+                final qp = state.uri.queryParameters;
+                final meetingId = qp['meetingId'] ?? '';
+                final status = qp['status'] ?? '';
+                final email = qp['email'] ?? '';
+                final token = qp['token'] ?? '';
+
+                if (meetingId.isEmpty ||
+                    status.isEmpty ||
+                    email.isEmpty ||
+                    token.isEmpty) {
+                  return Scaffold(
+                    body: Center(child: Text('Missing RSVP parameters')),
+                  );
+                }
+
+                return MeetingRsvpConfirmationScreen(
+                  meetingId: meetingId,
+                  status: status,
+                  email: email,
+                  token: token,
+                );
+              },
+            ),
             // ========================================
             // Meeting Video Route (Outside ShellRoute for guests)
             // ========================================
@@ -620,17 +665,22 @@ class _MyAppState extends State<MyApp> {
               redirect: (context, state) async {
                 final meetingId = state.pathParameters['meetingId']!;
                 final extra = state.extra as Map<String, dynamic>?;
-                final isExternal = extra?['isExternal'] == true || state.uri.queryParameters['external'] == 'true';
-                
+                final isExternal =
+                    extra?['isExternal'] == true ||
+                    state.uri.queryParameters['external'] == 'true';
+
                 // Skip auth check for external guests (explicitly marked or query param)
                 if (isExternal) {
                   return null;
                 }
-                
+
                 // Check authorization for authenticated users
-                final hasAccess = await MeetingAuthorizationService.instance.checkMeetingAccess(meetingId);
+                final hasAccess = await MeetingAuthorizationService.instance
+                    .checkMeetingAccess(meetingId);
                 if (!hasAccess) {
-                  debugPrint('[ROUTER] ❌ Unauthorized access to meeting: $meetingId');
+                  debugPrint(
+                    '[ROUTER] ❌ Unauthorized access to meeting: $meetingId',
+                  );
                   return '/app/meetings';
                 }
                 return null;
@@ -638,14 +688,22 @@ class _MyAppState extends State<MyApp> {
               builder: (context, state) {
                 final meetingId = state.pathParameters['meetingId']!;
                 final extra = state.extra as Map<String, dynamic>?;
-                final isExternal = extra?['isExternal'] == true || state.uri.queryParameters['external'] == 'true';
+                final isExternal =
+                    extra?['isExternal'] == true ||
+                    state.uri.queryParameters['external'] == 'true';
 
-                debugPrint('[ROUTE_BUILDER] WEB Meeting video route builder called');
+                debugPrint(
+                  '[ROUTE_BUILDER] WEB Meeting video route builder called',
+                );
                 debugPrint('[ROUTE_BUILDER] meetingId: $meetingId');
                 debugPrint('[ROUTE_BUILDER] extra: $extra');
-                debugPrint('[ROUTE_BUILDER] query params: ${state.uri.queryParameters}');
+                debugPrint(
+                  '[ROUTE_BUILDER] query params: ${state.uri.queryParameters}',
+                );
                 debugPrint('[ROUTE_BUILDER] isExternal: $isExternal');
-                debugPrint('[ROUTE_BUILDER] Loading view: ${isExternal ? "GuestMeetingVideoView" : "MeetingVideoConferenceView"}');
+                debugPrint(
+                  '[ROUTE_BUILDER] Loading view: ${isExternal ? "GuestMeetingVideoView" : "MeetingVideoConferenceView"}',
+                );
 
                 // Use guest view for external participants (query param or extra flag)
                 if (isExternal) {
@@ -804,9 +862,12 @@ class _MyAppState extends State<MyApp> {
                   path: '/meeting/prejoin/:meetingId',
                   redirect: (context, state) async {
                     final meetingId = state.pathParameters['meetingId']!;
-                    final hasAccess = await MeetingAuthorizationService.instance.checkMeetingAccess(meetingId);
+                    final hasAccess = await MeetingAuthorizationService.instance
+                        .checkMeetingAccess(meetingId);
                     if (!hasAccess) {
-                      debugPrint('[ROUTER] ❌ Unauthorized access to meeting: $meetingId');
+                      debugPrint(
+                        '[ROUTER] ❌ Unauthorized access to meeting: $meetingId',
+                      );
                       return '/app/meetings';
                     }
                     return null;
@@ -960,6 +1021,32 @@ class _MyAppState extends State<MyApp> {
                   builder: (context, state) => const SignalSetupScreen(),
                 ),
                 GoRoute(
+                  path: '/meeting/rsvp',
+                  builder: (context, state) {
+                    final qp = state.uri.queryParameters;
+                    final meetingId = qp['meetingId'] ?? '';
+                    final status = qp['status'] ?? '';
+                    final email = qp['email'] ?? '';
+                    final token = qp['token'] ?? '';
+
+                    if (meetingId.isEmpty ||
+                        status.isEmpty ||
+                        email.isEmpty ||
+                        token.isEmpty) {
+                      return const Scaffold(
+                        body: Center(child: Text('Missing RSVP parameters')),
+                      );
+                    }
+
+                    return MeetingRsvpConfirmationScreen(
+                      meetingId: meetingId,
+                      status: status,
+                      email: email,
+                      token: token,
+                    );
+                  },
+                ),
+                GoRoute(
                   path: '/magic-link',
                   builder: (context, state) {
                     final extra = state.extra;
@@ -1109,9 +1196,12 @@ class _MyAppState extends State<MyApp> {
                   path: '/meeting/prejoin/:meetingId',
                   redirect: (context, state) async {
                     final meetingId = state.pathParameters['meetingId']!;
-                    final hasAccess = await MeetingAuthorizationService.instance.checkMeetingAccess(meetingId);
+                    final hasAccess = await MeetingAuthorizationService.instance
+                        .checkMeetingAccess(meetingId);
                     if (!hasAccess) {
-                      debugPrint('[ROUTER] ❌ Unauthorized access to meeting: $meetingId');
+                      debugPrint(
+                        '[ROUTER] ❌ Unauthorized access to meeting: $meetingId',
+                      );
                       return '/app/meetings';
                     }
                     return null;
@@ -1126,17 +1216,22 @@ class _MyAppState extends State<MyApp> {
                   redirect: (context, state) async {
                     final meetingId = state.pathParameters['meetingId']!;
                     final extra = state.extra as Map<String, dynamic>?;
-                    final isExternal = extra?['isExternal'] == true || state.uri.queryParameters['external'] == 'true';
-                    
+                    final isExternal =
+                        extra?['isExternal'] == true ||
+                        state.uri.queryParameters['external'] == 'true';
+
                     // Skip auth check for external guests (explicitly marked or query param)
                     if (isExternal) {
                       return null;
                     }
-                    
+
                     // Check authorization for authenticated users
-                    final hasAccess = await MeetingAuthorizationService.instance.checkMeetingAccess(meetingId);
+                    final hasAccess = await MeetingAuthorizationService.instance
+                        .checkMeetingAccess(meetingId);
                     if (!hasAccess) {
-                      debugPrint('[ROUTER] ❌ Unauthorized access to meeting: $meetingId');
+                      debugPrint(
+                        '[ROUTER] ❌ Unauthorized access to meeting: $meetingId',
+                      );
                       return '/app/meetings';
                     }
                     return null;
@@ -1144,7 +1239,9 @@ class _MyAppState extends State<MyApp> {
                   builder: (context, state) {
                     final meetingId = state.pathParameters['meetingId']!;
                     final extra = state.extra as Map<String, dynamic>?;
-                    final isExternal = extra?['isExternal'] == true || state.uri.queryParameters['external'] == 'true';
+                    final isExternal =
+                        extra?['isExternal'] == true ||
+                        state.uri.queryParameters['external'] == 'true';
 
                     // Use guest view for external participants (query param or extra flag)
                     if (isExternal) {
@@ -1290,8 +1387,12 @@ class _MyAppState extends State<MyApp> {
         debugPrint('[ROUTER] 🔀 Redirect called for location: $location');
 
         // Allow guest routes (external participants) without authentication checks
-        if (kIsWeb && (location.startsWith('/join/') || location.startsWith('/meeting/video/'))) {
-          debugPrint('[ROUTER] 🔓 Guest route detected, skipping authentication checks: $location');
+        if (kIsWeb &&
+            (location.startsWith('/join/') ||
+                location.startsWith('/meeting/video/'))) {
+          debugPrint(
+            '[ROUTER] 🔓 Guest route detected, skipping authentication checks: $location',
+          );
           return null;
         }
 
@@ -1330,7 +1431,7 @@ class _MyAppState extends State<MyApp> {
         // This is required for database and Signal Protocol operations
         if (loggedIn && !DeviceIdentityService.instance.isInitialized) {
           debugPrint('[ROUTER] 🔄 Restoring device identity from storage...');
-          
+
           // For native, get the active server URL to restore the correct identity
           String? serverUrl;
           if (!kIsWeb) {
@@ -1340,7 +1441,7 @@ class _MyAppState extends State<MyApp> {
               debugPrint('[ROUTER] 🔄 Active server: $serverUrl');
             }
           }
-          
+
           final restored = await DeviceIdentityService.instance
               .tryRestoreFromSession(serverUrl: serverUrl);
           if (restored) {
@@ -1657,15 +1758,22 @@ class _MyAppState extends State<MyApp> {
         if (kIsWeb && loggedIn && fromParam == 'magic-link') {
           return '/magic-link';
         }
-        
+
         // Allow guest join routes (external participants) without authentication
         debugPrint('[ROUTER] Checking guest routes - location: $location');
-        if (kIsWeb && !loggedIn && (location.startsWith('/join/') || location.startsWith('/meeting/video/'))) {
+        if (kIsWeb &&
+            !loggedIn &&
+            (location.startsWith('/join/') ||
+                location.startsWith('/meeting/video/'))) {
           debugPrint('[ROUTER] 🔓 Guest access allowed for: $location');
           return null;
         }
         // Allow registration flow even when not logged in
-        if (kIsWeb && !loggedIn && !location.startsWith('/register/') && !location.startsWith('/join/') && !location.startsWith('/meeting/video/')) {
+        if (kIsWeb &&
+            !loggedIn &&
+            !location.startsWith('/register/') &&
+            !location.startsWith('/join/') &&
+            !location.startsWith('/meeting/video/')) {
           debugPrint('[ROUTER] ⚠️ Web: Not logged in, redirecting to /login');
           return '/login';
         }

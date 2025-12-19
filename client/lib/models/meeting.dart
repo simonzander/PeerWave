@@ -13,6 +13,7 @@ class Meeting {
   final bool isInstantCall;
   final String? channelId;
   final String? livekitRoom;
+  final bool livekitRoomActive;
   final bool allowExternal;
   final String? invitationToken;
   final DateTime? invitationExpiresAt;
@@ -20,6 +21,9 @@ class Meeting {
   final bool muteOnJoin;
   final int? maxParticipants;
   final int? participantCount; // Number of participants who have joined
+  final List<String> invitedParticipants;
+  final MeetingRsvpSummary? rsvpSummary;
+  final Map<String, String>? invitedRsvpStatuses;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -36,6 +40,7 @@ class Meeting {
     required this.isInstantCall,
     this.channelId,
     this.livekitRoom,
+    this.livekitRoomActive = false,
     required this.allowExternal,
     this.invitationToken,
     this.invitationExpiresAt,
@@ -43,22 +48,36 @@ class Meeting {
     required this.muteOnJoin,
     this.maxParticipants,
     this.participantCount,
+    this.invitedParticipants = const [],
+    this.rsvpSummary,
+    this.invitedRsvpStatuses,
     required this.createdAt,
     required this.updatedAt,
   });
 
+  static List<String> _parseInvitedParticipants(dynamic raw) {
+    if (raw == null) return const [];
+    if (raw is List) {
+      return raw.map((e) => e.toString()).where((e) => e.trim().isNotEmpty).toList();
+    }
+    return const [];
+  }
+
   factory Meeting.fromJson(Map<String, dynamic> json) {
+    final scheduledStartRaw = json['scheduled_start'] ?? json['start_time'];
+    final scheduledEndRaw = json['scheduled_end'] ?? json['end_time'];
+
     return Meeting(
       meetingId: json['meeting_id'] as String,
       title: json['title'] as String,
       description: json['description'] as String?,
       createdBy: json['created_by'] as String,
-      scheduledStart: json['scheduled_start'] != null
-          ? DateTime.parse(json['scheduled_start'] as String)
-          : null,
-      scheduledEnd: json['scheduled_end'] != null
-          ? DateTime.parse(json['scheduled_end'] as String)
-          : null,
+      scheduledStart: scheduledStartRaw != null
+        ? DateTime.parse(scheduledStartRaw as String)
+        : null,
+      scheduledEnd: scheduledEndRaw != null
+        ? DateTime.parse(scheduledEndRaw as String)
+        : null,
       startedAt: json['started_at'] != null
           ? DateTime.parse(json['started_at'] as String)
           : null,
@@ -69,6 +88,7 @@ class Meeting {
       isInstantCall: json['is_instant_call'] == 1 || json['is_instant_call'] == true,
       channelId: json['channel_id'] as String?,
       livekitRoom: json['livekit_room'] as String?,
+      livekitRoomActive: json['livekit_room_active'] == 1 || json['livekit_room_active'] == true,
       allowExternal: json['allow_external'] == 1 || json['allow_external'] == true,
       invitationToken: json['invitation_token'] as String?,
       invitationExpiresAt: json['invitation_expires_at'] != null
@@ -78,6 +98,15 @@ class Meeting {
       muteOnJoin: json['mute_on_join'] == 1 || json['mute_on_join'] == true,
       maxParticipants: json['max_participants'] as int?,
       participantCount: json['participant_count'] as int?,
+      invitedParticipants: _parseInvitedParticipants(json['invited_participants']),
+      rsvpSummary: json['rsvp_summary'] is Map
+          ? MeetingRsvpSummary.fromJson((json['rsvp_summary'] as Map).cast<String, dynamic>())
+          : null,
+      invitedRsvpStatuses: json['invited_rsvp_statuses'] is Map
+          ? (json['invited_rsvp_statuses'] as Map).map(
+              (k, v) => MapEntry(k.toString().toLowerCase(), v.toString().toLowerCase()),
+            )
+          : null,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -97,6 +126,7 @@ class Meeting {
       'is_instant_call': isInstantCall,
       'channel_id': channelId,
       'livekit_room': livekitRoom,
+      'livekit_room_active': livekitRoomActive,
       'allow_external': allowExternal,
       'invitation_token': invitationToken,
       'invitation_expires_at': invitationExpiresAt?.toIso8601String(),
@@ -104,6 +134,9 @@ class Meeting {
       'mute_on_join': muteOnJoin,
       'max_participants': maxParticipants,
       'participant_count': participantCount,
+      'invited_participants': invitedParticipants,
+      'rsvp_summary': rsvpSummary?.toJson(),
+      'invited_rsvp_statuses': invitedRsvpStatuses,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -122,6 +155,7 @@ class Meeting {
     bool? isInstantCall,
     String? channelId,
     String? livekitRoom,
+    bool? livekitRoomActive,
     bool? allowExternal,
     String? invitationToken,
     DateTime? invitationExpiresAt,
@@ -129,6 +163,9 @@ class Meeting {
     bool? muteOnJoin,
     int? maxParticipants,
     int? participantCount,
+    List<String>? invitedParticipants,
+    MeetingRsvpSummary? rsvpSummary,
+    Map<String, String>? invitedRsvpStatuses,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -145,6 +182,7 @@ class Meeting {
       isInstantCall: isInstantCall ?? this.isInstantCall,
       channelId: channelId ?? this.channelId,
       livekitRoom: livekitRoom ?? this.livekitRoom,
+      livekitRoomActive: livekitRoomActive ?? this.livekitRoomActive,
       allowExternal: allowExternal ?? this.allowExternal,
       invitationToken: invitationToken ?? this.invitationToken,
       invitationExpiresAt: invitationExpiresAt ?? this.invitationExpiresAt,
@@ -152,6 +190,9 @@ class Meeting {
       muteOnJoin: muteOnJoin ?? this.muteOnJoin,
       maxParticipants: maxParticipants ?? this.maxParticipants,
       participantCount: participantCount ?? this.participantCount,
+      invitedParticipants: invitedParticipants ?? this.invitedParticipants,
+      rsvpSummary: rsvpSummary ?? this.rsvpSummary,
+      invitedRsvpStatuses: invitedRsvpStatuses ?? this.invitedRsvpStatuses,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -180,5 +221,37 @@ class Meeting {
   @override
   String toString() {
     return 'Meeting(id: $meetingId, title: $title, status: $status, isInstantCall: $isInstantCall)';
+  }
+}
+
+class MeetingRsvpSummary {
+  final int invited;
+  final int accepted;
+  final int tentative;
+  final int declined;
+
+  const MeetingRsvpSummary({
+    required this.invited,
+    required this.accepted,
+    required this.tentative,
+    required this.declined,
+  });
+
+  factory MeetingRsvpSummary.fromJson(Map<String, dynamic> json) {
+    return MeetingRsvpSummary(
+      invited: (json['invited'] as num?)?.toInt() ?? 0,
+      accepted: (json['accepted'] as num?)?.toInt() ?? 0,
+      tentative: (json['tentative'] as num?)?.toInt() ?? 0,
+      declined: (json['declined'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'invited': invited,
+      'accepted': accepted,
+      'tentative': tentative,
+      'declined': declined,
+    };
   }
 }

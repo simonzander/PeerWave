@@ -3,12 +3,11 @@ import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../models/meeting.dart';
 import '../services/meeting_service.dart';
-import '../services/device_identity_service.dart';
 import '../services/user_profile_service.dart';
 import '../widgets/meeting_dialog.dart';
 
 /// Meetings screen - displays list of meetings with filters
-/// 
+///
 /// Features:
 /// - Filter tabs: All, Upcoming, Past, My Meetings
 /// - Meeting cards with title, time, participants count
@@ -22,15 +21,16 @@ class MeetingsScreen extends StatefulWidget {
   State<MeetingsScreen> createState() => _MeetingsScreenState();
 }
 
-class _MeetingsScreenState extends State<MeetingsScreen> with SingleTickerProviderStateMixin {
+class _MeetingsScreenState extends State<MeetingsScreen>
+    with SingleTickerProviderStateMixin {
   final _meetingService = MeetingService();
   late TabController _tabController;
-  
+
   List<Meeting> _allMeetings = [];
   List<Meeting> _upcomingMeetings = [];
   List<Meeting> _pastMeetings = [];
   List<Meeting> _myMeetings = [];
-  
+
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -43,33 +43,33 @@ class _MeetingsScreenState extends State<MeetingsScreen> with SingleTickerProvid
         _loadMeetings();
       }
     });
-    
+
     // Initialize listeners for real-time updates
     _meetingService.initializeListeners();
-    
+
     // Listen to real-time meeting events
     _meetingService.onMeetingCreated.listen((meeting) {
       if (mounted) {
         _loadMeetings();
       }
     });
-    
+
     _meetingService.onMeetingUpdated.listen((meeting) {
       if (mounted) {
         _loadMeetings();
       }
     });
-    
+
     _meetingService.onMeetingCancelled.listen((meetingId) {
       if (mounted) {
         _loadMeetings();
       }
     });
-    
+
     _ensureProfileLoaded();
     _loadMeetings();
   }
-  
+
   /// Ensure user profile is loaded for owner check
   Future<void> _ensureProfileLoaded() async {
     if (UserProfileService.instance.currentUserUuid == null) {
@@ -79,12 +79,16 @@ class _MeetingsScreenState extends State<MeetingsScreen> with SingleTickerProvid
         if (mounted) {
           setState(() {}); // Trigger rebuild with loaded profile
         }
-        debugPrint('[MEETINGS] User profile loaded: ${UserProfileService.instance.currentUserUuid}');
+        debugPrint(
+          '[MEETINGS] User profile loaded: ${UserProfileService.instance.currentUserUuid}',
+        );
       } catch (e) {
         debugPrint('[MEETINGS] Error loading user profile: $e');
       }
     } else {
-      debugPrint('[MEETINGS] User profile already loaded: ${UserProfileService.instance.currentUserUuid}');
+      debugPrint(
+        '[MEETINGS] User profile already loaded: ${UserProfileService.instance.currentUserUuid}',
+      );
     }
   }
 
@@ -94,9 +98,52 @@ class _MeetingsScreenState extends State<MeetingsScreen> with SingleTickerProvid
     super.dispose();
   }
 
+  Future<void> _deleteMeeting(Meeting meeting) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Delete meeting?'),
+          content: Text('This will permanently delete "${meeting.title}".'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await _meetingService.deleteMeeting(meeting.meetingId);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Meeting deleted')));
+      }
+      await _loadMeetings();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete meeting: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _loadMeetings() async {
     if (!mounted) return;
-    
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -117,7 +164,7 @@ class _MeetingsScreenState extends State<MeetingsScreen> with SingleTickerProvid
           _myMeetings = await _meetingService.getMyMeetings();
           break;
       }
-      
+
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -193,16 +240,21 @@ class _MeetingsScreenState extends State<MeetingsScreen> with SingleTickerProvid
         itemBuilder: (context, index) {
           final meeting = _currentMeetings[index];
           final currentUserUuid = UserProfileService.instance.currentUserUuid;
-          final isOwner = currentUserUuid != null && 
-                         meeting.createdBy == currentUserUuid;
-          
-          debugPrint('[MEETINGS] Meeting "${meeting.title}" - createdBy: ${meeting.createdBy}, currentUser: $currentUserUuid, isOwner: $isOwner');
-          
+          final isOwner =
+              currentUserUuid != null && meeting.createdBy == currentUserUuid;
+
+          debugPrint(
+            '[MEETINGS] Meeting "${meeting.title}" - createdBy: ${meeting.createdBy}, currentUser: $currentUserUuid, isOwner: $isOwner',
+          );
+
           return _MeetingCard(
             meeting: meeting,
             isOwner: isOwner,
+            currentUserId: currentUserUuid,
             onTap: () => _openMeetingDetails(meeting),
             onEdit: isOwner ? () => _editMeeting(meeting) : null,
+            onDelete: isOwner ? () => _deleteMeeting(meeting) : null,
+            onRsvp: (status) => _rsvpMeeting(meeting, status),
           );
         },
       ),
@@ -235,7 +287,7 @@ class _MeetingsScreenState extends State<MeetingsScreen> with SingleTickerProvid
   Widget _buildEmptyView() {
     String message;
     IconData icon;
-    
+
     switch (_tabController.index) {
       case 0:
         message = 'No meetings found';
@@ -266,9 +318,9 @@ class _MeetingsScreenState extends State<MeetingsScreen> with SingleTickerProvid
           const SizedBox(height: 16),
           Text(
             message,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: Colors.grey[600],
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(color: Colors.grey[600]),
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
@@ -286,22 +338,43 @@ class _MeetingsScreenState extends State<MeetingsScreen> with SingleTickerProvid
       context: context,
       builder: (context) => const MeetingDialog(),
     );
-    
+
     if (result == true && mounted) {
       _loadMeetings();
+    }
+  }
+
+  Future<void> _rsvpMeeting(Meeting meeting, String status) async {
+    try {
+      await _meetingService.rsvpMeeting(meeting.meetingId, status);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('RSVP set to ${status.toUpperCase()}')),
+        );
+      }
+      await _loadMeetings();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to RSVP: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
   void _openMeetingDetails(Meeting meeting) async {
     final now = DateTime.now();
     final currentUserUuid = UserProfileService.instance.currentUserUuid;
-    final isOwner = currentUserUuid != null && 
-                   meeting.createdBy == currentUserUuid;
-    
+    final isOwner =
+        currentUserUuid != null && meeting.createdBy == currentUserUuid;
+
     // Check if meeting is in the future (more than 15 minutes)
     if (meeting.scheduledStart != null) {
       final timeUntilMeeting = meeting.scheduledStart!.difference(now);
-      
+
       if (timeUntilMeeting.inMinutes > 15) {
         // Show future meeting dialog
         final shouldJoin = await showDialog<bool>(
@@ -318,7 +391,9 @@ class _MeetingsScreenState extends State<MeetingsScreen> with SingleTickerProvid
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  DateFormat('EEEE, MMMM d, y \'at\' h:mm a').format(meeting.scheduledStart!),
+                  DateFormat(
+                    'EEEE, MMMM d, y \'at\' h:mm a',
+                  ).format(meeting.scheduledStart!),
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -326,9 +401,9 @@ class _MeetingsScreenState extends State<MeetingsScreen> with SingleTickerProvid
                 const SizedBox(height: 16),
                 Text(
                   'Starts in ${timeUntilMeeting.inHours} hours and ${timeUntilMeeting.inMinutes % 60} minutes.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.orange,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: Colors.orange),
                 ),
                 if (isOwner) ...[
                   const SizedBox(height: 16),
@@ -364,22 +439,22 @@ class _MeetingsScreenState extends State<MeetingsScreen> with SingleTickerProvid
             ],
           ),
         );
-        
+
         if (shouldJoin != true) return;
       }
     }
-    
+
     // Navigate to prejoin page
     // TODO: Implement prejoin view for meetings
     context.go('/meeting/prejoin/${meeting.meetingId}');
   }
-  
+
   void _editMeeting(Meeting meeting) async {
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => MeetingDialog(meeting: meeting),
     );
-    
+
     if (result == true && mounted) {
       _loadMeetings();
     }
@@ -390,20 +465,26 @@ class _MeetingsScreenState extends State<MeetingsScreen> with SingleTickerProvid
 class _MeetingCard extends StatelessWidget {
   final Meeting meeting;
   final bool isOwner;
+  final String? currentUserId;
   final VoidCallback onTap;
   final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+  final void Function(String status)? onRsvp;
 
   const _MeetingCard({
     required this.meeting,
     required this.isOwner,
+    required this.currentUserId,
     required this.onTap,
     this.onEdit,
+    this.onDelete,
+    this.onRsvp,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -447,9 +528,27 @@ class _MeetingCard extends StatelessWidget {
                       ),
                     ),
                   ],
+                  if (isOwner && onDelete != null) ...[
+                    const SizedBox(width: 4),
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: onDelete,
+                        borderRadius: BorderRadius.circular(20),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Icon(
+                            Icons.delete_outline,
+                            size: 20,
+                            color: theme.colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
-              
+
               if (meeting.description != null) ...[
                 const SizedBox(height: 8),
                 Text(
@@ -461,9 +560,9 @@ class _MeetingCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
-              
+
               const SizedBox(height: 12),
-              
+
               // Meeting details
               Row(
                 children: [
@@ -479,11 +578,12 @@ class _MeetingCard extends StatelessWidget {
                   ),
                 ],
               ),
-              
+
               const SizedBox(height: 4),
-              
+
               // Participants count
-              if (meeting.participantCount != null && meeting.participantCount! > 0)
+              if (meeting.livekitRoomActive &&
+                  (meeting.participantCount ?? 0) > 0)
                 Row(
                   children: [
                     Icon(Icons.people, size: 16, color: Colors.grey[600]),
@@ -496,10 +596,41 @@ class _MeetingCard extends StatelessWidget {
                     ),
                   ],
                 ),
-              
-              if (meeting.participantCount != null && meeting.participantCount! > 0)
+
+              if (meeting.livekitRoomActive &&
+                  (meeting.participantCount ?? 0) > 0)
                 const SizedBox(height: 4),
-              
+
+              if (meeting.rsvpSummary != null &&
+                  (meeting.rsvpSummary!.invited +
+                          meeting.rsvpSummary!.accepted +
+                          meeting.rsvpSummary!.tentative +
+                          meeting.rsvpSummary!.declined) >
+                      0)
+                Row(
+                  children: [
+                    Icon(Icons.mail_outline, size: 16, color: Colors.grey[600]),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'Invited ${meeting.rsvpSummary!.invited} • Accepted ${meeting.rsvpSummary!.accepted} • Tentative ${meeting.rsvpSummary!.tentative} • Declined ${meeting.rsvpSummary!.declined}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+
+              if (meeting.rsvpSummary != null &&
+                  (meeting.rsvpSummary!.invited +
+                          meeting.rsvpSummary!.accepted +
+                          meeting.rsvpSummary!.tentative +
+                          meeting.rsvpSummary!.declined) >
+                      0)
+                const SizedBox(height: 4),
+
               // Meeting type and settings
               Wrap(
                 spacing: 8,
@@ -513,18 +644,86 @@ class _MeetingCard extends StatelessWidget {
                     _buildInfoChip(Icons.link, 'External Guests', context),
                 ],
               ),
+
+              if (!isOwner && currentUserId != null)
+                ..._buildRsvpSection(context),
             ],
           ),
         ),
       ),
     );
+  }
+
+  List<Widget> _buildRsvpSection(BuildContext context) {
+    final userId = currentUserId;
+    if (userId == null || userId.isEmpty) return const [];
+
+    if (!meeting.isScheduled || meeting.isCancelled || meeting.isCompleted) {
+      return const [];
     }
+
+    final key = userId.toLowerCase();
+    final invitedKeys = meeting.invitedParticipants
+        .map((v) => v.toLowerCase())
+        .toSet();
+    final isInvited =
+        invitedKeys.contains(key) ||
+        (meeting.invitedRsvpStatuses?.containsKey(key) ?? false);
+    if (!isInvited) return const [];
+
+    final myStatus = meeting.invitedRsvpStatuses?[key] ?? 'invited';
+    final label = myStatus == 'accepted'
+        ? 'Accepted'
+        : myStatus == 'tentative'
+        ? 'Tentative'
+        : myStatus == 'declined'
+        ? 'Declined'
+        : 'Invited';
+
+    return [
+      const SizedBox(height: 12),
+      Row(
+        children: [
+          Icon(Icons.how_to_reg, size: 16, color: Colors.grey[600]),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Your RSVP: $label',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          OutlinedButton(
+            onPressed: onRsvp == null ? null : () => onRsvp!('accepted'),
+            child: const Text('Accept'),
+          ),
+          OutlinedButton(
+            onPressed: onRsvp == null ? null : () => onRsvp!('tentative'),
+            child: const Text('Tentative'),
+          ),
+          OutlinedButton(
+            onPressed: onRsvp == null ? null : () => onRsvp!('declined'),
+            child: const Text('Decline'),
+          ),
+        ],
+      ),
+    ];
+  }
 
   Widget _buildStatusChip(BuildContext context) {
     Color backgroundColor;
     Color textColor;
     String label;
-    
+
     if (meeting.isActive) {
       backgroundColor = Colors.green[100]!;
       textColor = Colors.green[900]!;
@@ -546,7 +745,7 @@ class _MeetingCard extends StatelessWidget {
       textColor = Colors.grey[700]!;
       label = meeting.status;
     }
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -576,13 +775,7 @@ class _MeetingCard extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: Colors.grey[700]),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.grey[700],
-              fontSize: 11,
-            ),
-          ),
+          Text(label, style: TextStyle(color: Colors.grey[700], fontSize: 11)),
         ],
       ),
     );
@@ -591,14 +784,17 @@ class _MeetingCard extends StatelessWidget {
   String _formatMeetingTime() {
     final startTime = meeting.scheduledStart;
     final endTime = meeting.scheduledEnd;
-    
-    // Handle null times - show created time
+
+    // Handle null times
     if (startTime == null) {
-      return 'Created ${DateFormat('MMM d, y \\at h:mm a').format(meeting.createdAt)}';
+      if (meeting.isInstantCall) {
+        return 'Created ${DateFormat('MMM d, y \\at h:mm a').format(meeting.createdAt)}';
+      }
+      return 'Scheduled time not set';
     }
-    
+
     final now = DateTime.now();
-    
+
     // Format: "Today at 3:00 PM" or "Tomorrow at 10:30 AM" or "Dec 15 at 2:00 PM"
     String datePrefix;
     if (startTime.year == now.year &&
@@ -612,16 +808,16 @@ class _MeetingCard extends StatelessWidget {
     } else {
       datePrefix = DateFormat('MMM d').format(startTime);
     }
-    
+
     final timeString = DateFormat('h:mm a').format(startTime);
-    
+
     // Add duration if endTime is available
     if (endTime != null) {
       final duration = endTime.difference(startTime);
       final durationMinutes = duration.inMinutes;
       return '$datePrefix at $timeString ($durationMinutes min)';
     }
-    
+
     return '$datePrefix at $timeString';
   }
 }

@@ -46,6 +46,18 @@ class PreferencesService {
       'permission_change_notifications_enabled';
   static const String _keyDndEnabled = 'dnd_enabled';
 
+  // Meeting Email Settings (server-backed; cached locally)
+  static const String _keyMeetingInviteEmailEnabled =
+      'meeting_invite_email_enabled';
+  static const String _keyMeetingRsvpEmailToOrganizerEnabled =
+      'meeting_rsvp_email_to_organizer_enabled';
+    static const String _keyMeetingUpdateEmailEnabled =
+      'meeting_update_email_enabled';
+    static const String _keyMeetingCancelEmailEnabled =
+      'meeting_cancel_email_enabled';
+    static const String _keyMeetingSelfInviteEmailEnabled =
+      'meeting_self_invite_email_enabled';
+
   // IndexedDB Config (Web)
   static const String _dbName = 'peerwave_preferences';
   static const String _storeName = 'settings';
@@ -335,6 +347,32 @@ class PreferencesService {
       saveBoolPref(_keyDndEnabled, enabled);
   Future<bool> loadDndEnabled() =>
       loadBoolPref(_keyDndEnabled, defaultValue: false);
+
+  // Meeting Email Settings
+  Future<void> saveMeetingInviteEmailEnabled(bool enabled) =>
+      saveBoolPref(_keyMeetingInviteEmailEnabled, enabled);
+  Future<bool> loadMeetingInviteEmailEnabled() =>
+      loadBoolPref(_keyMeetingInviteEmailEnabled, defaultValue: true);
+
+  Future<void> saveMeetingRsvpEmailToOrganizerEnabled(bool enabled) =>
+      saveBoolPref(_keyMeetingRsvpEmailToOrganizerEnabled, enabled);
+  Future<bool> loadMeetingRsvpEmailToOrganizerEnabled() =>
+      loadBoolPref(_keyMeetingRsvpEmailToOrganizerEnabled, defaultValue: true);
+
+    Future<void> saveMeetingUpdateEmailEnabled(bool enabled) =>
+      saveBoolPref(_keyMeetingUpdateEmailEnabled, enabled);
+    Future<bool> loadMeetingUpdateEmailEnabled() =>
+      loadBoolPref(_keyMeetingUpdateEmailEnabled, defaultValue: true);
+
+    Future<void> saveMeetingCancelEmailEnabled(bool enabled) =>
+      saveBoolPref(_keyMeetingCancelEmailEnabled, enabled);
+    Future<bool> loadMeetingCancelEmailEnabled() =>
+      loadBoolPref(_keyMeetingCancelEmailEnabled, defaultValue: true);
+
+    Future<void> saveMeetingSelfInviteEmailEnabled(bool enabled) =>
+      saveBoolPref(_keyMeetingSelfInviteEmailEnabled, enabled);
+    Future<bool> loadMeetingSelfInviteEmailEnabled() =>
+      loadBoolPref(_keyMeetingSelfInviteEmailEnabled, defaultValue: false);
 
   // ============================================================================
   // Clear All
