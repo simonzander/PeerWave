@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.6.0
+  sdk: ^3.10.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -35,14 +35,13 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   google_fonts: ^6.2.1  # Google Fonts für schöne Schriftarten
-  go_router: ^16.2.1
+  go_router: ^17.0.1
   http: ^1.5.0
   provider: ^6.1.2
-  app_links: ^6.4.1
+  app_links: ^7.0.0
   url_launcher: ^6.3.2
-  js: ^0.6.7
   uuid: ^4.0.0
-  flutter_secure_storage: ^9.0.0
+  flutter_secure_storage: ^10.0.0
   shared_preferences: ^2.0.6
   socket_io_client: ^3.1.2
   dio: ^5.9.0
@@ -52,18 +51,14 @@ dependencies:
   libsignal_protocol_dart: ^0.7.4
   idb_shim: ^2.6.6+2
   idb_sqflite: ^1.3.5  # For persistent IndexedDB on native platforms
-  intl: ^0.19.0
+  intl: ^0.20.2
   flutter_markdown: ^0.7.4+1
   path_provider: ^2.1.5
   image: ^4.5.4
-  pdf_render: ^1.4.12
-  video_thumbnail: ^0.5.6
-  battery_plus: ^7.0.0
-  connectivity_plus: ^6.1.5
   crypto: ^3.0.6
   pointycastle: ^4.0.0
   flutter_webrtc: ^1.2.0  # Required by livekit_client for E2EE on native platforms
-  livekit_client: ^2.5.3
+  livekit_client: ^2.6.0
   file_picker: ^10.3.3
   mime: ^2.0.0
   path: ^1.9.0
@@ -71,35 +66,32 @@ dependencies:
   sqflite: ^2.4.1
   sqflite_common_ffi: ^2.3.3
   sqflite_common_ffi_web: ^1.0.1
-  emoji_picker_flutter: ^3.1.0
+  emoji_picker_flutter: ^4.4.0
   image_picker: ^1.1.2
   flutter_image_compress: ^2.3.0
   record: ^6.1.2
-  permission_handler: ^11.3.1
-  just_audio: ^0.9.40
+  permission_handler: ^12.0.1
+  just_audio: ^0.10.5
   audioplayers: ^6.1.0  # For Windows desktop audio playback
-  audio_waveforms: ^1.1.0
-  fl_chart: ^0.69.2
+  audio_waveforms: ^2.0.1
+  fl_chart: ^1.1.1
   # Native client dependencies
   qr_flutter: ^4.1.0  # QR code generation for web (magic key display)
-  mobile_scanner: ^6.0.2  # QR code scanning for native (optional)
+  mobile_scanner: ^7.1.4  # QR code scanning for native (optional)
   local_notifier: ^0.1.6  # Desktop notifications for native
   universal_html: ^2.3.0
   bitsdojo_window: ^0.1.6  # Custom window frame for desktop
   palette_generator: ^0.3.3+4  # Color extraction from images
-  tray_manager: ^0.2.4  # System tray support for desktop
-  launch_at_startup: ^0.3.1  # Autostart functionality for desktop
+  tray_manager: ^0.5.2  # System tray support for desktop
+  launch_at_startup: ^0.5.1  # Autostart functionality for desktop
 
 dev_dependencies:
-  flutter_test:
-    sdk: flutter
-
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -142,6 +134,3 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
-
-dependency_overrides:
-  record_linux: ^1.2.1  # Fix Windows build issue

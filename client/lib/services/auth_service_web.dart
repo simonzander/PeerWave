@@ -1,6 +1,5 @@
 
 import 'dart:js_interop';
-import 'package:js/js.dart';
 import '../web_config.dart';
 import '../services/api_service.dart';
 // Only for web:
