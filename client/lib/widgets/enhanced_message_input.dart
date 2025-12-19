@@ -878,13 +878,11 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
       }
       
       // Initialize waveform recorder controller (only on native platforms)
+      // Note: audio_waveforms 2.x uses RecorderController() without encoder config
+      // Encoder configuration is done via the record package's AudioRecorder
       if (!kIsWeb) {
         try {
-          _recorderController = RecorderController()
-            ..androidEncoder = AndroidEncoder.opus
-            ..androidOutputFormat = AndroidOutputFormat.ogg
-            ..iosEncoder = IosEncoder.kAudioFormatOpus
-            ..sampleRate = 44100;
+          _recorderController = RecorderController();
         } catch (e) {
           debugPrint('[MESSAGE_INPUT] Could not initialize waveform controller: $e');
           // Continue without waveform visualization
