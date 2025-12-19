@@ -1,4 +1,6 @@
 name: Publish Docker image (DEPRECATED - Use docker-build-web.yml)
+permissions:
+  contents: read
 
 # This workflow is deprecated and kept for reference only
 # Use docker-build-web.yml instead, which includes Flutter web build
