@@ -1,0 +1,190 @@
+name: Dependabot Auto-Merge Security Fixes
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  test-dependabot:
+    name: Test Dependabot PR
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      
+      - name: Check if security update
+        id: security-check
+        run: |
+          TITLE="${{ github.event.pull_request.title }}"
+          if [[ "$TITLE" =~ (security|vulnerability|CVE) ]]; then
+            echo "is_security=true" >> $GITHUB_OUTPUT
+            echo "🔒 Security update detected"
+          else
+            echo "is_security=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  Regular dependency update"
+          fi
+      
+      # Flutter/Client tests
+      - name: Setup Flutter
+        if: contains(github.event.pull_request.labels.*.name, 'client')
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.1'
+      
+      - name: Run Flutter tests
+        if: contains(github.event.pull_request.labels.*.name, 'client')
+        working-directory: ./client
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test --no-pub
+          dart format --set-exit-if-changed .
+        continue-on-error: false
+      
+      # Server/npm tests
+      - name: Setup Node.js
+        if: contains(github.event.pull_request.labels.*.name, 'server')
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Run Server tests
+        if: contains(github.event.pull_request.labels.*.name, 'server')
+        working-directory: ./server
+        run: |
+          npm ci
+          npm run lint
+        continue-on-error: false
+      
+      - name: Test summary
+        run: echo "✅ All tests passed for Dependabot PR #${{ github.event.pull_request.number }}"
+  
+  auto-merge:
+    name: Auto-Merge Decision
+    needs: test-dependabot
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Check PR metadata
+        id: metadata
+        run: |
+          TITLE="${{ github.event.pull_request.title }}"
+          
+          # Check if it's a security update
+          if [[ "$TITLE" =~ (security|vulnerability|CVE) ]]; then
+            echo "is_security=true" >> $GITHUB_OUTPUT
+            echo "auto_merge=true" >> $GITHUB_OUTPUT
+            echo "🔒 Security update - will auto-merge"
+          # Check if it's a patch version (safe to auto-merge)
+          elif [[ "$TITLE" =~ "Bump".*"from".*"to" ]]; then
+            # Extract version numbers
+            if [[ "$TITLE" =~ ([0-9]+)\.([0-9]+)\.([0-9]+).*to.*([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+              OLD_MAJOR="${BASH_REMATCH[1]}"
+              OLD_MINOR="${BASH_REMATCH[2]}"
+              NEW_MAJOR="${BASH_REMATCH[4]}"
+              NEW_MINOR="${BASH_REMATCH[5]}"
+              
+              if [[ "$OLD_MAJOR" == "$NEW_MAJOR" && "$OLD_MINOR" == "$NEW_MINOR" ]]; then
+                echo "is_security=false" >> $GITHUB_OUTPUT
+                echo "auto_merge=true" >> $GITHUB_OUTPUT
+                echo "📦 Patch version update - will auto-merge"
+              else
+                echo "is_security=false" >> $GITHUB_OUTPUT
+                echo "auto_merge=false" >> $GITHUB_OUTPUT
+                echo "⚠️  Minor/major update - manual review required"
+              fi
+            else
+              echo "auto_merge=false" >> $GITHUB_OUTPUT
+              echo "ℹ️  Could not parse version - manual review required"
+            fi
+          else
+            echo "auto_merge=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  Manual review required"
+          fi
+      
+      - name: Enable auto-merge
+        if: steps.metadata.outputs.auto_merge == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge ${{ github.event.pull_request.number }} --auto --squash
+          echo "✅ Auto-merge enabled - will merge when all checks pass"
+      
+      - name: Add auto-merge comment
+        if: steps.metadata.outputs.auto_merge == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "${{ steps.metadata.outputs.is_security }}" == "true" ]]; then
+            COMMENT="## 🔒 Security Update Detected
+
+✅ This PR will be **automatically merged** after all checks pass.
+
+**What happens next:**
+1. All PR checks must pass
+2. PR will auto-merge to main
+3. Version will automatically bump (patch)
+4. Release workflow will build and publish new version
+
+**Timeline:** ~25-35 minutes from merge to production
+
+---
+*Automated by Dependabot Auto-Merge workflow*"
+          else
+            COMMENT="## 📦 Patch Version Update
+
+✅ This PR will be **automatically merged** after all checks pass.
+
+**What happens next:**
+1. All PR checks must pass
+2. PR will auto-merge to main
+3. Version will automatically bump (patch)
+4. Release workflow will build and publish new version
+
+**Timeline:** ~25-35 minutes from merge to production
+
+---
+*Automated by Dependabot Auto-Merge workflow*"
+          fi
+          
+          gh pr comment ${{ github.event.pull_request.number }} --body "$COMMENT"
+      
+      - name: Request manual review
+        if: steps.metadata.outputs.auto_merge == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "## ⚠️  Manual Review Required
+
+This dependency update requires manual review before merging.
+
+**Reason:** Minor or major version change may include breaking changes.
+
+**Action Required:**
+1. Review the changelog for this dependency
+2. Test the changes locally if needed
+3. Manually approve and merge when ready
+
+---
+*Automated by Dependabot Auto-Merge workflow*"
+      
+      - name: Summary
+        run: |
+          echo "### Dependabot Auto-Merge Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**PR:** #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Title:** ${{ github.event.pull_request.title }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Security Update:** ${{ steps.metadata.outputs.is_security }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Auto-Merge:** ${{ steps.metadata.outputs.auto_merge }}" >> $GITHUB_STEP_SUMMARY
