@@ -37,7 +37,7 @@ jobs:
         if: contains(github.event.pull_request.labels.*.name, 'client')
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.27.1'
+          channel: 'stable'
       
       - name: Run Flutter tests
         if: contains(github.event.pull_request.labels.*.name, 'client')
