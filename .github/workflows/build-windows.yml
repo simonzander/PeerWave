@@ -1,0 +1,103 @@
+name: Build Windows Desktop App
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.1'
+          channel: 'stable'
+      
+      - name: Install dependencies
+        working-directory: ./client
+        run: flutter pub get
+      
+      - name: Generate version info
+        run: dart run tools/generate_version.dart
+      
+      - name: Build Windows app
+        working-directory: ./client
+        run: flutter build windows --release
+      
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup -y
+          refreshenv
+      
+      - name: Create Installer with Inno Setup
+        shell: pwsh
+        run: |
+          $version = (Get-Content version_config.yaml | Select-String 'version:\s*"([^"]+)"').Matches.Groups[1].Value
+          $env:APP_VERSION = $version
+          
+          # Compile installer
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /Q windows-installer.iss
+          
+          Write-Host "Created installer for version $version"
+          
+          # Find the generated installer
+          $installerPath = Get-ChildItem -Path . -Filter "PeerWave-*-windows-installer.exe" | Select-Object -First 1
+          if ($installerPath) {
+            Write-Host "Installer: $($installerPath.Name)"
+            echo "INSTALLER_NAME=$($installerPath.Name)" >> $env:GITHUB_ENV
+            echo "INSTALLER_PATH=$($installerPath.FullName)" >> $env:GITHUB_ENV
+          } else {
+            Write-Error "Installer not found!"
+            exit 1
+          }
+      
+      - name: Create ZIP package
+        shell: pwsh
+        run: |
+          $version = (Get-Content version_config.yaml | Select-String 'version:\s*"([^"]+)"').Matches.Groups[1].Value
+          $outputName = "PeerWave-$version-windows-x64.zip"
+          
+          # Copy build output and create package
+          $buildPath = "client\build\windows\x64\runner\Release"
+          
+          # Create temporary staging directory
+          New-Item -ItemType Directory -Path "staging" -Force
+          Copy-Item -Path "$buildPath\*" -Destination "staging\" -Recurse
+          
+          # Create ZIP
+          Compress-Archive -Path "staging\*" -DestinationPath $outputName
+          
+          Write-Host "Created package: $outputName"
+          echo "PACKAGE_NAME=$outputName" >> $env:GITHUB_ENV
+      
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: ${{ env.INSTALLER_PATH }}
+      
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-portable
+          path: ${{ env.PACKAGE_NAME }}
+      
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ env.INSTALLER_PATH }}
+            ${{ env.PACKAGE_NAME }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

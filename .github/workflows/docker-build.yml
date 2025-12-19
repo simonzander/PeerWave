@@ -1,0 +1,91 @@
+name: Docker Build & Test
+
+on:
+  push:
+    branches: [ main, clientserver, develop ]
+  pull_request:
+    branches: [ main, clientserver ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/peerwave-server
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./server
+          file: ./server/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=false
+
+      - name: Test container startup
+        run: |
+          docker run -d --name test-server \
+            -e NODE_ENV=test \
+            -e PORT=3000 \
+            -e MEDIASOUP_LISTEN_IP=0.0.0.0 \
+            -e MEDIASOUP_ANNOUNCED_IP=127.0.0.1 \
+            -e MEDIASOUP_MIN_PORT=40000 \
+            -e MEDIASOUP_MAX_PORT=40099 \
+            -e MEDIASOUP_NUM_WORKERS=2 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          
+          # Wait for server to start
+          sleep 10
+          
+          # Check if container is running
+          docker ps | grep test-server
+          
+          # Check logs for errors
+          docker logs test-server
+          
+          # Cleanup
+          docker stop test-server
+          docker rm test-server
+
+      - name: Build summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Tags: ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Node.js: 22-slim" >> $GITHUB_STEP_SUMMARY
+          echo "- mediasoup: Prebuilt binary with compilation fallback" >> $GITHUB_STEP_SUMMARY

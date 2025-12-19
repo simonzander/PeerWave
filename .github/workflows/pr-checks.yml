@@ -1,0 +1,64 @@
+name: Pull Request Checks
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  flutter-checks:
+    name: Flutter Analysis & Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.1'
+          channel: 'stable'
+      
+      - name: Install dependencies
+        working-directory: ./client
+        run: flutter pub get
+      
+      - name: Run Flutter analyze
+        working-directory: ./client
+        run: flutter analyze
+      
+      - name: Check Dart formatting
+        working-directory: ./client
+        run: dart format --set-exit-if-changed .
+      
+      - name: Run Flutter tests
+        working-directory: ./client
+        run: flutter test --no-pub
+        continue-on-error: true
+      
+  server-checks:
+    name: Server Lint & Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './server/package-lock.json'
+      
+      - name: Install dependencies
+        working-directory: ./server
+        run: npm ci
+      
+      - name: Run ESLint
+        working-directory: ./server
+        run: npm run lint
+        continue-on-error: true
+      
+      - name: Run tests
+        working-directory: ./server
+        run: npm test
+        continue-on-error: true

@@ -1,0 +1,74 @@
+name: Auto-Version on Main Merge
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'version_config.yaml'
+      - 'client/lib/core/version/version_info.dart'
+      - 'CHANGELOG.md'
+      - '**.md'
+      - '.github/**'
+
+jobs:
+  bump-version:
+    name: Bump Patch Version
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip-version]')"
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
+      
+      - name: Install yaml package
+        run: dart pub global activate yaml
+      
+      - name: Get current version
+        id: current
+        run: |
+          VERSION=$(grep -oP 'version: "\K[^"]+' version_config.yaml | head -1)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Current version: $VERSION"
+      
+      - name: Bump patch version
+        id: bump
+        run: |
+          cd tools
+          dart pub get
+          cd ..
+          dart run tools/version_manager.dart patch
+          NEW_VERSION=$(grep -oP 'version: "\K[^"]+' version_config.yaml | head -1)
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "🚀 New version: $NEW_VERSION"
+      
+      - name: Setup Flutter for version generation
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.1'
+      
+      - name: Generate version files
+        run: |
+          cd tools
+          dart pub get
+          cd ..
+          dart run tools/generate_version.dart
+          echo "✅ Generated version_info.dart"
+      
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add version_config.yaml
+          git add client/lib/core/version/version_info.dart
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }} [skip-version]"
+          git tag "v${{ steps.bump.outputs.new_version }}"
+          git push origin main
+          git push origin "v${{ steps.bump.outputs.new_version }}"
+          echo "✅ Version bumped and tagged: v${{ steps.bump.outputs.new_version }}"
