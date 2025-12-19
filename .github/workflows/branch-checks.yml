@@ -1,5 +1,8 @@
 name: Branch Push Checks
 
+permissions:
+  contents: read
+
 on:
   push:
     branches:
