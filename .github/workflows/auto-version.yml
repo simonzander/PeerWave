@@ -11,6 +11,9 @@ on:
       - '**.md'
       - '.github/**'
 
+permissions:
+  contents: write
+
 jobs:
   bump-version:
     name: Bump Patch Version
