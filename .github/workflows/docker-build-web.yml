@@ -33,6 +33,10 @@ jobs:
         working-directory: ./client
         run: flutter pub get
       
+      - name: Install tools dependencies
+        working-directory: ./tools
+        run: dart pub get
+      
       - name: Generate version info
         run: dart run tools/generate_version.dart
       
