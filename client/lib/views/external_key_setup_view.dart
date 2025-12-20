@@ -37,7 +37,7 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
   bool _hasError = false;
   String _errorMessage = '';
   int _retryCount = 0;
-  static const int MAX_RETRIES = 3;
+  static const int maxRetries = 3;
 
   @override
   void initState() {
@@ -195,11 +195,11 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
       }
 
       // Retry logic
-      if (_retryCount < MAX_RETRIES) {
+      if (_retryCount < maxRetries) {
         _retryCount++;
-        debugPrint('[KeySetup] Retry attempt $_retryCount/$MAX_RETRIES');
+        debugPrint('[KeySetup] Retry attempt $_retryCount/$maxRetries');
         setState(() {
-          _currentStep = 'Retrying... (Attempt $_retryCount/$MAX_RETRIES)';
+          _currentStep = 'Retrying... (Attempt $_retryCount/$maxRetries)';
           _progress = 0.0;
         });
         await Future.delayed(const Duration(seconds: 1));

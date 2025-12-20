@@ -326,9 +326,9 @@ class ThemeSelectorDialog extends StatelessWidget {
   /// Helper to determine contrast color for check icon
   Color _getContrastColor(Color background) {
     // Calculate relative luminance
-    final luminance = (0.299 * background.red + 
-                      0.587 * background.green + 
-                      0.114 * background.blue) / 255;
+    final luminance = (0.299 * (background.r * 255.0).round().clamp(0, 255) + 
+                      0.587 * (background.g * 255.0).round().clamp(0, 255) + 
+                      0.114 * (background.b * 255.0).round().clamp(0, 255)) / 255;
     
     return luminance > 0.5 ? Colors.black87 : Colors.white;
   }

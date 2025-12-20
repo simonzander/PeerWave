@@ -400,30 +400,30 @@ extension ThemeConstantsX on BuildContext {
   AppThemeConstants get constants => AppThemeConstants();
   
   /// Schnellzugriff für Spacing
-  _SpacingHelper get spacing => _SpacingHelper();
+  SpacingHelper get spacing => SpacingHelper();
   
   /// Schnellzugriff für Radius
-  _RadiusHelper get radius => _RadiusHelper();
+  RadiusHelper get radius => RadiusHelper();
   
   /// Schnellzugriff für Animation
-  _AnimationHelper get animation => _AnimationHelper();
+  AnimationHelper get animation => AnimationHelper();
 }
 
-class _SpacingHelper {
+class SpacingHelper {
   double get xs => AppThemeConstants.spacingXs;
   double get sm => AppThemeConstants.spacingSm;
   double get md => AppThemeConstants.spacingMd;
   double get lg => AppThemeConstants.spacingLg;
 }
 
-class _RadiusHelper {
+class RadiusHelper {
   double get small => AppThemeConstants.radiusSmall;
   double get standard => AppThemeConstants.radiusStandard;
   double get large => AppThemeConstants.radiusLarge;
   BorderRadius get standardBorder => AppThemeConstants.borderRadiusStandard;
 }
 
-class _AnimationHelper {
+class AnimationHelper {
   Duration get fast => AppThemeConstants.animationFast;
   Duration get normal => AppThemeConstants.animationNormal;
   Duration get slow => AppThemeConstants.animationSlow;

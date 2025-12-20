@@ -22,7 +22,7 @@ class VideoConferencePreJoinView extends StatefulWidget {
   final bool isInitiator;         // True if caller, false if recipient
 
   const VideoConferencePreJoinView({
-    Key? key,
+    super.key,
     required this.channelId,
     required this.channelName,
     this.onJoinReady,
@@ -30,7 +30,7 @@ class VideoConferencePreJoinView extends StatefulWidget {
     this.sourceChannelId,
     this.sourceUserId,
     this.isInitiator = false,
-  }) : super(key: key);  @override
+  }) ;  @override
   State<VideoConferencePreJoinView> createState() => _VideoConferencePreJoinViewState();
 }
 
@@ -538,10 +538,12 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
         widget.onJoinReady!(joinData);
       } else {
         // If no callback (standalone navigation mode), pop with result
+        if (!mounted) return;
         Navigator.of(context).pop(joinData);
       }
     } catch (e) {
       debugPrint('[PreJoin] Error joining channel: $e');
+      if (!mounted) return;
       context.showErrorSnackBar('Failed to join: $e');
     }
   }
@@ -649,7 +651,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
       children: [
         // Camera Selection
         DropdownButtonFormField<MediaDevice>(
-          value: _selectedCamera,
+          initialValue: _selectedCamera,
           decoration: InputDecoration(
             labelText: 'Camera',
             prefixIcon: Icon(Icons.videocam, color: Theme.of(context).colorScheme.onSurface),
@@ -693,7 +695,7 @@ class _VideoConferencePreJoinViewState extends State<VideoConferencePreJoinView>
         
         // Microphone Selection
         DropdownButtonFormField<MediaDevice>(
-          value: _selectedMicrophone,
+          initialValue: _selectedMicrophone,
           decoration: InputDecoration(
             labelText: 'Microphone',
             prefixIcon: Icon(Icons.mic, color: Theme.of(context).colorScheme.onSurface),

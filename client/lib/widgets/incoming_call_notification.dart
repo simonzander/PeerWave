@@ -11,13 +11,13 @@ class IncomingCallNotification extends StatelessWidget {
   final VoidCallback onDecline;
 
   const IncomingCallNotification({
-    Key? key,
+    super.key,
     required this.meetingId,
     required this.meetingTitle,
     required this.inviterName,
     required this.onAccept,
     required this.onDecline,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {
@@ -108,9 +108,9 @@ class IncomingCallNotificationManager extends StatefulWidget {
   final Widget child;
 
   const IncomingCallNotificationManager({
-    Key? key,
+    super.key,
     required this.child,
-  }) : super(key: key);
+  }) ;
 
   static final GlobalKey<_IncomingCallNotificationManagerState> _key =
       GlobalKey<_IncomingCallNotificationManagerState>();
@@ -180,6 +180,7 @@ class _IncomingCallNotificationManagerState
       );
 
       // Navigate to meeting prejoin
+      if (!mounted) return;
       if (mounted) {
         context.go('/meeting/prejoin/$_meetingId');
         hideNotification();

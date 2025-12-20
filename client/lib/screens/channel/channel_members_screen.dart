@@ -12,11 +12,11 @@ class ChannelMembersScreen extends StatefulWidget {
   final RoleScope channelScope;
 
   const ChannelMembersScreen({
-    Key? key,
+    super.key,
     required this.channelId,
     required this.channelName,
     required this.channelScope,
-  }) : super(key: key);
+  }) ;
 
   @override
   State<ChannelMembersScreen> createState() => _ChannelMembersScreenState();
@@ -54,9 +54,9 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
       final members = results[0] as List<ChannelMember>;
       debugPrint('[MEMBERS_SCREEN] Loaded ${members.length} members:');
-      members.forEach(
-        (m) => debugPrint('[MEMBERS_SCREEN] - ${m.name} (${m.userId})'),
-      );
+      for (final m in members) {
+        debugPrint('[MEMBERS_SCREEN] - ${m.name} (${m.userId})');
+      }
 
       setState(() {
         _members = members;
@@ -87,7 +87,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
               const Text('Select a role to assign:'),
               const SizedBox(height: 16),
               DropdownButtonFormField<Role>(
-                value: selectedRole,
+                initialValue: selectedRole,
                 hint: const Text('Select Role'),
                 decoration: InputDecoration(
                   filled: true,
@@ -136,6 +136,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
           channelId: widget.channelId,
           roleId: selectedRole!.uuid,
         );
+        if (!mounted) return;
         _showSuccess('Role assigned successfully');
         _loadData();
       } catch (e) {
@@ -175,6 +176,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
           channelId: widget.channelId,
           roleId: role.uuid,
         );
+        if (!mounted) return;
         _showSuccess('Role removed successfully');
         _loadData();
       } catch (e) {
@@ -242,11 +244,11 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                         debugPrint(
                           '[ADD_USER_DIALOG] Found ${users.length} users',
                         );
-                        users.forEach(
-                          (u) => debugPrint(
+                        for (final u in users) {
+                          debugPrint(
                             '[ADD_USER_DIALOG] - ${u['displayName']} (${u['email']})',
-                          ),
-                        );
+                          );
+                        }
                         setState(() {
                           availableUsers = users;
                           isLoading = false;
@@ -296,7 +298,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                   const Text('Assign Role (optional):'),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<Role>(
-                    value: selectedRole,
+                    initialValue: selectedRole,
                     hint: const Text('Select Role'),
                     decoration: InputDecoration(
                       filled: true,
@@ -304,7 +306,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                       border: const OutlineInputBorder(),
                     ),
                     items: _availableRoles.map((role) {
-                      return DropdownMenuItem(
+                      return DropdownMenuItem<Role>(
                         value: role,
                         child: Text(role.name),
                       );
@@ -466,6 +468,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
           channelId: widget.channelId,
           userId: member.userId,
         );
+        if (!mounted) return;
         _showSuccess('User removed from channel');
         _loadData();
       } catch (e) {
@@ -641,7 +644,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                                     )
                                   : null,
                             );
-                          }).toList(),
+                          }),
                       ],
                     ),
                   );
@@ -755,7 +758,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
             ? DecorationImage(
                 image: imageProvider,
                 fit: BoxFit.cover,
-                onError: (_, __) {
+                onError: (_, _) {
                   // Error handled by falling back to initials
                 },
               )

@@ -219,7 +219,7 @@ class SocketFileClient {
   }
   
   /// Get available chunks from seeders
-  /// Returns Map<String, SeederInfo> where key is deviceKey (userId:deviceId)
+  /// Returns `Map<String, SeederInfo>` where key is deviceKey (userId:deviceId)
   Future<Map<String, SeederInfo>> getAvailableChunks(String fileId) async {
     final completer = Completer<Map<String, SeederInfo>>();
     

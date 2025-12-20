@@ -5,9 +5,9 @@ class HiddenParticipantsBadge extends StatelessWidget {
   final int hiddenCount;
 
   const HiddenParticipantsBadge({
-    Key? key,
+    super.key,
     required this.hiddenCount,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {

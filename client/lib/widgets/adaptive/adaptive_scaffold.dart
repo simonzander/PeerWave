@@ -237,6 +237,8 @@ class AdaptiveScaffold extends StatelessWidget {
       child: NavigationDrawer(
         selectedIndex: selectedIndex,
         onDestinationSelected: onDestinationSelected,
+        backgroundColor: colorScheme.surface,
+        elevation: 1,
         children: [
           // Leading (header)
           if (navigationLeading != null)
@@ -263,8 +265,6 @@ class AdaptiveScaffold extends StatelessWidget {
             ),
           ],
         ],
-        backgroundColor: colorScheme.surface,
-        elevation: 1,
       ),
     );
   }

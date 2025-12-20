@@ -10,10 +10,10 @@ class CustomWindowTitleBar extends StatelessWidget {
   final Color? backgroundColor;
   
   const CustomWindowTitleBar({
-    Key? key,
+    super.key,
     this.title = 'PeerWave',
     this.backgroundColor,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {
@@ -99,6 +99,8 @@ class CustomWindowTitleBar extends StatelessWidget {
 }
 
 class WindowButtons extends StatelessWidget {
+  const WindowButtons({super.key});
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -147,10 +149,10 @@ class WindowTitleBarWrapper extends StatelessWidget {
   final String title;
   
   const WindowTitleBarWrapper({
-    Key? key,
+    super.key,
     required this.child,
     this.title = 'PeerWave',
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {

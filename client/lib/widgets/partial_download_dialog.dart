@@ -13,12 +13,12 @@ class PartialDownloadDialog extends StatelessWidget {
   final VoidCallback? onWaitForMore;
 
   const PartialDownloadDialog({
-    Key? key,
+    super.key,
     required this.fileName,
     required this.chunkQuality,
     required this.onDownloadAnyway,
     this.onWaitForMore,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {

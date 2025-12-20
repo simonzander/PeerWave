@@ -141,7 +141,9 @@ class UpdateChecker extends ChangeNotifier {
   List<int> _parseVersion(String version) {
     final cleaned = version.split('+')[0]; // Remove build number
     final parts = cleaned.split('.').map((e) => int.tryParse(e) ?? 0).toList();
-    while (parts.length < 3) parts.add(0);
+    while (parts.length < 3) {
+      parts.add(0);
+    }
     return parts;
   }
   

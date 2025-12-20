@@ -21,7 +21,7 @@ class FileMessageWidget extends StatelessWidget {
   final int? chunkQuality; // NEW: Chunk availability percentage (0-100)
 
   const FileMessageWidget({
-    Key? key,
+    super.key,
     required this.fileMessage,
     this.isOwnMessage = false,
     this.onDownload,
@@ -29,7 +29,7 @@ class FileMessageWidget extends StatelessWidget {
     this.downloadProgress,
     this.isDownloading = false,
     this.chunkQuality,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {

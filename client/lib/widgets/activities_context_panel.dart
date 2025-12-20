@@ -400,7 +400,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
       return CircleAvatar(
         radius: 20,
         backgroundImage: NetworkImage('${widget.host}$senderPicture'),
-        onBackgroundImageError: (_, __) {},
+        onBackgroundImageError: (_, _) {},
       );
     }
     

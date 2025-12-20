@@ -12,7 +12,7 @@ class OtpWebPage extends StatefulWidget {
   final int? wait;
   final String? clientId;  // Optional - fetched/created after login
 
-  const OtpWebPage({Key? key, required this.email, required this.serverUrl, this.clientId, this.wait}) : super(key: key);
+  const OtpWebPage({super.key, required this.email, required this.serverUrl, this.clientId, this.wait});
 
   @override
   State<OtpWebPage> createState() => _OtpWebPageState();
@@ -48,6 +48,7 @@ class _OtpWebPageState extends State<OtpWebPage> {
       // Handle response as needed
       if (response.statusCode == 200) {
         // Success logic here
+        if (!mounted) return;
         context.showSuccessSnackBar('OTP sent!');
       } else {
         setState(() {
@@ -89,10 +90,12 @@ class _OtpWebPageState extends State<OtpWebPage> {
       // Handle response as needed
       if (response.statusCode == 200) {
         // Success logic here - existing user login
+        if (!mounted) return;
         context.showSuccessSnackBar('OTP Verified!');
         GoRouter.of(context).go('/app');
       } else if (response.statusCode == 202) {
         // New user registration - go to backup codes
+        if (!mounted) return;
         context.showSuccessSnackBar('OTP Verified!');
         GoRouter.of(context).go('/register/backupcode');
       } else {

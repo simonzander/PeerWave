@@ -153,7 +153,7 @@ class _AppLayoutState extends State<AppLayout> {
         case 4:
           context.go('/app/channels');
           break;
-        case 4:
+        case 5:
           context.go('/app/messages');
           break;
       }

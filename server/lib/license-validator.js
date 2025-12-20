@@ -1,10 +1,10 @@
 /**
- * PeerWave License Validator
+ * PeerWave License Validator - Binary Wrapper
  * 
- * Validates X.509 license certificates with:
- * - Signature verification against Root CA
- * - Expiration date check with grace period
- * - Custom extension parsing (features)
+ * This validator calls the compiled binary (license-validator.exe) which has:
+ * - Embedded CA certificate with hash pinning
+ * - Compiled/obfuscated code for tamper resistance
+ * - Standalone execution without file system CA access
  * 
  * Usage:
  *   const LicenseValidator = require('./lib/license-validator');
@@ -17,19 +17,44 @@
  *   }
  */
 
-const forge = require('node-forge');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 class LicenseValidator {
   constructor(options = {}) {
     this.certDir = options.certDir || path.join(__dirname, '../cert');
-    this.caCertPath = path.join(this.certDir, 'ca-cert.pem');
     this.licenseCertPath = options.licensePath || path.join(this.certDir, 'license.crt');
+    
+    // Path to compiled binary validator
+    this.validatorBinary = this._getValidatorBinary();
     
     this._cache = null;
     this._lastCheck = null;
     this.cacheTimeout = options.cacheTimeout || 5 * 60 * 1000; // 5 minutes
+  }
+
+  /**
+   * Get the appropriate binary path for current platform
+   * @private
+   */
+  _getValidatorBinary() {
+    const binDir = path.join(__dirname, '../bin');
+    const platform = os.platform();
+    
+    let binaryName;
+    if (platform === 'win32') {
+      binaryName = 'license-validator-win.exe';
+    } else if (platform === 'linux') {
+      binaryName = 'license-validator-linux';
+    } else if (platform === 'darwin') {
+      binaryName = 'license-validator-macos';
+    } else {
+      throw new Error(`Unsupported platform: ${platform}`);
+    }
+    
+    return path.join(binDir, binaryName);
   }
 
   /**
@@ -55,17 +80,21 @@ class LicenseValidator {
   }
 
   /**
-   * Perform actual validation (internal)
+   * Perform actual validation by calling compiled binary
    * @private
    */
   async _performValidation() {
     try {
-      // Check if CA certificate exists
-      if (!fs.existsSync(this.caCertPath)) {
+      // Check if compiled binary exists
+      if (!fs.existsSync(this.validatorBinary)) {
+        console.warn(`⚠️  Compiled license validator not found: ${this.validatorBinary}`);
+        console.warn('⚠️  Fallback: Using non-commercial mode');
+        console.warn('⚠️  To build validator: cd server/lib && npm install && npm run build');
+        
         return {
           valid: false,
-          error: 'CA_NOT_FOUND',
-          message: 'Root CA certificate not found. Server is not properly configured.',
+          error: 'VALIDATOR_NOT_FOUND',
+          message: 'License validator binary not found. Using non-commercial mode.',
           type: 'non-commercial',
           features: {}
         };
@@ -82,106 +111,24 @@ class LicenseValidator {
         };
       }
 
-      // Load certificates
-      const caCertPem = fs.readFileSync(this.caCertPath, 'utf8');
+      // Read license certificate
       const licenseCertPem = fs.readFileSync(this.licenseCertPath, 'utf8');
 
-      const caCert = forge.pki.certificateFromPem(caCertPem);
-      const licenseCert = forge.pki.certificateFromPem(licenseCertPem);
-
-      // Verify certificate signature
-      const caStore = forge.pki.createCaStore([caCert]);
+      // Call compiled binary with license certificate via stdin
+      const result = await this._callValidator(licenseCertPem);
       
-      try {
-        const verified = forge.pki.verifyCertificateChain(caStore, [licenseCert]);
-        
-        if (!verified) {
-          return {
-            valid: false,
-            error: 'INVALID_SIGNATURE',
-            message: 'License certificate signature is invalid.',
-            type: 'non-commercial',
-            features: {}
-          };
-        }
-      } catch (e) {
-        return {
-          valid: false,
-          error: 'VERIFICATION_FAILED',
-          message: `Certificate verification failed: ${e.message}`,
-          type: 'non-commercial',
-          features: {}
-        };
+      // Parse dates from ISO strings
+      if (result.expires) {
+        result.expires = new Date(result.expires);
       }
-
-      // Check expiration with grace period
-      const now = new Date();
-      const notBefore = licenseCert.validity.notBefore;
-      const notAfter = licenseCert.validity.notAfter;
-      
-      // Parse features to get grace period from certificate
-      const features = this._parseFeatures(licenseCert);
-      const gracePeriodDays = features.gracePeriodDays || 30;
-      
-      // Calculate grace period end date
-      const gracePeriodEnd = new Date(notAfter);
-      gracePeriodEnd.setDate(gracePeriodEnd.getDate() + gracePeriodDays);
-
-      // Check if certificate is not yet valid
-      if (now < notBefore) {
-        return {
-          valid: false,
-          error: 'NOT_YET_VALID',
-          message: `License is not yet valid. Valid from: ${notBefore.toISOString().split('T')[0]}`,
-          type: 'non-commercial',
-          features: {}
-        };
-      }
-
-      // Check if grace period has expired
-      if (now > gracePeriodEnd) {
-        return {
-          valid: false,
-          error: 'EXPIRED',
-          message: `License expired on ${notAfter.toISOString().split('T')[0]} (grace period ended)`,
-          type: 'non-commercial',
-          features: {},
-          expired: true,
-          expiredDate: notAfter
-        };
-      }
-
-      // Check if in grace period
-      const inGracePeriod = now > notAfter && now <= gracePeriodEnd;
-      const daysRemaining = inGracePeriod 
-        ? Math.ceil((gracePeriodEnd - now) / (1000 * 60 * 60 * 24))
-        : Math.ceil((notAfter - now) / (1000 * 60 * 60 * 24));
-
-      // Extract customer name
-      const customerField = licenseCert.subject.getField('CN');
-      const customer = customerField ? customerField.value : 'Unknown';
-
-      // Build result
-      const result = {
-        valid: true,
-        customer: customer,
-        type: features.type || 'non-commercial',
-        features: features,
-        expires: notAfter,
-        daysRemaining: daysRemaining,
-        serial: licenseCert.serialNumber,
-        gracePeriodDays: gracePeriodDays
-      };
-
-      // Add grace period warning if applicable
-      if (inGracePeriod) {
-        result.gracePeriod = true;
-        result.warning = `License expired on ${notAfter.toISOString().split('T')[0]}. Grace period ends in ${daysRemaining} days.`;
+      if (result.expiredDate) {
+        result.expiredDate = new Date(result.expiredDate);
       }
 
       return result;
 
     } catch (error) {
+      console.error('License validation error:', error.message);
       return {
         valid: false,
         error: 'VALIDATION_ERROR',
@@ -193,28 +140,44 @@ class LicenseValidator {
   }
 
   /**
-   * Parse custom extension containing license features
+   * Call the compiled validator binary
    * @private
    */
-  _parseFeatures(cert) {
-    try {
-      // Look for our custom extension (OID 1.3.6.1.4.1.99999.1)
-      const customExt = cert.extensions.find(ext => ext.id === '1.3.6.1.4.1.99999.1');
-      
-      if (!customExt) {
-        return { type: 'non-commercial' };
-      }
+  _callValidator(licenseCertPem) {
+    return new Promise((resolve, reject) => {
+      const child = spawn(this.validatorBinary, [], {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
 
-      // Decode base64 value
-      const jsonString = forge.util.decode64(customExt.value);
-      const features = JSON.parse(jsonString);
+      let stdout = '';
+      let stderr = '';
 
-      return features;
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
 
-    } catch (error) {
-      console.error('Failed to parse license features:', error.message);
-      return { type: 'non-commercial' };
-    }
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      child.on('error', (error) => {
+        reject(new Error(`Failed to execute validator: ${error.message}`));
+      });
+
+      child.on('close', (code) => {
+        try {
+          // Parse JSON output from validator
+          const result = JSON.parse(stdout);
+          resolve(result);
+        } catch (parseError) {
+          reject(new Error(`Invalid validator output: ${stdout}\nError: ${stderr}`));
+        }
+      });
+
+      // Send license certificate to stdin
+      child.stdin.write(licenseCertPem);
+      child.stdin.end();
+    });
   }
 
   /**

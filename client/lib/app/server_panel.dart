@@ -4,7 +4,7 @@ import '../services/auth_service_native.dart';
 import '../services/clientid_native.dart';
 import '../services/api_service.dart';
 import 'dart:convert';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 
 class ServerPanel extends StatefulWidget {
   final void Function()? onAddServer;
@@ -95,7 +95,7 @@ class _ServerPanelState extends State<ServerPanel> {
               missedNotifications: meta['missedNotifications'] ?? 0,
             ));
           }
-          final socket = IO.io(host, <String, dynamic>{
+          final socket = io.io(host, <String, dynamic>{
             'transports': ['websocket'],
             'autoConnect': true,
           });
@@ -233,7 +233,7 @@ class _ServerPanelState extends State<ServerPanel> {
           ...servers.map((server) => _ServerIcon(
                 server: server,
                 onShowSnackBar: _showSnackBar,
-              )).toList(),
+              )),
           const Spacer(),
           IconButton(
             icon: Icon(Icons.add_circle, color: Theme.of(context).colorScheme.onSurface, size: 36),
@@ -256,7 +256,7 @@ class _ServerMeta {
   final bool hasServerError;
   final bool hasAuthError;
   final int missedNotifications;
-  final IO.Socket? socket;
+  final io.Socket? socket;
 
   _ServerMeta({
     required this.host,
@@ -334,6 +334,7 @@ class _ServerIcon extends StatelessWidget {
                   }
                   if (selected == 'logout') {
                     await AuthService().removeMailFromHost(server.host);
+                    if (!context.mounted) return;
                     final parentState = context.findAncestorStateOfType<_ServerPanelState>();
                     if (parentState != null) {
                       final idx = parentState.servers.indexWhere((s) => s.host == server.host);

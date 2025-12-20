@@ -10,12 +10,12 @@ class NotificationBadge extends StatelessWidget {
   final bool showZero;
 
   const NotificationBadge({
-    Key? key,
+    super.key,
     this.channelId,
     this.userId,
     required this.child,
     this.showZero = false,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {
@@ -69,9 +69,9 @@ class GlobalNotificationBadge extends StatelessWidget {
   final Widget child;
 
   const GlobalNotificationBadge({
-    Key? key,
+    super.key,
     required this.child,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {

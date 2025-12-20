@@ -7,10 +7,10 @@ class FileSizeErrorDialog extends StatelessWidget {
   final String fileName;
   
   const FileSizeErrorDialog({
-    Key? key,
+    super.key,
     required this.fileSize,
     required this.fileName,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {
@@ -152,9 +152,9 @@ class FileSizeErrorDialog extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 6),
-                  _buildPlatformLimit(context, 'Web', FileTransferConfig.MAX_FILE_SIZE_WEB),
-                  _buildPlatformLimit(context, 'Mobile', FileTransferConfig.MAX_FILE_SIZE_MOBILE),
-                  _buildPlatformLimit(context, 'Desktop', FileTransferConfig.MAX_FILE_SIZE_DESKTOP),
+                  _buildPlatformLimit(context, 'Web', FileTransferConfig.maxFileSizeWeb),
+                  _buildPlatformLimit(context, 'Mobile', FileTransferConfig.maxFileSizeMobile),
+                  _buildPlatformLimit(context, 'Desktop', FileTransferConfig.maxFileSizeDesktop),
                 ],
               ),
             ),

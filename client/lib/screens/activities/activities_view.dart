@@ -34,7 +34,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
   late TabController _tabController;
   bool _loading = true;
   List<Map<String, dynamic>> _webrtcChannels = [];
-  List<Map<String, dynamic>> _conversations = [];
+  final List<Map<String, dynamic>> _conversations = [];
   List<Map<String, dynamic>> _notifications = [];
   int _conversationsPage = 0;
   static const int _conversationsPerPage = 20;
@@ -873,7 +873,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
             ? DecorationImage(
                 image: imageProvider,
                 fit: BoxFit.cover,
-                onError: (_, __) {
+                onError: (_, _) {
                   // Error handled by falling back to icon
                 },
               )

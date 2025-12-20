@@ -3,7 +3,7 @@ import 'package:go_router/go_router.dart';
 
 /// File Transfer Hub - Central navigation for P2P file sharing features
 class FileTransferHub extends StatelessWidget {
-  const FileTransferHub({Key? key}) : super(key: key);
+  const FileTransferHub({super.key});
 
   @override
   Widget build(BuildContext context) {

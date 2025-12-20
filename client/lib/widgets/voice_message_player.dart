@@ -15,12 +15,12 @@ class VoiceMessagePlayer extends StatefulWidget {
   final bool isOwnMessage;
 
   const VoiceMessagePlayer({
-    Key? key,
+    super.key,
     required this.base64Audio,
     this.durationSeconds,
     this.sizeBytes,
     this.isOwnMessage = false,
-  }) : super(key: key);
+  }) ;
 
   @override
   State<VoiceMessagePlayer> createState() => _VoiceMessagePlayerState();

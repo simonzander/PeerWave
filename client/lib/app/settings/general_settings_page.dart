@@ -10,10 +10,10 @@ class GeneralSettingsPage extends StatefulWidget {
 }
 
 class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
-  static const String AUTO_DELETE_DAYS_KEY = 'auto_delete_days';
-  static const int DEFAULT_AUTO_DELETE_DAYS = 365;
+  static const String autoDeleteDaysKey = 'auto_delete_days';
+  static const int defaultAutoDeleteDays = 365;
   
-  int _autoDeleteDays = DEFAULT_AUTO_DELETE_DAYS;
+  int _autoDeleteDays = defaultAutoDeleteDays;
   bool _loading = true;
   bool _isCleaningUp = false;
   final TextEditingController _daysController = TextEditingController();
@@ -33,7 +33,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _autoDeleteDays = prefs.getInt(AUTO_DELETE_DAYS_KEY) ?? DEFAULT_AUTO_DELETE_DAYS;
+      _autoDeleteDays = prefs.getInt(autoDeleteDaysKey) ?? defaultAutoDeleteDays;
       _daysController.text = _autoDeleteDays.toString();
       _loading = false;
     });
@@ -41,7 +41,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
 
   Future<void> _saveAutoDeleteDays(int days) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(AUTO_DELETE_DAYS_KEY, days);
+    await prefs.setInt(autoDeleteDaysKey, days);
     setState(() {
       _autoDeleteDays = days;
       _daysController.text = days.toString();
@@ -166,7 +166,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                       }
                     },
                     onSubmitted: (value) {
-                      final days = int.tryParse(value) ?? DEFAULT_AUTO_DELETE_DAYS;
+                      final days = int.tryParse(value) ?? defaultAutoDeleteDays;
                       _saveAutoDeleteDays(days.clamp(0, 3650)); // Max 10 years
                     },
                   ),

@@ -6,7 +6,7 @@ import '../../services/user_management_service.dart';
 import '../../extensions/snackbar_extensions.dart';
 
 class UserManagementScreen extends StatefulWidget {
-  const UserManagementScreen({Key? key}) : super(key: key);
+  const UserManagementScreen({super.key});
 
   @override
   State<UserManagementScreen> createState() => _UserManagementScreenState();
@@ -151,7 +151,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 } else {
                   await _userService.activateUser(user.uuid);
                 }
-                _showSuccess('User ${action}d successfully');
+                _showSuccess('User $action successfully');
                 _loadData();
               } catch (e) {
                 _showError('Failed to $action user: $e');
@@ -392,12 +392,11 @@ class _ManageUserRolesDialog extends StatelessWidget {
   final Function(Role) onRemoveRole;
 
   const _ManageUserRolesDialog({
-    Key? key,
     required this.user,
     required this.availableRoles,
     required this.onAssignRole,
     required this.onRemoveRole,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {

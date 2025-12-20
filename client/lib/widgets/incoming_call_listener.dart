@@ -189,7 +189,7 @@ class _IncomingCallListenerState extends State<IncomingCallListener> {
                   onDismiss: () => _handleDismiss(callData),
                 ),
               );
-            }).toList(),
+            }),
           ],
         );
       },

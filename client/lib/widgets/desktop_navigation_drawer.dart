@@ -348,7 +348,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
                     },
                   ),
                 );
-              }).toList(),
+              }),
           ],
         );
       },
@@ -424,7 +424,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
                     },
                   ),
                 );
-              }).toList(),
+              }),
           ],
         );
       },
@@ -513,10 +513,9 @@ class _CreateChannelDialog extends StatefulWidget {
   final Function(String) onChannelCreated;
 
   const _CreateChannelDialog({
-    Key? key,
     required this.host,
     required this.onChannelCreated,
-  }) : super(key: key);
+  }) ;
 
   @override
   State<_CreateChannelDialog> createState() => _CreateChannelDialogState();
@@ -549,10 +548,10 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
         final data = resp.data;
         final rolesList = (data['roles'] as List?)
             ?.map((r) => Role.fromJson(r))
-            .toList() ?? [];
+             ?? [];
         
         setState(() {
-          availableRoles = rolesList;
+          availableRoles = rolesList.toList();
           selectedRole = rolesList.isNotEmpty ? rolesList.first : null;
           isLoadingRoles = false;
         });

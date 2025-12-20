@@ -27,7 +27,7 @@ import '../../views/video_conference_prejoin_view.dart';
 import '../../views/video_conference_view.dart';
 
 /// Whitelist of message types that should be displayed in UI
-const Set<String> DISPLAYABLE_MESSAGE_TYPES = {
+const Set<String> displayableMessageTypes = {
   'message',
   'file',
   'image',
@@ -529,7 +529,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       final itemType = data['type'] as String? ?? 'message';
 
       // ✅ WHITELIST: Filter out system messages (only display 'message' and 'file')
-      if (!DISPLAYABLE_MESSAGE_TYPES.contains(itemType)) {
+      if (!displayableMessageTypes.contains(itemType)) {
         debugPrint('[SIGNAL_GROUP] Skipping system message type: $itemType');
         return;
       }
@@ -652,6 +652,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
 
       // Mark this channel as read in the unread provider
       try {
+        if (!mounted) return;
         final provider = Provider.of<UnreadMessagesProvider>(
           context,
           listen: false,
@@ -859,7 +860,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           ...sentGroupItems
               .where((m) {
                 final msgType = m['type'] ?? 'message';
-                final isDisplayable = DISPLAYABLE_MESSAGE_TYPES.contains(
+                final isDisplayable = displayableMessageTypes.contains(
                   msgType,
                 );
                 if (!isDisplayable) {
@@ -882,7 +883,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           ...receivedGroupItems
               .where((m) {
                 final msgType = m['type'] ?? 'message';
-                final isDisplayable = DISPLAYABLE_MESSAGE_TYPES.contains(
+                final isDisplayable = displayableMessageTypes.contains(
                   msgType,
                 );
                 if (!isDisplayable) {
@@ -1171,6 +1172,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
 
       // STEP 4: Better error messages based on error type
       String errorMessage = 'Failed to send message';
+      if (!mounted) return;
       final theme = Theme.of(context);
       final warningColor = theme.brightness == Brightness.dark
           ? const Color(0xFFFFA726)

@@ -4,7 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 /// Shows application information including version, build info, and links
 class AppAboutDialog extends StatelessWidget {
-  const AppAboutDialog({Key? key}) : super(key: key);
+  const AppAboutDialog({super.key});
 
   @override
   Widget build(BuildContext context) {

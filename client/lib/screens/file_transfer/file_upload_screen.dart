@@ -13,7 +13,7 @@ import '../../widgets/file_size_error_dialog.dart';
 
 /// File Upload Screen - Upload and announce files to P2P network
 class FileUploadScreen extends StatefulWidget {
-  const FileUploadScreen({Key? key}) : super(key: key);
+  const FileUploadScreen({super.key});
 
   @override
   State<FileUploadScreen> createState() => _FileUploadScreenState();
@@ -68,7 +68,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
     return Card(
       child: InkWell(
         onTap: _pickFile,
-        child: Container(
+        child: SizedBox(
           height: 200,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -491,9 +491,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
   }
   
   String _generateFileId() {
-    return DateTime.now().millisecondsSinceEpoch.toString() +
-           '_' +
-           (_selectedFile?.name.hashCode.toString() ?? '');
+    return '${DateTime.now().millisecondsSinceEpoch}_${_selectedFile?.name.hashCode ?? ''}';
   }
   
   void _showError(String message) {

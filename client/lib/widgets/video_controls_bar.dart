@@ -18,7 +18,7 @@ class VideoControlsBar extends StatelessWidget {
   final Function(String sourceId)? onSetDesktopScreenSource;
 
   const VideoControlsBar({
-    Key? key,
+    super.key,
     required this.isMicEnabled,
     required this.isCameraEnabled,
     required this.isScreenShareEnabled,
@@ -29,7 +29,7 @@ class VideoControlsBar extends StatelessWidget {
     this.onSwitchMicrophone,
     this.onSwitchCamera,
     this.onSetDesktopScreenSource,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {
@@ -210,7 +210,7 @@ class VideoControlsBar extends StatelessWidget {
                       }
                     },
                   );
-                }).toList(),
+                }),
             ],
           ),
         ),
@@ -294,7 +294,7 @@ class VideoControlsBar extends StatelessWidget {
                       }
                     },
                   );
-                }).toList(),
+                }),
             ],
           ),
         ),

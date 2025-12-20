@@ -188,6 +188,7 @@ class _AuthLayoutState extends State<AuthLayout> {
         debugPrint(
           '[AUTH] ✓ Navigating to /app (initialization will continue there)',
         );
+        if (!mounted) return;
         if (fromParam == 'magic-link') {
           context.go('/magic-link');
         } else {
@@ -204,6 +205,7 @@ class _AuthLayoutState extends State<AuthLayout> {
         setState(() {
           _loginStatus = 'Login failed with status: $status';
         });
+        if (!mounted) return;
         context.go(
           '/otp',
           extra: {'email': _lastEmail ?? '', 'serverUrl': urlString, 'wait': 0},
@@ -216,6 +218,7 @@ class _AuthLayoutState extends State<AuthLayout> {
           urlString = 'https://$urlString';
         }
         // Client ID already stored locally during login
+        if (!mounted) return;
         context.go('/app/settings/backupcode/list');
       } else {
         setState(() {
@@ -266,6 +269,7 @@ class _AuthLayoutState extends State<AuthLayout> {
       );
       if (resp.statusCode == 200) {
         final data = resp.data;
+        if (!mounted) return;
         if (data['status'] == "otp") {
           GoRouter.of(context).go(
             '/otp',
@@ -277,6 +281,7 @@ class _AuthLayoutState extends State<AuthLayout> {
           );
         }
         if (data['status'] == "waitotp") {
+          if (!mounted) return;
           GoRouter.of(context).go(
             '/otp',
             extra: {
@@ -287,6 +292,7 @@ class _AuthLayoutState extends State<AuthLayout> {
           );
         }
         if (data['status'] == "recovery") {
+          if (!mounted) return;
           GoRouter.of(
             context,
           ).go('/recovery', extra: {'email': email, 'serverUrl': urlString});
@@ -309,7 +315,7 @@ class _AuthLayoutState extends State<AuthLayout> {
           _loginStatus = errorMsg;
         });
       }
-    } on DioError catch (e) {
+    } on DioException catch (e) {
       String errorMsg = 'Network error';
       if (e.response != null && e.response?.data != null) {
         if (e.response?.data is Map && e.response?.data['error'] != null) {
@@ -333,7 +339,7 @@ class _AuthLayoutState extends State<AuthLayout> {
 
   Future<String> _getDeviceId() async {
     // For demo, use a random string. Replace with real device/hardware ID in production.
-    return 'native-demo-' + DateTime.now().millisecondsSinceEpoch.toString();
+    return 'native-demo-${DateTime.now().millisecondsSinceEpoch}';
   }
 
   Future<void> webauthnLogin(

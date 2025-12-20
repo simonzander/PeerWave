@@ -21,10 +21,6 @@ import 'services/signal_setup_service.dart';
 import 'services/device_identity_service.dart';
 import 'services/logout_service.dart';
 import 'services/preferences_service.dart';
-import 'services/api_service.dart' show setGlobalUnauthorizedHandler;
-import 'services/socket_service_web_export.dart'
-    if (dart.library.io) 'services/socket_service_native_export.dart'
-    show setSocketUnauthorizedHandler;
 import 'app/app_layout.dart';
 import 'app/dashboard_page.dart';
 import 'app/settings_sidebar.dart';
@@ -203,11 +199,11 @@ class MyApp extends StatefulWidget {
   final ThemeProvider themeProvider;
 
   const MyApp({
-    Key? key,
+    super.key,
     this.initialMagicKey,
     required this.serverUrl,
     required this.themeProvider,
-  }) : super(key: key);
+  }) ;
 
   // Public static accessor for root navigator key
   static GlobalKey<NavigatorState> get rootNavigatorKey =>
@@ -1575,6 +1571,13 @@ class _MyAppState extends State<MyApp> {
                   debugPrint('[MAIN] ========================================');
 
                   try {
+                    // Capture providers before any async operations
+                    final unreadProvider = context
+                        .read<UnreadMessagesProvider>();
+                    final roleProvider = context.read<RoleProvider>();
+                    final statsProvider = context
+                        .read<FileTransferStatsProvider>();
+
                     // Get server URL based on platform
                     String serverUrl = '';
                     if (kIsWeb) {
@@ -1592,12 +1595,6 @@ class _MyAppState extends State<MyApp> {
                         !serverUrl.startsWith('https://')) {
                       serverUrl = 'https://$serverUrl';
                     }
-
-                    final unreadProvider = context
-                        .read<UnreadMessagesProvider>();
-                    final roleProvider = context.read<RoleProvider>();
-                    final statsProvider = context
-                        .read<FileTransferStatsProvider>();
 
                     await PostLoginInitService.instance.initialize(
                       serverUrl: serverUrl,
@@ -1642,6 +1639,12 @@ class _MyAppState extends State<MyApp> {
                 );
 
                 try {
+                  // Capture providers before any async operations
+                  final unreadProvider = context.read<UnreadMessagesProvider>();
+                  final roleProvider = context.read<RoleProvider>();
+                  final statsProvider = context
+                      .read<FileTransferStatsProvider>();
+
                   // Get server URL based on platform
                   String serverUrl = '';
                   if (kIsWeb) {
@@ -1658,11 +1661,6 @@ class _MyAppState extends State<MyApp> {
                       !serverUrl.startsWith('https://')) {
                     serverUrl = 'https://$serverUrl';
                   }
-
-                  final unreadProvider = context.read<UnreadMessagesProvider>();
-                  final roleProvider = context.read<RoleProvider>();
-                  final statsProvider = context
-                      .read<FileTransferStatsProvider>();
 
                   await PostLoginInitService.instance.initialize(
                     serverUrl: serverUrl,

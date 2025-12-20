@@ -7,7 +7,7 @@ import '../../services/socket_service.dart';
 
 /// File Browser Screen - Browse and download available P2P files
 class FileBrowserScreen extends StatefulWidget {
-  const FileBrowserScreen({Key? key}) : super(key: key);
+  const FileBrowserScreen({super.key});
 
   @override
   State<FileBrowserScreen> createState() => _FileBrowserScreenState();
@@ -453,6 +453,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       
       // Register as leecher
       await client.registerLeecher(fileId);
+      if (!mounted) return;
       
       // Get P2P Coordinator
       final p2pCoordinator = Provider.of<P2PCoordinator?>(context, listen: false);

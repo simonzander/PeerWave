@@ -481,14 +481,14 @@ class _MeetingVideoConferenceViewState
     final TextEditingController searchController = TextEditingController();
     List<Map<String, dynamic>> searchResults = [];
     bool isSearching = false;
-    bool isValidEmail = false;
+    bool isValidEmailAddress = false;
     String emailAddress = '';
 
     await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
-          bool _isValidEmail(String email) {
+          bool isValidEmail(String email) {
             final emailRegex = RegExp(
               r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
             );
@@ -497,13 +497,13 @@ class _MeetingVideoConferenceViewState
 
           Future<void> searchUsers(String query) async {
             // Check if it's a valid email
-            final isEmail = _isValidEmail(query);
+            final isEmail = isValidEmail(query);
             
             if (query.length < 2) {
               setDialogState(() {
                 searchResults = [];
                 isSearching = false;
-                isValidEmail = false;
+                isValidEmailAddress = false;
                 emailAddress = '';
               });
               return;
@@ -511,7 +511,7 @@ class _MeetingVideoConferenceViewState
 
             setDialogState(() {
               isSearching = true;
-              isValidEmail = isEmail;
+              isValidEmailAddress = isEmail;
               emailAddress = isEmail ? query : '';
             });
 
@@ -636,7 +636,7 @@ class _MeetingVideoConferenceViewState
                   const SizedBox(height: 16),
                   if (isSearching)
                     const Center(child: CircularProgressIndicator())
-                  else if (!isInstantCall && isValidEmail && emailAddress.isNotEmpty)
+                  else if (!isInstantCall && isValidEmailAddress && emailAddress.isNotEmpty)
                     // Show email invitation option
                     SizedBox(
                       height: 300,
@@ -828,7 +828,7 @@ class _MeetingVideoConferenceViewState
           // Participant count
           Selector<VideoConferenceService, int>(
             selector: (_, service) => service.remoteParticipants.length,
-            builder: (_, remoteCount, __) => Center(
+            builder: (_, remoteCount, _) => Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(

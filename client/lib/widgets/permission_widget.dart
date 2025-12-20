@@ -20,13 +20,13 @@ class PermissionWidget extends StatelessWidget {
   final bool showFallback;
 
   const PermissionWidget({
-    Key? key,
+    super.key,
     required this.permission,
     required this.child,
     this.channelId,
     this.fallback,
     this.showFallback = false,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {
@@ -53,11 +53,11 @@ class AdminOnlyWidget extends StatelessWidget {
   final bool showFallback;
 
   const AdminOnlyWidget({
-    Key? key,
+    super.key,
     required this.child,
     this.fallback,
     this.showFallback = false,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {
@@ -80,11 +80,11 @@ class ModeratorOnlyWidget extends StatelessWidget {
   final bool showFallback;
 
   const ModeratorOnlyWidget({
-    Key? key,
+    super.key,
     required this.child,
     this.fallback,
     this.showFallback = false,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {
@@ -108,12 +108,12 @@ class ChannelOwnerWidget extends StatelessWidget {
   final bool showFallback;
 
   const ChannelOwnerWidget({
-    Key? key,
+    super.key,
     required this.channelId,
     required this.child,
     this.fallback,
     this.showFallback = false,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {
@@ -137,12 +137,12 @@ class ChannelModeratorWidget extends StatelessWidget {
   final bool showFallback;
 
   const ChannelModeratorWidget({
-    Key? key,
+    super.key,
     required this.channelId,
     required this.child,
     this.fallback,
     this.showFallback = false,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {

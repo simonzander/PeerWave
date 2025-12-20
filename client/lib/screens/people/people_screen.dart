@@ -22,11 +22,11 @@ class PeopleScreen extends StatefulWidget {
   final bool showRecentSection;
 
   const PeopleScreen({
-    Key? key,
+    super.key,
     required this.host,
     required this.onMessageTap,
     this.showRecentSection = true,
-  }) : super(key: key);
+  }) ;
 
   @override
   State<PeopleScreen> createState() => _PeopleScreenState();
@@ -37,7 +37,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   Timer? _debounceTimer;
   
   List<Map<String, dynamic>> _recentConversationUsers = [];
-  List<Map<String, dynamic>> _randomUsers = [];
+  final List<Map<String, dynamic>> _randomUsers = [];
   List<Map<String, dynamic>> _searchResults = [];
   
   bool _isLoadingRecent = false;
@@ -702,7 +702,7 @@ class _UserCardState extends State<_UserCard> {
       cursor: SystemMouseCursors.click,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        transform: Matrix4.identity()..scale(_isHovered ? 1.05 : 1.0),
+        transform: Matrix4.identity()..scale(_isHovered ? 1.05 : 1.0, _isHovered ? 1.05 : 1.0, 1.0),
         decoration: BoxDecoration(
           color: widget.colorScheme.onInverseSurface,
           borderRadius: BorderRadius.circular(12),

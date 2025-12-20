@@ -35,7 +35,7 @@ class _DashboardPageState extends State<DashboardPage> {
   int _selectedIndex = 0;
   
   // Direct Messages
-  List<DirectMessageInfo> _directMessages = [];
+  final List<DirectMessageInfo> _directMessages = [];
   String? _activeDirectMessageUuid;
   String? _activeDirectMessageDisplayName;
   

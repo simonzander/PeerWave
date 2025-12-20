@@ -21,7 +21,7 @@ class VideoGridLayout extends StatelessWidget {
   final List<Map<String, dynamic>>? pendingParticipants;
 
   const VideoGridLayout({
-    Key? key,
+    super.key,
     required this.room,
     required this.hasScreenShare,
     this.screenShareParticipantId,
@@ -32,7 +32,7 @@ class VideoGridLayout extends StatelessWidget {
     required this.maxVisibleParticipants,
     this.onShowParticipantMenu,
     this.pendingParticipants,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {

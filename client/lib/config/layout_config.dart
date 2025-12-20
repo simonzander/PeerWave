@@ -2,6 +2,7 @@
 /// 
 /// Defines breakpoints and layout types following Material 3 guidelines.
 /// Use this to determine which navigation pattern and UI density to use.
+library;
 
 /// Material 3 Breakpoints
 /// 

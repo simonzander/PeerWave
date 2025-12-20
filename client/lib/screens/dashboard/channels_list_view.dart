@@ -1143,10 +1143,9 @@ class _CreateChannelDialog extends StatefulWidget {
   final Function(String) onChannelCreated;
 
   const _CreateChannelDialog({
-    Key? key,
     required this.host,
     required this.onChannelCreated,
-  }) : super(key: key);
+  }) ;
 
   @override
   State<_CreateChannelDialog> createState() => _CreateChannelDialogState();

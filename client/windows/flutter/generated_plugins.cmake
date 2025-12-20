@@ -5,7 +5,6 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
   audioplayers_windows
-  battery_plus
   bitsdojo_window_windows
   connectivity_plus
   emoji_picker_flutter

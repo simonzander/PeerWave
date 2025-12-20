@@ -12,10 +12,10 @@ import 'storage_interface.dart';
 /// - FlutterSecureStorage for metadata & keys
 /// - AppDirectories cache for chunks
 class NativeStorage implements FileStorageInterface {
-  static const String KEY_FILES_LIST = 'files_list';
-  static const String KEY_FILE_PREFIX = 'file_';
-  static const String KEY_CHUNK_META_PREFIX = 'chunks_';
-  static const String KEY_FILE_KEY_PREFIX = 'filekey_';
+  static const String keyFilesList = 'files_list';
+  static const String keyFilePrefix = 'file_';
+  static const String keyChunkMetaPrefix = 'chunks_';
+  static const String keyFileKeyPrefix = 'filekey_';
   
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   Directory? _chunksDirectory;
@@ -46,7 +46,7 @@ class NativeStorage implements FileStorageInterface {
     
     // Save individual file metadata
     await _secureStorage.write(
-      key: '$KEY_FILE_PREFIX$fileId',
+      key: '$keyFilePrefix$fileId',
       value: jsonEncode(metadata),
     );
     
@@ -60,7 +60,7 @@ class NativeStorage implements FileStorageInterface {
   
   @override
   Future<Map<String, dynamic>?> getFileMetadata(String fileId) async {
-    final json = await _secureStorage.read(key: '$KEY_FILE_PREFIX$fileId');
+    final json = await _secureStorage.read(key: '$keyFilePrefix$fileId');
     if (json == null) return null;
     return jsonDecode(json) as Map<String, dynamic>;
   }
@@ -92,7 +92,7 @@ class NativeStorage implements FileStorageInterface {
   @override
   Future<void> deleteFile(String fileId) async {
     // Delete metadata
-    await _secureStorage.delete(key: '$KEY_FILE_PREFIX$fileId');
+    await _secureStorage.delete(key: '$keyFilePrefix$fileId');
     
     // Delete from files list
     final filesList = await _getFilesList();
@@ -106,7 +106,7 @@ class NativeStorage implements FileStorageInterface {
     }
     
     // Delete chunk metadata
-    await _secureStorage.delete(key: '$KEY_CHUNK_META_PREFIX$fileId');
+    await _secureStorage.delete(key: '$keyChunkMetaPrefix$fileId');
     
     // Delete file key
     await deleteFileKey(fileId);
@@ -220,21 +220,21 @@ class NativeStorage implements FileStorageInterface {
   @override
   Future<void> saveFileKey(String fileId, Uint8List key) async {
     await _secureStorage.write(
-      key: '$KEY_FILE_KEY_PREFIX$fileId',
+      key: '$keyFileKeyPrefix$fileId',
       value: base64Encode(key),
     );
   }
   
   @override
   Future<Uint8List?> getFileKey(String fileId) async {
-    final encoded = await _secureStorage.read(key: '$KEY_FILE_KEY_PREFIX$fileId');
+    final encoded = await _secureStorage.read(key: '$keyFileKeyPrefix$fileId');
     if (encoded == null) return null;
     return base64Decode(encoded);
   }
   
   @override
   Future<void> deleteFileKey(String fileId) async {
-    await _secureStorage.delete(key: '$KEY_FILE_KEY_PREFIX$fileId');
+    await _secureStorage.delete(key: '$keyFileKeyPrefix$fileId');
   }
   
   // ============================================
@@ -278,7 +278,7 @@ class NativeStorage implements FileStorageInterface {
     }
     
     // Clear files list
-    await _secureStorage.delete(key: KEY_FILES_LIST);
+    await _secureStorage.delete(key: keyFilesList);
     
     // Delete chunks directory
     if (_chunksDirectory != null && await _chunksDirectory!.exists()) {
@@ -292,14 +292,14 @@ class NativeStorage implements FileStorageInterface {
   // ============================================
   
   Future<List<String>> _getFilesList() async {
-    final json = await _secureStorage.read(key: KEY_FILES_LIST);
+    final json = await _secureStorage.read(key: keyFilesList);
     if (json == null) return [];
     return List<String>.from(jsonDecode(json));
   }
   
   Future<void> _saveFilesList(List<String> filesList) async {
     await _secureStorage.write(
-      key: KEY_FILES_LIST,
+      key: keyFilesList,
       value: jsonEncode(filesList),
     );
   }
@@ -318,7 +318,7 @@ class NativeStorage implements FileStorageInterface {
   }
   
   Future<Map<String, Map<String, dynamic>>> _getAllChunkMetadata(String fileId) async {
-    final json = await _secureStorage.read(key: '$KEY_CHUNK_META_PREFIX$fileId');
+    final json = await _secureStorage.read(key: '$keyChunkMetaPrefix$fileId');
     if (json == null) return {};
     
     final decoded = jsonDecode(json) as Map<String, dynamic>;
@@ -327,7 +327,7 @@ class NativeStorage implements FileStorageInterface {
   
   Future<void> _saveAllChunkMetadata(String fileId, Map<String, Map<String, dynamic>> metadata) async {
     await _secureStorage.write(
-      key: '$KEY_CHUNK_META_PREFIX$fileId',
+      key: '$keyChunkMetaPrefix$fileId',
       value: jsonEncode(metadata),
     );
   }

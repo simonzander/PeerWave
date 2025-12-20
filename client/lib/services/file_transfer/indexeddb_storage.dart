@@ -13,12 +13,12 @@ import '../web/encrypted_storage_wrapper.dart';
 /// - Chunks: Already encrypted (no change)
 /// - Metadata: Plain (ok for metadata)
 class IndexedDBStorage implements FileStorageInterface {
-  static const String DB_BASE_NAME = 'PeerWaveFiles';
-  static const int DB_VERSION = 1;
+  static const String dbBaseName = 'PeerWaveFiles';
+  static const int dbVersion = 1;
   
-  static const String STORE_FILES = 'files';
-  static const String STORE_CHUNKS = 'chunks';
-  static const String STORE_FILE_KEYS = 'fileKeys';
+  static const String storeFiles = 'files';
+  static const String storeChunks = 'chunks';
+  static const String storeFileKeys = 'fileKeys';
   
   Database? _db;
   final IdbFactory _idbFactory = idbFactoryBrowser;
@@ -38,7 +38,7 @@ class IndexedDBStorage implements FileStorageInterface {
     }
     
     final deviceId = _deviceIdentity.deviceId;
-    _deviceScopedDbName = '${DB_BASE_NAME}_$deviceId';
+    _deviceScopedDbName = '${dbBaseName}_$deviceId';
     debugPrint('[FILE_STORAGE] Device-scoped DB name: $_deviceScopedDbName');
     return _deviceScopedDbName!;
   }
@@ -52,15 +52,15 @@ class IndexedDBStorage implements FileStorageInterface {
     // Open device-scoped database
     _db = await _idbFactory.open(
       _dbName,
-      version: DB_VERSION,
+      version: dbVersion,
       onUpgradeNeeded: (VersionChangeEvent event) {
         final db = event.database;
         
         debugPrint('[FILE_STORAGE] Creating database schema v${event.newVersion}');
         
         // Files ObjectStore
-        if (!db.objectStoreNames.contains(STORE_FILES)) {
-          final filesStore = db.createObjectStore(STORE_FILES, keyPath: 'fileId');
+        if (!db.objectStoreNames.contains(storeFiles)) {
+          final filesStore = db.createObjectStore(storeFiles, keyPath: 'fileId');
           filesStore.createIndex('status', 'status', unique: false);
           filesStore.createIndex('createdAt', 'createdAt', unique: false);
           filesStore.createIndex('isSeeder', 'isSeeder', unique: false);
@@ -68,16 +68,16 @@ class IndexedDBStorage implements FileStorageInterface {
         }
         
         // Chunks ObjectStore (composite key: fileId + chunkIndex)
-        if (!db.objectStoreNames.contains(STORE_CHUNKS)) {
-          final chunksStore = db.createObjectStore(STORE_CHUNKS, autoIncrement: true);
+        if (!db.objectStoreNames.contains(storeChunks)) {
+          final chunksStore = db.createObjectStore(storeChunks, autoIncrement: true);
           chunksStore.createIndex('fileId', 'fileId', unique: false);
           chunksStore.createIndex('fileId_chunkIndex', ['fileId', 'chunkIndex'], unique: true);
           debugPrint('[FILE_STORAGE] ✓ Created chunks store');
         }
         
         // File Keys ObjectStore (stores encrypted keys)
-        if (!db.objectStoreNames.contains(STORE_FILE_KEYS)) {
-          db.createObjectStore(STORE_FILE_KEYS, keyPath: 'fileId');
+        if (!db.objectStoreNames.contains(storeFileKeys)) {
+          db.createObjectStore(storeFileKeys, keyPath: 'fileId');
           debugPrint('[FILE_STORAGE] ✓ Created fileKeys store (encrypted)');
         }
       },
@@ -98,32 +98,32 @@ class IndexedDBStorage implements FileStorageInterface {
   
   @override
   Future<void> saveFileMetadata(Map<String, dynamic> metadata) async {
-    final tx = _db!.transaction(STORE_FILES, idbModeReadWrite);
-    final store = tx.objectStore(STORE_FILES);
+    final tx = _db!.transaction(storeFiles, idbModeReadWrite);
+    final store = tx.objectStore(storeFiles);
     await store.put(metadata);
     await tx.completed;
   }
   
   @override
   Future<Map<String, dynamic>?> getFileMetadata(String fileId) async {
-    final tx = _db!.transaction(STORE_FILES, idbModeReadOnly);
-    final store = tx.objectStore(STORE_FILES);
+    final tx = _db!.transaction(storeFiles, idbModeReadOnly);
+    final store = tx.objectStore(storeFiles);
     final result = await store.getObject(fileId);
     return result as Map<String, dynamic>?;
   }
   
   @override
   Future<List<Map<String, dynamic>>> getAllFiles() async {
-    final tx = _db!.transaction(STORE_FILES, idbModeReadOnly);
-    final store = tx.objectStore(STORE_FILES);
+    final tx = _db!.transaction(storeFiles, idbModeReadOnly);
+    final store = tx.objectStore(storeFiles);
     final results = await store.getAll();
     return results.cast<Map<String, dynamic>>();
   }
   
   @override
   Future<void> updateFileMetadata(String fileId, Map<String, dynamic> updates) async {
-    final tx = _db!.transaction(STORE_FILES, idbModeReadWrite);
-    final store = tx.objectStore(STORE_FILES);
+    final tx = _db!.transaction(storeFiles, idbModeReadWrite);
+    final store = tx.objectStore(storeFiles);
     
     final existing = await store.getObject(fileId) as Map<String, dynamic>?;
     if (existing != null) {
@@ -136,13 +136,13 @@ class IndexedDBStorage implements FileStorageInterface {
   @override
   Future<void> deleteFile(String fileId) async {
     // Delete file metadata
-    final fileTx = _db!.transaction(STORE_FILES, idbModeReadWrite);
-    await fileTx.objectStore(STORE_FILES).delete(fileId);
+    final fileTx = _db!.transaction(storeFiles, idbModeReadWrite);
+    await fileTx.objectStore(storeFiles).delete(fileId);
     await fileTx.completed;
     
     // Delete all chunks
-    final chunkTx = _db!.transaction(STORE_CHUNKS, idbModeReadWrite);
-    final chunksStore = chunkTx.objectStore(STORE_CHUNKS);
+    final chunkTx = _db!.transaction(storeChunks, idbModeReadWrite);
+    final chunksStore = chunkTx.objectStore(storeChunks);
     final index = chunksStore.index('fileId');
     
     await for (final cursor in index.openCursor(key: fileId, autoAdvance: true)) {
@@ -166,8 +166,8 @@ class IndexedDBStorage implements FileStorageInterface {
     Uint8List? iv,
     String? chunkHash,
   }) async {
-    final tx = _db!.transaction(STORE_CHUNKS, idbModeReadWrite);
-    final store = tx.objectStore(STORE_CHUNKS);
+    final tx = _db!.transaction(storeChunks, idbModeReadWrite);
+    final store = tx.objectStore(storeChunks);
     
     await store.put({
       'fileId': fileId,
@@ -210,8 +210,8 @@ class IndexedDBStorage implements FileStorageInterface {
   
   @override
   Future<Uint8List?> getChunk(String fileId, int chunkIndex) async {
-    final tx = _db!.transaction(STORE_CHUNKS, idbModeReadOnly);
-    final store = tx.objectStore(STORE_CHUNKS);
+    final tx = _db!.transaction(storeChunks, idbModeReadOnly);
+    final store = tx.objectStore(storeChunks);
     final index = store.index('fileId_chunkIndex');
     
     final key = await index.getKey([fileId, chunkIndex]);
@@ -226,8 +226,8 @@ class IndexedDBStorage implements FileStorageInterface {
   
   @override
   Future<Map<String, dynamic>?> getChunkMetadata(String fileId, int chunkIndex) async {
-    final tx = _db!.transaction(STORE_CHUNKS, idbModeReadOnly);
-    final store = tx.objectStore(STORE_CHUNKS);
+    final tx = _db!.transaction(storeChunks, idbModeReadOnly);
+    final store = tx.objectStore(storeChunks);
     final index = store.index('fileId_chunkIndex');
     
     final key = await index.getKey([fileId, chunkIndex]);
@@ -250,8 +250,8 @@ class IndexedDBStorage implements FileStorageInterface {
   
   @override
   Future<void> deleteChunk(String fileId, int chunkIndex) async {
-    final tx = _db!.transaction(STORE_CHUNKS, idbModeReadWrite);
-    final store = tx.objectStore(STORE_CHUNKS);
+    final tx = _db!.transaction(storeChunks, idbModeReadWrite);
+    final store = tx.objectStore(storeChunks);
     final index = store.index('fileId_chunkIndex');
     
     final key = await index.getKey([fileId, chunkIndex]);
@@ -263,8 +263,8 @@ class IndexedDBStorage implements FileStorageInterface {
   
   @override
   Future<List<int>> getAvailableChunks(String fileId) async {
-    final tx = _db!.transaction(STORE_CHUNKS, idbModeReadOnly);
-    final store = tx.objectStore(STORE_CHUNKS);
+    final tx = _db!.transaction(storeChunks, idbModeReadOnly);
+    final store = tx.objectStore(storeChunks);
     final index = store.index('fileId');
     
     final chunks = <int>[];
@@ -301,8 +301,8 @@ class IndexedDBStorage implements FileStorageInterface {
       // Encrypt the file key using WebAuthn-derived encryption
       final encryptedKeyEnvelope = await _encryption.encryptForStorage(key);
       
-      final tx = _db!.transaction(STORE_FILE_KEYS, idbModeReadWrite);
-      final store = tx.objectStore(STORE_FILE_KEYS);
+      final tx = _db!.transaction(storeFileKeys, idbModeReadWrite);
+      final store = tx.objectStore(storeFileKeys);
       
       await store.put({
         'fileId': fileId,
@@ -323,8 +323,8 @@ class IndexedDBStorage implements FileStorageInterface {
     debugPrint('[FILE_STORAGE] Retrieving encrypted file key for $fileId');
     
     try {
-      final tx = _db!.transaction(STORE_FILE_KEYS, idbModeReadOnly);
-      final store = tx.objectStore(STORE_FILE_KEYS);
+      final tx = _db!.transaction(storeFileKeys, idbModeReadOnly);
+      final store = tx.objectStore(storeFileKeys);
       
       final result = await store.getObject(fileId);
       await tx.completed;
@@ -365,8 +365,8 @@ class IndexedDBStorage implements FileStorageInterface {
   
   @override
   Future<void> deleteFileKey(String fileId) async {
-    final tx = _db!.transaction(STORE_FILE_KEYS, idbModeReadWrite);
-    await tx.objectStore(STORE_FILE_KEYS).delete(fileId);
+    final tx = _db!.transaction(storeFileKeys, idbModeReadWrite);
+    await tx.objectStore(storeFileKeys).delete(fileId);
     await tx.completed;
   }
   
@@ -384,8 +384,8 @@ class IndexedDBStorage implements FileStorageInterface {
     total += files.length * 1024; // ~1KB per file metadata
     
     // Chunks size
-    final chunkTx = _db!.transaction(STORE_CHUNKS, idbModeReadOnly);
-    final chunksStore = chunkTx.objectStore(STORE_CHUNKS);
+    final chunkTx = _db!.transaction(storeChunks, idbModeReadOnly);
+    final chunksStore = chunkTx.objectStore(storeChunks);
     
     await for (final cursor in chunksStore.openCursor(autoAdvance: true)) {
       final data = cursor.value as Map<String, dynamic>;
@@ -411,13 +411,13 @@ class IndexedDBStorage implements FileStorageInterface {
   @override
   Future<void> clearAll() async {
     final tx = _db!.transaction(
-      [STORE_FILES, STORE_CHUNKS, STORE_FILE_KEYS],
+      [storeFiles, storeChunks, storeFileKeys],
       idbModeReadWrite,
     );
     
-    await tx.objectStore(STORE_FILES).clear();
-    await tx.objectStore(STORE_CHUNKS).clear();
-    await tx.objectStore(STORE_FILE_KEYS).clear();
+    await tx.objectStore(storeFiles).clear();
+    await tx.objectStore(storeChunks).clear();
+    await tx.objectStore(storeFileKeys).clear();
     
     await tx.completed;
   }

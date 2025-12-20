@@ -8,7 +8,7 @@ class MagicLinkWebPageWithServer extends StatefulWidget {
   final String serverUrl;
   final String? clientId;
 
-  const MagicLinkWebPageWithServer({Key? key, required this.serverUrl, this.clientId}) : super(key: key);
+  const MagicLinkWebPageWithServer({super.key, required this.serverUrl, this.clientId});
 
   @override
   State<MagicLinkWebPageWithServer> createState() => _MagicLinkWebPageWithServerState();
@@ -26,7 +26,7 @@ class _MagicLinkWebPageWithServerState extends State<MagicLinkWebPageWithServer>
 class MagicLinkWebPageWithInjectedServer extends StatefulWidget {
   final String serverUrl;
   final String? clientId;
-  const MagicLinkWebPageWithInjectedServer({Key? key, required this.serverUrl, this.clientId}) : super(key: key);
+  const MagicLinkWebPageWithInjectedServer({super.key, required this.serverUrl, this.clientId});
 
   @override
   State<MagicLinkWebPageWithInjectedServer> createState() => _MagicLinkWebPageWithInjectedServerState();
@@ -43,9 +43,8 @@ class _MagicLinkWebPageWithInjectedServerState extends State<MagicLinkWebPageWit
 // MagicLinkWebPage with serverUrl injected into controller
 class MagicLinkWebPageWithServerUrl extends MagicLinkWebPage {
   final String serverUrl;
-  final String? clientId;
 
-  MagicLinkWebPageWithServerUrl({Key? key, required this.serverUrl, this.clientId}) : super(key: key, clientId: clientId);
+  const MagicLinkWebPageWithServerUrl({super.key, required this.serverUrl, super.clientId});
 
   @override
   State<MagicLinkWebPage> createState() => _MagicLinkWebPageWithServerUrlState();

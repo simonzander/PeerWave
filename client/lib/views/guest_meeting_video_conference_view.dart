@@ -341,7 +341,7 @@ class _GuestMeetingVideoConferenceViewState
           // Participant count
           Selector<VideoConferenceService, int>(
             selector: (_, service) => service.remoteParticipants.length,
-            builder: (_, remoteCount, __) => Center(
+            builder: (_, remoteCount, _) => Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(

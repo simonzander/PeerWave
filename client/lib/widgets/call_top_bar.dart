@@ -10,7 +10,7 @@ import 'dart:convert';
 /// Global top bar showing active call status
 /// Only visible when in a call and overlay is visible
 class CallTopBar extends StatefulWidget {
-  const CallTopBar({Key? key}) : super(key: key);
+  const CallTopBar({super.key});
 
   @override
   State<CallTopBar> createState() => _CallTopBarState();

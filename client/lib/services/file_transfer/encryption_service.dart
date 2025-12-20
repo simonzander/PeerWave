@@ -11,16 +11,16 @@ import 'package:crypto/crypto.dart';
 /// - 128-bit authentication tags
 /// - Provides confidentiality AND integrity
 class EncryptionService {
-  static const int KEY_SIZE = 32; // 256 bits
-  static const int IV_SIZE = 12; // 96 bits (recommended for GCM)
-  static const int MAC_SIZE = 16; // 128 bits (authentication tag)
+  static const int keySize = 32; // 256 bits
+  static const int ivSize = 12; // 96 bits (recommended for GCM)
+  static const int macSize = 16; // 128 bits (authentication tag)
   
   final Random _random = Random.secure();
   
   /// Generate a random 256-bit AES key
   Uint8List generateKey() {
-    final key = Uint8List(KEY_SIZE);
-    for (int i = 0; i < KEY_SIZE; i++) {
+    final key = Uint8List(keySize);
+    for (int i = 0; i < keySize; i++) {
       key[i] = _random.nextInt(256);
     }
     return key;
@@ -31,8 +31,8 @@ class EncryptionService {
   /// CRITICAL: Never reuse an IV with the same key!
   /// Generate a new IV for each chunk encryption.
   Uint8List generateIV() {
-    final iv = Uint8List(IV_SIZE);
-    for (int i = 0; i < IV_SIZE; i++) {
+    final iv = Uint8List(ivSize);
+    for (int i = 0; i < ivSize; i++) {
       iv[i] = _random.nextInt(256);
     }
     return iv;
@@ -47,11 +47,11 @@ class EncryptionService {
     Uint8List key,
     Uint8List iv,
   ) async {
-    if (key.length != KEY_SIZE) {
-      throw ArgumentError('Key must be $KEY_SIZE bytes (256 bits)');
+    if (key.length != keySize) {
+      throw ArgumentError('Key must be $keySize bytes (256 bits)');
     }
-    if (iv.length != IV_SIZE) {
-      throw ArgumentError('IV must be $IV_SIZE bytes (96 bits)');
+    if (iv.length != ivSize) {
+      throw ArgumentError('IV must be $ivSize bytes (96 bits)');
     }
     
     // Create AES-GCM cipher
@@ -60,7 +60,7 @@ class EncryptionService {
     // Initialize for encryption
     final params = AEADParameters(
       KeyParameter(key),
-      MAC_SIZE * 8, // MAC size in bits
+      macSize * 8, // MAC size in bits
       iv,
       Uint8List(0), // No additional authenticated data
     );
@@ -68,7 +68,7 @@ class EncryptionService {
     cipher.init(true, params); // true = encrypt
     
     // Allocate output buffer (plaintext + MAC tag)
-    final ciphertext = Uint8List(plaintext.length + MAC_SIZE);
+    final ciphertext = Uint8List(plaintext.length + macSize);
     
     // Encrypt
     int offset = 0;
@@ -96,13 +96,13 @@ class EncryptionService {
     Uint8List key,
     Uint8List iv,
   ) async {
-    if (key.length != KEY_SIZE) {
-      throw ArgumentError('Key must be $KEY_SIZE bytes (256 bits)');
+    if (key.length != keySize) {
+      throw ArgumentError('Key must be $keySize bytes (256 bits)');
     }
-    if (iv.length != IV_SIZE) {
-      throw ArgumentError('IV must be $IV_SIZE bytes (96 bits)');
+    if (iv.length != ivSize) {
+      throw ArgumentError('IV must be $ivSize bytes (96 bits)');
     }
-    if (ciphertext.length < MAC_SIZE) {
+    if (ciphertext.length < macSize) {
       throw ArgumentError('Ciphertext too short (must include MAC tag)');
     }
     
@@ -113,7 +113,7 @@ class EncryptionService {
       // Initialize for decryption
       final params = AEADParameters(
         KeyParameter(key),
-        MAC_SIZE * 8, // MAC size in bits
+        macSize * 8, // MAC size in bits
         iv,
         Uint8List(0), // No additional authenticated data
       );
@@ -121,7 +121,7 @@ class EncryptionService {
       cipher.init(false, params); // false = decrypt
       
       // Allocate output buffer (ciphertext - MAC tag)
-      final plaintext = Uint8List(ciphertext.length - MAC_SIZE);
+      final plaintext = Uint8List(ciphertext.length - macSize);
       
       // Decrypt
       int offset = 0;
@@ -173,7 +173,7 @@ class EncryptionService {
     int iterations = 100000,
   }) async {
     final generator = PBKDF2KeyDerivator(HMac(SHA256Digest(), 64));
-    generator.init(Pbkdf2Parameters(salt, iterations, KEY_SIZE));
+    generator.init(Pbkdf2Parameters(salt, iterations, keySize));
     
     return generator.process(Uint8List.fromList(password.codeUnits));
   }
@@ -189,12 +189,12 @@ class EncryptionService {
   
   /// Validate key format
   bool isValidKey(Uint8List key) {
-    return key.length == KEY_SIZE;
+    return key.length == keySize;
   }
   
   /// Validate IV format
   bool isValidIV(Uint8List iv) {
-    return iv.length == IV_SIZE;
+    return iv.length == ivSize;
   }
   
   /// Calculate SHA-256 hash of data

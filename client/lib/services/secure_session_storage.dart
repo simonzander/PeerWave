@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Secure storage for session secrets using platform-specific secure storage
@@ -9,7 +10,7 @@ class SecureSessionStorage {
 
   final _storage = const FlutterSecureStorage(
     aOptions: AndroidOptions(
-      encryptedSharedPreferences: true,
+      // encryptedSharedPreferences removed - deprecated and automatically migrated
     ),
     iOptions: IOSOptions(
       accessibility: KeychainAccessibility.first_unlock_this_device,
@@ -62,7 +63,7 @@ class SecureSessionStorage {
       } catch (e) {
         retries--;
         if (retries == 0) {
-          print('[SecureSessionStorage] Failed to read session after retries: $e');
+          debugPrint('[SecureSessionStorage] Failed to read session after retries: $e');
           return null; // Return null instead of throwing
         }
         await Future.delayed(Duration(milliseconds: 100));
@@ -127,7 +128,7 @@ class SecureSessionStorage {
           return DateTime.parse(match.group(1)!);
         }
       } catch (e) {
-        print('[SecureSessionStorage] Error parsing metadata: $e');
+        debugPrint('[SecureSessionStorage] Error parsing metadata: $e');
       }
     }
     

@@ -1,5 +1,4 @@
-import 'dart:convert';
-import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'api_service.dart';
 import 'session_auth_service.dart';
 
@@ -47,14 +46,14 @@ class MagicKeyService {
       
       // Need at least 4 parts for basic format (protocol://host:hash:timestamp:signature)
       if (parts.length < 4) {
-        print('[MagicKey] Invalid format: Expected at least 4 parts, got ${parts.length}');
+        debugPrint('[MagicKey] Invalid format: Expected at least 4 parts, got ${parts.length}');
         return null;
       }
 
       // Extract protocol (http or https)
       final protocol = parts[0];
       if (protocol != 'http' && protocol != 'https') {
-        print('[MagicKey] Invalid protocol: $protocol');
+        debugPrint('[MagicKey] Invalid protocol: $protocol');
         return null;
       }
 
@@ -85,7 +84,7 @@ class MagicKeyService {
       }
 
       if (timestampIndex == -1) {
-        print('[MagicKey] No valid timestamp found');
+        debugPrint('[MagicKey] No valid timestamp found');
         return null;
       }
 
@@ -98,7 +97,7 @@ class MagicKeyService {
       // Signature is everything after timestamp
       final signature = parts.sublist(timestampIndex + 1).join(':');
 
-      print('[MagicKey] Parsed - serverUrl: $serverUrl, randomHash: $randomHash');
+      debugPrint('[MagicKey] Parsed - serverUrl: $serverUrl, randomHash: $randomHash');
 
       return MagicKeyData(
         serverUrl: serverUrl,
@@ -107,7 +106,7 @@ class MagicKeyService {
         signature: signature,
       );
     } catch (e) {
-      print('[MagicKey] Parse error: $e');
+      debugPrint('[MagicKey] Parse error: $e');
       return null;
     }
   }
@@ -162,8 +161,8 @@ class MagicKeyService {
       // Construct full API URL using server URL from magic key
       final verifyUrl = '${parsed.serverUrl}/magic/verify';
       
-      print('[MagicKey] Verifying with server: $verifyUrl');
-      print('[MagicKey] Client ID: $clientId');
+      debugPrint('[MagicKey] Verifying with server: $verifyUrl');
+      debugPrint('[MagicKey] Client ID: $clientId');
 
       // Call verification endpoint
       final response = await ApiService.post(
@@ -182,7 +181,7 @@ class MagicKeyService {
         if (success && data['sessionSecret'] != null) {
           final sessionSecret = data['sessionSecret'] as String;
           await SessionAuthService().initializeSession(clientId, sessionSecret);
-          print('[MagicKey] Session secret stored for client: $clientId');
+          debugPrint('[MagicKey] Session secret stored for client: $clientId');
         }
         
         return MagicKeyVerificationResponse(
@@ -198,7 +197,7 @@ class MagicKeyService {
         );
       }
     } catch (e) {
-      print('[MagicKey] Verification error: $e');
+      debugPrint('[MagicKey] Verification error: $e');
       return MagicKeyVerificationResponse(
         success: false,
         message: 'Network error: $e',

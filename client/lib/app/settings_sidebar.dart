@@ -7,7 +7,7 @@ import '../widgets/theme_selector_dialog.dart';
 
 class SettingsSidebar extends StatelessWidget {
   final Widget child;
-  const SettingsSidebar({Key? key, required this.child}) : super(key: key);
+  const SettingsSidebar({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {

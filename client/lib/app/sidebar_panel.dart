@@ -1,6 +1,6 @@
 
 import 'package:flutter/material.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../providers/role_provider.dart';
@@ -14,7 +14,7 @@ import 'dart:convert';
 class SidebarPanel extends StatefulWidget {
   final double panelWidth;
   final Widget Function() buildProfileCard;
-  final IO.Socket? socket;
+  final io.Socket? socket;
   final String host;
   final VoidCallback? onPeopleTap;
   final VoidCallback? onFileManagerTap;
@@ -23,8 +23,7 @@ class SidebarPanel extends StatefulWidget {
   final List<Map<String, dynamic>>? channels;
   final void Function(String uuid, String name, String type)? onChannelTap;
   
-  const SidebarPanel({
-    Key? key,
+  const SidebarPanel({super.key,
     required this.panelWidth,
     required this.buildProfileCard,
     this.socket,
@@ -35,7 +34,7 @@ class SidebarPanel extends StatefulWidget {
     this.onDirectMessageTap,
     this.channels,
     this.onChannelTap,
-  }) : super(key: key);
+  });
 
   @override
   State<SidebarPanel> createState() => _SidebarPanelState();
@@ -163,7 +162,7 @@ class _SidebarPanelState extends State<SidebarPanel> {
 
 // License Footer Widget
 class _LicenseFooter extends StatefulWidget {
-  const _LicenseFooter({Key? key}) : super(key: key);
+  const _LicenseFooter();
 
   @override
   State<_LicenseFooter> createState() => _LicenseFooterState();
@@ -224,7 +223,7 @@ class _LicenseFooterState extends State<_LicenseFooter> {
 }
 
 class _UpcomingMeetingsDropdown extends StatefulWidget {
-  const _UpcomingMeetingsDropdown({Key? key}) : super(key: key);
+  const _UpcomingMeetingsDropdown();
 
   @override
   State<_UpcomingMeetingsDropdown> createState() => _UpcomingMeetingsDropdownState();
@@ -269,7 +268,7 @@ class _UpcomingMeetingsDropdownState extends State<_UpcomingMeetingsDropdown> {
 class _ChannelsDropdown extends StatefulWidget {
   final List<String> channelNames;
   final String host;
-  const _ChannelsDropdown({Key? key, required this.channelNames, required this.host}) : super(key: key);
+  const _ChannelsDropdown({required this.channelNames, required this.host});
 
   @override
   State<_ChannelsDropdown> createState() => _ChannelsDropdownState();
@@ -343,11 +342,9 @@ class _CreateChannelDialog extends StatefulWidget {
   final String host;
   final Function(String) onChannelCreated;
 
-  const _CreateChannelDialog({
-    Key? key,
-    required this.host,
+  const _CreateChannelDialog({required this.host,
     required this.onChannelCreated,
-  }) : super(key: key);
+  });
 
   @override
   State<_CreateChannelDialog> createState() => _CreateChannelDialogState();
@@ -540,7 +537,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
 class _DirectMessagesDropdown extends StatefulWidget {
   final List<Map<String, String>> directMessages;
   final void Function(String uuid, String displayName)? onDirectMessageTap;
-  const _DirectMessagesDropdown({Key? key, required this.directMessages, this.onDirectMessageTap}) : super(key: key);
+  const _DirectMessagesDropdown({required this.directMessages, this.onDirectMessageTap});
 
   @override
   State<_DirectMessagesDropdown> createState() => _DirectMessagesDropdownState();
@@ -676,13 +673,11 @@ class _ChannelsListWidget extends StatefulWidget {
   final String host;
   final Function(String)? onChannelCreated;
   
-  const _ChannelsListWidget({
-    Key? key,
-    required this.channels,
+  const _ChannelsListWidget({required this.channels,
     this.onChannelTap,
     required this.host,
     this.onChannelCreated,
-  }) : super(key: key);
+  });
 
   @override
   State<_ChannelsListWidget> createState() => _ChannelsListWidgetState();

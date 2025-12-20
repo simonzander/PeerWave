@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:livekit_client/livekit_client.dart';
 import 'package:go_router/go_router.dart';
 import '../services/meeting_service.dart';
 import '../services/video_conference_service.dart';
@@ -18,9 +17,9 @@ class MeetingPreJoinView extends StatefulWidget {
   final String meetingId;
 
   const MeetingPreJoinView({
-    Key? key,
+    super.key,
     required this.meetingId,
-  }) : super(key: key);
+  }) ;
 
   @override
   State<MeetingPreJoinView> createState() => _MeetingPreJoinViewState();
@@ -199,7 +198,9 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         
         if (userId == null || deviceId == null) continue;
         if (userId == SignalService.instance.currentUserId && 
-            deviceId == SignalService.instance.currentDeviceId) continue;
+            deviceId == SignalService.instance.currentDeviceId) {
+          continue;
+        }
         
         try {
           await SignalService.instance.loadSenderKeyFromServer(

@@ -10,7 +10,7 @@ import 'video_participant_tile.dart';
 /// Draggable video overlay that shows active call
 /// Can be minimized, maximized, and closed
 class CallOverlay extends StatefulWidget {
-  const CallOverlay({Key? key}) : super(key: key);
+  const CallOverlay({super.key});
 
   @override
   State<CallOverlay> createState() => _CallOverlayState();
@@ -469,10 +469,12 @@ class _CallOverlayState extends State<CallOverlay> {
             final aState = _participantStates[a.identity];
             final bState = _participantStates[b.identity];
 
-            if (aState?.isSpeaking == true && bState?.isSpeaking != true)
+            if (aState?.isSpeaking == true && bState?.isSpeaking != true) {
               return -1;
-            if (bState?.isSpeaking == true && aState?.isSpeaking != true)
+            }
+            if (bState?.isSpeaking == true && aState?.isSpeaking != true) {
               return 1;
+            }
 
             if (aState != null && bState != null) {
               return bState.lastSpokeAt.compareTo(aState.lastSpokeAt);

@@ -122,6 +122,7 @@ class LogoutService {
                     
                     // Redirect to /app
                     await Future.delayed(const Duration(milliseconds: 100));
+                    if (!validContext.mounted) return;
                     GoRouter.of(validContext).go('/app');
                   }
                   
@@ -463,6 +464,7 @@ class LogoutService {
             ),
           );
           await Future.delayed(const Duration(milliseconds: 100));
+          if (!validContext.mounted) return;
           GoRouter.of(validContext).go('/server-selection');
         } else {
           // Web: Show login link

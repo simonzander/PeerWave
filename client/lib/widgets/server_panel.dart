@@ -13,7 +13,7 @@ import '../providers/unread_messages_provider.dart';
 class ServerPanel extends StatefulWidget {
   final Function(String serverId)? onServerSelected;
 
-  const ServerPanel({Key? key, this.onServerSelected}) : super(key: key);
+  const ServerPanel({super.key, this.onServerSelected});
 
   @override
   State<ServerPanel> createState() => _ServerPanelState();
@@ -188,6 +188,7 @@ class _ServerPanelState extends State<ServerPanel> {
                 controller.text,
               );
               _loadServers();
+              if (!mounted) return;
               if (mounted) {
                 Navigator.pop(context);
               }

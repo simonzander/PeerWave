@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 
 /// Stub service for web platform (no-op implementation)
 class SystemTrayService {

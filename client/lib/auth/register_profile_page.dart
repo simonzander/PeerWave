@@ -9,7 +9,7 @@ import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
 
 class RegisterProfilePage extends StatefulWidget {
-  const RegisterProfilePage({Key? key}) : super(key: key);
+  const RegisterProfilePage({super.key});
 
   @override
   State<RegisterProfilePage> createState() => _RegisterProfilePageState();
@@ -136,6 +136,7 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
           
           // Wait a moment for the user to see the message
           await Future.delayed(const Duration(seconds: 1));
+          if (!mounted) return;
           
           // Navigate to login page
           GoRouter.of(context).go('/login');

@@ -271,8 +271,9 @@ class MeetingService {
     if (voiceOnly != null) updates['voice_only'] = voiceOnly;
     if (muteOnJoin != null) updates['mute_on_join'] = muteOnJoin;
     if (maxParticipants != null) updates['max_participants'] = maxParticipants;
-    if (invitedParticipants != null)
+    if (invitedParticipants != null) {
       updates['invited_participants'] = invitedParticipants;
+    }
 
     final response = await ApiService.patch(
       '/api/meetings/$meetingId',

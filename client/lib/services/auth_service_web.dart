@@ -12,7 +12,6 @@ external JSPromise fetch(
   JSAny? init,
 );
 
-@JS()
 class AuthService {
   static bool isLoggedIn = false;
 

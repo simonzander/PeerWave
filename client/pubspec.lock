@@ -210,7 +210,7 @@ packages:
     source: hosted
     version: "1.0.0"
   collection:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: collection
       sha256: "2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76"
@@ -748,7 +748,7 @@ packages:
     source: hosted
     version: "0.20.2"
   js:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: js
       sha256: "53385261521cc4a0c4658fd0ad07a7d14591cf8fc33abbceae306ddb974888dc"

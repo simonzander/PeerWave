@@ -7,6 +7,7 @@
 /// Working platforms: Android, iOS, macOS, Web
 /// 
 /// See: https://github.com/flutter-webrtc/flutter-webrtc/tree/main/common/cpp/src
+library;
 
 import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart';

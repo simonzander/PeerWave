@@ -1,5 +1,3 @@
-import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import '../models/audio_settings.dart';
 
@@ -45,7 +43,6 @@ class AudioProcessorService {
 
   Float32List _applyNoiseGate(Float32List samples) {
     final threshold = _dbToLinear(_settings.noiseGate.threshold);
-    final attackTime = _settings.noiseGate.attack / 1000.0; // Convert to seconds
     final releaseTime = _settings.noiseGate.release / 1000.0;
     
     final result = Float32List(samples.length);

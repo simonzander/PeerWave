@@ -16,7 +16,6 @@ const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
 const { hasServerPermission } = require('../db/roleHelpers');
-const { buildIceServerConfig } = require('../lib/turnCredentials');
 const livekitWrapper = require('../lib/livekit-wrapper');
 const { verifySessionAuth, verifyAuthEither } = require('../middleware/sessionAuth');
 
@@ -94,22 +93,8 @@ clientRoutes.get("/client/meta", async (req, res) => {
         }
     };
     
-    // Add ICE server configuration if user is authenticated
-    // Use session UUID or generate a temporary ID for unauthenticated users
-    const userId = req.session.uuid || `guest_${Date.now()}`;
-    
-    try {
-        const iceServers = buildIceServerConfig(config, userId);
-        response.iceServers = iceServers;
-        
-        console.log(`[CLIENT META] Providing ICE servers to user ${userId}`);
-    } catch (error) {
-        console.error('[CLIENT META] Failed to build ICE server config:', error);
-        // Fallback to public STUN only
-        response.iceServers = [
-            { urls: ['stun:stun.l.google.com:19302'] }
-        ];
-    }
+    // Note: ICE servers are now provided by LiveKit via /api/livekit/ice-config
+    // This endpoint only provides server metadata and settings
     
     // Add server settings (server name, picture, registration mode)
     try {
@@ -1649,7 +1634,8 @@ clientRoutes.get("/channels", async (req, res) => {
             console.log('Channels:', channels);
             console.log(`Threads:`, threads.user);
             console.log('User Data:', user.dataValues);
-            res.render("channels", { channels: channels, threads: threads, user: user });
+            // REMOVED: Pug render (Pug disabled, Flutter web client used)
+            res.status(410).json({ error: "Pug routes deprecated - use Flutter web client" });
         } else {
             //res.redirect("/login");
         }
@@ -1776,7 +1762,8 @@ clientRoutes.get("/channel/:name", async (req, res) => {
             }
 
                 console.log(`Threads for channel ${channel.name}:`, threads);
-                res.render("channel", { channel: channel, threads: threads, channels: channels, user: user });
+                // REMOVED: Pug render (Pug disabled, Flutter web client used)
+                res.status(410).json({ error: "Pug routes deprecated - use Flutter web client" });
             }
         } else {
             //res.redirect("/login");

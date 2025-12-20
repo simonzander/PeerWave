@@ -305,6 +305,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
 
     if (confirmed != true) return;
+    if (!mounted) return;
 
     // Second confirmation with typed confirmation
     final textConfirmed = await showDialog<bool>(

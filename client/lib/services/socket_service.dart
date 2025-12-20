@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:uuid/uuid.dart';
@@ -32,13 +32,13 @@ class SocketService {
     debugPrint('[SOCKET SERVICE] 🏗️ Private constructor called, creating NEW instance');
   }
 
-  IO.Socket? _socket;
+  io.Socket? _socket;
   final Map<String, List<void Function(dynamic)>> _listeners = {};
   bool _connecting = false;
   bool _listenersRegistered = false; // 🔒 Track listener registration state
   
   // Public getter for socket (needed by SocketFileClient)
-  IO.Socket? get socket => _socket;
+  io.Socket? get socket => _socket;
   
   /// Check if listeners are registered and client is ready
   bool get isReady => _listenersRegistered && (_socket?.connected ?? false);
@@ -67,7 +67,7 @@ class SocketService {
       if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      _socket = IO.io(urlString, <String, dynamic>{
+      _socket = io.io(urlString, <String, dynamic>{
         'transports': ['websocket'],
         'autoConnect': false, // Manually connect after setup to ensure cookies are ready
         'reconnection': true,

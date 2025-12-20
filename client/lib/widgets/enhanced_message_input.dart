@@ -9,10 +9,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:crypto/crypto.dart';
-import 'package:cross_file/cross_file.dart';
 import 'package:audio_waveforms/audio_waveforms.dart';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:async';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
@@ -209,10 +207,7 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
     final cursorPos = _controller.selection.baseOffset;
     final mentionText = '@${user['atName'] ?? user['displayName']}';
     
-    final newText = text.substring(0, _mentionStartIndex!) +
-                    mentionText +
-                    ' ' +
-                    text.substring(cursorPos);
+    final newText = '${text.substring(0, _mentionStartIndex!)}$mentionText ${text.substring(cursorPos)}';
     
     _controller.text = newText;
     _controller.selection = TextSelection.collapsed(
@@ -787,7 +782,7 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
         if (mounted && isLoadingShown) {
           Navigator.of(context, rootNavigator: true).pop();
         }
-        throw uploadError;
+        rethrow;
       }
       
     } catch (e) {

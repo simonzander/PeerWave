@@ -140,7 +140,16 @@ server/cert/ca-key.pem
 server/cert/ca-cert.pem
 server/cert/license.crt
 server/cert/README.md
+server/cert/*.ps1
 QUICKSTART-LICENSE.md
+
+# License validator build dependencies (temporary build files)
+server/lib/node_modules/
+server/lib/test-hash.js
+server/lib/ca-cert-lf.pem
+
+# NOTE: Pre-built binaries (server/bin/license-validator-*) ARE included in git
+# This ensures consistent validator deployment without requiring pkg/build step
 
 # Server web build
 server/web/*
@@ -194,6 +203,9 @@ client/android/app/release
 docker-build.log
 
 # Build artifacts
+# Include license validator binaries
+!server/bin/license-validator-win.exe
+!server/bin/license-validator-linux
 *.exe
 *.dll
 *.so
@@ -213,3 +225,32 @@ livekit-certs/*.crt
 client/lib/core/version/version_info.dart
 tools/.dart_tool/
 tools/pubspec.lock
+URL_LAUNCHER_MIGRATION.md
+CI_CD_QUICK_REFERENCE.md
+CI_CD_SETUP_COMPLETE.md
+JS_PACKAGE_MIGRATION.md
+PRODUCTION_DEPLOYMENT_PLAN.md
+client/analyze_current.txt
+UNUSED_FILES.md
+client/analyze_final.txt
+client/analyze_output_new.txt
+client/analyze_output.txt
+client/fix_build_context.ps1
+client/fix_deprecations.ps1
+client/fix_io_prefix.ps1
+client/fix_print.ps1
+client/fix_super_parameters.ps1
+client/fix_warnings_step1.ps1
+client/linux/flutter/generated_plugin_registrant.cc
+client/linux/flutter/generated_plugin_registrant.h
+client/linux/flutter/generated_plugins.cmake
+client/macos/Flutter/GeneratedPluginRegistrant.swift
+client/windows/flutter/generated_plugin_registrant.cc
+client/windows/flutter/generated_plugin_registrant.h
+client/windows/flutter/generated_plugins.cmake
+server/lib/build-validator.bat
+server/lib/build-validator.sh
+server/lib/license-validator-standalone.js
+server/lib/package-validator.json
+server/lib/QUICKSTART-VALIDATOR.md
+server/lib/README-VALIDATOR.md

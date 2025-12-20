@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
 import 'package:peerwave_client/core/storage/app_directories.dart';
 import '../device_identity_service.dart';
 import '../server_config_native.dart';

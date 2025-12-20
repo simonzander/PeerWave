@@ -8,10 +8,10 @@
 /// 
 /// This allows:
 /// - ✅ Audio/video frame encryption (FrameCryptor works on all platforms)
+library;
 /// - ⚠️ Data channel is not encrypted (DataPacketCryptor skipped on Windows/Linux)
 
 import 'dart:io' show Platform;
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart';
@@ -19,9 +19,9 @@ import 'package:livekit_client/livekit_client.dart';
 /// E2EE Manager that works on Windows/Linux by skipping DataPacketCryptor
 class WindowsCompatibleE2EEManager extends E2EEManager {
   WindowsCompatibleE2EEManager(
-    BaseKeyProvider keyProvider, {
-    bool dcEncryptionEnabled = false,
-  }) : super(keyProvider, dcEncryptionEnabled: dcEncryptionEnabled);
+    super.keyProvider, {
+    super.dcEncryptionEnabled,
+  });
 
   @override
   Future<void> setup(Room room) async {

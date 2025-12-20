@@ -33,7 +33,7 @@ import '../../widgets/file_size_error_dialog.dart';
 /// - Delete files from localStorage and unannounce
 /// - Share files via Signal (1:1 or Channel)
 class FileManagerScreen extends StatefulWidget {
-  const FileManagerScreen({Key? key}) : super(key: key);
+  const FileManagerScreen({super.key});
 
   @override
   State<FileManagerScreen> createState() => _FileManagerScreenState();
@@ -1231,13 +1231,12 @@ class _AddFileProgressDialog extends StatefulWidget {
   final Function(String) onError;
   
   const _AddFileProgressDialog({
-    Key? key,
     required this.fileName,
     required this.fileSize,
     required this.fileBytes,
     required this.onComplete,
     required this.onError,
-  }) : super(key: key);
+  });
 
   @override
   State<_AddFileProgressDialog> createState() => _AddFileProgressDialogState();
@@ -1403,9 +1402,7 @@ class _AddFileProgressDialogState extends State<_AddFileProgressDialog> {
   }
   
   String _generateFileId() {
-    return DateTime.now().millisecondsSinceEpoch.toString() +
-           '_' +
-           widget.fileName.hashCode.toString();
+    return '${DateTime.now().millisecondsSinceEpoch}_${widget.fileName.hashCode}';
   }
   
   @override
@@ -1480,7 +1477,7 @@ enum FileFilter {
 class _ShareFileDialog extends StatefulWidget {
   final Map<String, dynamic> file;
 
-  const _ShareFileDialog({Key? key, required this.file}) : super(key: key);
+  const _ShareFileDialog({required this.file});
 
   @override
   State<_ShareFileDialog> createState() => _ShareFileDialogState();
@@ -1675,6 +1672,7 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
         // Get all channel members (excluding self)
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         final members = await roleProvider.getChannelMembers(channelId);
+        if (!mounted) return;
         
         // Get own userId from SignalService
         final ownUserId = signalService.currentUserId;
@@ -1874,7 +1872,6 @@ class _DownloadFileProgressDialog extends StatefulWidget {
   final Function(String) onError;
   
   const _DownloadFileProgressDialog({
-    Key? key,
     required this.storage,
     required this.encryptionService,
     required this.chunkingService,
@@ -1884,7 +1881,7 @@ class _DownloadFileProgressDialog extends StatefulWidget {
     required this.downloadedChunks,
     required this.onComplete,
     required this.onError,
-  }) : super(key: key);
+  });
 
   @override
   State<_DownloadFileProgressDialog> createState() => _DownloadFileProgressDialogState();

@@ -424,7 +424,7 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
 
                 // Registration Mode Dropdown
                 DropdownButtonFormField<String>(
-                  value: _registrationMode,
+                  initialValue: _registrationMode,
                   decoration: InputDecoration(
                     labelText: 'Registration Mode',
                     filled: true,

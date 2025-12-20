@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -108,7 +109,7 @@ class ServerConfig {
     String? serverName,
   }) {
     return ServerConfig(
-      id: this.id,
+      id: id,
       serverUrl: serverUrl,
       serverHash: serverHash,
       credentials: credentials ?? this.credentials,
@@ -137,7 +138,7 @@ class ServerConfigService {
     await _loadServers();
     await _loadActiveServerId();
     await _cleanupStaleServers(); // Remove servers without valid sessions
-    print('[ServerConfig] Initialized with ${_servers.length} servers');
+    debugPrint('[ServerConfig] Initialized with ${_servers.length} servers');
   }
 
   /// Remove servers that don't have valid HMAC sessions
@@ -148,7 +149,7 @@ class ServerConfigService {
     final hasSession = await SessionAuthService().hasSession(clientId);
 
     if (!hasSession && _servers.isNotEmpty) {
-      print('[ServerConfig] No valid session found - clearing all servers');
+      debugPrint('[ServerConfig] No valid session found - clearing all servers');
       _servers.clear();
       await _saveServers();
       _activeServerId = null;
@@ -167,10 +168,10 @@ class ServerConfigService {
         // Sort by lastActive (most recent first)
         _servers.sort((a, b) => b.lastActive.compareTo(a.lastActive));
         
-        print('[ServerConfig] Loaded ${_servers.length} servers');
+        debugPrint('[ServerConfig] Loaded ${_servers.length} servers');
       }
     } catch (e) {
-      print('[ServerConfig] Error loading servers: $e');
+      debugPrint('[ServerConfig] Error loading servers: $e');
       _servers = [];
     }
   }
@@ -178,7 +179,7 @@ class ServerConfigService {
   /// Load active server ID
   static Future<void> _loadActiveServerId() async {
     _activeServerId = await _storage.read(key: _storageKeyActiveServer);
-    print('[ServerConfig] Active server: $_activeServerId');
+    debugPrint('[ServerConfig] Active server: $_activeServerId');
   }
 
   /// Save servers to secure storage
@@ -186,9 +187,9 @@ class ServerConfigService {
     try {
       final json = jsonEncode(_servers.map((e) => e.toJson()).toList());
       await _storage.write(key: _storageKeyServerList, value: json);
-      print('[ServerConfig] Saved ${_servers.length} servers');
+      debugPrint('[ServerConfig] Saved ${_servers.length} servers');
     } catch (e) {
-      print('[ServerConfig] Error saving servers: $e');
+      debugPrint('[ServerConfig] Error saving servers: $e');
     }
   }
 
@@ -196,7 +197,7 @@ class ServerConfigService {
   static Future<void> _saveActiveServerId() async {
     if (_activeServerId != null) {
       await _storage.write(key: _storageKeyActiveServer, value: _activeServerId!);
-      print('[ServerConfig] Saved active server: $_activeServerId');
+      debugPrint('[ServerConfig] Saved active server: $_activeServerId');
     }
   }
 
@@ -238,7 +239,7 @@ class ServerConfigService {
     );
     
     if (existingServer.serverUrl.isNotEmpty) {
-      print('[ServerConfig] Server already exists, updating credentials for: ${existingServer.getDisplayName()} (${existingServer.id})');
+      debugPrint('[ServerConfig] Server already exists, updating credentials for: ${existingServer.getDisplayName()} (${existingServer.id})');
       // Update credentials (HMAC session) for existing server
       await updateCredentials(existingServer.id, credentials);
       await setActiveServer(existingServer.id);
@@ -268,7 +269,7 @@ class ServerConfigService {
       await setActiveServer(id);
     }
 
-    print('[ServerConfig] Added server: ${config.getDisplayName()} ($id)');
+    debugPrint('[ServerConfig] Added server: ${config.getDisplayName()} ($id)');
     return config;
   }
 
@@ -276,7 +277,7 @@ class ServerConfigService {
   static Future<bool> removeServer(String serverId) async {
     final index = _servers.indexWhere((s) => s.id == serverId);
     if (index == -1) {
-      print('[ServerConfig] Server not found: $serverId');
+      debugPrint('[ServerConfig] Server not found: $serverId');
       return false;
     }
 
@@ -293,7 +294,7 @@ class ServerConfigService {
       }
     }
 
-    print('[ServerConfig] Removed server: $serverId');
+    debugPrint('[ServerConfig] Removed server: $serverId');
     return true;
   }
 
@@ -312,11 +313,11 @@ class ServerConfigService {
     );
 
     if (server.id.isEmpty) {
-      print('[ServerConfig] Server not found: $serverId');
+      debugPrint('[ServerConfig] Server not found: $serverId');
       return false;
     }
 
-    print('[ServerConfig] Deleting server and all data: ${server.getDisplayName()} ($serverId)');
+    debugPrint('[ServerConfig] Deleting server and all data: ${server.getDisplayName()} ($serverId)');
 
     try {
       // 1. Delete SQLite databases for this server's device
@@ -330,7 +331,7 @@ class ServerConfigService {
       final isLastServer = _servers.length == 1;
       
       if (isLastServer && await directory.exists()) {
-        print('[ServerConfig] This is the last server - deleting all SQLite databases');
+        debugPrint('[ServerConfig] This is the last server - deleting all SQLite databases');
         final files = await directory.list().toList();
         // Look for peerwave_*.db files
         for (final file in files) {
@@ -338,15 +339,15 @@ class ServerConfigService {
           if (fileName.startsWith('peerwave_') && fileName.endsWith('.db')) {
             try {
               await file.delete();
-              print('[ServerConfig] Deleted database: ${file.path}');
+              debugPrint('[ServerConfig] Deleted database: ${file.path}');
             } catch (e) {
-              print('[ServerConfig] Error deleting database ${file.path}: $e');
+              debugPrint('[ServerConfig] Error deleting database ${file.path}: $e');
             }
           }
         }
         
         // 2. Delete secure storage keys (only if last server)
-        print('[ServerConfig] Deleting all secure storage keys');
+        debugPrint('[ServerConfig] Deleting all secure storage keys');
         final allKeys = await _storage.readAll();
         final keysToDelete = [
           'session_secret_',
@@ -364,23 +365,23 @@ class ServerConfigService {
           if (keysToDelete.any((prefix) => key.contains(prefix) || key == prefix)) {
             try {
               await _storage.delete(key: key);
-              print('[ServerConfig] Deleted secure storage key: $key');
+              debugPrint('[ServerConfig] Deleted secure storage key: $key');
             } catch (e) {
-              print('[ServerConfig] Error deleting key $key: $e');
+              debugPrint('[ServerConfig] Error deleting key $key: $e');
             }
           }
         }
       } else {
-        print('[ServerConfig] Multiple servers exist - keeping shared data (device identity, encryption keys)');
+        debugPrint('[ServerConfig] Multiple servers exist - keeping shared data (device identity, encryption keys)');
       }
 
       // 3. Remove server from config list
       await removeServer(serverId);
 
-      print('[ServerConfig] ✓ Server and all associated data deleted: $serverId');
+      debugPrint('[ServerConfig] ✓ Server and all associated data deleted: $serverId');
       return true;
     } catch (e) {
-      print('[ServerConfig] Error deleting server data: $e');
+      debugPrint('[ServerConfig] Error deleting server data: $e');
       rethrow;
     }
   }
@@ -413,7 +414,7 @@ class ServerConfigService {
     }
     
     await _saveActiveServerId();
-    print('[ServerConfig] Set active server: $serverId');
+    debugPrint('[ServerConfig] Set active server: $serverId');
   }
 
   /// Get server by ID
@@ -431,7 +432,7 @@ class ServerConfigService {
     if (index != -1) {
       _servers[index] = _servers[index].copyWith(iconPath: iconPath);
       await _saveServers();
-      print('[ServerConfig] Updated icon for $serverId: $iconPath');
+      debugPrint('[ServerConfig] Updated icon for $serverId: $iconPath');
     }
   }
 
@@ -441,7 +442,7 @@ class ServerConfigService {
     if (index != -1) {
       _servers[index] = _servers[index].copyWith(unreadCount: count);
       await _saveServers();
-      print('[ServerConfig] Updated unread count for $serverId: $count');
+      debugPrint('[ServerConfig] Updated unread count for $serverId: $count');
     }
   }
 
@@ -476,7 +477,7 @@ class ServerConfigService {
     if (index != -1) {
       _servers[index] = _servers[index].copyWith(displayName: displayName);
       await _saveServers();
-      print('[ServerConfig] Updated display name for $serverId: $displayName');
+      debugPrint('[ServerConfig] Updated display name for $serverId: $displayName');
     }
   }
 
@@ -486,7 +487,7 @@ class ServerConfigService {
     if (index != -1) {
       _servers[index] = _servers[index].copyWith(credentials: credentials);
       await _saveServers();
-      print('[ServerConfig] Updated credentials for $serverId');
+      debugPrint('[ServerConfig] Updated credentials for $serverId');
     }
   }
 
@@ -495,7 +496,7 @@ class ServerConfigService {
     try {
       final index = _servers.indexWhere((s) => s.id == serverId);
       if (index == -1) {
-        print('[ServerConfig] Server not found: $serverId');
+        debugPrint('[ServerConfig] Server not found: $serverId');
         return;
       }
 
@@ -517,10 +518,10 @@ class ServerConfigService {
         );
         
         await _saveServers();
-        print('[ServerConfig] Updated metadata for ${server.getDisplayName()}: name=$serverName, hasPicture=${serverPicture != null}');
+        debugPrint('[ServerConfig] Updated metadata for ${server.getDisplayName()}: name=$serverName, hasPicture=${serverPicture != null}');
       }
     } catch (e) {
-      print('[ServerConfig] Failed to fetch server metadata for $serverId: $e');
+      debugPrint('[ServerConfig] Failed to fetch server metadata for $serverId: $e');
     }
   }
 
@@ -558,6 +559,6 @@ class ServerConfigService {
     _activeServerId = null;
     await _storage.delete(key: _storageKeyServerList);
     await _storage.delete(key: _storageKeyActiveServer);
-    print('[ServerConfig] Cleared all servers');
+    debugPrint('[ServerConfig] Cleared all servers');
   }
 }

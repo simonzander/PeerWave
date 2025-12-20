@@ -28,7 +28,7 @@ class UnreadMessagesProvider extends ChangeNotifier {
   static const String _storageKeyActivityNotifications = 'unread_activity_notifications';
   
   /// Whitelisted message types that should increment badge counts
-  static const Set<String> BADGE_MESSAGE_TYPES = {
+  static const Set<String> badgeMessageTypes = {
     'message', 
     'file', 
     'emote', 
@@ -41,7 +41,7 @@ class UnreadMessagesProvider extends ChangeNotifier {
   
   /// Activity notification types (subset of badge types)
   /// These are shown in Activities/Notifications tab, not in chat message lists
-  static const Set<String> ACTIVITY_NOTIFICATION_TYPES = {
+  static const Set<String> activityNotificationTypes = {
     'emote', 
     'mention', 
     'missingcall', 
@@ -156,13 +156,13 @@ class UnreadMessagesProvider extends ChangeNotifier {
   
   /// Increment unread count based on message type (with type filtering)
   /// 
-  /// Only increments if messageType is in BADGE_MESSAGE_TYPES
+  /// Only increments if messageType is in badgeMessageTypes
   void incrementIfBadgeType(
     String messageType,
     String targetId,
     bool isChannel,
   ) {
-    if (!BADGE_MESSAGE_TYPES.contains(messageType)) {
+    if (!badgeMessageTypes.contains(messageType)) {
       debugPrint('[UnreadProvider] Ignoring non-badge type: $messageType');
       return;
     }

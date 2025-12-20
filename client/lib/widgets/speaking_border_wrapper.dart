@@ -7,11 +7,11 @@ class SpeakingBorderWrapper extends StatefulWidget {
   final Color? glowColor;
 
   const SpeakingBorderWrapper({
-    Key? key,
+    super.key,
     required this.child,
     required this.isSpeaking,
     this.glowColor,
-  }) : super(key: key);
+  }) ;
 
   @override
   State<SpeakingBorderWrapper> createState() => _SpeakingBorderWrapperState();
@@ -80,7 +80,7 @@ class _SpeakingBorderWrapperState extends State<SpeakingBorderWrapper>
             boxShadow: glowOpacity > 0
                 ? [
                     BoxShadow(
-                      color: glowColor.withOpacity(glowOpacity),
+                      color: glowColor.withValues(alpha: glowOpacity),
                       blurRadius: 12,
                       spreadRadius: 3,
                     ),

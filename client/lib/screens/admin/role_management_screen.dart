@@ -5,7 +5,7 @@ import '../../providers/role_provider.dart';
 import '../../extensions/snackbar_extensions.dart';
 
 class RoleManagementScreen extends StatefulWidget {
-  const RoleManagementScreen({Key? key}) : super(key: key);
+  const RoleManagementScreen({super.key});
 
   @override
   State<RoleManagementScreen> createState() => _RoleManagementScreenState();
@@ -132,6 +132,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
           scope: _selectedScope,
           permissions: permissions,
         );
+        if (!mounted) return;
         _showSuccess('Role created successfully');
         _loadRoles();
       } catch (e) {
@@ -215,6 +216,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
           description: description.isNotEmpty ? description : null,
           permissions: permissions.isNotEmpty ? permissions : null,
         );
+        if (!mounted) return;
         _showSuccess('Role updated successfully');
         _loadRoles();
       } catch (e) {
@@ -254,6 +256,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
       try {
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         await roleProvider.deleteRole(role.uuid);
+        if (!mounted) return;
         _showSuccess('Role deleted successfully');
         _loadRoles();
       } catch (e) {

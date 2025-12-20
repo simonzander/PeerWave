@@ -14,7 +14,7 @@ String localStorageGetItem(String key) {
 }
 
 class RegisterWebauthnPage extends StatelessWidget {
-  const RegisterWebauthnPage({Key? key}) : super(key: key);
+  const RegisterWebauthnPage({super.key});
 
   @override
   Widget build(BuildContext context) {

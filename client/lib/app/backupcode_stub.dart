@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class BackupCodeListPage extends StatelessWidget {
-  const BackupCodeListPage({Key? key}) : super(key: key);
+  const BackupCodeListPage({super.key});
 
   @override
   Widget build(BuildContext context) {

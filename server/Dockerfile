@@ -51,6 +51,14 @@ COPY --from=builder /usr/src/app/node_modules ./node_modules
 # Copy application code (includes pre-built web/ folder)
 COPY . .
 
+# Copy license validator binary and set permissions
+RUN if [ -f bin/license-validator-linux ]; then \
+      chmod +x bin/license-validator-linux && \
+      echo "License validator binary configured"; \
+    else \
+      echo "Warning: License validator binary not found - will use non-commercial mode"; \
+    fi
+
 # Create directories for persistent data
 RUN mkdir -p /usr/src/app/db /usr/src/app/cert /usr/src/app/coturn/data
 

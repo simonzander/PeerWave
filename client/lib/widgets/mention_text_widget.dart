@@ -74,6 +74,7 @@ class _MentionTextWidgetState extends State<MentionTextWidget> {
       ),
     );
 
+    if (!mounted) return;
     Overlay.of(context).insert(_profileCardOverlay!);
   }
 

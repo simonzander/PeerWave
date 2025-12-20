@@ -181,7 +181,7 @@ class PermanentSenderKeyStore extends SenderKeyStore {
       
       // Get all keys and filter by group
       final allKeys = await storage.getAllKeys(_storeName, _storeName);
-      final groupKeys = allKeys.where((k) => k.contains('${_keyPrefix}${groupId}_'));
+      final groupKeys = allKeys.where((k) => k.contains('$_keyPrefix$groupId}_'));
       
       for (final key in groupKeys) {
         await storage.deleteEncrypted(_storeName, _storeName, key);
@@ -194,7 +194,7 @@ class PermanentSenderKeyStore extends SenderKeyStore {
       
       if (keysJson != null) {
         List<String> keys = List<String>.from(jsonDecode(keysJson));
-        final groupKeys = keys.where((k) => k.contains('${_keyPrefix}${groupId}_')).toList();
+        final groupKeys = keys.where((k) => k.contains('$_keyPrefix$groupId}_')).toList();
         
         for (final key in groupKeys) {
           await storage.delete(key: key);

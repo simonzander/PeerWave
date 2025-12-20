@@ -130,6 +130,7 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
       
       // Get message store instance for last messages
       final messageStore = await SqliteMessageStore.getInstance();
+      if (!mounted) return;
       
       // Get unread provider
       final unreadProvider = context.read<UnreadMessagesProvider>();

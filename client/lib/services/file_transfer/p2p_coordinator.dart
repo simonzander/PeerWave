@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:math' show min, max;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -15,7 +14,6 @@ import '../../models/seeder_info.dart';
 import '../../providers/file_transfer_stats_provider.dart';
 // Web-only imports for browser download
 import 'package:universal_html/html.dart' as html show AnchorElement, Blob, Url, document;
-import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// Download phase tracking for graceful completion
 enum DownloadPhase {
@@ -90,11 +88,11 @@ class P2PCoordinator extends ChangeNotifier {
   
   // Rate limiting: Track chunks in flight per peer
   final Map<String, Set<int>> _chunksInFlightPerPeer = {};
-  static const int MAX_CHUNKS_IN_FLIGHT_PER_PEER = 5;
+  static const int maxChunksInFlightPerPeer = 5;
   
   // Chunk retry tracking: fileId -> Map<chunkIndex, RetryInfo>
   final Map<String, Map<int, ChunkRetryInfo>> _chunkRetryInfo = {};
-  static const int MAX_CHUNK_RETRIES = 3;
+  static const int maxChunkRetries = 3;
   
   // Chunk error tracking: Track which seeder failed for which chunk
   // fileId -> Map<chunkIndex, Set<failedPeerIds>>
@@ -1513,11 +1511,11 @@ class P2PCoordinator extends ChangeNotifier {
     debugPrint('[P2P ChunkRetry] ================================================');
     debugPrint('[P2P ChunkRetry] Chunk $chunkIndex failed from $peerId');
     debugPrint('[P2P ChunkRetry] Error: $error');
-    debugPrint('[P2P ChunkRetry] Attempt: ${retryInfo.attemptCount + 1}/$MAX_CHUNK_RETRIES');
+    debugPrint('[P2P ChunkRetry] Attempt: ${retryInfo.attemptCount + 1}/$maxChunkRetries');
     debugPrint('[P2P ChunkRetry] Failed seeders: ${_chunkFailedSeeders[fileId]![chunkIndex]!.toList()}');
     
     // Check if max retries exceeded
-    if (retryInfo.attemptCount >= MAX_CHUNK_RETRIES) {
+    if (retryInfo.attemptCount >= maxChunkRetries) {
       debugPrint('[P2P ChunkRetry] ❌ Max retries exceeded for chunk $chunkIndex');
       debugPrint('[P2P ChunkRetry] Marking chunk as permanently failed');
       debugPrint('[P2P ChunkRetry] Download will continue with other chunks');
@@ -1862,7 +1860,7 @@ class P2PCoordinator extends ChangeNotifier {
     
     // ✅ RATE LIMITING: Check chunks in flight for this peer
     final inFlight = _chunksInFlightPerPeer[peerId]?.length ?? 0;
-    if (inFlight >= MAX_CHUNKS_IN_FLIGHT_PER_PEER) {
+    if (inFlight >= maxChunksInFlightPerPeer) {
       debugPrint('[P2P RateLimit] Peer $peerId has $inFlight chunks in flight, waiting...');
       return;
     }
@@ -1909,7 +1907,7 @@ class P2PCoordinator extends ChangeNotifier {
     
     // Request up to the limit (use min of all limits)
     final effectiveLimit = min(
-      min(adaptiveLimit, MAX_CHUNKS_IN_FLIGHT_PER_PEER - inFlight),
+      min(adaptiveLimit, maxChunksInFlightPerPeer - inFlight),
       maxParallelChunksPerConnection - currentPeerRequests,
     );
     
@@ -2207,13 +2205,13 @@ class AdaptiveThrottler {
   int _slowdownCount = 0;
   
   // Limits
-  static const int MIN_LIMIT = 2;
-  static const int MAX_LIMIT = 10;
-  static const int DEFAULT_LIMIT = 5;
+  static const int minLimit = 2;
+  static const int maxLimit = 10;
+  static const int defaultLimit = 5;
   
   // Timing
-  static const Duration COOLDOWN_PERIOD = Duration(seconds: 5);
-  static const int SUCCESS_THRESHOLD = 10; // Speed up after N successes
+  static const Duration cooldownPeriod = Duration(seconds: 5);
+  static const int successThreshold = 10; // Speed up after N successes
   
   int getCurrentLimit() => _currentMaxInFlight;
   
@@ -2221,13 +2219,13 @@ class AdaptiveThrottler {
     _successCount++;
     
     // Speed up after consistent success
-    if (_successCount >= SUCCESS_THRESHOLD) {
+    if (_successCount >= successThreshold) {
       final now = DateTime.now();
       final canSpeedup = _lastSpeedup == null || 
-                         now.difference(_lastSpeedup!) > COOLDOWN_PERIOD;
+                         now.difference(_lastSpeedup!) > cooldownPeriod;
       
-      if (canSpeedup && _currentMaxInFlight < MAX_LIMIT) {
-        _currentMaxInFlight = min(MAX_LIMIT, _currentMaxInFlight + 1);
+      if (canSpeedup && _currentMaxInFlight < maxLimit) {
+        _currentMaxInFlight = min(maxLimit, _currentMaxInFlight + 1);
         _lastSpeedup = now;
         _successCount = 0;
         debugPrint('[AdaptiveThrottle] ↑ Increased limit to $_currentMaxInFlight');
@@ -2240,11 +2238,11 @@ class AdaptiveThrottler {
     
     // Only slowdown if not in cooldown
     final canSlowdown = _lastSlowdown == null || 
-                       now.difference(_lastSlowdown!) > COOLDOWN_PERIOD;
+                       now.difference(_lastSlowdown!) > cooldownPeriod;
     
     if (canSlowdown && bufferedAmount > 10 * 1024 * 1024) { // > 10 MB
-      if (_currentMaxInFlight > MIN_LIMIT) {
-        _currentMaxInFlight = max(MIN_LIMIT, _currentMaxInFlight - 1);
+      if (_currentMaxInFlight > minLimit) {
+        _currentMaxInFlight = max(minLimit, _currentMaxInFlight - 1);
         _lastSlowdown = now;
         _slowdownCount++;
         _successCount = 0; // Reset success counter
@@ -2254,7 +2252,7 @@ class AdaptiveThrottler {
   }
   
   void reset() {
-    _currentMaxInFlight = DEFAULT_LIMIT;
+    _currentMaxInFlight = defaultLimit;
     _lastSlowdown = null;
     _lastSpeedup = null;
     _successCount = 0;

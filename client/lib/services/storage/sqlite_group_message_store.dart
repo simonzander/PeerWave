@@ -717,7 +717,7 @@ class SqliteGroupMessageStore {
   }
 
   /// Get all reactions for a message
-  /// Returns: Map<emoji, List<userId>>
+  /// Returns: `Map<emoji, List<userId>>`
   Future<Map<String, dynamic>> getReactions(String messageId) async {
     try {
       final db = await DatabaseHelper.database;

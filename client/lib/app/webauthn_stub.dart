@@ -6,7 +6,7 @@ Future<bool> webauthnRegister(String serverUrl, String email) async {
 }
 
 class WebauthnPage extends StatelessWidget {
-  const WebauthnPage({Key? key}) : super(key: key);
+  const WebauthnPage({super.key});
 
   @override
   Widget build(BuildContext context) {

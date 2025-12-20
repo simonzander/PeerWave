@@ -7,10 +7,10 @@ class SocketAwareWidget extends StatefulWidget {
   final String featureName;
   
   const SocketAwareWidget({
-    Key? key,
+    super.key,
     required this.child,
     this.featureName = 'This feature',
-  }) : super(key: key);
+  }) ;
 
   @override
   State<SocketAwareWidget> createState() => _SocketAwareWidgetState();

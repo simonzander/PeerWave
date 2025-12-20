@@ -431,11 +431,7 @@ authRoutes.use(session({
     cookie: config.cookie // Set to true if using HTTPS
 }));
 
-// Implement register route
-authRoutes.get("/register", (req, res) => {
-    // Render the register form
-    res.render("register");
-});
+// REMOVED: Pug register route (Pug disabled, Flutter web client used)
 authRoutes.post("/register", async (req, res) => {
 
     const email = req.body.email;
@@ -622,12 +618,10 @@ authRoutes.post("/otp", (req, res) => {
                     res.status(200).json({ status: "ok", message: "Authentication successful" });
                 }
             });
-            //res.render("register-webauthn");
         }
     }).catch(error => {
         console.error('Error finding OTP:', error);
         res.status(400).json({ error: "Invalid OTP" });
-        //res.render("otp");
     });
 });
 
@@ -764,12 +758,6 @@ authRoutes.post("/backupcode/regenerate", async(req, res) => {
     }
 });
 
-// Implement login route
-/*authRoutes.get("/login", (req, res) => {
-    // Render the login form
-    res.render("login");
-});
-*/
 // POST logout route - destroys session and clears cookie
 authRoutes.post("/logout", async (req, res) => {
     // Support both HMAC (native) and Session (web) authentication
@@ -1426,7 +1414,8 @@ authRoutes.get("/channels", async (req, res) => {
             console.log('Channels:', channels);
             console.log(`Threads:`, threads.user);
             console.log('User Data:', user.dataValues);
-            res.render("channels", { channels: channels, threads: threads, user: user });
+            // REMOVED: Pug render (Pug disabled, Flutter web client used)
+            res.status(410).json({ error: "Pug routes deprecated - use Flutter web client" });
         } else {
             res.redirect("/login");
         }
@@ -1553,7 +1542,8 @@ authRoutes.get("/channel/:name", async (req, res) => {
             }
 
                 console.log(`Threads for channel ${channel.name}:`, threads);
-                res.render("channel", { channel: channel, threads: threads, channels: channels, user: user });
+                // REMOVED: Pug render (Pug disabled, Flutter web client used)
+                res.status(410).json({ error: "Pug routes deprecated - use Flutter web client" });
             }
         } else {
             res.redirect("/login");

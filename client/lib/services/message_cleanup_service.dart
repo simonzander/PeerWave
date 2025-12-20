@@ -12,13 +12,13 @@ class MessageCleanupService {
   factory MessageCleanupService() => instance;
   MessageCleanupService._internal();
 
-  static const String AUTO_DELETE_DAYS_KEY = 'auto_delete_days';
-  static const int DEFAULT_AUTO_DELETE_DAYS = 365;
+  static const String autoDeleteDaysKey = 'auto_delete_days';
+  static const int defaultAutoDeleteDays = 365;
 
   /// Initialize cleanup service - call on app start
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    final days = prefs.getInt(AUTO_DELETE_DAYS_KEY) ?? DEFAULT_AUTO_DELETE_DAYS;
+    final days = prefs.getInt(autoDeleteDaysKey) ?? defaultAutoDeleteDays;
     
     if (days > 0) {
       await cleanupOldMessages(days);

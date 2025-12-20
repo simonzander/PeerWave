@@ -16,7 +16,7 @@ class VideoPreJoinWidget extends StatefulWidget {
   final bool voiceOnly;
 
   const VideoPreJoinWidget({
-    Key? key,
+    super.key,
     this.showE2EEStatus = false,
     this.isFirstParticipant = false,
     this.participantCount = 0,
@@ -27,7 +27,7 @@ class VideoPreJoinWidget extends StatefulWidget {
     this.onRetryKeyExchange,
     this.onDeviceChanged,
     this.voiceOnly = false,
-  }) : super(key: key);
+  }) ;
 
   @override
   State<VideoPreJoinWidget> createState() => VideoPreJoinWidgetState();
@@ -291,7 +291,7 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
     return Column(
       children: [
         DropdownButtonFormField<MediaDevice>(
-          value: _selectedCamera,
+          initialValue: _selectedCamera,
           decoration: const InputDecoration(
             labelText: 'Camera',
             prefixIcon: Icon(Icons.videocam),
@@ -323,7 +323,7 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
 
   Widget _buildMicrophoneSelection() {
     return DropdownButtonFormField<MediaDevice>(
-      value: _selectedMicrophone,
+      initialValue: _selectedMicrophone,
       decoration: const InputDecoration(
         labelText: 'Microphone',
         prefixIcon: Icon(Icons.mic),

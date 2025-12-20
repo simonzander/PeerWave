@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:flutter/foundation.dart';
 
@@ -9,11 +8,11 @@ import 'package:flutter/foundation.dart';
 /// Manages WebRTC connections for chunk transfer between peers
 class WebRTCFileService extends ChangeNotifier {
   // Buffer management constants
-  static const int MAX_BUFFERED_AMOUNT = 16 * 1024 * 1024; // 16 MB
-  static const int HIGH_WATER_MARK = 8 * 1024 * 1024;      // 8 MB (50%)
-  static const int LOW_WATER_MARK = 2 * 1024 * 1024;       // 2 MB (12.5%)
-  static const int BACKPRESSURE_WAIT_MS = 10;              // 10ms wait interval
-  static const int BACKPRESSURE_TIMEOUT_SEC = 30;          // 30s timeout
+  static const int maxBufferedAmount = 16 * 1024 * 1024; // 16 MB
+  static const int highWaterMark = 8 * 1024 * 1024;      // 8 MB (50%)
+  static const int lowWaterMark = 2 * 1024 * 1024;       // 2 MB (12.5%)
+  static const int backpressureWaitMs = 10;              // 10ms wait interval
+  static const int backpressureTimeoutSec = 30;          // 30s timeout
   
   // Buffer statistics for monitoring
   final Map<String, BufferStats> _bufferStats = {};
@@ -249,17 +248,17 @@ class WebRTCFileService extends ChangeNotifier {
     
     // ✅ BACKPRESSURE: Wait if buffer is filling up
     int waitCount = 0;
-    final maxWaits = (BACKPRESSURE_TIMEOUT_SEC * 1000) ~/ BACKPRESSURE_WAIT_MS;
+    final maxWaits = (backpressureTimeoutSec * 1000) ~/ backpressureWaitMs;
     final startTime = DateTime.now();
     
     while (channel.bufferedAmount != null && 
-           channel.bufferedAmount! > HIGH_WATER_MARK) {
+           channel.bufferedAmount! > highWaterMark) {
       
       // Timeout check
       if (waitCount++ > maxWaits) {
         stats.recordTimeout(channel.bufferedAmount ?? 0);
         throw TimeoutException(
-          'Backpressure timeout: Buffer not draining (${channel.bufferedAmount} bytes) after ${BACKPRESSURE_TIMEOUT_SEC}s'
+          'Backpressure timeout: Buffer not draining (${channel.bufferedAmount} bytes) after ${backpressureTimeoutSec}s'
         );
       }
       
@@ -269,7 +268,7 @@ class WebRTCFileService extends ChangeNotifier {
                    '${(channel.bufferedAmount! / 1024 / 1024).toStringAsFixed(2)} MB buffered');
       }
       
-      await Future.delayed(Duration(milliseconds: BACKPRESSURE_WAIT_MS));
+      await Future.delayed(Duration(milliseconds: backpressureWaitMs));
     }
     
     // Record wait statistics
@@ -287,7 +286,7 @@ class WebRTCFileService extends ChangeNotifier {
       stats.updateMaxBuffered(channel.bufferedAmount!);
       
       // Log if getting close to limit
-      if (channel.bufferedAmount! > LOW_WATER_MARK) {
+      if (channel.bufferedAmount! > lowWaterMark) {
         debugPrint('[WebRTC Buffer] $peerId: ${(channel.bufferedAmount! / 1024 / 1024).toStringAsFixed(2)} MB buffered');
       }
     }

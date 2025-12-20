@@ -13,7 +13,7 @@ import '../../services/user_notification_settings_service.dart';
 /// - Activity notifications (mentions, reactions, etc.)
 /// - Platform-specific settings (Web permission request)
 class NotificationSettingsPage extends StatefulWidget {
-  const NotificationSettingsPage({Key? key}) : super(key: key);
+  const NotificationSettingsPage({super.key});
 
   @override
   State<NotificationSettingsPage> createState() =>

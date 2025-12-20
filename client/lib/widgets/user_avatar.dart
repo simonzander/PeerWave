@@ -12,14 +12,14 @@ class UserAvatar extends StatefulWidget {
   final bool isOnline;
 
   const UserAvatar({
-    Key? key,
+    super.key,
     this.userId,
     this.displayName,
     this.pictureData,
     this.size = 40,
     this.showOnlineStatus = false,
     this.isOnline = false,
-  }) : super(key: key);
+  }) ;
 
   @override
   State<UserAvatar> createState() => _UserAvatarState();
@@ -187,11 +187,11 @@ class SmallUserAvatar extends StatelessWidget {
   final String? pictureData;
 
   const SmallUserAvatar({
-    Key? key,
+    super.key,
     this.userId,
     this.displayName,
     this.pictureData,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {
@@ -213,13 +213,13 @@ class LargeUserAvatar extends StatelessWidget {
   final bool isOnline;
 
   const LargeUserAvatar({
-    Key? key,
+    super.key,
     this.userId,
     this.displayName,
     this.pictureData,
     this.showOnlineStatus = false,
     this.isOnline = false,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {
@@ -244,14 +244,14 @@ class SquareUserAvatar extends StatefulWidget {
   final bool isOnline;
 
   const SquareUserAvatar({
-    Key? key,
+    super.key,
     this.userId,
     this.displayName,
     this.pictureData,
     this.size = 40,
     this.showOnlineStatus = false,
     this.isOnline = false,
-  }) : super(key: key);
+  }) ;
 
   @override
   State<SquareUserAvatar> createState() => _SquareUserAvatarState();

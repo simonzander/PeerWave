@@ -88,8 +88,8 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
   // Track invited/joined users for missed call notifications (instant calls only)
   Set<String> _invitedUserIds = {};
-  Set<String> _joinedUserIds = {};
-  Set<String> _declinedUserIds = {}; // Track users who declined/timed out
+  final Set<String> _joinedUserIds = {};
+  final Set<String> _declinedUserIds = {}; // Track users who declined/timed out
 
   bool _autoLeaving = false;
 
@@ -792,7 +792,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
           // Participant count - optimized with Selector
           Selector<VideoConferenceService, int>(
             selector: (_, service) => service.remoteParticipants.length,
-            builder: (_, remoteCount, __) => Center(
+            builder: (_, remoteCount, _) => Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
@@ -1474,7 +1474,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                       }
                     },
                   );
-                }).toList(),
+                }),
             ],
           ),
         ),
@@ -1557,7 +1557,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                       }
                     },
                   );
-                }).toList(),
+                }),
             ],
           ),
         ),

@@ -8,10 +8,10 @@ class CallDurationTimer extends StatefulWidget {
   final TextStyle? style;
   
   const CallDurationTimer({
-    Key? key,
+    super.key,
     required this.startTime,
     this.style,
-  }) : super(key: key);
+  }) ;
   
   @override
   State<CallDurationTimer> createState() => _CallDurationTimerState();

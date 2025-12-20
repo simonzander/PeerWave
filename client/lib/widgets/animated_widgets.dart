@@ -236,8 +236,8 @@ class SlidePageRoute<T> extends PageRoute<T> {
   SlidePageRoute({
     required this.builder,
     this.startOffset,
-    RouteSettings? settings,
-  }) : super(settings: settings);
+    super.settings,
+  });
 
   @override
   Color? get barrierColor => null;

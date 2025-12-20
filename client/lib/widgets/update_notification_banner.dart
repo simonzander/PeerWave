@@ -9,9 +9,9 @@ class UpdateNotificationBanner extends StatelessWidget {
   final UpdateChecker updateChecker;
   
   const UpdateNotificationBanner({
-    Key? key,
+    super.key,
     required this.updateChecker,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {
@@ -104,9 +104,9 @@ class UpdateDetailsDialog extends StatelessWidget {
   final UpdateInfo update;
   
   const UpdateDetailsDialog({
-    Key? key,
+    super.key,
     required this.update,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {

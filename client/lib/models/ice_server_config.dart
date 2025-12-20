@@ -1,6 +1,7 @@
 /// ICE Server Configuration Models
 /// 
 /// Models for STUN/TURN server configuration received from server
+library;
 
 /// Single ICE Server (STUN or TURN)
 class IceServer {

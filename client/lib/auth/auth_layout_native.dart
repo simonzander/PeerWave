@@ -79,7 +79,7 @@ class _AuthLayoutState extends State<AuthLayout> {
 
   Future<String> _getDeviceId() async {
     // For demo, use a random string. Replace with real device/hardware ID in production.
-    return 'native-demo-' + DateTime.now().millisecondsSinceEpoch.toString();
+    return 'native-demo-${DateTime.now().millisecondsSinceEpoch}';
   }
 
   Future<void> webauthnLogin(String serverUrl, String email) async {

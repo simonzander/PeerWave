@@ -8,6 +8,7 @@
 /// - fileName: Encrypted in Signal message (user sees original name)
 /// - encryptedFileKey: AES-256 key for decrypting file chunks (encrypted with SenderKey)
 /// - checksum: SHA-256 hash for integrity verification
+library;
 /// 
 /// Privacy:
 /// - Only users in the channel can decrypt this message

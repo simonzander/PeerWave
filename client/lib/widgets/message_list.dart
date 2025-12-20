@@ -377,8 +377,8 @@ class _MessageListState extends State<MessageList> {
               duration: const Duration(milliseconds: 300),
               decoration: isHighlighted
                   ? BoxDecoration(
-                      color: theme.colorScheme.primaryContainer.withOpacity(
-                        0.3,
+                      color: theme.colorScheme.primaryContainer.withValues(
+                        alpha: 0.3,
                       ),
                       border: Border.all(
                         color: theme.colorScheme.primary,
@@ -434,8 +434,8 @@ class _MessageListState extends State<MessageList> {
                             Text(
                               _formatTime(msgTime),
                               style: TextStyle(
-                                color: theme.colorScheme.onSurface.withOpacity(
-                                  0.6,
+                                color: theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.6,
                                 ),
                                 fontSize: 13,
                               ),

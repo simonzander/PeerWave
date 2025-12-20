@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/file_transfer_stats_provider.dart';
 import 'package:fl_chart/fl_chart.dart';
-import '../theme/app_theme_constants.dart';
 
 /// Context panel for Files view showing transfer statistics
 class FilesContextPanel extends StatelessWidget {
-  const FilesContextPanel({Key? key}) : super(key: key);
+  const FilesContextPanel({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -85,8 +84,7 @@ class FilesContextPanel extends StatelessWidget {
                             .map(
                               (transfer) =>
                                   _buildTransferItem(context, transfer),
-                            )
-                            .toList(),
+                            ),
                       ],
                     ],
                   ),

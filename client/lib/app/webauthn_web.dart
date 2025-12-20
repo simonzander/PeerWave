@@ -19,7 +19,7 @@ Future<bool> webauthnRegister(String serverUrl, String email) async {
 }
 
 class WebauthnPage extends StatefulWidget {
-  const WebauthnPage({Key? key}) : super(key: key);
+  const WebauthnPage({super.key});
 
   @override
   State<WebauthnPage> createState() => _WebauthnPageState();
@@ -35,7 +35,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
 
   // Existing state
   List<Map<String, dynamic>> webauthnCredentials = [];
-  List<Map<String, dynamic>> Clients = [];
+  List<Map<String, dynamic>> clients = [];
   bool loading = false;
   int backupUnusedCount = 0;
   int backupTotalCount = 0;
@@ -105,7 +105,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
     if (remaining.isNegative) return 'Expired';
     final minutes = remaining.inMinutes;
     final seconds = remaining.inSeconds % 60;
-    return '${minutes}:${seconds.toString().padLeft(2, '0')}';
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
   void _showError(String message) {
@@ -150,6 +150,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
                 final resp = await ApiService.get(
                   '$urlString/backupcode/regenerate',
                 );
+                if (!mounted) return;
                 if (resp.statusCode == 200) {
                   GoRouter.of(context).go('/app/settings/backupcode/list');
                 }
@@ -217,11 +218,11 @@ class _WebauthnPageState extends State<WebauthnPage> {
       if (resp.statusCode == 200 && resp.data != null) {
         if (resp.data is List) {
           setState(() {
-            Clients = List<Map<String, dynamic>>.from(resp.data);
+            clients = List<Map<String, dynamic>>.from(resp.data);
           });
         } else if (resp.data is Map && resp.data['clients'] is List) {
           setState(() {
-            Clients = List<Map<String, dynamic>>.from(resp.data['clients']);
+            clients = List<Map<String, dynamic>>.from(resp.data['clients']);
           });
         }
       }
@@ -362,8 +363,9 @@ class _WebauthnPageState extends State<WebauthnPage> {
       final difference = now.difference(date);
 
       if (difference.inMinutes < 1) return 'Just now';
-      if (difference.inMinutes < 60)
+      if (difference.inMinutes < 60) {
         return '${difference.inMinutes} minutes ago';
+      }
       if (difference.inHours < 24) return '${difference.inHours} hours ago';
       return '${difference.inDays} days ago';
     } catch (e) {
@@ -698,7 +700,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
 
                   if (loading)
                     const Center(child: CircularProgressIndicator())
-                  else if (Clients.isEmpty)
+                  else if (clients.isEmpty)
                     Center(
                       child: Padding(
                         padding: const EdgeInsets.all(20.0),
@@ -717,10 +719,10 @@ class _WebauthnPageState extends State<WebauthnPage> {
                     ListView.separated(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      itemCount: Clients.length,
+                      itemCount: clients.length,
                       separatorBuilder: (context, index) => const Divider(),
                       itemBuilder: (context, index) {
-                        final device = Clients[index];
+                        final device = clients[index];
                         final isNative = !(device['browser'] ?? '')
                             .toLowerCase()
                             .contains('mozilla');

@@ -446,6 +446,7 @@ class _MeetingsScreenState extends State<MeetingsScreen>
 
     // Navigate to prejoin page
     // TODO: Implement prejoin view for meetings
+    if (!mounted) return;
     context.go('/meeting/prejoin/${meeting.meetingId}');
   }
 

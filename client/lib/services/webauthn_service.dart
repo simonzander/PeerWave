@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'device_identity_service.dart';
 import 'web/webauthn_crypto_service.dart';

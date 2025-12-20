@@ -10,11 +10,11 @@ class ParticipantProfileDisplay extends StatefulWidget {
   final double size;
 
   const ParticipantProfileDisplay({
-    Key? key,
+    super.key,
     required this.profilePictureBase64,
     required this.displayName,
     this.size = 150,
-  }) : super(key: key);
+  }) ;
 
   @override
   State<ParticipantProfileDisplay> createState() => _ParticipantProfileDisplayState();

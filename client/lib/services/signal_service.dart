@@ -517,91 +517,91 @@ class SignalService {
 
   Future<void> test() async {
     debugPrint("SignalService test method called");
-    final AliceIdentityKeyPair = generateIdentityKeyPair();
-    final AliceRegistrationId = generateRegistrationId(false);
-    final AliceIdentityStore = InMemoryIdentityKeyStore(
-      AliceIdentityKeyPair,
-      AliceRegistrationId,
+    final aliceIdentityKeyPair = generateIdentityKeyPair();
+    final aliceRegistrationId = generateRegistrationId(false);
+    final aliceIdentityStore = InMemoryIdentityKeyStore(
+      aliceIdentityKeyPair,
+      aliceRegistrationId,
     );
-    final AliceSessionStore = InMemorySessionStore();
-    final AlicePreKeyStore = InMemoryPreKeyStore();
-    final AliceSignedPreKeyStore = InMemorySignedPreKeyStore();
+    final aliceSessionStore = InMemorySessionStore();
+    final alicePreKeyStore = InMemoryPreKeyStore();
+    final aliceSignedPreKeyStore = InMemorySignedPreKeyStore();
 
-    final BobIdentityKeyPair = await identityStore.getIdentityKeyPair();
-    final BobRegistrationId = await identityStore.getLocalRegistrationId();
-    final BobIdentityStore = identityStore;
-    final BobSessionStore = sessionStore;
-    final BobPreKeyStore = preKeyStore;
-    final BobSignedPreKeyStore = signedPreKeyStore;
+    final bobIdentityKeyPair = await identityStore.getIdentityKeyPair();
+    final bobRegistrationId = await identityStore.getLocalRegistrationId();
+    final bobIdentityStore = identityStore;
+    final bobSessionStore = sessionStore;
+    final bobPreKeyStore = preKeyStore;
+    final bobSignedPreKeyStore = signedPreKeyStore;
 
     // Generate keys for Alice
     final alicePreKeys = generatePreKeys(0, 110);
-    final aliceSignedPreKey = generateSignedPreKey(AliceIdentityKeyPair, 0);
+    final aliceSignedPreKey = generateSignedPreKey(aliceIdentityKeyPair, 0);
 
     for (final p in alicePreKeys) {
-      await AlicePreKeyStore.storePreKey(p.id, p);
+      await alicePreKeyStore.storePreKey(p.id, p);
     }
-    await AliceSignedPreKeyStore.storeSignedPreKey(
+    await aliceSignedPreKeyStore.storeSignedPreKey(
       aliceSignedPreKey.id,
       aliceSignedPreKey,
     );
 
     // Generate keys for Bob (if not already present)
-    final bobPreKeysAll = await BobPreKeyStore.getAllPreKeys();
+    final bobPreKeysAll = await bobPreKeyStore.getAllPreKeys();
     if (bobPreKeysAll.isEmpty) {
       final bobPreKeys = generatePreKeys(0, 110);
       for (final p in bobPreKeys) {
-        await BobPreKeyStore.storePreKey(p.id, p);
+        await bobPreKeyStore.storePreKey(p.id, p);
       }
     }
 
-    final bobSignedPreKeysAll = await BobSignedPreKeyStore.loadSignedPreKeys();
+    final bobSignedPreKeysAll = await bobSignedPreKeyStore.loadSignedPreKeys();
     if (bobSignedPreKeysAll.isEmpty) {
-      final bobSignedPreKey = generateSignedPreKey(BobIdentityKeyPair, 0);
-      await BobSignedPreKeyStore.storeSignedPreKey(
+      final bobSignedPreKey = generateSignedPreKey(bobIdentityKeyPair, 0);
+      await bobSignedPreKeyStore.storeSignedPreKey(
         bobSignedPreKey.id,
         bobSignedPreKey,
       );
     }
-    final AliceAddress = SignalProtocolAddress(Uuid().v4(), 1);
-    final BobAddress = SignalProtocolAddress(Uuid().v4(), 1);
+    final aliceAddress = SignalProtocolAddress(Uuid().v4(), 1);
+    final bobAddress = SignalProtocolAddress(Uuid().v4(), 1);
 
-    final AliceSessionBuilder = SessionBuilder(
-      AliceSessionStore,
-      AlicePreKeyStore,
-      AliceSignedPreKeyStore,
-      AliceIdentityStore,
-      BobAddress,
+    final aliceSessionBuilder = SessionBuilder(
+      aliceSessionStore,
+      alicePreKeyStore,
+      aliceSignedPreKeyStore,
+      aliceIdentityStore,
+      bobAddress,
     );
 
     // Retrieve Bob's keys for the PreKeyBundle
-    final bobPreKeys = await BobPreKeyStore.getAllPreKeys();
-    final bobSignedPreKeys = await BobSignedPreKeyStore.loadSignedPreKeys();
+    final bobPreKeys = await bobPreKeyStore.getAllPreKeys();
+    final bobSignedPreKeys = await bobSignedPreKeyStore.loadSignedPreKeys();
 
     if (bobPreKeys.isEmpty || bobSignedPreKeys.isEmpty) {
       debugPrint("ERROR: Bob has no preKeys or signedPreKeys!");
       return;
     }
 
-    final BobRetrievedPreKey = PreKeyBundle(
-      BobRegistrationId,
+    final bobRetrievedPreKey = PreKeyBundle(
+      bobRegistrationId,
       1,
       bobPreKeys[0].id,
       bobPreKeys[0].getKeyPair().publicKey,
       bobSignedPreKeys[0].id,
       bobSignedPreKeys[0].getKeyPair().publicKey,
       bobSignedPreKeys[0].signature,
-      BobIdentityKeyPair.getPublicKey(),
+      bobIdentityKeyPair.getPublicKey(),
     );
 
-    await AliceSessionBuilder.processPreKeyBundle(BobRetrievedPreKey);
+    await aliceSessionBuilder.processPreKeyBundle(bobRetrievedPreKey);
 
     final aliceSessionCipher = SessionCipher(
-      AliceSessionStore,
-      AlicePreKeyStore,
-      AliceSignedPreKeyStore,
-      AliceIdentityStore,
-      BobAddress,
+      aliceSessionStore,
+      alicePreKeyStore,
+      aliceSignedPreKeyStore,
+      aliceIdentityStore,
+      bobAddress,
     );
     final ciphertext = await aliceSessionCipher.encrypt(
       Uint8List.fromList(utf8.encode('Hello Mixin🤣')),
@@ -618,11 +618,11 @@ class SignalService {
 
     // Bob decrypts using his real stores (not a new empty store!)
     final bobSessionCipher = SessionCipher(
-      BobSessionStore,
-      BobPreKeyStore,
-      BobSignedPreKeyStore,
-      BobIdentityStore,
-      AliceAddress,
+      bobSessionStore,
+      bobPreKeyStore,
+      bobSignedPreKeyStore,
+      bobIdentityStore,
+      aliceAddress,
     );
 
     if (ciphertext.getType() == CiphertextMessage.prekeyType) {
@@ -1528,7 +1528,7 @@ class SignalService {
     }
   }
 
-  Future<void> _ensureSignalKeysPresent(status) async {
+  Future<void> _ensureSignalKeysPresent(dynamic status) async {
     // Use a socket callback to get status
     debugPrint('[SIGNAL SERVICE] signalStatus: $status');
 
@@ -2801,7 +2801,7 @@ class SignalService {
   /// Das Backend filtert bereits und sendet nur Nachrichten, die für DIESES Gerät
   /// (deviceId) verschlüsselt wurden. Die Nachricht wird dann mit dem Session-Schlüssel
   /// dieses Geräts entschlüsselt.
-  Future<void> receiveItem(data) async {
+  Future<void> receiveItem(dynamic data) async {
     debugPrint(
       "[SIGNAL SERVICE] ===============================================",
     );
@@ -3278,7 +3278,7 @@ class SignalService {
       final recipientUserId = data['recipientUserId'] as String;
       final recipientDeviceId = data['recipientDeviceId'] as int;
       final reason = data['reason'] as String;
-      final addressKey = '${recipientUserId}:${recipientDeviceId}';
+      final addressKey = '$recipientUserId:$recipientDeviceId';
 
       debugPrint(
         '[SIGNAL SERVICE] 🔄 Session recovery requested by $addressKey',
@@ -3411,8 +3411,8 @@ class SignalService {
         final devices = response.data is String
             ? jsonDecode(response.data)
             : response.data;
-        debugPrint('[DEBUG] devices: \\${devices}');
-        debugPrint('[DEBUG] devices.runtimeType: \\${devices.runtimeType}');
+        debugPrint('[DEBUG] devices: $devices');
+        debugPrint('[DEBUG] devices.runtimeType: ${devices.runtimeType}');
         if (devices is List) {
           debugPrint('[DEBUG] devices.length: \\${devices.length}');
         }
@@ -3421,7 +3421,7 @@ class SignalService {
 
         for (final data in devices) {
           debugPrint(
-            '[DEBUG] signedPreKey: ' + jsonEncode(data['signedPreKey']),
+            '[DEBUG] signedPreKey: ${jsonEncode(data['signedPreKey'])}',
           );
           final hasAllFields =
               data['public_key'] != null &&
@@ -3560,7 +3560,7 @@ class SignalService {
         return result;
       } catch (e, st) {
         debugPrint(
-          '[ERROR] Exception while decoding response: \\${e}\\n\\${st}',
+          '[ERROR] Exception while decoding response: $e\n$st',
         );
         rethrow;
       }
@@ -3836,7 +3836,7 @@ class SignalService {
     // This allows Bob Device 1 to see his own sent message without decryption
 
     // ✅ PHASE 4: Define types that should NOT be stored
-    const SKIP_STORAGE_TYPES = {
+    const skipStorageTypes = {
       'fileKeyResponse',
       'senderKeyDistribution',
       'read_receipt', // Already handled separately
@@ -3849,7 +3849,7 @@ class SignalService {
     // Store sent message in local storage for persistence after refresh
     // IMPORTANT: Only store actual chat messages and file messages, not system messages
     final timestamp = DateTime.now().toIso8601String();
-    const STORABLE_TYPES = {
+    const storableTypes = {
       'message',
       'file',
       'image',
@@ -3864,7 +3864,7 @@ class SignalService {
       'system:identityKeyChanged', // ← Identity key change notifications (visible in chat)
     };
     final shouldStore =
-        !SKIP_STORAGE_TYPES.contains(type) && STORABLE_TYPES.contains(type);
+        !skipStorageTypes.contains(type) && storableTypes.contains(type);
 
     if (shouldStore) {
       // Store in SQLite database with status
@@ -4143,7 +4143,7 @@ class SignalService {
             '[SIGNAL SERVICE] WARNING: PreKey message despite existing session! Session is corrupted.',
           );
           debugPrint(
-            '[SIGNAL SERVICE] Deleting corrupted session with ${recipientAddress}',
+            '[SIGNAL SERVICE] Deleting corrupted session with $recipientAddress',
           );
           await sessionStore.deleteSession(recipientAddress);
           hasSession = false;
@@ -4360,7 +4360,7 @@ class SignalService {
             try {
               final senderId = senderAddress.getName();
               final deviceId = senderAddress.getDeviceId();
-              final recoveryKey = '${senderId}:${deviceId}';
+              final recoveryKey = '$senderId:$deviceId';
 
               // 🔒 LOOP PREVENTION: Check if we recently sent recovery for this address
               final lastAttempt = _sessionRecoveryLastAttempt[recoveryKey];
@@ -4456,7 +4456,7 @@ class SignalService {
             try {
               final senderId = senderAddress.getName();
               final deviceId = senderAddress.getDeviceId();
-              final recoveryKey = '${senderId}:${deviceId}';
+              final recoveryKey = '$senderId:$deviceId';
 
               // 🔒 LOOP PREVENTION: Check if we recently sent recovery for this address
               final lastAttempt = _sessionRecoveryLastAttempt[recoveryKey];
@@ -4533,7 +4533,7 @@ class SignalService {
             try {
               final senderId = senderAddress.getName();
               final deviceId = senderAddress.getDeviceId();
-              final recoveryKey = '${senderId}:${deviceId}';
+              final recoveryKey = '$senderId:$deviceId';
 
               // 🔒 LOOP PREVENTION: Check if we recently sent recovery for this address
               final lastAttempt = _sessionRecoveryLastAttempt[recoveryKey];
@@ -4606,7 +4606,7 @@ class SignalService {
       }
     } catch (e, st) {
       debugPrint(
-        '[ERROR] Exception while decrypting message: \\${e}\\n\\${st}',
+        '[ERROR] Exception while decrypting message: $e\n$st',
       );
       return '';
     }
@@ -5481,7 +5481,6 @@ class SignalService {
           '[SIGNAL_SERVICE] ✗ Failed to store file message in SQLite: $e',
         );
       }
-      ;
 
       // Send via Socket.IO
       SocketService().emit("sendGroupItem", {
@@ -5696,7 +5695,7 @@ class SignalService {
       final timestamp = DateTime.now().toIso8601String();
 
       // ✅ PHASE 4: Skip storage for system message types
-      const SKIP_STORAGE_TYPES = {
+      const skipStorageTypes = {
         'fileKeyResponse',
         'senderKeyDistribution',
         'video_e2ee_key_request', // Video E2EE key exchange (ephemeral)
@@ -5705,7 +5704,7 @@ class SignalService {
         'video_key_response', // Legacy video key response (ephemeral)
       };
 
-      final shouldStore = !SKIP_STORAGE_TYPES.contains(type);
+      final shouldStore = !skipStorageTypes.contains(type);
 
       // Store locally first (unless it's a system message)
       if (shouldStore) {

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'webauthn_crypto_service.dart';
 import '../native_crypto_service.dart';

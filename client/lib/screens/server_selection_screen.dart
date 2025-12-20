@@ -17,9 +17,9 @@ class ServerSelectionScreen extends StatefulWidget {
   final bool isAddingServer; // true if adding to existing servers, false if first launch
 
   const ServerSelectionScreen({
-    Key? key,
+    super.key,
     this.isAddingServer = false,
-  }) : super(key: key);
+  }) ;
 
   @override
   State<ServerSelectionScreen> createState() => _ServerSelectionScreenState();
@@ -44,7 +44,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   }
 
   Future<void> _handleMagicKey(String magicKey) async {
-    print('[ServerSelection] ========== Starting magic key flow ==========');
+    debugPrint('[ServerSelection] ========== Starting magic key flow ==========');
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -81,12 +81,12 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
       // Generate client ID
       final clientId = await ClientIdService.getClientId();
-      print('[ServerSelection] Client ID: $clientId');
+      debugPrint('[ServerSelection] Client ID: $clientId');
 
       // Verify with server
-      print('[ServerSelection] Verifying magic key with server...');
+      debugPrint('[ServerSelection] Verifying magic key with server...');
       final response = await MagicKeyService.verifyWithServer(magicKey, clientId);
-      print('[ServerSelection] Verification response: success=${response.success}, message=${response.message}');
+      debugPrint('[ServerSelection] Verification response: success=${response.success}, message=${response.message}');
 
       if (!response.success) {
         setState(() {
@@ -97,54 +97,54 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
       }
 
       // Success! The session secret is already stored in SessionAuthService
-      print('[ServerSelection] ✓ Magic key verified successfully');
+      debugPrint('[ServerSelection] ✓ Magic key verified successfully');
       
       // Initialize device identity for native clients
       // For native, we generate a synthetic credential ID based on client ID + server URL
       // This ensures consistent device identity across app restarts
       if (!kIsWeb) {
-        print('[ServerSelection] Initializing device identity for native client...');
+        debugPrint('[ServerSelection] Initializing device identity for native client...');
         final data = response.data ?? {};
         final email = data['email'] as String? ?? 'native@device';
         // Generate synthetic credential ID: use serverUrl directly (no hashCode!)
         // CRITICAL: hashCode is NOT stable across Dart VM restarts!
         // This was causing new deviceId → new database → prekeys regenerated every time
-        final syntheticCredId = '${clientId}_$serverUrl'.replaceAll('-', '').replaceAll(':', '').replaceAll('/', '');
+        final syntheticCredId = serverUrl.replaceAll('-', '').replaceAll(':', '').replaceAll('/', '');
         await DeviceIdentityService.instance.setDeviceIdentity(
           email, 
           syntheticCredId, 
           clientId,
           serverUrl: serverUrl, // Pass serverUrl for multi-server storage
         );
-        print('[ServerSelection] ✓ Device identity initialized');
+        debugPrint('[ServerSelection] ✓ Device identity initialized');
         
         // Generate and store encryption key for native client
-        print('[ServerSelection] Generating encryption key...');
+        debugPrint('[ServerSelection] Generating encryption key...');
         final deviceId = DeviceIdentityService.instance.deviceId;
         await NativeCryptoService.instance.getOrCreateKey(deviceId);
-        print('[ServerSelection] ✓ Encryption key generated and stored');
+        debugPrint('[ServerSelection] ✓ Encryption key generated and stored');
       }
       
       // Add server to config (or update credentials if exists)
       // Note: credentials field is not used for authentication (SessionAuthService handles that)
-      print('[ServerSelection] Adding/updating server config...');
+      debugPrint('[ServerSelection] Adding/updating server config...');
       final serverConfig = await ServerConfigService.addServer(
         serverUrl: serverUrl,
         credentials: 'hmac-session', // Placeholder - actual session is in SessionAuthService
         displayName: null, // Will extract from URL
       );
 
-      print('[ServerSelection] Server configured: ${serverConfig.getDisplayName()}');
+      debugPrint('[ServerSelection] Server configured: ${serverConfig.getDisplayName()}');
 
       // Session is now stored in SessionAuthService
       // Check session to update isLoggedIn flag
-      print('[ServerSelection] Calling checkSession...');
+      debugPrint('[ServerSelection] Calling checkSession...');
       await AuthService.checkSession();
-      print('[ServerSelection] ✓ Session checked, isLoggedIn: ${AuthService.isLoggedIn}');
+      debugPrint('[ServerSelection] ✓ Session checked, isLoggedIn: ${AuthService.isLoggedIn}');
 
       // Clear loading state
       if (mounted) {
-        print('[ServerSelection] Clearing loading state');
+        debugPrint('[ServerSelection] Clearing loading state');
         setState(() {
           _isLoading = false;
         });
@@ -152,14 +152,14 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
       // Navigate to main app
       if (mounted) {
-        print('[ServerSelection] ✓ Navigating to /app');
+        debugPrint('[ServerSelection] ✓ Navigating to /app');
         context.go('/app');
-        print('[ServerSelection] ✓ Navigation triggered');
+        debugPrint('[ServerSelection] ✓ Navigation triggered');
       } else {
-        print('[ServerSelection] ⚠️ Widget not mounted, cannot navigate');
+        debugPrint('[ServerSelection] ⚠️ Widget not mounted, cannot navigate');
       }
     } catch (e) {
-      print('[ServerSelection] Error: $e');
+      debugPrint('[ServerSelection] Error: $e');
       setState(() {
         _errorMessage = 'Error: $e';
         _isLoading = false;

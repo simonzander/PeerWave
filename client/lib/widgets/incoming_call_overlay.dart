@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import '../models/meeting.dart';
 import '../services/call_service.dart';
 
 /// Incoming call overlay - displays at top of screen when receiving a call

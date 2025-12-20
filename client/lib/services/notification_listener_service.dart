@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'event_bus.dart';
 import 'notification_service.dart';
-import 'sound_service.dart';
 import 'user_profile_service.dart';
 
 /// Listens to EventBus events and triggers appropriate notifications

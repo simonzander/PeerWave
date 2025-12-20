@@ -685,7 +685,7 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     );
 
     // Create temporary stores for guest session
-    final sessionStore = await signal.InMemorySessionStore();
+    final sessionStore = signal.InMemorySessionStore();
     final preKeyStore = signal.InMemoryPreKeyStore();
     final signedPreKeyStore = signal.InMemorySignedPreKeyStore();
     final identityStore = signal.InMemoryIdentityKeyStore(identityKeyPair, 0);

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
@@ -21,7 +22,7 @@ class SessionAuthService {
   /// Initialize session with secret received from server
   Future<void> initializeSession(String clientId, String sessionSecret) async {
     await _secureStorage.saveSessionSecret(clientId, sessionSecret);
-    print('[SessionAuth] Session initialized for client: $clientId');
+    debugPrint('[SessionAuth] Session initialized for client: $clientId');
   }
 
   /// Get session secret for a client
@@ -115,20 +116,20 @@ class SessionAuthService {
   /// Rotate session secret (called periodically or on demand)
   Future<void> rotateSession(String clientId, String newSessionSecret) async {
     await _secureStorage.saveSessionSecret(clientId, newSessionSecret);
-    print('[SessionAuth] Session rotated for client: $clientId');
+    debugPrint('[SessionAuth] Session rotated for client: $clientId');
   }
 
   /// Clear session (logout)
   Future<void> clearSession(String clientId) async {
     await _secureStorage.deleteSessionSecret(clientId);
-    print('[SessionAuth] Session cleared for client: $clientId');
+    debugPrint('[SessionAuth] Session cleared for client: $clientId');
   }
 
   /// Clear all sessions
   Future<void> clearAllSessions() async {
     await _secureStorage.deleteAllSessionSecrets();
     _usedNonces.clear();
-    print('[SessionAuth] All sessions cleared');
+    debugPrint('[SessionAuth] All sessions cleared');
   }
 
   /// Clean up old nonces from cache

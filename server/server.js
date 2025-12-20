@@ -4152,12 +4152,6 @@ function callbackHandler(callback, data) {
   }
 }
 
-//app.use(express.static(__dirname + "/public"));
-
-//app.set("view engine", "pug");
-
-
-
 // Serve static files from Flutter web build output
 app.use(express.static(path.resolve(__dirname, 'web')));
 

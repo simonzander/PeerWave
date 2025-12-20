@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import '../../services/api_service.dart';
 import '../../models/role.dart';
 import '../../providers/role_provider.dart';
-import '../../services/signal_service.dart';
 
 class ChannelSettingsScreen extends StatefulWidget {
   final String channelId;
@@ -17,7 +16,7 @@ class ChannelSettingsScreen extends StatefulWidget {
   final bool isOwner;
 
   const ChannelSettingsScreen({
-    Key? key,
+    super.key,
     required this.channelId,
     required this.channelName,
     required this.channelType,
@@ -26,7 +25,7 @@ class ChannelSettingsScreen extends StatefulWidget {
     this.defaultJoinRole,
     required this.host,
     required this.isOwner,
-  }) : super(key: key);
+  }) ;
 
   @override
   State<ChannelSettingsScreen> createState() => _ChannelSettingsScreenState();
@@ -405,7 +404,7 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
                       border: Border.all(color: colorScheme.outlineVariant),
                     ),
                     child: DropdownButtonFormField<String>(
-                      value: _selectedDefaultRole,
+                      initialValue: _selectedDefaultRole,
                       hint: const Text('Select default role for new members'),
                       decoration: const InputDecoration(
                         border: InputBorder.none,
@@ -414,7 +413,7 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
                       ),
                       isExpanded: true,
                       items: _availableRoles.map((role) {
-                        return DropdownMenuItem(
+                        return DropdownMenuItem<String>(
                           value: role.uuid,
                           child: Text(
                             role.name,

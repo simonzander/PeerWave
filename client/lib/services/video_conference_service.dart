@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -39,22 +38,21 @@ class VideoConferenceService extends ChangeNotifier {
   // Core LiveKit components
   Room? _room;
   LocalParticipant? get localParticipant => _room?.localParticipant;
-  Map<String, RemoteParticipant> _remoteParticipants = {};
+  final Map<String, RemoteParticipant> _remoteParticipants = {};
 
   // E2EE components
   BaseKeyProvider? _keyProvider;
   Uint8List? _channelSharedKey; // ONE shared key for the entire channel
   int?
   _keyTimestamp; // Timestamp of current key (for race condition resolution)
-  Map<String, Uint8List> _participantKeys =
-      {}; // userId -> encryption key (legacy, for backward compat)
+  final Map<String, Uint8List> _participantKeys = {}; // userId -> encryption key (legacy, for backward compat)
   Completer<bool>?
   _keyReceivedCompleter; // For waiting on key exchange in PreJoin
   bool _isFirstParticipant =
       false; // Track if this participant originated the key
 
   // Security level tracking
-  String _encryptionLevel = 'none'; // 'none', 'transport', 'e2ee'
+  final String _encryptionLevel = 'none'; // 'none', 'transport', 'e2ee'
   String get encryptionLevel => _encryptionLevel;
 
   // Video quality settings
@@ -1871,7 +1869,7 @@ class VideoConferenceService extends ChangeNotifier {
           }
 
           debugPrint(
-            '[VideoConf] ✅ Desktop screen share track published: ${_selectedDesktopSourceId}',
+            '[VideoConf] ✅ Desktop screen share track published: $track',
           );
 
           // Clear the selected source after use

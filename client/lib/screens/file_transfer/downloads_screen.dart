@@ -4,7 +4,7 @@ import '../../services/file_transfer/download_manager.dart';
 
 /// Downloads Screen - Monitor active and completed downloads
 class DownloadsScreen extends StatefulWidget {
-  const DownloadsScreen({Key? key}) : super(key: key);
+  const DownloadsScreen({super.key});
 
   @override
   State<DownloadsScreen> createState() => _DownloadsScreenState();

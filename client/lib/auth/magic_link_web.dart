@@ -52,7 +52,7 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
   }
   final TextEditingController serverController = TextEditingController();
   String? _status;
-  bool _loading = false;
+  final bool _loading = false;
 
   @override
   Widget build(BuildContext context) {

@@ -23,7 +23,7 @@ import '../../views/video_conference_view.dart';
 import '../../widgets/animated_widgets.dart';
 
 /// Whitelist of message types that should be displayed in UI
-const Set<String> DISPLAYABLE_MESSAGE_TYPES = {
+const Set<String> displayableMessageTypes = {
   'message',
   'file',
   'image',
@@ -71,7 +71,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     _scrollController.dispose();
 
     // ✅ Unregister specific callbacks for this conversation
-    for (final type in DISPLAYABLE_MESSAGE_TYPES) {
+    for (final type in displayableMessageTypes) {
       SignalService.instance.unregisterReceiveItem(
         type,
         widget.recipientUuid,
@@ -323,7 +323,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   /// ✅ NEW: Setup granular callbacks for this specific conversation
   void _setupReceiveItemCallbacks() {
     // Register callback for each displayable message type
-    for (final type in DISPLAYABLE_MESSAGE_TYPES) {
+    for (final type in displayableMessageTypes) {
       SignalService.instance.registerReceiveItem(
         type,
         widget.recipientUuid,
@@ -332,7 +332,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
 
     debugPrint(
-      '[DM_SCREEN] Registered receiveItem callbacks for ${DISPLAYABLE_MESSAGE_TYPES.length} types',
+      '[DM_SCREEN] Registered receiveItem callbacks for ${displayableMessageTypes.length} types',
     );
   }
 
@@ -455,6 +455,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
       // Mark this conversation as read in the unread provider
       try {
+        if (!mounted) return;
         final provider = Provider.of<UnreadMessagesProvider>(
           context,
           listen: false,
@@ -593,7 +594,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         widget.recipientUuid,
         limit: 20,
         offset: loadMore ? _messageOffset : 0,
-        types: DISPLAYABLE_MESSAGE_TYPES.toList(),
+        types: displayableMessageTypes.toList(),
       );
 
       debugPrint(
@@ -818,7 +819,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         final msgIndex = _messages.indexWhere((msg) => msg['itemId'] == itemId);
         if (msgIndex != -1) {
           _messages[msgIndex]['status'] = 'sent';
-          debugPrint('[DM_SCREEN] ✓ ${messageType} message sent: $itemId');
+          debugPrint('[DM_SCREEN] ✓ $messageType message sent: $itemId');
         }
       });
     } catch (e) {
@@ -831,7 +832,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
       if (mounted) {
         context.showErrorSnackBar(
-          'Failed to send ${messageType}: ${e.toString()}',
+          'Failed to send $messageType: ${e.toString()}',
           duration: const Duration(seconds: 5),
         );
       }

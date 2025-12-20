@@ -256,7 +256,7 @@ class DeviceScopedStorageService {
       
       debugPrint('[DEVICE_STORAGE] Opening cursor to iterate keys...');
       final keys = <String>[];
-      final cursor = await store.openCursor(autoAdvance: true);
+      final cursor = store.openCursor(autoAdvance: true);
       
       debugPrint('[DEVICE_STORAGE] Cursor created, iterating...');
       await cursor.forEach((c) {

@@ -6,9 +6,9 @@ class RegistrationProgressBar extends StatelessWidget {
   final int currentStep;
   
   const RegistrationProgressBar({
-    Key? key,
+    super.key,
     required this.currentStep,
-  }) : super(key: key);
+  }) ;
 
   @override
   Widget build(BuildContext context) {

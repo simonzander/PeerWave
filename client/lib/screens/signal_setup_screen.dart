@@ -13,7 +13,7 @@ import 'dart:async';
 /// Screen displayed during Signal Protocol key generation
 /// Shows PeerWave logo, progress bar, and status text
 class SignalSetupScreen extends StatefulWidget {
-  const SignalSetupScreen({Key? key}) : super(key: key);
+  const SignalSetupScreen({super.key});
 
   @override
   State<SignalSetupScreen> createState() => _SignalSetupScreenState();
@@ -80,9 +80,11 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
         if (mounted) {
           // Try to restore last route, otherwise go to /app/activities (default view)
           final lastRoute = await PreferencesService().loadLastRoute();
+          if (!mounted) return;
           if (lastRoute != null && lastRoute.startsWith('/app/') && lastRoute != '/app') {
             debugPrint('[SIGNAL SETUP] Restoring last route: $lastRoute');
             await PreferencesService().clearLastRoute(); // Clear after using
+            if (!mounted) return;
             GoRouter.of(context).go(lastRoute);
           } else {
             // No saved route or route was just /app - go to default view
@@ -90,6 +92,7 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
             if (lastRoute != null) {
               await PreferencesService().clearLastRoute(); // Clear if it was /app
             }
+            if (!mounted) return;
             GoRouter.of(context).go('/app/activities');
           }
         }

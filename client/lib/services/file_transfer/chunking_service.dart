@@ -11,11 +11,11 @@ import 'package:crypto/crypto.dart';
 /// - Progress callbacks for UI feedback
 class ChunkingService {
   /// Optimal chunk size for WebRTC DataChannel (64 KB)
-  static const int CHUNK_SIZE = 64 * 1024; // 64 KB
+  static const int chunkSize = 64 * 1024; // 64 KB
   
   /// Calculate how many chunks a file will have
   static int calculateChunkCount(int fileSize) {
-    return (fileSize / CHUNK_SIZE).ceil();
+    return (fileSize / chunkSize).ceil();
   }
   
   /// Calculate the size of a specific chunk
@@ -24,11 +24,11 @@ class ChunkingService {
     
     // Last chunk might be smaller
     if (chunkIndex == totalChunks - 1) {
-      final remainder = fileSize % CHUNK_SIZE;
-      return remainder > 0 ? remainder : CHUNK_SIZE;
+      final remainder = fileSize % chunkSize;
+      return remainder > 0 ? remainder : chunkSize;
     }
     
-    return CHUNK_SIZE;
+    return chunkSize;
   }
   
   /// Split a file into chunks
@@ -46,8 +46,8 @@ class ChunkingService {
     final totalChunks = calculateChunkCount(fileData.length);
     
     for (int i = 0; i < totalChunks; i++) {
-      final start = i * CHUNK_SIZE;
-      final end = (start + CHUNK_SIZE).clamp(0, fileData.length);
+      final start = i * chunkSize;
+      final end = (start + chunkSize).clamp(0, fileData.length);
       
       // Extract chunk data
       final chunkData = fileData.sublist(start, end);
@@ -74,8 +74,8 @@ class ChunkingService {
   /// Useful for streaming scenarios where you don't want to
   /// split the entire file into memory at once
   ChunkData extractChunk(Uint8List fileData, int chunkIndex) {
-    final start = chunkIndex * CHUNK_SIZE;
-    final end = (start + CHUNK_SIZE).clamp(0, fileData.length);
+    final start = chunkIndex * chunkSize;
+    final end = (start + chunkSize).clamp(0, fileData.length);
     
     final chunkData = fileData.sublist(start, end);
     final hash = sha256.convert(chunkData).toString();

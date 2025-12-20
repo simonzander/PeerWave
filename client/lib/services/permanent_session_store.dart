@@ -53,7 +53,7 @@ class PermanentSessionStore extends SessionStore {
     final keys = await storage.getAllKeys(_storeName, _storeName);
 
     for (var key in keys) {
-      if (key.startsWith(_keyPrefix + name + '_')) {
+      if (key.startsWith('$_keyPrefix$name}_')) {
         await storage.deleteEncrypted(_storeName, _storeName, key);
       }
     }
@@ -75,8 +75,8 @@ class PermanentSessionStore extends SessionStore {
     var keys = await storage.getAllKeys(_storeName, _storeName);
 
     for (var key in keys) {
-      if (key.startsWith(_keyPrefix + name + '_')) {
-        var deviceIdStr = key.substring((_keyPrefix + name + '_').length);
+      if (key.startsWith('$_keyPrefix$name}_')) {
+        var deviceIdStr = key.substring('$_keyPrefix$name}_'.length);
         var deviceId = int.tryParse(deviceIdStr);
         if (deviceId != null && deviceId != 1) {
           deviceIds.add(deviceId);
