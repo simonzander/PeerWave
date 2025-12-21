@@ -1487,13 +1487,14 @@ class _MyAppState extends State<MyApp> {
           // ========================================
           // POST-LOGIN SERVICE INITIALIZATION (ONCE)
           // ========================================
-          // Skip Signal key checks for authentication and registration flows
-          final isAuthFlow =
-              location == '/otp' ||
-              location == '/login' ||
-              location == '/backupcode/recover' ||
-              location.startsWith('/register/') ||
-              location == '/signal-setup';
+          // Skip Signal key checks ONLY for authentication flows when NOT logged in
+          // If logged in, we should always run initialization checks
+          final isAuthFlow = !loggedIn &&
+              (location == '/otp' ||
+                  location == '/login' ||
+                  location == '/backupcode/recover' ||
+                  location.startsWith('/register/') ||
+                  location == '/signal-setup');
 
           debugPrint('[ROUTER] isAuthFlow: $isAuthFlow');
 
@@ -1717,15 +1718,15 @@ class _MyAppState extends State<MyApp> {
         if (loggedIn && location == '/login') {
           if (kIsWeb) {
             debugPrint(
-              '[ROUTER] ✅ Web: Logged in at /login, redirecting to /app',
+              '[ROUTER] ✅ Web: Logged in at /login, redirecting to /app/activities',
             );
-            return '/app';
+            return '/app/activities';
           } else {
-            // Native: Redirect to /app which will trigger signal setup check
+            // Native: Redirect to /app/activities which will trigger signal setup check
             debugPrint(
-              '[ROUTER] ✅ Native: Logged in at /login, redirecting to /app for signal check',
+              '[ROUTER] ✅ Native: Logged in at /login, redirecting to /app/activities',
             );
-            return '/app';
+            return '/app/activities';
           }
         }
 

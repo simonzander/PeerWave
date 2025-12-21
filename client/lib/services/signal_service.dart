@@ -1,6 +1,7 @@
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
+import 'package:collection/collection.dart';
 import 'api_service.dart';
 import '../web_config.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
@@ -23,6 +24,7 @@ import 'device_identity_service.dart';
 import 'web/webauthn_crypto_service.dart';
 import 'native_crypto_service.dart';
 import 'event_bus.dart';
+import 'key_management_metrics.dart';
 import 'server_config_web.dart'
     if (dart.library.io) 'server_config_native.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -809,12 +811,36 @@ class SignalService {
       '[SIGNAL INIT] Current state: _isInitialized=$_isInitialized, _storesCreated=$_storesCreated, _listenersRegistered=$_listenersRegistered',
     );
 
-    // Prevent multiple concurrent initializations
+    // Check if initialization is needed
     if (_isInitialized) {
-      debugPrint('[SIGNAL INIT] Already initialized, skipping...');
-      onProgress('Signal Protocol ready', 112, 112, 100.0);
+      debugPrint(
+        '[SIGNAL INIT] Already initialized, checking if PreKeys need regeneration...',
+      );
+
+      // Even if initialized, check if PreKeys are missing
+      final preKeyIds = await preKeyStore.getAllPreKeyIds();
+      debugPrint('[SIGNAL INIT] Current PreKey count: ${preKeyIds.length}');
+
+      if (preKeyIds.length >= 110) {
+        debugPrint(
+          '[SIGNAL INIT] PreKeys sufficient (${preKeyIds.length}/110), skipping...',
+        );
+        onProgress('Signal Protocol ready', 112, 112, 100.0);
+        return;
+      }
+
+      debugPrint(
+        '[SIGNAL INIT] ⚠️ PreKeys insufficient (${preKeyIds.length}/110), regenerating...',
+      );
+
+      // Just regenerate PreKeys without full initialization
+      await _regeneratePreKeysOnly(onProgress, preKeyIds);
+
+      debugPrint('[SIGNAL INIT] ✅ PreKey regeneration complete');
       return;
     }
+
+    // Continue with full initialization for first-time setup...
 
     const int totalSteps = 112; // 1 KeyPair + 1 SignedPreKey + 110 PreKeys
     int currentStep = 0;
@@ -1130,6 +1156,233 @@ class SignalService {
 
     _isInitialized = true;
     debugPrint('[SIGNAL INIT] Progressive initialization complete');
+
+    // 🔍 SELF-VERIFICATION: Verify our own keys are uploaded to server
+    debugPrint('[SIGNAL INIT] ========================================');
+    debugPrint(
+      '[SIGNAL INIT] Starting post-initialization self-verification...',
+    );
+
+    // Wait a moment for server to process signalStatus response
+    await Future.delayed(Duration(seconds: 2));
+
+    final keysValid = await verifyOwnKeysOnServer();
+    if (!keysValid) {
+      debugPrint(
+        '[SIGNAL INIT] ⚠️ Self-verification failed - keys may not be uploaded properly',
+      );
+      debugPrint('[SIGNAL INIT] → Attempting to re-upload keys...');
+
+      try {
+        // Re-upload all keys
+        await _uploadKeysOnly();
+        await Future.delayed(Duration(milliseconds: 1000));
+
+        // Verify again
+        final retryValid = await verifyOwnKeysOnServer();
+        if (!retryValid) {
+          debugPrint('[SIGNAL INIT] ❌ Keys still not valid after retry');
+          debugPrint('[SIGNAL INIT] → User may need to logout and login again');
+          // Don't throw - allow app to continue, but user will see errors when sending
+        } else {
+          debugPrint('[SIGNAL INIT] ✅ Keys uploaded and verified on retry');
+        }
+      } catch (e) {
+        debugPrint('[SIGNAL INIT] ❌ Key upload retry failed: $e');
+        // Don't rethrow - allow app to continue
+      }
+    } else {
+      debugPrint(
+        '[SIGNAL INIT] ✅ Self-verification passed - all keys valid on server',
+      );
+    }
+    debugPrint('[SIGNAL INIT] ========================================');
+  }
+
+  /// Regenerate PreKeys when already initialized but PreKeys are missing
+  /// This is called when initWithProgress() detects missing PreKeys on an already-initialized system
+  Future<void> _regeneratePreKeysOnly(
+    Function(String statusText, int current, int total, double percentage)
+    onProgress,
+    List<int> existingPreKeyIds,
+  ) async {
+    const int totalSteps = 110;
+    int currentStep = existingPreKeyIds.length; // Start from existing count
+
+    // Helper to update progress
+    void updateProgress(String status, int step) {
+      final percentage = (step / totalSteps * 100).clamp(0.0, 100.0);
+      onProgress(status, step, totalSteps, percentage);
+    }
+
+    debugPrint('[SIGNAL INIT] Starting PreKey regeneration...');
+    debugPrint(
+      '[SIGNAL INIT] Existing PreKeys: ${existingPreKeyIds.length}/110',
+    );
+
+    // Check for invalid IDs (>= 110)
+    final hasInvalidIds = existingPreKeyIds.any((id) => id >= 110);
+    if (hasInvalidIds) {
+      final invalidIds = existingPreKeyIds.where((id) => id >= 110).toList();
+      debugPrint(
+        '[SIGNAL INIT] ⚠️ Found invalid PreKey IDs (>= 110): $invalidIds',
+      );
+      debugPrint(
+        '[SIGNAL INIT] 🔧 Deleting ALL PreKeys and regenerating fresh set...',
+      );
+
+      // Delete ALL existing PreKeys
+      for (final id in existingPreKeyIds) {
+        await preKeyStore.removePreKey(id, sendToServer: true);
+      }
+
+      existingPreKeyIds = [];
+      debugPrint(
+        '[SIGNAL INIT] ✓ Cleanup complete, will generate fresh 110 PreKeys',
+      );
+    }
+
+    final neededPreKeys = 110 - existingPreKeyIds.length;
+
+    if (neededPreKeys > 0) {
+      debugPrint(
+        '[SIGNAL INIT] Generating $neededPreKeys pre keys (IDs must be 0-109)',
+      );
+
+      // Find missing IDs in range 0-109
+      final existingIds = existingPreKeyIds.toSet();
+      final missingIds = List.generate(
+        110,
+        (i) => i,
+      ).where((id) => !existingIds.contains(id)).toList();
+
+      if (missingIds.length != neededPreKeys) {
+        debugPrint(
+          '[SIGNAL INIT] ⚠️ Mismatch: need $neededPreKeys keys but found ${missingIds.length} missing IDs',
+        );
+        // Regenerate everything
+        for (final id in existingPreKeyIds) {
+          await preKeyStore.removePreKey(id, sendToServer: true);
+        }
+        existingPreKeyIds = [];
+        missingIds.clear();
+        missingIds.addAll(List.generate(110, (i) => i));
+      }
+
+      // Generate keys using contiguous range batching
+      final contiguousRanges = _findContiguousRanges(missingIds);
+      int keysGeneratedInSession = 0;
+
+      debugPrint(
+        '[SIGNAL INIT] Found ${contiguousRanges.length} range(s) to generate',
+      );
+
+      const int uploadBatchSize = 20;
+      List<PreKeyRecord> uploadBatch = [];
+
+      for (final range in contiguousRanges) {
+        if (range.length > 1) {
+          final start = range.first;
+          final end = range.last;
+          debugPrint(
+            '[SIGNAL INIT] Batch generating PreKeys $start-$end (${range.length} keys)',
+          );
+
+          final preKeys = generatePreKeys(start, end);
+
+          for (final preKey in preKeys) {
+            uploadBatch.add(preKey);
+
+            if (uploadBatch.length >= uploadBatchSize ||
+                keysGeneratedInSession + uploadBatch.length >=
+                    missingIds.length) {
+              final success = await preKeyStore.storePreKeysBatch(uploadBatch);
+
+              if (success) {
+                keysGeneratedInSession += uploadBatch.length;
+
+                final totalKeysNow =
+                    existingPreKeyIds.length + keysGeneratedInSession;
+                updateProgress(
+                  'Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...',
+                  currentStep + keysGeneratedInSession,
+                );
+              } else {
+                debugPrint(
+                  '[SIGNAL INIT] ⚠️ Batch upload failed, will retry on next initialization',
+                );
+              }
+
+              uploadBatch.clear();
+            }
+          }
+        } else {
+          // Single key generation
+          final id = range.first;
+          debugPrint('[SIGNAL INIT] Generating single PreKey $id');
+
+          final preKeys = generatePreKeys(id, id);
+          if (preKeys.isNotEmpty) {
+            uploadBatch.add(preKeys.first);
+
+            if (uploadBatch.length >= uploadBatchSize ||
+                keysGeneratedInSession + uploadBatch.length >=
+                    missingIds.length) {
+              final success = await preKeyStore.storePreKeysBatch(uploadBatch);
+
+              if (success) {
+                keysGeneratedInSession += uploadBatch.length;
+
+                final totalKeysNow =
+                    existingPreKeyIds.length + keysGeneratedInSession;
+                updateProgress(
+                  'Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...',
+                  currentStep + keysGeneratedInSession,
+                );
+              } else {
+                debugPrint(
+                  '[SIGNAL INIT] ⚠️ Batch upload failed, will retry on next initialization',
+                );
+              }
+
+              uploadBatch.clear();
+            }
+          }
+        }
+      }
+
+      // Upload any remaining keys in the batch
+      if (uploadBatch.isNotEmpty) {
+        final success = await preKeyStore.storePreKeysBatch(uploadBatch);
+
+        if (success) {
+          keysGeneratedInSession += uploadBatch.length;
+
+          final totalKeysNow =
+              existingPreKeyIds.length + keysGeneratedInSession;
+          updateProgress(
+            'Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...',
+            currentStep + keysGeneratedInSession,
+          );
+        } else {
+          debugPrint(
+            '[SIGNAL INIT] ⚠️ Final batch upload failed, will retry on next initialization',
+          );
+        }
+      }
+
+      debugPrint(
+        '[SIGNAL INIT] ✅ PreKey regeneration complete: generated $keysGeneratedInSession keys',
+      );
+    }
+
+    // Final progress update
+    updateProgress('Signal Protocol ready', totalSteps);
+
+    // Notify server that keys are updated
+    SocketService().emit("signalStatus", null);
+
+    debugPrint('[SIGNAL INIT] ✓ PreKey regeneration successful');
   }
 
   /// Register all Socket.IO listeners (extracted for reuse)
@@ -2132,6 +2385,32 @@ class SignalService {
       // Step 3 & 4: Upload SignedPreKey and PreKeys
       await _uploadKeysOnly();
 
+      // Step 5: Delete all sessions and SenderKeys (key reinforcement means keys changed)
+      if (_storesCreated) {
+        debugPrint(
+          '[SIGNAL SERVICE][REINFORCEMENT] Step 5: Deleting sessions and SenderKeys...',
+        );
+        try {
+          await sessionStore.deleteAllSessionsCompletely();
+          debugPrint('[SIGNAL SERVICE][REINFORCEMENT] ✓ All sessions deleted');
+        } catch (e) {
+          debugPrint(
+            '[SIGNAL SERVICE][REINFORCEMENT] ⚠️ Error deleting sessions: $e',
+          );
+        }
+
+        try {
+          await senderKeyStore.deleteAllSenderKeys();
+          debugPrint(
+            '[SIGNAL SERVICE][REINFORCEMENT] ✓ All SenderKeys deleted',
+          );
+        } catch (e) {
+          debugPrint(
+            '[SIGNAL SERVICE][REINFORCEMENT] ⚠️ Error deleting SenderKeys: $e',
+          );
+        }
+      }
+
       debugPrint(
         '[SIGNAL SERVICE][REINFORCEMENT] ========================================',
       );
@@ -2228,6 +2507,32 @@ class SignalService {
 
       await Future.delayed(Duration(milliseconds: 500));
 
+      // Apply cleanup strategy after upload: remove old keys from server
+      debugPrint(
+        '[SIGNAL SERVICE][REINFORCEMENT] Applying SignedPreKey cleanup strategy...',
+      );
+      final allStoredKeys = await signedPreKeyStore
+          .loadAllStoredSignedPreKeys();
+      if (allStoredKeys.length > 1) {
+        // Sort to find newest
+        allStoredKeys.sort((a, b) {
+          if (a.createdAt == null) return 1;
+          if (b.createdAt == null) return -1;
+          return b.createdAt!.compareTo(a.createdAt!);
+        });
+
+        // Remove ALL old keys from server immediately
+        for (final key in allStoredKeys) {
+          // Skip newest
+          if (key.record.id == allStoredKeys.first.record.id) continue;
+
+          debugPrint(
+            '[SIGNAL SERVICE][REINFORCEMENT] Removing old server key: ${key.record.id}',
+          );
+          SocketService().emit("removeSignedPreKey", {'id': key.record.id});
+        }
+      }
+
       // Step 4: Re-upload all PreKeys (optimized - check IDs first)
       debugPrint(
         '[SIGNAL SERVICE][REINFORCEMENT] Step 4: Re-uploading PreKeys...',
@@ -2320,6 +2625,219 @@ class SignalService {
       );
       debugPrint('[SIGNAL_SERVICE] Stack trace: $stackTrace');
       // Don't rethrow - rotation failure shouldn't block normal operations
+    }
+  }
+
+  /// 🔍 SELF-VERIFICATION: Verify our own keys are valid on the server
+  /// This should be called after initialization and before sending messages
+  /// Returns true if keys are valid, false if issues detected
+  Future<bool> verifyOwnKeysOnServer() async {
+    try {
+      debugPrint(
+        '[SIGNAL_SELF_VERIFY] ========================================',
+      );
+      debugPrint(
+        '[SIGNAL_SELF_VERIFY] Starting self-verification of keys on server...',
+      );
+
+      if (!_isInitialized) {
+        debugPrint('[SIGNAL_SELF_VERIFY] ❌ Not initialized, cannot verify');
+        return false;
+      }
+
+      // 1. Get our own device info
+      final deviceId = DeviceIdentityService.instance.deviceId;
+      final userId = _currentUserId;
+
+      if (userId == null || userId.isEmpty || deviceId.isEmpty) {
+        debugPrint('[SIGNAL_SELF_VERIFY] ❌ No user/device ID available');
+        return false;
+      }
+
+      // Parse deviceId to get device number
+      final deviceIdParts = deviceId.split(':');
+      if (deviceIdParts.length != 2) {
+        debugPrint('[SIGNAL_SELF_VERIFY] ❌ Invalid deviceId format: $deviceId');
+        return false;
+      }
+      final deviceNumber = int.tryParse(deviceIdParts[1]);
+      if (deviceNumber == null) {
+        debugPrint(
+          '[SIGNAL_SELF_VERIFY] ❌ Cannot parse device number from: $deviceId',
+        );
+        return false;
+      }
+
+      debugPrint(
+        '[SIGNAL_SELF_VERIFY] Checking keys for: $userId (device $deviceNumber)',
+      );
+
+      // 2. Fetch our own bundle from server
+      final response = await ApiService.get(
+        '/signal/status/minimal',
+        queryParameters: {
+          'userId': userId,
+          'deviceId': deviceNumber.toString(),
+        },
+      );
+
+      final serverData = response.data as Map<String, dynamic>;
+
+      // 3. Verify identity key exists and matches
+      final serverIdentityKey = serverData['identityKey'] as String?;
+      if (serverIdentityKey == null) {
+        debugPrint(
+          '[SIGNAL_SELF_VERIFY] ❌ Server has NO identity key for our device!',
+        );
+        debugPrint(
+          '[SIGNAL_SELF_VERIFY] → Keys were not uploaded or were deleted',
+        );
+        return false;
+      }
+
+      final identityKeyPair = await identityStore.getIdentityKeyPair();
+      final localIdentityKey = base64Encode(
+        identityKeyPair.getPublicKey().serialize(),
+      );
+
+      if (serverIdentityKey != localIdentityKey) {
+        debugPrint('[SIGNAL_SELF_VERIFY] ❌ Identity key MISMATCH!');
+        debugPrint('[SIGNAL_SELF_VERIFY]   Local:  $localIdentityKey');
+        debugPrint('[SIGNAL_SELF_VERIFY]   Server: $serverIdentityKey');
+        return false;
+      }
+      debugPrint('[SIGNAL_SELF_VERIFY] ✓ Identity key matches');
+
+      // 4. Verify SignedPreKey exists and is valid
+      final serverSignedPreKey = serverData['signedPreKey'] as String?;
+      final serverSignedPreKeySignature =
+          serverData['signedPreKeySignature'] as String?;
+
+      if (serverSignedPreKey == null || serverSignedPreKeySignature == null) {
+        debugPrint(
+          '[SIGNAL_SELF_VERIFY] ❌ Server has NO SignedPreKey for our device!',
+        );
+        return false;
+      }
+
+      // Verify signature
+      try {
+        final localPublicKey = Curve.decodePoint(
+          identityKeyPair.getPublicKey().serialize(),
+          0,
+        );
+        final signedPreKeyBytes = base64Decode(serverSignedPreKey);
+        final signatureBytes = base64Decode(serverSignedPreKeySignature);
+
+        final isValid = Curve.verifySignature(
+          localPublicKey,
+          signedPreKeyBytes,
+          signatureBytes,
+        );
+
+        if (!isValid) {
+          debugPrint('[SIGNAL_SELF_VERIFY] ❌ SignedPreKey signature INVALID!');
+          return false;
+        }
+        debugPrint('[SIGNAL_SELF_VERIFY] ✓ SignedPreKey valid');
+      } catch (e) {
+        debugPrint('[SIGNAL_SELF_VERIFY] ❌ SignedPreKey validation error: $e');
+        return false;
+      }
+
+      // 5. Verify PreKeys count
+      final preKeysCount = serverData['preKeysCount'] as int? ?? 0;
+      if (preKeysCount == 0) {
+        debugPrint(
+          '[SIGNAL_SELF_VERIFY] ❌ Server has ZERO PreKeys for our device!',
+        );
+        return false;
+      }
+
+      if (preKeysCount < 10) {
+        debugPrint(
+          '[SIGNAL_SELF_VERIFY] ⚠️ Low PreKey count on server: $preKeysCount',
+        );
+        debugPrint('[SIGNAL_SELF_VERIFY] → Should regenerate PreKeys soon');
+      } else {
+        debugPrint(
+          '[SIGNAL_SELF_VERIFY] ✓ PreKeys count adequate: $preKeysCount',
+        );
+      }
+
+      debugPrint(
+        '[SIGNAL_SELF_VERIFY] ========================================',
+      );
+      debugPrint('[SIGNAL_SELF_VERIFY] ✅ All keys verified successfully');
+      return true;
+    } catch (e, stackTrace) {
+      debugPrint('[SIGNAL_SELF_VERIFY] ❌ Verification failed with error: $e');
+      debugPrint('[SIGNAL_SELF_VERIFY] Stack trace: $stackTrace');
+      return false;
+    }
+  }
+
+  /// Quick check if recipient has ANY keys on server (before fetching bundles)
+  /// Returns true if recipient has at least one device with keys, false otherwise
+  /// This saves a network round-trip by checking status before fetching full bundles
+  Future<bool> _recipientHasKeys(String userId) async {
+    try {
+      debugPrint('[SIGNAL_PRE_CHECK] Checking if $userId has any keys...');
+
+      // Fetch bundles list (lightweight - just metadata)
+      final response = await ApiService.get('/signal/prekey_bundle/$userId');
+      final devices = response.data is String
+          ? jsonDecode(response.data)
+          : response.data;
+
+      if (devices is! List || devices.isEmpty) {
+        debugPrint(
+          '[SIGNAL_PRE_CHECK] ❌ Recipient $userId has no registered devices',
+        );
+        return false;
+      }
+
+      debugPrint(
+        '[SIGNAL_PRE_CHECK] Found ${devices.length} devices for $userId',
+      );
+
+      // Check if at least ONE device has complete keys
+      int devicesWithKeys = 0;
+      for (final device in devices) {
+        final hasAllFields =
+            device['public_key'] != null &&
+            device['registration_id'] != null &&
+            device['preKey'] != null &&
+            device['signedPreKey'] != null &&
+            device['preKey']['prekey_data'] != null &&
+            device['signedPreKey']['signed_prekey_data'] != null &&
+            device['signedPreKey']['signed_prekey_signature'] != null;
+
+        if (hasAllFields) {
+          devicesWithKeys++;
+          debugPrint(
+            '[SIGNAL_PRE_CHECK] ✓ Device ${device['device_id']} has complete keys',
+          );
+        } else {
+          debugPrint(
+            '[SIGNAL_PRE_CHECK] ⚠️ Device ${device['device_id']} missing keys',
+          );
+        }
+      }
+
+      if (devicesWithKeys == 0) {
+        debugPrint('[SIGNAL_PRE_CHECK] ❌ No devices have complete key bundles');
+        return false;
+      }
+
+      debugPrint(
+        '[SIGNAL_PRE_CHECK] ✓ Found $devicesWithKeys devices with keys',
+      );
+      return true;
+    } catch (e, stackTrace) {
+      debugPrint('[SIGNAL_PRE_CHECK] ❌ Error checking recipient keys: $e');
+      debugPrint('[SIGNAL_PRE_CHECK] Stack trace: $stackTrace');
+      return false; // Assume no keys on error to be safe
     }
   }
 
@@ -2518,7 +3036,26 @@ class SignalService {
         }
       }
 
-      // 3. Reset initialization state
+      // 3. Delete all sessions (local cleanup)
+      // Sessions are bound to Identity Keys - when Identity changes, sessions are invalid
+      if (_storesCreated) {
+        try {
+          await sessionStore.deleteAllSessionsCompletely();
+          debugPrint('[SIGNAL SERVICE] ✓ Deleted all local sessions');
+        } catch (e) {
+          debugPrint('[SIGNAL SERVICE] ⚠️ Error deleting sessions: $e');
+        }
+
+        // Delete all SenderKeys - they are signed with Identity Key
+        try {
+          await senderKeyStore.deleteAllSenderKeys();
+          debugPrint('[SIGNAL SERVICE] ✓ Deleted all SenderKeys');
+        } catch (e) {
+          debugPrint('[SIGNAL SERVICE] ⚠️ Error deleting SenderKeys: $e');
+        }
+      }
+
+      // 4. Reset initialization state
       _isInitialized = false;
       _storesCreated = false;
 
@@ -2655,6 +3192,7 @@ class SignalService {
         senderAddress: senderAddress,
         payload: payload,
         cipherType: cipherType,
+        itemId: itemId,
       );
     } on UntrustedIdentityException catch (e) {
       debugPrint(
@@ -2671,6 +3209,7 @@ class SignalService {
             senderAddress: senderAddress,
             payload: payload,
             cipherType: cipherType,
+            itemId: itemId,
           );
         },
         sendNotification: true, // ✅ Send system message to both users
@@ -2840,7 +3379,13 @@ class SignalService {
         return;
       }
 
-      // For other errors, also delete from server to prevent stuck messages
+      // For other errors, notify UI and attempt recovery
+      _notifyDecryptionFailure(
+        SignalProtocolAddress(sender, senderDeviceId),
+        reason: e.toString(),
+        itemId: itemId,
+      );
+
       debugPrint(
         "[SIGNAL SERVICE] ⚠️ Decryption failed - deleting from server to prevent stuck message",
       );
@@ -2876,8 +3421,10 @@ class SignalService {
 
     // Handle call notification type (cipherType 0 - unencrypted)
     if (type == 'call_notification') {
-      debugPrint('[SIGNAL SERVICE] Received call_notification - triggering callbacks');
-      
+      debugPrint(
+        '[SIGNAL SERVICE] Received call_notification - triggering callbacks',
+      );
+
       // Trigger all registered callbacks for this type
       if (_itemTypeCallbacks.containsKey(type)) {
         final callbackItem = {
@@ -2886,19 +3433,25 @@ class SignalService {
           'sender': sender,
           'itemId': itemId,
         };
-        
+
         for (final callback in _itemTypeCallbacks[type]!) {
           try {
-            debugPrint('[SIGNAL SERVICE] Calling callback for call_notification');
+            debugPrint(
+              '[SIGNAL SERVICE] Calling callback for call_notification',
+            );
             callback(callbackItem);
           } catch (e) {
-            debugPrint('[SIGNAL SERVICE] Error in call_notification callback: $e');
+            debugPrint(
+              '[SIGNAL SERVICE] Error in call_notification callback: $e',
+            );
           }
         }
       } else {
-        debugPrint('[SIGNAL SERVICE] No callbacks registered for call_notification');
+        debugPrint(
+          '[SIGNAL SERVICE] No callbacks registered for call_notification',
+        );
       }
-      
+
       isSystemMessage = true;
     }
     // Handle read_receipt type
@@ -3559,9 +4112,7 @@ class SignalService {
 
         return result;
       } catch (e, st) {
-        debugPrint(
-          '[ERROR] Exception while decoding response: $e\n$st',
-        );
+        debugPrint('[ERROR] Exception while decoding response: $e\n$st');
         rethrow;
       }
     } else {
@@ -3641,6 +4192,170 @@ class SignalService {
       debugPrint('[VALIDATION] ❌ Exception validating bundle: $e');
       debugPrint('[VALIDATION] ============================================');
       return false;
+    }
+  }
+
+  /// Validate session before sending (check if remote keys changed)
+  /// Compares stored Identity Key in session vs. server's current Identity Key
+  /// Returns true if session is valid, false if stale or missing
+  // Track signedPreKey IDs used to establish sessions
+  // Format: "userId:deviceId" => signedPreKeyId
+  final Map<String, int> _sessionSignedPreKeyIds = {};
+
+  Future<bool> _validateSessionBeforeSend(
+    SignalProtocolAddress remoteAddress,
+    String recipientUserId,
+    int recipientDeviceId,
+    int? currentSignedPreKeyId, // SignedPreKey ID from current PreKey bundle
+  ) async {
+    try {
+      // 1. Check if session exists locally
+      if (!await sessionStore.containsSession(remoteAddress)) {
+        debugPrint('[SIGNAL] No session exists for ${remoteAddress.getName()}');
+        return false; // Need to create new session
+      }
+
+      // 2. Get server's current Identity Key
+      final response = await ApiService.get(
+        '/signal/status/minimal',
+        queryParameters: {
+          'userId': recipientUserId,
+          'deviceId': recipientDeviceId.toString(),
+        },
+      );
+
+      final serverIdentityKey = response.data['identityKey'] as String?;
+      if (serverIdentityKey == null) {
+        debugPrint(
+          '[SIGNAL] ⚠️ Server has no Identity Key for ${remoteAddress.getName()}',
+        );
+        debugPrint(
+          '[SIGNAL] Device may be unregistered or keys not uploaded yet',
+        );
+
+        // Delete session with removed device to clean up
+        await sessionStore.deleteSession(remoteAddress);
+        debugPrint(
+          '[SIGNAL] ✓ Session deleted - device no longer has keys on server',
+        );
+
+        return false; // Server has no keys, session is invalid
+      }
+
+      final serverIdentityKeyBytes = base64Decode(serverIdentityKey);
+
+      // 3. Get Identity Key stored in our session
+      final storedIdentity = await identityStore.getIdentity(remoteAddress);
+
+      if (storedIdentity == null) {
+        debugPrint(
+          '[SIGNAL] No stored identity for ${remoteAddress.getName()}',
+        );
+        return false; // No stored identity, session might be corrupted
+      }
+
+      // 4. Compare: Server's current key vs. our stored key
+      final storedIdentityBytes = storedIdentity.serialize();
+      final keysMatch = const ListEquality().equals(
+        serverIdentityKeyBytes,
+        storedIdentityBytes,
+      );
+
+      if (!keysMatch) {
+        debugPrint(
+          '[SIGNAL] ⚠️ Identity Key mismatch for ${remoteAddress.getName()}! '
+          'Session is STALE (remote user regenerated keys)',
+        );
+        // Record metrics
+        KeyManagementMetrics.recordSessionInvalidation(
+          remoteAddress.getName(),
+          reason: 'Identity Key changed',
+        );
+        return false; // Session invalid
+      }
+
+      // 5. Compare SignedPreKey ID (if provided)
+      // This detects if recipient rotated their signedPreKey
+      if (currentSignedPreKeyId != null) {
+        final sessionKey = '${recipientUserId}:${recipientDeviceId}';
+        final storedSignedPreKeyId = _sessionSignedPreKeyIds[sessionKey];
+
+        if (storedSignedPreKeyId != null &&
+            storedSignedPreKeyId != currentSignedPreKeyId) {
+          debugPrint(
+            '[SIGNAL] ⚠️ SignedPreKey changed for ${remoteAddress.getName()}! '
+            'Session established with ID $storedSignedPreKeyId, but server now has ID $currentSignedPreKeyId',
+          );
+          debugPrint(
+            '[SIGNAL] Recipient rotated their signedPreKey - session is STALE',
+          );
+          // Record metrics
+          KeyManagementMetrics.recordSessionInvalidation(
+            remoteAddress.getName(),
+            reason: 'SignedPreKey rotated',
+          );
+          // Clear stored ID
+          _sessionSignedPreKeyIds.remove(sessionKey);
+          return false; // Session invalid - need to establish new session with new signedPreKey
+        }
+      }
+
+      debugPrint('[SIGNAL] ✓ Session valid for ${remoteAddress.getName()}');
+      return true; // Session is valid
+    } catch (e) {
+      debugPrint(
+        '[SIGNAL] Session validation error for ${remoteAddress.getName()}: $e',
+      );
+
+      // Handle 404: Device no longer exists (unregistered)
+      if (e.toString().contains('404') || e.toString().contains('Not Found')) {
+        debugPrint(
+          '[SIGNAL] ⚠️ Device ${remoteAddress.getName()}:${remoteAddress.getDeviceId()} no longer exists (404)',
+        );
+        debugPrint(
+          '[SIGNAL] User likely logged out or unregistered this device',
+        );
+
+        // Delete session with removed device
+        try {
+          await sessionStore.deleteSession(remoteAddress);
+          debugPrint('[SIGNAL] ✓ Session deleted for removed device');
+        } catch (deleteError) {
+          debugPrint('[SIGNAL] ⚠️ Error deleting session: $deleteError');
+        }
+      }
+
+      // On error, assume invalid to be safe
+      return false;
+    }
+  }
+
+  /// Notify UI about decryption failure
+  /// Sends system message to inform user that message couldn't be decrypted
+  void _notifyDecryptionFailure(
+    SignalProtocolAddress sender, {
+    required String reason,
+    String? itemId,
+  }) {
+    debugPrint(
+      '[SIGNAL] \u26a0\ufe0f Notifying UI about decryption failure from ${sender.getName()}:${sender.getDeviceId()}',
+    );
+
+    // Emit system message event
+    if (_itemTypeCallbacks.containsKey('system')) {
+      for (final callback in _itemTypeCallbacks['system']!) {
+        callback({
+          'type': 'decryptionFailure',
+          'sender': sender.getName(),
+          'senderDeviceId': sender.getDeviceId(),
+          'itemId': itemId,
+          'message':
+              'Could not decrypt message. Requesting sender to resend...',
+          'reason': reason,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+      }
+      debugPrint('[SIGNAL] ✓ Decryption failure notification sent to UI');
     }
   }
 
@@ -3925,12 +4640,41 @@ class SignalService {
     }
 
     debugPrint(
+      '[SIGNAL SERVICE] Step 0c: Pre-flight check - does recipient have keys?',
+    );
+    // Quick check to avoid fetching bundles if recipient has no keys
+    final recipientHasKeys = await _recipientHasKeys(recipientUserId);
+    if (!recipientHasKeys) {
+      debugPrint(
+        '[SIGNAL SERVICE] ❌ Recipient $recipientUserId has no keys on server',
+      );
+      throw Exception(
+        'Recipient has not set up encryption keys. '
+        'They need to log out and back in to generate Signal keys.',
+      );
+    }
+    debugPrint(
+      '[SIGNAL SERVICE] ✓ Recipient has keys, proceeding with encryption',
+    );
+
+    debugPrint(
       '[SIGNAL SERVICE] Step 1: fetchPreKeyBundleForUser($recipientUserId)',
     );
     debugPrint(
       '[SIGNAL SERVICE] This fetches devices for BOTH users: recipient AND sender (own devices)',
     );
     final preKeyBundles = await fetchPreKeyBundleForUser(recipientUserId);
+
+    // Safety check: Ensure we have a valid non-empty list
+    if (preKeyBundles.isEmpty) {
+      debugPrint(
+        '[SIGNAL SERVICE] ❌ No PreKey bundles available for $recipientUserId',
+      );
+      throw Exception(
+        'Cannot send message: recipient has no devices with encryption keys',
+      );
+    }
+
     debugPrint('[SIGNAL SERVICE] Step 1 result: $preKeyBundles');
     debugPrint(
       '[SIGNAL SERVICE] Number of devices (Alice + Bob): ${preKeyBundles.length}',
@@ -3989,6 +4733,40 @@ class SignalService {
           bundle['userId'],
           bundle['deviceId'],
         );
+
+        // SESSION VALIDATION: Check if existing session is still valid
+        // Validates that stored Identity Key matches server's current Identity Key
+        // AND that signedPreKey hasn't rotated
+        debugPrint(
+          '[SIGNAL SERVICE] Step 2a: Validate session for ${recipientAddress.getName()}',
+        );
+        final isSessionValid = await _validateSessionBeforeSend(
+          recipientAddress,
+          bundle['userId'],
+          bundle['deviceId'],
+          bundle['signedPreKeyId'], // Pass current signedPreKey ID from bundle
+        );
+
+        if (!isSessionValid) {
+          debugPrint(
+            '[SIGNAL SERVICE] Session invalid or missing for ${bundle['userId']}:${bundle['deviceId']}',
+          );
+
+          // Delete stale session only if it exists (forces new session creation below)
+          if (await sessionStore.containsSession(recipientAddress)) {
+            await sessionStore.deleteSession(recipientAddress);
+            debugPrint('[SIGNAL SERVICE] ✓ Stale session deleted');
+          } else {
+            debugPrint(
+              '[SIGNAL SERVICE] No session exists - will create new session',
+            );
+          }
+
+          // NOTE: We don't do a secondary key check here because:
+          // 1. The PreKey bundle was already validated above
+          // 2. /signal/status/minimal only returns current user's keys, not recipient's
+          // 3. If no session exists (first message), that's expected - we'll create one below
+        }
 
         // Check if this is our own device (not the intended recipient)
         // This happens when the backend returns our own devices for multi-device support
@@ -4050,6 +4828,13 @@ class SignalService {
           // Identity verification and signature validation happen during session building
           try {
             await sessionBuilder.processPreKeyBundle(preKeyBundle);
+            // Store the signedPreKey ID for this session
+            final sessionKey = '${bundle['userId']}:${bundle['deviceId']}';
+            _sessionSignedPreKeyIds[sessionKey] =
+                bundle['signedPreKeyId'] as int;
+            debugPrint(
+              '[SIGNAL SERVICE] Stored signedPreKey ID ${bundle['signedPreKeyId']} for session $sessionKey',
+            );
             debugPrint('[SIGNAL SERVICE] Step 5 done');
           } on UntrustedIdentityException catch (e) {
             debugPrint(
@@ -4066,6 +4851,13 @@ class SignalService {
                 recipientAddress,
               );
               await newSessionBuilder.processPreKeyBundle(preKeyBundle);
+              // Store the signedPreKey ID for this session
+              final sessionKey = '${bundle['userId']}:${bundle['deviceId']}';
+              _sessionSignedPreKeyIds[sessionKey] =
+                  bundle['signedPreKeyId'] as int;
+              debugPrint(
+                '[SIGNAL SERVICE] Stored signedPreKey ID ${bundle['signedPreKeyId']} for session $sessionKey',
+              );
               debugPrint(
                 '[SIGNAL SERVICE] Session rebuilt with trusted identity',
               );
@@ -4282,16 +5074,22 @@ class SignalService {
 
   Future<String> decryptItem({
     required SignalProtocolAddress senderAddress,
-    required String payload, // base64-encoded serialized message OR plain JSON for cipherType 0
-    required int cipherType, // 3 = PreKey, 1 = SignalMessage, 0 = Unencrypted system message
+    required String
+    payload, // base64-encoded serialized message OR plain JSON for cipherType 0
+    required int
+    cipherType, // 3 = PreKey, 1 = SignalMessage, 0 = Unencrypted system message
+    String?
+    itemId, // Optional: Include in recovery notifications so sender knows which message failed
   }) async {
     // Handle unencrypted system messages (cipherType 0)
     if (cipherType == 0) {
-      debugPrint('[SIGNAL SERVICE] Processing unencrypted system message (cipherType 0)');
+      debugPrint(
+        '[SIGNAL SERVICE] Processing unencrypted system message (cipherType 0)',
+      );
       // Payload is already the plain message (JSON string), no decryption needed
       return payload;
     }
-    
+
     // 1. SessionCipher für den Absender holen/erstellen
     try {
       final sessionCipher = SessionCipher(
@@ -4328,29 +5126,56 @@ class SignalService {
           );
 
           // Retry decryption with trusted identity
-          final newSessionCipher = SessionCipher(
-            sessionStore,
-            preKeyStore,
-            signedPreKeyStore,
-            identityStore,
-            senderAddress,
-          );
-          plaintext = await newSessionCipher.decryptWithCallback(
-            preKeyMsg,
-            (pt) {},
-          );
-          debugPrint(
-            '[SIGNAL SERVICE] ✓ PreKey message decrypted after identity update',
-          );
+          try {
+            final newSessionCipher = SessionCipher(
+              sessionStore,
+              preKeyStore,
+              signedPreKeyStore,
+              identityStore,
+              senderAddress,
+            );
+            plaintext = await newSessionCipher.decryptWithCallback(
+              preKeyMsg,
+              (pt) {},
+            );
+            debugPrint(
+              '[SIGNAL SERVICE] ✓ PreKey message decrypted after identity update',
+            );
+          } catch (retryError) {
+            // If retry also fails, handle it the same way as the first attempt
+            final errorStr = retryError.toString().toLowerCase();
+            if (errorStr.contains('prekey') ||
+                errorStr.contains('no valid') ||
+                errorStr.contains('invalidkey') ||
+                errorStr.contains('signedprekeyrecord') ||
+                errorStr.contains('signature')) {
+              debugPrint(
+                '[SIGNAL SERVICE] ⚠️ PreKey/SignedPreKey decryption failed after identity trust: $retryError',
+              );
+              debugPrint(
+                '[SIGNAL SERVICE] PreKey/SignedPreKey issue persists after identity verification',
+              );
+
+              // Don't send another notification here - the session was just trusted
+              // The sender likely needs to upload fresh keys
+              return '';
+            }
+            // Re-throw other errors
+            rethrow;
+          }
         } catch (e) {
           // Handle PreKey-specific errors (missing PreKey, invalid signature, etc.)
-          if (e.toString().contains('PreKey') ||
-              e.toString().contains('No valid') ||
-              e.toString().contains('InvalidKey') ||
-              e.toString().contains('signature')) {
-            debugPrint('[SIGNAL SERVICE] ⚠️ PreKey decryption failed: $e');
+          final errorStr = e.toString().toLowerCase();
+          if (errorStr.contains('prekey') ||
+              errorStr.contains('no valid') ||
+              errorStr.contains('invalidkey') ||
+              errorStr.contains('signedprekeyrecord') ||
+              errorStr.contains('signature')) {
             debugPrint(
-              '[SIGNAL SERVICE] PreKey may be consumed, invalid, or sender keys corrupted',
+              '[SIGNAL SERVICE] ⚠️ PreKey/SignedPreKey decryption failed: $e',
+            );
+            debugPrint(
+              '[SIGNAL SERVICE] PreKey/SignedPreKey may be missing, consumed, invalid, or sender keys corrupted',
             );
             debugPrint(
               '[SIGNAL SERVICE] Sender needs to fetch fresh PreKeyBundle and resend',
@@ -4378,12 +5203,28 @@ class SignalService {
 
               _sessionRecoveryLastAttempt[recoveryKey] = DateTime.now();
 
+              // Delete our session with sender (if any) to ensure clean state
+              final recipientAddress = SignalProtocolAddress(
+                senderId,
+                deviceId,
+              );
+              final hadSession = await sessionStore.containsSession(
+                recipientAddress,
+              );
+              if (hadSession) {
+                await sessionStore.deleteSession(recipientAddress);
+                debugPrint(
+                  '[SIGNAL SERVICE] ✓ Deleted our session with sender for clean state',
+                );
+              }
+
               SocketService().emit('sessionRecoveryNeeded', {
                 'recipientUserId': _currentUserId,
                 'recipientDeviceId': _currentDeviceId,
                 'senderUserId': senderId,
                 'senderDeviceId': deviceId,
                 'reason': 'InvalidPreKeyBundle',
+                if (itemId != null) 'failedMessageId': itemId,
               });
 
               debugPrint(
@@ -4474,8 +5315,23 @@ class SignalService {
 
               _sessionRecoveryLastAttempt[recoveryKey] = DateTime.now();
 
+              // Delete our session with sender to ensure clean bidirectional state
+              final recipientAddress = SignalProtocolAddress(
+                senderId,
+                deviceId,
+              );
+              final hadSession = await sessionStore.containsSession(
+                recipientAddress,
+              );
+              if (hadSession) {
+                await sessionStore.deleteSession(recipientAddress);
+                debugPrint(
+                  '[SIGNAL SERVICE] ✓ Deleted our session with sender for clean state',
+                );
+              }
+
               debugPrint(
-                '[SIGNAL SERVICE] 📤 Notifying sender to resend message (will auto-establish session)',
+                '[SIGNAL SERVICE] 📤 Notifying sender to create new session and resend',
               );
               SocketService().emit('sessionRecoveryNeeded', {
                 'recipientUserId':
@@ -4484,6 +5340,7 @@ class SignalService {
                 'senderUserId': senderId, // Who should resend
                 'senderDeviceId': deviceId,
                 'reason': 'NoSession',
+                if (itemId != null) 'failedMessageId': itemId,
               });
               debugPrint(
                 '[SIGNAL SERVICE] ✓ Session recovery notification sent to sender',
@@ -4521,7 +5378,7 @@ class SignalService {
               '[SIGNAL SERVICE] Deleting corrupted session for ${senderAddress.getName()}:${senderAddress.getDeviceId()}',
             );
 
-            // Delete the corrupted session
+            // Delete the corrupted session (already not working)
             await sessionStore.deleteSession(senderAddress);
 
             debugPrint('[SIGNAL SERVICE] ✓ Corrupted session deleted');
@@ -4551,8 +5408,23 @@ class SignalService {
 
               _sessionRecoveryLastAttempt[recoveryKey] = DateTime.now();
 
+              // Delete our session with sender to ensure clean bidirectional state
+              final recipientAddress = SignalProtocolAddress(
+                senderId,
+                deviceId,
+              );
+              final hadSession = await sessionStore.containsSession(
+                recipientAddress,
+              );
+              if (hadSession) {
+                await sessionStore.deleteSession(recipientAddress);
+                debugPrint(
+                  '[SIGNAL SERVICE] ✓ Deleted our session with sender for clean state',
+                );
+              }
+
               debugPrint(
-                '[SIGNAL SERVICE] 📤 Notifying sender to resend message (session was corrupted)',
+                '[SIGNAL SERVICE] 📤 Notifying sender to create new session and resend',
               );
               SocketService().emit('sessionRecoveryNeeded', {
                 'recipientUserId':
@@ -4561,6 +5433,7 @@ class SignalService {
                 'senderUserId': senderId, // Who should resend
                 'senderDeviceId': deviceId,
                 'reason': 'BadMAC',
+                if (itemId != null) 'failedMessageId': itemId,
               });
               debugPrint(
                 '[SIGNAL SERVICE] ✓ Session recovery notification sent to sender',
@@ -4605,9 +5478,7 @@ class SignalService {
         throw Exception('Unknown cipherType: $cipherType');
       }
     } catch (e, st) {
-      debugPrint(
-        '[ERROR] Exception while decrypting message: $e\n$st',
-      );
+      debugPrint('[ERROR] Exception while decrypting message: $e\n$st');
       return '';
     }
   }
@@ -4830,8 +5701,9 @@ class SignalService {
 
       // Check if this is a meeting or instant call
       // Meetings and calls use 1:1 Signal sessions, not SenderKey protocol
-      final isMeeting = groupId.startsWith('mtg_') || groupId.startsWith('call_');
-      
+      final isMeeting =
+          groupId.startsWith('mtg_') || groupId.startsWith('call_');
+
       if (isMeeting) {
         debugPrint(
           '[SIGNAL_SERVICE] Meeting/call detected ($groupId) - skipping server SenderKey storage',
@@ -5302,12 +6174,104 @@ class SignalService {
   ) async {
     final senderAddress = SignalProtocolAddress(senderId, senderDeviceId);
     final senderKeyName = SenderKeyName(groupId, senderAddress);
-    final groupCipher = GroupCipher(senderKeyStore, senderKeyName);
 
-    final ciphertext = base64Decode(ciphertextBase64);
-    final plaintext = await groupCipher.decrypt(ciphertext);
+    try {
+      final groupCipher = GroupCipher(senderKeyStore, senderKeyName);
+      final ciphertext = base64Decode(ciphertextBase64);
+      final plaintext = await groupCipher.decrypt(ciphertext);
 
-    return utf8.decode(plaintext);
+      return utf8.decode(plaintext);
+    } catch (e) {
+      final errorStr = e.toString().toLowerCase();
+
+      // Detect sender key chain desynchronization
+      // This happens when messages are skipped (network packet loss, out-of-order delivery)
+      if (errorStr.contains('chain') ||
+          errorStr.contains('counter') ||
+          errorStr.contains('invalid message number') ||
+          errorStr.contains('duplicate message')) {
+        debugPrint(
+          '[SIGNAL] ⚠️ Sender key chain desync detected for $senderId:$senderDeviceId in $groupId',
+        );
+        debugPrint(
+          '[SIGNAL] Message counter out of order - likely skipped message(s)',
+        );
+
+        // 1. Delete corrupted sender key
+        try {
+          await senderKeyStore.removeSenderKey(senderKeyName);
+          debugPrint('[SIGNAL] ✓ Removed corrupted sender key');
+        } catch (removeError) {
+          debugPrint('[SIGNAL] ⚠️ Error removing sender key: $removeError');
+        }
+
+        // 2. Request fresh sender key from server
+        try {
+          final reloaded = await loadSenderKeyFromServer(
+            channelId: groupId,
+            userId: senderId,
+            deviceId: senderDeviceId,
+            forceReload: true,
+          );
+
+          if (reloaded) {
+            debugPrint(
+              '[SIGNAL] ✓ Fresh sender key loaded from server - next message should work',
+            );
+          } else {
+            debugPrint('[SIGNAL] ⚠️ Could not reload sender key from server');
+          }
+        } catch (reloadError) {
+          debugPrint('[SIGNAL] ⚠️ Error reloading sender key: $reloadError');
+        }
+
+        // 3. Send 1:1 Signal message to sender asking them to resend
+        try {
+          debugPrint(
+            '[SIGNAL] 📤 Notifying sender to resend missed message via 1:1 encrypted message...',
+          );
+
+          await sendItem(
+            recipientUserId: senderId,
+            type: 'group_message_recovery',
+            payload: jsonEncode({
+              'action': 'resend_last_message',
+              'channelId': groupId,
+              'reason': 'chain_desync',
+              'message':
+                  'Could not decrypt your last message (message skipped). Please resend.',
+            }),
+          );
+
+          debugPrint(
+            '[SIGNAL] ✓ Recovery notification sent to $senderId via encrypted 1:1 message',
+          );
+        } catch (notifyError) {
+          debugPrint('[SIGNAL] ⚠️ Failed to notify sender: $notifyError');
+        }
+
+        // 4. Notify local user via UI callback
+        _notifyDecryptionFailure(
+          senderAddress,
+          reason: 'Message skipped - chain desync. Sender notified to resend.',
+          itemId: null,
+        );
+
+        debugPrint('[SIGNAL] ℹ️ Current message lost, but recovery initiated');
+      } else {
+        // Other decryption errors (not chain-related)
+        debugPrint('[SIGNAL] ⚠️ Group message decryption failed: $e');
+
+        // Still notify user
+        _notifyDecryptionFailure(
+          senderAddress,
+          reason: 'Decryption failed: ${e.toString()}',
+          itemId: null,
+        );
+      }
+
+      return ''; // Message lost, return empty
+    }
   }
 
   /// DEPRECATED: Use sendGroupItem instead
@@ -6164,6 +7128,7 @@ class SignalService {
             senderAddress: senderAddress,
             payload: payload,
             cipherType: cipherType,
+            itemId: null, // Emotes don't have itemIds
           );
         }
       }
@@ -6422,7 +7387,9 @@ class SignalService {
     required dynamic payload,
   }) async {
     try {
-      debugPrint('[SIGNAL SERVICE] Sending Signal item to guest: $guestSessionId');
+      debugPrint(
+        '[SIGNAL SERVICE] Sending Signal item to guest: $guestSessionId',
+      );
 
       // Get or create Signal session with guest
       final session = await _getOrCreateGuestSession(
@@ -6445,7 +7412,9 @@ class SignalService {
       );
 
       if (kDebugMode) {
-        debugPrint('[SIGNAL SERVICE] 🔒 Encrypted ${payloadString.length} bytes for guest');
+        debugPrint(
+          '[SIGNAL SERVICE] 🔒 Encrypted ${payloadString.length} bytes for guest',
+        );
       }
 
       // Emit via Socket.IO to guest
@@ -6458,7 +7427,10 @@ class SignalService {
         'timestamp': DateTime.now().toIso8601String(),
       };
 
-      SocketService().emit('participant:meeting_e2ee_key_response', messageData);
+      SocketService().emit(
+        'participant:meeting_e2ee_key_response',
+        messageData,
+      );
       debugPrint('[SIGNAL SERVICE] ✓ Sent encrypted item to guest via Signal');
     } catch (e) {
       debugPrint('[SIGNAL SERVICE] ✗ Error sending item to guest: $e');
@@ -6478,7 +7450,9 @@ class SignalService {
     required String type,
   }) async {
     try {
-      debugPrint('[SIGNAL SERVICE] Receiving Signal item from participant: $participantUserId:$participantDeviceId');
+      debugPrint(
+        '[SIGNAL SERVICE] Receiving Signal item from participant: $participantUserId:$participantDeviceId',
+      );
 
       // Get or create Signal session with participant
       final session = await _getOrCreateParticipantSession(
@@ -6495,7 +7469,9 @@ class SignalService {
       );
 
       if (kDebugMode) {
-        debugPrint('[SIGNAL SERVICE] 🔓 Decrypted ${plaintext.length} bytes from participant');
+        debugPrint(
+          '[SIGNAL SERVICE] 🔓 Decrypted ${plaintext.length} bytes from participant',
+        );
       }
 
       // Parse and return decrypted data
@@ -6507,7 +7483,9 @@ class SignalService {
         'senderDeviceId': participantDeviceId,
       };
     } catch (e) {
-      debugPrint('[SIGNAL SERVICE] ✗ Error receiving item from participant: $e');
+      debugPrint(
+        '[SIGNAL SERVICE] ✗ Error receiving item from participant: $e',
+      );
       rethrow;
     }
   }
@@ -6523,11 +7501,15 @@ class SignalService {
 
     // Check if session already exists
     if (await sessionStore.containsSession(address)) {
-      debugPrint('[SIGNAL SERVICE] ✓ Using existing guest session: $guestSessionId');
+      debugPrint(
+        '[SIGNAL SERVICE] ✓ Using existing guest session: $guestSessionId',
+      );
       return address;
     }
 
-    debugPrint('[SIGNAL SERVICE] Creating new guest session, fetching keybundle...');
+    debugPrint(
+      '[SIGNAL SERVICE] Creating new guest session, fetching keybundle...',
+    );
 
     // Fetch guest's Signal keybundle from server
     final response = await ApiService.get(
@@ -6535,7 +7517,9 @@ class SignalService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to fetch guest keybundle: ${response.statusCode}');
+      throw Exception(
+        'Failed to fetch guest keybundle: ${response.statusCode}',
+      );
     }
 
     final keybundle = response.data is String
@@ -6595,25 +7579,35 @@ class SignalService {
     required int participantDeviceId,
   }) async {
     // Create address for participant
-    final address = SignalProtocolAddress(participantUserId, participantDeviceId);
+    final address = SignalProtocolAddress(
+      participantUserId,
+      participantDeviceId,
+    );
 
     // Check if session already exists
     if (await sessionStore.containsSession(address)) {
-      debugPrint('[SIGNAL SERVICE] ✓ Using existing participant session: $participantUserId:$participantDeviceId');
+      debugPrint(
+        '[SIGNAL SERVICE] ✓ Using existing participant session: $participantUserId:$participantDeviceId',
+      );
       return address;
     }
 
-    debugPrint('[SIGNAL SERVICE] Creating new participant session, fetching keybundle...');
+    debugPrint(
+      '[SIGNAL SERVICE] Creating new participant session, fetching keybundle...',
+    );
 
     // For guests: we need sessionStorage-based fetch since we don't have authentication
     // The external_guest_socket_service.dart will need to inject sessionId/token
-    final sessionId = ''; // TODO: Get from sessionStorage or ExternalParticipantService
+    final sessionId =
+        ''; // TODO: Get from sessionStorage or ExternalParticipantService
     final response = await ApiService.get(
       '/api/meetings/external/$sessionId/participant/$participantUserId/$participantDeviceId/keys',
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to fetch participant keybundle: ${response.statusCode}');
+      throw Exception(
+        'Failed to fetch participant keybundle: ${response.statusCode}',
+      );
     }
 
     final keybundle = response.data is String
@@ -6660,7 +7654,9 @@ class SignalService {
     );
 
     await sessionBuilder.processPreKeyBundle(bundle);
-    debugPrint('[SIGNAL SERVICE] ✓ Created new participant session: $participantUserId:$participantDeviceId');
+    debugPrint(
+      '[SIGNAL SERVICE] ✓ Created new participant session: $participantUserId:$participantDeviceId',
+    );
 
     return address;
   }
@@ -6684,7 +7680,8 @@ class SignalService {
 
     return {
       'ciphertext': base64Encode(ciphertext.serialize()),
-      'type': ciphertext.getType(), // 3 = PreKeySignalMessage, 1 = SignalMessage
+      'type': ciphertext
+          .getType(), // 3 = PreKeySignalMessage, 1 = SignalMessage
     };
   }
 
@@ -6727,7 +7724,9 @@ class SignalService {
         final address = SignalProtocolAddress('guest_', deviceId);
         await sessionStore.deleteSession(address);
       }
-      debugPrint('[SIGNAL SERVICE] ✓ Cleared all guest sessions for meeting: $meetingId');
+      debugPrint(
+        '[SIGNAL SERVICE] ✓ Cleared all guest sessions for meeting: $meetingId',
+      );
     } catch (e) {
       debugPrint('[SIGNAL SERVICE] ✗ Error clearing guest sessions: $e');
     }

@@ -59,6 +59,23 @@ class PermanentSessionStore extends SessionStore {
     }
   }
 
+  /// Delete ALL sessions (for all users and devices)
+  /// Used when regenerating identity keys - all sessions become invalid
+  Future<void> deleteAllSessionsCompletely() async {
+    debugPrint('[PermanentSessionStore] Deleting ALL sessions...');
+    final storage = DeviceScopedStorageService.instance;
+    final keys = await storage.getAllKeys(_storeName, _storeName);
+
+    int deletedCount = 0;
+    for (var key in keys) {
+      if (key.startsWith(_keyPrefix)) {
+        await storage.deleteEncrypted(_storeName, _storeName, key);
+        deletedCount++;
+      }
+    }
+    debugPrint('[PermanentSessionStore] ✓ Deleted $deletedCount sessions');
+  }
+
   @override
   Future<void> deleteSession(SignalProtocolAddress address) async {
     final sessionKey = _sessionKey(address);

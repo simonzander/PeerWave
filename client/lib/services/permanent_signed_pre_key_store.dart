@@ -123,26 +123,90 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
         return b.createdAt!.compareTo(a.createdAt!);
       });
 
-      // Check if the NEWEST signed prekey is older than 7 days
       final newest = keys.first;
+      debugPrint(
+        '[SIGNED_PREKEY_SETUP] Found ${keys.length} local signed prekeys, newest ID: ${newest.record.id}',
+      );
+
+      // Check if the NEWEST signed prekey is older than 7 days
       final createdAt = newest.createdAt;
       if (createdAt != null &&
           DateTime.now().difference(createdAt).inDays > 7) {
         debugPrint(
-          "Found expired signed pre key (older than 7 days), creating new one",
+          '[SIGNED_PREKEY_SETUP] Newest key is ${DateTime.now().difference(createdAt).inDays} days old - rotating',
         );
         var newPreSignedKey = generateSignedPreKey(
           identityKeyPair,
           keys.length,
         );
         await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
+        // Re-fetch keys after rotation
+        keys = await loadAllStoredSignedPreKeys();
+        keys.sort((a, b) {
+          if (a.createdAt == null) return 1;
+          if (b.createdAt == null) return -1;
+          return b.createdAt!.compareTo(a.createdAt!);
+        });
       }
 
-      // Delete all old signed prekeys except the newest one
-      for (int i = 1; i < keys.length; i++) {
-        debugPrint("Removing old signed pre key: ${keys[i].record.id}");
-        await removeSignedPreKey(keys[i].record.id);
+      // Ensure the newest key is uploaded to server (re-upload to be safe)
+      debugPrint(
+        '[SIGNED_PREKEY_SETUP] Ensuring newest signed prekey (ID ${keys.first.record.id}) is on server',
+      );
+      await storeSignedPreKey(keys.first.record.id, keys.first.record);
+
+      // Local cleanup: Keep at least 2 keys, delete only those older than 30 days
+      // This provides grace period for devices with cached PreKey bundles
+      final cutoffDate = DateTime.now().subtract(const Duration(days: 30));
+      int localDeleted = 0;
+
+      for (int i = 0; i < keys.length; i++) {
+        final key = keys[i];
+        // Keep at least 2 keys (newest + 1 backup)
+        if (i < 2) continue;
+
+        // Delete only if older than 30 days
+        if (key.createdAt != null && key.createdAt!.isBefore(cutoffDate)) {
+          debugPrint(
+            '[SIGNED_PREKEY_SETUP] Deleting local key ${key.record.id} (${DateTime.now().difference(key.createdAt!).inDays} days old)',
+          );
+          await _deleteLocalOnly(key.record.id);
+          localDeleted++;
+        }
       }
+
+      if (localDeleted > 0) {
+        debugPrint(
+          '[SIGNED_PREKEY_SETUP] ✓ Deleted $localDeleted old local keys',
+        );
+      }
+
+      // Server cleanup: Remove old signedPreKeys from server IMMEDIATELY
+      // This ensures PreKey bundles always use the newest signedPreKey
+      // Local keeps grace period (30 days) to decrypt delayed messages
+      int serverDeleted = 0;
+
+      for (final key in keys) {
+        // Keep newest key always
+        if (key.record.id == keys.first.record.id) continue;
+
+        // Delete ALL old keys from server immediately
+        debugPrint(
+          '[SIGNED_PREKEY_SETUP] Removing old server key: ${key.record.id}',
+        );
+        SocketService().emit("removeSignedPreKey", {'id': key.record.id});
+        serverDeleted++;
+      }
+
+      if (serverDeleted > 0) {
+        debugPrint(
+          '[SIGNED_PREKEY_SETUP] ✓ Removed $serverDeleted old keys from server',
+        );
+      }
+
+      debugPrint(
+        '[SIGNED_PREKEY_SETUP] ✅ Setup complete: ${keys.length} local keys, 1 server key (newest)',
+      );
     });
   }
 
@@ -160,6 +224,24 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
     if (stored != null) {
       return stored.record;
     } else {
+      // SignedPreKey not found - this can happen if:
+      // 1. Sender used old PreKey bundle (we deleted the signedPreKey)
+      // 2. This is first message - sender just fetched bundle with this ID
+      // 3. Device was unregistered/re-registered with same ID
+      // 4. Local storage (IndexedDB/native) was cleared but server still has the key
+      debugPrint(
+        '[SIGNED_PREKEY] ❌ SignedPreKey $signedPreKeyId not found locally',
+      );
+
+      // Debug: Show what keys we DO have
+      final allKeys = await loadAllStoredSignedPreKeys();
+      debugPrint(
+        '[SIGNED_PREKEY] Available local keys: ${allKeys.map((k) => k.record.id).toList()}',
+      );
+
+      debugPrint(
+        '[SIGNED_PREKEY] This usually means sender used cached/stale PreKey bundle',
+      );
       throw Exception('No such signedprekeyrecord! $signedPreKeyId');
     }
   }
@@ -181,12 +263,25 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
     final publicKey = base64Encode(record.getKeyPair().publicKey.serialize());
     final signature = base64Encode(record.signature);
 
-    // Optionally, you can still store the full serialized record for compatibility
+    // Upload to server
     SocketService().emit("storeSignedPreKey", {
       'id': signedPreKeyId,
       'data': publicKey,
       "signature": signature,
     });
+
+    // CRITICAL: After uploading new key, delete ALL other keys from server
+    // This ensures server always advertises only the newest signedPreKey
+    final allKeys = await loadAllStoredSignedPreKeys();
+    for (final key in allKeys) {
+      if (key.record.id != signedPreKeyId) {
+        debugPrint(
+          "[SIGNED_PREKEY] Auto-cleanup: Removing old server key ${key.record.id} (keeping only $signedPreKeyId)",
+        );
+        SocketService().emit("removeSignedPreKey", {'id': key.record.id});
+      }
+    }
+
     final serialized = record.serialize();
     final createdAt = DateTime.now().toIso8601String();
     final meta = jsonEncode({'createdAt': createdAt});
@@ -225,6 +320,25 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
     SocketService().emit("removeSignedPreKey", {'id': signedPreKeyId});
 
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
+    final storage = DeviceScopedStorageService.instance;
+    await storage.deleteEncrypted(
+      _storeName,
+      _storeName,
+      _signedPreKey(signedPreKeyId),
+    );
+    await storage.deleteEncrypted(
+      _storeName,
+      _storeName,
+      _signedPreKeyMeta(signedPreKeyId),
+    );
+  }
+
+  /// Delete signed prekey from local storage only (not from server)
+  /// Used during cleanup when we want to keep keys on server for grace period
+  Future<void> _deleteLocalOnly(int signedPreKeyId) async {
+    debugPrint(
+      "[SIGNED_PREKEY_CLEANUP] Deleting local signed pre key: $signedPreKeyId",
+    );
     final storage = DeviceScopedStorageService.instance;
     await storage.deleteEncrypted(
       _storeName,
@@ -285,17 +399,18 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
     }
   }
 
-  /// Rotate SignedPreKey: Generate new key and keep old one for 7 days
+  /// Rotate SignedPreKey: Generate new key and apply cleanup strategy
   ///
   /// This ensures that:
   /// - New PreKeyBundles use the new SignedPreKey
-  /// - Existing sessions can still use old SignedPreKey for a grace period
-  /// - Old keys are automatically cleaned up after 7 days
+  /// - Server gets only the newest key (old ones removed immediately)
+  /// - Local keeps at least 2 keys for grace period
+  /// - Very old keys (>30 days) are deleted locally
   Future<void> rotateSignedPreKey(IdentityKeyPair identityKeyPair) async {
     try {
       debugPrint('[SIGNED_PREKEY_ROTATION] Starting SignedPreKey rotation...');
 
-      final allKeys = await loadAllStoredSignedPreKeys();
+      var allKeys = await loadAllStoredSignedPreKeys();
       final nextId = allKeys.isEmpty
           ? 0
           : allKeys.map((k) => k.record.id).reduce((a, b) => a > b ? a : b) + 1;
@@ -312,32 +427,62 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
         '[SIGNED_PREKEY_ROTATION] ✓ New SignedPreKey generated and stored',
       );
 
-      // Clean up old keys (older than 30 days)
-      // Keep 30 days to ensure pending messages can still be decrypted
-      // even if someone fetched PreKeyBundle long ago but sent message later
-      int deletedCount = 0;
+      // Re-fetch keys after rotation to get updated list
+      allKeys = await loadAllStoredSignedPreKeys();
+      allKeys.sort((a, b) {
+        if (a.createdAt == null) return 1;
+        if (b.createdAt == null) return -1;
+        return b.createdAt!.compareTo(a.createdAt!);
+      });
+
+      // Local cleanup: Keep at least 2 keys, delete only those older than 30 days
+      int localDeleted = 0;
       final cutoffDate = DateTime.now().subtract(const Duration(days: 30));
 
-      for (final key in allKeys) {
+      for (int i = 0; i < allKeys.length; i++) {
+        final key = allKeys[i];
+        // Keep at least 2 keys (newest + 1 backup)
+        if (i < 2) continue;
+
+        // Delete only if older than 30 days
         if (key.createdAt != null && key.createdAt!.isBefore(cutoffDate)) {
           debugPrint(
-            '[SIGNED_PREKEY_ROTATION] Deleting old SignedPreKey ID ${key.record.id} (created ${key.createdAt})',
+            '[SIGNED_PREKEY_ROTATION] Deleting local key ${key.record.id} (${DateTime.now().difference(key.createdAt!).inDays} days old)',
           );
-          await removeSignedPreKey(key.record.id);
-          deletedCount++;
+          await _deleteLocalOnly(key.record.id);
+          localDeleted++;
         }
       }
 
-      if (deletedCount > 0) {
+      if (localDeleted > 0) {
         debugPrint(
-          '[SIGNED_PREKEY_ROTATION] ✓ Deleted $deletedCount old SignedPreKeys',
+          '[SIGNED_PREKEY_ROTATION] ✓ Deleted $localDeleted old local keys',
         );
-      } else {
-        debugPrint('[SIGNED_PREKEY_ROTATION] No old SignedPreKeys to delete');
+      }
+
+      // Server cleanup: Remove old signedPreKeys from server IMMEDIATELY
+      int serverDeleted = 0;
+
+      for (final key in allKeys) {
+        // Keep newest key always
+        if (key.record.id == allKeys.first.record.id) continue;
+
+        // Delete ALL old keys from server immediately
+        debugPrint(
+          '[SIGNED_PREKEY_ROTATION] Removing old server key: ${key.record.id}',
+        );
+        SocketService().emit("removeSignedPreKey", {'id': key.record.id});
+        serverDeleted++;
+      }
+
+      if (serverDeleted > 0) {
+        debugPrint(
+          '[SIGNED_PREKEY_ROTATION] ✓ Removed $serverDeleted old keys from server',
+        );
       }
 
       debugPrint(
-        '[SIGNED_PREKEY_ROTATION] ✅ SignedPreKey rotation completed successfully',
+        '[SIGNED_PREKEY_ROTATION] ✅ Rotation complete: ${allKeys.length} local keys, 1 server key (newest)',
       );
     } catch (e, stackTrace) {
       debugPrint('[SIGNED_PREKEY_ROTATION] ❌ ERROR during rotation: $e');

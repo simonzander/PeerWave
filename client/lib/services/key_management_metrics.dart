@@ -10,6 +10,7 @@ class KeyManagementMetrics {
   static int decryptionFailures = 0;
   static int serverKeyMismatches = 0;
   static int preKeysConsumed = 0;
+  static int sessionsInvalidated = 0;
 
   /// Record identity key regeneration
   static void recordIdentityRegeneration({String? reason}) {
@@ -59,6 +60,14 @@ class KeyManagementMetrics {
     );
   }
 
+  /// Record session invalidation (stale session deleted)
+  static void recordSessionInvalidation(String address, {String? reason}) {
+    sessionsInvalidated++;
+    debugPrint(
+      '[KEY METRICS] Session invalidated #$sessionsInvalidated - $address${reason != null ? ' - $reason' : ''}',
+    );
+  }
+
   /// Print full metrics report
   static void report() {
     debugPrint('');
@@ -69,6 +78,7 @@ class KeyManagementMetrics {
     debugPrint('SignedPreKey rotations:    $signedPreKeyRotations');
     debugPrint('PreKeys regenerated:       $preKeysRegenerated');
     debugPrint('PreKeys consumed:          $preKeysConsumed');
+    debugPrint('Sessions invalidated:      $sessionsInvalidated');
     debugPrint('Decryption failures:       $decryptionFailures');
     debugPrint('Server key mismatches:     $serverKeyMismatches');
     debugPrint('═══════════════════════════════════════════════');
@@ -83,6 +93,7 @@ class KeyManagementMetrics {
     decryptionFailures = 0;
     serverKeyMismatches = 0;
     preKeysConsumed = 0;
+    sessionsInvalidated = 0;
     debugPrint('[KEY METRICS] All metrics reset');
   }
 
@@ -93,6 +104,7 @@ class KeyManagementMetrics {
       'signedPreKeyRotations': signedPreKeyRotations,
       'preKeysRegenerated': preKeysRegenerated,
       'preKeysConsumed': preKeysConsumed,
+      'sessionsInvalidated': sessionsInvalidated,
       'decryptionFailures': decryptionFailures,
       'serverKeyMismatches': serverKeyMismatches,
     };

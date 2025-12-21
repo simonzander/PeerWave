@@ -10,10 +10,11 @@ import 'database_encryption_service.dart';
 /// Messages are encrypted at rest using WebAuthn-derived keys
 class SqliteMessageStore {
   static SqliteMessageStore? _instance;
-  final DatabaseEncryptionService _encryption = DatabaseEncryptionService.instance;
-  
+  final DatabaseEncryptionService _encryption =
+      DatabaseEncryptionService.instance;
+
   SqliteMessageStore._();
-  
+
   static Future<SqliteMessageStore> getInstance() async {
     if (_instance == null) {
       _instance = SqliteMessageStore._();
@@ -21,21 +22,23 @@ class SqliteMessageStore {
     }
     return _instance!;
   }
-  
+
   Future<void> _initialize() async {
     // Ensure database is created
     await DatabaseHelper.database;
-    
+
     // Verify tables exist
     final isReady = await DatabaseHelper.isDatabaseReady();
     if (!isReady) {
       throw Exception('[SQLITE_MESSAGE_STORE] Database tables not ready!');
     }
-    
+
     // Clean up legacy system messages that were stored before filtering was added
     await _cleanupLegacySystemMessages();
-    
-    debugPrint('[SQLITE_MESSAGE_STORE] Initialized - Database ready with encryption');
+
+    debugPrint(
+      '[SQLITE_MESSAGE_STORE] Initialized - Database ready with encryption',
+    );
   }
 
   /// Remove system messages from database (one-time cleanup)
@@ -43,19 +46,28 @@ class SqliteMessageStore {
   Future<void> _cleanupLegacySystemMessages() async {
     try {
       final db = await DatabaseHelper.database;
-      
+
       // Delete read receipts, delivery receipts, and key request messages
       final deletedCount = await db.delete(
         'messages',
         where: 'type IN (?, ?, ?, ?)',
-        whereArgs: ['read_receipt', 'delivery_receipt', 'senderKeyRequest', 'fileKeyRequest'],
+        whereArgs: [
+          'read_receipt',
+          'delivery_receipt',
+          'senderKeyRequest',
+          'fileKeyRequest',
+        ],
       );
-      
+
       if (deletedCount > 0) {
-        debugPrint('[SQLITE_MESSAGE_STORE] 🧹 Cleaned up $deletedCount legacy system messages');
+        debugPrint(
+          '[SQLITE_MESSAGE_STORE] 🧹 Cleaned up $deletedCount legacy system messages',
+        );
       }
     } catch (e) {
-      debugPrint('[SQLITE_MESSAGE_STORE] ⚠️ Error cleaning up system messages: $e');
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] ⚠️ Error cleaning up system messages: $e',
+      );
       // Non-critical, don't throw
     }
   }
@@ -81,9 +93,9 @@ class SqliteMessageStore {
       whereArgs: [itemId],
       limit: 1,
     );
-    
+
     if (result.isEmpty) return null;
-    
+
     final converted = await _convertFromDb(result.first);
     if (converted == null) {
       // Failed to decrypt, delete it
@@ -104,28 +116,26 @@ class SqliteMessageStore {
     Map<String, dynamic>? metadata,
   }) async {
     final db = await DatabaseHelper.database;
-    
+
     // Encrypt the message content
     final encryptedMessage = await _encryption.encryptString(message);
-    
-    await db.insert(
-      'messages',
-      {
-        'item_id': itemId,
-        'message': encryptedMessage, // BLOB - encrypted
-        'sender': sender,
-        'sender_device_id': senderDeviceId,
-        'channel_id': channelId,
-        'timestamp': timestamp,
-        'type': type,
-        'direction': 'received',
-        'metadata': metadata != null ? jsonEncode(metadata) : null,
-        'decrypted_at': DateTime.now().toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
+
+    await db.insert('messages', {
+      'item_id': itemId,
+      'message': encryptedMessage, // BLOB - encrypted
+      'sender': sender,
+      'sender_device_id': senderDeviceId,
+      'channel_id': channelId,
+      'timestamp': timestamp,
+      'type': type,
+      'direction': 'received',
+      'metadata': metadata != null ? jsonEncode(metadata) : null,
+      'decrypted_at': DateTime.now().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+    debugPrint(
+      '[SQLITE_MESSAGE_STORE] Stored received message: $itemId (type: $type, sender: $sender, channel: $channelId) [ENCRYPTED]',
     );
-    
-    debugPrint('[SQLITE_MESSAGE_STORE] Stored received message: $itemId (type: $type, sender: $sender, channel: $channelId) [ENCRYPTED]');
   }
 
   /// Store a sent message (1:1 or group)
@@ -140,35 +150,35 @@ class SqliteMessageStore {
     Map<String, dynamic>? metadata,
   }) async {
     final db = await DatabaseHelper.database;
-    
+
     // Validate message size (2MB limit)
     final messageBytes = utf8.encode(message).length;
     if (messageBytes > 2 * 1024 * 1024) {
-      throw Exception('Message too large (${(messageBytes / 1024 / 1024).toStringAsFixed(2)}MB, max 2MB)');
+      throw Exception(
+        'Message too large (${(messageBytes / 1024 / 1024).toStringAsFixed(2)}MB, max 2MB)',
+      );
     }
-    
+
     // Encrypt the message content
     final encryptedMessage = await _encryption.encryptString(message);
-    
-    await db.insert(
-      'messages',
-      {
-        'item_id': itemId,
-        'message': encryptedMessage, // BLOB - encrypted
-        'sender': recipientId, // Store recipient as sender for query consistency
-        'sender_device_id': null,
-        'channel_id': channelId,
-        'timestamp': timestamp,
-        'type': type,
-        'direction': 'sent',
-        'status': status, // Store message status
-        'metadata': metadata != null ? jsonEncode(metadata) : null,
-        'decrypted_at': DateTime.now().toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
+
+    await db.insert('messages', {
+      'item_id': itemId,
+      'message': encryptedMessage, // BLOB - encrypted
+      'sender': recipientId, // Store recipient as sender for query consistency
+      'sender_device_id': null,
+      'channel_id': channelId,
+      'timestamp': timestamp,
+      'type': type,
+      'direction': 'sent',
+      'status': status, // Store message status
+      'metadata': metadata != null ? jsonEncode(metadata) : null,
+      'decrypted_at': DateTime.now().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+    debugPrint(
+      '[SQLITE_MESSAGE_STORE] Stored sent message: $itemId (type: $type, status: $status, recipient: $recipientId, channel: $channelId) [ENCRYPTED]',
     );
-    
-    debugPrint('[SQLITE_MESSAGE_STORE] Stored sent message: $itemId (type: $type, status: $status, recipient: $recipientId, channel: $channelId) [ENCRYPTED]');
   }
 
   /// Get all messages from a 1:1 conversation (both directions)
@@ -179,16 +189,16 @@ class SqliteMessageStore {
     List<String>? types,
   }) async {
     final db = await DatabaseHelper.database;
-    
+
     String whereClause = 'sender = ? AND channel_id IS NULL';
     List<dynamic> whereArgs = [userId];
-    
+
     if (types != null && types.isNotEmpty) {
       final placeholders = types.map((_) => '?').join(',');
       whereClause += ' AND type IN ($placeholders)';
       whereArgs.addAll(types);
     }
-    
+
     final result = await db.query(
       'messages',
       where: whereClause,
@@ -197,11 +207,11 @@ class SqliteMessageStore {
       limit: limit,
       offset: offset,
     );
-    
+
     // Decrypt all messages and delete those that fail
     final decryptedMessages = <Map<String, dynamic>>[];
     final messagesToDelete = <String>[];
-    
+
     for (final row in result) {
       final converted = await _convertFromDb(row);
       if (converted != null) {
@@ -211,15 +221,17 @@ class SqliteMessageStore {
         messagesToDelete.add(row['item_id'] as String);
       }
     }
-    
+
     // Delete messages that couldn't be decrypted
     if (messagesToDelete.isNotEmpty) {
-      debugPrint('[SQLITE_MESSAGE_STORE] 🗑️ Deleting ${messagesToDelete.length} 1:1 messages that failed decryption');
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] 🗑️ Deleting ${messagesToDelete.length} 1:1 messages that failed decryption',
+      );
       for (final itemId in messagesToDelete) {
         await deleteMessage(itemId);
       }
     }
-    
+
     return decryptedMessages;
   }
 
@@ -231,16 +243,16 @@ class SqliteMessageStore {
     List<String>? types,
   }) async {
     final db = await DatabaseHelper.database;
-    
+
     String whereClause = 'channel_id = ?';
     List<dynamic> whereArgs = [channelId];
-    
+
     if (types != null && types.isNotEmpty) {
       final placeholders = types.map((_) => '?').join(',');
       whereClause += ' AND type IN ($placeholders)';
       whereArgs.addAll(types);
     }
-    
+
     final result = await db.query(
       'messages',
       where: whereClause,
@@ -249,11 +261,11 @@ class SqliteMessageStore {
       limit: limit,
       offset: offset,
     );
-    
+
     // Decrypt all messages and delete those that fail
     final decryptedMessages = <Map<String, dynamic>>[];
     final messagesToDelete = <String>[];
-    
+
     for (final row in result) {
       final converted = await _convertFromDb(row);
       if (converted != null) {
@@ -263,22 +275,24 @@ class SqliteMessageStore {
         messagesToDelete.add(row['item_id'] as String);
       }
     }
-    
+
     // Delete messages that couldn't be decrypted
     if (messagesToDelete.isNotEmpty) {
-      debugPrint('[SQLITE_MESSAGE_STORE] 🗑️ Deleting ${messagesToDelete.length} channel messages that failed decryption');
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] 🗑️ Deleting ${messagesToDelete.length} channel messages that failed decryption',
+      );
       for (final itemId in messagesToDelete) {
         await deleteMessage(itemId);
       }
     }
-    
+
     return decryptedMessages;
   }
 
   /// Get all unique conversation partners (1:1 only)
   Future<Set<String>> getAllUniqueConversationPartners() async {
     final db = await DatabaseHelper.database;
-    
+
     final result = await db.rawQuery('''
       SELECT DISTINCT sender 
       FROM messages 
@@ -287,21 +301,21 @@ class SqliteMessageStore {
         AND type != 'read_receipt'
       ORDER BY timestamp DESC
     ''');
-    
+
     return result.map((row) => row['sender'] as String).toSet();
   }
 
   /// Get all unique channels
   Future<Set<String>> getAllUniqueChannels() async {
     final db = await DatabaseHelper.database;
-    
+
     final result = await db.rawQuery('''
       SELECT DISTINCT channel_id 
       FROM messages 
       WHERE channel_id IS NOT NULL
       ORDER BY timestamp DESC
     ''');
-    
+
     return result
         .map((row) => row['channel_id'] as String?)
         .where((id) => id != null)
@@ -312,7 +326,7 @@ class SqliteMessageStore {
   /// Get last message from a conversation
   Future<Map<String, dynamic>?> getLastMessage(String userId) async {
     final db = await DatabaseHelper.database;
-    
+
     final result = await db.query(
       'messages',
       where: 'sender = ? AND channel_id IS NULL',
@@ -320,9 +334,9 @@ class SqliteMessageStore {
       orderBy: 'timestamp DESC',
       limit: 1,
     );
-    
+
     if (result.isEmpty) return null;
-    
+
     final converted = await _convertFromDb(result.first);
     if (converted == null) {
       // Failed to decrypt, delete it
@@ -334,7 +348,7 @@ class SqliteMessageStore {
   /// Get last message from a channel
   Future<Map<String, dynamic>?> getLastChannelMessage(String channelId) async {
     final db = await DatabaseHelper.database;
-    
+
     final result = await db.query(
       'messages',
       where: 'channel_id = ?',
@@ -342,9 +356,9 @@ class SqliteMessageStore {
       orderBy: 'timestamp DESC',
       limit: 1,
     );
-    
+
     if (result.isEmpty) return null;
-    
+
     final converted = await _convertFromDb(result.first);
     if (converted == null) {
       // Failed to decrypt, delete it
@@ -356,57 +370,63 @@ class SqliteMessageStore {
   /// Count messages in a conversation
   Future<int> countConversationMessages(String userId) async {
     final db = await DatabaseHelper.database;
-    
-    final result = await db.rawQuery('''
+
+    final result = await db.rawQuery(
+      '''
       SELECT COUNT(*) as count 
       FROM messages 
       WHERE sender = ? AND channel_id IS NULL
-    ''', [userId]);
-    
+    ''',
+      [userId],
+    );
+
     return result.first['count'] as int;
   }
 
   /// Count messages in a channel
   Future<int> countChannelMessages(String channelId) async {
     final db = await DatabaseHelper.database;
-    
-    final result = await db.rawQuery('''
+
+    final result = await db.rawQuery(
+      '''
       SELECT COUNT(*) as count 
       FROM messages 
       WHERE channel_id = ?
-    ''', [channelId]);
-    
+    ''',
+      [channelId],
+    );
+
     return result.first['count'] as int;
   }
 
   /// Delete a specific message
   Future<void> deleteMessage(String itemId) async {
     final db = await DatabaseHelper.database;
-    
-    await db.delete(
-      'messages',
-      where: 'item_id = ?',
-      whereArgs: [itemId],
-    );
-    
+
+    await db.delete('messages', where: 'item_id = ?', whereArgs: [itemId]);
+
     debugPrint('[SQLITE_MESSAGE_STORE] Deleted message: $itemId');
   }
 
   /// Update message status (for sent messages)
   Future<void> updateMessageStatus(String itemId, String status) async {
     final db = await DatabaseHelper.database;
-    
+
     final count = await db.update(
       'messages',
       {'status': status},
       where: 'item_id = ? AND direction = ?',
       whereArgs: [itemId, 'sent'],
     );
-    
+
     if (count > 0) {
-      debugPrint('[SQLITE_MESSAGE_STORE] Updated message status: $itemId → $status');
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] Updated message status: $itemId → $status',
+      );
     } else {
-      debugPrint('[SQLITE_MESSAGE_STORE] ⚠️ Message not found for status update: $itemId');
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] ⚠️ Message not found for status update: $itemId',
+      );
     }
   }
 
@@ -424,30 +444,32 @@ class SqliteMessageStore {
   /// Prevents sending duplicate read receipts on page reload
   Future<void> markReadReceiptSent(String itemId) async {
     final db = await DatabaseHelper.database;
-    
+
     await db.update(
       'messages',
       {'read_receipt_sent': 1},
       where: 'item_id = ?',
       whereArgs: [itemId],
     );
-    
-    debugPrint('[SQLITE_MESSAGE_STORE] Marked read receipt sent for itemId: $itemId');
+
+    debugPrint(
+      '[SQLITE_MESSAGE_STORE] Marked read receipt sent for itemId: $itemId',
+    );
   }
 
   /// Check if read receipt was already sent for this message
   Future<bool> hasReadReceiptBeenSent(String itemId) async {
     final db = await DatabaseHelper.database;
-    
+
     final result = await db.query(
       'messages',
       columns: ['read_receipt_sent'],
       where: 'item_id = ?',
       whereArgs: [itemId],
     );
-    
+
     if (result.isEmpty) return false;
-    
+
     final flag = result.first['read_receipt_sent'];
     return flag == 1 || flag == true;
   }
@@ -455,43 +477,50 @@ class SqliteMessageStore {
   /// Delete all messages from a conversation
   Future<void> deleteConversation(String userId) async {
     final db = await DatabaseHelper.database;
-    
+
+    // Delete all messages where this user is either sender OR recipient
     final count = await db.delete(
       'messages',
-      where: 'sender = ? AND channel_id IS NULL',
-      whereArgs: [userId],
+      where: '(sender = ? OR recipient = ?) AND channel_id IS NULL',
+      whereArgs: [userId, userId],
     );
-    
-    debugPrint('[SQLITE_MESSAGE_STORE] Deleted $count messages from conversation: $userId');
+
+    debugPrint(
+      '[SQLITE_MESSAGE_STORE] Deleted $count messages from conversation with: $userId',
+    );
   }
 
   /// Delete all messages from a channel
   Future<void> deleteChannel(String channelId) async {
     final db = await DatabaseHelper.database;
-    
+
     final count = await db.delete(
       'messages',
       where: 'channel_id = ?',
       whereArgs: [channelId],
     );
-    
-    debugPrint('[SQLITE_MESSAGE_STORE] Deleted $count messages from channel: $channelId');
+
+    debugPrint(
+      '[SQLITE_MESSAGE_STORE] Deleted $count messages from channel: $channelId',
+    );
   }
 
   /// Clear all messages
   Future<void> clearAll() async {
     final db = await DatabaseHelper.database;
-    
+
     await db.delete('messages');
-    
+
     debugPrint('[SQLITE_MESSAGE_STORE] Cleared all messages');
   }
 
   /// Get database statistics
   Future<Map<String, dynamic>> getStatistics() async {
     final db = await DatabaseHelper.database;
-    
-    final totalResult = await db.rawQuery('SELECT COUNT(*) as count FROM messages');
+
+    final totalResult = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM messages',
+    );
     final conversationsResult = await db.rawQuery('''
       SELECT COUNT(DISTINCT sender) as count 
       FROM messages 
@@ -502,7 +531,7 @@ class SqliteMessageStore {
       FROM messages 
       WHERE channel_id IS NOT NULL
     ''');
-    
+
     return {
       'total_messages': totalResult.first['count'],
       'conversations': conversationsResult.first['count'],
@@ -516,15 +545,19 @@ class SqliteMessageStore {
     // Decrypt the message content (stored as BLOB)
     final encryptedMessage = row['message'];
     String? decryptedMessage;
-    
+
     try {
       decryptedMessage = await _encryption.decryptString(encryptedMessage);
     } catch (e) {
-      debugPrint('[SQLITE_MESSAGE_STORE] ⚠️ Decryption failed for message ${row['item_id']}: $e');
-      debugPrint('[SQLITE_MESSAGE_STORE] 🗑️ Message will be deleted (cannot decrypt)');
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] ⚠️ Decryption failed for message ${row['item_id']}: $e',
+      );
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] 🗑️ Message will be deleted (cannot decrypt)',
+      );
       return null; // Signal that this message should be deleted
     }
-    
+
     // Parse metadata if present
     Map<String, dynamic>? metadata;
     if (row['metadata'] != null) {
@@ -534,7 +567,7 @@ class SqliteMessageStore {
         debugPrint('[SQLITE_MESSAGE_STORE] Failed to parse metadata: $e');
       }
     }
-    
+
     return {
       'itemId': row['item_id'],
       'item_id': row['item_id'], // Keep snake_case for compatibility
@@ -561,25 +594,28 @@ class SqliteMessageStore {
   }) async {
     try {
       final db = await DatabaseHelper.database;
-      
-      final notificationTypes = types ?? [
-        'emote',
-        'mention',
-        'missingcall',
-        'addtochannel',
-        'removefromchannel',
-        'permissionchange',
-      ];
-      
+
+      final notificationTypes =
+          types ??
+          [
+            'emote',
+            'mention',
+            'missingcall',
+            'addtochannel',
+            'removefromchannel',
+            'permissionchange',
+          ];
+
       final placeholders = List.filled(notificationTypes.length, '?').join(',');
-      String whereClause = 'type IN ($placeholders) AND channel_id IS NULL AND direction = ?';
+      String whereClause =
+          'type IN ($placeholders) AND channel_id IS NULL AND direction = ?';
       List<dynamic> whereArgs = [...notificationTypes, 'received'];
-      
+
       if (unreadOnly) {
         whereClause += ' AND (status IS NULL OR status != ?)';
         whereArgs.add('read');
       }
-      
+
       final results = await db.query(
         'messages',
         where: whereClause,
@@ -587,11 +623,11 @@ class SqliteMessageStore {
         orderBy: 'timestamp DESC',
         limit: limit,
       );
-      
+
       // Decrypt and convert each result
       final decryptedResults = <Map<String, dynamic>>[];
       final messagesToDelete = <String>[];
-      
+
       for (var row in results) {
         final converted = await _convertFromDb(row);
         if (converted != null) {
@@ -601,19 +637,25 @@ class SqliteMessageStore {
           messagesToDelete.add(row['item_id'] as String);
         }
       }
-      
+
       // Delete messages that couldn't be decrypted
       if (messagesToDelete.isNotEmpty) {
-        debugPrint('[SQLITE_MESSAGE_STORE] 🗑️ Deleting ${messagesToDelete.length} notification messages that failed decryption');
+        debugPrint(
+          '[SQLITE_MESSAGE_STORE] 🗑️ Deleting ${messagesToDelete.length} notification messages that failed decryption',
+        );
         for (final itemId in messagesToDelete) {
           await deleteMessage(itemId);
         }
       }
-      
-      debugPrint('[SQLITE_MESSAGE_STORE] ✓ Retrieved ${decryptedResults.length} DM notification messages');
+
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] ✓ Retrieved ${decryptedResults.length} DM notification messages',
+      );
       return decryptedResults;
     } catch (e, stackTrace) {
-      debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error getting DM notification messages: $e');
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] ✗ Error getting DM notification messages: $e',
+      );
       debugPrint('[SQLITE_MESSAGE_STORE] Stack trace: $stackTrace');
       return [];
     }
@@ -623,17 +665,21 @@ class SqliteMessageStore {
   Future<void> markNotificationAsRead(String itemId) async {
     try {
       final db = await DatabaseHelper.database;
-      
+
       await db.update(
         'messages',
         {'status': 'read'},
         where: 'item_id = ?',
         whereArgs: [itemId],
       );
-      
-      debugPrint('[SQLITE_MESSAGE_STORE] ✓ Marked notification as read: $itemId');
+
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] ✓ Marked notification as read: $itemId',
+      );
     } catch (e, stackTrace) {
-      debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error marking notification as read: $e');
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] ✗ Error marking notification as read: $e',
+      );
       debugPrint('[SQLITE_MESSAGE_STORE] Stack trace: $stackTrace');
       rethrow;
     }
@@ -643,39 +689,47 @@ class SqliteMessageStore {
   Future<void> markAllNotificationsAsRead({List<String>? types}) async {
     try {
       final db = await DatabaseHelper.database;
-      
-      final notificationTypes = types ?? [
-        'emote',
-        'mention',
-        'missingcall',
-        'addtochannel',
-        'removefromchannel',
-        'permissionchange',
-      ];
-      
+
+      final notificationTypes =
+          types ??
+          [
+            'emote',
+            'mention',
+            'missingcall',
+            'addtochannel',
+            'removefromchannel',
+            'permissionchange',
+          ];
+
       final placeholders = List.filled(notificationTypes.length, '?').join(',');
       final whereClause = 'type IN ($placeholders) AND channel_id IS NULL';
-      
+
       await db.update(
         'messages',
         {'status': 'read'},
         where: whereClause,
         whereArgs: notificationTypes,
       );
-      
-      debugPrint('[SQLITE_MESSAGE_STORE] ✓ Marked all DM notifications as read');
+
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] ✓ Marked all DM notifications as read',
+      );
     } catch (e, stackTrace) {
-      debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error marking all DM notifications as read: $e');
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] ✗ Error marking all DM notifications as read: $e',
+      );
       debugPrint('[SQLITE_MESSAGE_STORE] Stack trace: $stackTrace');
       rethrow;
     }
   }
 
   /// Get unread notification messages for a specific user (for auto-mark when opening conversation)
-  Future<List<Map<String, dynamic>>> getUnreadNotificationsForUser(String userId) async {
+  Future<List<Map<String, dynamic>>> getUnreadNotificationsForUser(
+    String userId,
+  ) async {
     try {
       final db = await DatabaseHelper.database;
-      
+
       final notificationTypes = [
         'emote',
         'mention',
@@ -684,22 +738,27 @@ class SqliteMessageStore {
         'removefromchannel',
         'permissionchange',
       ];
-      
+
       final placeholders = List.filled(notificationTypes.length, '?').join(',');
-      final whereClause = 'type IN ($placeholders) AND sender = ? AND channel_id IS NULL AND (status IS NULL OR status != ?)';
+      final whereClause =
+          'type IN ($placeholders) AND sender = ? AND channel_id IS NULL AND (status IS NULL OR status != ?)';
       final whereArgs = [...notificationTypes, userId, 'read'];
-      
+
       final results = await db.query(
         'messages',
         where: whereClause,
         whereArgs: whereArgs,
         orderBy: 'timestamp DESC',
       );
-      
-      debugPrint('[SQLITE_MESSAGE_STORE] ✓ Found ${results.length} unread notifications for user $userId');
+
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] ✓ Found ${results.length} unread notifications for user $userId',
+      );
       return results;
     } catch (e, stackTrace) {
-      debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error getting unread notifications for user: $e');
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] ✗ Error getting unread notifications for user: $e',
+      );
       debugPrint('[SQLITE_MESSAGE_STORE] Stack trace: $stackTrace');
       return [];
     }
@@ -710,13 +769,17 @@ class SqliteMessageStore {
   // =========================================================================
 
   /// Add a reaction to a message
-  Future<void> addReaction(String messageId, String emoji, String userId) async {
+  Future<void> addReaction(
+    String messageId,
+    String emoji,
+    String userId,
+  ) async {
     try {
       final db = await DatabaseHelper.database;
-      
+
       // Get current reactions
       final reactions = await getReactions(messageId);
-      
+
       // Add user to emoji list (using Set to prevent duplicates)
       if (reactions.containsKey(emoji)) {
         final users = Set<String>.from(reactions[emoji] as List);
@@ -725,7 +788,7 @@ class SqliteMessageStore {
       } else {
         reactions[emoji] = [userId];
       }
-      
+
       // Update in database
       await db.update(
         'messages',
@@ -733,33 +796,39 @@ class SqliteMessageStore {
         where: 'item_id = ?',
         whereArgs: [messageId],
       );
-      
-      debugPrint('[SQLITE_MESSAGE_STORE] ✓ Added reaction $emoji from $userId to message $messageId');
+
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] ✓ Added reaction $emoji from $userId to message $messageId',
+      );
     } catch (e) {
       debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error adding reaction: $e');
     }
   }
 
   /// Remove a reaction from a message
-  Future<void> removeReaction(String messageId, String emoji, String userId) async {
+  Future<void> removeReaction(
+    String messageId,
+    String emoji,
+    String userId,
+  ) async {
     try {
       final db = await DatabaseHelper.database;
-      
+
       // Get current reactions
       final reactions = await getReactions(messageId);
-      
+
       // Remove user from emoji list
       if (reactions.containsKey(emoji)) {
         final users = Set<String>.from(reactions[emoji] as List);
         users.remove(userId);
-        
+
         if (users.isEmpty) {
           // Remove emoji entirely if no users left
           reactions.remove(emoji);
         } else {
           reactions[emoji] = users.toList();
         }
-        
+
         // Update in database
         await db.update(
           'messages',
@@ -767,8 +836,10 @@ class SqliteMessageStore {
           where: 'item_id = ?',
           whereArgs: [messageId],
         );
-        
-        debugPrint('[SQLITE_MESSAGE_STORE] ✓ Removed reaction $emoji from $userId from message $messageId');
+
+        debugPrint(
+          '[SQLITE_MESSAGE_STORE] ✓ Removed reaction $emoji from $userId from message $messageId',
+        );
       }
     } catch (e) {
       debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error removing reaction: $e');
@@ -780,7 +851,7 @@ class SqliteMessageStore {
   Future<Map<String, dynamic>> getReactions(String messageId) async {
     try {
       final db = await DatabaseHelper.database;
-      
+
       final result = await db.query(
         'messages',
         columns: ['reactions'],
@@ -788,16 +859,18 @@ class SqliteMessageStore {
         whereArgs: [messageId],
         limit: 1,
       );
-      
+
       if (result.isEmpty) {
         return {};
       }
-      
+
       final reactionsJson = result.first['reactions'] as String?;
-      if (reactionsJson == null || reactionsJson.isEmpty || reactionsJson == '{}') {
+      if (reactionsJson == null ||
+          reactionsJson.isEmpty ||
+          reactionsJson == '{}') {
         return {};
       }
-      
+
       return jsonDecode(reactionsJson) as Map<String, dynamic>;
     } catch (e) {
       debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error getting reactions: $e');
@@ -806,22 +879,25 @@ class SqliteMessageStore {
   }
 
   /// Update reactions for a message (bulk update)
-  Future<void> updateReactions(String messageId, Map<String, dynamic> reactions) async {
+  Future<void> updateReactions(
+    String messageId,
+    Map<String, dynamic> reactions,
+  ) async {
     try {
       final db = await DatabaseHelper.database;
-      
+
       await db.update(
         'messages',
         {'reactions': jsonEncode(reactions)},
         where: 'item_id = ?',
         whereArgs: [messageId],
       );
-      
-      debugPrint('[SQLITE_MESSAGE_STORE] ✓ Updated reactions for message $messageId');
+
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] ✓ Updated reactions for message $messageId',
+      );
     } catch (e) {
       debugPrint('[SQLITE_MESSAGE_STORE] ✗ Error updating reactions: $e');
     }
   }
 }
-
-

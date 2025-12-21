@@ -36,6 +36,9 @@ enum AppEvent {
   /// New conversation started
   newConversation,
   
+  /// Conversation deleted
+  conversationDeleted,
+  
   /// Unread count changed
   unreadCountChanged,
   

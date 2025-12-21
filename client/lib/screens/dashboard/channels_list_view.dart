@@ -10,6 +10,8 @@ import '../../providers/unread_messages_provider.dart';
 import '../../providers/navigation_state_provider.dart';
 import '../../widgets/animated_widgets.dart';
 import '../../theme/app_theme_constants.dart';
+import '../../services/storage/sqlite_message_store.dart';
+import '../../services/event_bus.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 
@@ -413,6 +415,96 @@ class _ChannelsListViewState extends State<ChannelsListView>
     }
   }
 
+  Future<void> _showDeleteChannelDialog(String channelId, String channelName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Channel Messages'),
+        content: Text(
+          'Are you sure you want to delete all messages from "$channelName"? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _deleteChannelMessages(channelId);
+    }
+  }
+
+  Future<void> _deleteChannelMessages(String channelId) async {
+    try {
+      // Delete from SQLite message store
+      final messageStore = await SqliteMessageStore.getInstance();
+      await messageStore.deleteChannel(channelId);
+
+      // Remove from starred if it was starred
+      await StarredChannelsService.instance.unstarChannel(channelId);
+
+      // Emit event to update UI
+      EventBus.instance.emit(AppEvent.conversationDeleted, {'channelId': channelId});
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Channel messages deleted')),
+        );
+      }
+    } catch (e) {
+      debugPrint('[CHANNELS_LIST] Error deleting channel messages: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete channel messages: $e')),
+        );
+      }
+    }
+  }
+
+  void _showChannelContextMenu(BuildContext context, Offset position, String channelId, String channelName, String channelType) {
+    // Only show delete option for text channels (signal), not video channels (webrtc)
+    if (channelType != 'signal') {
+      return; // Don't show menu for video channels
+    }
+    
+    showMenu(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx,
+        position.dy,
+      ),
+      items: [
+        PopupMenuItem(
+          child: const Row(
+            children: [
+              Icon(Icons.delete, size: 20),
+              SizedBox(width: 8),
+              Text('Delete Messages'),
+            ],
+          ),
+          onTap: () {
+            // Delay to allow menu to close first
+            Future.delayed(const Duration(milliseconds: 100), () {
+              _showDeleteChannelDialog(channelId, channelName);
+            });
+          },
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -806,52 +898,60 @@ class _ChannelsListViewState extends State<ChannelsListView>
       );
     }
 
-    return AnimatedSelectionTile(
-      leading: leading,
-      title: Text(
-        type == 'signal' ? '# $name' : name,
-        style: TextStyle(
-          fontWeight: hasUnread ? FontWeight.bold : FontWeight.w500,
-          color: hasUnread
-              ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).colorScheme.onSurface,
-        ),
-      ),
-      subtitle: _buildChannelSubtitle(channel),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: Icon(
-              isStarred ? Icons.star : Icons.star_border,
-              color: isStarred ? Theme.of(context).colorScheme.tertiary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-              size: 20,
-            ),
-            onPressed: () => _toggleStar(uuid),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-          const SizedBox(width: 8),
-          const Icon(Icons.arrow_forward_ios, size: 16),
-        ],
-      ),
-      selected: isSelected,
-      onTap: () {
-        if (type == 'signal') {
-          navProvider.selectChannel(uuid, 'signal');
-        }
-
-        // Enter full-view mode for WebRTC
-        final videoService = VideoConferenceService.instance;
-        if (type == 'webrtc' && videoService.isInCall) {
-          videoService.enterFullView();
-        }
-
-        context.go(
-          '/app/channels/$uuid',
-          extra: {'host': widget.host, 'name': name, 'type': type},
-        );
+    return GestureDetector(
+      onSecondaryTapDown: (details) {
+        _showChannelContextMenu(context, details.globalPosition, uuid, name, type);
       },
+      onLongPressStart: (details) {
+        _showChannelContextMenu(context, details.globalPosition, uuid, name, type);
+      },
+      child: AnimatedSelectionTile(
+        leading: leading,
+        title: Text(
+          type == 'signal' ? '# $name' : name,
+          style: TextStyle(
+            fontWeight: hasUnread ? FontWeight.bold : FontWeight.w500,
+            color: hasUnread
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        subtitle: _buildChannelSubtitle(channel),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(
+                isStarred ? Icons.star : Icons.star_border,
+                color: isStarred ? Theme.of(context).colorScheme.tertiary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                size: 20,
+              ),
+              onPressed: () => _toggleStar(uuid),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.arrow_forward_ios, size: 16),
+          ],
+        ),
+        selected: isSelected,
+        onTap: () {
+          if (type == 'signal') {
+            navProvider.selectChannel(uuid, 'signal');
+          }
+
+          // Enter full-view mode for WebRTC
+          final videoService = VideoConferenceService.instance;
+          if (type == 'webrtc' && videoService.isInCall) {
+            videoService.enterFullView();
+          }
+
+          context.go(
+            '/app/channels/$uuid',
+            extra: {'host': widget.host, 'name': name, 'type': type},
+          );
+        },
+      ),
     );
   }
 

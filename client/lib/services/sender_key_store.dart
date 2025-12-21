@@ -208,6 +208,49 @@ class PermanentSenderKeyStore extends SenderKeyStore {
     }
   }
 
+  /// Delete ALL sender keys (for all groups)
+  /// Used when Identity Key is regenerated - all SenderKeys become invalid
+  Future<void> deleteAllSenderKeys() async {
+    debugPrint('[SENDER_KEY_STORE] Deleting ALL sender keys...');
+    
+    if (kIsWeb) {
+      // Use encrypted device-scoped storage
+      final storage = DeviceScopedStorageService.instance;
+      
+      // Get all keys and delete sender keys
+      final allKeys = await storage.getAllKeys(_storeName, _storeName);
+      final senderKeys = allKeys.where((k) => k.startsWith(_keyPrefix));
+      
+      int deletedCount = 0;
+      for (final key in senderKeys) {
+        await storage.deleteEncrypted(_storeName, _storeName, key);
+        deletedCount++;
+      }
+      
+      debugPrint('[SENDER_KEY_STORE] ✓ Deleted $deletedCount sender keys');
+    } else {
+      final storage = FlutterSecureStorage();
+      String? keysJson = await storage.read(key: 'sender_key_list');
+      
+      if (keysJson != null) {
+        List<String> keys = List<String>.from(jsonDecode(keysJson));
+        int deletedCount = keys.length;
+        
+        for (final key in keys) {
+          await storage.delete(key: key);
+          // Also delete metadata
+          await storage.delete(key: '${key}_metadata');
+        }
+        
+        // Clear the list
+        await storage.write(key: 'sender_key_list', value: jsonEncode([]));
+        debugPrint('[SENDER_KEY_STORE] ✓ Deleted $deletedCount sender keys');
+      } else {
+        debugPrint('[SENDER_KEY_STORE] No sender keys to delete');
+      }
+    }
+  }
+
   /// Get all group IDs that have sender keys
   Future<List<String>> getAllGroupIds() async {
     final Set<String> groupIds = {};
