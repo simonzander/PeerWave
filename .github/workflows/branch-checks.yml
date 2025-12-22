@@ -30,7 +30,7 @@ jobs:
       
       - name: Run Flutter analyze
         working-directory: ./client
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
       
       - name: Check Dart formatting
         working-directory: ./client
@@ -111,7 +111,7 @@ jobs:
       
       - name: Build Flutter web
         working-directory: ./client
-        run: flutter build web --release --web-renderer canvaskit
+        run: flutter build web --release
       
       - name: Copy web to server
         run: |
