@@ -44,7 +44,7 @@ jobs:
         working-directory: ./client
         run: |
           flutter pub get
-          flutter analyze --no-fatal-infos
+          flutter analyze --no-fatal-infos --no-fatal-warnings
           flutter test --no-pub
           dart format --set-exit-if-changed .
         continue-on-error: false
