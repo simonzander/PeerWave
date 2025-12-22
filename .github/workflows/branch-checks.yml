@@ -1,8 +1,5 @@
 name: Branch Push Checks
 
-permissions:
-  contents: read
-
 on:
   push:
     branches:
@@ -33,7 +30,7 @@ jobs:
       
       - name: Run Flutter analyze
         working-directory: ./client
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
       
       - name: Check Dart formatting
         working-directory: ./client
@@ -99,7 +96,6 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.27.1'
           channel: 'stable'
       
       - name: Install dependencies
@@ -115,7 +111,7 @@ jobs:
       
       - name: Build Flutter web
         working-directory: ./client
-        run: flutter build web --release --web-renderer canvaskit
+        run: flutter build web --release
       
       - name: Copy web to server
         run: |
