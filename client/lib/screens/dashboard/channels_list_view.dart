@@ -11,7 +11,6 @@ import '../../providers/navigation_state_provider.dart';
 import '../../widgets/animated_widgets.dart';
 import '../../theme/app_theme_constants.dart';
 import '../../services/storage/sqlite_message_store.dart';
-import '../../services/storage/sqlite_group_message_store.dart';
 import '../../services/event_bus.dart';
 import '../../services/sent_group_items_store.dart';
 import '../../services/decrypted_group_items_store.dart';

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:bitsdojo_window/bitsdojo_window.dart';
-import 'package:peerwave_client/core/version/version_info.dart';
+import '../core/version/version_info.dart';
 import '../services/system_tray_service_web.dart'
     if (dart.library.io) '../services/system_tray_service.dart';
 
