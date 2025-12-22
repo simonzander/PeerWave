@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:bitsdojo_window/bitsdojo_window.dart';
-import '../core/version/version_info.dart';
 import '../services/system_tray_service_web.dart'
     if (dart.library.io) '../services/system_tray_service.dart';
 
@@ -48,38 +47,18 @@ class CustomWindowTitleBar extends StatelessWidget {
                             height: 18,
                           ),
                           const SizedBox(width: 6),
-                          // Title and version - constrained to prevent overflow
-                          ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: constraints.maxWidth - 60, // Logo + padding + margins
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    title,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                      color: textColor,
-                                      decoration: TextDecoration.none,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  VersionInfo.displayVersion,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w400,
-                                    color: textColor.withValues(alpha: 0.6),
-                                    decoration: TextDecoration.none,
-                                  ),
-                                ),
-                              ],
+                          // Title - constrained to prevent overflow
+                          Flexible(
+                            child: Text(
+                              title,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: textColor,
+                                decoration: TextDecoration.none,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
                           ),
                         ],
