@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'dart:convert';
 import 'database_helper.dart';
 import 'database_encryption_service.dart';
+import '../user_profile_service.dart';
 
 /// SQLite-based message store for both 1:1 and group messages
 /// Replaces PermanentDecryptedMessagesStore and DecryptedGroupItemsStore
@@ -477,17 +478,47 @@ class SqliteMessageStore {
   /// Delete all messages from a conversation
   Future<void> deleteConversation(String userId) async {
     final db = await DatabaseHelper.database;
+    final currentUserId = UserProfileService.instance.currentUserUuid;
 
-    // Delete all messages where this user is either sender OR recipient
+    if (currentUserId == null) {
+      debugPrint('[SQLITE_MESSAGE_STORE] Cannot delete conversation: current user ID not available');
+      return;
+    }
+
+    debugPrint('[SQLITE_MESSAGE_STORE] Deleting conversation: currentUser=$currentUserId, otherUser=$userId');
+
+    // Check sent vs received breakdown
+    final sentCount = await db.rawQuery('''
+      SELECT COUNT(*) as count FROM messages 
+      WHERE sender = ? AND direction = 'sent' AND channel_id IS NULL
+    ''', [userId]);
+    
+    final receivedCount = await db.rawQuery('''
+      SELECT COUNT(*) as count FROM messages 
+      WHERE sender = ? AND direction = 'received' AND channel_id IS NULL
+    ''', [userId]);
+    
+    debugPrint('[SQLITE_MESSAGE_STORE] Found ${sentCount.first['count']} sent messages to $userId');
+    debugPrint('[SQLITE_MESSAGE_STORE] Found ${receivedCount.first['count']} received messages from $userId');
+
+    // Delete all messages in this conversation (both sent and received)
+    // Since sent messages store recipient as sender, both have sender = userId
     final count = await db.delete(
       'messages',
-      where: '(sender = ? OR recipient = ?) AND channel_id IS NULL',
-      whereArgs: [userId, userId],
+      where: 'sender = ? AND channel_id IS NULL',
+      whereArgs: [userId],
     );
 
+    // Verify deletion
+    final countAfter = await db.rawQuery('''
+      SELECT COUNT(*) as count FROM messages 
+      WHERE sender = ? AND channel_id IS NULL
+    ''', [userId]);
+
     debugPrint(
-      '[SQLITE_MESSAGE_STORE] Deleted $count messages from conversation with: $userId',
+      '[SQLITE_MESSAGE_STORE] ✓ Deleted $count messages from conversation with: $userId',
     );
+    debugPrint('[SQLITE_MESSAGE_STORE] Remaining messages: ${countAfter.first['count']}');
   }
 
   /// Delete all messages from a channel

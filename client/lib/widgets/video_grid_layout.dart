@@ -32,7 +32,7 @@ class VideoGridLayout extends StatelessWidget {
     required this.maxVisibleParticipants,
     this.onShowParticipantMenu,
     this.pendingParticipants,
-  }) ;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +54,7 @@ class VideoGridLayout extends StatelessWidget {
     for (final remote in remoteParticipants) {
       cameraParticipants.add({'participant': remote, 'isLocal': false});
     }
-    
+
     // Add pending participants (not yet joined)
     if (pendingParticipants != null) {
       for (final pending in pendingParticipants!) {
@@ -287,8 +287,8 @@ class VideoGridLayout extends StatelessWidget {
 
     // If maxVisibleParticipants is 0 (not calculated yet), show all participants
     // to prevent empty grid on initial load
-    final effectiveMaxVisible = maxVisibleParticipants > 0 
-        ? maxVisibleParticipants 
+    final effectiveMaxVisible = maxVisibleParticipants > 0
+        ? maxVisibleParticipants
         : participants.length;
 
     // Get visibility manager
@@ -370,7 +370,7 @@ class VideoGridLayout extends StatelessWidget {
     if (isPending && pendingData != null) {
       final displayName = pendingData['displayName'] as String? ?? 'Unknown';
       final profilePicture = pendingData['picture'] as String?;
-      
+
       return Container(
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -386,17 +386,23 @@ class VideoGridLayout extends StatelessWidget {
             Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
-                color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                color: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
               ),
               child: Center(
                 child: CircleAvatar(
                   radius: 40,
-                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.primaryContainer,
                   child: Text(
                     displayName.substring(0, 1).toUpperCase(),
                     style: TextStyle(
                       fontSize: 32,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.5),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onPrimaryContainer.withValues(alpha: 0.5),
                     ),
                   ),
                 ),
@@ -415,7 +421,9 @@ class VideoGridLayout extends StatelessWidget {
                     Icon(
                       Icons.person_add,
                       size: 48,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -431,7 +439,9 @@ class VideoGridLayout extends StatelessWidget {
                     Text(
                       'Waiting for participant to join...',
                       style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.7),
                         fontSize: 12,
                       ),
                       textAlign: TextAlign.center,
@@ -451,16 +461,18 @@ class VideoGridLayout extends StatelessWidget {
     final displayName = userId != null
         ? (displayNameCache[userId] ?? userId)
         : 'Unknown';
-    final profilePicture =
-        userId != null ? profilePictureCache[userId] : null;
+    final profilePicture = userId != null ? profilePictureCache[userId] : null;
+
+    debugPrint(
+      '[VideoGridLayout] Building tile for $userId (isLocal=$isLocal): displayName=$displayName, hasPicture=${profilePicture?.isNotEmpty ?? false}',
+    );
 
     // Get audio state for speaking indicator
     final speakingNotifier =
         userId != null && speakingNotifiers.containsKey(userId)
         ? speakingNotifiers[userId]!
         : null;
-    final isPinned =
-        userId != null && participantStates.containsKey(userId)
+    final isPinned = userId != null && participantStates.containsKey(userId)
         ? participantStates[userId]!.isPinned
         : false;
 

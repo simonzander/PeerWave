@@ -445,6 +445,25 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         });
       }
     });
+
+    // Listen for conversation/channel deletion
+    EventBus.instance.on(AppEvent.conversationDeleted).listen((data) {
+      if (!mounted) return;
+
+      final channelId = data['channelId'] as String?;
+      
+      // If this channel's messages were deleted, clear the UI
+      if (channelId == widget.channelUuid) {
+        debugPrint(
+          '[SIGNAL_GROUP] Messages deleted for this channel, clearing UI',
+        );
+        setState(() {
+          _messages.clear();
+          _messageOffset = 0;
+          _hasMoreMessages = false;
+        });
+      }
+    });
   }
 
   /// Handle delivery receipt from server

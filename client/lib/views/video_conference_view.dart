@@ -596,25 +596,41 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
   /// Load participant profile with callback
   void _loadParticipantProfile(String participantId) {
+    debugPrint(
+      '[VIDEO_CONFERENCE] Loading profile for participant: $participantId',
+    );
+
     final profile = UserProfileService.instance.getProfileOrLoad(
       participantId,
       onLoaded: (profile) {
+        debugPrint(
+          '[VIDEO_CONFERENCE] Profile loaded for $participantId: ${profile != null ? "success" : "null"}',
+        );
         if (mounted && profile != null) {
+          debugPrint(
+            '[VIDEO_CONFERENCE] Updating cache - displayName: ${profile['displayName']}, has picture: ${(profile['picture'] as String?)?.isNotEmpty ?? false}',
+          );
           setState(() {
             _displayNameCache[participantId] =
                 profile['displayName'] as String? ?? participantId;
             _profilePictureCache[participantId] =
                 profile['picture'] as String? ?? '';
           });
+          debugPrint('[VIDEO_CONFERENCE] Cache updated, triggering rebuild');
         }
       },
     );
 
     // Use cached data immediately if available
     if (profile != null) {
+      debugPrint('[VIDEO_CONFERENCE] Using cached profile for $participantId');
       _displayNameCache[participantId] =
           profile['displayName'] as String? ?? participantId;
       _profilePictureCache[participantId] = profile['picture'] as String? ?? '';
+    } else {
+      debugPrint(
+        '[VIDEO_CONFERENCE] No cached profile for $participantId, will load from server',
+      );
     }
   }
 
@@ -889,33 +905,45 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
         if (hasScreenShare) {
           // Find the participant who is sharing
-          final screenShareParticipant =
-              screenShareParticipantId == localParticipant?.identity
-              ? localParticipant
-              : remoteParticipants.firstWhere(
-                  (p) => p.identity == screenShareParticipantId,
-                  orElse: () => remoteParticipants.first,
-                );
-
-          // Determine layout based on screen orientation
-          final size = MediaQuery.of(context).size;
-          final isHorizontal = size.width > size.height;
-
-          if (isHorizontal) {
-            return _buildHorizontalScreenShareLayout(
-              screenShareParticipant: screenShareParticipant,
-              cameraParticipants: cameraParticipants,
-            );
+          dynamic screenShareParticipant;
+          if (screenShareParticipantId == localParticipant?.identity) {
+            screenShareParticipant = localParticipant;
           } else {
-            return _buildVerticalScreenShareLayout(
-              screenShareParticipant: screenShareParticipant,
-              cameraParticipants: cameraParticipants,
-            );
+            try {
+              screenShareParticipant = remoteParticipants.firstWhere(
+                (p) => p.identity == screenShareParticipantId,
+              );
+            } catch (e) {
+              // Participant not found, skip screen share layout
+              debugPrint(
+                '[VIDEO_CONFERENCE] Screen share participant not found: $screenShareParticipantId',
+              );
+              screenShareParticipant = null;
+            }
           }
-        } else {
-          // No screen share - use regular grid
-          return _buildRegularGrid(cameraParticipants);
+
+          // Only show screen share layout if we found the participant
+          if (screenShareParticipant != null) {
+            // Determine layout based on screen orientation
+            final size = MediaQuery.of(context).size;
+            final isHorizontal = size.width > size.height;
+
+            if (isHorizontal) {
+              return _buildHorizontalScreenShareLayout(
+                screenShareParticipant: screenShareParticipant,
+                cameraParticipants: cameraParticipants,
+              );
+            } else {
+              return _buildVerticalScreenShareLayout(
+                screenShareParticipant: screenShareParticipant,
+                cameraParticipants: cameraParticipants,
+              );
+            }
+          }
         }
+
+        // No screen share or participant not found - use regular grid
+        return _buildRegularGrid(cameraParticipants);
       },
     );
   }
@@ -1170,6 +1198,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         : 'Unknown';
     final profilePicture = userId != null ? _profilePictureCache[userId] : null;
 
+    debugPrint(
+      '[VIDEO_CONFERENCE] Building tile for $userId (isLocal=$isLocal): displayName=$displayName, hasPicture=${profilePicture?.isNotEmpty ?? false}',
+    );
+
     // Get audio state for speaking indicator
     final speakingNotifier =
         userId != null && _speakingNotifiers.containsKey(userId)
@@ -1210,9 +1242,13 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     if (room == null) return;
 
     // Check if it's a remote participant
-    final remoteParticipant = room.remoteParticipants.values.firstWhere(
+    final remoteParticipantsList = room.remoteParticipants.values.toList();
+    if (remoteParticipantsList.isEmpty)
+      return; // No remote participants to show menu for
+
+    final remoteParticipant = remoteParticipantsList.firstWhere(
       (p) => p.identity == participantId,
-      orElse: () => room.remoteParticipants.values.first,
+      orElse: () => remoteParticipantsList.first,
     );
 
     // Show context menu as bottom sheet (better for mobile/touch)
@@ -1582,7 +1618,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         final buttonColor =
             color ??
             (isDisabled
-                ? Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
+                ? Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
                 : isActive
                 ? Theme.of(context).colorScheme.primary
                 : Theme.of(context).colorScheme.surfaceContainerHighest);

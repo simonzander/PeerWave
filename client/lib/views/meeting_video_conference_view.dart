@@ -9,7 +9,8 @@ import '../services/api_service.dart';
 import '../services/message_listener_service.dart';
 import '../services/user_profile_service.dart';
 import '../services/meeting_service.dart';
-import '../services/socket_service.dart' if (dart.library.io) '../services/socket_service_native.dart';
+import '../services/socket_service.dart'
+    if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/external_participant_service.dart';
 import '../services/signal_service.dart';
 import '../services/call_service.dart';
@@ -57,10 +58,10 @@ class _MeetingVideoConferenceViewState
   // Profile cache
   final Map<String, String> _displayNameCache = {};
   final Map<String, String> _profilePictureCache = {};
-  
+
   // Pending participants (invited but not yet joined)
   final List<Map<String, dynamic>> _pendingParticipants = [];
-  
+
   // Track invited vs joined for missed call notifications
   final Set<String> _invitedUserIds = {};
   final Set<String> _joinedUserIds = {};
@@ -84,33 +85,45 @@ class _MeetingVideoConferenceViewState
   void _setupGuestE2EEKeyRequestSocketListener() {
     SocketService().socket?.on('guest:meeting_e2ee_key_request', (data) async {
       try {
-        debugPrint('[MeetingVideo] 🔐 Received E2EE key request from guest via Socket.IO');
-        
+        debugPrint(
+          '[MeetingVideo] 🔐 Received E2EE key request from guest via Socket.IO',
+        );
+
         // Validate data structure
         if (data is! Map) {
           debugPrint('[MeetingVideo] ⚠️ Invalid request data format');
           return;
         }
-        
-        final Map<String, dynamic> requestData = Map<String, dynamic>.from(data);
+
+        final Map<String, dynamic> requestData = Map<String, dynamic>.from(
+          data,
+        );
         final guestSessionId = requestData['guest_session_id'] as String?;
         final meetingId = requestData['meeting_id'] as String?;
-        
-        if (guestSessionId == null || meetingId == null || meetingId != widget.meetingId) {
+
+        if (guestSessionId == null ||
+            meetingId == null ||
+            meetingId != widget.meetingId) {
           debugPrint('[MeetingVideo] ⚠️ Missing session ID or wrong meeting');
           return;
         }
-        
-        debugPrint('[MeetingVideo] Guest $guestSessionId requesting E2EE key for meeting $meetingId');
-        
+
+        debugPrint(
+          '[MeetingVideo] Guest $guestSessionId requesting E2EE key for meeting $meetingId',
+        );
+
         // Get the VideoConferenceService instance
         if (_service == null || _service!.channelSharedKey == null) {
-          debugPrint('[MeetingVideo] ⚠️ No E2EE key available to share with guest');
+          debugPrint(
+            '[MeetingVideo] ⚠️ No E2EE key available to share with guest',
+          );
           return;
         }
-        
-        debugPrint('[MeetingVideo] ✓ Responding to guest with encrypted LiveKit E2EE key...');
-        
+
+        debugPrint(
+          '[MeetingVideo] ✓ Responding to guest with encrypted LiveKit E2EE key...',
+        );
+
         // Send encrypted response via Signal Protocol
         // SignalService will encrypt the LiveKit key and send it to the guest
         await SignalService.instance.sendItemToGuest(
@@ -123,14 +136,20 @@ class _MeetingVideoConferenceViewState
             'timestamp': DateTime.now().millisecondsSinceEpoch,
           },
         );
-        
-        debugPrint('[MeetingVideo] ✓ Sent encrypted LiveKit E2EE key to guest $guestSessionId');
+
+        debugPrint(
+          '[MeetingVideo] ✓ Sent encrypted LiveKit E2EE key to guest $guestSessionId',
+        );
       } catch (e, stack) {
-        debugPrint('[MeetingVideo] ✗ Error handling guest E2EE key request: $e');
+        debugPrint(
+          '[MeetingVideo] ✗ Error handling guest E2EE key request: $e',
+        );
         debugPrint('[MeetingVideo] Stack trace: $stack');
       }
     });
-    debugPrint('[MeetingVideo] ✓ Registered Socket.IO listener for guest:meeting_e2ee_key_request');
+    debugPrint(
+      '[MeetingVideo] ✓ Registered Socket.IO listener for guest:meeting_e2ee_key_request',
+    );
   }
 
   @override
@@ -184,15 +203,19 @@ class _MeetingVideoConferenceViewState
       ExternalParticipantService().initializeListeners();
 
       // Join socket room for meeting events (admission notifications, guest E2EE requests, etc.)
-      debugPrint('[MeetingVideo] Attempting to join socket room: meeting:${widget.meetingId}');
-      debugPrint('[MeetingVideo] Socket connected: ${SocketService().isConnected}');
-      
+      debugPrint(
+        '[MeetingVideo] Attempting to join socket room: meeting:${widget.meetingId}',
+      );
+      debugPrint(
+        '[MeetingVideo] Socket connected: ${SocketService().isConnected}',
+      );
+
       if (!SocketService().isConnected) {
         debugPrint('[MeetingVideo] ⚠️ Socket not connected, waiting...');
         // Wait a bit for socket to connect
         await Future.delayed(const Duration(seconds: 1));
       }
-      
+
       SocketService().emit('meeting:join-room', {
         'meeting_id': widget.meetingId,
       });
@@ -237,13 +260,15 @@ class _MeetingVideoConferenceViewState
       if (isInstantCall && _invitedUserIds.isNotEmpty) {
         await _sendMissedCallNotifications();
       }
-      
+
       // Leave Socket.IO meeting room before leaving LiveKit
-      debugPrint('[MeetingVideo] Leaving socket room: meeting:${widget.meetingId}');
+      debugPrint(
+        '[MeetingVideo] Leaving socket room: meeting:${widget.meetingId}',
+      );
       SocketService().emit('meeting:leave-room', {
         'meeting_id': widget.meetingId,
       });
-      
+
       await _service!.leaveRoom();
 
       // Navigate back to meetings list
@@ -259,13 +284,15 @@ class _MeetingVideoConferenceViewState
   void dispose() {
     // Remove Socket.IO listener for guest E2EE requests
     SocketService().socket?.off('guest:meeting_e2ee_key_request');
-    debugPrint('[MeetingVideo] ✓ Removed Socket.IO listener for guest:meeting_e2ee_key_request');
-    
+    debugPrint(
+      '[MeetingVideo] ✓ Removed Socket.IO listener for guest:meeting_e2ee_key_request',
+    );
+
     // SECURITY: Clear guest Signal sessions when meeting ends
     // This prevents session keys from persisting in sessionStorage
     SignalService.instance.clearGuestSessions(widget.meetingId);
     debugPrint('[MeetingVideo] ✓ Cleared guest Signal sessions for security');
-    
+
     // Clean up subscriptions
     for (final sub in _audioSubscriptions.values) {
       sub.cancel();
@@ -353,7 +380,7 @@ class _MeetingVideoConferenceViewState
 
       // Remove from pending list if they joined
       _pendingParticipants.removeWhere((p) => p['userId'] == remoteId);
-      
+
       // Track that they joined (for missed call notifications)
       if (_invitedUserIds.contains(remoteId)) {
         _joinedUserIds.add(remoteId);
@@ -388,24 +415,51 @@ class _MeetingVideoConferenceViewState
   }
 
   void _loadParticipantProfile(String participantId) {
+    debugPrint(
+      '[MEETING_VIDEO] Loading profile for participant: $participantId',
+    );
+
+    // Strip device suffix (:1, :2, etc.) from participant identity to get actual user UUID
+    final userId = participantId.contains(':')
+        ? participantId.split(':').first
+        : participantId;
+
+    if (userId != participantId) {
+      debugPrint(
+        '[MEETING_VIDEO] Stripped device suffix: $participantId -> $userId',
+      );
+    }
+
     final profile = UserProfileService.instance.getProfileOrLoad(
-      participantId,
+      userId,
       onLoaded: (profile) {
+        debugPrint(
+          '[MEETING_VIDEO] Profile loaded for $userId: ${profile != null ? "success" : "null"}',
+        );
         if (mounted && profile != null) {
+          debugPrint(
+            '[MEETING_VIDEO] Updating cache - displayName: ${profile['displayName']}, has picture: ${(profile['picture'] as String?)?.isNotEmpty ?? false}',
+          );
           setState(() {
             _displayNameCache[participantId] =
                 profile['displayName'] as String? ?? participantId;
             _profilePictureCache[participantId] =
                 profile['picture'] as String? ?? '';
           });
+          debugPrint('[MEETING_VIDEO] Cache updated, triggering rebuild');
         }
       },
     );
 
     if (profile != null) {
+      debugPrint('[MEETING_VIDEO] Using cached profile for $userId');
       _displayNameCache[participantId] =
           profile['displayName'] as String? ?? participantId;
       _profilePictureCache[participantId] = profile['picture'] as String? ?? '';
+    } else {
+      debugPrint(
+        '[MEETING_VIDEO] No cached profile for $userId, will load from server',
+      );
     }
   }
 
@@ -436,21 +490,25 @@ class _MeetingVideoConferenceViewState
   Future<void> _sendMissedCallNotifications() async {
     // Get users who were invited but never joined
     final missedUsers = _invitedUserIds.difference(_joinedUserIds);
-    
+
     if (missedUsers.isEmpty) {
       debugPrint('[MeetingVideo] No missed call notifications to send');
       return;
     }
-    
-    debugPrint('[MeetingVideo] Sending missed call notifications to ${missedUsers.length} users');
-    
+
+    debugPrint(
+      '[MeetingVideo] Sending missed call notifications to ${missedUsers.length} users',
+    );
+
     // Get current user info for the notification
     final currentUserId = UserProfileService.instance.currentUserUuid;
     if (currentUserId == null) {
-      debugPrint('[MeetingVideo] Cannot send missed call: current user ID is null');
+      debugPrint(
+        '[MeetingVideo] Cannot send missed call: current user ID is null',
+      );
       return;
     }
-    
+
     // Prepare missed call payload
     final payload = {
       'callerId': currentUserId,
@@ -458,13 +516,14 @@ class _MeetingVideoConferenceViewState
       'meetingTitle': widget.meetingTitle,
       'timestamp': DateTime.now().toIso8601String(),
     };
-    
+
     // Send missed_call Signal message to each user who didn't join
     for (final userId in missedUsers) {
       try {
         await SignalService.instance.sendItem(
           recipientUserId: userId,
-          type: 'missingcall', // Note: using 'missingcall' to match existing activity type
+          type:
+              'missingcall', // Note: using 'missingcall' to match existing activity type
           payload: payload,
         );
         debugPrint('[MeetingVideo] Sent missed call notification to $userId');
@@ -477,7 +536,7 @@ class _MeetingVideoConferenceViewState
   Future<void> _showAddParticipantsDialog() async {
     // Check if this is an instant call (meeting IDs start with 'call_')
     final isInstantCall = widget.meetingId.startsWith('call_');
-    
+
     final TextEditingController searchController = TextEditingController();
     List<Map<String, dynamic>> searchResults = [];
     bool isSearching = false;
@@ -498,7 +557,7 @@ class _MeetingVideoConferenceViewState
           Future<void> searchUsers(String query) async {
             // Check if it's a valid email
             final isEmail = isValidEmail(query);
-            
+
             if (query.length < 2) {
               setDialogState(() {
                 searchResults = [];
@@ -518,7 +577,9 @@ class _MeetingVideoConferenceViewState
             try {
               final response = await ApiService.get('/people/list');
               if (response.statusCode == 200) {
-                final users = response.data is List ? response.data as List : [];
+                final users = response.data is List
+                    ? response.data as List
+                    : [];
                 final results = <Map<String, dynamic>>[];
 
                 for (final user in users) {
@@ -559,9 +620,7 @@ class _MeetingVideoConferenceViewState
                 data: {'email': email},
               );
               if (mounted) {
-                context.showSuccessSnackBar(
-                  'Invitation sent to $email',
-                );
+                context.showSuccessSnackBar('Invitation sent to $email');
                 Navigator.of(context).pop();
               }
             } catch (e) {
@@ -583,7 +642,7 @@ class _MeetingVideoConferenceViewState
                 widget.meetingId,
                 userId,
               );
-              
+
               // Add to pending participants list
               setState(() {
                 _pendingParticipants.add({
@@ -592,13 +651,13 @@ class _MeetingVideoConferenceViewState
                   'picture': user['picture'],
                 });
               });
-              
+
               // If user is online, send call notification
               if (isOnline) {
                 final callService = CallService();
                 callService.notifyRecipients(widget.meetingId, [userId]);
               }
-              
+
               if (mounted) {
                 context.showSuccessSnackBar(
                   isOnline
@@ -616,7 +675,9 @@ class _MeetingVideoConferenceViewState
           }
 
           return AlertDialog(
-            title: Text(isInstantCall ? 'Invite Participants' : 'Add Participants'),
+            title: Text(
+              isInstantCall ? 'Invite Participants' : 'Add Participants',
+            ),
             content: SizedBox(
               width: 400,
               child: Column(
@@ -636,7 +697,9 @@ class _MeetingVideoConferenceViewState
                   const SizedBox(height: 16),
                   if (isSearching)
                     const Center(child: CircularProgressIndicator())
-                  else if (!isInstantCall && isValidEmailAddress && emailAddress.isNotEmpty)
+                  else if (!isInstantCall &&
+                      isValidEmailAddress &&
+                      emailAddress.isNotEmpty)
                     // Show email invitation option
                     SizedBox(
                       height: 300,
@@ -644,17 +707,22 @@ class _MeetingVideoConferenceViewState
                         children: [
                           ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.primaryContainer,
                               child: Icon(
                                 Icons.email,
-                                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimaryContainer,
                               ),
                             ),
                             title: Text(emailAddress),
                             subtitle: const Text('Send email invitation'),
                             trailing: IconButton(
                               icon: const Icon(Icons.add),
-                              onPressed: () => sendEmailInvitation(emailAddress),
+                              onPressed: () =>
+                                  sendEmailInvitation(emailAddress),
                             ),
                           ),
                           if (searchResults.isNotEmpty) ...[
@@ -694,7 +762,9 @@ class _MeetingVideoConferenceViewState
                                                 color: Colors.green,
                                                 shape: BoxShape.circle,
                                                 border: Border.all(
-                                                  color: Theme.of(context).colorScheme.surface,
+                                                  color: Theme.of(
+                                                    context,
+                                                  ).colorScheme.surface,
                                                   width: 2,
                                                 ),
                                               ),
@@ -704,8 +774,9 @@ class _MeetingVideoConferenceViewState
                                     ),
                                     title: Text(user['displayName'] as String),
                                     subtitle: Text(
-                                      user['atName'] as String? ?? 
-                                      user['email'] as String? ?? '',
+                                      user['atName'] as String? ??
+                                          user['email'] as String? ??
+                                          '',
                                     ),
                                     trailing: IconButton(
                                       icon: const Icon(Icons.add),
@@ -749,7 +820,9 @@ class _MeetingVideoConferenceViewState
                                         color: Colors.green,
                                         shape: BoxShape.circle,
                                         border: Border.all(
-                                          color: Theme.of(context).colorScheme.surface,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.surface,
                                           width: 2,
                                         ),
                                       ),
@@ -759,8 +832,9 @@ class _MeetingVideoConferenceViewState
                             ),
                             title: Text(user['displayName'] as String),
                             subtitle: Text(
-                              user['atName'] as String? ?? 
-                              user['email'] as String? ?? '',
+                              user['atName'] as String? ??
+                                  user['email'] as String? ??
+                                  '',
                             ),
                             trailing: IconButton(
                               icon: const Icon(Icons.add),

@@ -318,6 +318,25 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         });
       }
     });
+
+    // Listen for conversation deletion
+    EventBus.instance.on(AppEvent.conversationDeleted).listen((data) {
+      if (!mounted) return;
+
+      final userId = data['userId'] as String?;
+      
+      // If this conversation's messages were deleted, clear the UI
+      if (userId == widget.recipientUuid) {
+        debugPrint(
+          '[DM_SCREEN] Messages deleted for this conversation, clearing UI',
+        );
+        setState(() {
+          _messages.clear();
+          _messageOffset = 0;
+          _hasMoreMessages = false;
+        });
+      }
+    });
   }
 
   /// ✅ NEW: Setup granular callbacks for this specific conversation

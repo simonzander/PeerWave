@@ -11,7 +11,10 @@ import '../../providers/navigation_state_provider.dart';
 import '../../widgets/animated_widgets.dart';
 import '../../theme/app_theme_constants.dart';
 import '../../services/storage/sqlite_message_store.dart';
+import '../../services/storage/sqlite_group_message_store.dart';
 import '../../services/event_bus.dart';
+import '../../services/sent_group_items_store.dart';
+import '../../services/decrypted_group_items_store.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 
@@ -445,24 +448,47 @@ class _ChannelsListViewState extends State<ChannelsListView>
   }
 
   Future<void> _deleteChannelMessages(String channelId) async {
+    debugPrint('[CHANNELS_LIST] ===== START DELETING CHANNEL MESSAGES =====');
+    debugPrint('[CHANNELS_LIST] Channel ID: $channelId');
+    
     try {
-      // Delete from SQLite message store
+      // Delete from sent items store (old storage + SQLite)
+      debugPrint('[CHANNELS_LIST] Step 1: Deleting sent items...');
+      final sentStore = await SentGroupItemsStore.getInstance();
+      await sentStore.deleteChannelItems(channelId);
+      debugPrint('[CHANNELS_LIST] Step 2: Sent items deleted');
+
+      // Delete from received/decrypted items store (old storage + SQLite)
+      debugPrint('[CHANNELS_LIST] Step 3: Deleting received items...');
+      final receivedStore = await DecryptedGroupItemsStore.getInstance();
+      await receivedStore.deleteChannelItems(channelId);
+      debugPrint('[CHANNELS_LIST] Step 4: Received items deleted');
+
+      // Also delete from DM message store (in case any were stored there incorrectly)
+      debugPrint('[CHANNELS_LIST] Step 5: Cleaning up DM store...');
       final messageStore = await SqliteMessageStore.getInstance();
       await messageStore.deleteChannel(channelId);
+      debugPrint('[CHANNELS_LIST] Step 6: DM store cleanup completed');
 
       // Remove from starred if it was starred
+      debugPrint('[CHANNELS_LIST] Step 7: Unstarring channel...');
       await StarredChannelsService.instance.unstarChannel(channelId);
+      debugPrint('[CHANNELS_LIST] Step 8: Unstar completed');
 
       // Emit event to update UI
+      debugPrint('[CHANNELS_LIST] Step 9: Emitting event...');
       EventBus.instance.emit(AppEvent.conversationDeleted, {'channelId': channelId});
+
+      debugPrint('[CHANNELS_LIST] ✓ Successfully deleted all messages from channel: $channelId');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Channel messages deleted')),
         );
       }
-    } catch (e) {
-      debugPrint('[CHANNELS_LIST] Error deleting channel messages: $e');
+    } catch (e, stackTrace) {
+      debugPrint('[CHANNELS_LIST] ✗ Error deleting channel messages: $e');
+      debugPrint('[CHANNELS_LIST] Stack trace: $stackTrace');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to delete channel messages: $e')),

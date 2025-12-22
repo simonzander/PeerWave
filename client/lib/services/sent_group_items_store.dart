@@ -324,5 +324,56 @@ class SentGroupItemsStore {
 
     return channels;
   }
+
+  /// Delete all sent items for a channel
+  Future<void> deleteChannelItems(String channelId) async {
+    debugPrint('[SENT GROUP ITEMS] Deleting all items for channel: $channelId');
+    
+    // Delete from SQLite
+    try {
+      final sqliteStore = await SqliteGroupMessageStore.getInstance();
+      await sqliteStore.deleteChannelMessages(channelId);
+      debugPrint('[SENT GROUP ITEMS] ✓ Deleted from SQLite');
+    } catch (e) {
+      debugPrint('[SENT GROUP ITEMS] ⚠ SQLite deletion failed: $e');
+    }
+    
+    // Delete from old storage
+    final prefix = '$_keyPrefix$channelId';
+    int deletedCount = 0;
+
+    if (kIsWeb) {
+      final storage = DeviceScopedStorageService.instance;
+      final keys = await storage.getAllKeys(_storeName, _storeName);
+      
+      for (var key in keys) {
+        if (key.startsWith(prefix)) {
+          await storage.deleteEncrypted(_storeName, _storeName, key);
+          deletedCount++;
+        }
+      }
+    } else {
+      final storage = FlutterSecureStorage();
+      String? keysJson = await storage.read(key: 'sent_group_item_keys');
+      if (keysJson != null) {
+        List<String> keys = List<String>.from(jsonDecode(keysJson));
+        List<String> remainingKeys = [];
+        
+        for (var key in keys) {
+          if (key.startsWith(prefix)) {
+            await storage.delete(key: key);
+            deletedCount++;
+          } else {
+            remainingKeys.add(key);
+          }
+        }
+        
+        // Update keys list
+        await storage.write(key: 'sent_group_item_keys', value: jsonEncode(remainingKeys));
+      }
+    }
+    
+    debugPrint('[SENT GROUP ITEMS] ✓ Deleted $deletedCount items from old storage for channel: $channelId');
+  }
 }
 

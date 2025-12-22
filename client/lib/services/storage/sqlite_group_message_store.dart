@@ -353,13 +353,53 @@ class SqliteGroupMessageStore {
     try {
       final db = await DatabaseHelper.database;
       
+      debugPrint('[GROUP STORE] ===== DELETING CHANNEL MESSAGES =====');
+      debugPrint('[GROUP STORE] Channel ID: $channelId');
+      
+      // Show ALL messages in database to debug
+      final allMessages = await db.query(
+        'messages',
+        columns: ['item_id', 'sender', 'channel_id', 'direction', 'type'],
+        limit: 10,
+      );
+      debugPrint('[GROUP STORE] Total messages in DB (first 10): ${allMessages.length}');
+      for (var msg in allMessages) {
+        debugPrint('[GROUP STORE]   - channel_id: ${msg['channel_id']}, direction: ${msg['direction']}, type: ${msg['type']}');
+      }
+      
+      // Show messages for THIS channel specifically
+      final channelMessages = await db.query(
+        'messages',
+        where: 'channel_id = ?',
+        whereArgs: [channelId],
+        columns: ['item_id', 'sender', 'channel_id', 'direction', 'type'],
+      );
+      debugPrint('[GROUP STORE] Messages for channel $channelId: ${channelMessages.length}');
+      for (var msg in channelMessages) {
+        debugPrint('[GROUP STORE]   - item_id: ${msg['item_id']}, direction: ${msg['direction']}, type: ${msg['type']}');
+      }
+      
+      // First check how many messages exist
+      final countBefore = await db.rawQuery('''
+        SELECT COUNT(*) as count FROM messages WHERE channel_id = ?
+      ''', [channelId]);
+      
+      debugPrint('[GROUP STORE] Count query result: ${countBefore.first['count']}');
+      
       final deleted = await db.delete(
         'messages',
         where: 'channel_id = ?',
         whereArgs: [channelId],
       );
       
+      // Verify deletion
+      final countAfter = await db.rawQuery('''
+        SELECT COUNT(*) as count FROM messages WHERE channel_id = ?
+      ''', [channelId]);
+      
       debugPrint('[GROUP STORE] ✓ Deleted $deleted messages from channel $channelId');
+      debugPrint('[GROUP STORE] Remaining messages: ${countAfter.first['count']}');
+      debugPrint('[GROUP STORE] ===== DELETION COMPLETE =====');
     } catch (e, stackTrace) {
       debugPrint('[GROUP STORE] ✗ Error deleting channel messages: $e');
       debugPrint('[GROUP STORE] Stack trace: $stackTrace');

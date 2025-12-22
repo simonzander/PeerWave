@@ -6,13 +6,15 @@ import '../../widgets/animated_widgets.dart';
 import '../../providers/unread_messages_provider.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/storage/sqlite_message_store.dart';
+import '../../services/storage/sqlite_recent_conversations_store.dart';
 import '../../services/recent_conversations_service.dart';
 import '../../services/starred_conversations_service.dart';
+import '../../services/event_bus.dart';
 import '../../app/views/people_context_data_loader.dart';
 import 'dart:async';
 
 /// Messages Main Content - Shows conversation list with enhanced UI
-/// 
+///
 /// This is displayed when no specific conversation is selected.
 /// Features larger cards, search, and better organization than the context panel.
 class MessagesMainContent extends StatefulWidget {
@@ -32,10 +34,10 @@ class MessagesMainContent extends StatefulWidget {
 class _MessagesMainContentState extends State<MessagesMainContent> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounceTimer;
-  
+
   List<Map<String, dynamic>> _conversations = [];
   List<Map<String, dynamic>> _filteredConversations = [];
-  
+
   bool _isLoading = false;
   String _searchQuery = '';
   String _selectedFilter = 'all'; // 'all', 'unread', 'starred'
@@ -46,8 +48,25 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
     _initializeStarredService();
     _loadConversations();
     _searchController.addListener(_onSearchChanged);
+    _setupEventListeners();
   }
-  
+
+  void _setupEventListeners() {
+    // Listen for conversation deletion
+    EventBus.instance.on(AppEvent.conversationDeleted).listen((data) {
+      if (!mounted) return;
+
+      final userId = data['userId'] as String?;
+      if (userId != null) {
+        debugPrint(
+          '[MESSAGES_MAIN] Conversation deleted event received for: $userId',
+        );
+        // Reload the conversation list
+        _loadConversations();
+      }
+    });
+  }
+
   Future<void> _initializeStarredService() async {
     await StarredConversationsService.instance.initialize();
     if (mounted) {
@@ -64,7 +83,7 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
 
   void _onSearchChanged() {
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
-    
+
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
       final query = _searchController.text.trim().toLowerCase();
       setState(() {
@@ -73,19 +92,21 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
       });
     });
   }
-  
+
   void _applyFilters() {
     var filtered = _conversations;
-    
+
     // Apply search filter
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((conv) {
-        final displayName = (conv['displayName'] as String? ?? '').toLowerCase();
+        final displayName = (conv['displayName'] as String? ?? '')
+            .toLowerCase();
         final atName = (conv['atName'] as String? ?? '').toLowerCase();
-        return displayName.contains(_searchQuery) || atName.contains(_searchQuery);
+        return displayName.contains(_searchQuery) ||
+            atName.contains(_searchQuery);
       }).toList();
     }
-    
+
     // Apply category filter
     if (_selectedFilter == 'unread') {
       filtered = filtered.where((conv) {
@@ -98,7 +119,7 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
         return isStarred;
       }).toList();
     }
-    
+
     setState(() {
       _filteredConversations = filtered;
     });
@@ -106,17 +127,18 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
 
   Future<void> _loadConversations() async {
     if (!mounted) return;
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
       debugPrint('[MESSAGES_MAIN] Loading conversations...');
-      
+
       // Get recent conversations from service (returns List<Map<String, String>>)
-      final conversations = await RecentConversationsService.getRecentConversations();
-      
+      final conversations =
+          await RecentConversationsService.getRecentConversations();
+
       debugPrint('[MESSAGES_MAIN] Found ${conversations.length} conversations');
-      
+
       if (conversations.isEmpty) {
         if (mounted) {
           setState(() {
@@ -127,22 +149,22 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
         }
         return;
       }
-      
+
       // Get message store instance for last messages
       final messageStore = await SqliteMessageStore.getInstance();
       if (!mounted) return;
-      
+
       // Get unread provider
       final unreadProvider = context.read<UnreadMessagesProvider>();
-      
+
       // Build conversation list with profile data
       final conversationList = <Map<String, dynamic>>[];
-      
+
       for (final conv in conversations) {
         final userId = conv['uuid'];
         final displayName = conv['displayName'];
         final picture = conv['picture'];
-        
+
         if (userId != null && userId.isNotEmpty) {
           // Get last message info
           final messages = await messageStore.getMessagesFromConversation(
@@ -150,22 +172,25 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
             limit: 1,
             types: ['message', 'file', 'image', 'voice'],
           );
-          
+
           String lastMessage = '';
           String lastMessageTime = '';
           String lastMessageType = 'message';
-          
+
           if (messages.isNotEmpty) {
             final lastMsg = messages.first;
             final msgType = lastMsg['type'] ?? 'message';
             lastMessageType = msgType;
-            lastMessage = PeopleContextDataLoader.formatMessagePreview(msgType, lastMsg['message']);
+            lastMessage = PeopleContextDataLoader.formatMessagePreview(
+              msgType,
+              lastMsg['message'],
+            );
             lastMessageTime = lastMsg['timestamp'] as String? ?? '';
           }
-          
+
           // Get atName from UserProfileService
           final profile = UserProfileService.instance.getProfile(userId);
-          
+
           conversationList.add({
             'uuid': userId,
             'displayName': displayName ?? userId,
@@ -175,12 +200,13 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
             'lastMessage': lastMessage,
             'lastMessageTime': lastMessageTime,
             'lastMessageType': lastMessageType,
-            'unreadCount': unreadProvider.directMessageUnreadCounts[userId] ?? 0,
+            'unreadCount':
+                unreadProvider.directMessageUnreadCounts[userId] ?? 0,
             'isStarred': StarredConversationsService.instance.isStarred(userId),
           });
         }
       }
-      
+
       if (mounted) {
         setState(() {
           _conversations = conversationList;
@@ -188,12 +214,14 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
           _isLoading = false;
         });
       }
-      
-      debugPrint('[MESSAGES_MAIN] Loaded ${_conversations.length} conversations');
+
+      debugPrint(
+        '[MESSAGES_MAIN] Loaded ${_conversations.length} conversations',
+      );
     } catch (e, stackTrace) {
       debugPrint('[MESSAGES_MAIN] Error loading conversations: $e');
       debugPrint('[MESSAGES_MAIN] Stack trace: $stackTrace');
-      
+
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -204,7 +232,7 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
+
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: Column(
@@ -215,10 +243,7 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
             decoration: BoxDecoration(
               color: colorScheme.surface,
               border: Border(
-                bottom: BorderSide(
-                  color: colorScheme.outlineVariant,
-                  width: 1,
-                ),
+                bottom: BorderSide(color: colorScheme.outlineVariant, width: 1),
               ),
             ),
             child: Row(
@@ -230,10 +255,16 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
                     decoration: InputDecoration(
                       hintText: 'Search conversations...',
                       hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
-                      prefixIcon: Icon(Icons.search, color: colorScheme.onSurfaceVariant),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                       suffixIcon: _searchQuery.isNotEmpty
                           ? IconButton(
-                              icon: Icon(Icons.clear, color: colorScheme.onSurfaceVariant),
+                              icon: Icon(
+                                Icons.clear,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
                               onPressed: () {
                                 _searchController.clear();
                               },
@@ -245,33 +276,29 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
                       ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                     ),
                   ),
                 ),
               ],
             ),
           ),
-          
+
           // Filter Chips
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
               color: colorScheme.surface,
               border: Border(
-                bottom: BorderSide(
-                  color: colorScheme.outlineVariant,
-                  width: 1,
-                ),
+                bottom: BorderSide(color: colorScheme.outlineVariant, width: 1),
               ),
             ),
             child: Row(
               children: [
-                _buildFilterChip(
-                  label: 'All',
-                  value: 'all',
-                  icon: Icons.inbox,
-                ),
+                _buildFilterChip(label: 'All', value: 'all', icon: Icons.inbox),
                 const SizedBox(width: 8),
                 _buildFilterChip(
                   label: 'Unread',
@@ -288,23 +315,25 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
               ],
             ),
           ),
-          
+
           // Content
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredConversations.isEmpty
-                    ? _buildEmptyState()
-                    : RefreshIndicator(
-                        onRefresh: _loadConversations,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: _filteredConversations.length,
-                          itemBuilder: (context, index) {
-                            return _buildConversationCard(_filteredConversations[index]);
-                          },
-                        ),
-                      ),
+                ? _buildEmptyState()
+                : RefreshIndicator(
+                    onRefresh: _loadConversations,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _filteredConversations.length,
+                      itemBuilder: (context, index) {
+                        return _buildConversationCard(
+                          _filteredConversations[index],
+                        );
+                      },
+                    ),
+                  ),
           ),
         ],
       ),
@@ -328,7 +357,7 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
   }) {
     final isSelected = _selectedFilter == value;
     final theme = Theme.of(context);
-    
+
     return FilterChip(
       label: Row(
         mainAxisSize: MainAxisSize.min,
@@ -336,8 +365,8 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
           Icon(
             icon,
             size: iconSize ?? 16,
-            color: isSelected 
-                ? theme.colorScheme.onSecondaryContainer 
+            color: isSelected
+                ? theme.colorScheme.onSecondaryContainer
                 : theme.colorScheme.onSurfaceVariant,
           ),
           const SizedBox(width: 6),
@@ -362,8 +391,8 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
       backgroundColor: theme.colorScheme.surface,
       selectedColor: theme.colorScheme.secondaryContainer,
       side: BorderSide(
-        color: isSelected 
-            ? theme.colorScheme.secondary 
+        color: isSelected
+            ? theme.colorScheme.secondary
             : theme.colorScheme.outlineVariant,
         width: 1,
       ),
@@ -378,150 +407,197 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
     final userId = conversation['uuid'] as String? ?? '';
     final lastMessage = conversation['lastMessage'] as String? ?? '';
     final lastMessageTime = conversation['lastMessageTime'] as String? ?? '';
-    
+
     return Consumer<UnreadMessagesProvider>(
       builder: (context, unreadProvider, child) {
-        final currentUnreadCount = unreadProvider.directMessageUnreadCounts[userId] ?? 0;
-        
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-              color: Theme.of(context).colorScheme.outlineVariant,
-              width: 1,
+        final currentUnreadCount =
+            unreadProvider.directMessageUnreadCounts[userId] ?? 0;
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onSecondaryTapDown: (details) {
+            debugPrint(
+              '[MESSAGES_MAIN] *** RIGHT-CLICK DETECTED *** for user: $userId',
+            );
+            _showConversationContextMenu(
+              context,
+              details.globalPosition,
+              userId,
+              displayName,
+            );
+          },
+          onLongPressStart: (details) {
+            debugPrint('[MESSAGES_MAIN] Long-press detected for user: $userId');
+            _showConversationContextMenu(
+              context,
+              details.globalPosition,
+              userId,
+              displayName,
+            );
+          },
+          child: Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(
+                color: Theme.of(context).colorScheme.outlineVariant,
+                width: 1,
+              ),
             ),
-          ),
-          child: InkWell(
-            onTap: () => widget.onConversationTap(userId, displayName),
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Avatar with online indicator
-                  SizedBox(
-                    width: 56,
-                    height: 56,
-                    child: Stack(
-                      children: [
-                        SquareUserAvatar(
-                          userId: userId,
-                          displayName: displayName,
-                          pictureData: picture.isNotEmpty ? picture : null,
-                          size: 56,
-                        ),
-                        if (isOnline)
-                          Positioned(
-                            right: 0,
-                            bottom: 0,
-                            child: Container(
-                              width: 16,
-                              height: 16,
-                              decoration: BoxDecoration(
-                                color: Colors.green,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Theme.of(context).colorScheme.surface,
-                                  width: 3,
-                                ),
-                              ),
-                            ),
+            child: InkWell(
+              onTap: () => widget.onConversationTap(userId, displayName),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Avatar with online indicator
+                    SizedBox(
+                      width: 56,
+                      height: 56,
+                      child: Stack(
+                        children: [
+                          SquareUserAvatar(
+                            userId: userId,
+                            displayName: displayName,
+                            pictureData: picture.isNotEmpty ? picture : null,
+                            size: 56,
                           ),
-                      ],
-                    ),
-                  ),
-                  
-                  const SizedBox(width: 16),
-                  
-                  // Content
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Name row
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                displayName,
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: currentUnreadCount > 0 ? FontWeight.bold : FontWeight.w600,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (lastMessageTime.isNotEmpty)
-                              Text(
-                                _formatTime(lastMessageTime),
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          if (isOnline)
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: Container(
+                                width: 16,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  color: Colors.green,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.surface,
+                                    width: 3,
+                                  ),
                                 ),
                               ),
-                          ],
-                        ),
-                        
-                        if (atName.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            '@$atName',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
-                          ),
                         ],
-                        
-                        if (lastMessage.isNotEmpty) ...[
-                          const SizedBox(height: 8),
+                      ),
+                    ),
+
+                    const SizedBox(width: 16),
+
+                    // Content
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Name row
                           Row(
                             children: [
                               Expanded(
                                 child: Text(
-                                  lastMessage,
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: currentUnreadCount > 0
-                                        ? Theme.of(context).colorScheme.onSurface
-                                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                                    fontWeight: currentUnreadCount > 0 ? FontWeight.w500 : FontWeight.normal,
-                                  ),
-                                  maxLines: 2,
+                                  displayName,
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(
+                                        fontWeight: currentUnreadCount > 0
+                                            ? FontWeight.bold
+                                            : FontWeight.w600,
+                                      ),
+                                  maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              if (currentUnreadCount > 0) ...[
-                                const SizedBox(width: 8),
-                                AnimatedBadge(
-                                  count: currentUnreadCount,
-                                  isSmall: false,
+                              if (lastMessageTime.isNotEmpty)
+                                Text(
+                                  _formatTime(lastMessageTime),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
                                 ),
-                              ],
                             ],
                           ),
+
+                          if (atName.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              '@$atName',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
+
+                          if (lastMessage.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    lastMessage,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                          color: currentUnreadCount > 0
+                                              ? Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurface
+                                              : Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                          fontWeight: currentUnreadCount > 0
+                                              ? FontWeight.w500
+                                              : FontWeight.normal,
+                                        ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (currentUnreadCount > 0) ...[
+                                  const SizedBox(width: 8),
+                                  AnimatedBadge(
+                                    count: currentUnreadCount,
+                                    isSmall: false,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                  
-                  // Star icon button
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: Icon(
-                      StarredConversationsService.instance.isStarred(userId) 
-                          ? Icons.star 
-                          : Icons.star_border,
-                      color: StarredConversationsService.instance.isStarred(userId) 
-                          ? Colors.amber 
-                          : Colors.grey,
-                      size: 24,
+
+                    // Star icon button
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: Icon(
+                        StarredConversationsService.instance.isStarred(userId)
+                            ? Icons.star
+                            : Icons.star_border,
+                        color:
+                            StarredConversationsService.instance.isStarred(
+                              userId,
+                            )
+                            ? Colors.amber
+                            : Colors.grey,
+                        size: 24,
+                      ),
+                      onPressed: () => _toggleStar(userId),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
                     ),
-                    onPressed: () => _toggleStar(userId),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -529,9 +605,134 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
       },
     );
   }
-  
+
+  void _showConversationContextMenu(
+    BuildContext context,
+    Offset position,
+    String userId,
+    String displayName,
+  ) {
+    debugPrint(
+      '[MESSAGES_MAIN] Showing context menu for $displayName at position: $position',
+    );
+
+    if (!mounted) {
+      debugPrint(
+        '[MESSAGES_MAIN] Widget not mounted, cannot show context menu',
+      );
+      return;
+    }
+
+    showMenu(
+          context: context,
+          position: RelativeRect.fromLTRB(
+            position.dx,
+            position.dy,
+            position.dx,
+            position.dy,
+          ),
+          items: [
+            PopupMenuItem(
+              child: const Row(
+                children: [
+                  Icon(Icons.delete, size: 20),
+                  SizedBox(width: 8),
+                  Text('Delete Conversation'),
+                ],
+              ),
+              onTap: () {
+                debugPrint(
+                  '[MESSAGES_MAIN] Delete menu item tapped for user: $userId',
+                );
+                // Delay to allow menu to close first
+                Future.delayed(const Duration(milliseconds: 100), () {
+                  if (mounted) {
+                    _showDeleteConversationDialog(userId, displayName);
+                  }
+                });
+              },
+            ),
+          ],
+        )
+        .then((value) {
+          debugPrint('[MESSAGES_MAIN] Context menu closed with value: $value');
+        })
+        .catchError((error) {
+          debugPrint('[MESSAGES_MAIN] Error showing context menu: $error');
+        });
+  }
+
+  Future<void> _showDeleteConversationDialog(
+    String userId,
+    String displayName,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Conversation'),
+        content: Text(
+          'Are you sure you want to delete all messages with $displayName? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _deleteConversation(userId);
+    }
+  }
+
+  Future<void> _deleteConversation(String userId) async {
+    try {
+      // Delete from SQLite message store
+      final messageStore = await SqliteMessageStore.getInstance();
+      await messageStore.deleteConversation(userId);
+
+      // Delete from recent conversations
+      final conversationsStore =
+          await SqliteRecentConversationsStore.getInstance();
+      await conversationsStore.removeConversation(userId);
+
+      // Remove from starred if it was starred
+      await StarredConversationsService.instance.unstarConversation(userId);
+
+      // Emit event to update UI
+      EventBus.instance.emit(AppEvent.conversationDeleted, {'userId': userId});
+
+      // Reload conversations
+      await _loadConversations();
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Conversation deleted')));
+      }
+    } catch (e) {
+      debugPrint('[MESSAGES_MAIN] Error deleting conversation: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete conversation: $e')),
+        );
+      }
+    }
+  }
+
   void _toggleStar(String userId) async {
-    final success = await StarredConversationsService.instance.toggleStar(userId);
+    final success = await StarredConversationsService.instance.toggleStar(
+      userId,
+    );
     if (success && mounted) {
       setState(() {
         // Trigger rebuild to update star icon
@@ -549,14 +750,18 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
             Icon(
               Icons.chat_bubble_outline,
               size: 80,
-              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+              color: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.5),
             ),
             const SizedBox(height: 24),
             Text(
-              _searchQuery.isEmpty ? 'No conversations yet' : 'No conversations found',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              _searchQuery.isEmpty
+                  ? 'No conversations yet'
+                  : 'No conversations found',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(

@@ -607,101 +607,94 @@ class _MessagesListViewState extends State<MessagesListView> {
           );
         }
 
-        return Listener(
-          onPointerDown: (event) {
-            // Capture right-click (secondary button)
-            if (event.buttons == 2) {
-              debugPrint(
-                '[MESSAGES_LIST] *** RIGHT-CLICK DETECTED *** for user: $userId',
-              );
-              _showConversationContextMenu(
-                context,
-                event.position,
-                userId,
-                displayName,
-              );
-            }
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            debugPrint('[MESSAGES_LIST] Tap detected for user: $userId');
+            navProvider.selectDirectMessage(userId);
+            widget.onMessageTap(userId, displayName);
           },
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              debugPrint('[MESSAGES_LIST] Tap detected for user: $userId');
-              navProvider.selectDirectMessage(userId);
-              widget.onMessageTap(userId, displayName);
-            },
-            onLongPressStart: (details) {
-              debugPrint(
-                '[MESSAGES_LIST] Long-press detected for user: $userId',
-              );
-              _showConversationContextMenu(
-                context,
-                details.globalPosition,
-                userId,
-                displayName,
-              );
-            },
-            child: AnimatedSelectionTile(
-              leading: avatarWidget,
-              title: Text(
-                displayName,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w500,
-                  color: AppThemeConstants.textPrimary,
-                ),
+          onSecondaryTapDown: (details) {
+            debugPrint(
+              '[MESSAGES_LIST] *** RIGHT-CLICK DETECTED *** for user: $userId',
+            );
+            _showConversationContextMenu(
+              context,
+              details.globalPosition,
+              userId,
+              displayName,
+            );
+          },
+          onLongPressStart: (details) {
+            debugPrint('[MESSAGES_LIST] Long-press detected for user: $userId');
+            _showConversationContextMenu(
+              context,
+              details.globalPosition,
+              userId,
+              displayName,
+            );
+          },
+          child: AnimatedSelectionTile(
+            leading: avatarWidget,
+            title: Text(
+              displayName,
+              style: const TextStyle(
+                fontWeight: FontWeight.w500,
+                color: AppThemeConstants.textPrimary,
               ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (atName.isNotEmpty)
-                    Text(
-                      '@$atName',
-                      style: const TextStyle(
-                        fontSize: AppThemeConstants.fontSizeCaption,
-                        color: AppThemeConstants.textSecondary,
-                      ),
-                    ),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (atName.isNotEmpty)
                   Text(
-                    lastMessage.length > 50
-                        ? '${lastMessage.substring(0, 50)}...'
-                        : lastMessage,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    '@$atName',
                     style: const TextStyle(
                       fontSize: AppThemeConstants.fontSizeCaption,
                       color: AppThemeConstants.textSecondary,
                     ),
                   ),
-                  Text(
-                    _formatTime(lastMessageTime),
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: AppThemeConstants.textSecondary,
-                    ),
+                Text(
+                  lastMessage.length > 50
+                      ? '${lastMessage.substring(0, 50)}...'
+                      : lastMessage,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: AppThemeConstants.fontSizeCaption,
+                    color: AppThemeConstants.textSecondary,
                   ),
-                ],
-              ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: Icon(
-                      isStarred ? Icons.star : Icons.star_border,
-                      color: isStarred ? Colors.amber : Colors.grey,
-                      size: 20,
-                    ),
-                    onPressed: () => _toggleStar(userId),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
+                ),
+                Text(
+                  _formatTime(lastMessageTime),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppThemeConstants.textSecondary,
                   ),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.arrow_forward_ios, size: 16),
-                ],
-              ),
-              selected: isSelected,
-              // Remove onTap from AnimatedSelectionTile - handled by GestureDetector
-              onTap: null,
+                ),
+              ],
             ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: Icon(
+                    isStarred ? Icons.star : Icons.star_border,
+                    color: isStarred ? Colors.amber : Colors.grey,
+                    size: 20,
+                  ),
+                  onPressed: () => _toggleStar(userId),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.arrow_forward_ios, size: 16),
+              ],
+            ),
+            selected: isSelected,
+            // Remove onTap from AnimatedSelectionTile - handled by GestureDetector
+            onTap: null,
           ),
         );
       },
