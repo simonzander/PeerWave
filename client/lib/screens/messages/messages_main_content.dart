@@ -56,7 +56,8 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
     EventBus.instance.on(AppEvent.conversationDeleted).listen((data) {
       if (!mounted) return;
 
-      final userId = data['userId'] as String?;
+      final dataMap = data as Map<String, dynamic>?;
+      final userId = dataMap?['userId'] as String?;
       if (userId != null) {
         debugPrint(
           '[MESSAGES_MAIN] Conversation deleted event received for: $userId',

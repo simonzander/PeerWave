@@ -286,8 +286,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     EventBus.instance.on(AppEvent.reactionUpdated).listen((data) {
       if (!mounted) return;
 
-      final messageId = data['messageId'] as String?;
-      final reactions = data['reactions'] as Map<String, dynamic>?;
+      final dataMap = data as Map<String, dynamic>?;
+      final messageId = dataMap?['messageId'] as String?;
+      final reactions = dataMap?['reactions'] as Map<String, dynamic>?;
 
       debugPrint('[DM_SCREEN] 🎭 Reaction update event received:');
       debugPrint('[DM_SCREEN]   messageId: $messageId');
@@ -323,7 +324,8 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     EventBus.instance.on(AppEvent.conversationDeleted).listen((data) {
       if (!mounted) return;
 
-      final userId = data['userId'] as String?;
+      final dataMap = data as Map<String, dynamic>?;
+      final userId = dataMap?['userId'] as String?;
       
       // If this conversation's messages were deleted, clear the UI
       if (userId == widget.recipientUuid) {

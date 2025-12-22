@@ -423,9 +423,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     EventBus.instance.on(AppEvent.reactionUpdated).listen((data) {
       if (!mounted) return;
 
-      final messageId = data['messageId'] as String?;
-      final channelId = data['channelId'] as String?;
-      final reactions = data['reactions'] as Map<String, dynamic>?;
+      final dataMap = data as Map<String, dynamic>?;
+      final messageId = dataMap?['messageId'] as String?;
+      final channelId = dataMap?['channelId'] as String?;
+      final reactions = dataMap?['reactions'] as Map<String, dynamic>?;
 
       // Only update if it's for this channel
       if (channelId == widget.channelUuid &&
@@ -450,7 +451,8 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     EventBus.instance.on(AppEvent.conversationDeleted).listen((data) {
       if (!mounted) return;
 
-      final channelId = data['channelId'] as String?;
+      final dataMap = data as Map<String, dynamic>?;
+      final channelId = dataMap?['channelId'] as String?;
       
       // If this channel's messages were deleted, clear the UI
       if (channelId == widget.channelUuid) {
