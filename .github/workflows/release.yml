@@ -127,7 +127,7 @@ jobs:
       
       - name: Build Flutter web client
         working-directory: ./client
-        run: flutter build web --release --web-renderer canvaskit
+        run: flutter build web --release
       
       - name: Copy web build to server
         run: |

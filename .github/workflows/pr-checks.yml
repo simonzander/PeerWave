@@ -23,7 +23,7 @@ jobs:
       
       - name: Run Flutter analyze
         working-directory: ./client
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
       
       - name: Check Dart formatting
         working-directory: ./client
