@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
 /// Offline Message Queue - Stores messages when offline and retries when reconnected
-/// 
+///
 /// This queue persists messages locally and automatically retries sending them
 /// when the connection is restored.
 class OfflineMessageQueue {
@@ -19,7 +19,9 @@ class OfflineMessageQueue {
   Future<void> enqueue(QueuedMessage message) async {
     _queue.add(message);
     await _saveQueue();
-    debugPrint('[OFFLINE QUEUE] Message queued: ${message.itemId} (${message.type})');
+    debugPrint(
+      '[OFFLINE QUEUE] Message queued: ${message.itemId} (${message.type})',
+    );
   }
 
   /// Load the queue from persistent storage
@@ -27,7 +29,7 @@ class OfflineMessageQueue {
     try {
       final prefs = await SharedPreferences.getInstance();
       final queueJson = prefs.getString(_queueKey);
-      
+
       if (queueJson != null) {
         final List<dynamic> queueList = jsonDecode(queueJson);
         _queue.clear();
@@ -51,7 +53,7 @@ class OfflineMessageQueue {
   }
 
   /// Process the queue - send all pending messages
-  /// 
+  ///
   /// Parameters:
   /// - [sendFunction]: Function to send a single message (returns true on success)
   /// - [onProgress]: Optional callback for progress updates
@@ -70,7 +72,9 @@ class OfflineMessageQueue {
     }
 
     _isProcessing = true;
-    debugPrint('[OFFLINE QUEUE] Processing ${_queue.length} queued messages...');
+    debugPrint(
+      '[OFFLINE QUEUE] Processing ${_queue.length} queued messages...',
+    );
 
     int processed = 0;
     final List<QueuedMessage> failedMessages = [];
@@ -80,20 +84,28 @@ class OfflineMessageQueue {
 
     for (final message in messagesToProcess) {
       try {
-        debugPrint('[OFFLINE QUEUE] Sending queued message ${message.itemId}...');
+        debugPrint(
+          '[OFFLINE QUEUE] Sending queued message ${message.itemId}...',
+        );
         final success = await sendFunction(message);
-        
+
         if (success) {
           _queue.remove(message);
           processed++;
-          debugPrint('[OFFLINE QUEUE] ✓ Message sent successfully: ${message.itemId}');
+          debugPrint(
+            '[OFFLINE QUEUE] ✓ Message sent successfully: ${message.itemId}',
+          );
         } else {
           failedMessages.add(message);
-          debugPrint('[OFFLINE QUEUE] ✗ Message send failed: ${message.itemId}');
+          debugPrint(
+            '[OFFLINE QUEUE] ✗ Message send failed: ${message.itemId}',
+          );
         }
       } catch (e) {
         failedMessages.add(message);
-        debugPrint('[OFFLINE QUEUE] ✗ Error sending message ${message.itemId}: $e');
+        debugPrint(
+          '[OFFLINE QUEUE] ✗ Error sending message ${message.itemId}: $e',
+        );
       }
 
       onProgress?.call(processed, messagesToProcess.length);
@@ -102,7 +114,9 @@ class OfflineMessageQueue {
     await _saveQueue();
     _isProcessing = false;
 
-    debugPrint('[OFFLINE QUEUE] Processing complete: $processed/${messagesToProcess.length} sent, ${failedMessages.length} failed');
+    debugPrint(
+      '[OFFLINE QUEUE] Processing complete: $processed/${messagesToProcess.length} sent, ${failedMessages.length} failed',
+    );
   }
 
   /// Get the current queue size
@@ -132,7 +146,8 @@ class QueuedMessage {
   final String type; // 'direct' or 'group'
   final String text;
   final String timestamp;
-  final Map<String, dynamic> metadata; // Additional data (recipientId, channelId, etc.)
+  final Map<String, dynamic>
+  metadata; // Additional data (recipientId, channelId, etc.)
   final int retryCount;
   final DateTime queuedAt;
 
@@ -182,4 +197,3 @@ class QueuedMessage {
     );
   }
 }
-

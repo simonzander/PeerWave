@@ -33,27 +33,27 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   // Navigation: Track current view using index
   int _selectedIndex = 0;
-  
+
   // Direct Messages
   final List<DirectMessageInfo> _directMessages = [];
   String? _activeDirectMessageUuid;
   String? _activeDirectMessageDisplayName;
-  
+
   // Channels (both WebRTC and Signal)
   List<ChannelInfo> _channels = [];
   String? _activeChannelUuid;
   String? _activeChannelName;
   String? _activeChannelType;
-  
+
   // Video conference state
   Map<String, dynamic>? _videoConferenceConfig;
-  
+
   // People (for context panel)
   List<Map<String, dynamic>> _recentPeople = [];
   bool _isLoadingRecentPeople = false;
   int _recentPeopleLimit = 10;
   bool _hasMoreRecentPeople = true;
-  
+
   // Flag to track if data has been loaded
   bool _hasLoadedInitialData = false;
 
@@ -61,7 +61,7 @@ class _DashboardPageState extends State<DashboardPage> {
   List<NavigationDestination> _getNavigationDestinations(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final layoutType = LayoutConfig.getLayoutType(width);
-    
+
     // Mobile: Activities, Channels, Messages, Files (4 items)
     if (layoutType == LayoutType.mobile) {
       return [
@@ -115,7 +115,7 @@ class _DashboardPageState extends State<DashboardPage> {
         ),
       ];
     }
-    
+
     // Tablet & Desktop: Activities, People, Files, Channels, Messages (5 items)
     return [
       NavigationDestination(
@@ -186,12 +186,12 @@ class _DashboardPageState extends State<DashboardPage> {
     super.initState();
     // Don't access context here - wait for didChangeDependencies
   }
-  
+
   /// Safe picture extraction from API response
   /// Handles String, Map, JSArray, and null values
   String _extractPictureData(dynamic picture) {
     if (picture == null) return '';
-    
+
     try {
       if (picture is String) {
         return picture;
@@ -206,14 +206,14 @@ class _DashboardPageState extends State<DashboardPage> {
       return '';
     }
   }
-  
+
   /// Format message timestamp for display
   String _formatMessageTime(String timestamp) {
     try {
       final dateTime = DateTime.parse(timestamp);
       final now = DateTime.now();
       final difference = now.difference(dateTime);
-      
+
       if (difference.inMinutes < 1) {
         return 'now';
       } else if (difference.inMinutes < 60) {
@@ -229,7 +229,7 @@ class _DashboardPageState extends State<DashboardPage> {
       return '';
     }
   }
-  
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -244,29 +244,44 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<void> _loadChannels() async {
     try {
       final host = GoRouterState.of(context).extra as Map?;
-      final hostUrl = ApiService.ensureHttpPrefix(host?['host'] as String? ?? '');
-      
-      debugPrint('[DASHBOARD] Loading channels from: $hostUrl/client/channels?limit=20');
+      final hostUrl = ApiService.ensureHttpPrefix(
+        host?['host'] as String? ?? '',
+      );
+
+      debugPrint(
+        '[DASHBOARD] Loading channels from: $hostUrl/client/channels?limit=20',
+      );
       ApiService.init();
       final resp = await ApiService.get('$hostUrl/client/channels?limit=20');
       debugPrint('[DASHBOARD] Channel response status: ${resp.statusCode}');
-      debugPrint('[DASHBOARD] Channel response data type: ${resp.data.runtimeType}');
+      debugPrint(
+        '[DASHBOARD] Channel response data type: ${resp.data.runtimeType}',
+      );
       debugPrint('[DASHBOARD] Channel response data: ${resp.data}');
-      
+
       if (resp.statusCode == 200) {
         final channels = (resp.data['channels'] as List<dynamic>? ?? []);
-        debugPrint('[DASHBOARD] Loaded ${channels.length} channels: ${channels.map((ch) => ch['name']).toList()}');
-        
+        debugPrint(
+          '[DASHBOARD] Loaded ${channels.length} channels: ${channels.map((ch) => ch['name']).toList()}',
+        );
+
         setState(() {
-          _channels = channels.map((ch) => ChannelInfo(
-            uuid: ch['uuid'],
-            name: ch['name'],
-            type: ch['type'], // 'signal' or 'webrtc'
-            isPrivate: ch['private'] ?? false, // Field is 'private' in backend
-            description: ch['description'],
-          )).toList();
+          _channels = channels
+              .map(
+                (ch) => ChannelInfo(
+                  uuid: ch['uuid'],
+                  name: ch['name'],
+                  type: ch['type'], // 'signal' or 'webrtc'
+                  isPrivate:
+                      ch['private'] ?? false, // Field is 'private' in backend
+                  description: ch['description'],
+                ),
+              )
+              .toList();
         });
-        debugPrint('[DASHBOARD] State updated with ${_channels.length} channels');
+        debugPrint(
+          '[DASHBOARD] State updated with ${_channels.length} channels',
+        );
       }
     } catch (e, stackTrace) {
       debugPrint('[DASHBOARD] Error loading channels: $e');
@@ -276,38 +291,43 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Future<void> _loadRecentPeople() async {
     if (_isLoadingRecentPeople) return;
-    
+
     setState(() {
       _isLoadingRecentPeople = true;
     });
-    
+
     try {
       final host = GoRouterState.of(context).extra as Map?;
       final hostUrl = host?['host'] as String? ?? '';
-      
-      debugPrint('[DASHBOARD] Loading recent people (limit: $_recentPeopleLimit)...');
-      
-      // Get recent direct conversations from ActivitiesService
-      final conversations = await ActivitiesService.getRecentDirectConversations(
-        limit: _recentPeopleLimit,
+
+      debugPrint(
+        '[DASHBOARD] Loading recent people (limit: $_recentPeopleLimit)...',
       );
-      
-      debugPrint('[DASHBOARD] Found ${conversations.length} recent conversations');
-      
+
+      // Get recent direct conversations from ActivitiesService
+      final conversations =
+          await ActivitiesService.getRecentDirectConversations(
+            limit: _recentPeopleLimit,
+          );
+
+      debugPrint(
+        '[DASHBOARD] Found ${conversations.length} recent conversations',
+      );
+
       // Check if there might be more
       _hasMoreRecentPeople = conversations.length >= _recentPeopleLimit;
-      
+
       // Get message store for last messages
       final messageStore = await SqliteMessageStore.getInstance();
-      
+
       final userMap = <String, Map<String, dynamic>>{};
-      
+
       for (final conv in conversations) {
         final userId = conv['userId'] as String?;
         if (userId != null && userId.isNotEmpty) {
           // Try to get profile from UserProfileService first
           final profile = UserProfileService.instance.getProfile(userId);
-          
+
           // Get last message from SQLite
           String lastMessage = '';
           String lastMessageTime = '';
@@ -317,11 +337,11 @@ class _DashboardPageState extends State<DashboardPage> {
               limit: 1,
               types: ['message', 'file', 'image', 'voice'],
             );
-            
+
             if (messages.isNotEmpty) {
               final lastMsg = messages.first;
               final msgType = lastMsg['type'] ?? 'message';
-              
+
               // Format message preview
               if (msgType == 'file') {
                 lastMessage = '📎 File';
@@ -335,7 +355,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   lastMessage = '${lastMessage.substring(0, 35)}...';
                 }
               }
-              
+
               // Format timestamp
               final timestamp = lastMsg['timestamp'];
               if (timestamp != null) {
@@ -343,12 +363,15 @@ class _DashboardPageState extends State<DashboardPage> {
               }
             }
           } catch (e) {
-            debugPrint('[DASHBOARD] Error loading last message for $userId: $e');
+            debugPrint(
+              '[DASHBOARD] Error loading last message for $userId: $e',
+            );
           }
-          
+
           userMap[userId] = {
             'uuid': userId,
-            'displayName': profile?['displayName'] ?? conv['displayName'] ?? userId,
+            'displayName':
+                profile?['displayName'] ?? conv['displayName'] ?? userId,
             'atName': profile?['atName'] ?? '',
             'picture': profile?['picture'] ?? '',
             'online': false,
@@ -357,22 +380,24 @@ class _DashboardPageState extends State<DashboardPage> {
           };
         }
       }
-      
+
       // Batch fetch display names from API if still showing UUIDs
       final userIdsNeedingNames = userMap.entries
           .where((entry) => entry.value['displayName'] == entry.key)
           .map((entry) => entry.key)
           .toList();
-      
+
       if (userIdsNeedingNames.isNotEmpty && hostUrl.isNotEmpty) {
-        debugPrint('[DASHBOARD] Fetching display names for ${userIdsNeedingNames.length} users from API...');
+        debugPrint(
+          '[DASHBOARD] Fetching display names for ${userIdsNeedingNames.length} users from API...',
+        );
         try {
           ApiService.init();
           final resp = await ApiService.post(
             '$hostUrl/client/people/info',
             data: {'userIds': userIdsNeedingNames},
           );
-          
+
           if (resp.statusCode == 200) {
             final users = resp.data is List ? resp.data : [];
             for (final user in users) {
@@ -380,30 +405,34 @@ class _DashboardPageState extends State<DashboardPage> {
               if (userId != null && userMap.containsKey(userId)) {
                 userMap[userId]!['displayName'] = user['displayName'] ?? userId;
                 userMap[userId]!['atName'] = user['atName'] ?? '';
-                userMap[userId]!['picture'] = _extractPictureData(user['picture']);
+                userMap[userId]!['picture'] = _extractPictureData(
+                  user['picture'],
+                );
               }
             }
-            debugPrint('[DASHBOARD] Updated ${users.length} display names from API');
+            debugPrint(
+              '[DASHBOARD] Updated ${users.length} display names from API',
+            );
           }
         } catch (e) {
           debugPrint('[DASHBOARD] Error fetching display names from API: $e');
         }
       }
-      
+
       if (!mounted) return;
-      
+
       setState(() {
         _recentPeople = userMap.values.toList();
         _isLoadingRecentPeople = false;
       });
-      
+
       debugPrint('[DASHBOARD] Loaded ${_recentPeople.length} recent people');
     } catch (e, stackTrace) {
       debugPrint('[DASHBOARD] Error loading recent people: $e');
       debugPrint('[DASHBOARD] Stack trace: $stackTrace');
-      
+
       if (!mounted) return;
-      
+
       setState(() {
         _isLoadingRecentPeople = false;
       });
@@ -412,11 +441,11 @@ class _DashboardPageState extends State<DashboardPage> {
 
   void _loadMoreRecentPeople() {
     if (_isLoadingRecentPeople || !_hasMoreRecentPeople) return;
-    
+
     setState(() {
       _recentPeopleLimit += 10;
     });
-    
+
     _loadRecentPeople();
   }
 
@@ -428,28 +457,28 @@ class _DashboardPageState extends State<DashboardPage> {
       debugPrint('[DASHBOARD] Warning: Could not load profile for $uuid: $e');
       // Continue anyway - will use fallback display
     }
-    
+
     setState(() {
       _activeDirectMessageUuid = uuid;
       _activeDirectMessageDisplayName = displayName;
       _videoConferenceConfig = null;
-      
+
       // Set correct index based on device layout
       final width = MediaQuery.of(context).size.width;
       final layoutType = LayoutConfig.getLayoutType(width);
-      
+
       if (layoutType == LayoutType.mobile) {
         _selectedIndex = 2; // Mobile: Messages is at index 2
       } else {
         _selectedIndex = 4; // Tablet/Desktop: Messages is at index 4
       }
-      
+
       // Add to direct messages list if not already present
       if (!_directMessages.any((dm) => dm.uuid == uuid)) {
-        _directMessages.insert(0, DirectMessageInfo(
-          uuid: uuid,
-          displayName: displayName,
-        ));
+        _directMessages.insert(
+          0,
+          DirectMessageInfo(uuid: uuid, displayName: displayName),
+        );
       }
     });
   }
@@ -460,11 +489,11 @@ class _DashboardPageState extends State<DashboardPage> {
       _activeChannelName = name;
       _activeChannelType = type;
       _videoConferenceConfig = null;
-      
+
       // Set correct index based on device layout
       final width = MediaQuery.of(context).size.width;
       final layoutType = LayoutConfig.getLayoutType(width);
-      
+
       if (layoutType == LayoutType.mobile) {
         _selectedIndex = 1; // Mobile: Channels is at index 1
       } else {
@@ -477,13 +506,14 @@ class _DashboardPageState extends State<DashboardPage> {
     setState(() {
       _selectedIndex = index;
       _videoConferenceConfig = null;
-      
+
       // Reset active items when switching views
       if (index != 0) {
         _activeDirectMessageUuid = null;
         _activeDirectMessageDisplayName = null;
       }
-      if (index != 2) { // Changed from 1 to 2 (People moved)
+      if (index != 2) {
+        // Changed from 1 to 2 (People moved)
         _activeChannelUuid = null;
         _activeChannelName = null;
         _activeChannelType = null;
@@ -501,14 +531,14 @@ class _DashboardPageState extends State<DashboardPage> {
 
     // Get device-specific destinations
     final destinations = _getNavigationDestinations(context);
-    
+
     // Build content based on selected index
     Widget body = _buildContent(host ?? '');
 
     // Check layout type for custom desktop drawer
     final width = MediaQuery.of(context).size.width;
     final layoutType = LayoutConfig.getLayoutType(width);
-    
+
     if (layoutType == LayoutType.desktop) {
       // Desktop: 3-column layout (Icon Sidebar + Context Panel + Main View)
       return Scaffold(
@@ -581,14 +611,17 @@ class _DashboardPageState extends State<DashboardPage> {
                   _buildIconButton(
                     icon: Icons.logout,
                     isSelected: false,
-                    onTap: () => LogoutService.instance.logout(context, userInitiated: true),
+                    onTap: () => LogoutService.instance.logout(
+                      context,
+                      userInitiated: true,
+                    ),
                     tooltip: 'Logout',
                   ),
                   const SizedBox(height: 12),
                 ],
               ),
             ),
-            
+
             // 2. Context Panel (~280px) - Shows different content based on selection
             if (_shouldShowContextPanel())
               ContextPanel(
@@ -608,7 +641,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 onLoadMorePeople: _loadMoreRecentPeople,
                 hasMorePeople: _hasMoreRecentPeople,
               ),
-            
+
             // 3. Main View (rest of space)
             Expanded(
               child: Container(
@@ -651,7 +684,9 @@ class _DashboardPageState extends State<DashboardPage> {
         ),
       ],
       // Mobile: Add drawer with additional menu items
-      drawer: layoutType == LayoutType.mobile ? _buildMobileDrawer(context, host ?? '') : null,
+      drawer: layoutType == LayoutType.mobile
+          ? _buildMobileDrawer(context, host ?? '')
+          : null,
       body: body,
     );
   }
@@ -659,15 +694,13 @@ class _DashboardPageState extends State<DashboardPage> {
   // Build mobile drawer with additional options
   Widget _buildMobileDrawer(BuildContext context, String host) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
           DrawerHeader(
-            decoration: BoxDecoration(
-              color: colorScheme.primaryContainer,
-            ),
+            decoration: BoxDecoration(color: colorScheme.primaryContainer),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -740,11 +773,11 @@ class _DashboardPageState extends State<DashboardPage> {
     // Get layout type to determine index mapping
     final width = MediaQuery.of(context).size.width;
     final layoutType = LayoutConfig.getLayoutType(width);
-    
+
     // Map index based on device type
     // Mobile: 0=Activities, 1=Channels, 2=Messages, 3=Files
     // Tablet/Desktop: 0=Activities, 1=Meetings, 2=People, 3=Files, 4=Channels, 5=Messages
-    
+
     String viewType;
     if (layoutType == LayoutType.mobile) {
       switch (_selectedIndex) {
@@ -788,7 +821,7 @@ class _DashboardPageState extends State<DashboardPage> {
           viewType = 'activities';
       }
     }
-    
+
     // Build content based on view type
     switch (viewType) {
       case 'activities':
@@ -797,10 +830,10 @@ class _DashboardPageState extends State<DashboardPage> {
           onDirectMessageTap: _onDirectMessageTap,
           onChannelTap: _onChannelTap,
         );
-      
+
       case 'meetings':
         return const MeetingsScreen();
-        
+
       case 'messages':
         // Desktop: Always show messages list view when Messages tab is selected
         // Mobile/Tablet: Show list view when no active conversation
@@ -882,7 +915,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 channelId: _videoConferenceConfig!['channelId'],
                 channelName: _videoConferenceConfig!['channelName'],
                 selectedCamera: _videoConferenceConfig!['selectedCamera'],
-                selectedMicrophone: _videoConferenceConfig!['selectedMicrophone'],
+                selectedMicrophone:
+                    _videoConferenceConfig!['selectedMicrophone'],
               );
             } else {
               return VideoConferencePreJoinView(
@@ -910,15 +944,15 @@ class _DashboardPageState extends State<DashboardPage> {
             onCreateChannel: () {
               // TODO: Navigate to channel creation screen
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Channel creation coming soon'),
-                ),
+                const SnackBar(content: Text('Channel creation coming soon')),
               );
             },
           );
         }
-        
-        if (_activeChannelUuid != null && _activeChannelName != null && _activeChannelType != null) {
+
+        if (_activeChannelUuid != null &&
+            _activeChannelName != null &&
+            _activeChannelType != null) {
           // Use appropriate screen based on channel type
           if (_activeChannelType == 'signal') {
             return SignalGroupChatScreen(
@@ -933,7 +967,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 channelId: _videoConferenceConfig!['channelId'],
                 channelName: _videoConferenceConfig!['channelName'],
                 selectedCamera: _videoConferenceConfig!['selectedCamera'],
-                selectedMicrophone: _videoConferenceConfig!['selectedMicrophone'],
+                selectedMicrophone:
+                    _videoConferenceConfig!['selectedMicrophone'],
               );
             } else {
               return VideoConferencePreJoinView(
@@ -981,21 +1016,13 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 }
 
-enum DashboardView {
-  directMessages,
-  channel,
-  people,
-  fileManager,
-}
+enum DashboardView { directMessages, channel, people, fileManager }
 
 class DirectMessageInfo {
   final String uuid;
   final String displayName;
 
-  DirectMessageInfo({
-    required this.uuid,
-    required this.displayName,
-  });
+  DirectMessageInfo({required this.uuid, required this.displayName});
 }
 
 class SignalGroupInfo {
@@ -1035,12 +1062,20 @@ class _EmptyStateWidget extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 80, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+          Icon(
+            icon,
+            size: 80,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.6),
+          ),
           const SizedBox(height: 24),
           Text(
             title,
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.4),
               fontSize: 24,
               fontWeight: FontWeight.bold,
             ),
@@ -1049,7 +1084,9 @@ class _EmptyStateWidget extends StatelessWidget {
           Text(
             subtitle,
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
               fontSize: 16,
             ),
           ),
@@ -1069,7 +1106,7 @@ extension _DashboardPageHelpers on _DashboardPageState {
     required String tooltip,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Tooltip(
       message: tooltip,
       child: InkWell(
@@ -1079,7 +1116,7 @@ extension _DashboardPageHelpers on _DashboardPageState {
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            color: isSelected 
+            color: isSelected
                 ? colorScheme.primary.withValues(alpha: 0.15)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
@@ -1089,7 +1126,7 @@ extension _DashboardPageHelpers on _DashboardPageState {
           ),
           child: Icon(
             icon,
-            color: isSelected 
+            color: isSelected
                 ? colorScheme.primary
                 : AppThemeConstants.textSecondary,
             size: 24,
@@ -1098,7 +1135,7 @@ extension _DashboardPageHelpers on _DashboardPageState {
       ),
     );
   }
-  
+
   /// Get AppBar title based on current selection
   String _getAppBarTitle() {
     switch (_selectedIndex) {
@@ -1122,15 +1159,15 @@ extension _DashboardPageHelpers on _DashboardPageState {
         return 'PeerWave';
     }
   }
-  
+
   /// Determine if context panel should be shown
   bool _shouldShowContextPanel() {
     // Show for Channels, Messages, and optionally People/Files
     return _selectedIndex == 1 || // People (optional, currently placeholder)
-           _selectedIndex == 3 || // Channels
-           _selectedIndex == 4;   // Messages
+        _selectedIndex == 3 || // Channels
+        _selectedIndex == 4; // Messages
   }
-  
+
   /// Get the type of context panel to display
   ContextPanelType _getContextPanelType() {
     switch (_selectedIndex) {
@@ -1147,4 +1184,3 @@ extension _DashboardPageHelpers on _DashboardPageState {
     }
   }
 }
-

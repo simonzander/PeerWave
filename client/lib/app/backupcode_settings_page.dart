@@ -29,11 +29,12 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
     setState(() {
       _loading = true;
     });
-    
+
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
       final resp = await ApiService.get('$urlString/backupcode/list');
@@ -58,7 +59,7 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: Center(
@@ -86,11 +87,14 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
                 const SizedBox(height: 20),
                 Text(
                   'Each backup code is valid once. If you lost your passkey, you can login with a backup code. The backup codes are saved encrypted on the server and can\'t be decrypted anymore. Please save your backup codes in a safe place like a key vault (1Password, Bitwarden, KeePass etc.). If you lost access to your passkeys and backup codes you can\'t login to your account anymore. Support through the administration is not possible for security reasons.',
-                  style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
+                  style: TextStyle(
+                    color: colorScheme.onSurfaceVariant,
+                    fontSize: 13,
+                  ),
                   textAlign: TextAlign.left,
                 ),
                 const SizedBox(height: 24),
-                
+
                 // Backup Codes Display
                 TextField(
                   controller: backupCodesController,
@@ -109,7 +113,7 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                
+
                 // Copy to Clipboard Button
                 FilledButton.icon(
                   style: FilledButton.styleFrom(
@@ -119,28 +123,32 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
                     ),
                   ),
                   icon: const Icon(Icons.copy),
-                  onPressed: _loading ? null : () async {
-                    await Clipboard.setData(ClipboardData(text: backupCodesController.text));
-                    setState(() {
-                      _status = 'Backup codes copied to clipboard!';
-                    });
-                    
-                    // Clear status after 3 seconds
-                    Future.delayed(const Duration(seconds: 3), () {
-                      if (mounted) {
-                        setState(() {
-                          _status = null;
-                        });
-                      }
-                    });
-                  },
+                  onPressed: _loading
+                      ? null
+                      : () async {
+                          await Clipboard.setData(
+                            ClipboardData(text: backupCodesController.text),
+                          );
+                          setState(() {
+                            _status = 'Backup codes copied to clipboard!';
+                          });
+
+                          // Clear status after 3 seconds
+                          Future.delayed(const Duration(seconds: 3), () {
+                            if (mounted) {
+                              setState(() {
+                                _status = null;
+                              });
+                            }
+                          });
+                        },
                   label: const Text(
                     'Copy to Clipboard',
                     style: TextStyle(fontSize: 16),
                   ),
                 ),
                 const SizedBox(height: 12),
-                
+
                 // Download as .txt Button
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
@@ -150,38 +158,42 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
                     ),
                   ),
                   icon: const Icon(Icons.download),
-                  onPressed: _loading ? null : () {
-                    final text = backupCodesController.text;
-                    final bytes = utf8.encode(text);
-                    final blob = web.Blob([bytes.toJS].toJS);
-                    final url = web.URL.createObjectURL(blob);
-                    final anchor = web.document.createElement('a') as web.HTMLAnchorElement;
-                    anchor.href = url;
-                    anchor.download = 'backup_codes.txt';
-                    web.document.body!.append(anchor);
-                    anchor.click();
-                    anchor.remove();
-                    web.URL.revokeObjectURL(url);
-                    
-                    setState(() {
-                      _status = 'Backup codes downloaded!';
-                    });
-                    
-                    // Clear status after 3 seconds
-                    Future.delayed(const Duration(seconds: 3), () {
-                      if (mounted) {
-                        setState(() {
-                          _status = null;
-                        });
-                      }
-                    });
-                  },
+                  onPressed: _loading
+                      ? null
+                      : () {
+                          final text = backupCodesController.text;
+                          final bytes = utf8.encode(text);
+                          final blob = web.Blob([bytes.toJS].toJS);
+                          final url = web.URL.createObjectURL(blob);
+                          final anchor =
+                              web.document.createElement('a')
+                                  as web.HTMLAnchorElement;
+                          anchor.href = url;
+                          anchor.download = 'backup_codes.txt';
+                          web.document.body!.append(anchor);
+                          anchor.click();
+                          anchor.remove();
+                          web.URL.revokeObjectURL(url);
+
+                          setState(() {
+                            _status = 'Backup codes downloaded!';
+                          });
+
+                          // Clear status after 3 seconds
+                          Future.delayed(const Duration(seconds: 3), () {
+                            if (mounted) {
+                              setState(() {
+                                _status = null;
+                              });
+                            }
+                          });
+                        },
                   label: const Text(
                     'Download as .txt',
                     style: TextStyle(fontSize: 16),
                   ),
                 ),
-                
+
                 // Status Message
                 if (_status != null) ...[
                   const SizedBox(height: 20),
@@ -206,12 +218,14 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
                     ),
                   ),
                 ],
-                
+
                 // Loading Indicator
                 if (_loading) ...[
                   const SizedBox(height: 20),
                   Center(
-                    child: CircularProgressIndicator(color: colorScheme.primary),
+                    child: CircularProgressIndicator(
+                      color: colorScheme.primary,
+                    ),
                   ),
                 ],
               ],
@@ -228,4 +242,3 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
     super.dispose();
   }
 }
-

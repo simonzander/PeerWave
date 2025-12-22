@@ -5,7 +5,7 @@ import '../theme/color_schemes.dart';
 import '../widgets/theme_selector_dialog.dart';
 
 /// Theme Settings Page
-/// 
+///
 /// A dedicated page for theme customization that can be added to your settings.
 /// Shows current theme, quick theme mode toggle, and button to open full selector.
 class ThemeSettingsPage extends StatelessWidget {
@@ -18,27 +18,30 @@ class ThemeSettingsPage extends StatelessWidget {
     final currentScheme = themeProvider.currentScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Theme Einstellungen'),
-      ),
+      appBar: AppBar(title: const Text('Theme Einstellungen')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           // Current Theme Preview Card
-          _buildCurrentThemeCard(context, themeProvider, currentScheme, colorScheme),
-          
+          _buildCurrentThemeCard(
+            context,
+            themeProvider,
+            currentScheme,
+            colorScheme,
+          ),
+
           const SizedBox(height: 24),
-          
+
           // Quick Theme Mode Toggle
           _buildThemeModeCard(context, themeProvider, colorScheme),
-          
+
           const SizedBox(height: 24),
-          
+
           // Open Full Selector Button
           _buildSelectorButton(context, colorScheme),
-          
+
           const SizedBox(height: 24),
-          
+
           // Info Card
           _buildInfoCard(context, colorScheme),
         ],
@@ -79,9 +82,9 @@ class ThemeSettingsPage extends StatelessWidget {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Color Preview Strip
             Row(
               children: [
@@ -94,9 +97,9 @@ class ThemeSettingsPage extends StatelessWidget {
                 _buildColorCircle(colorScheme.error, 'Error'),
               ],
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             Text(
               currentScheme.name,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -151,12 +154,12 @@ class ThemeSettingsPage extends StatelessWidget {
           children: [
             Text(
               'Theme Modus',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            
+
             SegmentedButton<ThemeMode>(
               segments: const [
                 ButtonSegment<ThemeMode>(
@@ -180,9 +183,9 @@ class ThemeSettingsPage extends StatelessWidget {
                 themeProvider.setThemeMode(newSelection.first);
               },
             ),
-            
+
             const SizedBox(height: 12),
-            
+
             Text(
               _getThemeModeDescription(themeProvider.themeMode),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -216,10 +219,7 @@ class ThemeSettingsPage extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            Icon(
-              Icons.info_outline,
-              color: colorScheme.primary,
-            ),
+            Icon(Icons.info_outline, color: colorScheme.primary),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -246,4 +246,3 @@ class ThemeSettingsPage extends StatelessWidget {
     }
   }
 }
-

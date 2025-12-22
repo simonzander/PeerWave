@@ -14,7 +14,7 @@ class UserManagementService {
   Future<List<UserInfo>> getUsers() async {
     try {
       final response = await _dio.get('/api/users');
-      
+
       if (response.statusCode == 200) {
         final data = response.data;
         final users = (data['users'] as List)
@@ -33,7 +33,7 @@ class UserManagementService {
   Future<List<Role>> getServerRoles() async {
     try {
       final response = await _dio.get('/api/roles?scope=server');
-      
+
       if (response.statusCode == 200) {
         final data = response.data;
         final roles = (data['roles'] as List)
@@ -52,7 +52,7 @@ class UserManagementService {
   Future<List<Role>> getUserRoles(String userId) async {
     try {
       final response = await _dio.get('/api/users/$userId/roles');
-      
+
       if (response.statusCode == 200) {
         final data = response.data;
         final roles = (data['serverRoles'] as List)
@@ -74,7 +74,7 @@ class UserManagementService {
         '/api/users/$userId/roles',
         data: {'roleId': roleId},
       );
-      
+
       if (response.statusCode != 200) {
         throw Exception('Failed to assign role: ${response.statusCode}');
       }
@@ -87,7 +87,7 @@ class UserManagementService {
   Future<void> removeServerRole(String userId, String roleId) async {
     try {
       final response = await _dio.delete('/api/users/$userId/roles/$roleId');
-      
+
       if (response.statusCode != 200) {
         throw Exception('Failed to remove role: ${response.statusCode}');
       }
@@ -99,10 +99,8 @@ class UserManagementService {
   /// Deactivate a user
   Future<void> deactivateUser(String userId) async {
     try {
-      final response = await _dio.patch(
-        '/api/users/$userId/deactivate',
-      );
-      
+      final response = await _dio.patch('/api/users/$userId/deactivate');
+
       if (response.statusCode != 200) {
         throw Exception('Failed to deactivate user: ${response.statusCode}');
       }
@@ -114,10 +112,8 @@ class UserManagementService {
   /// Activate a user
   Future<void> activateUser(String userId) async {
     try {
-      final response = await _dio.patch(
-        '/api/users/$userId/activate',
-      );
-      
+      final response = await _dio.patch('/api/users/$userId/activate');
+
       if (response.statusCode != 200) {
         throw Exception('Failed to activate user: ${response.statusCode}');
       }
@@ -130,7 +126,7 @@ class UserManagementService {
   Future<void> deleteUser(String userId) async {
     try {
       final response = await _dio.delete('/api/users/$userId');
-      
+
       if (response.statusCode != 200) {
         throw Exception('Failed to delete user: ${response.statusCode}');
       }
@@ -139,4 +135,3 @@ class UserManagementService {
     }
   }
 }
-

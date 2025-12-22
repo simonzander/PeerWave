@@ -16,7 +16,7 @@ class ChannelMembersScreen extends StatefulWidget {
     required this.channelId,
     required this.channelName,
     required this.channelScope,
-  }) ;
+  });
 
   @override
   State<ChannelMembersScreen> createState() => _ChannelMembersScreenState();
@@ -91,7 +91,9 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                 hint: const Text('Select Role'),
                 decoration: InputDecoration(
                   filled: true,
-                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  fillColor: Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest,
                   border: const OutlineInputBorder(),
                 ),
                 items: _availableRoles.map((role) {
@@ -107,7 +109,12 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                 const SizedBox(height: 16),
                 Text(
                   'Permissions: ${selectedRole!.permissions.join(", ")}',
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
                 ),
               ],
             ],
@@ -187,7 +194,10 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Theme.of(context).colorScheme.error),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ),
     );
   }
 
@@ -221,7 +231,9 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                     hintText: 'Enter name or email',
                     prefixIcon: const Icon(Icons.search),
                     filled: true,
-                    fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    fillColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -302,7 +314,9 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                     hint: const Text('Select Role'),
                     decoration: InputDecoration(
                       filled: true,
-                      fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      fillColor: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
                       border: const OutlineInputBorder(),
                     ),
                     items: _availableRoles.map((role) {
@@ -583,7 +597,9 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                               ? Theme.of(context).colorScheme.primary
                               : member.isModerator
                               ? Theme.of(context).colorScheme.tertiary
-                              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                              : Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.5),
                         ),
                       ),
                       trailing: Row(
@@ -619,14 +635,17 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                                 role.permissions.join(', '),
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.6),
                                 ),
                               ),
                               trailing: canManageRoles && !role.standard
                                   ? IconButton(
                                       icon: Icon(
                                         Icons.remove_circle,
-                                        color: Theme.of(context).colorScheme.error,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
                                       ),
                                       onPressed: () =>
                                           _showRemoveRoleDialog(member, role),
@@ -637,10 +656,14 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                                       label: Text(
                                         'Standard',
                                         style: TextStyle(
-                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
                                         ),
                                       ),
-                                      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                      backgroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.surfaceContainerHighest,
                                     )
                                   : null,
                             );

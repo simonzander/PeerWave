@@ -6,21 +6,24 @@ import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'device_scoped_storage_service.dart';
 import 'api_service.dart';
 import '../web_config.dart';
-import 'server_config_web.dart' if (dart.library.io) 'server_config_native.dart';
+import 'server_config_web.dart'
+    if (dart.library.io) 'server_config_native.dart';
 
 /// A persistent pre-key store for Signal pre-keys.
 /// Uses IndexedDB on web and FlutterSecureStorage on native.
 class PermanentPreKeyStore extends PreKeyStore {
   /// 🔒 Guard to prevent concurrent checkPreKeys() calls
   bool _isCheckingPreKeys = false;
-  
+
   /// Store multiple prekeys at once via HTTP POST (batch upload)
   /// Returns true if successful, false otherwise
   Future<bool> storePreKeysBatch(List<PreKeyRecord> preKeys) async {
     if (preKeys.isEmpty) return true;
-    
-    debugPrint("[PREKEY STORE] Storing ${preKeys.length} PreKeys via HTTP batch upload");
-    
+
+    debugPrint(
+      "[PREKEY STORE] Storing ${preKeys.length} PreKeys via HTTP batch upload",
+    );
+
     try {
       // Get server URL (platform-specific)
       String? serverUrl;
@@ -31,47 +34,59 @@ class PermanentPreKeyStore extends PreKeyStore {
         final activeServer = ServerConfigService.getActiveServer();
         serverUrl = activeServer?.serverUrl;
       }
-      
+
       final urlString = ApiService.ensureHttpPrefix(serverUrl ?? '');
-      
+
       // Prepare payload
-      final preKeyPayload = preKeys.map((k) => {
-        'id': k.id,
-        'data': base64Encode(k.getKeyPair().publicKey.serialize()),
-      }).toList();
-      
+      final preKeyPayload = preKeys
+          .map(
+            (k) => {
+              'id': k.id,
+              'data': base64Encode(k.getKeyPair().publicKey.serialize()),
+            },
+          )
+          .toList();
+
       // Send via HTTP POST
       final response = await ApiService.post(
         '$urlString/signal/prekeys/batch',
-        data: { 'preKeys': preKeyPayload }
+        data: {'preKeys': preKeyPayload},
       );
-      
+
       if (response.statusCode == 200) {
-        debugPrint("[PREKEY STORE] ✓ Batch upload successful: ${preKeys.length} keys stored on server");
-        
+        debugPrint(
+          "[PREKEY STORE] ✓ Batch upload successful: ${preKeys.length} keys stored on server",
+        );
+
         // Store locally after successful server upload
         for (final record in preKeys) {
           await storePreKey(record.id, record, sendToServer: false);
         }
-        
+
         return true;
       } else if (response.statusCode == 202) {
         // 202 Accepted: Write is queued but not yet completed on server
-        debugPrint("[PREKEY STORE] ⏳ Batch upload accepted (processing in background): ${preKeys.length} keys");
-        
+        debugPrint(
+          "[PREKEY STORE] ⏳ Batch upload accepted (processing in background): ${preKeys.length} keys",
+        );
+
         // Store locally immediately (client-side storage is fast)
         for (final record in preKeys) {
           await storePreKey(record.id, record, sendToServer: false);
         }
-        
+
         // Add a short delay to allow server background write to complete
         // This prevents immediately checking status before write finishes
-        debugPrint("[PREKEY STORE] Waiting 2s for background processing to complete...");
+        debugPrint(
+          "[PREKEY STORE] Waiting 2s for background processing to complete...",
+        );
         await Future.delayed(const Duration(seconds: 2));
-        
+
         return true; // Consider this a success - write will complete in background
       } else {
-        debugPrint("[PREKEY STORE] ✗ Batch upload failed with status ${response.statusCode}");
+        debugPrint(
+          "[PREKEY STORE] ✗ Batch upload failed with status ${response.statusCode}",
+        );
         return false;
       }
     } catch (e) {
@@ -79,20 +94,24 @@ class PermanentPreKeyStore extends PreKeyStore {
       return false;
     }
   }
-  
+
   /// Store multiple prekeys at once and emit them in a single call.
   Future<void> storePreKeys(List<PreKeyRecord> preKeys) async {
     if (preKeys.isEmpty) return;
     debugPrint("Storing ${preKeys.length} pre keys in batch");
     // Prepare for emit
-    final preKeyPayload = preKeys.map((k) => {
-      'id': k.id,
-      'data': base64Encode(k.getKeyPair().publicKey.serialize()),
-    }).toList();
-    
+    final preKeyPayload = preKeys
+        .map(
+          (k) => {
+            'id': k.id,
+            'data': base64Encode(k.getKeyPair().publicKey.serialize()),
+          },
+        )
+        .toList();
+
     // CRITICAL FIX: Server expects { preKeys: [...] } not just [...]
-    SocketService().emit("storePreKeys", { 'preKeys': preKeyPayload });
-    
+    SocketService().emit("storePreKeys", {'preKeys': preKeyPayload});
+
     // Store locally
     for (final record in preKeys) {
       await storePreKey(record.id, record, sendToServer: false);
@@ -109,14 +128,14 @@ class PermanentPreKeyStore extends PreKeyStore {
     final ids = await _getAllPreKeyIds();
     List<PreKeyRecord> preKeys = [];
     bool hasDecryptionFailure = false;
-    
+
     for (final id in ids) {
       try {
         final preKey = await loadPreKey(id);
         preKeys.add(preKey);
       } catch (e) {
         // Check if this is a decryption failure
-        if (e.toString().contains('InvalidCipherTextException') || 
+        if (e.toString().contains('InvalidCipherTextException') ||
             e.toString().contains('Decryption failed')) {
           debugPrint('[PREKEY STORE] ⚠️ Decryption failed for prekey_$id: $e');
           hasDecryptionFailure = true;
@@ -126,12 +145,14 @@ class PermanentPreKeyStore extends PreKeyStore {
         }
       }
     }
-    
+
     // If any decryption failed, throw exception to trigger key regeneration
     if (hasDecryptionFailure && preKeys.isEmpty) {
-      throw Exception('Decryption failed: All PreKeys are corrupted or encrypted with wrong key');
+      throw Exception(
+        'Decryption failed: All PreKeys are corrupted or encrypted with wrong key',
+      );
     }
-    
+
     return preKeys;
   }
 
@@ -142,40 +163,53 @@ class PermanentPreKeyStore extends PreKeyStore {
       debugPrint("[PREKEY STORE] checkPreKeys already running, skipping...");
       return;
     }
-    
+
     try {
       _isCheckingPreKeys = true;
-      
+
       final allKeyIds = await _getAllPreKeyIds();
-      
+
       // � OPTIMIZED: Use gap-filling with contiguous range batching
       if (allKeyIds.length < 20) {
-        debugPrint("[PREKEY STORE] Not enough pre keys (${allKeyIds.length}/110), generating more");
-        
+        debugPrint(
+          "[PREKEY STORE] Not enough pre keys (${allKeyIds.length}/110), generating more",
+        );
+
         // Find missing IDs in range 0-109
         final existingIds = allKeyIds.toSet();
-        final missingIds = List.generate(110, (i) => i)
-            .where((id) => !existingIds.contains(id))
-            .toList();
-        
+        final missingIds = List.generate(
+          110,
+          (i) => i,
+        ).where((id) => !existingIds.contains(id)).toList();
+
         final neededKeys = 110 - allKeyIds.length;
-        debugPrint("[PREKEY STORE] Need to generate $neededKeys keys, found ${missingIds.length} missing IDs in range 0-109");
-        
+        debugPrint(
+          "[PREKEY STORE] Need to generate $neededKeys keys, found ${missingIds.length} missing IDs in range 0-109",
+        );
+
         if (missingIds.length != neededKeys) {
-          debugPrint("[PREKEY STORE] ⚠️ Mismatch detected! This should not happen.");
+          debugPrint(
+            "[PREKEY STORE] ⚠️ Mismatch detected! This should not happen.",
+          );
         }
-        
+
         // Find contiguous ranges for batch generation
-        final contiguousRanges = _findContiguousRanges(missingIds.take(neededKeys).toList());
-        debugPrint("[PREKEY STORE] Found ${contiguousRanges.length} range(s) to generate");
-        
+        final contiguousRanges = _findContiguousRanges(
+          missingIds.take(neededKeys).toList(),
+        );
+        debugPrint(
+          "[PREKEY STORE] Found ${contiguousRanges.length} range(s) to generate",
+        );
+
         final newPreKeys = <PreKeyRecord>[];
         for (final range in contiguousRanges) {
           if (range.length > 1) {
             // BATCH GENERATION: Multiple contiguous IDs (FAST!)
             final start = range.first;
             final end = range.last;
-            debugPrint("[PREKEY STORE] Batch generating PreKeys $start-$end (${range.length} keys)");
+            debugPrint(
+              "[PREKEY STORE] Batch generating PreKeys $start-$end (${range.length} keys)",
+            );
             final keys = generatePreKeys(start, end);
             newPreKeys.addAll(keys);
           } else {
@@ -188,23 +222,25 @@ class PermanentPreKeyStore extends PreKeyStore {
             }
           }
         }
-        
+
         await storePreKeys(newPreKeys);
-        debugPrint("[PREKEY STORE] ✓ Generated and stored ${newPreKeys.length} new pre keys (filling gaps with batching)");
+        debugPrint(
+          "[PREKEY STORE] ✓ Generated and stored ${newPreKeys.length} new pre keys (filling gaps with batching)",
+        );
       }
     } finally {
       _isCheckingPreKeys = false;
     }
   }
-  
+
   /// Helper: Find contiguous ranges in a list of IDs for batch generation
   List<List<int>> _findContiguousRanges(List<int> ids) {
     if (ids.isEmpty) return [];
-    
+
     final sortedIds = List<int>.from(ids)..sort();
     final ranges = <List<int>>[];
     var currentRange = <int>[sortedIds[0]];
-    
+
     for (int i = 1; i < sortedIds.length; i++) {
       if (sortedIds[i] == currentRange.last + 1) {
         // Contiguous - add to current range
@@ -216,7 +252,7 @@ class PermanentPreKeyStore extends PreKeyStore {
       }
     }
     ranges.add(currentRange); // Add last range
-    
+
     return ranges;
   }
 
@@ -237,21 +273,27 @@ class PermanentPreKeyStore extends PreKeyStore {
   Future<List<int>> _getAllPreKeyIds() async {
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
-    debugPrint('[PREKEY STORE] Getting all keys from storage (baseName: $_storeName, storeName: $_storeName)');
+    debugPrint(
+      '[PREKEY STORE] Getting all keys from storage (baseName: $_storeName, storeName: $_storeName)',
+    );
     final keys = await storage.getAllKeys(_storeName, _storeName);
-    debugPrint('[PREKEY STORE] Found ${keys.length} total keys in storage: $keys');
-    
+    debugPrint(
+      '[PREKEY STORE] Found ${keys.length} total keys in storage: $keys',
+    );
+
     final filtered = keys.where((k) => k.startsWith(_keyPrefix)).toList();
-    debugPrint('[PREKEY STORE] Filtered to ${filtered.length} keys with prefix "$_keyPrefix": $filtered');
-    
+    debugPrint(
+      '[PREKEY STORE] Filtered to ${filtered.length} keys with prefix "$_keyPrefix": $filtered',
+    );
+
     final ids = filtered
         .map((k) => int.tryParse(k.replaceFirst(_keyPrefix, '')))
         .whereType<int>()
         .toList();
     debugPrint('[PREKEY STORE] Parsed to ${ids.length} PreKey IDs: $ids');
-    
+
     return ids;
-    
+
     /* LEGACY NATIVE STORAGE - DISABLED
     if (kIsWeb) {
       // Use encrypted device-scoped storage
@@ -277,17 +319,19 @@ class PermanentPreKeyStore extends PreKeyStore {
     }
     */
   }
-  
+
   final String _storeName = 'peerwaveSignalPreKeys';
   final String _keyPrefix = 'prekey_';
 
   PermanentPreKeyStore() {
-    debugPrint('[PREKEY STORE] 🔧 Constructor called - LEGACY AUTO-GENERATION DISABLED FOR DEBUGGING');
-    
+    debugPrint(
+      '[PREKEY STORE] 🔧 Constructor called - LEGACY AUTO-GENERATION DISABLED FOR DEBUGGING',
+    );
+
     // 🚫 TEMPORARILY DISABLED: Legacy auto-generation logic
     // This constructor automatically generated PreKeys based on server sync
     // We're disabling it to isolate the current setup issue
-    
+
     /* LEGACY CODE - COMMENTED OUT FOR DEBUGGING
     // Listener for server PreKey query response
     SocketService().registerListener("getPreKeysResponse", (data) async {
@@ -370,10 +414,10 @@ class PermanentPreKeyStore extends PreKeyStore {
     });
     
     loadRemotePreKeys();
-    */ 
+    */
     // END LEGACY CODE
   }
-  
+
   /* LEGACY SYNC METHOD - COMMENTED OUT FOR DEBUGGING
   /// Synchronize local PreKeys with server IDs
   /// Deletes local PreKeys that don't exist on server
@@ -415,9 +459,13 @@ class PermanentPreKeyStore extends PreKeyStore {
   Future<bool> containsPreKey(int preKeyId) async {
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
-    final value = await storage.getDecrypted(_storeName, _storeName, _preKey(preKeyId));
+    final value = await storage.getDecrypted(
+      _storeName,
+      _storeName,
+      _preKey(preKeyId),
+    );
     return value != null;
-    
+
     /* LEGACY NATIVE STORAGE - DISABLED
     if (kIsWeb) {
       // Use encrypted device-scoped storage
@@ -437,14 +485,18 @@ class PermanentPreKeyStore extends PreKeyStore {
     if (await containsPreKey(preKeyId)) {
       // ✅ ONLY encrypted device-scoped storage (Web + Native)
       final storage = DeviceScopedStorageService.instance;
-      final value = await storage.getDecrypted(_storeName, _storeName, _preKey(preKeyId));
-      
+      final value = await storage.getDecrypted(
+        _storeName,
+        _storeName,
+        _preKey(preKeyId),
+      );
+
       if (value != null) {
         return PreKeyRecord.fromBuffer(base64Decode(value));
       } else {
         throw Exception('Invalid prekey data');
       }
-      
+
       /* LEGACY NATIVE STORAGE - DISABLED
       if (kIsWeb) {
         // Use encrypted device-scoped storage
@@ -476,7 +528,7 @@ class PermanentPreKeyStore extends PreKeyStore {
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
     await storage.deleteEncrypted(_storeName, _storeName, _preKey(preKeyId));
-    
+
     /* LEGACY NATIVE STORAGE - DISABLED
     if (kIsWeb) {
       // Use encrypted device-scoped storage
@@ -487,7 +539,7 @@ class PermanentPreKeyStore extends PreKeyStore {
       await storage.delete(key: _preKey(preKeyId));
     }
     */
-    
+
     // Only send to server if requested (skip during sync cleanup)
     if (sendToServer) {
       SocketService().emit("removePreKey", {'id': preKeyId});
@@ -495,7 +547,11 @@ class PermanentPreKeyStore extends PreKeyStore {
   }
 
   @override
-  Future<void> storePreKey(int preKeyId, PreKeyRecord record, {bool sendToServer = true}) async {
+  Future<void> storePreKey(
+    int preKeyId,
+    PreKeyRecord record, {
+    bool sendToServer = true,
+  }) async {
     debugPrint("Storing pre key: $preKeyId");
     if (sendToServer) {
       SocketService().emit("storePreKey", {
@@ -504,11 +560,16 @@ class PermanentPreKeyStore extends PreKeyStore {
       });
     }
     final serialized = record.serialize();
-    
+
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
-    await storage.putEncrypted(_storeName, _storeName, _preKey(preKeyId), base64Encode(serialized));
-    
+    await storage.putEncrypted(
+      _storeName,
+      _storeName,
+      _preKey(preKeyId),
+      base64Encode(serialized),
+    );
+
     /* LEGACY NATIVE STORAGE - DISABLED
     if (kIsWeb) {
       // Use encrypted device-scoped storage
@@ -532,4 +593,3 @@ class PermanentPreKeyStore extends PreKeyStore {
     */
   }
 }
-

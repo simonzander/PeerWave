@@ -4,7 +4,7 @@ import 'user_avatar.dart';
 import '../theme/app_theme_constants.dart';
 
 /// User Profile Card Overlay - Shows on hover over avatar/name
-/// 
+///
 /// Displays like an ID card with:
 /// - Left: Square profile picture (same as people_screen cards)
 /// - Right: User details (displayName, @atName, online status, last seen)
@@ -31,7 +31,7 @@ class UserProfileCardOverlay extends StatelessWidget {
   String _formatLastSeen(DateTime lastSeen) {
     final now = DateTime.now();
     final difference = now.difference(lastSeen);
-    
+
     if (difference.inMinutes < 1) {
       return 'Just now';
     } else if (difference.inMinutes < 60) {
@@ -70,7 +70,9 @@ class UserProfileCardOverlay extends StatelessWidget {
               end: Alignment.bottomRight,
               colors: [
                 AppThemeConstants.contextPanelBackground,
-                AppThemeConstants.contextPanelBackground.withValues(alpha: 0.95),
+                AppThemeConstants.contextPanelBackground.withValues(
+                  alpha: 0.95,
+                ),
               ],
             ),
           ),
@@ -84,9 +86,9 @@ class UserProfileCardOverlay extends StatelessWidget {
                 pictureData: pictureData,
                 size: 80,
               ),
-              
+
               const SizedBox(width: 16),
-              
+
               // Right side: User details
               Expanded(
                 child: Column(
@@ -104,7 +106,7 @@ class UserProfileCardOverlay extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    
+
                     // @atName
                     if (atName != null && atName!.isNotEmpty) ...[
                       const SizedBox(height: 4),
@@ -112,21 +114,25 @@ class UserProfileCardOverlay extends StatelessWidget {
                         '@$atName',
                         style: TextStyle(
                           fontSize: 14,
-                          color: AppThemeConstants.textSecondary.withValues(alpha: 0.8),
+                          color: AppThemeConstants.textSecondary.withValues(
+                            alpha: 0.8,
+                          ),
                         ),
                       ),
                     ],
-                    
+
                     const SizedBox(height: 12),
-                    
+
                     // Divider
                     Container(
                       height: 1,
-                      color: AppThemeConstants.textSecondary.withValues(alpha: 0.2),
+                      color: AppThemeConstants.textSecondary.withValues(
+                        alpha: 0.2,
+                      ),
                     ),
-                    
+
                     const SizedBox(height: 12),
-                    
+
                     // Online status
                     Row(
                       children: [
@@ -143,15 +149,15 @@ class UserProfileCardOverlay extends StatelessWidget {
                           isOnline ? 'Online' : 'Offline',
                           style: TextStyle(
                             fontSize: 13,
-                            color: isOnline 
-                                ? Colors.green 
+                            color: isOnline
+                                ? Colors.green
                                 : AppThemeConstants.textSecondary,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
                     ),
-                    
+
                     // Last seen (if offline)
                     if (!isOnline && lastSeen != null) ...[
                       const SizedBox(height: 8),
@@ -160,7 +166,9 @@ class UserProfileCardOverlay extends StatelessWidget {
                           Icon(
                             Icons.access_time,
                             size: 14,
-                            color: AppThemeConstants.textSecondary.withValues(alpha: 0.7),
+                            color: AppThemeConstants.textSecondary.withValues(
+                              alpha: 0.7,
+                            ),
                           ),
                           const SizedBox(width: 6),
                           Expanded(
@@ -168,7 +176,8 @@ class UserProfileCardOverlay extends StatelessWidget {
                               'Last seen ${_formatLastSeen(lastSeen!)}',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: AppThemeConstants.textSecondary.withValues(alpha: 0.7),
+                                color: AppThemeConstants.textSecondary
+                                    .withValues(alpha: 0.7),
                               ),
                             ),
                           ),

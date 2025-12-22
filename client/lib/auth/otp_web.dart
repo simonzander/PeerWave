@@ -10,9 +10,15 @@ class OtpWebPage extends StatefulWidget {
   final String email;
   final String serverUrl;
   final int? wait;
-  final String? clientId;  // Optional - fetched/created after login
+  final String? clientId; // Optional - fetched/created after login
 
-  const OtpWebPage({super.key, required this.email, required this.serverUrl, this.clientId, this.wait});
+  const OtpWebPage({
+    super.key,
+    required this.email,
+    required this.serverUrl,
+    this.clientId,
+    this.wait,
+  });
 
   @override
   State<OtpWebPage> createState() => _OtpWebPageState();
@@ -34,16 +40,15 @@ class _OtpWebPageState extends State<OtpWebPage> {
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
       //final dio = ApiService.dio;
 
       final response = await ApiService.post(
         '$urlString/register',
-        data: {
-          'email': widget.email,
-        },
+        data: {'email': widget.email},
       );
       // Handle response as needed
       if (response.statusCode == 200) {
@@ -74,7 +79,8 @@ class _OtpWebPageState extends State<OtpWebPage> {
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
       //final dio = ApiService.dio;
@@ -143,7 +149,7 @@ class _OtpWebPageState extends State<OtpWebPage> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: Column(
@@ -187,9 +193,15 @@ class _OtpWebPageState extends State<OtpWebPage> {
                       controller: _otpController,
                       decoration: InputDecoration(
                         labelText: 'Enter OTP Code',
-                        labelStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                        labelStyle: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
                         hintText: '00000',
-                        hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+                        hintStyle: TextStyle(
+                          color: colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.5,
+                          ),
+                        ),
                         filled: true,
                         fillColor: colorScheme.surfaceContainerHighest,
                         border: const OutlineInputBorder(),
@@ -256,9 +268,7 @@ class _OtpWebPageState extends State<OtpWebPage> {
                         _wait != null && _wait! > 0
                             ? 'Resend Code (${_wait}s)'
                             : 'Resend Code',
-                        style: TextStyle(
-                          fontSize: 14,
-                        ),
+                        style: TextStyle(fontSize: 14),
                       ),
                     ),
                   ],

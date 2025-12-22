@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:provider/provider.dart';
@@ -9,7 +8,6 @@ import '../services/recent_conversations_service.dart';
 import '../widgets/notification_badge.dart';
 import '../models/role.dart';
 import 'dart:convert';
-
 
 class SidebarPanel extends StatefulWidget {
   final double panelWidth;
@@ -22,8 +20,9 @@ class SidebarPanel extends StatefulWidget {
   final void Function(String uuid, String displayName)? onDirectMessageTap;
   final List<Map<String, dynamic>>? channels;
   final void Function(String uuid, String name, String type)? onChannelTap;
-  
-  const SidebarPanel({super.key,
+
+  const SidebarPanel({
+    super.key,
     required this.panelWidth,
     required this.buildProfileCard,
     this.socket,
@@ -51,23 +50,26 @@ class _SidebarPanelState extends State<SidebarPanel> {
   }
 
   Future<void> _fetchChannels() async {
-  try {
-    ApiService.init();
-    final dio = ApiService.dio;
-    final resp = await dio.get('${widget.host}/client/channels');
-    if (resp.statusCode == 200) {
-      final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
-      if (data is List) {
-        setState(() {
-          channelNames = data.map<String>((c) => c['name']?.toString() ?? '').where((n) => n.isNotEmpty).toList();
-        });
+    try {
+      ApiService.init();
+      final dio = ApiService.dio;
+      final resp = await dio.get('${widget.host}/client/channels');
+      if (resp.statusCode == 200) {
+        final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
+        if (data is List) {
+          setState(() {
+            channelNames = data
+                .map<String>((c) => c['name']?.toString() ?? '')
+                .where((n) => n.isNotEmpty)
+                .toList();
+          });
+        }
       }
+    } catch (e) {
+      // Handle error or timeout
+      debugPrint('Error fetching channels: $e');
     }
-  } catch (e) {
-    // Handle error or timeout
-    debugPrint('Error fetching channels: $e');
   }
-}
 
   @override
   void dispose() {
@@ -124,8 +126,19 @@ class _SidebarPanelState extends State<SidebarPanel> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('General Channel:', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                      ...generalMessages.map((msg) => Text(msg, style: const TextStyle(color: Colors.white70))),
+                      const Text(
+                        'General Channel:',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      ...generalMessages.map(
+                        (msg) => Text(
+                          msg,
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -183,11 +196,12 @@ class _LicenseFooterState extends State<_LicenseFooter> {
       ApiService.init();
       final dio = ApiService.dio;
       final resp = await dio.get('/api/license-info');
-      
+
       if (resp.statusCode == 200) {
         final data = resp.data;
         setState(() {
-          _isCommercial = data['type'] == 'commercial' || data['showNotice'] == false;
+          _isCommercial =
+              data['type'] == 'commercial' || data['showNotice'] == false;
           _isLoading = false;
         });
       }
@@ -226,7 +240,8 @@ class _UpcomingMeetingsDropdown extends StatefulWidget {
   const _UpcomingMeetingsDropdown();
 
   @override
-  State<_UpcomingMeetingsDropdown> createState() => _UpcomingMeetingsDropdownState();
+  State<_UpcomingMeetingsDropdown> createState() =>
+      _UpcomingMeetingsDropdownState();
 }
 
 class _UpcomingMeetingsDropdownState extends State<_UpcomingMeetingsDropdown> {
@@ -240,10 +255,21 @@ class _UpcomingMeetingsDropdownState extends State<_UpcomingMeetingsDropdown> {
         Row(
           children: [
             IconButton(
-              icon: Icon(expanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right, color: Colors.white),
+              icon: Icon(
+                expanded
+                    ? Icons.keyboard_arrow_down
+                    : Icons.keyboard_arrow_right,
+                color: Colors.white,
+              ),
               onPressed: () => setState(() => expanded = !expanded),
             ),
-            const Text('Upcoming Meetings', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            const Text(
+              'Upcoming Meetings',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const Spacer(),
             IconButton(
               icon: const Icon(Icons.add, color: Colors.white),
@@ -257,7 +283,9 @@ class _UpcomingMeetingsDropdownState extends State<_UpcomingMeetingsDropdown> {
             padding: const EdgeInsets.only(left: 32.0, top: 4.0, bottom: 4.0),
             child: Text('No meetings', style: TextStyle(color: Colors.white70)),
           ),
-          crossFadeState: expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+          crossFadeState: expanded
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
           duration: const Duration(milliseconds: 200),
         ),
       ],
@@ -280,7 +308,9 @@ class _ChannelsDropdownState extends State<_ChannelsDropdown> {
   @override
   Widget build(BuildContext context) {
     final roleProvider = Provider.of<RoleProvider>(context);
-    final hasCreatePermission = roleProvider.hasServerPermission('channel.create');
+    final hasCreatePermission = roleProvider.hasServerPermission(
+      'channel.create',
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -288,10 +318,21 @@ class _ChannelsDropdownState extends State<_ChannelsDropdown> {
         Row(
           children: [
             IconButton(
-              icon: Icon(expanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right, color: Colors.white),
+              icon: Icon(
+                expanded
+                    ? Icons.keyboard_arrow_down
+                    : Icons.keyboard_arrow_right,
+                color: Colors.white,
+              ),
               onPressed: () => setState(() => expanded = !expanded),
             ),
-            const Text('Channels', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            const Text(
+              'Channels',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const Spacer(),
             if (hasCreatePermission)
               IconButton(
@@ -309,14 +350,21 @@ class _ChannelsDropdownState extends State<_ChannelsDropdown> {
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: widget.channelNames
-                        .map((name) => Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2.0),
-                              child: Text(name, style: TextStyle(color: Colors.white)),
-                            ))
+                        .map(
+                          (name) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2.0),
+                            child: Text(
+                              name,
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        )
                         .toList(),
                   ),
           ),
-          crossFadeState: expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+          crossFadeState: expanded
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
           duration: const Duration(milliseconds: 200),
         ),
       ],
@@ -342,7 +390,8 @@ class _CreateChannelDialog extends StatefulWidget {
   final String host;
   final Function(String) onChannelCreated;
 
-  const _CreateChannelDialog({required this.host,
+  const _CreateChannelDialog({
+    required this.host,
     required this.onChannelCreated,
   });
 
@@ -372,13 +421,13 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
       final dio = ApiService.dio;
       final scope = channelType == 'webrtc' ? 'channelWebRtc' : 'channelSignal';
       final resp = await dio.get('${widget.host}/api/roles?scope=$scope');
-      
+
       if (resp.statusCode == 200) {
         final data = resp.data;
-        final rolesList = (data['roles'] as List?)
-            ?.map((r) => Role.fromJson(r))
-            .toList() ?? [];
-        
+        final rolesList =
+            (data['roles'] as List?)?.map((r) => Role.fromJson(r)).toList() ??
+            [];
+
         setState(() {
           availableRoles = rolesList;
           selectedRole = rolesList.isNotEmpty ? rolesList.first : null;
@@ -425,7 +474,10 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
               ],
             ),
             const SizedBox(height: 8),
-            const Text('Channel Type:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Channel Type:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             Row(
               children: [
                 Expanded(
@@ -457,12 +509,18 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
               ],
             ),
             const SizedBox(height: 16),
-            const Text('Default Join Role:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Default Join Role:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             if (isLoadingRoles)
               const Center(child: CircularProgressIndicator())
             else if (availableRoles.isEmpty)
-              const Text('No standard roles available', style: TextStyle(color: Colors.grey))
+              const Text(
+                'No standard roles available',
+                style: TextStyle(color: Colors.grey),
+              )
             else
               DropdownButton<Role>(
                 isExpanded: true,
@@ -474,11 +532,18 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(role.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        if (role.description != null && role.description!.isNotEmpty)
+                        Text(
+                          role.name,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        if (role.description != null &&
+                            role.description!.isNotEmpty)
                           Text(
                             role.description!,
-                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
                           ),
                       ],
                     ),
@@ -519,28 +584,31 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
         type: channelType,
         defaultRoleId: selectedRole!.uuid,
       );
-      
+
       if (resp.statusCode == 201) {
         widget.onChannelCreated(channelName);
         Navigator.of(context).pop();
       }
     } catch (e) {
       debugPrint('Error creating channel: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error creating channel: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error creating channel: $e')));
     }
   }
 }
 
-
 class _DirectMessagesDropdown extends StatefulWidget {
   final List<Map<String, String>> directMessages;
   final void Function(String uuid, String displayName)? onDirectMessageTap;
-  const _DirectMessagesDropdown({required this.directMessages, this.onDirectMessageTap});
+  const _DirectMessagesDropdown({
+    required this.directMessages,
+    this.onDirectMessageTap,
+  });
 
   @override
-  State<_DirectMessagesDropdown> createState() => _DirectMessagesDropdownState();
+  State<_DirectMessagesDropdown> createState() =>
+      _DirectMessagesDropdownState();
 }
 
 class _DirectMessagesDropdownState extends State<_DirectMessagesDropdown> {
@@ -554,7 +622,8 @@ class _DirectMessagesDropdownState extends State<_DirectMessagesDropdown> {
   }
 
   Future<void> _loadRecentConversations() async {
-    final conversations = await RecentConversationsService.getRecentConversations();
+    final conversations =
+        await RecentConversationsService.getRecentConversations();
     setState(() {
       _recentConversations = conversations;
     });
@@ -564,12 +633,12 @@ class _DirectMessagesDropdownState extends State<_DirectMessagesDropdown> {
   Widget build(BuildContext context) {
     // Merge props and recent conversations
     final allConversations = <String, Map<String, String>>{};
-    
+
     // Add recent conversations from storage
     for (final conv in _recentConversations) {
       allConversations[conv['uuid']!] = conv;
     }
-    
+
     // Add/override with prop conversations (these have priority)
     for (final dm in widget.directMessages) {
       allConversations[dm['uuid']!] = dm;
@@ -584,7 +653,7 @@ class _DirectMessagesDropdownState extends State<_DirectMessagesDropdown> {
         conversationsList.sort((a, b) {
           final aTime = notificationProvider.lastMessageTimes[a['uuid']];
           final bTime = notificationProvider.lastMessageTimes[b['uuid']];
-          
+
           // If both have timestamps, compare them (descending)
           if (aTime != null && bTime != null) {
             return bTime.compareTo(aTime);
@@ -607,10 +676,21 @@ class _DirectMessagesDropdownState extends State<_DirectMessagesDropdown> {
             Row(
               children: [
                 IconButton(
-                  icon: Icon(expanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right, color: Colors.white),
+                  icon: Icon(
+                    expanded
+                        ? Icons.keyboard_arrow_down
+                        : Icons.keyboard_arrow_right,
+                    color: Colors.white,
+                  ),
                   onPressed: () => setState(() => expanded = !expanded),
                 ),
-                const Text('Direct Messages', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                const Text(
+                  'Direct Messages',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.add, color: Colors.white),
@@ -621,9 +701,16 @@ class _DirectMessagesDropdownState extends State<_DirectMessagesDropdown> {
             AnimatedCrossFade(
               firstChild: Container(),
               secondChild: Padding(
-                padding: const EdgeInsets.only(left: 32.0, top: 4.0, bottom: 4.0),
+                padding: const EdgeInsets.only(
+                  left: 32.0,
+                  top: 4.0,
+                  bottom: 4.0,
+                ),
                 child: conversationsList.isEmpty
-                    ? const Text('No messages', style: TextStyle(color: Colors.white70))
+                    ? const Text(
+                        'No messages',
+                        style: TextStyle(color: Colors.white70),
+                      )
                     : Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: conversationsList.map((dm) {
@@ -636,13 +723,24 @@ class _DirectMessagesDropdownState extends State<_DirectMessagesDropdown> {
                               }
                             },
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4.0),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 4.0,
+                              ),
                               child: Row(
                                 children: [
-                                  const Icon(Icons.person, color: Colors.white70, size: 18),
+                                  const Icon(
+                                    Icons.person,
+                                    color: Colors.white70,
+                                    size: 18,
+                                  ),
                                   const SizedBox(width: 6),
                                   Expanded(
-                                    child: Text(displayName, style: const TextStyle(color: Colors.white)),
+                                    child: Text(
+                                      displayName,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
+                                    ),
                                   ),
                                   // Notification badge
                                   NotificationBadge(
@@ -656,7 +754,9 @@ class _DirectMessagesDropdownState extends State<_DirectMessagesDropdown> {
                         }).toList(),
                       ),
               ),
-              crossFadeState: expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+              crossFadeState: expanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
               duration: const Duration(milliseconds: 200),
             ),
           ],
@@ -672,8 +772,9 @@ class _ChannelsListWidget extends StatefulWidget {
   final void Function(String uuid, String name, String type)? onChannelTap;
   final String host;
   final Function(String)? onChannelCreated;
-  
-  const _ChannelsListWidget({required this.channels,
+
+  const _ChannelsListWidget({
+    required this.channels,
     this.onChannelTap,
     required this.host,
     this.onChannelCreated,
@@ -695,7 +796,7 @@ class _ChannelsListWidgetState extends State<_ChannelsListWidget> {
         sortedChannels.sort((a, b) {
           final aTime = notificationProvider.lastMessageTimes[a['uuid']];
           final bTime = notificationProvider.lastMessageTimes[b['uuid']];
-          
+
           // If both have timestamps, compare them (descending)
           if (aTime != null && bTime != null) {
             return bTime.compareTo(aTime);
@@ -714,14 +815,19 @@ class _ChannelsListWidgetState extends State<_ChannelsListWidget> {
               children: [
                 IconButton(
                   icon: Icon(
-                    expanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right,
+                    expanded
+                        ? Icons.keyboard_arrow_down
+                        : Icons.keyboard_arrow_right,
                     color: Colors.white,
                   ),
                   onPressed: () => setState(() => expanded = !expanded),
                 ),
                 const Text(
                   'Channels',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const Spacer(),
                 IconButton(
@@ -734,7 +840,11 @@ class _ChannelsListWidgetState extends State<_ChannelsListWidget> {
             AnimatedCrossFade(
               firstChild: Container(),
               secondChild: Padding(
-                padding: const EdgeInsets.only(left: 32.0, top: 4.0, bottom: 4.0),
+                padding: const EdgeInsets.only(
+                  left: 32.0,
+                  top: 4.0,
+                  bottom: 4.0,
+                ),
                 child: sortedChannels.isEmpty
                     ? const Text(
                         'No channels yet',
@@ -747,20 +857,28 @@ class _ChannelsListWidgetState extends State<_ChannelsListWidget> {
                           final uuid = channel['uuid'] ?? '';
                           final type = channel['type'] ?? 'webrtc';
                           final isPrivate = channel['isPrivate'] ?? false;
-                          
+
                           // Icon based on channel type
                           Widget leadingIcon;
                           if (type == 'signal') {
                             // Signal channels get # prefix
                             leadingIcon = const Text(
                               '# ',
-                              style: TextStyle(color: Colors.white70, fontSize: 18, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
                             );
                           } else {
                             // WebRTC channels get speaker icon
-                            leadingIcon = const Icon(Icons.campaign, color: Colors.white70, size: 18);
+                            leadingIcon = const Icon(
+                              Icons.campaign,
+                              color: Colors.white70,
+                              size: 18,
+                            );
                           }
-                          
+
                           return InkWell(
                             onTap: () {
                               if (widget.onChannelTap != null) {
@@ -768,7 +886,9 @@ class _ChannelsListWidgetState extends State<_ChannelsListWidget> {
                               }
                             },
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4.0),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 4.0,
+                              ),
                               child: Row(
                                 children: [
                                   leadingIcon,
@@ -776,13 +896,19 @@ class _ChannelsListWidgetState extends State<_ChannelsListWidget> {
                                   Expanded(
                                     child: Text(
                                       name,
-                                      style: const TextStyle(color: Colors.white),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
                                     ),
                                   ),
                                   if (isPrivate)
                                     const Padding(
                                       padding: EdgeInsets.only(left: 6),
-                                      child: Icon(Icons.lock, color: Colors.white54, size: 16),
+                                      child: Icon(
+                                        Icons.lock,
+                                        color: Colors.white54,
+                                        size: 16,
+                                      ),
                                     ),
                                   // Notification badge
                                   NotificationBadge(
@@ -796,7 +922,9 @@ class _ChannelsListWidgetState extends State<_ChannelsListWidget> {
                         }).toList(),
                       ),
               ),
-              crossFadeState: expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+              crossFadeState: expanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
               duration: const Duration(milliseconds: 200),
             ),
           ],
@@ -819,4 +947,3 @@ class _ChannelsListWidgetState extends State<_ChannelsListWidget> {
     );
   }
 }
-

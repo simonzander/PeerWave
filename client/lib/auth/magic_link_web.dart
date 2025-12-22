@@ -29,12 +29,12 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
     _fetchMagicKey();
   }
 
-
   Future<void> _fetchMagicKey() async {
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
       final resp = await ApiService.get('$urlString/magic/generate');
@@ -42,7 +42,8 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
         final data = resp.data is String ? json.decode(resp.data) : resp.data;
         if (data is Map && data['magicKey'] is String) {
           magicKeyController.text = data['magicKey'];
-          final url = 'peerwave://?magicKey=${Uri.encodeComponent(data['magicKey'])}';
+          final url =
+              'peerwave://?magicKey=${Uri.encodeComponent(data['magicKey'])}';
           openWindow(url, '_self');
         }
       }
@@ -50,6 +51,7 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
       debugPrint('Error fetching magic key: $e');
     }
   }
+
   final TextEditingController serverController = TextEditingController();
   String? _status;
   final bool _loading = false;
@@ -58,7 +60,7 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
   Widget build(BuildContext context) {
     if (!kIsWeb) return const SizedBox.shrink();
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: Center(
@@ -72,7 +74,10 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Magic Key', style: TextStyle(fontSize: 20, color: colorScheme.onSurface)),
+              Text(
+                'Magic Key',
+                style: TextStyle(fontSize: 20, color: colorScheme.onSurface),
+              ),
               const SizedBox(height: 20),
               TextField(
                 controller: magicKeyController,
@@ -91,12 +96,16 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
                   minimumSize: const Size(double.infinity, 45),
                 ),
                 onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: magicKeyController.text));
+                  await Clipboard.setData(
+                    ClipboardData(text: magicKeyController.text),
+                  );
                   setState(() {
-                  _status = 'Magic key copied to clipboard!';
+                    _status = 'Magic key copied to clipboard!';
                   });
                 },
-                child: _loading ? CircularProgressIndicator(color: colorScheme.onPrimary) : const Text('Submit Key'),
+                child: _loading
+                    ? CircularProgressIndicator(color: colorScheme.onPrimary)
+                    : const Text('Submit Key'),
               ),
               if (_status != null) ...[
                 const SizedBox(height: 20),
@@ -109,4 +118,3 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
     );
   }
 }
-

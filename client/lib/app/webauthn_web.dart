@@ -801,9 +801,8 @@ class _WebauthnPageState extends State<WebauthnPage> {
                             icon: Icon(
                               Icons.delete,
                               color: isCurrentDevice
-                                  ? Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface.withValues(alpha: 0.3)
+                                  ? Theme.of(context).colorScheme.onSurface
+                                        .withValues(alpha: 0.3)
                                   : Theme.of(context).colorScheme.error,
                             ),
                             onPressed: isCurrentDevice

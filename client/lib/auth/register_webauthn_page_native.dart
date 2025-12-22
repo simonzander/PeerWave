@@ -27,11 +27,7 @@ class RegisterWebauthnPage extends StatelessWidget {
             children: [
               const RegistrationProgressBar(currentStep: 2),
               const SizedBox(height: 48),
-              const Icon(
-                Icons.lock_outline,
-                size: 64,
-                color: Colors.grey,
-              ),
+              const Icon(Icons.lock_outline, size: 64, color: Colors.grey),
               const SizedBox(height: 24),
               Text(
                 'WebAuthn Not Available',

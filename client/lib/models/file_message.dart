@@ -1,15 +1,16 @@
 /// File Message Payload Model
-/// 
+///
 /// Used for sharing P2P files via Signal group chats.
 /// This model is encrypted with SenderKey and sent as GroupItem.payload.
-/// 
+///
 /// Security:
 /// - fileId: Public UUID (identifies file in fileRegistry)
 /// - fileName: Encrypted in Signal message (user sees original name)
 /// - encryptedFileKey: AES-256 key for decrypting file chunks (encrypted with SenderKey)
 /// - checksum: SHA-256 hash for integrity verification
 library;
-/// 
+
+///
 /// Privacy:
 /// - Only users in the channel can decrypt this message
 /// - File key is encrypted end-to-end
@@ -18,32 +19,32 @@ library;
 class FileMessage {
   /// Unique file identifier (from fileRegistry)
   final String fileId;
-  
+
   /// Original file name (visible to recipients)
   final String fileName;
-  
+
   /// MIME type (e.g., 'application/pdf', 'image/png')
   final String mimeType;
-  
+
   /// File size in bytes
   final int fileSize;
-  
+
   /// SHA-256 checksum for integrity verification
   final String checksum;
-  
+
   /// Number of chunks (for download progress tracking)
   final int chunkCount;
-  
+
   /// AES-256 key for decrypting file chunks (base64 encoded)
   /// This is encrypted with SenderKey when sent in GroupItem
   final String encryptedFileKey;
-  
+
   /// Uploader's user ID
   final String uploaderId;
-  
+
   /// Upload timestamp (milliseconds since epoch)
   final int timestamp;
-  
+
   /// Optional message text (e.g., "Here's the document we discussed")
   final String? message;
 
@@ -119,7 +120,8 @@ class FileMessage {
       return '📝';
     } else if (mimeType.contains('spreadsheet') || mimeType.contains('excel')) {
       return '📊';
-    } else if (mimeType.contains('presentation') || mimeType.contains('powerpoint')) {
+    } else if (mimeType.contains('presentation') ||
+        mimeType.contains('powerpoint')) {
       return '📽️';
     } else if (mimeType.contains('zip') || mimeType.contains('archive')) {
       return '📦';
@@ -133,4 +135,3 @@ class FileMessage {
     return 'FileMessage(fileId: $fileId, fileName: $fileName, size: $fileSizeFormatted)';
   }
 }
-

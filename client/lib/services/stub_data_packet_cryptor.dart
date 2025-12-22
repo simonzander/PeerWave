@@ -1,11 +1,11 @@
 /// Stub DataPacketCryptor implementation for Windows/Linux platforms
-/// 
+///
 /// flutter_webrtc package is missing DataPacketCryptor C++ implementation for desktop platforms.
 /// This stub prevents crashes when E2EEManager tries to create DataPacketCryptor.
-/// 
+///
 /// Platforms affected: Windows, Linux
 /// Working platforms: Android, iOS, macOS, Web
-/// 
+///
 /// See: https://github.com/flutter-webrtc/flutter-webrtc/tree/main/common/cpp/src
 library;
 

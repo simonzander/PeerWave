@@ -27,12 +27,13 @@ class Role {
       name: json['name'] as String,
       description: json['description'] as String?,
       scope: RoleScopeExtension.fromString(json['scope'] as String),
-      permissions: (json['permissions'] as List<dynamic>?)
+      permissions:
+          (json['permissions'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           [],
       standard: json['standard'] as bool? ?? false,
-      createdAt: json['createdAt'] != null 
+      createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'] as String)
           : DateTime.now(),
       updatedAt: json['updatedAt'] != null
@@ -59,17 +60,17 @@ class Role {
   bool hasPermission(String permission) {
     // Wildcard permission grants everything
     if (permissions.contains('*')) return true;
-    
+
     // Check for exact permission match
     if (permissions.contains(permission)) return true;
-    
+
     // Check for wildcard permission category (e.g., 'user.*' matches 'user.manage')
     final parts = permission.split('.');
     if (parts.length > 1) {
       final category = '${parts[0]}.*';
       if (permissions.contains(category)) return true;
     }
-    
+
     return false;
   }
 
@@ -115,11 +116,7 @@ class Role {
 }
 
 /// Enum representing the different role scopes
-enum RoleScope {
-  server,
-  channelWebRtc,
-  channelSignal,
-}
+enum RoleScope { server, channelWebRtc, channelSignal }
 
 /// Extension methods for RoleScope enum
 extension RoleScopeExtension on RoleScope {
@@ -164,4 +161,3 @@ extension RoleScopeExtension on RoleScope {
   /// Returns all available role scopes
   static List<RoleScope> get values => RoleScope.values;
 }
-

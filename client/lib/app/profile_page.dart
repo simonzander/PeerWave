@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:universal_html/html.dart' as html;
 import '../services/api_service.dart';
-import '../services/server_config_web.dart' if (dart.library.io) '../services/server_config_native.dart';
+import '../services/server_config_web.dart'
+    if (dart.library.io) '../services/server_config_native.dart';
 import '../web_config.dart';
 import '../extensions/snackbar_extensions.dart';
 
@@ -18,17 +19,17 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   final TextEditingController _displayNameController = TextEditingController();
   final TextEditingController _atNameController = TextEditingController();
-  
+
   bool _loading = false;
   bool _loadingProfile = true;
   bool _checkingAtName = false;
   String? _error;
   String? _atNameError;
-  
+
   Uint8List? _imageBytes;
   String? _imageFileName;
   Uint8List? _currentImageBytes;
-  
+
   String? _uuid;
   String? _email;
   String? _currentAtName;
@@ -50,9 +51,11 @@ class _ProfilePageState extends State<ProfilePage> {
 
   void _onAtNameChanged() {
     // Debounce: Check after user stops typing
-    if (_atNameController.text.isNotEmpty && _atNameController.text != _currentAtName) {
+    if (_atNameController.text.isNotEmpty &&
+        _atNameController.text != _currentAtName) {
       Future.delayed(const Duration(milliseconds: 500), () {
-        if (_atNameController.text.isNotEmpty && _atNameController.text != _currentAtName) {
+        if (_atNameController.text.isNotEmpty &&
+            _atNameController.text != _currentAtName) {
           _checkAtNameAvailability(_atNameController.text);
         }
       });
@@ -75,7 +78,8 @@ class _ProfilePageState extends State<ProfilePage> {
       if (kIsWeb) {
         final apiServer = await loadWebApiServer();
         urlString = apiServer ?? '';
-        if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+        if (!urlString.startsWith('http://') &&
+            !urlString.startsWith('https://')) {
           urlString = 'https://$urlString';
         }
       } else {
@@ -90,7 +94,9 @@ class _ProfilePageState extends State<ProfilePage> {
       if (resp.statusCode == 200) {
         final data = resp.data;
         setState(() {
-          _atNameError = data['available'] == true ? null : 'This @name is already taken';
+          _atNameError = data['available'] == true
+              ? null
+              : 'This @name is already taken';
           _checkingAtName = false;
         });
       }
@@ -113,7 +119,8 @@ class _ProfilePageState extends State<ProfilePage> {
       if (kIsWeb) {
         final apiServer = await loadWebApiServer();
         urlString = apiServer ?? '';
-        if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+        if (!urlString.startsWith('http://') &&
+            !urlString.startsWith('https://')) {
           urlString = 'https://$urlString';
         }
       } else {
@@ -125,14 +132,14 @@ class _ProfilePageState extends State<ProfilePage> {
 
       if (resp.statusCode == 200) {
         final data = resp.data;
-        
+
         setState(() {
           _displayNameController.text = data['displayName'] ?? '';
           _atNameController.text = data['atName'] ?? '';
           _currentAtName = data['atName'];
           _uuid = data['uuid'];
           _email = data['email'];
-          
+
           // Load current profile picture
           if (data['picture'] != null) {
             try {
@@ -147,7 +154,7 @@ class _ProfilePageState extends State<ProfilePage> {
               debugPrint('Error decoding profile picture: $e');
             }
           }
-          
+
           _loadingProfile = false;
         });
       }
@@ -161,26 +168,26 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _pickImage() async {
     if (!kIsWeb) return;
-    
+
     try {
       final html.FileUploadInputElement input = html.FileUploadInputElement()
         ..accept = 'image/*';
-      
+
       input.click();
-      
+
       await input.onChange.first;
-      
+
       if (input.files!.isEmpty) return;
-      
+
       final file = input.files![0];
       final reader = html.FileReader();
-      
+
       reader.readAsArrayBuffer(file);
-      
+
       await reader.onLoad.first;
-      
+
       final bytes = reader.result as List<int>;
-      
+
       // Check file size (max 1MB)
       if (bytes.length > 1 * 1024 * 1024) {
         setState(() {
@@ -188,7 +195,7 @@ class _ProfilePageState extends State<ProfilePage> {
         });
         return;
       }
-      
+
       setState(() {
         _imageBytes = Uint8List.fromList(bytes);
         _imageFileName = file.name;
@@ -226,7 +233,8 @@ class _ProfilePageState extends State<ProfilePage> {
       if (kIsWeb) {
         final apiServer = await loadWebApiServer();
         urlString = apiServer ?? '';
-        if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+        if (!urlString.startsWith('http://') &&
+            !urlString.startsWith('https://')) {
           urlString = 'https://$urlString';
         }
       } else {
@@ -246,7 +254,8 @@ class _ProfilePageState extends State<ProfilePage> {
       // Add image if selected
       if (_imageBytes != null) {
         final base64Image = base64Encode(_imageBytes!);
-        data['picture'] = 'data:image/${_imageFileName?.split('.').last ?? 'png'};base64,$base64Image';
+        data['picture'] =
+            'data:image/${_imageFileName?.split('.').last ?? 'png'};base64,$base64Image';
       }
 
       final resp = await ApiService.post(
@@ -261,10 +270,10 @@ class _ProfilePageState extends State<ProfilePage> {
           _imageBytes = null;
           _currentAtName = _atNameController.text.trim();
         });
-        
+
         // Reload profile to get updated data
         await _loadProfile();
-        
+
         if (mounted) {
           context.showSuccessSnackBar('Profile updated successfully');
         }
@@ -325,7 +334,9 @@ class _ProfilePageState extends State<ProfilePage> {
                 decoration: InputDecoration(
                   hintText: 'Type DELETE here',
                   filled: true,
-                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  fillColor: Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest,
                   border: const OutlineInputBorder(),
                 ),
               ),
@@ -366,7 +377,8 @@ class _ProfilePageState extends State<ProfilePage> {
       if (kIsWeb) {
         final apiServer = await loadWebApiServer();
         urlString = apiServer ?? '';
-        if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+        if (!urlString.startsWith('http://') &&
+            !urlString.startsWith('https://')) {
           urlString = 'https://$urlString';
         }
       } else {
@@ -394,9 +406,7 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   Widget build(BuildContext context) {
     if (_loadingProfile) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     return Center(
@@ -417,10 +427,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 // Title
                 const Text(
                   'Profile Settings',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
@@ -440,14 +447,23 @@ class _ProfilePageState extends State<ProfilePage> {
                     children: [
                       CircleAvatar(
                         radius: 60,
-                        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        backgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                         backgroundImage: _imageBytes != null
                             ? MemoryImage(_imageBytes!)
                             : (_currentImageBytes != null
-                                ? MemoryImage(_currentImageBytes!)
-                                : null),
-                        child: (_imageBytes == null && _currentImageBytes == null)
-                            ? Icon(Icons.person, size: 60, color: Theme.of(context).colorScheme.onSurfaceVariant)
+                                  ? MemoryImage(_currentImageBytes!)
+                                  : null),
+                        child:
+                            (_imageBytes == null && _currentImageBytes == null)
+                            ? Icon(
+                                Icons.person,
+                                size: 60,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              )
                             : null,
                       ),
                       Positioned(
@@ -455,9 +471,15 @@ class _ProfilePageState extends State<ProfilePage> {
                         right: 0,
                         child: CircleAvatar(
                           radius: 20,
-                          backgroundColor: Theme.of(context).colorScheme.primary,
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primary,
                           child: IconButton(
-                            icon: Icon(Icons.camera_alt, size: 20, color: Theme.of(context).colorScheme.onPrimary),
+                            icon: Icon(
+                              Icons.camera_alt,
+                              size: 20,
+                              color: Theme.of(context).colorScheme.onPrimary,
+                            ),
                             onPressed: _pickImage,
                           ),
                         ),
@@ -474,7 +496,9 @@ class _ProfilePageState extends State<ProfilePage> {
                     labelText: 'UUID',
                     prefixIcon: const Icon(Icons.fingerprint),
                     filled: true,
-                    fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    fillColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     border: const OutlineInputBorder(),
                   ),
                   readOnly: true,
@@ -489,7 +513,9 @@ class _ProfilePageState extends State<ProfilePage> {
                     labelText: 'Email',
                     prefixIcon: const Icon(Icons.email),
                     filled: true,
-                    fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    fillColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     border: const OutlineInputBorder(),
                   ),
                   readOnly: true,
@@ -505,7 +531,9 @@ class _ProfilePageState extends State<ProfilePage> {
                     hintText: 'Your display name',
                     prefixIcon: const Icon(Icons.person),
                     filled: true,
-                    fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    fillColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     border: const OutlineInputBorder(),
                   ),
                 ),
@@ -520,7 +548,9 @@ class _ProfilePageState extends State<ProfilePage> {
                     prefixText: '@',
                     prefixIcon: const Icon(Icons.alternate_email),
                     filled: true,
-                    fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    fillColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     border: const OutlineInputBorder(),
                     errorText: _atNameError,
                     suffixIcon: _checkingAtName
@@ -532,15 +562,23 @@ class _ProfilePageState extends State<ProfilePage> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
                           )
-                        : (_atNameError == null && _atNameController.text.isNotEmpty && _atNameController.text != _currentAtName
-                            ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary)
-                            : null),
+                        : (_atNameError == null &&
+                                  _atNameController.text.isNotEmpty &&
+                                  _atNameController.text != _currentAtName
+                              ? Icon(
+                                  Icons.check_circle,
+                                  color: Theme.of(context).colorScheme.primary,
+                                )
+                              : null),
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Choose a unique @name for mentions in chat',
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 24),
 
@@ -551,16 +589,23 @@ class _ProfilePageState extends State<ProfilePage> {
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.errorContainer,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Theme.of(context).colorScheme.error),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error),
+                        Icon(
+                          Icons.error_outline,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             _error!,
-                            style: TextStyle(color: Theme.of(context).colorScheme.error),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
                           ),
                         ),
                       ],
@@ -583,7 +628,10 @@ class _ProfilePageState extends State<ProfilePage> {
                           width: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Update Profile', style: TextStyle(fontSize: 16)),
+                      : const Text(
+                          'Update Profile',
+                          style: TextStyle(fontSize: 16),
+                        ),
                 ),
                 const SizedBox(height: 32),
 
@@ -603,7 +651,10 @@ class _ProfilePageState extends State<ProfilePage> {
                 const SizedBox(height: 8),
                 Text(
                   'Once you delete your account, there is no going back.',
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 16),
 
@@ -612,7 +663,9 @@ class _ProfilePageState extends State<ProfilePage> {
                   onPressed: _loading ? null : _deleteAccount,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Theme.of(context).colorScheme.error,
-                    side: BorderSide(color: Theme.of(context).colorScheme.error),
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -635,4 +688,3 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 }
-

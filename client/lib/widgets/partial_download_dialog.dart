@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Dialog to warn user about partial download availability
-/// 
+///
 /// Shows:
 /// - Chunk quality percentage
 /// - Warning about incomplete file
@@ -18,17 +18,17 @@ class PartialDownloadDialog extends StatelessWidget {
     required this.chunkQuality,
     required this.onDownloadAnyway,
     this.onWaitForMore,
-  }) ;
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     // Determine warning severity
     Color warningColor;
     IconData warningIcon;
     String warningText;
-    
+
     if (chunkQuality >= 75) {
       warningColor = Colors.orange;
       warningIcon = Icons.warning_amber;
@@ -42,14 +42,10 @@ class PartialDownloadDialog extends StatelessWidget {
       warningIcon = Icons.error_outline;
       warningText = 'Only a small part of the file is available';
     }
-    
+
     return AlertDialog(
       title: const Text('Incomplete File'),
-      icon: Icon(
-        warningIcon,
-        color: warningColor,
-        size: 48,
-      ),
+      icon: Icon(warningIcon, color: warningColor, size: 48),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -63,9 +59,9 @@ class PartialDownloadDialog extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Chunk quality indicator
           Row(
             children: [
@@ -94,18 +90,16 @@ class PartialDownloadDialog extends StatelessWidget {
               ),
             ],
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Warning text
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: warningColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: warningColor.withValues(alpha: 0.3),
-              ),
+              border: Border.all(color: warningColor.withValues(alpha: 0.3)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -135,7 +129,7 @@ class PartialDownloadDialog extends StatelessWidget {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
-        
+
         // Wait button (optional)
         if (onWaitForMore != null)
           TextButton(
@@ -145,7 +139,7 @@ class PartialDownloadDialog extends StatelessWidget {
             },
             child: const Text('Wait for More'),
           ),
-        
+
         // Download anyway button
         FilledButton.icon(
           onPressed: () {
@@ -154,9 +148,7 @@ class PartialDownloadDialog extends StatelessWidget {
           },
           icon: const Icon(Icons.download, size: 18),
           label: const Text('Download Anyway'),
-          style: FilledButton.styleFrom(
-            backgroundColor: warningColor,
-          ),
+          style: FilledButton.styleFrom(backgroundColor: warningColor),
         ),
       ],
     );
@@ -181,4 +173,3 @@ class PartialDownloadDialog extends StatelessWidget {
     );
   }
 }
-

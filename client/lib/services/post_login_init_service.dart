@@ -288,7 +288,11 @@ class PostLoginInitService {
       // ========================================
 
       currentStep++;
-      onProgress?.call('Initializing meetings and calls...', currentStep, totalSteps);
+      onProgress?.call(
+        'Initializing meetings and calls...',
+        currentStep,
+        totalSteps,
+      );
       debugPrint(
         '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing meeting/call services (parallel)...',
       );
@@ -332,9 +336,13 @@ class PostLoginInitService {
           try {
             final externalService = ExternalParticipantService();
             externalService.initializeListeners();
-            debugPrint('[POST_LOGIN_INIT]   ✓ External participant service initialized');
+            debugPrint(
+              '[POST_LOGIN_INIT]   ✓ External participant service initialized',
+            );
           } catch (e) {
-            debugPrint('[POST_LOGIN_INIT]   ⚠️ External participant service error: $e');
+            debugPrint(
+              '[POST_LOGIN_INIT]   ⚠️ External participant service error: $e',
+            );
           }
         }),
       ]);

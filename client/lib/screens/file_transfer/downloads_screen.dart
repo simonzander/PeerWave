@@ -16,21 +16,24 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     // Get download manager from Provider
     final downloadManager = Provider.of<DownloadManager>(context);
     final downloads = downloadManager.getAllDownloads();
-    
-    final activeDownloads = downloads.where((d) => 
-      d.status == DownloadStatus.downloading || 
-      d.status == DownloadStatus.queued ||
-      d.status == DownloadStatus.verifying
-    ).toList();
-    
-    final pausedDownloads = downloads.where((d) => 
-      d.status == DownloadStatus.paused
-    ).toList();
-    
-    final completedDownloads = downloads.where((d) => 
-      d.status == DownloadStatus.completed
-    ).toList();
-    
+
+    final activeDownloads = downloads
+        .where(
+          (d) =>
+              d.status == DownloadStatus.downloading ||
+              d.status == DownloadStatus.queued ||
+              d.status == DownloadStatus.verifying,
+        )
+        .toList();
+
+    final pausedDownloads = downloads
+        .where((d) => d.status == DownloadStatus.paused)
+        .toList();
+
+    final completedDownloads = downloads
+        .where((d) => d.status == DownloadStatus.completed)
+        .toList();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Downloads'),
@@ -54,13 +57,13 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                   ...activeDownloads.map((d) => _buildDownloadItem(d)),
                   const SizedBox(height: 16),
                 ],
-                
+
                 if (pausedDownloads.isNotEmpty) ...[
                   _buildSectionHeader('Paused', pausedDownloads.length),
                   ...pausedDownloads.map((d) => _buildDownloadItem(d)),
                   const SizedBox(height: 16),
                 ],
-                
+
                 if (completedDownloads.isNotEmpty) ...[
                   _buildSectionHeader('Completed', completedDownloads.length),
                   ...completedDownloads.map((d) => _buildDownloadItem(d)),
@@ -69,7 +72,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
             ),
     );
   }
-  
+
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -78,21 +81,27 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           Icon(
             Icons.download_done,
             size: 64,
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.4),
           ),
           const SizedBox(height: 16),
           Text(
             'No downloads',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                ),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             'Browse files to start downloading',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-                ),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.5),
+            ),
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
@@ -106,7 +115,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       ),
     );
   }
-  
+
   Widget _buildSectionHeader(String title, int count) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -114,10 +123,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         children: [
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(width: 8),
           Container(
@@ -128,17 +134,14 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
             ),
             child: Text(
               '$count',
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
             ),
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildDownloadItem(DownloadTask task) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -164,9 +167,9 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                 _buildStatusBadge(task),
               ],
             ),
-            
+
             const SizedBox(height: 12),
-            
+
             // Progress bar
             if (task.status == DownloadStatus.downloading ||
                 task.status == DownloadStatus.verifying)
@@ -175,12 +178,14 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                   LinearProgressIndicator(
                     value: task.progress / 100,
                     minHeight: 8,
-                    backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                   ),
                   const SizedBox(height: 8),
                 ],
               ),
-            
+
             // Download stats
             Row(
               children: [
@@ -192,7 +197,9 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                         '${task.downloadedChunks} / ${task.chunkCount} chunks',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                       if (task.status == DownloadStatus.downloading)
@@ -200,33 +207,37 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                           _formatSpeed(task.speed),
                           style: TextStyle(
                             fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.6),
                           ),
                         ),
                     ],
                   ),
                 ),
-                
+
                 if (task.status == DownloadStatus.downloading)
                   Text(
                     _formatETA(task.estimatedTimeRemaining),
                     style: TextStyle(
                       fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
               ],
             ),
-            
+
             const SizedBox(height: 12),
-            
+
             // Connected seeders
             if (task.status == DownloadStatus.downloading)
               _buildSeederChips(task),
-            
+
             const SizedBox(height: 12),
-            
+
             // Action buttons
             _buildActionButtons(task),
           ],
@@ -234,11 +245,11 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       ),
     );
   }
-  
+
   Widget _buildStatusBadge(DownloadTask task) {
     Color color;
     IconData icon;
-    
+
     switch (task.status) {
       case DownloadStatus.queued:
         color = Colors.orange;
@@ -269,7 +280,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         icon = Icons.cancel;
         break;
     }
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -293,10 +304,10 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       ),
     );
   }
-  
+
   Widget _buildSeederChips(DownloadTask task) {
     final connectedSeeders = task.seederChunks.keys.toList();
-    
+
     if (connectedSeeders.isEmpty) {
       return Text(
         'No seeders connected',
@@ -306,9 +317,9 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         ),
       );
     }
-    
+
     final chips = <Widget>[];
-    
+
     // Add first 3 seeders
     for (final peerId in connectedSeeders.take(3)) {
       chips.add(
@@ -327,11 +338,13 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           ),
           visualDensity: VisualDensity.compact,
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest,
         ),
       );
     }
-    
+
     // Add "+X more" chip if there are more than 3 seeders
     if (connectedSeeders.length > 3) {
       chips.add(
@@ -345,17 +358,16 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           ),
           visualDensity: VisualDensity.compact,
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest,
         ),
       );
     }
-    
-    return Wrap(
-      spacing: 8,
-      children: chips,
-    );
+
+    return Wrap(spacing: 8, children: chips);
   }
-  
+
   Widget _buildActionButtons(DownloadTask task) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
@@ -366,14 +378,14 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
             icon: const Icon(Icons.pause, size: 16),
             label: const Text('Pause'),
           ),
-        
+
         if (task.status == DownloadStatus.paused)
           TextButton.icon(
             onPressed: () => _resumeDownload(task.fileId),
             icon: const Icon(Icons.play_arrow, size: 16),
             label: const Text('Resume'),
           ),
-        
+
         if (task.status == DownloadStatus.downloading ||
             task.status == DownloadStatus.paused ||
             task.status == DownloadStatus.queued)
@@ -383,14 +395,14 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
             label: const Text('Cancel'),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
           ),
-        
+
         if (task.status == DownloadStatus.completed)
           TextButton.icon(
             onPressed: () => _openFile(task.fileId),
             icon: const Icon(Icons.open_in_new, size: 16),
             label: const Text('Open'),
           ),
-        
+
         if (task.status == DownloadStatus.failed)
           TextButton.icon(
             onPressed: () => _retryDownload(task.fileId),
@@ -400,41 +412,44 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       ],
     );
   }
-  
+
   String _formatSpeed(double bytesPerSecond) {
-    if (bytesPerSecond < 1024) return '${bytesPerSecond.toStringAsFixed(0)} B/s';
+    if (bytesPerSecond < 1024)
+      return '${bytesPerSecond.toStringAsFixed(0)} B/s';
     if (bytesPerSecond < 1024 * 1024) {
       return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
     }
     return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
   }
-  
+
   String _formatETA(Duration? eta) {
     if (eta == null) return 'Calculating...';
-    
+
     if (eta.inSeconds < 60) return '${eta.inSeconds}s';
     if (eta.inMinutes < 60) return '${eta.inMinutes}m ${eta.inSeconds % 60}s';
     return '${eta.inHours}h ${eta.inMinutes % 60}m';
   }
-  
+
   // ============================================
   // DOWNLOAD ACTIONS
   // ============================================
-  
+
   void _pauseDownload(String fileId) {
     // TODO: _downloadManager.pauseDownload(fileId);
   }
-  
+
   void _resumeDownload(String fileId) {
     // TODO: _downloadManager.resumeDownload(fileId);
   }
-  
+
   void _cancelDownload(String fileId) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Cancel Download?'),
-        content: const Text('This will delete all downloaded data for this file.'),
+        content: const Text(
+          'This will delete all downloaded data for this file.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -451,15 +466,15 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       ),
     );
   }
-  
+
   void _pauseAllDownloads() {
     // TODO: Pause all active downloads
   }
-  
+
   void _retryDownload(String fileId) {
     // TODO: Retry failed download
   }
-  
+
   void _openFile(String fileId) {
     // TODO: Open completed file
     ScaffoldMessenger.of(context).showSnackBar(
@@ -467,4 +482,3 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     );
   }
 }
-

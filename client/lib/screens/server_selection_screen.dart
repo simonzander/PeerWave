@@ -9,17 +9,16 @@ import '../services/server_config_native.dart';
 import '../services/clientid_native.dart';
 import '../services/device_identity_service.dart';
 import '../services/native_crypto_service.dart';
-import '../services/auth_service_web.dart' if (dart.library.io) '../services/auth_service_native.dart';
+import '../services/auth_service_web.dart'
+    if (dart.library.io) '../services/auth_service_native.dart';
 
 /// Server selection screen for native clients
 /// Shown on first launch or when adding a new server
 class ServerSelectionScreen extends StatefulWidget {
-  final bool isAddingServer; // true if adding to existing servers, false if first launch
+  final bool
+  isAddingServer; // true if adding to existing servers, false if first launch
 
-  const ServerSelectionScreen({
-    super.key,
-    this.isAddingServer = false,
-  }) ;
+  const ServerSelectionScreen({super.key, this.isAddingServer = false});
 
   @override
   State<ServerSelectionScreen> createState() => _ServerSelectionScreenState();
@@ -44,7 +43,9 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   }
 
   Future<void> _handleMagicKey(String magicKey) async {
-    debugPrint('[ServerSelection] ========== Starting magic key flow ==========');
+    debugPrint(
+      '[ServerSelection] ========== Starting magic key flow ==========',
+    );
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -85,8 +86,13 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
       // Verify with server
       debugPrint('[ServerSelection] Verifying magic key with server...');
-      final response = await MagicKeyService.verifyWithServer(magicKey, clientId);
-      debugPrint('[ServerSelection] Verification response: success=${response.success}, message=${response.message}');
+      final response = await MagicKeyService.verifyWithServer(
+        magicKey,
+        clientId,
+      );
+      debugPrint(
+        '[ServerSelection] Verification response: success=${response.success}, message=${response.message}',
+      );
 
       if (!response.success) {
         setState(() {
@@ -98,49 +104,59 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
       // Success! The session secret is already stored in SessionAuthService
       debugPrint('[ServerSelection] ✓ Magic key verified successfully');
-      
+
       // Initialize device identity for native clients
       // For native, we generate a synthetic credential ID based on client ID + server URL
       // This ensures consistent device identity across app restarts
       if (!kIsWeb) {
-        debugPrint('[ServerSelection] Initializing device identity for native client...');
+        debugPrint(
+          '[ServerSelection] Initializing device identity for native client...',
+        );
         final data = response.data ?? {};
         final email = data['email'] as String? ?? 'native@device';
         // Generate synthetic credential ID: use serverUrl directly (no hashCode!)
         // CRITICAL: hashCode is NOT stable across Dart VM restarts!
         // This was causing new deviceId → new database → prekeys regenerated every time
-        final syntheticCredId = serverUrl.replaceAll('-', '').replaceAll(':', '').replaceAll('/', '');
+        final syntheticCredId = serverUrl
+            .replaceAll('-', '')
+            .replaceAll(':', '')
+            .replaceAll('/', '');
         await DeviceIdentityService.instance.setDeviceIdentity(
-          email, 
-          syntheticCredId, 
+          email,
+          syntheticCredId,
           clientId,
           serverUrl: serverUrl, // Pass serverUrl for multi-server storage
         );
         debugPrint('[ServerSelection] ✓ Device identity initialized');
-        
+
         // Generate and store encryption key for native client
         debugPrint('[ServerSelection] Generating encryption key...');
         final deviceId = DeviceIdentityService.instance.deviceId;
         await NativeCryptoService.instance.getOrCreateKey(deviceId);
         debugPrint('[ServerSelection] ✓ Encryption key generated and stored');
       }
-      
+
       // Add server to config (or update credentials if exists)
       // Note: credentials field is not used for authentication (SessionAuthService handles that)
       debugPrint('[ServerSelection] Adding/updating server config...');
       final serverConfig = await ServerConfigService.addServer(
         serverUrl: serverUrl,
-        credentials: 'hmac-session', // Placeholder - actual session is in SessionAuthService
+        credentials:
+            'hmac-session', // Placeholder - actual session is in SessionAuthService
         displayName: null, // Will extract from URL
       );
 
-      debugPrint('[ServerSelection] Server configured: ${serverConfig.getDisplayName()}');
+      debugPrint(
+        '[ServerSelection] Server configured: ${serverConfig.getDisplayName()}',
+      );
 
       // Session is now stored in SessionAuthService
       // Check session to update isLoggedIn flag
       debugPrint('[ServerSelection] Calling checkSession...');
       await AuthService.checkSession();
-      debugPrint('[ServerSelection] ✓ Session checked, isLoggedIn: ${AuthService.isLoggedIn}');
+      debugPrint(
+        '[ServerSelection] ✓ Session checked, isLoggedIn: ${AuthService.isLoggedIn}',
+      );
 
       // Clear loading state
       if (mounted) {
@@ -212,8 +228,8 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                   Text(
                     'PeerWave',
                     style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
@@ -222,8 +238,8 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                         ? 'Add New Server'
                         : 'Connect to Your Server',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 48),
@@ -245,18 +261,29 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                               const SizedBox(width: 8),
                               Text(
                                 'How to Connect',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.bold),
                               ),
                             ],
                           ),
                           const SizedBox(height: 12),
-                          _buildInstructionStep('1', 'Open PeerWave in your web browser'),
-                          _buildInstructionStep('2', 'Go to Settings → Credentials'),
+                          _buildInstructionStep(
+                            '1',
+                            'Open PeerWave in your web browser',
+                          ),
+                          _buildInstructionStep(
+                            '2',
+                            'Go to Settings → Credentials',
+                          ),
                           _buildInstructionStep('3', 'Click "Add New Client"'),
-                          _buildInstructionStep('4', 'Scan the QR code or copy the magic key'),
-                          _buildInstructionStep('5', 'Paste it below or scan it with your camera'),
+                          _buildInstructionStep(
+                            '4',
+                            'Scan the QR code or copy the magic key',
+                          ),
+                          _buildInstructionStep(
+                            '5',
+                            'Paste it below or scan it with your camera',
+                          ),
                         ],
                       ),
                     ),
@@ -275,8 +302,12 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                   if (_isMobilePlatform)
                     TextButton.icon(
                       onPressed: _isLoading ? null : _toggleQRScanner,
-                      icon: Icon(_showQRScanner ? Icons.keyboard : Icons.qr_code_scanner),
-                      label: Text(_showQRScanner ? 'Enter Key Manually' : 'Scan QR Code'),
+                      icon: Icon(
+                        _showQRScanner ? Icons.keyboard : Icons.qr_code_scanner,
+                      ),
+                      label: Text(
+                        _showQRScanner ? 'Enter Key Manually' : 'Scan QR Code',
+                      ),
                     ),
 
                   // Error Message
@@ -350,10 +381,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              text,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+            child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
           ),
         ],
       ),
@@ -435,9 +463,9 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                   ),
                   child: Text(
                     'Position the QR code within the frame',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.white,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: Colors.white),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -445,9 +473,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
               if (_isLoading)
                 Container(
                   color: Colors.black54,
-                  child: const Center(
-                    child: CircularProgressIndicator(),
-                  ),
+                  child: const Center(child: CircularProgressIndicator()),
                 ),
             ],
           ),

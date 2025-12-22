@@ -17,4 +17,3 @@ class BackupCodeListPage extends StatelessWidget {
     );
   }
 }
-

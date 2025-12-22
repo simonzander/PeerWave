@@ -9,7 +9,7 @@ IdbFactory getIdbFactoryNative() {
   if (_cachedFactory != null) {
     return _cachedFactory!;
   }
-  
+
   // Initialize sqflite FFI for desktop platforms (Windows, Linux, macOS)
   if (!_initialized) {
     debugPrint('[IDB_FACTORY] Initializing sqflite FFI for native platform');
@@ -17,7 +17,7 @@ IdbFactory getIdbFactoryNative() {
     databaseFactory = databaseFactoryFfi;
     _initialized = true;
   }
-  
+
   debugPrint('[IDB_FACTORY] Creating new idbFactorySqflite instance');
   _cachedFactory = idbFactorySqflite;
   return _cachedFactory!;

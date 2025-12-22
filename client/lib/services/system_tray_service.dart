@@ -19,22 +19,24 @@ class SystemTrayService with TrayListener {
 
     try {
       debugPrint('[SystemTray] Starting initialization...');
-      
+
       // Get icon path
       final iconPath = _getTrayIconPath();
       debugPrint('[SystemTray] Using icon path: $iconPath');
-      
+
       // Check if icon file exists
       final iconFile = File(iconPath);
       if (!await iconFile.exists()) {
-        debugPrint('[SystemTray] ⚠️ WARNING: Icon file does not exist at: $iconPath');
+        debugPrint(
+          '[SystemTray] ⚠️ WARNING: Icon file does not exist at: $iconPath',
+        );
       }
-      
+
       // Initialize tray manager
       debugPrint('[SystemTray] Setting tray icon...');
       await trayManager.setIcon(iconPath);
       debugPrint('[SystemTray] Tray icon set successfully');
-      
+
       trayManager.addListener(this);
       debugPrint('[SystemTray] Listener added');
 
@@ -61,28 +63,30 @@ class SystemTrayService with TrayListener {
       // Get the directory where the executable is located
       final exePath = Platform.resolvedExecutable;
       final exeDir = path.dirname(exePath);
-      
+
       // In development, icon is in windows/runner/resources/
       // In release build, icon should be in data/flutter_assets/ or root
       final devIconPath = path.join(
-        path.dirname(path.dirname(exeDir)), // Go up from build/windows/x64/runner/Debug or Release
+        path.dirname(
+          path.dirname(exeDir),
+        ), // Go up from build/windows/x64/runner/Debug or Release
         'windows',
         'runner',
         'resources',
         'app_icon.ico',
       );
-      
+
       // Check if dev path exists
       if (File(devIconPath).existsSync()) {
         return devIconPath;
       }
-      
+
       // Try release path (next to exe)
       final releaseIconPath = path.join(exeDir, 'app_icon.ico');
       if (File(releaseIconPath).existsSync()) {
         return releaseIconPath;
       }
-      
+
       // Fallback to dev path even if it doesn't exist (will be logged)
       return devIconPath;
     } else if (Platform.isMacOS) {
@@ -103,23 +107,14 @@ class SystemTrayService with TrayListener {
     } catch (e) {
       debugPrint('[SystemTray] Autostart status check not supported: $e');
     }
-    
+
     final menu = Menu(
       items: [
-        MenuItem(
-          key: 'show',
-          label: 'Show PeerWave',
-        ),
+        MenuItem(key: 'show', label: 'Show PeerWave'),
         MenuItem.separator(),
-        MenuItem(
-          key: 'autostart',
-          label: autostartLabel,
-        ),
+        MenuItem(key: 'autostart', label: autostartLabel),
         MenuItem.separator(),
-        MenuItem(
-          key: 'quit',
-          label: 'Quit PeerWave',
-        ),
+        MenuItem(key: 'quit', label: 'Quit PeerWave'),
       ],
     );
     await trayManager.setContextMenu(menu);
@@ -211,8 +206,6 @@ class SystemTrayService with TrayListener {
         break;
     }
   }
-
-
 
   /// Dispose resources
   void dispose() {

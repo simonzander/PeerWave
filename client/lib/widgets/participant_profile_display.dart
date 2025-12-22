@@ -14,10 +14,11 @@ class ParticipantProfileDisplay extends StatefulWidget {
     required this.profilePictureBase64,
     required this.displayName,
     this.size = 150,
-  }) ;
+  });
 
   @override
-  State<ParticipantProfileDisplay> createState() => _ParticipantProfileDisplayState();
+  State<ParticipantProfileDisplay> createState() =>
+      _ParticipantProfileDisplayState();
 }
 
 class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
@@ -77,9 +78,7 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
     if (_isLoading) {
       return Container(
         color: Theme.of(context).colorScheme.surface,
-        child: const Center(
-          child: CircularProgressIndicator(),
-        ),
+        child: const Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -96,9 +95,7 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
                 ],
               ),
       ),
-      child: Center(
-        child: _buildProfileContent(),
-      ),
+      child: Center(child: _buildProfileContent()),
     );
   }
 
@@ -123,7 +120,9 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.3),
+              color: Theme.of(
+                context,
+              ).colorScheme.shadow.withValues(alpha: 0.3),
               blurRadius: 20,
               spreadRadius: 5,
             ),
@@ -135,7 +134,9 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
             bytes,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
-              debugPrint('[ParticipantProfileDisplay] Error loading image: $error');
+              debugPrint(
+                '[ParticipantProfileDisplay] Error loading image: $error',
+              );
               return _buildFallbackAvatar();
             },
           ),

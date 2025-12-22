@@ -6,19 +6,19 @@ import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'user_profile_service.dart';
 
 /// Presence service - tracks online/busy/offline status of users
-/// 
+///
 /// Features:
 /// - Socket connection-based presence (no heartbeat polling)
 /// - Real-time presence updates via Socket.IO
 /// - Integration with UserProfileService for cached presence
 /// - Streams for UI updates
 /// - Pre-call online status validation
-/// 
+///
 /// Socket.IO events:
 /// - presence:update (listen) - Receive status updates (online/busy/offline)
 /// - presence:user_connected (listen) - User came online
 /// - presence:user_disconnected (listen) - User went offline
-/// 
+///
 /// Status values:
 /// - 'online': User has at least one socket connection
 /// - 'busy': User is in a LiveKit room (call/meeting)
@@ -53,16 +53,20 @@ class PresenceService {
     _listenersRegistered = true;
 
     _socketService.registerListener('presence:update', (data) {
-      debugPrint('[PRESENCE SERVICE] ========== Received presence:update ==========');
+      debugPrint(
+        '[PRESENCE SERVICE] ========== Received presence:update ==========',
+      );
       debugPrint('[PRESENCE SERVICE] Raw data: $data');
       try {
         final map = data as Map<String, dynamic>;
         final userId = map['user_id'] as String;
         final status = map['status'] as String?;
         final lastSeenStr = map['last_seen'] as String?;
-        
-        debugPrint('[PRESENCE SERVICE] Parsed: user_id=$userId, status=$status');
-        
+
+        debugPrint(
+          '[PRESENCE SERVICE] Parsed: user_id=$userId, status=$status',
+        );
+
         DateTime? lastSeen;
         if (lastSeenStr != null) {
           try {
@@ -73,9 +77,15 @@ class PresenceService {
         }
 
         // Update UserProfileService cache
-        UserProfileService.instance.updatePresenceStatus(userId, status ?? 'offline', lastSeen);
-        debugPrint('[PRESENCE SERVICE] Updated UserProfileService cache for $userId');
-        
+        UserProfileService.instance.updatePresenceStatus(
+          userId,
+          status ?? 'offline',
+          lastSeen,
+        );
+        debugPrint(
+          '[PRESENCE SERVICE] Updated UserProfileService cache for $userId',
+        );
+
         final presence = UserPresence(
           userId: userId,
           lastHeartbeat: lastSeen ?? DateTime.now(),
@@ -95,7 +105,7 @@ class PresenceService {
         final map = data as Map<String, dynamic>;
         final userId = map['user_id'] as String;
         final lastSeenStr = map['last_seen'] as String?;
-        
+
         DateTime? lastSeen;
         if (lastSeenStr != null) {
           try {
@@ -106,8 +116,12 @@ class PresenceService {
         }
 
         // Update UserProfileService cache
-        UserProfileService.instance.updatePresenceStatus(userId, 'online', lastSeen);
-        
+        UserProfileService.instance.updatePresenceStatus(
+          userId,
+          'online',
+          lastSeen,
+        );
+
         final presence = UserPresence(
           userId: userId,
           lastHeartbeat: lastSeen ?? DateTime.now(),
@@ -117,17 +131,21 @@ class PresenceService {
 
         _userConnectedController.add(userId);
       } catch (e) {
-        debugPrint('[PRESENCE SERVICE] Error parsing presence:user_connected: $e');
+        debugPrint(
+          '[PRESENCE SERVICE] Error parsing presence:user_connected: $e',
+        );
       }
     });
 
     _socketService.registerListener('presence:user_disconnected', (data) {
-      debugPrint('[PRESENCE SERVICE] Received presence:user_disconnected: $data');
+      debugPrint(
+        '[PRESENCE SERVICE] Received presence:user_disconnected: $data',
+      );
       try {
         final map = data as Map<String, dynamic>;
         final userId = map['user_id'] as String;
         final lastSeenStr = map['last_seen'] as String?;
-        
+
         DateTime? lastSeen;
         if (lastSeenStr != null) {
           try {
@@ -138,11 +156,17 @@ class PresenceService {
         }
 
         // Update UserProfileService cache
-        UserProfileService.instance.updatePresenceStatus(userId, 'offline', lastSeen);
-        
+        UserProfileService.instance.updatePresenceStatus(
+          userId,
+          'offline',
+          lastSeen,
+        );
+
         _userDisconnectedController.add(userId);
       } catch (e) {
-        debugPrint('[PRESENCE SERVICE] Error parsing presence:user_disconnected: $e');
+        debugPrint(
+          '[PRESENCE SERVICE] Error parsing presence:user_disconnected: $e',
+        );
       }
     });
 
@@ -155,29 +179,35 @@ class PresenceService {
 
   /// Check online status for multiple users (bulk check via API)
   /// Returns Map<userId, status> where status is 'online', 'busy', or 'offline'
-  /// 
+  ///
   /// Use this before initiating instant calls to verify recipients are online
   Future<Map<String, String>> checkOnlineStatus(List<String> userIds) async {
     if (userIds.isEmpty) return {};
-    
+
     try {
       final userIdsParam = userIds.join(',');
-      debugPrint('[PRESENCE SERVICE] Calling /api/presence/bulk?user_ids=$userIdsParam');
-      final response = await ApiService.get('/api/presence/bulk?user_ids=$userIdsParam');
+      debugPrint(
+        '[PRESENCE SERVICE] Calling /api/presence/bulk?user_ids=$userIdsParam',
+      );
+      final response = await ApiService.get(
+        '/api/presence/bulk?user_ids=$userIdsParam',
+      );
       debugPrint('[PRESENCE SERVICE] Response: ${response.data}');
-      
+
       final List<dynamic> data = response.data as List<dynamic>;
       final statusMap = <String, String>{};
-      
+
       for (final item in data) {
         if (item is Map<String, dynamic>) {
           final userId = item['user_id'] as String?;
           final status = item['status'] as String?;
           if (userId != null) {
             statusMap[userId] = status ?? 'offline';
-            
+
             // Update UserProfileService cache
-            final lastSeenStr = item['last_heartbeat'] as String? ?? item['updated_at'] as String?;
+            final lastSeenStr =
+                item['last_heartbeat'] as String? ??
+                item['updated_at'] as String?;
             DateTime? lastSeen;
             if (lastSeenStr != null) {
               try {
@@ -186,11 +216,15 @@ class PresenceService {
                 debugPrint('[PRESENCE SERVICE] Error parsing timestamp: $e');
               }
             }
-            UserProfileService.instance.updatePresenceStatus(userId, status ?? 'offline', lastSeen);
+            UserProfileService.instance.updatePresenceStatus(
+              userId,
+              status ?? 'offline',
+              lastSeen,
+            );
           }
         }
       }
-      
+
       return statusMap;
     } catch (e) {
       debugPrint('[PRESENCE SERVICE] Error checking online status: $e');
@@ -204,7 +238,9 @@ class PresenceService {
     final result = await checkOnlineStatus([userId]);
     final status = result[userId];
     final isOnline = status == 'online' || status == 'busy';
-    debugPrint('[PRESENCE SERVICE] User $userId status: $status, isOnline: $isOnline');
+    debugPrint(
+      '[PRESENCE SERVICE] User $userId status: $status, isOnline: $isOnline',
+    );
     return isOnline;
   }
 

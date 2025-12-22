@@ -1,5 +1,5 @@
 /// Dashboard View Pages
-/// 
+///
 /// Exports all view pages for routing
 library;
 

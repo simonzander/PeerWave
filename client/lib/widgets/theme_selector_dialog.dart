@@ -4,7 +4,7 @@ import '../theme/theme_provider.dart';
 import '../theme/color_schemes.dart';
 
 /// Theme Selector Dialog
-/// 
+///
 /// A Material 3 dialog that allows users to:
 /// - Switch between 8 color schemes
 /// - Toggle between Light, Dark, and System theme modes
@@ -26,9 +26,9 @@ class ThemeSelectorDialog extends StatelessWidget {
           children: [
             // Header
             _buildHeader(context, colorScheme),
-            
+
             const Divider(height: 1),
-            
+
             // Content
             Expanded(
               child: SingleChildScrollView(
@@ -38,18 +38,22 @@ class ThemeSelectorDialog extends StatelessWidget {
                   children: [
                     // Theme Mode Section
                     _buildThemeModeSection(context, themeProvider, colorScheme),
-                    
+
                     const SizedBox(height: 32),
-                    
+
                     // Color Scheme Section
-                    _buildColorSchemeSection(context, themeProvider, colorScheme),
+                    _buildColorSchemeSection(
+                      context,
+                      themeProvider,
+                      colorScheme,
+                    ),
                   ],
                 ),
               ),
             ),
-            
+
             const Divider(height: 1),
-            
+
             // Actions
             _buildActions(context, themeProvider, colorScheme),
           ],
@@ -63,11 +67,7 @@ class ThemeSelectorDialog extends StatelessWidget {
       padding: const EdgeInsets.all(24),
       child: Row(
         children: [
-          Icon(
-            Icons.palette_outlined,
-            size: 28,
-            color: colorScheme.primary,
-          ),
+          Icon(Icons.palette_outlined, size: 28, color: colorScheme.primary),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -132,9 +132,7 @@ class ThemeSelectorDialog extends StatelessWidget {
           onSelectionChanged: (Set<ThemeMode> newSelection) {
             themeProvider.setThemeMode(newSelection.first);
           },
-          style: ButtonStyle(
-            visualDensity: VisualDensity.comfortable,
-          ),
+          style: ButtonStyle(visualDensity: VisualDensity.comfortable),
         ),
       ],
     );
@@ -146,7 +144,7 @@ class ThemeSelectorDialog extends StatelessWidget {
     ColorScheme colorScheme,
   ) {
     final allSchemes = ColorSchemeOptions.all;
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -158,7 +156,7 @@ class ThemeSelectorDialog extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        
+
         // Color Scheme Grid
         GridView.builder(
           shrinkWrap: true,
@@ -173,7 +171,7 @@ class ThemeSelectorDialog extends StatelessWidget {
           itemBuilder: (context, index) {
             final scheme = allSchemes[index];
             final isSelected = scheme.id == themeProvider.colorSchemeId;
-            
+
             return _buildColorSchemeCard(
               context,
               scheme,
@@ -193,11 +191,11 @@ class ThemeSelectorDialog extends StatelessWidget {
     VoidCallback onTap,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Material(
-      color: isSelected 
-        ? colorScheme.primaryContainer 
-        : colorScheme.surfaceContainerHighest,
+      color: isSelected
+          ? colorScheme.primaryContainer
+          : colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -207,9 +205,7 @@ class ThemeSelectorDialog extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected 
-                ? colorScheme.primary 
-                : Colors.transparent,
+              color: isSelected ? colorScheme.primary : Colors.transparent,
               width: 2,
             ),
           ),
@@ -231,16 +227,16 @@ class ThemeSelectorDialog extends StatelessWidget {
                   ],
                 ),
                 child: isSelected
-                  ? Icon(
-                      Icons.check,
-                      color: _getContrastColor(scheme.previewColor),
-                      size: 20,
-                    )
-                  : null,
+                    ? Icon(
+                        Icons.check,
+                        color: _getContrastColor(scheme.previewColor),
+                        size: 20,
+                      )
+                    : null,
               ),
-              
+
               const SizedBox(width: 12),
-              
+
               // Name and Icon
               Expanded(
                 child: Column(
@@ -252,20 +248,23 @@ class ThemeSelectorDialog extends StatelessWidget {
                         Icon(
                           scheme.icon,
                           size: 16,
-                          color: isSelected 
-                            ? colorScheme.onPrimaryContainer 
-                            : colorScheme.onSurface,
+                          color: isSelected
+                              ? colorScheme.onPrimaryContainer
+                              : colorScheme.onSurface,
                         ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
                             scheme.name,
-                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                              color: isSelected 
-                                ? colorScheme.onPrimaryContainer 
-                                : colorScheme.onSurface,
-                            ),
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
+                                  fontWeight: isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: isSelected
+                                      ? colorScheme.onPrimaryContainer
+                                      : colorScheme.onSurface,
+                                ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -276,9 +275,11 @@ class ThemeSelectorDialog extends StatelessWidget {
                     Text(
                       scheme.description,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: isSelected 
-                          ? colorScheme.onPrimaryContainer.withValues(alpha: 0.7)
-                          : colorScheme.onSurfaceVariant,
+                        color: isSelected
+                            ? colorScheme.onPrimaryContainer.withValues(
+                                alpha: 0.7,
+                              )
+                            : colorScheme.onSurfaceVariant,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -311,7 +312,7 @@ class ThemeSelectorDialog extends StatelessWidget {
             icon: const Icon(Icons.restart_alt),
             label: const Text('Zurücksetzen'),
           ),
-          
+
           // Close Button
           FilledButton.icon(
             onPressed: () => Navigator.of(context).pop(),
@@ -326,10 +327,12 @@ class ThemeSelectorDialog extends StatelessWidget {
   /// Helper to determine contrast color for check icon
   Color _getContrastColor(Color background) {
     // Calculate relative luminance
-    final luminance = (0.299 * (background.r * 255.0).round().clamp(0, 255) + 
-                      0.587 * (background.g * 255.0).round().clamp(0, 255) + 
-                      0.114 * (background.b * 255.0).round().clamp(0, 255)) / 255;
-    
+    final luminance =
+        (0.299 * (background.r * 255.0).round().clamp(0, 255) +
+            0.587 * (background.g * 255.0).round().clamp(0, 255) +
+            0.114 * (background.b * 255.0).round().clamp(0, 255)) /
+        255;
+
     return luminance > 0.5 ? Colors.black87 : Colors.white;
   }
 
@@ -341,4 +344,3 @@ class ThemeSelectorDialog extends StatelessWidget {
     );
   }
 }
-

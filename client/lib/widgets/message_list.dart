@@ -348,7 +348,9 @@ class _MessageListState extends State<MessageList> {
                   children: [
                     Expanded(
                       child: Divider(
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.2,
+                        ),
                         thickness: 1,
                       ),
                     ),
@@ -357,7 +359,9 @@ class _MessageListState extends State<MessageList> {
                       child: Text(
                         _getDateDividerText(msgTime),
                         style: TextStyle(
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.5,
+                          ),
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                         ),
@@ -365,7 +369,9 @@ class _MessageListState extends State<MessageList> {
                     ),
                     Expanded(
                       child: Divider(
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.2,
+                        ),
                         thickness: 1,
                       ),
                     ),
@@ -515,7 +521,9 @@ class _MessageListState extends State<MessageList> {
               ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                color: Theme.of(
+                  context,
+                ).colorScheme.outline.withValues(alpha: 0.3),
               ),
             ),
             child: Row(
@@ -596,7 +604,10 @@ class _MessageListState extends State<MessageList> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: warningColor.withValues(alpha: 0.15),
-        border: Border.all(color: warningColor.withValues(alpha: 0.5), width: 1.5),
+        border: Border.all(
+          color: warningColor.withValues(alpha: 0.5),
+          width: 1.5,
+        ),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -844,7 +855,9 @@ class _MessageListState extends State<MessageList> {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+          color: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.6,
+          ),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: theme.colorScheme.outline.withValues(alpha: 0.25),
@@ -882,7 +895,9 @@ class _MessageListState extends State<MessageList> {
                     Text(
                       when,
                       style: TextStyle(
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.7,
+                        ),
                         fontSize: 12,
                       ),
                     ),
@@ -953,7 +968,9 @@ class _MessageListState extends State<MessageList> {
           fontFamily: 'monospace',
         ),
         codeblockDecoration: BoxDecoration(
-          color: markdownTheme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          color: markdownTheme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.5,
+          ),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: markdownTheme.colorScheme.outline),
         ),

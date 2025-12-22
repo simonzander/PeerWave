@@ -9,7 +9,9 @@ import 'services/clientid_native.dart';
 class DebugStorage {
   static Future<void> printAllStoredKeys() async {
     if (kIsWeb) {
-      debugPrint('[DEBUG_STORAGE] Web platform - skipping secure storage inspection');
+      debugPrint(
+        '[DEBUG_STORAGE] Web platform - skipping secure storage inspection',
+      );
       return;
     }
 
@@ -33,9 +35,11 @@ class DebugStorage {
         for (var entry in allKeys.entries) {
           final key = entry.key;
           final value = entry.value;
-          
+
           // Don't print full values for security
-          final preview = value.length > 20 ? '${value.substring(0, 20)}...' : value;
+          final preview = value.length > 20
+              ? '${value.substring(0, 20)}...'
+              : value;
           debugPrint('🔑 $key');
           debugPrint('   Value length: ${value.length} chars');
           debugPrint('   Preview: $preview');
@@ -60,7 +64,9 @@ class DebugStorage {
       try {
         final clientId = await ClientIdService.getClientId();
         final hasSession = await SessionAuthService().hasSession(clientId);
-        debugPrint('${hasSession ? '✅' : '❌'} HMAC Session exists: $hasSession');
+        debugPrint(
+          '${hasSession ? '✅' : '❌'} HMAC Session exists: $hasSession',
+        );
         if (hasSession) {
           final secret = await SessionAuthService().getSessionSecret(clientId);
           debugPrint('   Session secret length: ${secret?.length ?? 0} chars');
@@ -72,17 +78,24 @@ class DebugStorage {
       // Device Identity
       try {
         final isInit = DeviceIdentityService.instance.isInitialized;
-        debugPrint('${isInit ? '✅' : '❌'} Device Identity initialized: $isInit');
-        
+        debugPrint(
+          '${isInit ? '✅' : '❌'} Device Identity initialized: $isInit',
+        );
+
         if (!isInit) {
-          final restored = await DeviceIdentityService.instance.tryRestoreFromSession();
+          final restored = await DeviceIdentityService.instance
+              .tryRestoreFromSession();
           debugPrint('   Restore attempt: ${restored ? 'SUCCESS' : 'FAILED'}');
           if (restored) {
-            debugPrint('   Device ID: ${DeviceIdentityService.instance.deviceId}');
+            debugPrint(
+              '   Device ID: ${DeviceIdentityService.instance.deviceId}',
+            );
             debugPrint('   Email: ${DeviceIdentityService.instance.email}');
           }
         } else {
-          debugPrint('   Device ID: ${DeviceIdentityService.instance.deviceId}');
+          debugPrint(
+            '   Device ID: ${DeviceIdentityService.instance.deviceId}',
+          );
           debugPrint('   Email: ${DeviceIdentityService.instance.email}');
         }
       } catch (e) {
@@ -94,12 +107,16 @@ class DebugStorage {
         if (DeviceIdentityService.instance.isInitialized) {
           final deviceId = DeviceIdentityService.instance.deviceId;
           final key = await NativeCryptoService.instance.getKey(deviceId);
-          debugPrint('${key != null ? '✅' : '❌'} Encryption key exists: ${key != null}');
+          debugPrint(
+            '${key != null ? '✅' : '❌'} Encryption key exists: ${key != null}',
+          );
           if (key != null) {
             debugPrint('   Key length: ${key.length} bytes');
           }
         } else {
-          debugPrint('⚠️  Cannot check encryption key - device identity not initialized');
+          debugPrint(
+            '⚠️  Cannot check encryption key - device identity not initialized',
+          );
         }
       } catch (e) {
         debugPrint('❌ Encryption key error: $e');

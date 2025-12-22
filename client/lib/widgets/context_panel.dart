@@ -6,10 +6,10 @@ import '../widgets/files_context_panel.dart';
 import '../widgets/activities_context_panel.dart';
 
 /// Context Panel - Shows contextual content based on selected view
-/// 
+///
 /// This panel appears between the icon sidebar and main view on desktop,
 /// and can be shown as a drawer or overlay on mobile/tablet.
-/// 
+///
 /// Displays different content types:
 /// - Channels list when Channels is selected
 /// - Messages list when Messages is selected
@@ -25,7 +25,7 @@ class ContextPanel extends StatelessWidget {
   final Function(String type, Map<String, dynamic> data)? onNotificationTap;
   final double width;
   final bool useFullWidth; // For activities on tablet/mobile
-  
+
   // Additional data for People panel
   final List<Map<String, dynamic>>? recentPeople;
   final List<Map<String, dynamic>>? starredPeople;
@@ -33,7 +33,7 @@ class ContextPanel extends StatelessWidget {
   final bool isLoadingPeople;
   final VoidCallback? onLoadMorePeople;
   final bool hasMorePeople;
-  
+
   // Additional data for Channels panel
   final List<Map<String, dynamic>>? allChannels; // All member/owner channels
   final String? activeChannelUuid;
@@ -81,14 +81,14 @@ class ContextPanel extends StatelessWidget {
           onCreateChannel: onCreateChannel,
           isLoading: isLoadingChannels,
         );
-        
+
       case ContextPanelType.messages:
         return MessagesListView(
           host: host,
           onMessageTap: onMessageTap ?? (uuid, displayName) {},
           onNavigateToPeople: onNavigateToPeople ?? () {},
         );
-        
+
       case ContextPanelType.people:
         return PeopleContextPanel(
           host: host,
@@ -100,16 +100,16 @@ class ContextPanel extends StatelessWidget {
           onLoadMore: onLoadMorePeople,
           hasMore: hasMorePeople,
         );
-        
+
       case ContextPanelType.files:
         return const FilesContextPanel();
-        
+
       case ContextPanelType.activities:
         return ActivitiesContextPanel(
           host: host,
           onNotificationTap: onNotificationTap,
         );
-        
+
       case ContextPanelType.none:
         return const SizedBox.shrink();
     }
@@ -120,20 +120,19 @@ class ContextPanel extends StatelessWidget {
 enum ContextPanelType {
   /// No context panel (hidden)
   none,
-  
+
   /// Shows list of channels
   channels,
-  
+
   /// Shows list of recent messages/conversations
   messages,
-  
+
   /// Shows list of people/contacts
   people,
-  
+
   /// Shows list of recent files
   files,
-  
+
   /// Shows notification feed for activities
   activities,
 }
-

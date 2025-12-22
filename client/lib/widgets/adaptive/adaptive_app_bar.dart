@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import '../../config/layout_config.dart';
 
 /// Adaptive AppBar - Material 3 Size Variants
-/// 
+///
 /// Provides three AppBar sizes following Material 3 guidelines:
 /// - Small (64dp): Compact, single-line title, best for mobile
 /// - Medium (112dp): Title + subtitle, comfortable spacing, best for tablet
 /// - Large (152dp): Large title, extended header, best for desktop
-/// 
+///
 /// Automatically selects size based on screen width if not specified.
-/// 
+///
 /// Usage:
 /// ```dart
 /// AdaptiveAppBar(
@@ -79,7 +79,7 @@ class AdaptiveAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final effectiveSize = size ?? _getAutomaticSize(context);
-    
+
     switch (effectiveSize) {
       case AppBarSize.small:
         return _buildSmallAppBar(context);
@@ -100,7 +100,7 @@ class AdaptiveAppBar extends StatelessWidget implements PreferredSizeWidget {
   /// Build Small AppBar (64dp) - Mobile
   Widget _buildSmallAppBar(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return AppBar(
       title: _buildTitle(context, AppBarSize.small),
       leading: leading,
@@ -118,7 +118,7 @@ class AdaptiveAppBar extends StatelessWidget implements PreferredSizeWidget {
   /// Build Medium AppBar (112dp) - Tablet
   Widget _buildMediumAppBar(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return SizedBox(
       height: preferredSize.height,
       child: AppBar(
@@ -141,7 +141,7 @@ class AdaptiveAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget _buildLargeAppBar(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    
+
     return SizedBox(
       height: preferredSize.height,
       child: AppBar(
@@ -153,41 +153,47 @@ class AdaptiveAppBar extends StatelessWidget implements PreferredSizeWidget {
         scrolledUnderElevation: 2,
         backgroundColor: backgroundColor ?? colorScheme.surface,
         foregroundColor: foregroundColor ?? colorScheme.onSurface,
-        flexibleSpace: flexibleSpace ?? FlexibleSpaceBar(
-          titlePadding: const EdgeInsets.only(left: 16, bottom: 16, right: 16),
-          title: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Title
-              _buildTitle(context, AppBarSize.large),
-              
-              // Subtitle
-              if (subtitle != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  subtitle!,
-                  style: textTheme.titleMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-              
-              // Description (only in large)
-              if (description != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  description!,
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ],
-          ),
-        ),
+        flexibleSpace:
+            flexibleSpace ??
+            FlexibleSpaceBar(
+              titlePadding: const EdgeInsets.only(
+                left: 16,
+                bottom: 16,
+                right: 16,
+              ),
+              title: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title
+                  _buildTitle(context, AppBarSize.large),
+
+                  // Subtitle
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle!,
+                      style: textTheme.titleMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+
+                  // Description (only in large)
+                  if (description != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      description!,
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
         bottom: bottom,
       ),
     );
@@ -197,14 +203,14 @@ class AdaptiveAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget _buildTitle(BuildContext context, AppBarSize size) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     if (title is Widget) {
       return title as Widget;
     }
-    
+
     final titleText = title.toString();
     final textStyle = _getTitleTextStyle(textTheme, colorScheme, size);
-    
+
     return Text(titleText, style: textStyle);
   }
 
@@ -216,9 +222,7 @@ class AdaptiveAppBar extends StatelessWidget implements PreferredSizeWidget {
   ) {
     switch (size) {
       case AppBarSize.small:
-        return textTheme.titleLarge?.copyWith(
-          color: colorScheme.onSurface,
-        );
+        return textTheme.titleLarge?.copyWith(color: colorScheme.onSurface);
       case AppBarSize.medium:
         return textTheme.headlineSmall?.copyWith(
           color: colorScheme.onSurface,
@@ -242,9 +246,9 @@ class AdaptiveAppBar extends StatelessWidget implements PreferredSizeWidget {
 }
 
 /// Sliver Adaptive AppBar - For use with CustomScrollView
-/// 
+///
 /// Provides collapsing/expanding behavior with size variants.
-/// 
+///
 /// Usage:
 /// ```dart
 /// CustomScrollView(
@@ -295,7 +299,7 @@ class SliverAdaptiveAppBar extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final expandedHeight = LayoutConfig.getAppBarHeight(effectiveSize);
-    
+
     return SliverAppBar(
       title: _buildTitle(context, effectiveSize),
       leading: leading,
@@ -309,15 +313,19 @@ class SliverAdaptiveAppBar extends StatelessWidget {
       foregroundColor: colorScheme.onSurface,
       elevation: 0,
       scrolledUnderElevation: 2,
-      flexibleSpace: flexibleSpace ?? (effectiveSize == AppBarSize.large
-        ? FlexibleSpaceBar(
-            title: _buildLargeTitle(context, textTheme, colorScheme),
-            titlePadding: const EdgeInsets.only(left: 16, bottom: 16, right: 16),
-            background: Container(
-              color: colorScheme.surface,
-            ),
-          )
-        : null),
+      flexibleSpace:
+          flexibleSpace ??
+          (effectiveSize == AppBarSize.large
+              ? FlexibleSpaceBar(
+                  title: _buildLargeTitle(context, textTheme, colorScheme),
+                  titlePadding: const EdgeInsets.only(
+                    left: 16,
+                    bottom: 16,
+                    right: 16,
+                  ),
+                  background: Container(color: colorScheme.surface),
+                )
+              : null),
       bottom: bottom,
     );
   }
@@ -330,23 +338,27 @@ class SliverAdaptiveAppBar extends StatelessWidget {
 
   Widget _buildTitle(BuildContext context, AppBarSize size) {
     if (title is Widget) return title as Widget;
-    
+
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     TextStyle? textStyle;
     switch (size) {
       case AppBarSize.small:
         textStyle = textTheme.titleLarge;
         break;
       case AppBarSize.medium:
-        textStyle = textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold);
+        textStyle = textTheme.headlineSmall?.copyWith(
+          fontWeight: FontWeight.bold,
+        );
         break;
       case AppBarSize.large:
-        textStyle = textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold);
+        textStyle = textTheme.headlineMedium?.copyWith(
+          fontWeight: FontWeight.bold,
+        );
         break;
     }
-    
+
     return Text(
       title.toString(),
       style: textStyle?.copyWith(color: colorScheme.onSurface),
@@ -393,4 +405,3 @@ class SliverAdaptiveAppBar extends StatelessWidget {
     );
   }
 }
-

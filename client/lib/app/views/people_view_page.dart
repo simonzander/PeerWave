@@ -10,24 +10,21 @@ import '../../providers/unread_messages_provider.dart';
 import '../../services/event_bus.dart';
 
 /// People View Page
-/// 
+///
 /// Shows all people/contacts with recent conversations
-/// 
+///
 /// Structure:
 /// - Desktop: Context Panel (PeopleContextPanel) + Main Content (PeopleScreen)
 /// - Tablet: Main Content only (PeopleScreen with showRecentSection=true)
 /// - Mobile: Main Content only (PeopleScreen with showRecentSection=true)
-/// 
+///
 /// Features:
 /// - Recent conversations in context panel (desktop only)
 /// - Full people grid in main content (all layouts)
 /// - Search functionality
 /// - Real-time updates via EventBus (Phase 2)
 class PeopleViewPage extends BaseView {
-  const PeopleViewPage({
-    super.key,
-    required super.host,
-  });
+  const PeopleViewPage({super.key, required super.host});
 
   @override
   State<PeopleViewPage> createState() => _PeopleViewPageState();
@@ -39,7 +36,7 @@ class _PeopleViewPageState extends BaseViewState<PeopleViewPage> {
   List<Map<String, dynamic>> _starredPeople = [];
   bool _isLoadingContextPanel = false;
   static const int _contextPanelLimit = 10;
-  
+
   // EventBus subscriptions
   StreamSubscription? _newMessageSubscription;
   StreamSubscription? _conversationSubscription;
@@ -50,44 +47,44 @@ class _PeopleViewPageState extends BaseViewState<PeopleViewPage> {
     _loadContextPanelData();
     _setupEventBusListeners();
   }
-  
+
   @override
   void dispose() {
     _newMessageSubscription?.cancel();
     _conversationSubscription?.cancel();
     super.dispose();
   }
-  
+
   /// Setup Event Bus listeners for real-time updates
   void _setupEventBusListeners() {
     // Listen for new messages
     _newMessageSubscription = EventBus.instance
         .on<Map<String, dynamic>>(AppEvent.newMessage)
         .listen((data) {
-      debugPrint('[PEOPLE_VIEW] New message received via Event Bus');
-      // Reload context panel data to update recent conversations
-      if (mounted) {
-        _loadContextPanelData();
-      }
-    });
-    
+          debugPrint('[PEOPLE_VIEW] New message received via Event Bus');
+          // Reload context panel data to update recent conversations
+          if (mounted) {
+            _loadContextPanelData();
+          }
+        });
+
     // Listen for new conversations
     _conversationSubscription = EventBus.instance
         .on<Map<String, dynamic>>(AppEvent.newConversation)
         .listen((data) {
-      debugPrint('[PEOPLE_VIEW] New conversation via Event Bus');
-      // Reload context panel data to add new conversation
-      if (mounted) {
-        _loadContextPanelData();
-      }
-    });
-    
+          debugPrint('[PEOPLE_VIEW] New conversation via Event Bus');
+          // Reload context panel data to add new conversation
+          if (mounted) {
+            _loadContextPanelData();
+          }
+        });
+
     debugPrint('[PEOPLE_VIEW] Event Bus listeners registered');
   }
 
   @override
   ContextPanelType get contextPanelType => ContextPanelType.people;
-  
+
   @override
   Widget buildContextPanel() {
     // Use existing ContextPanel widget wrapper with people type
@@ -102,7 +99,7 @@ class _PeopleViewPageState extends BaseViewState<PeopleViewPage> {
       hasMorePeople: false, // TODO: Implement pagination if needed
     );
   }
-  
+
   @override
   Widget buildMainContent() {
     return PeopleScreen(
@@ -120,24 +117,24 @@ class _PeopleViewPageState extends BaseViewState<PeopleViewPage> {
   /// Shows last 10 people from recent 1:1 conversations
   Future<void> _loadContextPanelData() async {
     setState(() => _isLoadingContextPanel = true);
-    
+
     try {
       debugPrint('[PEOPLE_VIEW] Loading context panel data...');
-      
+
       // Get unread provider from context
       final unreadProvider = context.read<UnreadMessagesProvider>();
-      
+
       // Use shared utility to load data
       final peopleList = await PeopleContextDataLoader.loadRecentPeople(
         limit: _contextPanelLimit,
         unreadProvider: unreadProvider,
       );
-      
+
       // Load starred people separately
       final starredList = await PeopleContextDataLoader.loadStarredPeople(
         unreadProvider: unreadProvider,
       );
-      
+
       if (mounted) {
         setState(() {
           _recentPeople = peopleList;
@@ -145,12 +142,14 @@ class _PeopleViewPageState extends BaseViewState<PeopleViewPage> {
           _isLoadingContextPanel = false;
         });
       }
-      
-      debugPrint('[PEOPLE_VIEW] Loaded ${_recentPeople.length} people for context panel');
+
+      debugPrint(
+        '[PEOPLE_VIEW] Loaded ${_recentPeople.length} people for context panel',
+      );
     } catch (e, stackTrace) {
       debugPrint('[PEOPLE_VIEW] Error loading context panel data: $e');
       debugPrint('[PEOPLE_VIEW] Stack trace: $stackTrace');
-      
+
       if (mounted) {
         setState(() => _isLoadingContextPanel = false);
       }
@@ -171,12 +170,12 @@ class _PeopleViewPageState extends BaseViewState<PeopleViewPage> {
   /// Handle person tap - navigate to messages view with this person
   void _handlePersonTap(String uuid, String displayName) {
     debugPrint('[PEOPLE_VIEW] Person tapped: $displayName ($uuid)');
-    
+
     // Navigate to messages view with specific conversation
-    context.go('/app/messages/$uuid', extra: {
-      'host': widget.host,
-      'displayName': displayName,
-    });
+    context.go(
+      '/app/messages/$uuid',
+      extra: {'host': widget.host, 'displayName': displayName},
+    );
   }
 
   @override

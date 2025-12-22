@@ -4,11 +4,8 @@ import 'package:flutter/material.dart';
 /// Shows 4 steps: OTP → Backup Codes → Security Key → Profile
 class RegistrationProgressBar extends StatelessWidget {
   final int currentStep;
-  
-  const RegistrationProgressBar({
-    super.key,
-    required this.currentStep,
-  }) ;
+
+  const RegistrationProgressBar({super.key, required this.currentStep});
 
   @override
   Widget build(BuildContext context) {
@@ -16,12 +13,7 @@ class RegistrationProgressBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
       decoration: const BoxDecoration(
         color: Color(0xFF23272A),
-        border: Border(
-          bottom: BorderSide(
-            color: Color(0xFF40444B),
-            width: 1,
-          ),
-        ),
+        border: Border(bottom: BorderSide(color: Color(0xFF40444B), width: 1)),
       ),
       child: Column(
         children: [
@@ -42,7 +34,12 @@ class RegistrationProgressBar extends StatelessWidget {
     );
   }
 
-  Widget _buildStepIndicator(BuildContext context, int step, String label, bool isActive) {
+  Widget _buildStepIndicator(
+    BuildContext context,
+    int step,
+    String label,
+    bool isActive,
+  ) {
     return Expanded(
       child: Column(
         children: [
@@ -50,33 +47,39 @@ class RegistrationProgressBar extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.surfaceContainerHighest,
+              color: isActive
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.surfaceContainerHighest,
               shape: BoxShape.circle,
               border: Border.all(
-                color: isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline,
+                color: isActive
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.outline,
                 width: 2,
               ),
             ),
             child: Center(
               child: isActive
                   ? (currentStep == step
-                      ? Text(
-                          step.toString(),
-                          style: TextStyle(
+                        ? Text(
+                            step.toString(),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onPrimary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          )
+                        : Icon(
+                            Icons.check,
                             color: Theme.of(context).colorScheme.onPrimary,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        )
-                      : Icon(
-                          Icons.check,
-                          color: Theme.of(context).colorScheme.onPrimary,
-                          size: 24,
-                        ))
+                            size: 24,
+                          ))
                   : Text(
                       step.toString(),
                       style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.5),
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
                       ),
@@ -87,7 +90,11 @@ class RegistrationProgressBar extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: isActive ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+              color: isActive
+                  ? Theme.of(context).colorScheme.onSurface
+                  : Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.5),
               fontSize: 12,
               fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
             ),
@@ -103,9 +110,10 @@ class RegistrationProgressBar extends StatelessWidget {
       child: Container(
         height: 2,
         margin: const EdgeInsets.only(bottom: 30),
-        color: isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline,
+        color: isActive
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.outline,
       ),
     );
   }
 }
-

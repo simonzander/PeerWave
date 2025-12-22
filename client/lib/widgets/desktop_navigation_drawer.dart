@@ -11,7 +11,7 @@ import 'animated_widgets.dart';
 import '../theme/app_theme_constants.dart';
 
 /// Desktop Navigation Drawer with expandable Messages and Channels sections
-/// 
+///
 /// Provides a richer navigation experience on desktop with:
 /// - Standard navigation destinations
 /// - Expandable Messages section with recent conversations
@@ -28,8 +28,10 @@ class DesktopNavigationDrawer extends StatefulWidget {
   final List<Map<String, dynamic>>? channels;
   final void Function(String uuid, String name, String type)? onChannelTap;
   final VoidCallback? onNavigateToPeople;
-  final VoidCallback? onNavigateToMessagesView; // Navigate to messages list view
-  final VoidCallback? onNavigateToChannelsView; // Navigate to channels list view
+  final VoidCallback?
+  onNavigateToMessagesView; // Navigate to messages list view
+  final VoidCallback?
+  onNavigateToChannelsView; // Navigate to channels list view
 
   const DesktopNavigationDrawer({
     super.key,
@@ -48,7 +50,8 @@ class DesktopNavigationDrawer extends StatefulWidget {
   });
 
   @override
-  State<DesktopNavigationDrawer> createState() => _DesktopNavigationDrawerState();
+  State<DesktopNavigationDrawer> createState() =>
+      _DesktopNavigationDrawerState();
 }
 
 class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
@@ -65,52 +68,57 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
 
   Future<void> _loadRecentConversations() async {
     if (_loadingConversations) return;
-    
+
     setState(() {
       _loadingConversations = true;
     });
 
     try {
       final conversations = <Map<String, dynamic>>[];
-      
+
       // Displayable message types whitelist (same as ActivitiesService)
       const displayableTypes = {'message', 'file'};
-      
+
       // Use SQLite for recent conversations
       try {
         final messageStore = await SqliteMessageStore.getInstance();
-        final conversationsStore = await SqliteRecentConversationsStore.getInstance();
-        
+        final conversationsStore =
+            await SqliteRecentConversationsStore.getInstance();
+
         // Get recent conversations from SQLite (FAST!)
-        var recentConvs = await conversationsStore.getRecentConversations(limit: 20);
-        
+        var recentConvs = await conversationsStore.getRecentConversations(
+          limit: 20,
+        );
+
         // FALLBACK: If conversations store is empty, get from messages
         if (recentConvs.isEmpty) {
-          final uniqueSenders = await messageStore.getAllUniqueConversationPartners();
-          recentConvs = uniqueSenders.take(20).map((userId) => {
-            'userId': userId,
-            'displayName': userId,
-          }).toList();
+          final uniqueSenders = await messageStore
+              .getAllUniqueConversationPartners();
+          recentConvs = uniqueSenders
+              .take(20)
+              .map((userId) => {'userId': userId, 'displayName': userId})
+              .toList();
         }
-        
+
         // Get last message for each conversation
         for (final conv in recentConvs) {
           final userId = conv['userId'] ?? conv['uuid'];
           if (userId == null) continue;
-          
+
           // Get last message from this conversation (FAST indexed query!)
           final allMessages = await messageStore.getMessagesFromConversation(
             userId,
             types: displayableTypes.toList(),
             limit: 1,
           );
-          
+
           if (allMessages.isEmpty) continue;
-          
+
           final lastMsg = allMessages.first;
-          final lastMessageTime = DateTime.tryParse(lastMsg['timestamp'] ?? '') 
-              ?? DateTime.fromMillisecondsSinceEpoch(0);
-          
+          final lastMessageTime =
+              DateTime.tryParse(lastMsg['timestamp'] ?? '') ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+
           conversations.add({
             'uuid': userId,
             'displayName': conv['displayName'] ?? userId,
@@ -118,17 +126,19 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
           });
         }
       } catch (sqliteError) {
-        debugPrint('[DESKTOP_NAV] ✗ SQLite error loading conversations: $sqliteError');
+        debugPrint(
+          '[DESKTOP_NAV] ✗ SQLite error loading conversations: $sqliteError',
+        );
         // No fallback - SQLite is required
       }
-      
+
       // Sort by last message time
       conversations.sort((a, b) {
         final timeA = a['lastMessageTime'] as DateTime;
         final timeB = b['lastMessageTime'] as DateTime;
         return timeB.compareTo(timeA);
       });
-      
+
       // Limit to 20 most recent
       final limitedConversations = conversations.take(20).toList();
 
@@ -147,9 +157,11 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
     }
   }
 
-  Future<void> _enrichWithUserInfo(List<Map<String, dynamic>> conversations) async {
+  Future<void> _enrichWithUserInfo(
+    List<Map<String, dynamic>> conversations,
+  ) async {
     final userIds = conversations.map((c) => c['uuid'] as String).toList();
-    
+
     if (userIds.isEmpty) return;
 
     try {
@@ -158,11 +170,11 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
         '${widget.host}/client/people/info',
         data: {'userIds': userIds},
       );
-      
+
       if (resp.statusCode == 200) {
         final users = resp.data is List ? resp.data : [];
         final userMap = <String, Map<String, String?>>{};
-        
+
         for (final user in users) {
           // Extract picture as String (handle both direct string and nested objects)
           String? pictureData;
@@ -172,13 +184,13 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
           } else if (picture is Map && picture['data'] != null) {
             pictureData = picture['data'] as String?;
           }
-          
+
           userMap[user['uuid']] = {
             'displayName': user['displayName'] ?? user['uuid'],
             'picture': pictureData,
           };
         }
-        
+
         // Update display names and pictures
         for (final conv in conversations) {
           final userId = conv['uuid'] as String;
@@ -198,7 +210,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Container(
       width: 280,
       decoration: BoxDecoration(
@@ -214,11 +226,8 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
         children: [
           // Leading (header)
           if (widget.leading != null)
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: widget.leading,
-            ),
-          
+            Padding(padding: const EdgeInsets.all(16.0), child: widget.leading),
+
           // Main navigation destinations
           Expanded(
             child: ListView(
@@ -228,14 +237,14 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
                 ...widget.destinations.asMap().entries.map((entry) {
                   final index = entry.key;
                   final destination = entry.value;
-                  
+
                   // Skip Messages and Channels as they have expandable sections
                   if (destination.label == 'Messages') {
                     return _buildMessagesSection();
                   } else if (destination.label == 'Channels') {
                     return _buildChannelsSection();
                   }
-                  
+
                   // Regular destination
                   return _buildNavigationTile(
                     icon: destination.icon,
@@ -248,7 +257,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
               ],
             ),
           ),
-          
+
           // Trailing (footer)
           if (widget.trailing != null) ...[
             Divider(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
@@ -270,17 +279,17 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
     required VoidCallback onTap,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: ListTile(
         leading: selected ? selectedIcon : icon,
         title: Text(label),
         selected: selected,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        selectedTileColor: colorScheme.secondaryContainer.withValues(
+          alpha: 0.5,
         ),
-        selectedTileColor: colorScheme.secondaryContainer.withValues(alpha: 0.5),
         onTap: onTap,
       ),
     );
@@ -308,7 +317,8 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
                   widget.onNavigateToMessagesView!();
                 }
               },
-              onToggle: () => setState(() => _messagesExpanded = !_messagesExpanded),
+              onToggle: () =>
+                  setState(() => _messagesExpanded = !_messagesExpanded),
               onAdd: widget.onNavigateToPeople, // Navigate to People
             ),
             if (_messagesExpanded)
@@ -316,9 +326,11 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
                 final displayName = dm['displayName'] ?? 'Unknown';
                 final uuid = dm['uuid'] ?? '';
                 final picture = dm['picture'] as String?;
-                final unreadCount = unreadProvider.getDirectMessageUnreadCount(uuid);
+                final unreadCount = unreadProvider.getDirectMessageUnreadCount(
+                  uuid,
+                );
                 final isSelected = navProvider.isDirectMessageSelected(uuid);
-                
+
                 return Padding(
                   padding: EdgeInsets.symmetric(
                     horizontal: AppThemeConstants.spacingSm,
@@ -376,7 +388,8 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
                   widget.onNavigateToChannelsView!();
                 }
               },
-              onToggle: () => setState(() => _channelsExpanded = !_channelsExpanded),
+              onToggle: () =>
+                  setState(() => _channelsExpanded = !_channelsExpanded),
               onAdd: () => _showCreateChannelDialog(context), // Create channel
             ),
             if (_channelsExpanded)
@@ -387,7 +400,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
                 final isPrivate = channel['isPrivate'] ?? false;
                 final unreadCount = unreadProvider.getChannelUnreadCount(uuid);
                 final isSelected = navProvider.isChannelSelected(uuid);
-                
+
                 // Icon based on channel type
                 Widget leadingIcon;
                 if (type == 'signal') {
@@ -398,7 +411,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
                 } else {
                   leadingIcon = const Icon(Icons.campaign, size: 20);
                 }
-                
+
                 return Padding(
                   padding: EdgeInsets.symmetric(
                     horizontal: AppThemeConstants.spacingSm,
@@ -478,7 +491,9 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
               const SizedBox(width: 4),
               IconButton(
                 icon: Icon(
-                  expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                  expanded
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
                   size: 20,
                 ),
                 onPressed: onToggle,
@@ -515,7 +530,7 @@ class _CreateChannelDialog extends StatefulWidget {
   const _CreateChannelDialog({
     required this.host,
     required this.onChannelCreated,
-  }) ;
+  });
 
   @override
   State<_CreateChannelDialog> createState() => _CreateChannelDialogState();
@@ -543,13 +558,12 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
       final scope = channelType == 'webrtc' ? 'channelWebRtc' : 'channelSignal';
       final url = ApiService.ensureHttpPrefix(widget.host);
       final resp = await ApiService.get('$url/api/roles?scope=$scope');
-      
+
       if (resp.statusCode == 200) {
         final data = resp.data;
-        final rolesList = (data['roles'] as List?)
-            ?.map((r) => Role.fromJson(r))
-             ?? [];
-        
+        final rolesList =
+            (data['roles'] as List?)?.map((r) => Role.fromJson(r)) ?? [];
+
         setState(() {
           availableRoles = rolesList.toList();
           selectedRole = rolesList.isNotEmpty ? rolesList.first : null;
@@ -594,7 +608,10 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
               ],
             ),
             const SizedBox(height: 8),
-            const Text('Channel Type:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Channel Type:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             Row(
               children: [
                 Expanded(
@@ -626,12 +643,22 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
               ],
             ),
             const SizedBox(height: 16),
-            const Text('Default Join Role:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Default Join Role:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             if (isLoadingRoles)
               const Center(child: CircularProgressIndicator())
             else if (availableRoles.isEmpty)
-              Text('No standard roles available', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)))
+              Text(
+                'No standard roles available',
+                style: TextStyle(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.5),
+                ),
+              )
             else
               DropdownButton<Role>(
                 isExpanded: true,
@@ -675,7 +702,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
         type: channelType,
         defaultRoleId: selectedRole!.uuid,
       );
-      
+
       if (resp.statusCode == 201) {
         widget.onChannelCreated(channelName);
         if (context.mounted) {
@@ -685,11 +712,10 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
     } catch (e) {
       debugPrint('Error creating channel: $e');
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error creating channel: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error creating channel: $e')));
       }
     }
   }
 }
-

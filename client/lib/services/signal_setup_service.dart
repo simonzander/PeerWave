@@ -12,8 +12,9 @@ import 'device_identity_service.dart';
 import 'web/webauthn_crypto_service.dart';
 import 'native_crypto_service.dart';
 import 'api_service.dart';
-import 'key_management_metrics.dart';
-import 'server_config_web.dart' if (dart.library.io) 'server_config_native.dart';
+import '../core/metrics/key_management_metrics.dart';
+import 'server_config_web.dart'
+    if (dart.library.io) 'server_config_native.dart';
 
 /// Service to check if Signal Protocol keys are properly set up
 /// and handle post-login initialization
@@ -252,7 +253,7 @@ class SignalSetupService {
         debugPrint(
           '[SIGNAL SETUP] Device identity not initialized - attempting restore...',
         );
-        
+
         // For native, get the active server URL
         String? serverUrl;
         if (!kIsWeb) {
@@ -262,8 +263,10 @@ class SignalSetupService {
             debugPrint('[SIGNAL SETUP] Active server: $serverUrl');
           }
         }
-        
-        if (!await DeviceIdentityService.instance.tryRestoreFromSession(serverUrl: serverUrl)) {
+
+        if (!await DeviceIdentityService.instance.tryRestoreFromSession(
+          serverUrl: serverUrl,
+        )) {
           debugPrint(
             '[SIGNAL SETUP] Cannot check keys without device identity',
           );

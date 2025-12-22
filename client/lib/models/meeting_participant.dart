@@ -82,13 +82,13 @@ class MeetingParticipant {
   bool get isOwner => role == 'meeting_owner';
   bool get isManager => role == 'meeting_manager';
   bool get isMember => role == 'meeting_member';
-  
+
   bool get isInvited => status == 'invited';
   bool get hasAccepted => status == 'accepted';
   bool get hasDeclined => status == 'declined';
   bool get hasAttended => status == 'attended';
   bool get hasLeft => status == 'left';
-  
+
   bool get isActive => hasAccepted || hasAttended;
 
   @override

@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:universal_html/html.dart' as html;
 import '../services/api_service.dart';
-import '../services/auth_service_web.dart' if (dart.library.io) '../services/auth_service_native.dart';
+import '../services/auth_service_web.dart'
+    if (dart.library.io) '../services/auth_service_native.dart';
 import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
 
@@ -26,26 +27,26 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
 
   Future<void> _pickImage() async {
     if (!kIsWeb) return;
-    
+
     try {
       final html.FileUploadInputElement input = html.FileUploadInputElement()
         ..accept = 'image/*';
-      
+
       input.click();
-      
+
       await input.onChange.first;
-      
+
       if (input.files!.isEmpty) return;
-      
+
       final file = input.files![0];
       final reader = html.FileReader();
-      
+
       reader.readAsArrayBuffer(file);
-      
+
       await reader.onLoad.first;
-      
+
       final bytes = reader.result as List<int>;
-      
+
       // Check file size (max 1MB)
       if (bytes.length > 1 * 1024 * 1024) {
         setState(() {
@@ -53,7 +54,7 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
         });
         return;
       }
-      
+
       setState(() {
         _imageBytes = Uint8List.fromList(bytes);
         _imageFileName = file.name;
@@ -77,7 +78,10 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
     // Auto-generate atName if empty
     String atName = _atNameController.text.trim();
     if (atName.isEmpty) {
-      atName = _displayNameController.text.trim().replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '').toLowerCase();
+      atName = _displayNameController.text
+          .trim()
+          .replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '')
+          .toLowerCase();
       if (atName.isEmpty) {
         atName = 'user';
       }
@@ -96,7 +100,8 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
 
@@ -109,7 +114,8 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
       // Add image if selected
       if (_imageBytes != null) {
         final base64Image = base64Encode(_imageBytes!);
-        data['picture'] = 'data:image/${_imageFileName?.split('.').last ?? 'png'};base64,$base64Image';
+        data['picture'] =
+            'data:image/${_imageFileName?.split('.').last ?? 'png'};base64,$base64Image';
       }
 
       final resp = await ApiService.post(
@@ -120,30 +126,34 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
       if (resp.statusCode == 200 || resp.statusCode == 201) {
         // Registration complete - log out the user and redirect to login
         // The user needs to log in properly after registration
-        
+
         // Clear client-side authentication state
         AuthService.isLoggedIn = false;
-        
+
         if (mounted) {
           // Show success message
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Registration complete! Please log in to continue.'),
+              content: Text(
+                'Registration complete! Please log in to continue.',
+              ),
               duration: Duration(seconds: 3),
               backgroundColor: Colors.green,
             ),
           );
-          
+
           // Wait a moment for the user to see the message
           await Future.delayed(const Duration(seconds: 1));
           if (!mounted) return;
-          
+
           // Navigate to login page
           GoRouter.of(context).go('/login');
         }
       } else {
         // Server might return error if atName is taken
-        final errorMsg = resp.data is Map ? (resp.data['error'] ?? resp.data['message']) : null;
+        final errorMsg = resp.data is Map
+            ? (resp.data['error'] ?? resp.data['message'])
+            : null;
         setState(() {
           _error = errorMsg ?? 'Failed to save profile. Please try again.';
         });
@@ -164,14 +174,14 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
     final isFormValid = _displayNameController.text.trim().isNotEmpty;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
+
     // Responsive width
     final screenWidth = MediaQuery.of(context).size.width;
-    final cardWidth = screenWidth < 600 
+    final cardWidth = screenWidth < 600
         ? screenWidth * 0.9
         : screenWidth < 840
-            ? 500.0
-            : 600.0;
+        ? 500.0
+        : 600.0;
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
@@ -220,171 +230,192 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 32),
-                    // Profile Picture
-                    Center(
-                      child: Stack(
-                        children: [
-                          CircleAvatar(
-                            radius: 60,
-                            backgroundColor: colorScheme.surfaceContainerHigh,
-                            backgroundImage: _imageBytes != null
-                                ? MemoryImage(_imageBytes!)
-                                : null,
-                            child: _imageBytes == null
-                                ? Icon(
-                                    Icons.person,
-                                    size: 60,
-                                    color: colorScheme.onSurfaceVariant,
-                                  )
-                                : null,
-                          ),
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: CircleAvatar(
-                              radius: 20,
-                              backgroundColor: colorScheme.primary,
-                              child: IconButton(
-                                icon: const Icon(Icons.camera_alt, size: 20),
-                                color: colorScheme.onPrimary,
-                                onPressed: _pickImage,
-                                padding: EdgeInsets.zero,
+                      // Profile Picture
+                      Center(
+                        child: Stack(
+                          children: [
+                            CircleAvatar(
+                              radius: 60,
+                              backgroundColor: colorScheme.surfaceContainerHigh,
+                              backgroundImage: _imageBytes != null
+                                  ? MemoryImage(_imageBytes!)
+                                  : null,
+                              child: _imageBytes == null
+                                  ? Icon(
+                                      Icons.person,
+                                      size: 60,
+                                      color: colorScheme.onSurfaceVariant,
+                                    )
+                                  : null,
+                            ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: CircleAvatar(
+                                radius: 20,
+                                backgroundColor: colorScheme.primary,
+                                child: IconButton(
+                                  icon: const Icon(Icons.camera_alt, size: 20),
+                                  color: colorScheme.onPrimary,
+                                  onPressed: _pickImage,
+                                  padding: EdgeInsets.zero,
+                                ),
                               ),
                             ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Click camera icon to upload profile picture (optional)',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 32),
+                      // Display Name Field
+                      TextField(
+                        controller: _displayNameController,
+                        decoration: InputDecoration(
+                          labelText: 'Display Name *',
+                          hintText: 'Enter your display name',
+                          filled: true,
+                          fillColor: colorScheme.surfaceContainerHigh,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: colorScheme.outline),
                           ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Click camera icon to upload profile picture (optional)',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 32),
-                    // Display Name Field
-                    TextField(
-                      controller: _displayNameController,
-                      decoration: InputDecoration(
-                        labelText: 'Display Name *',
-                        hintText: 'Enter your display name',
-                        filled: true,
-                        fillColor: colorScheme.surfaceContainerHigh,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: colorScheme.outline),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: colorScheme.outline),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: colorScheme.primary, width: 2),
-                        ),
-                        prefixIcon: Icon(Icons.person_outline, color: colorScheme.onSurfaceVariant),
-                      ),
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: colorScheme.onSurface,
-                      ),
-                      onChanged: (value) {
-                        setState(() {});
-                        // Auto-generate atName if not manually edited
-                        if (!_atNameManuallyEdited && value.isNotEmpty) {
-                          final generated = value.trim().replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '').toLowerCase();
-                          _atNameController.text = generated.isEmpty ? '' : generated;
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    // AtName Field
-                    TextField(
-                      controller: _atNameController,
-                      decoration: InputDecoration(
-                        labelText: 'Username (@atName) *',
-                        hintText: 'Enter your username',
-                        helperText: 'Used for mentions and unique identification',
-                        filled: true,
-                        fillColor: colorScheme.surfaceContainerHigh,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: colorScheme.outline),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: colorScheme.outline),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: colorScheme.primary, width: 2),
-                        ),
-                        prefixIcon: Icon(Icons.alternate_email, color: colorScheme.onSurfaceVariant),
-                      ),
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: colorScheme.onSurface,
-                      ),
-                      onChanged: (value) {
-                        setState(() {
-                          _atNameManuallyEdited = value.isNotEmpty;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '* Required field',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    if (_error != null)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: colorScheme.errorContainer,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: colorScheme.error),
-                        ),
-                        child: Text(
-                          _error!,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: colorScheme.onErrorContainer,
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: colorScheme.outline),
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    // Complete Registration Button
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 52),
-                        backgroundColor: colorScheme.primary,
-                        foregroundColor: colorScheme.onPrimary,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        disabledBackgroundColor: colorScheme.surfaceContainerHighest,
-                        disabledForegroundColor: colorScheme.onSurfaceVariant,
-                      ),
-                      onPressed: (_loading || !isFormValid) ? null : _completeRegistration,
-                      child: _loading
-                          ? SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                color: colorScheme.onPrimary,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : Text(
-                              'Complete Registration',
-                              style: theme.textTheme.labelLarge?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: colorScheme.primary,
+                              width: 2,
                             ),
-                    ),
+                          ),
+                          prefixIcon: Icon(
+                            Icons.person_outline,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: colorScheme.onSurface,
+                        ),
+                        onChanged: (value) {
+                          setState(() {});
+                          // Auto-generate atName if not manually edited
+                          if (!_atNameManuallyEdited && value.isNotEmpty) {
+                            final generated = value
+                                .trim()
+                                .replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '')
+                                .toLowerCase();
+                            _atNameController.text = generated.isEmpty
+                                ? ''
+                                : generated;
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      // AtName Field
+                      TextField(
+                        controller: _atNameController,
+                        decoration: InputDecoration(
+                          labelText: 'Username (@atName) *',
+                          hintText: 'Enter your username',
+                          helperText:
+                              'Used for mentions and unique identification',
+                          filled: true,
+                          fillColor: colorScheme.surfaceContainerHigh,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: colorScheme.outline),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: colorScheme.outline),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: colorScheme.primary,
+                              width: 2,
+                            ),
+                          ),
+                          prefixIcon: Icon(
+                            Icons.alternate_email,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: colorScheme.onSurface,
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _atNameManuallyEdited = value.isNotEmpty;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '* Required field',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      if (_error != null)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: colorScheme.errorContainer,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: colorScheme.error),
+                          ),
+                          child: Text(
+                            _error!,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onErrorContainer,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      // Complete Registration Button
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 52),
+                          backgroundColor: colorScheme.primary,
+                          foregroundColor: colorScheme.onPrimary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          disabledBackgroundColor:
+                              colorScheme.surfaceContainerHighest,
+                          disabledForegroundColor: colorScheme.onSurfaceVariant,
+                        ),
+                        onPressed: (_loading || !isFormValid)
+                            ? null
+                            : _completeRegistration,
+                        child: _loading
+                            ? SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  color: colorScheme.onPrimary,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                'Complete Registration',
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                      ),
                     ],
                   ),
                 ),
@@ -403,4 +434,3 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
     super.dispose();
   }
 }
-

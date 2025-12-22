@@ -43,10 +43,12 @@ class MagicKeyService {
     try {
       // Split by colon
       final parts = magicKey.split(':');
-      
+
       // Need at least 4 parts for basic format (protocol://host:hash:timestamp:signature)
       if (parts.length < 4) {
-        debugPrint('[MagicKey] Invalid format: Expected at least 4 parts, got ${parts.length}');
+        debugPrint(
+          '[MagicKey] Invalid format: Expected at least 4 parts, got ${parts.length}',
+        );
         return null;
       }
 
@@ -59,11 +61,11 @@ class MagicKeyService {
 
       // Extract host (remove leading //)
       final hostPart = parts[1].replaceAll('//', '');
-      
+
       // Check if next part is a port number or the hash
       int serverUrlEndIndex = 2;
       String serverUrl = '$protocol://$hostPart';
-      
+
       // If parts[2] is a number and small (< 65536, valid port range), it's likely a port
       if (parts.length > 2) {
         final possiblePort = int.tryParse(parts[2]);
@@ -77,7 +79,8 @@ class MagicKeyService {
       int timestampIndex = -1;
       for (int i = serverUrlEndIndex; i < parts.length; i++) {
         final possibleTimestamp = int.tryParse(parts[i]);
-        if (possibleTimestamp != null && possibleTimestamp > 1000000000000) { // After year 2001 in milliseconds
+        if (possibleTimestamp != null && possibleTimestamp > 1000000000000) {
+          // After year 2001 in milliseconds
           timestampIndex = i;
           break;
         }
@@ -89,15 +92,21 @@ class MagicKeyService {
       }
 
       // RandomHash is everything between server URL and timestamp
-      final randomHash = parts.sublist(serverUrlEndIndex, timestampIndex).join(':');
-      
+      final randomHash = parts
+          .sublist(serverUrlEndIndex, timestampIndex)
+          .join(':');
+
       // Timestamp
-      final timestamp = DateTime.fromMillisecondsSinceEpoch(int.parse(parts[timestampIndex]));
-      
+      final timestamp = DateTime.fromMillisecondsSinceEpoch(
+        int.parse(parts[timestampIndex]),
+      );
+
       // Signature is everything after timestamp
       final signature = parts.sublist(timestampIndex + 1).join(':');
 
-      debugPrint('[MagicKey] Parsed - serverUrl: $serverUrl, randomHash: $randomHash');
+      debugPrint(
+        '[MagicKey] Parsed - serverUrl: $serverUrl, randomHash: $randomHash',
+      );
 
       return MagicKeyData(
         serverUrl: serverUrl,
@@ -123,7 +132,7 @@ class MagicKeyService {
 
     final now = DateTime.now();
     final expiresAt = parsed.timestamp.add(const Duration(minutes: 5));
-    
+
     return now.isAfter(expiresAt);
   }
 
@@ -160,30 +169,27 @@ class MagicKeyService {
 
       // Construct full API URL using server URL from magic key
       final verifyUrl = '${parsed.serverUrl}/magic/verify';
-      
+
       debugPrint('[MagicKey] Verifying with server: $verifyUrl');
       debugPrint('[MagicKey] Client ID: $clientId');
 
       // Call verification endpoint
       final response = await ApiService.post(
         verifyUrl,
-        data: {
-          'key': magicKey,
-          'clientid': clientId,
-        },
+        data: {'key': magicKey, 'clientid': clientId},
       );
 
       if (response.statusCode == 200) {
         final data = response.data;
         final success = data['status'] == 'ok';
-        
+
         // If verification successful and server provides session secret, store it
         if (success && data['sessionSecret'] != null) {
           final sessionSecret = data['sessionSecret'] as String;
           await SessionAuthService().initializeSession(clientId, sessionSecret);
           debugPrint('[MagicKey] Session secret stored for client: $clientId');
         }
-        
+
         return MagicKeyVerificationResponse(
           success: success,
           message: data['message'] ?? 'Verification successful',

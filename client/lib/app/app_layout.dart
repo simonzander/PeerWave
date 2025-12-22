@@ -30,26 +30,31 @@ class _AppLayoutState extends State<AppLayout> {
   @override
   void initState() {
     super.initState();
-    
+
     // Monitor connection status (native only)
     if (!kIsWeb) {
-      _connectionSubscription = ServerConnectionService.instance.isConnectedStream.listen((isConnected) {
-        if (mounted) {
-          setState(() {
-            _showServerError = !isConnected;
+      _connectionSubscription = ServerConnectionService
+          .instance
+          .isConnectedStream
+          .listen((isConnected) {
+            if (mounted) {
+              setState(() {
+                _showServerError = !isConnected;
+              });
+            }
+
+            if (!isConnected && _lastKnownConnectionStatus) {
+              // Connection lost
+              _lastKnownConnectionStatus = false;
+              debugPrint('[APP_LAYOUT] Connection lost - showing error screen');
+            } else if (isConnected && !_lastKnownConnectionStatus) {
+              // Connection restored
+              _lastKnownConnectionStatus = true;
+              debugPrint(
+                '[APP_LAYOUT] Connection restored - hiding error screen',
+              );
+            }
           });
-        }
-        
-        if (!isConnected && _lastKnownConnectionStatus) {
-          // Connection lost
-          _lastKnownConnectionStatus = false;
-          debugPrint('[APP_LAYOUT] Connection lost - showing error screen');
-        } else if (isConnected && !_lastKnownConnectionStatus) {
-          // Connection restored
-          _lastKnownConnectionStatus = true;
-          debugPrint('[APP_LAYOUT] Connection restored - hiding error screen');
-        }
-      });
     }
   }
 
@@ -68,13 +73,13 @@ class _AppLayoutState extends State<AppLayout> {
   /// Update selected index based on current route
   void _updateSelectedIndexFromRoute() {
     final location = GoRouterState.of(context).matchedLocation;
-    
+
     int newIndex = 0;
-    
+
     // Check layout type to determine index mapping
     final width = MediaQuery.of(context).size.width;
     final layoutType = LayoutConfig.getLayoutType(width);
-    
+
     if (layoutType == LayoutType.mobile) {
       // Mobile: 0=Activities, 1=Channels, 2=Messages, 3=Files (Meetings in burger menu)
       if (location.startsWith('/app/activities')) {
@@ -102,7 +107,7 @@ class _AppLayoutState extends State<AppLayout> {
         newIndex = 5;
       }
     }
-    
+
     if (newIndex != _selectedIndex) {
       setState(() {
         _selectedIndex = newIndex;
@@ -114,11 +119,11 @@ class _AppLayoutState extends State<AppLayout> {
     setState(() {
       _selectedIndex = index;
     });
-    
+
     // Check layout type for different navigation
     final width = MediaQuery.of(context).size.width;
     final layoutType = LayoutConfig.getLayoutType(width);
-    
+
     if (layoutType == LayoutType.mobile) {
       // Mobile navigation: Activities, Channels, Messages, Files
       switch (index) {
@@ -164,7 +169,7 @@ class _AppLayoutState extends State<AppLayout> {
   List<NavigationDestination> _getNavigationDestinations(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final layoutType = LayoutConfig.getLayoutType(width);
-    
+
     // Mobile: Activities, Channels, Messages, Files (4 items)
     if (layoutType == LayoutType.mobile) {
       return [
@@ -218,7 +223,7 @@ class _AppLayoutState extends State<AppLayout> {
         ),
       ];
     }
-    
+
     // Tablet & Desktop: Activities, Meetings, People, Files, Channels, Messages (6 items)
     return [
       NavigationDestination(
@@ -298,15 +303,13 @@ class _AppLayoutState extends State<AppLayout> {
 
   Widget _buildMobileDrawer(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
           DrawerHeader(
-            decoration: BoxDecoration(
-              color: colorScheme.primaryContainer,
-            ),
+            decoration: BoxDecoration(color: colorScheme.primaryContainer),
             child: Row(
               children: [
                 Image.asset(
@@ -388,7 +391,7 @@ class _AppLayoutState extends State<AppLayout> {
           children: [
             // Keep server panel visible so user can switch servers
             const ServerPanel(),
-            
+
             // Error message
             Expanded(
               child: Center(
@@ -407,16 +410,14 @@ class _AppLayoutState extends State<AppLayout> {
                         const SizedBox(height: 24),
                         Text(
                           'Server Unavailable',
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 12),
                         Text(
                           'Server is temporarily not available',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(color: colorScheme.onSurfaceVariant),
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 32),
@@ -438,22 +439,23 @@ class _AppLayoutState extends State<AppLayout> {
         ),
       );
     }
-    
+
     // Normal app layout
     final bool isWeb = kIsWeb;
     final location = GoRouterState.of(context).matchedLocation;
-    
+
     // Hide navigation sidebar on signal-setup, login, and server-selection screens
     // But keep server panel visible on native
-    final shouldShowNavigation = !location.startsWith('/signal-setup') && 
-                                 location != '/login' &&
-                                 location != '/server-selection';
+    final shouldShowNavigation =
+        !location.startsWith('/signal-setup') &&
+        location != '/login' &&
+        location != '/server-selection';
 
     if (isWeb) {
       // Check layout type
       final width = MediaQuery.of(context).size.width;
       final layoutType = LayoutConfig.getLayoutType(width);
-      
+
       if (layoutType == LayoutType.desktop || layoutType == LayoutType.tablet) {
         // Desktop/Tablet: Navigation Sidebar + Content
         return Scaffold(
@@ -462,18 +464,16 @@ class _AppLayoutState extends State<AppLayout> {
             children: [
               // Navigation Sidebar (60px)
               const NavigationSidebar(),
-              
+
               // Content with Sync Banner
               Expanded(
                 child: Column(
                   children: [
                     // 🚀 Sync Progress Banner
                     const SyncProgressBanner(),
-                    
+
                     // Main Content (Views handle their own Context Panel + Main Content)
-                    Expanded(
-                      child: widget.child ?? const DashboardPage(),
-                    ),
+                    Expanded(child: widget.child ?? const DashboardPage()),
                   ],
                 ),
               ),
@@ -481,10 +481,10 @@ class _AppLayoutState extends State<AppLayout> {
           ),
         );
       }
-      
+
       // Mobile: Use AdaptiveScaffold with bottom navigation
       final destinations = _getNavigationDestinations(context);
-      
+
       return AdaptiveScaffold(
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onNavigationSelected,
@@ -503,11 +503,9 @@ class _AppLayoutState extends State<AppLayout> {
           children: [
             // 🚀 Sync Progress Banner
             const SyncProgressBanner(),
-            
+
             // Main Content
-            Expanded(
-              child: widget.child ?? const DashboardPage(),
-            ),
+            Expanded(child: widget.child ?? const DashboardPage()),
           ],
         ),
       );
@@ -515,7 +513,7 @@ class _AppLayoutState extends State<AppLayout> {
       // Native Desktop: Server Panel (far left) + Navigation Sidebar + Content
       final width = MediaQuery.of(context).size.width;
       final layoutType = LayoutConfig.getLayoutType(width);
-      
+
       if (layoutType == LayoutType.desktop || layoutType == LayoutType.tablet) {
         return Scaffold(
           backgroundColor: Theme.of(context).colorScheme.surface,
@@ -523,22 +521,19 @@ class _AppLayoutState extends State<AppLayout> {
             children: [
               // Server Panel (far left, 72px) - Always visible on native
               const ServerPanel(),
-              
+
               // Navigation Sidebar (60px) - Hidden on signal-setup/login
-              if (shouldShowNavigation)
-                const NavigationSidebar(),
-              
+              if (shouldShowNavigation) const NavigationSidebar(),
+
               // Content with Sync Banner
               Expanded(
                 child: Column(
                   children: [
                     // 🚀 Sync Progress Banner
                     const SyncProgressBanner(),
-                    
+
                     // Main Content (Views handle their own Context Panel + Main Content)
-                    Expanded(
-                      child: widget.child ?? const DashboardPage(),
-                    ),
+                    Expanded(child: widget.child ?? const DashboardPage()),
                   ],
                 ),
               ),
@@ -546,10 +541,10 @@ class _AppLayoutState extends State<AppLayout> {
           ),
         );
       }
-      
+
       // Mobile native - use AdaptiveScaffold with bottom navigation
       final destinations = _getNavigationDestinations(context);
-      
+
       return AdaptiveScaffold(
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onNavigationSelected,
@@ -568,11 +563,9 @@ class _AppLayoutState extends State<AppLayout> {
           children: [
             // 🚀 Sync Progress Banner
             const SyncProgressBanner(),
-            
+
             // Main Content
-            Expanded(
-              child: widget.child ?? const DashboardPage(),
-            ),
+            Expanded(child: widget.child ?? const DashboardPage()),
           ],
         ),
       );

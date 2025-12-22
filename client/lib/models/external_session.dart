@@ -42,13 +42,14 @@ class ExternalSession {
       e2eeIdentityKey: json['e2ee_identity_key'] as String?,
       e2eeSignedPreKey: json['e2ee_signed_pre_key'] as String?,
       e2eePreKeySignature: json['e2ee_pre_key_signature'] as String?,
-      expiresAt: json['expires_at'] != null 
-          ? DateTime.tryParse(json['expires_at'] as String) ?? DateTime.now().add(const Duration(hours: 24))
+      expiresAt: json['expires_at'] != null
+          ? DateTime.tryParse(json['expires_at'] as String) ??
+                DateTime.now().add(const Duration(hours: 24))
           : DateTime.now().add(const Duration(hours: 24)),
-      createdAt: json['created_at'] != null 
+      createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'] as String) ?? DateTime.now()
           : DateTime.now(),
-      updatedAt: json['updated_at'] != null 
+      updatedAt: json['updated_at'] != null
           ? DateTime.tryParse(json['updated_at'] as String) ?? DateTime.now()
           : DateTime.now(),
     );

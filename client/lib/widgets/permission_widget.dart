@@ -26,7 +26,7 @@ class PermissionWidget extends StatelessWidget {
     this.channelId,
     this.fallback,
     this.showFallback = false,
-  }) ;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +57,7 @@ class AdminOnlyWidget extends StatelessWidget {
     required this.child,
     this.fallback,
     this.showFallback = false,
-  }) ;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +84,7 @@ class ModeratorOnlyWidget extends StatelessWidget {
     required this.child,
     this.fallback,
     this.showFallback = false,
-  }) ;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -113,7 +113,7 @@ class ChannelOwnerWidget extends StatelessWidget {
     required this.child,
     this.fallback,
     this.showFallback = false,
-  }) ;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -142,7 +142,7 @@ class ChannelModeratorWidget extends StatelessWidget {
     required this.child,
     this.fallback,
     this.showFallback = false,
-  }) ;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -159,4 +159,3 @@ class ChannelModeratorWidget extends StatelessWidget {
     }
   }
 }
-

@@ -29,7 +29,7 @@ class VideoControlsBar extends StatelessWidget {
     this.onSwitchMicrophone,
     this.onSwitchCamera,
     this.onSetDesktopScreenSource,
-  }) ;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -201,9 +201,12 @@ class VideoControlsBar extends StatelessWidget {
                         if (context.mounted) {
                           scaffoldMessenger.showSnackBar(
                             SnackBar(
-                              content: const Text('Failed to switch microphone'),
-                              backgroundColor:
-                                  Theme.of(context).colorScheme.error,
+                              content: const Text(
+                                'Failed to switch microphone',
+                              ),
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.error,
                             ),
                           );
                         }
@@ -286,8 +289,9 @@ class VideoControlsBar extends StatelessWidget {
                           scaffoldMessenger.showSnackBar(
                             SnackBar(
                               content: const Text('Failed to switch camera'),
-                              backgroundColor:
-                                  Theme.of(context).colorScheme.error,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.error,
                             ),
                           );
                         }
@@ -318,7 +322,9 @@ class VideoControlsBar extends StatelessWidget {
     final buttonColor =
         color ??
         (isDisabled
-            ? Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
+            ? Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
             : isActive
             ? Theme.of(context).colorScheme.primary
             : Theme.of(context).colorScheme.surfaceContainerHighest);
@@ -337,10 +343,12 @@ class VideoControlsBar extends StatelessWidget {
             child: Icon(
               icon,
               color: isDisabled
-                  ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)
+                  ? Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.38)
                   : (isActive
-                      ? Theme.of(context).colorScheme.onPrimary
-                      : Theme.of(context).colorScheme.onSurfaceVariant),
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ),
         ),

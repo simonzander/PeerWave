@@ -12,4 +12,3 @@ class BackupCodeRecoveryPage extends StatelessWidget {
     );
   }
 }
-

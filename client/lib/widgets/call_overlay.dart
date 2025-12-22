@@ -26,7 +26,7 @@ class _CallOverlayState extends State<CallOverlay> {
   final Map<String, ParticipantAudioState> _participantStates = {};
   final Map<String, String> _displayNameCache = {};
   final Map<String, String> _profilePictureCache = {};
-  
+
   static const double _minWidth = 240.0;
   static const double _maxWidth = 800.0;
   static const double _minHeight = 135.0;
@@ -46,7 +46,7 @@ class _CallOverlayState extends State<CallOverlay> {
             (service.isInFullView && service.isMeeting)) {
           return const SizedBox.shrink();
         }
-        
+
         // For channels, hide when in full-view
         if (service.isInFullView && !service.isMeeting) {
           return const SizedBox.shrink();
@@ -102,9 +102,13 @@ class _CallOverlayState extends State<CallOverlay> {
                     }
                   }
                 },
-                child: _buildOverlayContent(service, overlayWidth, overlayHeight),
+                child: _buildOverlayContent(
+                  service,
+                  overlayWidth,
+                  overlayHeight,
+                ),
               ),
-              
+
               // Resize handle (bottom-right corner)
               if (!_isMinimized)
                 Positioned(
@@ -118,14 +122,19 @@ class _CallOverlayState extends State<CallOverlay> {
                     },
                     onPanUpdate: (details) {
                       setState(() {
-                        _overlayWidth = (_overlayWidth + details.delta.dx).clamp(
-                          _minWidth,
-                          _maxWidth.clamp(_minWidth, screenSize.width - x),
-                        );
-                        _overlayHeight = (_overlayHeight + details.delta.dy).clamp(
-                          _minHeight,
-                          _maxHeight.clamp(_minHeight, screenSize.height - y),
-                        );
+                        _overlayWidth = (_overlayWidth + details.delta.dx)
+                            .clamp(
+                              _minWidth,
+                              _maxWidth.clamp(_minWidth, screenSize.width - x),
+                            );
+                        _overlayHeight = (_overlayHeight + details.delta.dy)
+                            .clamp(
+                              _minHeight,
+                              _maxHeight.clamp(
+                                _minHeight,
+                                screenSize.height - y,
+                              ),
+                            );
                       });
                     },
                     onPanEnd: (details) {
@@ -308,16 +317,19 @@ class _CallOverlayState extends State<CallOverlay> {
       onLoaded: (profile) {
         if (mounted && profile != null) {
           setState(() {
-            _displayNameCache[participantId] = profile['displayName'] as String? ?? participantId;
-            _profilePictureCache[participantId] = profile['picture'] as String? ?? '';
+            _displayNameCache[participantId] =
+                profile['displayName'] as String? ?? participantId;
+            _profilePictureCache[participantId] =
+                profile['picture'] as String? ?? '';
           });
         }
       },
     );
-    
+
     // Use cached data immediately if available
     if (profile != null) {
-      _displayNameCache[participantId] = profile['displayName'] as String? ?? participantId;
+      _displayNameCache[participantId] =
+          profile['displayName'] as String? ?? participantId;
       _profilePictureCache[participantId] = profile['picture'] as String? ?? '';
     }
   }
@@ -325,7 +337,9 @@ class _CallOverlayState extends State<CallOverlay> {
   Widget _buildVideoGrid(VideoConferenceService service) {
     if (service.room == null) {
       return Center(
-        child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
+        child: CircularProgressIndicator(
+          color: Theme.of(context).colorScheme.primary,
+        ),
       );
     }
 
@@ -503,7 +517,9 @@ class _CallOverlayState extends State<CallOverlay> {
                 : Center(
                     child: Icon(
                       Icons.screen_share,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.5),
                       size: 32,
                     ),
                   ),
@@ -581,7 +597,11 @@ class _CallOverlayState extends State<CallOverlay> {
       ),
       child: IconButton(
         padding: EdgeInsets.zero,
-        icon: Icon(icon, color: Theme.of(context).colorScheme.onSurface, size: 16),
+        icon: Icon(
+          icon,
+          color: Theme.of(context).colorScheme.onSurface,
+          size: 16,
+        ),
         onPressed: onPressed,
       ),
     );

@@ -24,7 +24,7 @@ class ServerUnavailableScreen extends StatelessWidget {
                 color: Theme.of(context).colorScheme.error,
               ),
               const SizedBox(height: 24),
-              
+
               // Title
               Text(
                 'Server Unavailable',
@@ -33,7 +33,7 @@ class ServerUnavailableScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              
+
               // Message
               Text(
                 'Server is temporarily not available',
@@ -43,7 +43,7 @@ class ServerUnavailableScreen extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 32),
-              
+
               // Retry Button
               FilledButton.icon(
                 onPressed: () {

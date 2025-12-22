@@ -3,8 +3,10 @@
 library;
 
 class Window {
-  dynamic get sessionStorage => throw UnsupportedError('sessionStorage is only available on web');
-  dynamic get crypto => throw UnsupportedError('crypto is only available on web');
+  dynamic get sessionStorage =>
+      throw UnsupportedError('sessionStorage is only available on web');
+  dynamic get crypto =>
+      throw UnsupportedError('crypto is only available on web');
 }
 
 final window = Window();

@@ -34,7 +34,7 @@ class RoleApiService {
       // Native: Use ApiService for HMAC authentication
       ApiService.init();
       final response = await ApiService.get('$baseUrl/api/user/roles');
-      
+
       if (response.statusCode == 200) {
         final data = response.data as Map<String, dynamic>;
         return UserRoles.fromJson(data);
@@ -49,7 +49,7 @@ class RoleApiService {
   /// Gets all roles filtered by scope
   Future<List<Role>> getRolesByScope(RoleScope? scope) async {
     final scopeParam = scope != null ? '?scope=${scope.value}' : '';
-    
+
     if (kIsWeb) {
       final response = await _client.get(
         Uri.parse('$baseUrl/api/roles$scopeParam'),
@@ -59,7 +59,9 @@ class RoleApiService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;
         final roles = data['roles'] as List<dynamic>;
-        return roles.map((e) => Role.fromJson(e as Map<String, dynamic>)).toList();
+        return roles
+            .map((e) => Role.fromJson(e as Map<String, dynamic>))
+            .toList();
       } else if (response.statusCode == 401) {
         throw Exception('Unauthorized: Please log in');
       } else {
@@ -69,11 +71,13 @@ class RoleApiService {
       // Native: Use ApiService for HMAC authentication
       ApiService.init();
       final response = await ApiService.get('$baseUrl/api/roles$scopeParam');
-      
+
       if (response.statusCode == 200) {
         final data = response.data as Map<String, dynamic>;
         final roles = data['roles'] as List<dynamic>;
-        return roles.map((e) => Role.fromJson(e as Map<String, dynamic>)).toList();
+        return roles
+            .map((e) => Role.fromJson(e as Map<String, dynamic>))
+            .toList();
       } else if (response.statusCode == 401) {
         throw Exception('Unauthorized: Please log in');
       } else {
@@ -139,7 +143,9 @@ class RoleApiService {
     } else if (response.statusCode == 401) {
       throw Exception('Unauthorized: Please log in');
     } else if (response.statusCode == 403) {
-      throw Exception('Forbidden: Cannot edit standard roles or insufficient permissions');
+      throw Exception(
+        'Forbidden: Cannot edit standard roles or insufficient permissions',
+      );
     } else if (response.statusCode == 404) {
       throw Exception('Role not found');
     } else {
@@ -159,7 +165,9 @@ class RoleApiService {
     } else if (response.statusCode == 401) {
       throw Exception('Unauthorized: Please log in');
     } else if (response.statusCode == 403) {
-      throw Exception('Forbidden: Cannot delete standard roles or insufficient permissions');
+      throw Exception(
+        'Forbidden: Cannot delete standard roles or insufficient permissions',
+      );
     } else if (response.statusCode == 404) {
       throw Exception('Role not found');
     } else {
@@ -185,7 +193,9 @@ class RoleApiService {
       } else if (response.statusCode == 401) {
         throw Exception('Unauthorized: Please log in');
       } else if (response.statusCode == 403) {
-        throw Exception('Forbidden: Insufficient permissions to assign roles in this channel');
+        throw Exception(
+          'Forbidden: Insufficient permissions to assign roles in this channel',
+        );
       } else if (response.statusCode == 400) {
         final error = json.decode(response.body);
         throw Exception('Bad request: ${error['error']}');
@@ -207,7 +217,9 @@ class RoleApiService {
       } else if (response.statusCode == 401) {
         throw Exception('Unauthorized: Please log in');
       } else if (response.statusCode == 403) {
-        throw Exception('Forbidden: Insufficient permissions to assign roles in this channel');
+        throw Exception(
+          'Forbidden: Insufficient permissions to assign roles in this channel',
+        );
       } else if (response.statusCode == 400) {
         throw Exception('Bad request');
       } else if (response.statusCode == 404) {
@@ -226,7 +238,9 @@ class RoleApiService {
   }) async {
     if (kIsWeb) {
       final response = await _client.delete(
-        Uri.parse('$baseUrl/api/users/$userId/channels/$channelId/roles/$roleId'),
+        Uri.parse(
+          '$baseUrl/api/users/$userId/channels/$channelId/roles/$roleId',
+        ),
         headers: {'Content-Type': 'application/json'},
       );
 
@@ -235,7 +249,9 @@ class RoleApiService {
       } else if (response.statusCode == 401) {
         throw Exception('Unauthorized: Please log in');
       } else if (response.statusCode == 403) {
-        throw Exception('Forbidden: Insufficient permissions to remove roles in this channel');
+        throw Exception(
+          'Forbidden: Insufficient permissions to remove roles in this channel',
+        );
       } else if (response.statusCode == 404) {
         throw Exception('User, channel, or role not found');
       } else {
@@ -253,7 +269,9 @@ class RoleApiService {
       } else if (response.statusCode == 401) {
         throw Exception('Unauthorized: Please log in');
       } else if (response.statusCode == 403) {
-        throw Exception('Forbidden: Insufficient permissions to remove roles in this channel');
+        throw Exception(
+          'Forbidden: Insufficient permissions to remove roles in this channel',
+        );
       } else if (response.statusCode == 404) {
         throw Exception('User, channel, or role not found');
       } else {
@@ -268,9 +286,10 @@ class RoleApiService {
     String? search,
   }) async {
     if (kIsWeb) {
-      final uri = Uri.parse('$baseUrl/api/channels/$channelId/available-users')
-          .replace(queryParameters: search != null ? {'search': search} : null);
-      
+      final uri = Uri.parse(
+        '$baseUrl/api/channels/$channelId/available-users',
+      ).replace(queryParameters: search != null ? {'search': search} : null);
+
       final response = await _client.get(
         uri,
         headers: {'Content-Type': 'application/json'},
@@ -280,11 +299,13 @@ class RoleApiService {
         final data = json.decode(response.body) as Map<String, dynamic>;
         final users = data['users'] as List<dynamic>;
         return users
-            .map((e) => {
-                  'uuid': e['uuid'] as String,
-                  'displayName': e['displayName'] as String,
-                  'email': e['email'] as String,
-                })
+            .map(
+              (e) => {
+                'uuid': e['uuid'] as String,
+                'displayName': e['displayName'] as String,
+                'email': e['email'] as String,
+              },
+            )
             .toList();
       } else if (response.statusCode == 401) {
         throw Exception('Unauthorized: Please log in');
@@ -305,11 +326,13 @@ class RoleApiService {
         final data = response.data as Map<String, dynamic>;
         final users = data['users'] as List<dynamic>;
         return users
-            .map((e) => {
-                  'uuid': e['uuid'] as String,
-                  'displayName': e['displayName'] as String,
-                  'email': e['email'] as String,
-                })
+            .map(
+              (e) => {
+                'uuid': e['uuid'] as String,
+                'displayName': e['displayName'] as String,
+                'email': e['email'] as String,
+              },
+            )
             .toList();
       } else if (response.statusCode == 401) {
         throw Exception('Unauthorized: Please log in');
@@ -342,7 +365,9 @@ class RoleApiService {
       } else if (response.statusCode == 401) {
         throw Exception('Unauthorized: Please log in');
       } else if (response.statusCode == 403) {
-        throw Exception('Forbidden: You do not have permission to add members to this channel');
+        throw Exception(
+          'Forbidden: You do not have permission to add members to this channel',
+        );
       } else if (response.statusCode == 404) {
         throw Exception('Channel or user not found');
       } else if (response.statusCode == 400) {
@@ -356,10 +381,7 @@ class RoleApiService {
       ApiService.init();
       final response = await ApiService.post(
         '$baseUrl/api/channels/$channelId/members',
-        data: {
-          'userId': userId,
-          if (roleId != null) 'roleId': roleId,
-        },
+        data: {'userId': userId, if (roleId != null) 'roleId': roleId},
       );
 
       if (response.statusCode == 201) {
@@ -367,7 +389,9 @@ class RoleApiService {
       } else if (response.statusCode == 401) {
         throw Exception('Unauthorized: Please log in');
       } else if (response.statusCode == 403) {
-        throw Exception('Forbidden: You do not have permission to add members to this channel');
+        throw Exception(
+          'Forbidden: You do not have permission to add members to this channel',
+        );
       } else if (response.statusCode == 404) {
         throw Exception('Channel or user not found');
       } else if (response.statusCode == 400) {
@@ -389,24 +413,24 @@ class RoleApiService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;
         final members = data['members'] as List<dynamic>;
-        
+
         debugPrint('[DEBUG] Channel members response: ${response.body}');
-        
-        return members
-            .map((e) {
-              try {
-                return ChannelMember.fromJson(e as Map<String, dynamic>);
-              } catch (error) {
-                debugPrint('[ERROR] Failed to parse member: $e');
-                debugPrint('[ERROR] Error: $error');
-                rethrow;
-              }
-            })
-            .toList();
+
+        return members.map((e) {
+          try {
+            return ChannelMember.fromJson(e as Map<String, dynamic>);
+          } catch (error) {
+            debugPrint('[ERROR] Failed to parse member: $e');
+            debugPrint('[ERROR] Error: $error');
+            rethrow;
+          }
+        }).toList();
       } else if (response.statusCode == 401) {
         throw Exception('Unauthorized: Please log in');
       } else if (response.statusCode == 403) {
-        throw Exception('Forbidden: You do not have permission to view members');
+        throw Exception(
+          'Forbidden: You do not have permission to view members',
+        );
       } else if (response.statusCode == 404) {
         throw Exception('Channel not found');
       } else {
@@ -415,29 +439,31 @@ class RoleApiService {
     } else {
       // Native: Use ApiService for HMAC authentication
       ApiService.init();
-      final response = await ApiService.get('$baseUrl/api/channels/$channelId/members');
-      
+      final response = await ApiService.get(
+        '$baseUrl/api/channels/$channelId/members',
+      );
+
       if (response.statusCode == 200) {
         final data = response.data as Map<String, dynamic>;
         final members = data['members'] as List<dynamic>;
-        
+
         debugPrint('[DEBUG] Channel members response (native)');
-        
-        return members
-            .map((e) {
-              try {
-                return ChannelMember.fromJson(e as Map<String, dynamic>);
-              } catch (error) {
-                debugPrint('[ERROR] Failed to parse member: $e');
-                debugPrint('[ERROR] Error: $error');
-                rethrow;
-              }
-            })
-            .toList();
+
+        return members.map((e) {
+          try {
+            return ChannelMember.fromJson(e as Map<String, dynamic>);
+          } catch (error) {
+            debugPrint('[ERROR] Failed to parse member: $e');
+            debugPrint('[ERROR] Error: $error');
+            rethrow;
+          }
+        }).toList();
       } else if (response.statusCode == 401) {
         throw Exception('Unauthorized: Please log in');
       } else if (response.statusCode == 403) {
-        throw Exception('Forbidden: You do not have permission to view members');
+        throw Exception(
+          'Forbidden: You do not have permission to view members',
+        );
       } else if (response.statusCode == 404) {
         throw Exception('Channel not found');
       } else {
@@ -508,7 +534,9 @@ class RoleApiService {
       throw Exception('Unauthorized: Please log in');
     } else if (response.statusCode == 403) {
       final error = json.decode(response.body);
-      throw Exception(error['error'] ?? 'Forbidden: Cannot kick users from this channel');
+      throw Exception(
+        error['error'] ?? 'Forbidden: Cannot kick users from this channel',
+      );
     } else if (response.statusCode == 404) {
       throw Exception('Channel or user not found');
     } else {
@@ -529,7 +557,9 @@ class RoleApiService {
     } else if (response.statusCode == 401) {
       throw Exception('Unauthorized: Please log in');
     } else if (response.statusCode == 403) {
-      throw Exception('Forbidden: Only the channel owner can delete the channel');
+      throw Exception(
+        'Forbidden: Only the channel owner can delete the channel',
+      );
     } else if (response.statusCode == 404) {
       throw Exception('Channel not found');
     } else {
@@ -538,5 +568,3 @@ class RoleApiService {
     }
   }
 }
-
-

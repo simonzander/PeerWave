@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import '../models/file_message.dart';
 
 /// Widget to display file messages in group chats (LÖSUNG 18)
-/// 
+///
 /// Shows:
 /// - File icon based on MIME type
 /// - File name and size
 /// - Download button
 /// - Optional message text
-/// 
+///
 /// Note: Actual download logic should be handled by parent widget
 /// via onDownload callback
 class FileMessageWidget extends StatelessWidget {
@@ -29,7 +29,7 @@ class FileMessageWidget extends StatelessWidget {
     this.downloadProgress,
     this.isDownloading = false,
     this.chunkQuality,
-  }) ;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -38,15 +38,15 @@ class FileMessageWidget extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
       child: Column(
-        crossAxisAlignment: isOwnMessage 
-            ? CrossAxisAlignment.end 
+        crossAxisAlignment: isOwnMessage
+            ? CrossAxisAlignment.end
             : CrossAxisAlignment.start,
         children: [
           // File card
           Container(
             constraints: const BoxConstraints(maxWidth: 300),
             decoration: BoxDecoration(
-              color: isOwnMessage 
+              color: isOwnMessage
                   ? theme.colorScheme.primaryContainer
                   : theme.colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(12),
@@ -101,19 +101,16 @@ class FileMessageWidget extends StatelessWidget {
                     ),
                   ],
                 ),
-                
+
                 // Optional message text
-                if (fileMessage.message != null && 
+                if (fileMessage.message != null &&
                     fileMessage.message!.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  Text(
-                    fileMessage.message!,
-                    style: theme.textTheme.bodyMedium,
-                  ),
+                  Text(fileMessage.message!, style: theme.textTheme.bodyMedium),
                 ],
-                
+
                 const SizedBox(height: 12),
-                
+
                 // Download button or progress (only for received messages)
                 if (!isOwnMessage) ...[
                   if (isDownloading && downloadProgress != null)
@@ -122,7 +119,8 @@ class FileMessageWidget extends StatelessWidget {
                       children: [
                         LinearProgressIndicator(
                           value: downloadProgress,
-                          backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                          backgroundColor:
+                              theme.colorScheme.surfaceContainerHighest,
                           valueColor: AlwaysStoppedAnimation<Color>(
                             theme.colorScheme.primary,
                           ),
@@ -155,7 +153,7 @@ class FileMessageWidget extends StatelessWidget {
               ],
             ),
           ),
-          
+
           // Timestamp
           Padding(
             padding: const EdgeInsets.only(top: 4, left: 12, right: 12),
@@ -174,9 +172,9 @@ class FileMessageWidget extends StatelessWidget {
   String _formatTimestamp(int timestamp) {
     final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
     final now = DateTime.now();
-    
-    if (date.year == now.year && 
-        date.month == now.month && 
+
+    if (date.year == now.year &&
+        date.month == now.month &&
         date.day == now.day) {
       // Today: show time only
       return '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
@@ -189,11 +187,11 @@ class FileMessageWidget extends StatelessWidget {
   /// Build chunk quality badge with color-coded availability indicator
   Widget _buildChunkQualityBadge(BuildContext context, int quality) {
     final theme = Theme.of(context);
-    
+
     // Determine color based on quality
     Color badgeColor;
     IconData icon;
-    
+
     if (quality >= 100) {
       // Complete: Green
       badgeColor = Colors.green;
@@ -215,25 +213,18 @@ class FileMessageWidget extends StatelessWidget {
       badgeColor = Colors.red;
       icon = Icons.error_outline;
     }
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: badgeColor.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: badgeColor.withValues(alpha: 0.4),
-          width: 1,
-        ),
+        border: Border.all(color: badgeColor.withValues(alpha: 0.4), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 12,
-            color: badgeColor,
-          ),
+          Icon(icon, size: 12, color: badgeColor),
           const SizedBox(width: 4),
           Text(
             '$quality%',
@@ -248,4 +239,3 @@ class FileMessageWidget extends StatelessWidget {
     );
   }
 }
-

@@ -1,14 +1,15 @@
 /// Custom E2EE Manager for Windows/Linux platforms
-/// 
+///
 /// This wrapper extends LiveKit's E2EEManager to skip DataPacketCryptor initialization
 /// on platforms where it's not implemented (Windows/Linux).
-/// 
+///
 /// The flutter_webrtc C++ backend is missing DataPacketCryptor implementation,
 /// but FrameCryptor (audio/video encryption) works perfectly.
-/// 
+///
 /// This allows:
 /// - ✅ Audio/video frame encryption (FrameCryptor works on all platforms)
 library;
+
 /// - ⚠️ Data channel is not encrypted (DataPacketCryptor skipped on Windows/Linux)
 
 import 'dart:io' show Platform;
@@ -18,25 +19,26 @@ import 'package:livekit_client/livekit_client.dart';
 
 /// E2EE Manager that works on Windows/Linux by skipping DataPacketCryptor
 class WindowsCompatibleE2EEManager extends E2EEManager {
-  WindowsCompatibleE2EEManager(
-    super.keyProvider, {
-    super.dcEncryptionEnabled,
-  });
+  WindowsCompatibleE2EEManager(super.keyProvider, {super.dcEncryptionEnabled});
 
   @override
   Future<void> setup(Room room) async {
     // Call parent setup but catch DataPacketCryptor errors on Windows/Linux
     if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
-      debugPrint('[WindowsE2EE] Setting up E2EE for Windows/Linux (skipping DataPacketCryptor)');
-      
+      debugPrint(
+        '[WindowsE2EE] Setting up E2EE for Windows/Linux (skipping DataPacketCryptor)',
+      );
+
       try {
         await super.setup(room);
       } catch (e) {
         // Expected to fail when trying to create DataPacketCryptor
         // This is fine - FrameCryptor will still work for audio/video
-        if (e.toString().contains('MissingPluginException') || 
+        if (e.toString().contains('MissingPluginException') ||
             e.toString().contains('dataPacketCryptor')) {
-          debugPrint('[WindowsE2EE] ✓ FrameCryptor setup complete (DataPacketCryptor skipped as expected)');
+          debugPrint(
+            '[WindowsE2EE] ✓ FrameCryptor setup complete (DataPacketCryptor skipped as expected)',
+          );
         } else {
           // Unexpected error - rethrow
           rethrow;
@@ -66,7 +68,9 @@ class WindowsCompatibleE2EEManager extends E2EEManager {
   }) async {
     // On Windows/Linux, data channel is not encrypted - return data as-is
     if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
-      debugPrint('[WindowsE2EE] Data channel not encrypted on Windows/Linux - passing through');
+      debugPrint(
+        '[WindowsE2EE] Data channel not encrypted on Windows/Linux - passing through',
+      );
       return data;
     }
     return super.handleEncryptedData(
@@ -81,7 +85,9 @@ class WindowsCompatibleE2EEManager extends E2EEManager {
   Future<rtc.EncryptedPacket> encryptData({required Uint8List data}) async {
     // On Windows/Linux, data channel is not encrypted - return unencrypted packet
     if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
-      debugPrint('[WindowsE2EE] Data channel not encrypted on Windows/Linux - passing through');
+      debugPrint(
+        '[WindowsE2EE] Data channel not encrypted on Windows/Linux - passing through',
+      );
       return rtc.EncryptedPacket(
         data: data,
         keyIndex: 0,

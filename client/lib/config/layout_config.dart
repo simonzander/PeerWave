@@ -1,11 +1,11 @@
 /// Layout Configuration for Adaptive/Responsive Design
-/// 
+///
 /// Defines breakpoints and layout types following Material 3 guidelines.
 /// Use this to determine which navigation pattern and UI density to use.
 library;
 
 /// Material 3 Breakpoints
-/// 
+///
 /// Based on Material Design 3 responsive guidelines:
 /// - Mobile: < 600px (smartphones in portrait)
 /// - Tablet: 600-840px (tablets in portrait, large phones in landscape)
@@ -37,7 +37,7 @@ class LayoutBreakpoints {
 }
 
 /// Layout Type based on screen width
-/// 
+///
 /// Determines which navigation pattern and UI density to use:
 /// - Mobile: Bottom NavigationBar, compact UI
 /// - Tablet: NavigationRail, comfortable UI
@@ -66,18 +66,18 @@ enum LayoutType {
 }
 
 /// Layout configuration helper
-/// 
+///
 /// Provides methods to determine layout type, padding, and other
 /// responsive design properties based on screen width.
 class LayoutConfig {
   LayoutConfig._(); // Private constructor - static class only
 
   /// Get layout type based on screen width
-  /// 
+  ///
   /// ```dart
   /// final width = MediaQuery.of(context).size.width;
   /// final layoutType = LayoutConfig.getLayoutType(width);
-  /// 
+  ///
   /// switch (layoutType) {
   ///   case LayoutType.mobile:
   ///     // Show bottom nav
@@ -98,7 +98,7 @@ class LayoutConfig {
   }
 
   /// Get horizontal padding based on layout type
-  /// 
+  ///
   /// Material 3 padding guidelines:
   /// - Mobile: 16dp
   /// - Tablet: 24dp
@@ -136,7 +136,7 @@ class LayoutConfig {
   static double get navigationDrawerWidth => 360.0;
 
   /// Get AppBar height based on layout type
-  /// 
+  ///
   /// Material 3 AppBar heights:
   /// - Small: 64dp (mobile)
   /// - Medium: 112dp (tablet)
@@ -212,7 +212,7 @@ class LayoutConfig {
 }
 
 /// AppBar size variants (Material 3)
-/// 
+///
 /// Material 3 defines three AppBar heights:
 /// - Small: 64dp (default, always visible)
 /// - Medium: 112dp (with subtitle or larger text)
@@ -239,13 +239,13 @@ enum AppBarSize {
 }
 
 /// Helper extension on BuildContext for easy layout access
-/// 
+///
 /// Usage (if uncommented):
 /// ```dart
 /// final layoutType = context.layoutType;
 /// final padding = context.horizontalPadding;
 /// ```
-/// 
+///
 /// Note: Commented out to avoid BuildContext import in config file.
 /// To use, uncomment and add: import 'package:flutter/widgets.dart';
 // extension LayoutConfigExtensions on BuildContext {
@@ -253,13 +253,12 @@ enum AppBarSize {
 //     final width = MediaQuery.of(this).size.width;
 //     return LayoutConfig.getLayoutType(width);
 //   }
-//   
+//
 //   double get horizontalPadding {
 //     return LayoutConfig.getHorizontalPadding(layoutType);
 //   }
-//   
+//
 //   bool get isMobile => layoutType == LayoutType.mobile;
 //   bool get isTablet => layoutType == LayoutType.tablet;
 //   bool get isDesktop => layoutType == LayoutType.desktop;
 // }
-

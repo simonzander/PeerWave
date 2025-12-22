@@ -1,16 +1,11 @@
-
 import 'dart:js_interop';
 import '../web_config.dart';
 import '../services/api_service.dart';
 // Only for web:
 // ignore: avoid_web_libraries_in_flutter
 
-
 @JS('window.fetch')
-external JSPromise fetch(
-  String input,
-  JSAny? init,
-);
+external JSPromise fetch(String input, JSAny? init);
 
 class AuthService {
   static bool isLoggedIn = false;
@@ -29,7 +24,8 @@ class AuthService {
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
       final resp = await ApiService.get('$urlString/webauthn/check');
@@ -48,5 +44,3 @@ class AuthService {
     return false;
   }
 }
-
-

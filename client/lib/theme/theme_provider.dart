@@ -4,14 +4,14 @@ import '../theme/color_schemes.dart';
 import '../services/preferences_service.dart';
 
 /// Provider für Theme State Management
-/// 
+///
 /// Verwaltet:
 /// - Theme Mode (light, dark, system)
 /// - Color Scheme Auswahl
 /// - Theme Persistierung
 class ThemeProvider extends ChangeNotifier {
   final PreferencesService _prefsService = PreferencesService();
-  
+
   // State
   ThemeMode _themeMode = ThemeMode.system;
   String _colorSchemeId = 'peerwave_dark';
@@ -21,11 +21,11 @@ class ThemeProvider extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   String get colorSchemeId => _colorSchemeId;
   bool get isInitialized => _isInitialized;
-  
+
   /// Aktuelles Color Scheme Option
   ColorSchemeOption get currentScheme {
-    return ColorSchemeOptions.byId(_colorSchemeId) ?? 
-           ColorSchemeOptions.defaultScheme;
+    return ColorSchemeOptions.byId(_colorSchemeId) ??
+        ColorSchemeOptions.defaultScheme;
   }
 
   /// Light Theme mit aktuellem Color Scheme
@@ -53,8 +53,10 @@ class ThemeProvider extends ChangeNotifier {
       _themeMode = _parseThemeMode(savedThemeMode);
       _colorSchemeId = savedSchemeId;
 
-      debugPrint('[ThemeProvider] Initialized: mode=$savedThemeMode, scheme=$savedSchemeId');
-      
+      debugPrint(
+        '[ThemeProvider] Initialized: mode=$savedThemeMode, scheme=$savedSchemeId',
+      );
+
       _isInitialized = true;
       notifyListeners();
     } catch (e) {
@@ -77,7 +79,7 @@ class ThemeProvider extends ChangeNotifier {
     // Persist
     final modeString = _themeModeToString(mode);
     await _prefsService.saveThemeMode(modeString);
-    
+
     debugPrint('[ThemeProvider] Theme mode changed to: $modeString');
   }
 
@@ -97,7 +99,7 @@ class ThemeProvider extends ChangeNotifier {
 
     // Persist
     await _prefsService.saveColorSchemeId(schemeId);
-    
+
     debugPrint('[ThemeProvider] Color scheme changed to: $schemeId');
   }
 
@@ -114,9 +116,9 @@ class ThemeProvider extends ChangeNotifier {
   Future<void> resetToDefaults() async {
     _themeMode = ThemeMode.system;
     _colorSchemeId = 'peerwave_dark';
-    
+
     await _prefsService.clearAll();
-    
+
     notifyListeners();
     debugPrint('[ThemeProvider] Reset to defaults');
   }
@@ -158,4 +160,3 @@ class ThemeProvider extends ChangeNotifier {
     debugPrint('================================');
   }
 }
-

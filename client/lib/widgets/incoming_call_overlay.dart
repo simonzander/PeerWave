@@ -3,7 +3,7 @@ import 'dart:async';
 import '../services/call_service.dart';
 
 /// Incoming call overlay - displays at top of screen when receiving a call
-/// 
+///
 /// Features:
 /// - Full-width notification bar
 /// - Caller information (name, meeting title)
@@ -50,10 +50,7 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, -1),
       end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: Curves.easeOut,
-    ));
+    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
 
     // Start animation
     _slideController.forward();
@@ -156,9 +153,7 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
                       children: [
                         Text(
                           meetingTitle,
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
+                          style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
@@ -169,20 +164,20 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
                         const SizedBox(height: 2),
                         Text(
                           '$callerName is calling',
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Colors.white.withValues(alpha: 0.9),
-                                  ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.9),
+                              ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
                         Text(
                           'Auto-dismiss in $_remainingSeconds seconds',
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.white.withValues(alpha: 0.7),
-                                  ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.7),
+                              ),
                         ),
                       ],
                     ),
@@ -288,7 +283,7 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
 }
 
 /// Overlay manager for incoming calls
-/// 
+///
 /// Usage:
 /// ```dart
 /// IncomingCallOverlayManager.show(

@@ -148,8 +148,12 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
     }
 
     final nameController = TextEditingController(text: role.name);
-    final descriptionController = TextEditingController(text: role.description ?? '');
-    final permissionsController = TextEditingController(text: role.permissions.join(', '));
+    final descriptionController = TextEditingController(
+      text: role.description ?? '',
+    );
+    final permissionsController = TextEditingController(
+      text: role.permissions.join(', '),
+    );
 
     final result = await showDialog<bool>(
       context: context,
@@ -162,16 +166,12 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
             children: [
               TextField(
                 controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Role Name',
-                ),
+                decoration: const InputDecoration(labelText: 'Role Name'),
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: descriptionController,
-                decoration: const InputDecoration(
-                  labelText: 'Description',
-                ),
+                decoration: const InputDecoration(labelText: 'Description'),
                 maxLines: 2,
               ),
               const SizedBox(height: 16),
@@ -235,7 +235,9 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Role'),
-        content: Text('Are you sure you want to delete the role "${role.name}"?'),
+        content: Text(
+          'Are you sure you want to delete the role "${role.name}"?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -276,9 +278,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Role Management'),
-      ),
+      appBar: AppBar(title: const Text('Role Management')),
       body: Column(
         children: [
           Padding(
@@ -327,11 +327,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
               ),
             ),
           if (_isLoading)
-            const Expanded(
-              child: Center(
-                child: CircularProgressIndicator(),
-              ),
-            )
+            const Expanded(child: Center(child: CircularProgressIndicator()))
           else
             Expanded(
               child: ListView.builder(
@@ -348,20 +344,23 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                         role.name,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: role.standard ? Theme.of(context).colorScheme.onSurfaceVariant : null,
+                          color: role.standard
+                              ? Theme.of(context).colorScheme.onSurfaceVariant
+                              : null,
                         ),
                       ),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (role.description != null)
-                            Text(role.description!),
+                          if (role.description != null) Text(role.description!),
                           const SizedBox(height: 4),
                           Text(
                             'Permissions: ${role.permissions.join(", ")}',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
                             ),
                           ),
                         ],
@@ -371,10 +370,14 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                               label: Text(
                                 'Standard',
                                 style: TextStyle(
-                                  color: Theme.of(context).colorScheme.onSurface,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
                                 ),
                               ),
-                              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
                             )
                           : PopupMenuButton(
                               itemBuilder: (context) => [
@@ -393,9 +396,21 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                                   child: Builder(
                                     builder: (context) => Row(
                                       children: [
-                                        Icon(Icons.delete, color: Theme.of(context).colorScheme.error),
+                                        Icon(
+                                          Icons.delete,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.error,
+                                        ),
                                         const SizedBox(width: 8),
-                                        Text('Delete', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                                        Text(
+                                          'Delete',
+                                          style: TextStyle(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.error,
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -419,4 +434,3 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
     );
   }
 }
-

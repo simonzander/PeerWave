@@ -4,7 +4,7 @@ import '../services/user_profile_service.dart';
 import 'user_profile_card_overlay.dart';
 
 /// Widget for rendering text with @mention highlighting
-/// 
+///
 /// Features:
 /// - Highlights @mentions in primary color (#0E8481)
 /// - Shows user profile card on hover
@@ -13,7 +13,8 @@ class MentionTextWidget extends StatefulWidget {
   final String text;
   final TextStyle? style;
   final String? currentUserId;
-  final Map<String, dynamic>? senderInfo; // Optional: {uuid, displayName, atName}
+  final Map<String, dynamic>?
+  senderInfo; // Optional: {uuid, displayName, atName}
 
   const MentionTextWidget({
     super.key,
@@ -38,7 +39,11 @@ class _MentionTextWidgetState extends State<MentionTextWidget> {
     super.dispose();
   }
 
-  void _showProfileCard(BuildContext context, String atName, Offset mousePosition) async {
+  void _showProfileCard(
+    BuildContext context,
+    String atName,
+    Offset mousePosition,
+  ) async {
     _profileCardOverlay?.remove();
     _lastMousePosition = mousePosition;
 
@@ -129,7 +134,9 @@ class _MentionTextWidgetState extends State<MentionTextWidget> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final primaryColor = theme.colorScheme.primary;
-    final defaultStyle = widget.style ?? TextStyle(color: theme.colorScheme.onSurface, fontSize: 15);
+    final defaultStyle =
+        widget.style ??
+        TextStyle(color: theme.colorScheme.onSurface, fontSize: 15);
 
     // Parse text and find @mentions
     final mentionRegex = RegExp(r'@(\w+)');
@@ -147,10 +154,12 @@ class _MentionTextWidgetState extends State<MentionTextWidget> {
     for (final match in matches) {
       // Add text before mention
       if (match.start > lastIndex) {
-        spans.add(TextSpan(
-          text: widget.text.substring(lastIndex, match.start),
-          style: defaultStyle,
-        ));
+        spans.add(
+          TextSpan(
+            text: widget.text.substring(lastIndex, match.start),
+            style: defaultStyle,
+          ),
+        );
       }
 
       // Add mention with highlighting
@@ -189,14 +198,11 @@ class _MentionTextWidgetState extends State<MentionTextWidget> {
 
     // Add remaining text
     if (lastIndex < widget.text.length) {
-      spans.add(TextSpan(
-        text: widget.text.substring(lastIndex),
-        style: defaultStyle,
-      ));
+      spans.add(
+        TextSpan(text: widget.text.substring(lastIndex), style: defaultStyle),
+      );
     }
 
-    return RichText(
-      text: TextSpan(children: spans),
-    );
+    return RichText(text: TextSpan(children: spans));
   }
 }

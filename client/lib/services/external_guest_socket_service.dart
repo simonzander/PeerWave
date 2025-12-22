@@ -23,7 +23,7 @@ class ExternalGuestSocketService {
   String? _sessionId;
   String? _token;
   String? _meetingId;
-  
+
   // DEPRECATED: _registeredMeetingEvents removed - was only used by deprecated plaintext handlers
 
   /// Public getter for connection status
@@ -31,13 +31,19 @@ class ExternalGuestSocketService {
 
   /// DEPRECATED: Old plaintext E2EE key response listener - DO NOT USE
   /// Use onParticipantE2EEKeySignal() with Signal Protocol instead
-  @Deprecated('Use onParticipantE2EEKeySignal() for encrypted Signal Protocol communication')
+  @Deprecated(
+    'Use onParticipantE2EEKeySignal() for encrypted Signal Protocol communication',
+  )
   void onParticipantE2EEKeyForMeeting(
     String meetingId,
     void Function(Map<String, dynamic>) callback,
   ) {
-    debugPrint('[GUEST SOCKET] ⚠️ DEPRECATED: onParticipantE2EEKeyForMeeting called - this is insecure!');
-    debugPrint('[GUEST SOCKET] ⚠️ Use onParticipantE2EEKeySignal() instead for Signal Protocol encryption');
+    debugPrint(
+      '[GUEST SOCKET] ⚠️ DEPRECATED: onParticipantE2EEKeyForMeeting called - this is insecure!',
+    );
+    debugPrint(
+      '[GUEST SOCKET] ⚠️ Use onParticipantE2EEKeySignal() instead for Signal Protocol encryption',
+    );
     // COMMENTED OUT - DO NOT USE PLAINTEXT KEY EXCHANGE
     // if (_socket == null) {
     //   debugPrint('[GUEST SOCKET] Cannot register listener - not connected');
@@ -117,7 +123,9 @@ class ExternalGuestSocketService {
         if (data is Map && data['success'] == true) {
           _sessionId = data['session_id'] as String?;
           _meetingId = data['meeting_id'] as String?;
-          debugPrint('[GUEST SOCKET] ✓ Successfully authenticated as guest (session: $_sessionId)');
+          debugPrint(
+            '[GUEST SOCKET] ✓ Successfully authenticated as guest (session: $_sessionId)',
+          );
         } else {
           debugPrint('[GUEST SOCKET] ✗ Authentication failed: $data');
           _connected = false;
@@ -241,10 +249,16 @@ class ExternalGuestSocketService {
 
   /// DEPRECATED: Request E2EE key via insecure plaintext - DO NOT USE
   /// Use requestE2EEKeySignal() with Signal Protocol instead
-  @Deprecated('Use requestE2EEKeySignal() for encrypted Signal Protocol communication')
+  @Deprecated(
+    'Use requestE2EEKeySignal() for encrypted Signal Protocol communication',
+  )
   void requestE2EEKey(String displayName) {
-    debugPrint('[GUEST SOCKET] ⚠️ DEPRECATED: requestE2EEKey called - this is insecure!');
-    debugPrint('[GUEST SOCKET] ⚠️ Use requestE2EEKeySignal() instead for Signal Protocol encryption');
+    debugPrint(
+      '[GUEST SOCKET] ⚠️ DEPRECATED: requestE2EEKey called - this is insecure!',
+    );
+    debugPrint(
+      '[GUEST SOCKET] ⚠️ Use requestE2EEKeySignal() instead for Signal Protocol encryption',
+    );
     // COMMENTED OUT - DO NOT USE PLAINTEXT KEY EXCHANGE
     // if (_sessionId == null || _meetingId == null) {
     //   debugPrint('[GUEST SOCKET] Cannot request key - no session ID or meeting ID');
@@ -275,10 +289,16 @@ class ExternalGuestSocketService {
 
   /// DEPRECATED: Listen for participant E2EE key responses via insecure plaintext - DO NOT USE
   /// Use onParticipantE2EEKeySignal() with Signal Protocol instead
-  @Deprecated('Use onParticipantE2EEKeySignal() for encrypted Signal Protocol communication')
+  @Deprecated(
+    'Use onParticipantE2EEKeySignal() for encrypted Signal Protocol communication',
+  )
   void onParticipantE2EEKey(void Function(Map<String, dynamic>) callback) {
-    debugPrint('[GUEST SOCKET] ⚠️ DEPRECATED: onParticipantE2EEKey called - this is insecure!');
-    debugPrint('[GUEST SOCKET] ⚠️ Use onParticipantE2EEKeySignal() instead for Signal Protocol encryption');
+    debugPrint(
+      '[GUEST SOCKET] ⚠️ DEPRECATED: onParticipantE2EEKey called - this is insecure!',
+    );
+    debugPrint(
+      '[GUEST SOCKET] ⚠️ Use onParticipantE2EEKeySignal() instead for Signal Protocol encryption',
+    );
     // COMMENTED OUT - DO NOT USE PLAINTEXT KEY EXCHANGE
     // on('participant:send_e2ee_key_to_guest', (data) {
     //   if (data is Map<String, dynamic>) {
@@ -289,10 +309,14 @@ class ExternalGuestSocketService {
 
   /// NEW: Listen for Signal Protocol encrypted E2EE key responses
   /// Participant sends LiveKit E2EE key encrypted with Signal Protocol
-  void onParticipantE2EEKeySignal(void Function(Map<String, dynamic>) callback) {
+  void onParticipantE2EEKeySignal(
+    void Function(Map<String, dynamic>) callback,
+  ) {
     on('participant:meeting_e2ee_key_response', (data) {
       if (data is Map<String, dynamic>) {
-        debugPrint('[GUEST SOCKET] Received Signal-encrypted E2EE key from ${data['participant_user_id']}:${data['participant_device_id']}');
+        debugPrint(
+          '[GUEST SOCKET] Received Signal-encrypted E2EE key from ${data['participant_user_id']}:${data['participant_device_id']}',
+        );
         callback(data);
       }
     });
@@ -307,7 +331,9 @@ class ExternalGuestSocketService {
     required int messageType,
   }) {
     if (_sessionId == null || _meetingId == null) {
-      debugPrint('[GUEST SOCKET] Cannot request key - no session ID or meeting ID');
+      debugPrint(
+        '[GUEST SOCKET] Cannot request key - no session ID or meeting ID',
+      );
       return;
     }
 
@@ -318,7 +344,9 @@ class ExternalGuestSocketService {
       'messageType': messageType,
       'request_id': '${_sessionId}_${DateTime.now().millisecondsSinceEpoch}',
     });
-    debugPrint('[GUEST SOCKET] Sent Signal E2EE key request to $participantUserId:$participantDeviceId');
+    debugPrint(
+      '[GUEST SOCKET] Sent Signal E2EE key request to $participantUserId:$participantDeviceId',
+    );
   }
 
   /// Listen for admission granted event

@@ -15,19 +15,19 @@ class FileBrowserScreen extends StatefulWidget {
 
 class _FileBrowserScreenState extends State<FileBrowserScreen> {
   SocketFileClient? _socketClient;
-  
+
   List<Map<String, dynamic>> _files = [];
   bool _isLoading = false;
   bool _hasLoadedOnce = false;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
-  
+
   @override
   void initState() {
     super.initState();
     // Don't load files here - will be triggered in build()
   }
-  
+
   SocketFileClient _getSocketClient() {
     if (_socketClient == null) {
       final socketService = SocketService();
@@ -38,13 +38,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     }
     return _socketClient!;
   }
-  
+
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     // Load files on first build
@@ -54,16 +54,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         _loadFiles();
       });
     }
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Available Files'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadFiles,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadFiles),
         ],
       ),
       body: Column(
@@ -96,23 +93,23 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               },
             ),
           ),
-          
+
           // File list
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _files.isEmpty
-                    ? _buildEmptyState()
-                    : RefreshIndicator(
-                        onRefresh: _loadFiles,
-                        child: ListView.builder(
-                          itemCount: _files.length,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemBuilder: (context, index) {
-                            return _buildFileItem(_files[index]);
-                          },
-                        ),
-                      ),
+                ? _buildEmptyState()
+                : RefreshIndicator(
+                    onRefresh: _loadFiles,
+                    child: ListView.builder(
+                      itemCount: _files.length,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemBuilder: (context, index) {
+                        return _buildFileItem(_files[index]);
+                      },
+                    ),
+                  ),
           ),
         ],
       ),
@@ -124,7 +121,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       ),
     );
   }
-  
+
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -133,27 +130,33 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           Icon(
             Icons.folder_open,
             size: 64,
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.4),
           ),
           const SizedBox(height: 16),
           Text(
             'No files available',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                ),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             'Upload a file to share',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-                ),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.5),
+            ),
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildFileItem(Map<String, dynamic> file) {
     // Privacy: fileName and mimeType are NOT sent from server
     // They come from the encrypted Signal message (future implementation)
@@ -161,7 +164,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final fileSize = file['fileSize'] as int? ?? 0;
     final mimeType = file['mimeType'] as String? ?? 'application/octet-stream';
     final seederCount = file['seederCount'] as int? ?? 0;
-    
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -174,7 +177,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               // File icon
               _buildFileIcon(mimeType),
               const SizedBox(width: 16),
-              
+
               // File info
               Expanded(
                 child: Column(
@@ -196,7 +199,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                   ],
                 ),
               ),
-              
+
               // Download button
               IconButton(
                 icon: const Icon(Icons.download),
@@ -209,11 +212,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       ),
     );
   }
-  
+
   Widget _buildFileIcon(String mimeType) {
     IconData icon;
     Color color;
-    
+
     if (mimeType.startsWith('image/')) {
       icon = Icons.image;
       color = Colors.blue;
@@ -233,7 +236,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       icon = Icons.insert_drive_file;
       color = Colors.grey;
     }
-    
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -243,12 +246,14 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       child: Icon(icon, size: 32, color: color),
     );
   }
-  
+
   Widget _buildSeederBadge(int seederCount) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: seederCount > 0 ? Colors.green.withValues(alpha: 0.1) : Colors.grey.withValues(alpha: 0.1),
+        color: seederCount > 0
+            ? Colors.green.withValues(alpha: 0.1)
+            : Colors.grey.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -271,21 +276,22 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       ),
     );
   }
-  
+
   String _formatFileSize(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes < 1024 * 1024 * 1024)
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
-  
+
   // ============================================
   // FILE OPERATIONS
   // ============================================
-  
+
   Future<void> _loadFiles() async {
     setState(() => _isLoading = true);
-    
+
     try {
       final client = _getSocketClient();
       final files = await client.getActiveFiles();
@@ -298,15 +304,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       setState(() => _isLoading = false);
     }
   }
-  
+
   Future<void> _searchFiles(String query) async {
     if (query.isEmpty) {
       _loadFiles();
       return;
     }
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
       final client = _getSocketClient();
       final results = await client.searchFiles(query);
@@ -319,27 +325,27 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       setState(() => _isLoading = false);
     }
   }
-  
+
   Future<void> _showFileDetails(Map<String, dynamic> file) async {
     if (_socketClient == null) {
       _showError('Not connected to server');
       return;
     }
-    
+
     final fileId = file['fileId'] as String? ?? '';
-    
+
     if (fileId.isEmpty) {
       _showError('Invalid file ID');
       return;
     }
-    
+
     // Get detailed file info with seeders
     try {
       final client = _getSocketClient();
       final detailedInfo = await client.getFileInfo(fileId);
-      
+
       if (!mounted) return;
-      
+
       showModalBottomSheet(
         context: context,
         builder: (context) => _buildFileDetailsSheet(detailedInfo),
@@ -348,15 +354,16 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       _showError('Failed to load file details: $e');
     }
   }
-  
+
   Widget _buildFileDetailsSheet(Map<String, dynamic> fileInfo) {
     // Privacy: fileName and mimeType might not be in server response
     final fileName = fileInfo['fileName'] as String? ?? 'Shared File';
     final fileSize = fileInfo['fileSize'] as int? ?? 0;
-    final mimeType = fileInfo['mimeType'] as String? ?? 'application/octet-stream';
+    final mimeType =
+        fileInfo['mimeType'] as String? ?? 'application/octet-stream';
     final chunkCount = fileInfo['chunkCount'] as int? ?? 0;
     final seederCount = fileInfo['seederCount'] as int? ?? 0;
-    
+
     return Container(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -378,14 +385,14 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             ],
           ),
           const SizedBox(height: 24),
-          
+
           _buildDetailRow('Size', _formatFileSize(fileSize)),
           _buildDetailRow('Type', mimeType),
           _buildDetailRow('Chunks', '$chunkCount'),
           _buildDetailRow('Seeders', '$seederCount'),
-          
+
           const SizedBox(height: 24),
-          
+
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -406,7 +413,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       ),
     );
   }
-  
+
   Widget _buildDetailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -416,54 +423,56 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           Text(
             label,
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
               fontWeight: FontWeight.w500,
             ),
           ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
   }
-  
+
   Future<void> _startDownload(Map<String, dynamic> file) async {
     final fileId = file['fileId'] as String? ?? '';
-    
+
     if (fileId.isEmpty) {
       _showError('Invalid file ID');
       return;
     }
-    
+
     try {
       final client = _getSocketClient();
-      
+
       // Get detailed file info with seeder chunks
       final fileInfo = await client.getFileInfo(fileId);
       final seederChunks = await client.getAvailableChunks(fileId);
-      
+
       if (seederChunks.isEmpty) {
         _showError('No seeders available for this file');
         return;
       }
-      
+
       // Register as leecher
       await client.registerLeecher(fileId);
       if (!mounted) return;
-      
+
       // Get P2P Coordinator
-      final p2pCoordinator = Provider.of<P2PCoordinator?>(context, listen: false);
-      
+      final p2pCoordinator = Provider.of<P2PCoordinator?>(
+        context,
+        listen: false,
+      );
+
       if (p2pCoordinator == null) {
-        throw Exception('P2P Coordinator not initialized. Please ensure you are logged in and Socket.IO is connected.');
+        throw Exception(
+          'P2P Coordinator not initialized. Please ensure you are logged in and Socket.IO is connected.',
+        );
       }
-      
+
       debugPrint('[FILE BROWSER] Starting download with automatic key request');
-      
+
       // Start download with automatic key request
       // This will:
       // 1. Connect to first seeder
@@ -471,34 +480,31 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       // 3. Start download with received key
       await p2pCoordinator.startDownloadWithKeyRequest(
         fileId: fileId,
-        fileName: file['fileName'] as String? ?? 'download_${fileId.substring(0, 8)}',
+        fileName:
+            file['fileName'] as String? ?? 'download_${fileId.substring(0, 8)}',
         mimeType: file['mimeType'] as String? ?? 'application/octet-stream',
         fileSize: fileInfo['fileSize'] as int? ?? 0,
         checksum: fileInfo['checksum'] as String? ?? '',
         chunkCount: fileInfo['chunkCount'] as int? ?? 0,
         seederChunks: seederChunks,
-        sharedWith: (fileInfo['sharedWith'] as List?)?.cast<String>(), // ✅ NEW: Pass sharedWith from fileInfo
+        sharedWith: (fileInfo['sharedWith'] as List?)
+            ?.cast<String>(), // ✅ NEW: Pass sharedWith from fileInfo
       );
-      
+
       debugPrint('[FILE BROWSER] Download started for file: $fileId');
-      
+
       // Navigate to downloads screen
       if (mounted) {
         context.go('/downloads');
       }
-      
     } catch (e) {
       _showError('Failed to start download: $e');
     }
   }
-  
+
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 }
-

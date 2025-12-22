@@ -29,18 +29,21 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
   @override
   void initState() {
     super.initState();
-    
+
     // Monitor connection status (native only)
     if (!kIsWeb) {
-      _connectionSubscription = ServerConnectionService.instance.isConnectedStream.listen((isConnected) {
-        if (mounted) {
-          setState(() {
-            _showServerError = !isConnected;
+      _connectionSubscription = ServerConnectionService
+          .instance
+          .isConnectedStream
+          .listen((isConnected) {
+            if (mounted) {
+              setState(() {
+                _showServerError = !isConnected;
+              });
+            }
           });
-        }
-      });
     }
-    
+
     _startSignalSetup();
   }
 
@@ -52,16 +55,19 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
 
   Future<void> _startSignalSetup() async {
     try {
-      await SignalService.instance.initWithProgress(
-        (String statusText, int current, int total, double percentage) {
-          if (mounted) {
-            setState(() {
-              _statusText = statusText;
-              _progress = percentage / 100.0;
-            });
-          }
-        },
-      );
+      await SignalService.instance.initWithProgress((
+        String statusText,
+        int current,
+        int total,
+        double percentage,
+      ) {
+        if (mounted) {
+          setState(() {
+            _statusText = statusText;
+            _progress = percentage / 100.0;
+          });
+        }
+      });
 
       // Setup complete - navigate to app
       if (mounted) {
@@ -81,16 +87,21 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
           // Try to restore last route, otherwise go to /app/activities (default view)
           final lastRoute = await PreferencesService().loadLastRoute();
           if (!mounted) return;
-          if (lastRoute != null && lastRoute.startsWith('/app/') && lastRoute != '/app') {
+          if (lastRoute != null &&
+              lastRoute.startsWith('/app/') &&
+              lastRoute != '/app') {
             debugPrint('[SIGNAL SETUP] Restoring last route: $lastRoute');
             await PreferencesService().clearLastRoute(); // Clear after using
             if (!mounted) return;
             GoRouter.of(context).go(lastRoute);
           } else {
             // No saved route or route was just /app - go to default view
-            debugPrint('[SIGNAL SETUP] No saved route, going to /app/activities (default)');
+            debugPrint(
+              '[SIGNAL SETUP] No saved route, going to /app/activities (default)',
+            );
             if (lastRoute != null) {
-              await PreferencesService().clearLastRoute(); // Clear if it was /app
+              await PreferencesService()
+                  .clearLastRoute(); // Clear if it was /app
             }
             if (!mounted) return;
             GoRouter.of(context).go('/app/activities');
@@ -99,7 +110,7 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
       }
     } catch (e) {
       debugPrint('[SIGNAL SETUP SCREEN] Error during setup: $e');
-      
+
       // Check if it's an authentication error
       final errorMessage = e.toString();
       if (errorMessage.contains('Device identity not initialized') ||
@@ -108,16 +119,20 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
         // Redirect to appropriate auth page
         if (mounted) {
           if (kIsWeb) {
-            debugPrint('[SIGNAL SETUP SCREEN] Authentication required, redirecting to login...');
+            debugPrint(
+              '[SIGNAL SETUP SCREEN] Authentication required, redirecting to login...',
+            );
             GoRouter.of(context).go('/login');
           } else {
-            debugPrint('[SIGNAL SETUP SCREEN] Authentication required, redirecting to server-selection...');
+            debugPrint(
+              '[SIGNAL SETUP SCREEN] Authentication required, redirecting to server-selection...',
+            );
             GoRouter.of(context).go('/server-selection');
           }
         }
         return;
       }
-      
+
       // Other errors - show retry dialog
       if (mounted) {
         setState(() {
@@ -130,12 +145,14 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
           barrierDismissible: false,
           builder: (context) => AlertDialog(
             title: const Text('Setup Failed'),
-            content: Text('Failed to initialize Signal Protocol:\n\n$e\n\nYou can delete local encrypted data and start fresh, or logout and try again.'),
+            content: Text(
+              'Failed to initialize Signal Protocol:\n\n$e\n\nYou can delete local encrypted data and start fresh, or logout and try again.',
+            ),
             actions: [
               TextButton(
                 onPressed: () async {
                   Navigator.of(context).pop();
-                  
+
                   // Show confirmation dialog for data deletion
                   final confirmed = await showDialog<bool>(
                     context: context,
@@ -144,7 +161,7 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
                       content: const Text(
                         'This will delete all locally encrypted Signal Protocol data for this device.\n\n'
                         'You will need to log in again and re-initialize encryption.\n\n'
-                        'Are you sure?'
+                        'Are you sure?',
                       ),
                       actions: [
                         TextButton(
@@ -154,33 +171,48 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
                         TextButton(
                           onPressed: () => Navigator.of(context).pop(true),
                           style: TextButton.styleFrom(
-                            foregroundColor: Theme.of(context).colorScheme.error,
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.error,
                           ),
                           child: const Text('Delete & Logout'),
                         ),
                       ],
                     ),
                   );
-                  
+
                   if (confirmed == true && mounted) {
                     try {
                       // Get device ID to delete account-specific data
                       final deviceId = DeviceIdentityService.instance.deviceId;
-                      debugPrint('[SIGNAL SETUP] Deleting local data for device: $deviceId');
-                      
+                      debugPrint(
+                        '[SIGNAL SETUP] Deleting local data for device: $deviceId',
+                      );
+
                       // Delete all device-specific databases
-                      await DeviceScopedStorageService.instance.deleteAllDeviceDatabases();
-                      debugPrint('[SIGNAL SETUP] ✓ Deleted all device-specific databases');
-                      
+                      await DeviceScopedStorageService.instance
+                          .deleteAllDeviceDatabases();
+                      debugPrint(
+                        '[SIGNAL SETUP] ✓ Deleted all device-specific databases',
+                      );
+
                       // Logout and redirect
                       if (mounted) {
-                        await LogoutService.instance.logout(context, userInitiated: true);
+                        await LogoutService.instance.logout(
+                          context,
+                          userInitiated: true,
+                        );
                       }
                     } catch (e) {
-                      debugPrint('[SIGNAL SETUP] Error deleting local data: $e');
+                      debugPrint(
+                        '[SIGNAL SETUP] Error deleting local data: $e',
+                      );
                       // Still logout even if deletion fails
                       if (mounted) {
-                        await LogoutService.instance.logout(context, userInitiated: true);
+                        await LogoutService.instance.logout(
+                          context,
+                          userInitiated: true,
+                        );
                       }
                     }
                   }
@@ -195,7 +227,10 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
                   Navigator.of(context).pop();
                   // Logout and redirect to login
                   if (mounted) {
-                    await LogoutService.instance.logout(context, userInitiated: true);
+                    await LogoutService.instance.logout(
+                      context,
+                      userInitiated: true,
+                    );
                   }
                 },
                 child: const Text('Logout'),
@@ -210,7 +245,7 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     // Show server unavailable screen if connection is lost
     if (_showServerError && !kIsWeb) {
       return Scaffold(
@@ -224,13 +259,9 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Icon
-                  Icon(
-                    Icons.cloud_off,
-                    size: 64,
-                    color: colorScheme.error,
-                  ),
+                  Icon(Icons.cloud_off, size: 64, color: colorScheme.error),
                   const SizedBox(height: 24),
-                  
+
                   // Title
                   Text(
                     'Server Unavailable',
@@ -239,7 +270,7 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  
+
                   // Message
                   Text(
                     'Server is temporarily not available',
@@ -249,7 +280,7 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 32),
-                  
+
                   // Retry Button
                   FilledButton.icon(
                     onPressed: () {
@@ -271,7 +302,7 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
         ),
       );
     }
-    
+
     // Normal signal setup screen
     return Scaffold(
       backgroundColor: colorScheme.surface,
@@ -314,7 +345,9 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
                   child: LinearProgressIndicator(
                     value: _progress,
                     backgroundColor: colorScheme.surfaceContainerHighest,
-                    valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      colorScheme.primary,
+                    ),
                   ),
                 ),
               ),
@@ -348,7 +381,11 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.check_circle, color: colorScheme.primary, size: 20),
+                    Icon(
+                      Icons.check_circle,
+                      color: colorScheme.primary,
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'Ready!',
@@ -367,4 +404,3 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
     );
   }
 }
-

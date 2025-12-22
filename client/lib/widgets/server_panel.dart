@@ -68,7 +68,7 @@ class _ServerPanelState extends State<ServerPanel> {
       _servers = ServerConfigService.getAllServers();
       _activeServerId = ServerConfigService.getActiveServer()?.id;
     });
-    
+
     // Load server metadata (name and picture) for all servers
     for (final server in _servers) {
       ServerConfigService.updateServerMetadata(server.id).then((_) {
@@ -93,14 +93,18 @@ class _ServerPanelState extends State<ServerPanel> {
 
     await ServerConfigService.setActiveServer(serverId);
     await ServerConfigService.resetUnreadCount(serverId);
-    
+
     // Switch device identity for native (multi-server support)
     if (!kIsWeb) {
       final server = ServerConfigService.getServerById(serverId);
       if (server != null) {
-        final switched = await DeviceIdentityService.instance.switchToServer(server.serverUrl);
+        final switched = await DeviceIdentityService.instance.switchToServer(
+          server.serverUrl,
+        );
         if (!switched) {
-          debugPrint('[ServerPanel] Warning: Could not switch to server identity for ${server.serverUrl}');
+          debugPrint(
+            '[ServerPanel] Warning: Could not switch to server identity for ${server.serverUrl}',
+          );
         }
       }
     }

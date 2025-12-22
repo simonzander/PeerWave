@@ -25,63 +25,81 @@ void setSocketUnauthorizedHandler(SocketUnauthorizedCallback callback) {
 class SocketService {
   static final SocketService _instance = SocketService._internal();
   factory SocketService() {
-    debugPrint('[SOCKET SERVICE] 🏭 Factory constructor called, returning instance: ${_instance.hashCode}');
+    debugPrint(
+      '[SOCKET SERVICE] 🏭 Factory constructor called, returning instance: ${_instance.hashCode}',
+    );
     return _instance;
   }
   SocketService._internal() {
-    debugPrint('[SOCKET SERVICE] 🏗️ Private constructor called, creating NEW instance');
+    debugPrint(
+      '[SOCKET SERVICE] 🏗️ Private constructor called, creating NEW instance',
+    );
   }
 
   io.Socket? _socket;
   final Map<String, List<void Function(dynamic)>> _listeners = {};
   bool _connecting = false;
   bool _listenersRegistered = false; // 🔒 Track listener registration state
-  
+
   // Public getter for socket (needed by SocketFileClient)
   io.Socket? get socket => _socket;
-  
+
   /// Check if listeners are registered and client is ready
   bool get isReady => _listenersRegistered && (_socket?.connected ?? false);
-  
+
   Future<void> connect() async {
     // Check if socket exists and is truly connected
     if (_socket != null) {
       if (_socket!.connected) {
-        debugPrint('[SOCKET SERVICE] Socket already connected (id: ${_socket!.id})');
+        debugPrint(
+          '[SOCKET SERVICE] Socket already connected (id: ${_socket!.id})',
+        );
         return;
       } else {
         // Socket exists but not connected - dispose and recreate
-        debugPrint('[SOCKET SERVICE] ⚠️ Socket exists but disconnected - disposing and reconnecting');
+        debugPrint(
+          '[SOCKET SERVICE] ⚠️ Socket exists but disconnected - disposing and reconnecting',
+        );
         debugPrint('[SOCKET SERVICE] Stack trace: ${StackTrace.current}');
         _socket?.disconnect();
         _socket?.dispose();
         _socket = null;
       }
     }
-    
+
     if (_connecting) return;
     _connecting = true;
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
       _socket = io.io(urlString, <String, dynamic>{
         'transports': ['websocket'],
-        'autoConnect': false, // Manually connect after setup to ensure cookies are ready
+        'autoConnect':
+            false, // Manually connect after setup to ensure cookies are ready
         'reconnection': true,
         'reconnectionDelay': 2000,
         'withCredentials': true, // Send cookies for session management
       });
       _socket!.on('connect', (_) {
-        debugPrint('[SOCKET SERVICE] ==========================================');
+        debugPrint(
+          '[SOCKET SERVICE] ==========================================',
+        );
         debugPrint('[SOCKET SERVICE] 🔌 Socket connected event fired');
-        debugPrint('[SOCKET SERVICE]    Socket object exists: ${_socket != null}');
+        debugPrint(
+          '[SOCKET SERVICE]    Socket object exists: ${_socket != null}',
+        );
         debugPrint('[SOCKET SERVICE]    Socket ID: ${_socket?.id}');
-        debugPrint('[SOCKET SERVICE]    Stored listeners count: ${_listeners.length}');
-        debugPrint('[SOCKET SERVICE] ==========================================');
-        
+        debugPrint(
+          '[SOCKET SERVICE]    Stored listeners count: ${_listeners.length}',
+        );
+        debugPrint(
+          '[SOCKET SERVICE] ==========================================',
+        );
+
         // ✅ Report successful socket connection (only on native)
         if (!kIsWeb) {
           ServerConnectionService.instance.reportSuccess();
@@ -97,25 +115,34 @@ class SocketService {
         if (data is Map && data['authenticated'] == false) {
           // Only trigger auto-logout if user is logged in
           if (AuthService.isLoggedIn) {
-            debugPrint('[SOCKET SERVICE] ⚠️  Authentication failed - triggering auto-logout');
+            debugPrint(
+              '[SOCKET SERVICE] ⚠️  Authentication failed - triggering auto-logout',
+            );
             _socketUnauthorizedCallback?.call();
           } else {
-            debugPrint('[SOCKET SERVICE] Authentication failed - user not logged in yet, ignoring');
+            debugPrint(
+              '[SOCKET SERVICE] Authentication failed - user not logged in yet, ignoring',
+            );
           }
           return;
         }
         // Store user info in SignalService for device filtering
-        if (data is Map && data['authenticated'] == true && data['uuid'] != null && data['deviceId'] != null) {
+        if (data is Map &&
+            data['authenticated'] == true &&
+            data['uuid'] != null &&
+            data['deviceId'] != null) {
           // Parse deviceId as int (server sends String)
           final deviceId = data['deviceId'] is int
               ? data['deviceId'] as int
               : int.parse(data['deviceId'].toString());
           SignalService.instance.setCurrentUserInfo(data['uuid'], deviceId);
-          
+
           // 🚀 CRITICAL: Only notify server AFTER authentication succeeds
           // This was previously called too early in initStoresAndListeners()
           if (_listenersRegistered) {
-            debugPrint('[SOCKET SERVICE] 🚀 Authentication complete - notifying server client is ready');
+            debugPrint(
+              '[SOCKET SERVICE] 🚀 Authentication complete - notifying server client is ready',
+            );
             _socket!.emit('clientReady', {
               'timestamp': DateTime.now().toIso8601String(),
             });
@@ -141,14 +168,20 @@ class SocketService {
       _socket!.on('unauthorized', (_) {
         // ❌ Report socket error (only on native)
         if (!kIsWeb) {
-          ServerConnectionService.instance.reportSocketError('Socket unauthorized');
+          ServerConnectionService.instance.reportSocketError(
+            'Socket unauthorized',
+          );
         }
         // Only trigger auto-logout if user is logged in
         if (AuthService.isLoggedIn) {
-          debugPrint('[SOCKET SERVICE] ⚠️  Unauthorized - triggering auto-logout');
+          debugPrint(
+            '[SOCKET SERVICE] ⚠️  Unauthorized - triggering auto-logout',
+          );
           _socketUnauthorizedCallback?.call();
         } else {
-          debugPrint('[SOCKET SERVICE] Unauthorized - user not logged in yet, ignoring');
+          debugPrint(
+            '[SOCKET SERVICE] Unauthorized - user not logged in yet, ignoring',
+          );
         }
       });
       _socket!.on('error', (data) {
@@ -157,13 +190,18 @@ class SocketService {
         if (!kIsWeb) {
           ServerConnectionService.instance.reportSocketError(data);
         }
-        if (data is Map && (data['message']?.toString().contains('unauthorized') ?? false)) {
+        if (data is Map &&
+            (data['message']?.toString().contains('unauthorized') ?? false)) {
           // Only trigger auto-logout if user is logged in
           if (AuthService.isLoggedIn) {
-            debugPrint('[SOCKET SERVICE] ⚠️  Unauthorized error - triggering auto-logout');
+            debugPrint(
+              '[SOCKET SERVICE] ⚠️  Unauthorized error - triggering auto-logout',
+            );
             _socketUnauthorizedCallback?.call();
           } else {
-            debugPrint('[SOCKET SERVICE] Unauthorized error - user not logged in yet, ignoring');
+            debugPrint(
+              '[SOCKET SERVICE] Unauthorized error - user not logged in yet, ignoring',
+            );
           }
         }
       });
@@ -173,9 +211,11 @@ class SocketService {
           _socket!.on(event, cb);
         }
       });
-      
+
       // Manually connect after everything is set up
-      debugPrint('[SOCKET SERVICE] Manually connecting socket with credentials...');
+      debugPrint(
+        '[SOCKET SERVICE] Manually connecting socket with credentials...',
+      );
       _socket!.connect();
     } finally {
       _connecting = false;
@@ -183,7 +223,9 @@ class SocketService {
   }
 
   void disconnect() {
-    debugPrint('[SOCKET SERVICE] ⚠️ disconnect() called - setting socket to null');
+    debugPrint(
+      '[SOCKET SERVICE] ⚠️ disconnect() called - setting socket to null',
+    );
     debugPrint('[SOCKET SERVICE] Stack trace: ${StackTrace.current}');
     resetReadyState(); // Reset ready state before disconnect
     _socket?.disconnect();
@@ -191,24 +233,32 @@ class SocketService {
   }
 
   void registerListener(String event, Function(dynamic) callback) {
-    // Debug: Check socket state  
-    debugPrint('[SOCKET SERVICE] 🔍 registerListener($event) called - socket: ${_socket != null ? "EXISTS (id=${_socket!.id})" : "NULL"}');
-    
+    // Debug: Check socket state
+    debugPrint(
+      '[SOCKET SERVICE] 🔍 registerListener($event) called - socket: ${_socket != null ? "EXISTS (id=${_socket!.id})" : "NULL"}',
+    );
+
     final callbacks = _listeners.putIfAbsent(event, () => []);
     if (!callbacks.contains(callback)) {
       callbacks.add(callback);
-      
+
       // Check socket state and register accordingly
       if (_socket == null) {
         // Socket doesn't exist yet - store for later registration
-        debugPrint('[SOCKET SERVICE] 📦 Socket is null, listener for $event stored (will register on connect)');
+        debugPrint(
+          '[SOCKET SERVICE] 📦 Socket is null, listener for $event stored (will register on connect)',
+        );
       } else {
         // Socket exists - register immediately regardless of connection state
         _socket!.on(event, callback);
         if (_socket!.connected) {
-          debugPrint('[SOCKET SERVICE] ✅ Registered listener for $event (socket connected)');
+          debugPrint(
+            '[SOCKET SERVICE] ✅ Registered listener for $event (socket connected)',
+          );
         } else {
-          debugPrint('[SOCKET SERVICE] 📝 Registered listener for $event (socket connecting...)');
+          debugPrint(
+            '[SOCKET SERVICE] 📝 Registered listener for $event (socket connecting...)',
+          );
         }
       }
     } else {
@@ -219,11 +269,15 @@ class SocketService {
   /// Re-register all stored listeners (called after reconnect or initial connect)
   void _reregisterAllListeners() {
     if (_socket == null) {
-      debugPrint('[SOCKET SERVICE] Cannot re-register listeners - socket is null');
+      debugPrint(
+        '[SOCKET SERVICE] Cannot re-register listeners - socket is null',
+      );
       return;
     }
-    
-    debugPrint('[SOCKET SERVICE] 🔄 Re-registering ${_listeners.length} event listeners');
+
+    debugPrint(
+      '[SOCKET SERVICE] 🔄 Re-registering ${_listeners.length} event listeners',
+    );
     int count = 0;
     _listeners.forEach((event, callbacks) {
       for (final callback in callbacks) {
@@ -233,24 +287,28 @@ class SocketService {
     });
     debugPrint('[SOCKET SERVICE] ✅ Re-registered $count listeners');
   }
-  
+
   /// Notify server that all listeners are registered and client is ready
   /// Call this AFTER all PreKeys are generated and listeners registered
   void notifyClientReady() {
     _listenersRegistered = true;
     debugPrint('[SOCKET SERVICE] 🚀 Listeners registered');
-    
+
     // If already authenticated and connected, notify immediately
     if (_socket?.connected ?? false) {
-      debugPrint('[SOCKET SERVICE] 🚀 Socket already authenticated - notifying server');
+      debugPrint(
+        '[SOCKET SERVICE] 🚀 Socket already authenticated - notifying server',
+      );
       _socket!.emit('clientReady', {
         'timestamp': DateTime.now().toIso8601String(),
       });
     } else {
-      debugPrint('[SOCKET SERVICE] ⚠️ Socket not connected yet - will notify after authentication');
+      debugPrint(
+        '[SOCKET SERVICE] ⚠️ Socket not connected yet - will notify after authentication',
+      );
     }
   }
-  
+
   /// Reset ready state (called on disconnect or logout)
   void resetReadyState() {
     _listenersRegistered = false;
@@ -265,7 +323,7 @@ class SocketService {
   }
 
   void emit(String event, dynamic data) {
-      _socket?.emit(event, data);
+    _socket?.emit(event, data);
   }
 
   /// Internal method to authenticate socket connection
@@ -278,28 +336,32 @@ class SocketService {
       // Native uses HMAC authentication
       try {
         debugPrint('[SOCKET SERVICE] Native client - using HMAC auth');
-        
+
         // Import necessary services
         final clientId = await ClientIdService.getClientId();
         final hasSession = await SessionAuthService().hasSession(clientId);
-        
+
         if (!hasSession) {
-          debugPrint('[SOCKET SERVICE] ⚠️ No HMAC session found for socket auth');
+          debugPrint(
+            '[SOCKET SERVICE] ⚠️ No HMAC session found for socket auth',
+          );
           _socket?.emit('authenticate', null);
           return;
         }
-        
+
         // Generate auth headers for Socket.IO authentication
         final timestamp = DateTime.now().millisecondsSinceEpoch;
         final nonce = const Uuid().v4();
-        
-        final sessionSecret = await SessionAuthService().getSessionSecret(clientId);
+
+        final sessionSecret = await SessionAuthService().getSessionSecret(
+          clientId,
+        );
         if (sessionSecret == null) {
           debugPrint('[SOCKET SERVICE] ⚠️ No session secret found');
           _socket?.emit('authenticate', null);
           return;
         }
-        
+
         // Generate signature for socket authentication
         // Path is always '/socket.io/auth' for socket authentication
         final message = '$clientId:$timestamp:$nonce:/socket.io/auth:';
@@ -308,14 +370,14 @@ class SocketService {
         final hmac = Hmac(sha256, key);
         final digest = hmac.convert(bytes);
         final signature = digest.toString();
-        
+
         final authData = {
           'X-Client-ID': clientId,
           'X-Timestamp': timestamp.toString(),
           'X-Nonce': nonce,
           'X-Signature': signature,
         };
-        
+
         debugPrint('[SOCKET SERVICE] Sending HMAC auth for socket connection');
         _socket?.emit('authenticate', authData);
       } catch (e) {
@@ -333,4 +395,3 @@ class SocketService {
 
   bool get isConnected => _socket?.connected ?? false;
 }
-

@@ -1,4 +1,4 @@
-// Native export - exports NativeStorage as StorageImpl  
+// Native export - exports NativeStorage as StorageImpl
 export 'native_storage.dart' show NativeStorage;
 
 // Factory function

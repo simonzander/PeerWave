@@ -45,7 +45,8 @@ class VideoConferenceService extends ChangeNotifier {
   Uint8List? _channelSharedKey; // ONE shared key for the entire channel
   int?
   _keyTimestamp; // Timestamp of current key (for race condition resolution)
-  final Map<String, Uint8List> _participantKeys = {}; // userId -> encryption key (legacy, for backward compat)
+  final Map<String, Uint8List> _participantKeys =
+      {}; // userId -> encryption key (legacy, for backward compat)
   Completer<bool>?
   _keyReceivedCompleter; // For waiting on key exchange in PreJoin
   bool _isFirstParticipant =
@@ -111,7 +112,8 @@ class VideoConferenceService extends ChangeNotifier {
   bool get hasE2EEKey =>
       _keyTimestamp !=
       null; // Check if E2EE key is available (generated or received)
-  Uint8List? get channelSharedKey => _channelSharedKey; // E2EE key for the meeting
+  Uint8List? get channelSharedKey =>
+      _channelSharedKey; // E2EE key for the meeting
 
   // NEW: Overlay state getters
   bool get isInCall => _isInCall;
@@ -203,7 +205,9 @@ class VideoConferenceService extends ChangeNotifier {
     String meetingId,
   ) async {
     try {
-      debugPrint('[VideoConf] 🔍 Getting participants with E2EE key for: $meetingId');
+      debugPrint(
+        '[VideoConf] 🔍 Getting participants with E2EE key for: $meetingId',
+      );
       final completer = Completer<List<String>>();
 
       void listener(dynamic data) {
@@ -215,16 +219,22 @@ class VideoConferenceService extends ChangeNotifier {
               .where((p) => p['hasE2EEKey'] == true)
               .map((p) => p['userId'] as String)
               .toList();
-          debugPrint('[VideoConf] ✓ Participants with E2EE key: ${withKey.length} - $withKey');
+          debugPrint(
+            '[VideoConf] ✓ Participants with E2EE key: ${withKey.length} - $withKey',
+          );
           completer.complete(withKey);
         } else {
-          debugPrint('[VideoConf] ⚠️ Ignoring participants-info for different channel: ${data['channelId']}');
+          debugPrint(
+            '[VideoConf] ⚠️ Ignoring participants-info for different channel: ${data['channelId']}',
+          );
         }
       }
 
       SocketService().registerListener('video:participants-info', listener);
 
-      debugPrint('[VideoConf] 📤 Emitting video:check-participants for: $meetingId');
+      debugPrint(
+        '[VideoConf] 📤 Emitting video:check-participants for: $meetingId',
+      );
       SocketService().emit('video:check-participants', {
         'channelId': meetingId,
       });
@@ -971,7 +981,8 @@ class VideoConferenceService extends ChangeNotifier {
     MediaDevice? cameraDevice, // NEW: Optional pre-selected camera
     MediaDevice? microphoneDevice, // NEW: Optional pre-selected microphone
     String? channelName, // NEW: Channel name for display
-    bool isExternalGuest = false, // NEW: Skip Signal Protocol for external guests
+    bool isExternalGuest =
+        false, // NEW: Skip Signal Protocol for external guests
     String? guestSessionId, // NEW: Guest session ID for token request
   }) async {
     if (_isConnecting || _isConnected) {
@@ -1001,7 +1012,7 @@ class VideoConferenceService extends ChangeNotifier {
           'Key exchange requires Signal Protocol encryption.',
         );
       }
-      
+
       if (!isExternalGuest) {
         debugPrint('[VideoConf] ✓ Signal Service ready for E2EE key exchange');
 
@@ -1021,7 +1032,9 @@ class VideoConferenceService extends ChangeNotifier {
           debugPrint('[VideoConf] ✓ Meeting E2EE callbacks registered');
         }
       } else {
-        debugPrint('[VideoConf] 🔓 External guest mode - skipping Signal Protocol setup');
+        debugPrint(
+          '[VideoConf] 🔓 External guest mode - skipping Signal Protocol setup',
+        );
       }
 
       // Initialize E2EE ONLY if we don't already have a key AND not an external guest
@@ -1089,18 +1102,17 @@ class VideoConferenceService extends ChangeNotifier {
       // For meetings (ID starts with mtg_ or call_), use meeting-token endpoint
       final isMeeting =
           channelId.startsWith('mtg_') || channelId.startsWith('call_');
-      
+
       String tokenEndpoint;
       Map<String, dynamic> requestData;
-      
+
       if (isExternalGuest && guestSessionId != null) {
         // Guest token endpoint
         tokenEndpoint = '/api/livekit/guest-token';
-        requestData = {
-          'meetingId': channelId,
-          'sessionId': guestSessionId,
-        };
-        debugPrint('[VideoConf] Requesting GUEST token for meeting: $channelId (session: $guestSessionId)');
+        requestData = {'meetingId': channelId, 'sessionId': guestSessionId};
+        debugPrint(
+          '[VideoConf] Requesting GUEST token for meeting: $channelId (session: $guestSessionId)',
+        );
       } else if (isMeeting) {
         tokenEndpoint = '/api/livekit/meeting-token';
         requestData = {'meetingId': channelId};

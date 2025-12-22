@@ -11,7 +11,7 @@ class SpeakingBorderWrapper extends StatefulWidget {
     required this.child,
     required this.isSpeaking,
     this.glowColor,
-  }) ;
+  });
 
   @override
   State<SpeakingBorderWrapper> createState() => _SpeakingBorderWrapperState();
@@ -65,8 +65,7 @@ class _SpeakingBorderWrapperState extends State<SpeakingBorderWrapper>
 
   @override
   Widget build(BuildContext context) {
-    final glowColor =
-        widget.glowColor ?? Theme.of(context).colorScheme.primary;
+    final glowColor = widget.glowColor ?? Theme.of(context).colorScheme.primary;
 
     return AnimatedBuilder(
       animation: _glowAnimation,

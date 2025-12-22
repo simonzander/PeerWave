@@ -15,14 +15,16 @@ class NotificationBadge extends StatelessWidget {
     this.userId,
     required this.child,
     this.showZero = false,
-  }) ;
+  });
 
   @override
   Widget build(BuildContext context) {
     return Consumer<NotificationProvider>(
       builder: (context, notificationProvider, _) {
         final key = channelId ?? userId;
-        final count = key != null ? notificationProvider.getUnreadCount(key) : 0;
+        final count = key != null
+            ? notificationProvider.getUnreadCount(key)
+            : 0;
 
         if (count == 0 && !showZero) {
           return child;
@@ -41,10 +43,7 @@ class NotificationBadge extends StatelessWidget {
                   color: Theme.of(context).colorScheme.error,
                   shape: BoxShape.circle,
                 ),
-                constraints: const BoxConstraints(
-                  minWidth: 20,
-                  minHeight: 20,
-                ),
+                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
                 child: Center(
                   child: Text(
                     count > 99 ? '99+' : '$count',
@@ -68,10 +67,7 @@ class NotificationBadge extends StatelessWidget {
 class GlobalNotificationBadge extends StatelessWidget {
   final Widget child;
 
-  const GlobalNotificationBadge({
-    super.key,
-    required this.child,
-  }) ;
+  const GlobalNotificationBadge({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -96,10 +92,7 @@ class GlobalNotificationBadge extends StatelessWidget {
                   color: Theme.of(context).colorScheme.error,
                   shape: BoxShape.circle,
                 ),
-                constraints: const BoxConstraints(
-                  minWidth: 20,
-                  minHeight: 20,
-                ),
+                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
                 child: Center(
                   child: Text(
                     count > 99 ? '99+' : '$count',
@@ -118,4 +111,3 @@ class GlobalNotificationBadge extends StatelessWidget {
     );
   }
 }
-

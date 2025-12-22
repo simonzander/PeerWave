@@ -7,9 +7,9 @@ import 'database_helper.dart';
 /// Provides atomic updates, proper sorting, and additional features
 class SqliteRecentConversationsStore {
   static SqliteRecentConversationsStore? _instance;
-  
+
   SqliteRecentConversationsStore._();
-  
+
   static Future<SqliteRecentConversationsStore> getInstance() async {
     if (_instance == null) {
       _instance = SqliteRecentConversationsStore._();
@@ -17,16 +17,18 @@ class SqliteRecentConversationsStore {
     }
     return _instance!;
   }
-  
+
   Future<void> _initialize() async {
     await DatabaseHelper.database;
-    
+
     // Verify tables exist
     final isReady = await DatabaseHelper.isDatabaseReady();
     if (!isReady) {
-      throw Exception('[SQLITE_CONVERSATIONS_STORE] Database tables not ready!');
+      throw Exception(
+        '[SQLITE_CONVERSATIONS_STORE] Database tables not ready!',
+      );
     }
-    
+
     debugPrint('[SQLITE_CONVERSATIONS_STORE] Initialized - Database ready');
   }
 
@@ -39,21 +41,17 @@ class SqliteRecentConversationsStore {
     bool pinned = false,
   }) async {
     final db = await DatabaseHelper.database;
-    
-    await db.insert(
-      'recent_conversations',
-      {
-        'user_id': userId,
-        'display_name': displayName,
-        'picture': picture,
-        'last_message_at': DateTime.now().toIso8601String(),
-        'unread_count': unreadCount,
-        'pinned': pinned ? 1 : 0,
-        'archived': 0,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-    
+
+    await db.insert('recent_conversations', {
+      'user_id': userId,
+      'display_name': displayName,
+      'picture': picture,
+      'last_message_at': DateTime.now().toIso8601String(),
+      'unread_count': unreadCount,
+      'pinned': pinned ? 1 : 0,
+      'archived': 0,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+
     debugPrint('[SQLITE_CONVERSATIONS_STORE] Updated conversation: $userId');
   }
 
@@ -63,30 +61,30 @@ class SqliteRecentConversationsStore {
     bool includeArchived = false,
   }) async {
     final db = await DatabaseHelper.database;
-    
+
     String whereClause = includeArchived ? '' : 'archived = 0';
-    
+
     final result = await db.query(
       'recent_conversations',
       where: whereClause.isEmpty ? null : whereClause,
       orderBy: 'pinned DESC, last_message_at DESC',
       limit: limit,
     );
-    
+
     return result.map(_convertFromDb).toList();
   }
 
   /// Get a specific conversation
   Future<Map<String, dynamic>?> getConversation(String userId) async {
     final db = await DatabaseHelper.database;
-    
+
     final result = await db.query(
       'recent_conversations',
       where: 'user_id = ?',
       whereArgs: [userId],
       limit: 1,
     );
-    
+
     if (result.isEmpty) return null;
     return _convertFromDb(result.first);
   }
@@ -94,12 +92,10 @@ class SqliteRecentConversationsStore {
   /// Update conversation timestamp (when new message arrives)
   Future<void> updateTimestamp(String userId) async {
     final db = await DatabaseHelper.database;
-    
+
     await db.update(
       'recent_conversations',
-      {
-        'last_message_at': DateTime.now().toIso8601String(),
-      },
+      {'last_message_at': DateTime.now().toIso8601String()},
       where: 'user_id = ?',
       whereArgs: [userId],
     );
@@ -108,19 +104,22 @@ class SqliteRecentConversationsStore {
   /// Increment unread count
   Future<void> incrementUnreadCount(String userId) async {
     final db = await DatabaseHelper.database;
-    
-    await db.rawUpdate('''
+
+    await db.rawUpdate(
+      '''
       UPDATE recent_conversations 
       SET unread_count = unread_count + 1,
           last_message_at = ?
       WHERE user_id = ?
-    ''', [DateTime.now().toIso8601String(), userId]);
+    ''',
+      [DateTime.now().toIso8601String(), userId],
+    );
   }
 
   /// Reset unread count (when user opens conversation)
   Future<void> resetUnreadCount(String userId) async {
     final db = await DatabaseHelper.database;
-    
+
     await db.update(
       'recent_conversations',
       {'unread_count': 0},
@@ -132,20 +131,20 @@ class SqliteRecentConversationsStore {
   /// Get total unread count across all conversations
   Future<int> getTotalUnreadCount() async {
     final db = await DatabaseHelper.database;
-    
+
     final result = await db.rawQuery('''
       SELECT SUM(unread_count) as total 
       FROM recent_conversations 
       WHERE archived = 0
     ''');
-    
+
     return (result.first['total'] as int?) ?? 0;
   }
 
   /// Pin a conversation
   Future<void> pinConversation(String userId) async {
     final db = await DatabaseHelper.database;
-    
+
     await db.update(
       'recent_conversations',
       {'pinned': 1},
@@ -157,7 +156,7 @@ class SqliteRecentConversationsStore {
   /// Unpin a conversation
   Future<void> unpinConversation(String userId) async {
     final db = await DatabaseHelper.database;
-    
+
     await db.update(
       'recent_conversations',
       {'pinned': 0},
@@ -169,7 +168,7 @@ class SqliteRecentConversationsStore {
   /// Archive a conversation
   Future<void> archiveConversation(String userId) async {
     final db = await DatabaseHelper.database;
-    
+
     await db.update(
       'recent_conversations',
       {'archived': 1},
@@ -181,7 +180,7 @@ class SqliteRecentConversationsStore {
   /// Unarchive a conversation
   Future<void> unarchiveConversation(String userId) async {
     final db = await DatabaseHelper.database;
-    
+
     await db.update(
       'recent_conversations',
       {'archived': 0},
@@ -193,34 +192,42 @@ class SqliteRecentConversationsStore {
   /// Remove a conversation
   Future<void> removeConversation(String userId) async {
     final db = await DatabaseHelper.database;
-    
+
     await db.delete(
       'recent_conversations',
       where: 'user_id = ?',
       whereArgs: [userId],
     );
-    
+
     debugPrint('[SQLITE_CONVERSATIONS_STORE] Removed conversation: $userId');
   }
 
   /// Clear all conversations
   Future<void> clearAll() async {
     final db = await DatabaseHelper.database;
-    
+
     await db.delete('recent_conversations');
-    
+
     debugPrint('[SQLITE_CONVERSATIONS_STORE] Cleared all conversations');
   }
 
   /// Get conversation statistics
   Future<Map<String, dynamic>> getStatistics() async {
     final db = await DatabaseHelper.database;
-    
-    final totalResult = await db.rawQuery('SELECT COUNT(*) as count FROM recent_conversations');
-    final pinnedResult = await db.rawQuery('SELECT COUNT(*) as count FROM recent_conversations WHERE pinned = 1');
-    final archivedResult = await db.rawQuery('SELECT COUNT(*) as count FROM recent_conversations WHERE archived = 1');
-    final unreadResult = await db.rawQuery('SELECT SUM(unread_count) as total FROM recent_conversations');
-    
+
+    final totalResult = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM recent_conversations',
+    );
+    final pinnedResult = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM recent_conversations WHERE pinned = 1',
+    );
+    final archivedResult = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM recent_conversations WHERE archived = 1',
+    );
+    final unreadResult = await db.rawQuery(
+      'SELECT SUM(unread_count) as total FROM recent_conversations',
+    );
+
     return {
       'total': totalResult.first['count'],
       'pinned': pinnedResult.first['count'],
@@ -243,4 +250,3 @@ class SqliteRecentConversationsStore {
     };
   }
 }
-

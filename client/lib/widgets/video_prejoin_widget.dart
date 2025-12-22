@@ -12,7 +12,13 @@ class VideoPreJoinWidget extends StatefulWidget {
   final bool isExchangingKey;
   final String? keyExchangeError;
   final VoidCallback? onRetryKeyExchange;
-  final void Function(MediaDevice? camera, MediaDevice? microphone, bool cameraEnabled, bool micEnabled)? onDeviceChanged;
+  final void Function(
+    MediaDevice? camera,
+    MediaDevice? microphone,
+    bool cameraEnabled,
+    bool micEnabled,
+  )?
+  onDeviceChanged;
   final bool voiceOnly;
 
   const VideoPreJoinWidget({
@@ -27,7 +33,7 @@ class VideoPreJoinWidget extends StatefulWidget {
     this.onRetryKeyExchange,
     this.onDeviceChanged,
     this.voiceOnly = false,
-  }) ;
+  });
 
   @override
   State<VideoPreJoinWidget> createState() => VideoPreJoinWidgetState();
@@ -39,7 +45,7 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
   MediaDevice? _selectedCamera;
   MediaDevice? _selectedMicrophone;
   bool _isLoadingDevices = true;
-  
+
   LocalVideoTrack? _previewTrack;
   bool _isCameraEnabled = true;
   bool _isMicEnabled = true;
@@ -74,7 +80,9 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
       LocalAudioTrack? tempAudioTrack;
 
       try {
-        tempAudioTrack = await LocalAudioTrack.create(const AudioCaptureOptions());
+        tempAudioTrack = await LocalAudioTrack.create(
+          const AudioCaptureOptions(),
+        );
         debugPrint('[VideoPreJoin] Audio permission granted');
       } catch (e) {
         debugPrint('[VideoPreJoin] Audio permission error: $e');
@@ -137,7 +145,9 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
 
       _notifyDeviceChange();
 
-      debugPrint('[VideoPreJoin] Loaded ${_cameras.length} cameras, ${_microphones.length} microphones');
+      debugPrint(
+        '[VideoPreJoin] Loaded ${_cameras.length} cameras, ${_microphones.length} microphones',
+      );
     } catch (e) {
       debugPrint('[VideoPreJoin] Error loading devices: $e');
       setState(() => _isLoadingDevices = false);
@@ -151,9 +161,7 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
       await _previewTrack?.dispose();
 
       _previewTrack = await LocalVideoTrack.createCameraTrack(
-        CameraCaptureOptions(
-          deviceId: _selectedCamera!.deviceId,
-        ),
+        CameraCaptureOptions(deviceId: _selectedCamera!.deviceId),
       );
 
       setState(() {});
@@ -172,7 +180,7 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
       _previewTrack?.dispose();
       _previewTrack = null;
     }
-    
+
     _notifyDeviceChange();
   }
 
@@ -199,17 +207,10 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
     return Column(
       children: [
         // Video Preview (if not voice only)
-        if (!widget.voiceOnly)
-          Expanded(
-            flex: 3,
-            child: _buildVideoPreview(),
-          ),
+        if (!widget.voiceOnly) Expanded(flex: 3, child: _buildVideoPreview()),
 
         // Controls
-        Expanded(
-          flex: widget.voiceOnly ? 4 : 2,
-          child: _buildControls(),
-        ),
+        Expanded(flex: widget.voiceOnly ? 4 : 2, child: _buildControls()),
       ],
     );
   }
@@ -265,7 +266,9 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
               if (!widget.voiceOnly)
                 IconButton.filledTonal(
                   onPressed: _toggleCamera,
-                  icon: Icon(_isCameraEnabled ? Icons.videocam : Icons.videocam_off),
+                  icon: Icon(
+                    _isCameraEnabled ? Icons.videocam : Icons.videocam_off,
+                  ),
                   iconSize: 28,
                 ),
               if (!widget.voiceOnly) const SizedBox(width: 16),
@@ -299,7 +302,9 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
           ),
           items: [
             const DropdownMenuItem(value: null, child: Text('No camera')),
-            ..._cameras.map((d) => DropdownMenuItem(value: d, child: Text(d.label))),
+            ..._cameras.map(
+              (d) => DropdownMenuItem(value: d, child: Text(d.label)),
+            ),
           ],
           onChanged: (device) async {
             setState(() {
@@ -331,7 +336,9 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
       ),
       items: [
         const DropdownMenuItem(value: null, child: Text('No microphone')),
-        ..._microphones.map((d) => DropdownMenuItem(value: d, child: Text(d.label))),
+        ..._microphones.map(
+          (d) => DropdownMenuItem(value: d, child: Text(d.label)),
+        ),
       ],
       onChanged: (device) {
         setState(() => _selectedMicrophone = device);
@@ -343,48 +350,112 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
   Widget _buildE2EEStatus() {
     if (widget.isCheckingParticipants) {
       return ListTile(
-        leading: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
-        title: Text('Checking participants...', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-        subtitle: Text('Verifying who else is in the call', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        leading: CircularProgressIndicator(
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        title: Text(
+          'Checking participants...',
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+        ),
+        subtitle: Text(
+          'Verifying who else is in the call',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
       );
     }
 
     if (widget.isFirstParticipant) {
       if (widget.hasE2EEKey) {
         return ListTile(
-          leading: Icon(Icons.lock, color: Theme.of(context).colorScheme.primary, size: 32),
-          title: Text('End-to-end encryption ready', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-          subtitle: Text('You are the first participant - encryption key generated', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          leading: Icon(
+            Icons.lock,
+            color: Theme.of(context).colorScheme.primary,
+            size: 32,
+          ),
+          title: Text(
+            'End-to-end encryption ready',
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+          ),
+          subtitle: Text(
+            'You are the first participant - encryption key generated',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
         );
       } else if (widget.isExchangingKey) {
         return ListTile(
-          leading: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
-          title: Text('Generating encryption key...', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-          subtitle: Text('You are the first participant', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          leading: CircularProgressIndicator(
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          title: Text(
+            'Generating encryption key...',
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+          ),
+          subtitle: Text(
+            'You are the first participant',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
         );
       }
     }
 
     if (widget.isExchangingKey) {
       return ListTile(
-        leading: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
-        title: Text('Exchanging encryption keys...', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-        subtitle: Text('${widget.participantCount} ${widget.participantCount == 1 ? "participant" : "participants"} in call', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        leading: CircularProgressIndicator(
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        title: Text(
+          'Exchanging encryption keys...',
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+        ),
+        subtitle: Text(
+          '${widget.participantCount} ${widget.participantCount == 1 ? "participant" : "participants"} in call',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
       );
     }
 
     if (widget.hasE2EEKey) {
       return ListTile(
-        leading: Icon(Icons.lock, color: Theme.of(context).colorScheme.primary, size: 32),
-        title: Text('End-to-end encryption ready', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-        subtitle: Text('Keys exchanged securely via Signal Protocol', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        leading: Icon(
+          Icons.lock,
+          color: Theme.of(context).colorScheme.primary,
+          size: 32,
+        ),
+        title: Text(
+          'End-to-end encryption ready',
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+        ),
+        subtitle: Text(
+          'Keys exchanged securely via Signal Protocol',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
       );
     }
 
     return ListTile(
-      leading: Icon(Icons.error, color: Theme.of(context).colorScheme.error, size: 32),
-      title: Text('Key exchange failed', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-      subtitle: Text(widget.keyExchangeError ?? 'Unknown error', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      leading: Icon(
+        Icons.error,
+        color: Theme.of(context).colorScheme.error,
+        size: 32,
+      ),
+      title: Text(
+        'Key exchange failed',
+        style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+      ),
+      subtitle: Text(
+        widget.keyExchangeError ?? 'Unknown error',
+        style: TextStyle(color: Theme.of(context).colorScheme.error),
+      ),
       trailing: widget.onRetryKeyExchange != null
           ? TextButton(
               onPressed: widget.onRetryKeyExchange,

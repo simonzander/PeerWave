@@ -26,13 +26,13 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
   bool _isProcessing = false;
   double _progress = 0.0;
   String _statusText = '';
-  
+
   // Upload stages
   bool _chunkingComplete = false;
   bool _encryptionComplete = false;
   bool _storageComplete = false;
   bool _announceComplete = false;
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -52,18 +52,17 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
               _buildFilePreview()
             else if (_isProcessing)
               _buildProcessingView(),
-            
+
             const SizedBox(height: 24),
-            
+
             // Action buttons
-            if (_selectedFile != null && !_isProcessing)
-              _buildActionButtons(),
+            if (_selectedFile != null && !_isProcessing) _buildActionButtons(),
           ],
         ),
       ),
     );
   }
-  
+
   Widget _buildFileSelector() {
     return Card(
       child: InkWell(
@@ -94,11 +93,11 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       ),
     );
   }
-  
+
   Widget _buildFilePreview() {
     final file = _selectedFile!;
     final mimeType = lookupMimeType(file.name) ?? 'application/octet-stream';
-    
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -126,9 +125,9 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
                       ),
                       Text(
                         mimeType,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey,
-                        ),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: Colors.grey),
                       ),
                     ],
                   ),
@@ -144,7 +143,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       ),
     );
   }
-  
+
   Widget _buildProcessingView() {
     return Card(
       child: Padding(
@@ -158,17 +157,14 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            LinearProgressIndicator(
-              value: _progress,
-              minHeight: 8,
-            ),
+            LinearProgressIndicator(value: _progress, minHeight: 8),
             const SizedBox(height: 8),
             Text(
               '${(_progress * 100).toStringAsFixed(1)}%',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 32),
-            
+
             // Stage indicators
             _buildStageIndicator('Chunking', _chunkingComplete),
             _buildStageIndicator('Encryption', _encryptionComplete),
@@ -179,7 +175,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       ),
     );
   }
-  
+
   Widget _buildStageIndicator(String label, bool complete) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -201,37 +197,46 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       ),
     );
   }
-  
+
   Widget _buildActionButtons() {
     return Column(
       children: [
         ElevatedButton.icon(
           onPressed: () {
-            final chunkingService = Provider.of<ChunkingService>(context, listen: false);
-            final encryptionService = Provider.of<EncryptionService>(context, listen: false);
-            final storage = Provider.of<FileStorageInterface>(context, listen: false);
+            final chunkingService = Provider.of<ChunkingService>(
+              context,
+              listen: false,
+            );
+            final encryptionService = Provider.of<EncryptionService>(
+              context,
+              listen: false,
+            );
+            final storage = Provider.of<FileStorageInterface>(
+              context,
+              listen: false,
+            );
             final socketService = SocketService();
-            _uploadFile(chunkingService, encryptionService, storage, socketService);
+            _uploadFile(
+              chunkingService,
+              encryptionService,
+              storage,
+              socketService,
+            );
           },
           icon: const Icon(Icons.cloud_upload),
           label: const Text('Upload & Share'),
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.all(16),
-          ),
+          style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
         ),
         const SizedBox(height: 8),
-        TextButton(
-          onPressed: _clearFile,
-          child: const Text('Cancel'),
-        ),
+        TextButton(onPressed: _clearFile, child: const Text('Cancel')),
       ],
     );
   }
-  
+
   Widget _buildFileIcon(String mimeType) {
     IconData icon;
     Color color;
-    
+
     if (mimeType.startsWith('image/')) {
       icon = Icons.image;
       color = Colors.blue;
@@ -251,34 +256,35 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       icon = Icons.insert_drive_file;
       color = Colors.grey;
     }
-    
+
     return Icon(icon, size: 48, color: color);
   }
-  
+
   String _formatFileSize(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes < 1024 * 1024 * 1024)
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
-  
+
   // ============================================
   // FILE OPERATIONS
   // ============================================
-  
+
   Future<void> _pickFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
         withData: true, // Load file into memory
       );
-      
+
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
-        
+
         // ✅ CHECK FILE SIZE
         final maxSize = FileTransferConfig.getMaxFileSize();
         final recommendedSize = FileTransferConfig.getRecommendedSize();
-        
+
         if (file.size > maxSize) {
           // File too large - show error dialog
           if (mounted) {
@@ -293,13 +299,13 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
               file.size,
               file.name,
             );
-            
+
             if (shouldContinue != true) {
               return; // User cancelled
             }
           }
         }
-        
+
         // File size OK - continue
         setState(() {
           _selectedFile = file;
@@ -310,7 +316,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       _showError('Failed to pick file: $e');
     }
   }
-  
+
   void _clearFile() {
     setState(() {
       _selectedFile = null;
@@ -324,7 +330,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       _announceComplete = false;
     });
   }
-  
+
   Future<void> _uploadFile(
     ChunkingService chunkingService,
     EncryptionService encryptionService,
@@ -332,7 +338,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
     SocketService socketService,
   ) async {
     if (_selectedFile == null || _fileBytes == null) return;
-    
+
     // Check if socket is connected
     if (socketService.socket == null || !socketService.isConnected) {
       if (mounted) {
@@ -345,37 +351,37 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       }
       return;
     }
-    
+
     final socketClient = SocketFileClient(socket: socketService.socket!);
-    
+
     setState(() {
       _isProcessing = true;
       _progress = 0.0;
       _statusText = 'Checking for duplicates...';
     });
-    
+
     try {
       final file = _selectedFile!;
       final fileBytes = _fileBytes!;
       final mimeType = lookupMimeType(file.name) ?? 'application/octet-stream';
-      
+
       // Calculate checksum first to check for duplicates
       final fileChecksum = chunkingService.calculateFileChecksum(fileBytes);
-      
+
       // Check if file already exists in local storage
       final existingFiles = await storage.getAllFiles();
       final duplicate = existingFiles.firstWhere(
         (f) => f['fileName'] == file.name && f['checksum'] == fileChecksum,
         orElse: () => {},
       );
-      
+
       if (duplicate.isNotEmpty) {
         setState(() {
           _isProcessing = false;
           _progress = 0.0;
           _statusText = '';
         });
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -387,9 +393,9 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
         }
         return;
       }
-      
+
       final fileId = _generateFileId();
-      
+
       // Step 1: Chunking
       setState(() => _statusText = 'Splitting file into chunks...');
       final chunks = await chunkingService.splitIntoChunks(
@@ -402,12 +408,14 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
         _chunkingComplete = true;
         _progress = 0.2;
       });
-      
+
       // Step 2: Generate encryption key
       setState(() => _statusText = 'Generating encryption key...');
       final fileKey = encryptionService.generateKey();
-      debugPrint('[UPLOAD] Generated AES-256 file key: ${fileKey.length} bytes');
-      
+      debugPrint(
+        '[UPLOAD] Generated AES-256 file key: ${fileKey.length} bytes',
+      );
+
       // Step 3: Encrypt and store chunks
       setState(() => _statusText = 'Encrypting and storing chunks...');
       int processedChunks = 0;
@@ -417,7 +425,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
           chunk.data,
           fileKey,
         );
-        
+
         // Store chunk
         await storage.saveChunk(
           fileId,
@@ -426,19 +434,19 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
           iv: encryptionResult.iv,
           chunkHash: chunk.hash,
         );
-        
+
         processedChunks++;
         setState(() {
           _progress = 0.2 + (0.6 * (processedChunks / chunks.length));
         });
       }
-      
+
       setState(() {
         _encryptionComplete = true;
         _storageComplete = true;
         _progress = 0.8;
       });
-      
+
       // Step 4: Save file metadata (use already calculated checksum)
       await storage.saveFileMetadata({
         'fileId': fileId,
@@ -451,17 +459,18 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
         'isSeeder': true,
         'createdAt': DateTime.now().toIso8601String(),
         'lastActivity': DateTime.now().toIso8601String(),
-        'sharedWith': [], // ← WICHTIG: Leere Liste initial (nur Uploader hat Zugriff)
+        'sharedWith':
+            [], // ← WICHTIG: Leere Liste initial (nur Uploader hat Zugriff)
       });
-      
+
       // Step 5: Save encryption key
       await storage.saveFileKey(fileId, fileKey);
       debugPrint('[UPLOAD] Saved file key to storage: ${fileKey.length} bytes');
-      
+
       // Step 6: Announce to network (fileName is NOT sent for privacy)
       setState(() => _statusText = 'Announcing to network...');
       final availableChunks = List.generate(chunks.length, (i) => i);
-      
+
       await socketClient.announceFile(
         fileId: fileId,
         mimeType: mimeType,
@@ -469,47 +478,40 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
         checksum: fileChecksum,
         chunkCount: chunks.length,
         availableChunks: availableChunks,
-        sharedWith: [], // ← WICHTIG: Leere Liste (nur Uploader ist initial Seeder)
+        sharedWith:
+            [], // ← WICHTIG: Leere Liste (nur Uploader ist initial Seeder)
       );
-      
+
       setState(() {
         _announceComplete = true;
         _progress = 1.0;
         _statusText = 'Upload complete!';
       });
-      
+
       // Show success and navigate back
       await Future.delayed(const Duration(seconds: 2));
       if (mounted) {
         _showSuccess('File uploaded and shared successfully!');
       }
-      
     } catch (e) {
       _showError('Upload failed: $e');
       _clearFile();
     }
   }
-  
+
   String _generateFileId() {
     return '${DateTime.now().millisecondsSinceEpoch}_${_selectedFile?.name.hashCode ?? ''}';
   }
-  
+
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
-  
+
   void _showSuccess(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.green),
     );
   }
 }
-

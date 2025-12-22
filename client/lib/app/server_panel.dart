@@ -28,6 +28,7 @@ class _ServerPanelState extends State<ServerPanel> {
       messenger.showSnackBar(SnackBar(content: Text(message)));
     }
   }
+
   Future<void> _removeServer(String host) async {
     // Remove from persistent storage
     await AuthService().removeHost(host);
@@ -35,6 +36,7 @@ class _ServerPanelState extends State<ServerPanel> {
       servers.removeWhere((s) => s.host == host);
     });
   }
+
   List<_ServerMeta> servers = [];
 
   @override
@@ -49,13 +51,17 @@ class _ServerPanelState extends State<ServerPanel> {
       // Use ModalRoute to get current location
       final currentUri = GoRouterState.of(context).uri.toString();
       if (currentUri != '/dashboard') {
-        router.go('/dashboard', extra: {'socket': servers[0].socket, 'host': servers[0].host});
+        router.go(
+          '/dashboard',
+          extra: {'socket': servers[0].socket, 'host': servers[0].host},
+        );
       }
     }
   }
 
   Future<void> _loadServers() async {
-    final hostMailList = await AuthService().getHostMailList(); // [{host: ..., mail: ...}, ...]
+    final hostMailList = await AuthService()
+        .getHostMailList(); // [{host: ..., mail: ...}, ...]
     final List<_ServerMeta> loaded = [];
     for (final entry in hostMailList) {
       final host = entry['host'] ?? '';
@@ -69,31 +75,40 @@ class _ServerPanelState extends State<ServerPanel> {
     _maybeNavigateToFirstServer();
   }
 
-  Future<void> tryLoadServer(String host, String mail, List<_ServerMeta> loaded, bool add) async {
+  Future<void> tryLoadServer(
+    String host,
+    String mail,
+    List<_ServerMeta> loaded,
+    bool add,
+  ) async {
     try {
       // Get server meta
       final metaResp = await ApiService.get('$host/client/meta');
       if (metaResp.statusCode == 200) {
-        final meta = metaResp.data is String ? jsonDecode(metaResp.data) : metaResp.data;
+        final meta = metaResp.data is String
+            ? jsonDecode(metaResp.data)
+            : metaResp.data;
         // Login and persist session cookie
         final loginResp = await ApiService.post(
           '$host/client/login',
           data: {
             'clientid': await ClientIdService.getClientId(),
             'email': mail,
-          }
+          },
         );
-        if(loginResp.statusCode == 200) {
+        if (loginResp.statusCode == 200) {
           // Successfully logged in
           if (add) {
-            loaded.add(_ServerMeta(
-              host: host,
-              mail: mail,
-              name: meta['name'] ?? host,
-              hasServerError: false,
-              hasAuthError: false,
-              missedNotifications: meta['missedNotifications'] ?? 0,
-            ));
+            loaded.add(
+              _ServerMeta(
+                host: host,
+                mail: mail,
+                name: meta['name'] ?? host,
+                hasServerError: false,
+                hasAuthError: false,
+                missedNotifications: meta['missedNotifications'] ?? 0,
+              ),
+            );
           }
           final socket = io.io(host, <String, dynamic>{
             'transports': ['websocket'],
@@ -115,7 +130,7 @@ class _ServerPanelState extends State<ServerPanel> {
             });
 
             socket.on('authenticated', (data) {
-              if(data.authenticated == true) {
+              if (data.authenticated == true) {
                 debugPrint('Socket authenticated for $host');
                 setState(() {
                   final idx = loaded.indexWhere((s) => s.host == host);
@@ -130,23 +145,23 @@ class _ServerPanelState extends State<ServerPanel> {
                     );
                   }
                 });
-              socket.on('notification', (notif) {
-                setState(() {
-                  final idx = loaded.indexWhere((s) => s.host == host);
-                  if (idx != -1) {
-                    final current = loaded[idx];
-                    loaded[idx] = _ServerMeta(
-                      host: current.host,
-                      mail: current.mail,
-                      name: current.name,
-                      hasServerError: current.hasServerError,
-                      hasAuthError: current.hasAuthError,
-                      missedNotifications: current.missedNotifications + 1,
-                      socket: current.socket,
-                    );
-                  }
+                socket.on('notification', (notif) {
+                  setState(() {
+                    final idx = loaded.indexWhere((s) => s.host == host);
+                    if (idx != -1) {
+                      final current = loaded[idx];
+                      loaded[idx] = _ServerMeta(
+                        host: current.host,
+                        mail: current.mail,
+                        name: current.name,
+                        hasServerError: current.hasServerError,
+                        hasAuthError: current.hasAuthError,
+                        missedNotifications: current.missedNotifications + 1,
+                        socket: current.socket,
+                      );
+                    }
+                  });
                 });
-              });
               } else {
                 setState(() {
                   final idx = loaded.indexWhere((s) => s.host == host);
@@ -165,7 +180,6 @@ class _ServerPanelState extends State<ServerPanel> {
             });
 
             socket.emit('authenticate');
-
           });
           socket.on('disconnect', (_) {
             setState(() {
@@ -183,41 +197,46 @@ class _ServerPanelState extends State<ServerPanel> {
             });
           });
           socket.connect();
-
         } else {
           if (add) {
-          loaded.add(_ServerMeta(
-            host: host,
-            mail: mail,
-            name: host,
-            hasServerError: false,
-            hasAuthError: true,
-            missedNotifications: 0,
-          ));
+            loaded.add(
+              _ServerMeta(
+                host: host,
+                mail: mail,
+                name: host,
+                hasServerError: false,
+                hasAuthError: true,
+                missedNotifications: 0,
+              ),
+            );
           }
         }
       } else {
         if (add) {
-        loaded.add(_ServerMeta(
-          host: host,
-          mail: mail,
-          name: host,
-          hasServerError: true,
-          hasAuthError: false,
-          missedNotifications: 0,
-        ));
+          loaded.add(
+            _ServerMeta(
+              host: host,
+              mail: mail,
+              name: host,
+              hasServerError: true,
+              hasAuthError: false,
+              missedNotifications: 0,
+            ),
+          );
         }
       }
     } catch (e) {
       if (add) {
-      loaded.add(_ServerMeta(
-        host: host,
-        mail: mail,
-        name: host,
-        hasServerError: true,
-        hasAuthError: false,
-        missedNotifications: 0,
-      ));
+        loaded.add(
+          _ServerMeta(
+            host: host,
+            mail: mail,
+            name: host,
+            hasServerError: true,
+            hasAuthError: false,
+            missedNotifications: 0,
+          ),
+        );
       }
     }
   }
@@ -230,13 +249,17 @@ class _ServerPanelState extends State<ServerPanel> {
       child: Column(
         children: [
           const SizedBox(height: 16),
-          ...servers.map((server) => _ServerIcon(
-                server: server,
-                onShowSnackBar: _showSnackBar,
-              )),
+          ...servers.map(
+            (server) =>
+                _ServerIcon(server: server, onShowSnackBar: _showSnackBar),
+          ),
           const Spacer(),
           IconButton(
-            icon: Icon(Icons.add_circle, color: Theme.of(context).colorScheme.onSurface, size: 36),
+            icon: Icon(
+              Icons.add_circle,
+              color: Theme.of(context).colorScheme.onSurface,
+              size: 36,
+            ),
             onPressed: () {
               GoRouter.of(context).go('/login');
             },
@@ -287,27 +310,43 @@ class _ServerIcon extends StatelessWidget {
               onTap: () {
                 if (server.hasAuthError) {
                   if (onShowSnackBar != null) {
-                    onShowSnackBar!('Authentication error: ${server.host}. Please re-authenticate.');
+                    onShowSnackBar!(
+                      'Authentication error: ${server.host}. Please re-authenticate.',
+                    );
                   }
-                  GoRouter.of(context).go('/login', extra: {'host': server.host});
+                  GoRouter.of(
+                    context,
+                  ).go('/login', extra: {'host': server.host});
                 }
-                if(server.hasServerError) {
+                if (server.hasServerError) {
                   // Try to reload server meta and status
-                  final parentState = context.findAncestorStateOfType<_ServerPanelState>();
+                  final parentState = context
+                      .findAncestorStateOfType<_ServerPanelState>();
                   if (parentState != null) {
-                    parentState.tryLoadServer(server.host, server.mail, parentState.servers, false);
+                    parentState.tryLoadServer(
+                      server.host,
+                      server.mail,
+                      parentState.servers,
+                      false,
+                    );
                   }
                   if (onShowSnackBar != null) {
-                    onShowSnackBar!('Cannot connect to server: ${server.host}. Try to reconnect.');
+                    onShowSnackBar!(
+                      'Cannot connect to server: ${server.host}. Try to reconnect.',
+                    );
                   }
                 }
                 if (!server.hasAuthError && !server.hasServerError) {
-                  GoRouter.of(context).go('/dashboard', extra: {'socket': server.socket, 'host': server.host});
+                  GoRouter.of(context).go(
+                    '/dashboard',
+                    extra: {'socket': server.socket, 'host': server.host},
+                  );
                 }
               },
               onSecondaryTapDown: (details) async {
                 // Show context menu on right click
-                final parentState = context.findAncestorStateOfType<_ServerPanelState>();
+                final parentState = context
+                    .findAncestorStateOfType<_ServerPanelState>();
                 if (parentState != null) {
                   final selected = await showMenu<String>(
                     context: context,
@@ -326,7 +365,6 @@ class _ServerIcon extends StatelessWidget {
                         value: 'remove',
                         child: Text('Remove Server'),
                       ),
-                      
                     ],
                   );
                   if (selected == 'remove') {
@@ -335,9 +373,12 @@ class _ServerIcon extends StatelessWidget {
                   if (selected == 'logout') {
                     await AuthService().removeMailFromHost(server.host);
                     if (!context.mounted) return;
-                    final parentState = context.findAncestorStateOfType<_ServerPanelState>();
+                    final parentState = context
+                        .findAncestorStateOfType<_ServerPanelState>();
                     if (parentState != null) {
-                      final idx = parentState.servers.indexWhere((s) => s.host == server.host);
+                      final idx = parentState.servers.indexWhere(
+                        (s) => s.host == server.host,
+                      );
                       if (idx != -1) {
                         final s = parentState.servers[idx];
                         parentState.servers[idx] = _ServerMeta(
@@ -358,10 +399,13 @@ class _ServerIcon extends StatelessWidget {
               },
               child: CircleAvatar(
                 radius: 28,
-                backgroundColor: server.hasServerError 
-                    ? Theme.of(context).colorScheme.error.withValues(alpha: 0.3) 
+                backgroundColor: server.hasServerError
+                    ? Theme.of(context).colorScheme.error.withValues(alpha: 0.3)
                     : Theme.of(context).colorScheme.primary,
-                child: Icon(Icons.cloud, color: Theme.of(context).colorScheme.onPrimary),
+                child: Icon(
+                  Icons.cloud,
+                  color: Theme.of(context).colorScheme.onPrimary,
+                ),
               ),
             ),
           ),
@@ -374,18 +418,25 @@ class _ServerIcon extends StatelessWidget {
               ? CircleAvatar(
                   radius: 10,
                   backgroundColor: Colors.amber.shade600,
-                  child: Icon(Icons.warning, color: Theme.of(context).colorScheme.onSurface, size: 14),
+                  child: Icon(
+                    Icons.warning,
+                    color: Theme.of(context).colorScheme.onSurface,
+                    size: 14,
+                  ),
                 )
               : (server.missedNotifications > 0
-                  ? CircleAvatar(
-                      radius: 10,
-                      backgroundColor: Colors.orange,
-                      child: Text(
-                        '${server.missedNotifications}',
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 12),
-                      ),
-                    )
-                  : const SizedBox.shrink()),
+                    ? CircleAvatar(
+                        radius: 10,
+                        backgroundColor: Colors.orange,
+                        child: Text(
+                          '${server.missedNotifications}',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontSize: 12,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink()),
         ),
       ],
     );

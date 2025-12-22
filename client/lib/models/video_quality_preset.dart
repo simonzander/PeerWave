@@ -126,36 +126,35 @@ class VideoQualityPreset {
 
   // All camera presets
   static List<VideoQualityPreset> get cameraPresets => [
-        camera360p,
-        camera720p,
-        camera1080p,
-        camera4k,
-      ];
+    camera360p,
+    camera720p,
+    camera1080p,
+    camera4k,
+  ];
 
   // All screenshare presets
   static List<VideoQualityPreset> get screensharePresets => [
-        screenshare360p,
-        screenshare720p,
-        screenshare1080p,
-        screenshare4k,
-      ];
+    screenshare360p,
+    screenshare720p,
+    screenshare1080p,
+    screenshare4k,
+  ];
 
   // Get default camera preset
   static VideoQualityPreset get defaultCameraPreset =>
       cameraPresets.firstWhere((p) => p.isDefault, orElse: () => camera720p);
 
   // Get default screenshare preset
-  static VideoQualityPreset get defaultScreensharePreset =>
-      screensharePresets.firstWhere(
-        (p) => p.isDefault,
-        orElse: () => screenshare1080p,
-      );
+  static VideoQualityPreset get defaultScreensharePreset => screensharePresets
+      .firstWhere((p) => p.isDefault, orElse: () => screenshare1080p);
 
   // Find preset by ID
   static VideoQualityPreset? findById(String id) {
     try {
-      return [...cameraPresets, ...screensharePresets]
-          .firstWhere((p) => p.id == id);
+      return [
+        ...cameraPresets,
+        ...screensharePresets,
+      ].firstWhere((p) => p.id == id);
     } catch (e) {
       return null;
     }
@@ -200,7 +199,8 @@ class VideoQualityPreset {
   }
 
   @override
-  String toString() => 'VideoQualityPreset($name - ${parameters.dimensions.width}x${parameters.dimensions.height})';
+  String toString() =>
+      'VideoQualityPreset($name - ${parameters.dimensions.width}x${parameters.dimensions.height})';
 }
 
 /// Video quality settings configuration
@@ -219,25 +219,27 @@ class VideoQualitySettings {
 
   // Default settings
   factory VideoQualitySettings.defaults() => VideoQualitySettings(
-        cameraPresetId: VideoQualityPreset.defaultCameraPreset.id,
-        screensharePresetId: VideoQualityPreset.defaultScreensharePreset.id,
-        simulcastEnabled: true,
-        adaptiveQualityEnabled: true,
-      );
+    cameraPresetId: VideoQualityPreset.defaultCameraPreset.id,
+    screensharePresetId: VideoQualityPreset.defaultScreensharePreset.id,
+    simulcastEnabled: true,
+    adaptiveQualityEnabled: true,
+  );
 
   // Convert to/from JSON for persistence
   Map<String, dynamic> toJson() => {
-        'cameraPresetId': cameraPresetId,
-        'screensharePresetId': screensharePresetId,
-        'simulcastEnabled': simulcastEnabled,
-        'adaptiveQualityEnabled': adaptiveQualityEnabled,
-      };
+    'cameraPresetId': cameraPresetId,
+    'screensharePresetId': screensharePresetId,
+    'simulcastEnabled': simulcastEnabled,
+    'adaptiveQualityEnabled': adaptiveQualityEnabled,
+  };
 
   factory VideoQualitySettings.fromJson(Map<String, dynamic> json) =>
       VideoQualitySettings(
-        cameraPresetId: json['cameraPresetId'] as String? ??
+        cameraPresetId:
+            json['cameraPresetId'] as String? ??
             VideoQualityPreset.defaultCameraPreset.id,
-        screensharePresetId: json['screensharePresetId'] as String? ??
+        screensharePresetId:
+            json['screensharePresetId'] as String? ??
             VideoQualityPreset.defaultScreensharePreset.id,
         simulcastEnabled: json['simulcastEnabled'] as bool? ?? true,
         adaptiveQualityEnabled: json['adaptiveQualityEnabled'] as bool? ?? true,
@@ -248,14 +250,13 @@ class VideoQualitySettings {
     String? screensharePresetId,
     bool? simulcastEnabled,
     bool? adaptiveQualityEnabled,
-  }) =>
-      VideoQualitySettings(
-        cameraPresetId: cameraPresetId ?? this.cameraPresetId,
-        screensharePresetId: screensharePresetId ?? this.screensharePresetId,
-        simulcastEnabled: simulcastEnabled ?? this.simulcastEnabled,
-        adaptiveQualityEnabled:
-            adaptiveQualityEnabled ?? this.adaptiveQualityEnabled,
-      );
+  }) => VideoQualitySettings(
+    cameraPresetId: cameraPresetId ?? this.cameraPresetId,
+    screensharePresetId: screensharePresetId ?? this.screensharePresetId,
+    simulcastEnabled: simulcastEnabled ?? this.simulcastEnabled,
+    adaptiveQualityEnabled:
+        adaptiveQualityEnabled ?? this.adaptiveQualityEnabled,
+  );
 
   // Get the actual preset objects
   VideoQualityPreset get cameraPreset =>

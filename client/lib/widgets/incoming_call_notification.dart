@@ -17,7 +17,7 @@ class IncomingCallNotification extends StatelessWidget {
     required this.inviterName,
     required this.onAccept,
     required this.onDecline,
-  }) ;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -35,11 +35,7 @@ class IncomingCallNotification extends StatelessWidget {
             child: Row(
               children: [
                 // Call icon
-                Icon(
-                  Icons.videocam,
-                  color: colorScheme.primary,
-                  size: 28,
-                ),
+                Icon(Icons.videocam, color: colorScheme.primary, size: 28),
                 const SizedBox(width: 12),
 
                 // Call info
@@ -59,7 +55,9 @@ class IncomingCallNotification extends StatelessWidget {
                       Text(
                         '$inviterName invited you to "$meetingTitle"',
                         style: TextStyle(
-                          color: colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
+                          color: colorScheme.onPrimaryContainer.withValues(
+                            alpha: 0.8,
+                          ),
                           fontSize: 12,
                         ),
                         maxLines: 1,
@@ -107,10 +105,7 @@ class IncomingCallNotification extends StatelessWidget {
 class IncomingCallNotificationManager extends StatefulWidget {
   final Widget child;
 
-  const IncomingCallNotificationManager({
-    super.key,
-    required this.child,
-  }) ;
+  const IncomingCallNotificationManager({super.key, required this.child});
 
   static final GlobalKey<_IncomingCallNotificationManagerState> _key =
       GlobalKey<_IncomingCallNotificationManagerState>();

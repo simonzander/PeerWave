@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Service to show toast notifications for P2P file transfer events
-/// 
+///
 /// Handles:
 /// - Auto-resume notifications
 /// - Download completion
@@ -16,16 +16,12 @@ class FileTransferNotificationService {
     required int previousQuality,
   }) {
     final newChunks = chunkQuality - previousQuality;
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            const Icon(
-              Icons.refresh,
-              color: Colors.white,
-              size: 20,
-            ),
+            const Icon(Icons.refresh, color: Colors.white, size: 20),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -75,11 +71,7 @@ class FileTransferNotificationService {
       SnackBar(
         content: Row(
           children: [
-            const Icon(
-              Icons.check_circle,
-              color: Colors.white,
-              size: 20,
-            ),
+            const Icon(Icons.check_circle, color: Colors.white, size: 20),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -88,10 +80,7 @@ class FileTransferNotificationService {
                 children: [
                   const Text(
                     'Download complete',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -181,11 +170,7 @@ class FileTransferNotificationService {
       SnackBar(
         content: Row(
           children: [
-            const Icon(
-              Icons.cloud_upload,
-              color: Colors.white,
-              size: 20,
-            ),
+            const Icon(Icons.cloud_upload, color: Colors.white, size: 20),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -194,10 +179,7 @@ class FileTransferNotificationService {
                 children: [
                   const Text(
                     'File announced',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -226,7 +208,7 @@ class FileTransferNotificationService {
     required int userCount,
   }) {
     final isAdd = action == 'add';
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -279,11 +261,7 @@ class FileTransferNotificationService {
       SnackBar(
         content: Row(
           children: [
-            const Icon(
-              Icons.cloud_sync,
-              color: Colors.white,
-              size: 20,
-            ),
+            const Icon(Icons.cloud_sync, color: Colors.white, size: 20),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -292,10 +270,7 @@ class FileTransferNotificationService {
                 children: [
                   const Text(
                     'More chunks available',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -331,11 +306,7 @@ class FileTransferNotificationService {
       SnackBar(
         content: Row(
           children: [
-            const Icon(
-              Icons.error_outline,
-              color: Colors.white,
-              size: 20,
-            ),
+            const Icon(Icons.error_outline, color: Colors.white, size: 20),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -344,10 +315,7 @@ class FileTransferNotificationService {
                 children: [
                   const Text(
                     'Error',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -368,4 +336,3 @@ class FileTransferNotificationService {
     );
   }
 }
-

@@ -318,7 +318,9 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     // Store the serialized record for later reconstruction
     final signedPreKeyData = {
       'keyId': 1, // Use 'keyId' to match server format
-      'serialized': base64Encode(signedPreKey.serialize()), // Store serialized record
+      'serialized': base64Encode(
+        signedPreKey.serialize(),
+      ), // Store serialized record
       'publicKey': base64Encode(
         signedPreKey.getKeyPair().publicKey.serialize(),
       ),
@@ -335,7 +337,9 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     final preKeysJson = preKeys.map((pk) {
       return {
         'keyId': pk.id, // Use 'keyId' for consistency
-        'serialized': base64Encode(pk.serialize()), // Store serialized for reconstruction
+        'serialized': base64Encode(
+          pk.serialize(),
+        ), // Store serialized for reconstruction
         'publicKey': base64Encode(pk.getKeyPair().publicKey.serialize()),
       };
     }).toList();
@@ -424,7 +428,9 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
       _guestSocket.onParticipantE2EEKeySignal((data) async {
         await _handleSignalE2EEKeyResponse(data);
       });
-      debugPrint('[GuestPreJoin] ✓ Registered Signal Protocol E2EE key listener');
+      debugPrint(
+        '[GuestPreJoin] ✓ Registered Signal Protocol E2EE key listener',
+      );
 
       _guestSocket.onAdmissionGranted((data) {
         debugPrint('[GuestPreJoin] Admission granted!');
@@ -573,23 +579,34 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
 
     // Get first participant
     final firstParticipant = _participants.first;
-    final participantUserId = firstParticipant['userId'] ?? firstParticipant['user_id'];
-    
+    final participantUserId =
+        firstParticipant['userId'] ?? firstParticipant['user_id'];
+
     // Parse device_id - server returns it as int
-    final deviceIdRaw = firstParticipant['deviceId'] ?? firstParticipant['device_id'];
-    final participantDeviceId = (deviceIdRaw is int) ? deviceIdRaw : 
-                                 (deviceIdRaw is String) ? int.tryParse(deviceIdRaw) ?? 0 : 
-                                 0;
+    final deviceIdRaw =
+        firstParticipant['deviceId'] ?? firstParticipant['device_id'];
+    final participantDeviceId = (deviceIdRaw is int)
+        ? deviceIdRaw
+        : (deviceIdRaw is String)
+        ? int.tryParse(deviceIdRaw) ?? 0
+        : 0;
 
     if (participantUserId == null) {
       throw Exception('Participant userId is null');
     }
 
-    debugPrint('[GuestPreJoin] Participant data: ${firstParticipant.toString()}');
-    debugPrint('[GuestPreJoin] Requesting E2EE key from $participantUserId:$participantDeviceId');
+    debugPrint(
+      '[GuestPreJoin] Participant data: ${firstParticipant.toString()}',
+    );
+    debugPrint(
+      '[GuestPreJoin] Requesting E2EE key from $participantUserId:$participantDeviceId',
+    );
 
     // Fetch participant's Signal keybundle
-    final keybundle = await _fetchParticipantKeybundle(participantUserId, participantDeviceId);
+    final keybundle = await _fetchParticipantKeybundle(
+      participantUserId,
+      participantDeviceId,
+    );
 
     // Establish Signal session with participant
     final session = await _establishSignalSession(
@@ -636,7 +653,9 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
       throw Exception('Session ID not found in session storage');
     }
 
-    debugPrint('[GuestPreJoin] Fetching keybundle for $participantUserId:$participantDeviceId');
+    debugPrint(
+      '[GuestPreJoin] Fetching keybundle for $participantUserId:$participantDeviceId',
+    );
 
     final response = await ApiService.get(
       '/api/meetings/external/$sessionId/participant/$participantUserId/$participantDeviceId/keys',
@@ -644,7 +663,9 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to fetch participant keybundle: ${response.statusCode}');
+      throw Exception(
+        'Failed to fetch participant keybundle: ${response.statusCode}',
+      );
     }
 
     return response.data as Map<String, dynamic>;
@@ -696,16 +717,20 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     final signedPreKeyJson = storage['external_signed_pre_key'];
     if (signedPreKeyJson != null) {
       final signedPreKeyData = jsonDecode(signedPreKeyJson);
-      
+
       // Deserialize the exact signed pre-key we generated and uploaded to server
       final serializedBytes = base64Decode(signedPreKeyData['serialized']);
-      final guestSignedPreKey = signal.SignedPreKeyRecord.fromSerialized(serializedBytes);
-      
+      final guestSignedPreKey = signal.SignedPreKeyRecord.fromSerialized(
+        serializedBytes,
+      );
+
       await signedPreKeyStore.storeSignedPreKey(
         signedPreKeyData['keyId'] as int,
         guestSignedPreKey,
       );
-      debugPrint('[GuestPreJoin] ✓ Loaded guest signed pre-key (ID: ${signedPreKeyData['keyId']}) from sessionStorage');
+      debugPrint(
+        '[GuestPreJoin] ✓ Loaded guest signed pre-key (ID: ${signedPreKeyData['keyId']}) from sessionStorage',
+      );
     }
 
     // Load guest's own pre-keys into the store for decrypting participant's response
@@ -718,7 +743,9 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
         final preKeyRecord = signal.PreKeyRecord.fromBuffer(serializedBytes);
         await preKeyStore.storePreKey(preKeyData['keyId'] as int, preKeyRecord);
       }
-      debugPrint('[GuestPreJoin] ✓ Loaded ${preKeysData.length} guest pre-keys from sessionStorage');
+      debugPrint(
+        '[GuestPreJoin] ✓ Loaded ${preKeysData.length} guest pre-keys from sessionStorage',
+      );
     }
 
     // Build participant's PreKeyBundle
@@ -752,7 +779,10 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     );
 
     // Create session address
-    final address = signal.SignalProtocolAddress(participantUserId, participantDeviceId);
+    final address = signal.SignalProtocolAddress(
+      participantUserId,
+      participantDeviceId,
+    );
 
     // Build session
     final sessionBuilder = signal.SessionBuilder(
@@ -771,7 +801,9 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     _guestSignedPreKeyStore = signedPreKeyStore;
     _guestIdentityStore = identityStore;
 
-    debugPrint('[GuestPreJoin] ✓ Established Signal session with $participantUserId:$participantDeviceId');
+    debugPrint(
+      '[GuestPreJoin] ✓ Established Signal session with $participantUserId:$participantDeviceId',
+    );
 
     return address;
   }
@@ -855,15 +887,26 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
           participantDeviceId == null ||
           ciphertext == null ||
           messageType == null) {
-        debugPrint('[GuestPreJoin] ✗ Invalid Signal E2EE key response: missing fields');
+        debugPrint(
+          '[GuestPreJoin] ✗ Invalid Signal E2EE key response: missing fields',
+        );
         return;
       }
 
-      debugPrint('[GuestPreJoin] Received Signal-encrypted E2EE key from $participantUserId:$participantDeviceId');
+      debugPrint(
+        '[GuestPreJoin] Received Signal-encrypted E2EE key from $participantUserId:$participantDeviceId',
+      );
 
       // Decrypt with Signal Protocol
-      final address = signal.SignalProtocolAddress(participantUserId, participantDeviceId);
-      final decryptedJson = await _decryptWithSignal(address, ciphertext, messageType);
+      final address = signal.SignalProtocolAddress(
+        participantUserId,
+        participantDeviceId,
+      );
+      final decryptedJson = await _decryptWithSignal(
+        address,
+        ciphertext,
+        messageType,
+      );
 
       // Parse decrypted payload
       final payload = jsonDecode(decryptedJson) as Map<String, dynamic>;
@@ -886,13 +929,18 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
       // Check if all keys received
       _checkKeyExchangeComplete();
     } catch (e) {
-      debugPrint('[GuestPreJoin] ✗ Error handling Signal E2EE key response: $e');
+      debugPrint(
+        '[GuestPreJoin] ✗ Error handling Signal E2EE key response: $e',
+      );
       _transitionTo(GuestFlowState.keyExchangeFailed);
     }
   }
 
   /// Store LiveKit E2EE key in session storage
-  Future<void> _storeLivekitE2EEKey(String encryptedKey, String fromUserId) async {
+  Future<void> _storeLivekitE2EEKey(
+    String encryptedKey,
+    String fromUserId,
+  ) async {
     if (!kIsWeb) return;
 
     final storage = html.window.sessionStorage;
@@ -900,7 +948,9 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     storage['livekit_e2ee_key_from'] = fromUserId;
     storage['livekit_e2ee_key_timestamp'] = DateTime.now().toIso8601String();
 
-    debugPrint('[GuestPreJoin] ✓ Stored LiveKit E2EE key in session storage (from $fromUserId)');
+    debugPrint(
+      '[GuestPreJoin] ✓ Stored LiveKit E2EE key in session storage (from $fromUserId)',
+    );
   }
 
   /// Check if key exchange is complete
@@ -913,7 +963,9 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
       _transitionTo(GuestFlowState.readyToJoin);
     } else {
       final receivedCount = _keyExchangeStatus.values.where((r) => r).length;
-      debugPrint('[GuestPreJoin] Progress: $receivedCount/${_keyExchangeStatus.length} keys received');
+      debugPrint(
+        '[GuestPreJoin] Progress: $receivedCount/${_keyExchangeStatus.length} keys received',
+      );
     }
   }
 
@@ -921,7 +973,10 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
   // Use Signal Protocol handlers instead
   // ignore: unused_element
   void _handleParticipantKeyResponse(Map<String, dynamic> data) {
-    final senderUserId = data['participant_user_id'] ?? data['sender_user_id'] ?? data['from_user_id'];
+    final senderUserId =
+        data['participant_user_id'] ??
+        data['sender_user_id'] ??
+        data['from_user_id'];
     if (senderUserId == null) {
       debugPrint('[GuestPreJoin] Received key response without sender ID');
       debugPrint('[GuestPreJoin] Response data: $data');

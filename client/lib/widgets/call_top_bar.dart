@@ -19,8 +19,10 @@ class CallTopBar extends StatefulWidget {
 class _CallTopBarState extends State<CallTopBar> {
   final Map<String, String?> _profilePictures = {};
   final Map<String, String> _displayNames = {};
-  final Set<String> _loadedProfiles = {}; // Track which profiles we've already loaded
-  final Map<String, Widget> _cachedAvatars = {}; // Cache avatar widgets to prevent rebuilds
+  final Set<String> _loadedProfiles =
+      {}; // Track which profiles we've already loaded
+  final Map<String, Widget> _cachedAvatars =
+      {}; // Cache avatar widgets to prevent rebuilds
 
   @override
   void initState() {
@@ -34,11 +36,11 @@ class _CallTopBarState extends State<CallTopBar> {
     if (service.remoteParticipants.isNotEmpty) {
       for (final participant in service.remoteParticipants) {
         final uuid = participant.identity;
-        
+
         // Skip if already loaded
         if (_loadedProfiles.contains(uuid)) continue;
         _loadedProfiles.add(uuid);
-        
+
         final profile = UserProfileService.instance.getProfileOrLoad(
           uuid,
           onLoaded: (profile) {
@@ -52,7 +54,7 @@ class _CallTopBarState extends State<CallTopBar> {
             }
           },
         );
-        
+
         // Use cached data immediately if available
         if (profile != null) {
           _profilePictures[uuid] = profile['picture'] as String?;
@@ -74,7 +76,7 @@ class _CallTopBarState extends State<CallTopBar> {
         if (!service.isInCall || (service.isInFullView && service.isMeeting)) {
           return const SizedBox.shrink();
         }
-        
+
         // For channels, hide when in full-view
         if (service.isInFullView && !service.isMeeting) {
           return const SizedBox.shrink();
@@ -169,7 +171,7 @@ class _CallTopBarState extends State<CallTopBar> {
                               WidgetsBinding.instance.addPostFrameCallback((_) {
                                 _loadParticipantProfiles();
                               });
-                              
+
                               return Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -237,9 +239,7 @@ class _CallTopBarState extends State<CallTopBar> {
                           if (service.isMeeting) {
                             GoRouter.of(navigatorContext).go(
                               '/meeting/video/$channelId',
-                              extra: {
-                                'meetingTitle': channelName ?? 'Meeting',
-                              },
+                              extra: {'meetingTitle': channelName ?? 'Meeting'},
                             );
                           } else {
                             GoRouter.of(navigatorContext).go(
@@ -339,12 +339,12 @@ class _CallTopBarState extends State<CallTopBar> {
   Widget _getCachedAvatar(String uuid, ColorScheme colorScheme) {
     final picture = _profilePictures[uuid];
     final cacheKey = '$uuid-$picture'; // Include picture in cache key
-    
+
     // Return cached widget if it exists and hasn't changed
     if (_cachedAvatars.containsKey(cacheKey)) {
       return _cachedAvatars[cacheKey]!;
     }
-    
+
     // Build and cache new avatar widget
     final avatar = _buildParticipantAvatar(uuid, colorScheme);
     _cachedAvatars[cacheKey] = avatar;
@@ -363,7 +363,10 @@ class _CallTopBarState extends State<CallTopBar> {
       decoration: BoxDecoration(
         color: colorScheme.primaryContainer,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.3), width: 1),
+        border: Border.all(
+          color: colorScheme.outline.withValues(alpha: 0.3),
+          width: 1,
+        ),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(3),

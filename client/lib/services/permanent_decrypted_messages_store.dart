@@ -8,12 +8,12 @@ import 'device_scoped_storage_service.dart';
 /// Uses FlutterSecureStorage on native.
 /// This prevents DuplicateMessageException by caching decrypted messages
 /// so they don't need to be decrypted multiple times.
-/// 
+///
 /// NOTE: Group messages use DecryptedGroupItemsStore instead.
 class PermanentDecryptedMessagesStore {
   final String _storeName = 'peerwaveDecryptedMessages';
   final String _keyPrefix = 'decrypted_msg_';
-  
+
   PermanentDecryptedMessagesStore();
 
   static Future<PermanentDecryptedMessagesStore> create() async {
@@ -21,12 +21,17 @@ class PermanentDecryptedMessagesStore {
     if (kIsWeb) {
       // Device-scoped storage will be initialized automatically
       // No need to manually open IndexedDB
-      debugPrint('[DECRYPTED_MESSAGES_STORE] Using device-scoped encrypted storage');
+      debugPrint(
+        '[DECRYPTED_MESSAGES_STORE] Using device-scoped encrypted storage',
+      );
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'decrypted_message_keys');
       if (keysJson == null) {
-        await storage.write(key: 'decrypted_message_keys', value: jsonEncode([]));
+        await storage.write(
+          key: 'decrypted_message_keys',
+          value: jsonEncode([]),
+        );
       }
     }
     return store;
@@ -56,7 +61,7 @@ class PermanentDecryptedMessagesStore {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
       var value = await storage.getDecrypted(_storeName, _storeName, key);
-      
+
       if (value != null) {
         final data = jsonDecode(value);
         return data['message'];
@@ -81,7 +86,7 @@ class PermanentDecryptedMessagesStore {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
       var value = await storage.getDecrypted(_storeName, _storeName, key);
-      
+
       if (value != null) {
         return jsonDecode(value) as Map<String, dynamic>;
       }
@@ -97,14 +102,16 @@ class PermanentDecryptedMessagesStore {
   }
 
   /// Get all decrypted messages from a specific sender (1:1 direct messages only)
-  Future<List<Map<String, dynamic>>> getMessagesFromSender(String senderId) async {
+  Future<List<Map<String, dynamic>>> getMessagesFromSender(
+    String senderId,
+  ) async {
     final List<Map<String, dynamic>> messages = [];
 
     if (kIsWeb) {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
       final keys = await storage.getAllKeys(_storeName, _storeName);
-      
+
       for (var key in keys) {
         if (key.startsWith(_keyPrefix)) {
           var value = await storage.getDecrypted(_storeName, _storeName, key);
@@ -132,7 +139,7 @@ class PermanentDecryptedMessagesStore {
         }
       }
     }
-    
+
     return messages;
   }
 
@@ -144,14 +151,16 @@ class PermanentDecryptedMessagesStore {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
       final keys = await storage.getAllKeys(_storeName, _storeName);
-      
+
       for (var key in keys) {
         if (key.startsWith(_keyPrefix)) {
           var value = await storage.getDecrypted(_storeName, _storeName, key);
           if (value != null) {
             final data = jsonDecode(value) as Map<String, dynamic>;
             final sender = data['sender'] as String?;
-            if (sender != null && sender != 'self' && data['type'] != 'read_receipt') {
+            if (sender != null &&
+                sender != 'self' &&
+                data['type'] != 'read_receipt') {
               senders.add(sender);
             }
           }
@@ -167,14 +176,16 @@ class PermanentDecryptedMessagesStore {
           if (value != null) {
             final data = jsonDecode(value) as Map<String, dynamic>;
             final sender = data['sender'] as String?;
-            if (sender != null && sender != 'self' && data['type'] != 'read_receipt') {
+            if (sender != null &&
+                sender != 'self' &&
+                data['type'] != 'read_receipt') {
               senders.add(sender);
             }
           }
         }
       }
     }
-    
+
     return senders;
   }
 
@@ -213,7 +224,10 @@ class PermanentDecryptedMessagesStore {
       }
       if (!keys.contains(key)) {
         keys.add(key);
-        await storage.write(key: 'decrypted_message_keys', value: jsonEncode(keys));
+        await storage.write(
+          key: 'decrypted_message_keys',
+          value: jsonEncode(keys),
+        );
       }
     }
   }
@@ -236,7 +250,10 @@ class PermanentDecryptedMessagesStore {
         keys = List<String>.from(jsonDecode(keysJson));
       }
       keys.remove(key);
-      await storage.write(key: 'decrypted_message_keys', value: jsonEncode(keys));
+      await storage.write(
+        key: 'decrypted_message_keys',
+        value: jsonEncode(keys),
+      );
     }
   }
 
@@ -246,7 +263,7 @@ class PermanentDecryptedMessagesStore {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
       final keys = await storage.getAllKeys(_storeName, _storeName);
-      
+
       for (var key in keys) {
         await storage.deleteEncrypted(_storeName, _storeName, key);
       }
@@ -258,9 +275,11 @@ class PermanentDecryptedMessagesStore {
         for (var key in keys) {
           await storage.delete(key: key);
         }
-        await storage.write(key: 'decrypted_message_keys', value: jsonEncode([]));
+        await storage.write(
+          key: 'decrypted_message_keys',
+          value: jsonEncode([]),
+        );
       }
     }
   }
 }
-

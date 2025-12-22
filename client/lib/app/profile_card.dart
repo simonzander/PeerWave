@@ -7,7 +7,7 @@ class ProfileCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Card(
       elevation: 8,
       color: colorScheme.surfaceContainerHighest,
@@ -19,18 +19,32 @@ class ProfileCard extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 24,
-              backgroundImage: AssetImage('assets/profile.jpg'), // Replace with your asset or network image
+              backgroundImage: AssetImage(
+                'assets/profile.jpg',
+              ), // Replace with your asset or network image
             ),
             const SizedBox(width: 12),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Your Name', style: TextStyle(color: colorScheme.onSurface, fontWeight: FontWeight.bold)),
+                Text(
+                  'Your Name',
+                  style: TextStyle(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 Row(
                   children: [
                     Icon(Icons.circle, color: colorScheme.primary, size: 12),
                     const SizedBox(width: 4),
-                    Text('Online', style: TextStyle(color: colorScheme.primary, fontSize: 12)),
+                    Text(
+                      'Online',
+                      style: TextStyle(
+                        color: colorScheme.primary,
+                        fontSize: 12,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -50,4 +64,3 @@ class ProfileCard extends StatelessWidget {
     );
   }
 }
-

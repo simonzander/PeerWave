@@ -5,7 +5,7 @@ import '../providers/unread_messages_provider.dart';
 import '../providers/file_transfer_stats_provider.dart';
 
 /// Badge widget for navigation items showing notification counts
-/// 
+///
 /// Usage:
 /// ```dart
 /// NavigationDestination(
@@ -32,8 +32,12 @@ class NavigationBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer2<NotificationProvider, UnreadMessagesProvider>(
       builder: (context, notificationProvider, unreadProvider, _) {
-        final count = _getCountForType(notificationProvider, unreadProvider, type);
-        
+        final count = _getCountForType(
+          notificationProvider,
+          unreadProvider,
+          type,
+        );
+
         // Special handling for files icon - show transfer indicators
         if (type == NavigationBadgeType.files) {
           return Consumer<FileTransferStatsProvider>(
@@ -43,7 +47,7 @@ class NavigationBadge extends StatelessWidget {
                 alignment: Alignment.center,
                 children: [
                   Icon(icon),
-                  
+
                   // Transfer indicators
                   if (stats.isUploading || stats.isDownloading)
                     Positioned(
@@ -56,7 +60,9 @@ class NavigationBadge extends StatelessWidget {
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.2),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.shadow.withValues(alpha: 0.2),
                               blurRadius: 2,
                             ),
                           ],
@@ -64,13 +70,13 @@ class NavigationBadge extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                          if (stats.isUploading)
+                            if (stats.isUploading)
                               Icon(
                                 Icons.arrow_upward,
                                 size: 10,
                                 color: Theme.of(context).colorScheme.tertiary,
                               ),
-                          if (stats.isDownloading)
+                            if (stats.isDownloading)
                               Icon(
                                 Icons.arrow_downward,
                                 size: 10,
@@ -80,15 +86,21 @@ class NavigationBadge extends StatelessWidget {
                         ),
                       ),
                     ),
-                  
+
                   // Unread count badge (if any)
                   if (count > 0)
                     Positioned(
                       right: -8,
                       top: -8,
                       child: Container(
-                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: Theme.of(context).colorScheme.error,
                           borderRadius: BorderRadius.circular(4),
@@ -110,7 +122,7 @@ class NavigationBadge extends StatelessWidget {
             },
           );
         }
-        
+
         // Default badge behavior for other types
         if (count == 0) {
           return Icon(icon);
@@ -159,22 +171,22 @@ class NavigationBadge extends StatelessWidget {
       case NavigationBadgeType.messages:
         // Show unread direct message count
         return unreadProvider.totalDirectMessageUnread;
-      
+
       case NavigationBadgeType.channels:
         // Show unread channel message count
         return unreadProvider.totalChannelUnread;
-      
+
       case NavigationBadgeType.files:
         // TODO: Implement file notification tracking
         return 0;
-      
+
       case NavigationBadgeType.activities:
         // Activities shows notification-type messages (emote, mention, etc.)
         return unreadProvider.totalActivityNotifications;
-      
+
       case NavigationBadgeType.people:
         return 0;
-      
+
       case NavigationBadgeType.meetings:
         // TODO: Implement meeting notification tracking (upcoming meetings, waiting guests)
         return 0;
@@ -193,7 +205,7 @@ enum NavigationBadgeType {
 }
 
 /// Label with badge for navigation items
-/// 
+///
 /// Shows count after label text (e.g., "Messages 3")
 class NavigationLabelWithBadge extends StatelessWidget {
   final String label;
@@ -209,17 +221,19 @@ class NavigationLabelWithBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer2<NotificationProvider, UnreadMessagesProvider>(
       builder: (context, notificationProvider, unreadProvider, _) {
-        final count = _getCountForType(notificationProvider, unreadProvider, type);
-        
+        final count = _getCountForType(
+          notificationProvider,
+          unreadProvider,
+          type,
+        );
+
         if (count == 0) {
           return Text(label);
         }
 
         return Text(
           '$label $count',
-          style: const TextStyle(
-            fontWeight: FontWeight.w500,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.w500),
         );
       },
     );
@@ -233,22 +247,21 @@ class NavigationLabelWithBadge extends StatelessWidget {
     switch (type) {
       case NavigationBadgeType.messages:
         return unreadProvider.totalDirectMessageUnread;
-      
+
       case NavigationBadgeType.channels:
         return unreadProvider.totalChannelUnread;
-      
+
       case NavigationBadgeType.files:
         return 0;
-      
+
       case NavigationBadgeType.activities:
         return notificationProvider.totalUnreadCount;
-      
+
       case NavigationBadgeType.people:
         return 0;
-      
+
       case NavigationBadgeType.meetings:
         return 0;
     }
   }
 }
-

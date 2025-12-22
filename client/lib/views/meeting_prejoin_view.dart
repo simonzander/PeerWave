@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/meeting_service.dart';
 import '../services/video_conference_service.dart';
-import '../services/socket_service.dart' if (dart.library.io) '../services/socket_service_native.dart';
+import '../services/socket_service.dart'
+    if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/api_service.dart';
 import '../services/signal_service.dart';
 import '../models/meeting.dart';
@@ -16,10 +17,7 @@ import 'package:intl/intl.dart';
 class MeetingPreJoinView extends StatefulWidget {
   final String meetingId;
 
-  const MeetingPreJoinView({
-    super.key,
-    required this.meetingId,
-  }) ;
+  const MeetingPreJoinView({super.key, required this.meetingId});
 
   @override
   State<MeetingPreJoinView> createState() => _MeetingPreJoinViewState();
@@ -27,13 +25,14 @@ class MeetingPreJoinView extends StatefulWidget {
 
 class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
   final _meetingService = MeetingService();
-  final GlobalKey<VideoPreJoinWidgetState> _prejoinKey = GlobalKey<VideoPreJoinWidgetState>();
-  
+  final GlobalKey<VideoPreJoinWidgetState> _prejoinKey =
+      GlobalKey<VideoPreJoinWidgetState>();
+
   // Meeting Data
   Meeting? _meeting;
   bool _isLoadingMeeting = true;
   String? _loadError;
-  
+
   // E2EE State
   bool _isFirstParticipant = false;
   int _participantCount = 0;
@@ -41,13 +40,13 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
   bool _hasE2EEKey = false;
   bool _isExchangingKey = false;
   String? _keyExchangeError;
-  
+
   @override
   void initState() {
     super.initState();
     _initialize();
   }
-  
+
   /// Initialize prejoin
   Future<void> _initialize() async {
     await _loadMeeting();
@@ -55,7 +54,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       await _initializeE2EE();
     }
   }
-  
+
   /// Load meeting details
   Future<void> _loadMeeting() async {
     try {
@@ -64,15 +63,15 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         _isLoadingMeeting = true;
         _loadError = null;
       });
-      
+
       final meeting = await _meetingService.getMeeting(widget.meetingId);
-      
+
       if (!mounted) return;
       setState(() {
         _meeting = meeting;
         _isLoadingMeeting = false;
       });
-      
+
       debugPrint('[MeetingPreJoin] Loaded meeting: ${meeting.title}');
     } catch (e) {
       debugPrint('[MeetingPreJoin] Error loading meeting: $e');
@@ -83,14 +82,18 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       });
     }
   }
-  
+
   /// Initialize E2EE key exchange for meeting
   /// All meetings support video via on-demand LiveKit rooms (room name = meeting_id)
   Future<void> _initializeE2EE() async {
     try {
-      debugPrint('[MeetingPreJoin] Initializing E2EE for meeting ${widget.meetingId}');
-      debugPrint('[MeetingPreJoin] LiveKit room will be created on-demand: ${_meeting!.meetingId}');
-      
+      debugPrint(
+        '[MeetingPreJoin] Initializing E2EE for meeting ${widget.meetingId}',
+      );
+      debugPrint(
+        '[MeetingPreJoin] LiveKit room will be created on-demand: ${_meeting!.meetingId}',
+      );
+
       // Check socket connection (increased timeout for slower networks)
       if (!SocketService().isConnected) {
         debugPrint('[MeetingPreJoin] Waiting for socket connection...');
@@ -103,19 +106,19 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
           throw Exception('Socket connection timeout after 15 seconds');
         }
       }
-      
+
       // Register as participant using meeting ID as room identifier
       // This will trigger on-demand LiveKit room creation
       SocketService().emit('video:register-participant', {
         'channelId': _meeting!.meetingId, // Use meeting ID as room identifier
       });
-      
+
       // Check participant status
       await _checkParticipantStatus();
-      
+
       // Load sender keys for the channel
       await _loadChannelSenderKeys();
-      
+
       // Handle E2EE key exchange
       if (_isFirstParticipant) {
         await _generateE2EEKey();
@@ -130,46 +133,48 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       });
     }
   }
-  
+
   /// Check participant status
   Future<void> _checkParticipantStatus() async {
     try {
       if (!mounted) return;
       setState(() => _isCheckingParticipants = true);
-      
+
       final completer = Completer<Map<String, dynamic>>();
-      
+
       void listener(dynamic data) {
         if (data['channelId'] == _meeting!.meetingId) {
           completer.complete(Map<String, dynamic>.from(data));
         }
       }
-      
+
       SocketService().registerListener('video:participants-info', listener);
-      
+
       SocketService().emit('video:check-participants', {
         'channelId': _meeting!.meetingId, // Use meeting ID as room identifier
       });
-      
+
       final result = await completer.future.timeout(
         const Duration(seconds: 5),
         onTimeout: () => {'error': 'Timeout'},
       );
-      
+
       SocketService().unregisterListener('video:participants-info', listener);
-      
+
       if (result.containsKey('error')) {
         throw Exception(result['error']);
       }
-      
+
       if (!mounted) return;
       setState(() {
         _isFirstParticipant = result['isFirstParticipant'] ?? false;
         _participantCount = result['participantCount'] ?? 0;
         _isCheckingParticipants = false;
       });
-      
-      debugPrint('[MeetingPreJoin] Is first: $_isFirstParticipant, Count: $_participantCount');
+
+      debugPrint(
+        '[MeetingPreJoin] Is first: $_isFirstParticipant, Count: $_participantCount',
+      );
     } catch (e) {
       debugPrint('[MeetingPreJoin] Error checking participants: $e');
       if (!mounted) return;
@@ -179,7 +184,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       });
     }
   }
-  
+
   /// Load sender keys for meeting participants
   Future<void> _loadChannelSenderKeys() async {
     try {
@@ -187,37 +192,41 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       final response = await ApiService.dio.get(
         '/api/meetings/${_meeting!.meetingId}/participants',
       );
-      
+
       if (response.data == null) return;
-      
-      final participants = response.data['participants'] as List<dynamic>? ?? [];
-      
+
+      final participants =
+          response.data['participants'] as List<dynamic>? ?? [];
+
       for (final participant in participants) {
         final userId = participant['uuid'] as String?;
         final deviceId = participant['deviceId'] as int?;
-        
+
         if (userId == null || deviceId == null) continue;
-        if (userId == SignalService.instance.currentUserId && 
+        if (userId == SignalService.instance.currentUserId &&
             deviceId == SignalService.instance.currentDeviceId) {
           continue;
         }
-        
+
         try {
           await SignalService.instance.loadSenderKeyFromServer(
-            channelId: _meeting!.meetingId, // Use meeting ID as channel identifier
+            channelId:
+                _meeting!.meetingId, // Use meeting ID as channel identifier
             userId: userId,
             deviceId: deviceId,
             forceReload: false,
           );
         } catch (e) {
-          debugPrint('[MeetingPreJoin] Failed to load sender key for $userId:$deviceId: $e');
+          debugPrint(
+            '[MeetingPreJoin] Failed to load sender key for $userId:$deviceId: $e',
+          );
         }
       }
     } catch (e) {
       debugPrint('[MeetingPreJoin] Error loading sender keys: $e');
     }
   }
-  
+
   /// Generate E2EE key (first participant)
   Future<void> _generateE2EEKey() async {
     try {
@@ -226,9 +235,11 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         _isExchangingKey = true;
         _keyExchangeError = null;
       });
-      
-      final success = await VideoConferenceService.generateE2EEKeyInPreJoin(_meeting!.meetingId);
-      
+
+      final success = await VideoConferenceService.generateE2EEKeyInPreJoin(
+        _meeting!.meetingId,
+      );
+
       if (!mounted) return;
       setState(() {
         _hasE2EEKey = success;
@@ -245,7 +256,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       });
     }
   }
-  
+
   /// Request E2EE key from existing participants
   Future<void> _requestE2EEKey() async {
     try {
@@ -254,9 +265,11 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         _isExchangingKey = true;
         _keyExchangeError = null;
       });
-      
-      final success = await VideoConferenceService.requestE2EEKey(_meeting!.meetingId);
-      
+
+      final success = await VideoConferenceService.requestE2EEKey(
+        _meeting!.meetingId,
+      );
+
       if (!mounted) return;
       setState(() {
         _hasE2EEKey = success;
@@ -273,11 +286,11 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       });
     }
   }
-  
+
   /// Join the meeting
   Future<void> _joinMeeting() async {
     if (_meeting == null) return;
-    
+
     // Check E2EE key (all meetings support video now)
     if (!_hasE2EEKey) {
       if (mounted) {
@@ -285,17 +298,17 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       }
       return;
     }
-    
+
     try {
       // Confirm E2EE key for meeting
       SocketService().emit('video:confirm-e2ee-key', {
         'channelId': _meeting!.meetingId, // Use meeting ID as room identifier
       });
-      
+
       // Get selected devices from VideoPreJoinWidget
       final selectedCamera = _prejoinKey.currentState?.selectedCamera;
       final selectedMicrophone = _prejoinKey.currentState?.selectedMicrophone;
-      
+
       // Navigate to MeetingVideoConferenceView
       if (mounted) {
         context.push(
@@ -314,7 +327,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     if (_isLoadingMeeting) {
@@ -323,7 +336,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         body: const Center(child: CircularProgressIndicator()),
       );
     }
-    
+
     if (_loadError != null || _meeting == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Join Meeting')),
@@ -348,19 +361,17 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         ),
       );
     }
-    
+
     final showE2EE = true; // All meetings support video with E2EE
     final canJoin = _hasE2EEKey;
-    
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Join ${_meeting!.title}'),
-      ),
+      appBar: AppBar(title: Text('Join ${_meeting!.title}')),
       body: Column(
         children: [
           // Meeting Info
           _buildMeetingInfo(),
-          
+
           // Video PreJoin Widget (flexible, scrollable)
           Expanded(
             child: VideoPreJoinWidget(
@@ -376,7 +387,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
               onRetryKeyExchange: _requestE2EEKey,
             ),
           ),
-          
+
           // Join Button (fixed at bottom)
           Container(
             padding: const EdgeInsets.all(16),
@@ -399,8 +410,13 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
                 label: Text(
                   canJoin
                       ? 'Join Meeting'
-                      : (_isExchangingKey ? 'Exchanging Keys...' : 'Waiting for Encryption...'),
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      : (_isExchangingKey
+                            ? 'Exchanging Keys...'
+                            : 'Waiting for Encryption...'),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
@@ -409,7 +425,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       ),
     );
   }
-  
+
   /// Build meeting info section
   Widget _buildMeetingInfo() {
     return Container(
@@ -433,19 +449,21 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
               color: Theme.of(context).colorScheme.onPrimaryContainer,
             ),
           ),
-          
+
           if (_meeting!.description != null) ...[
             const SizedBox(height: 4),
             Text(
               _meeting!.description!,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
               ),
             ),
           ],
-          
+
           const SizedBox(height: 8),
-          
+
           // Meeting time
           if (_meeting!.scheduledStart != null)
             Row(
@@ -457,22 +475,23 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  DateFormat('EEEE, MMMM d, y \'at\' h:mm a').format(_meeting!.scheduledStart!),
+                  DateFormat(
+                    'EEEE, MMMM d, y \'at\' h:mm a',
+                  ).format(_meeting!.scheduledStart!),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onPrimaryContainer,
                   ),
                 ),
               ],
             ),
-          
+
           // Meeting settings
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 4,
             children: [
-              if (_meeting!.voiceOnly)
-                _buildInfoChip(Icons.mic, 'Voice Only'),
+              if (_meeting!.voiceOnly) _buildInfoChip(Icons.mic, 'Voice Only'),
               if (_meeting!.allowExternal)
                 _buildInfoChip(Icons.link, 'External Guests'),
               if (_meeting!.muteOnJoin)
@@ -483,7 +502,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       ),
     );
   }
-  
+
   Widget _buildInfoChip(IconData icon, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

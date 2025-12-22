@@ -110,21 +110,27 @@ class ExternalParticipantService {
     });
 
     debugPrint('[EXTERNAL SERVICE] Socket.IO listeners initialized');
-    debugPrint('[EXTERNAL SERVICE] Note: DEPRECATED plaintext listeners are disabled - use Signal Protocol');
+    debugPrint(
+      '[EXTERNAL SERVICE] Note: DEPRECATED plaintext listeners are disabled - use Signal Protocol',
+    );
   }
 
   /// DEPRECATED: Register meeting-specific E2EE key request listener - DO NOT USE
   /// This uses insecure plaintext Socket.IO events. Use Signal Protocol instead.
   @Deprecated('Use Signal Protocol encrypted message handlers instead')
   void registerMeetingE2EEListener(String meetingId) {
-    debugPrint('[EXTERNAL SERVICE] ⚠️ DEPRECATED: registerMeetingE2EEListener called - this is insecure!');
-    debugPrint('[EXTERNAL SERVICE] ⚠️ Use Signal Protocol guest:meeting_e2ee_key_request handler instead');
+    debugPrint(
+      '[EXTERNAL SERVICE] ⚠️ DEPRECATED: registerMeetingE2EEListener called - this is insecure!',
+    );
+    debugPrint(
+      '[EXTERNAL SERVICE] ⚠️ Use Signal Protocol guest:meeting_e2ee_key_request handler instead',
+    );
     // COMMENTED OUT - DO NOT USE PLAINTEXT KEY EXCHANGE
     // final eventName = 'guest:request_e2ee_key:$meetingId';
-    // 
+    //
     // debugPrint('[EXTERNAL SERVICE] 🎧 Registering listener for $eventName');
     // debugPrint('[EXTERNAL SERVICE] Socket connected: ${_socketService.isConnected}');
-    // 
+    //
     // _socketService.registerListener(eventName, (data) {
     //   debugPrint('[EXTERNAL SERVICE] 🔔 Received $eventName: $data');
     //   try {
@@ -133,14 +139,16 @@ class ExternalParticipantService {
     //     debugPrint('[EXTERNAL SERVICE] Error parsing $eventName: $e');
     //   }
     // });
-    // 
+    //
     // debugPrint('[EXTERNAL SERVICE] ✅ Listener registered for $eventName');
   }
 
   /// DEPRECATED: Unregister meeting-specific E2EE key request listener - DO NOT USE
   @Deprecated('Use Signal Protocol encrypted message handlers instead')
   void unregisterMeetingE2EEListener(String meetingId) {
-    debugPrint('[EXTERNAL SERVICE] ⚠️ DEPRECATED: unregisterMeetingE2EEListener called');
+    debugPrint(
+      '[EXTERNAL SERVICE] ⚠️ DEPRECATED: unregisterMeetingE2EEListener called',
+    );
     // COMMENTED OUT - NO LONGER NEEDED
     // final eventName = 'guest:request_e2ee_key:$meetingId';
     // debugPrint('[EXTERNAL SERVICE] Meeting E2EE listener for $eventName will be cleaned up on disconnect');

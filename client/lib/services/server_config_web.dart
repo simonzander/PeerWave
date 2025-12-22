@@ -25,7 +25,8 @@ class ServerConfig {
   });
 
   Map<String, dynamic> toJson() => {};
-  factory ServerConfig.fromJson(Map<String, dynamic> json) => throw UnimplementedError();
+  factory ServerConfig.fromJson(Map<String, dynamic> json) =>
+      throw UnimplementedError();
   String getDisplayName() => serverUrl;
   String getShortName() => 'S';
   ServerConfig copyWith({
@@ -51,12 +52,21 @@ class ServerConfigService {
   static ServerConfig? getActiveServer() => null;
   static Future<void> setActiveServer(String serverId) async {}
   static ServerConfig? getServerById(String serverId) => null;
-  static Future<void> updateServerIcon(String serverId, String iconPath) async {}
+  static Future<void> updateServerIcon(
+    String serverId,
+    String iconPath,
+  ) async {}
   static Future<void> updateUnreadCount(String serverId, int count) async {}
-  static Future<void> incrementUnreadCount(String serverId, [int amount = 1]) async {}
+  static Future<void> incrementUnreadCount(
+    String serverId, [
+    int amount = 1,
+  ]) async {}
   static Future<void> resetUnreadCount(String serverId) async {}
   static bool hasServers() => false;
   static ServerConfig? getLastActiveServer() => null;
-  static Future<void> updateDisplayName(String serverId, String displayName) async {}
+  static Future<void> updateDisplayName(
+    String serverId,
+    String displayName,
+  ) async {}
   static Future<void> clearAll() async {}
 }

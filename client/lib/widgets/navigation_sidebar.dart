@@ -4,7 +4,7 @@ import '../services/logout_service.dart';
 import 'navigation_badge.dart';
 
 /// Navigation Sidebar for Desktop Layout
-/// 
+///
 /// Shows icon-only sidebar on the left with navigation between main views
 class NavigationSidebar extends StatefulWidget {
   const NavigationSidebar({super.key});
@@ -25,7 +25,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
   /// Update selected index based on current route
   void _updateSelectedIndexFromRoute() {
     final location = GoRouterState.of(context).matchedLocation;
-    
+
     int newIndex = 0;
     if (location.startsWith('/app/activities')) {
       newIndex = 0;
@@ -40,7 +40,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
     } else if (location.startsWith('/app/messages')) {
       newIndex = 5;
     }
-    
+
     if (newIndex != _selectedIndex) {
       setState(() {
         _selectedIndex = newIndex;
@@ -52,7 +52,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
     setState(() {
       _selectedIndex = index;
     });
-    
+
     // Navigate via GoRouter
     switch (index) {
       case 0:
@@ -84,7 +84,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
       child: Column(
         children: [
           const SizedBox(height: 12),
-          
+
           // Activity Icon
           _buildIconButton(
             badge: NavigationBadge(
@@ -97,7 +97,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
             tooltip: 'Activity',
           ),
           const SizedBox(height: 4),
-          
+
           // Meetings Icon
           _buildIconButton(
             badge: NavigationBadge(
@@ -110,7 +110,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
             tooltip: 'Meetings',
           ),
           const SizedBox(height: 4),
-          
+
           // People Icon
           _buildIconButton(
             badge: NavigationBadge(
@@ -123,7 +123,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
             tooltip: 'People',
           ),
           const SizedBox(height: 4),
-          
+
           // Files Icon
           _buildIconButton(
             badge: NavigationBadge(
@@ -136,7 +136,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
             tooltip: 'Files',
           ),
           const SizedBox(height: 4),
-          
+
           // Channels Icon
           _buildIconButton(
             badge: NavigationBadge(
@@ -149,7 +149,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
             tooltip: 'Channels',
           ),
           const SizedBox(height: 4),
-          
+
           // Messages Icon
           _buildIconButton(
             badge: NavigationBadge(
@@ -161,14 +161,16 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
             onTap: () => _onNavigationSelected(5),
             tooltip: 'Messages',
           ),
-          
+
           const Spacer(),
-          
+
           // Settings Icon at bottom
           _buildIconButton(
             badge: Icon(
               Icons.settings,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.7),
               size: 24,
             ),
             isSelected: false,
@@ -176,16 +178,19 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
             tooltip: 'Settings',
           ),
           const SizedBox(height: 4),
-          
+
           // Logout Icon
           _buildIconButton(
             badge: Icon(
               Icons.logout,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.7),
               size: 24,
             ),
             isSelected: false,
-            onTap: () => LogoutService.instance.logout(context, userInitiated: true),
+            onTap: () =>
+                LogoutService.instance.logout(context, userInitiated: true),
             tooltip: 'Logout',
           ),
           const SizedBox(height: 12),
@@ -202,7 +207,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
     required String tooltip,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Tooltip(
       message: tooltip,
       child: InkWell(
@@ -212,7 +217,7 @@ class _NavigationSidebarState extends State<NavigationSidebar> {
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            color: isSelected 
+            color: isSelected
                 ? colorScheme.primary.withValues(alpha: 0.15)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(12),

@@ -51,7 +51,8 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
       final resp = await ApiService.get('$urlString/webauthn/list');
@@ -62,7 +63,9 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
           });
         } else if (resp.data is Map && resp.data['credentials'] is List) {
           setState(() {
-            webauthnCredentials = List<Map<String, dynamic>>.from(resp.data['credentials']);
+            webauthnCredentials = List<Map<String, dynamic>>.from(
+              resp.data['credentials'],
+            );
           });
         }
       }
@@ -84,7 +87,8 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
       final email = localStorageGetItem('email'.toJS)?.toDart ?? '';
@@ -116,10 +120,14 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final resp = await ApiService.post('$urlString/webauthn/delete', data: {'credentialId': credentialId});
+      final resp = await ApiService.post(
+        '$urlString/webauthn/delete',
+        data: {'credentialId': credentialId},
+      );
       if (resp.statusCode == 200) {
         await _loadWebauthnCredentials();
       } else {
@@ -142,14 +150,14 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
+
     // Responsive width
     final screenWidth = MediaQuery.of(context).size.width;
-    final cardWidth = screenWidth < 600 
+    final cardWidth = screenWidth < 600
         ? screenWidth * 0.9
         : screenWidth < 840
-            ? 550.0
-            : 650.0;
+        ? 550.0
+        : 650.0;
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
@@ -165,7 +173,10 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
                 child: Container(
                   padding: const EdgeInsets.all(32),
                   width: cardWidth,
-                  constraints: const BoxConstraints(maxWidth: 700, maxHeight: 750),
+                  constraints: const BoxConstraints(
+                    maxWidth: 700,
+                    maxHeight: 750,
+                  ),
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(16),
@@ -198,152 +209,171 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 24),
-                    if (_error != null)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: colorScheme.errorContainer,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: colorScheme.error),
-                        ),
-                        child: Text(
-                          _error!,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: colorScheme.onErrorContainer,
+                      if (_error != null)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: colorScheme.errorContainer,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: colorScheme.error),
                           ),
-                          textAlign: TextAlign.center,
+                          child: Text(
+                            _error!,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onErrorContainer,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
                         ),
-                      ),
-                    // Credentials List
-                    Expanded(
-                      child: loading && webauthnCredentials.isEmpty
-                          ? Center(
-                              child: CircularProgressIndicator(color: colorScheme.primary),
-                            )
-                          : webauthnCredentials.isEmpty
-                              ? Container(
-                                  padding: const EdgeInsets.all(24),
-                                  decoration: BoxDecoration(
-                                    color: colorScheme.surfaceContainerHigh,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: colorScheme.outlineVariant,
-                                    ),
-                                  ),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.security, 
-                                        color: colorScheme.onSurfaceVariant, 
-                                        size: 48,
-                                      ),
-                                      const SizedBox(height: 16),
-                                      Text(
-                                        'No security keys registered yet',
-                                        style: theme.textTheme.titleMedium?.copyWith(
-                                          color: colorScheme.onSurface,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Click "Add Security Key" below to get started',
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: colorScheme.onSurfaceVariant,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              : Container(
-                                  decoration: BoxDecoration(
-                                    color: colorScheme.surfaceContainerHigh,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: colorScheme.outlineVariant,
-                                    ),
-                                  ),
-                                  child: ListView.separated(
-                                    padding: const EdgeInsets.all(8),
-                                    itemCount: webauthnCredentials.length,
-                                    separatorBuilder: (context, index) => Divider(
-                                      color: colorScheme.outlineVariant,
-                                      height: 1,
-                                    ),
-                                    itemBuilder: (context, index) {
-                                      final cred = webauthnCredentials[index];
-                                      return ListTile(
-                                        leading: Icon(Icons.key, color: colorScheme.primary),
-                                        title: Text(
-                                          cred['browser']?.toString() ?? 'Security Key ${index + 1}',
-                                          style: theme.textTheme.bodyLarge?.copyWith(
-                                            color: colorScheme.onSurface,
-                                          ),
-                                        ),
-                                        subtitle: Text(
-                                          'Created: ${cred['created']?.toString() ?? 'Unknown'}',
-                                          style: theme.textTheme.bodySmall?.copyWith(
-                                            color: colorScheme.onSurfaceVariant,
-                                          ),
-                                        ),
-                                        trailing: webauthnCredentials.length > 1
-                                            ? IconButton(
-                                                icon: Icon(Icons.delete, color: colorScheme.error),
-                                                onPressed: () => _deleteCredential(cred['id']?.toString() ?? ''),
-                                              )
-                                            : null,
-                                      );
-                                    },
+                      // Credentials List
+                      Expanded(
+                        child: loading && webauthnCredentials.isEmpty
+                            ? Center(
+                                child: CircularProgressIndicator(
+                                  color: colorScheme.primary,
+                                ),
+                              )
+                            : webauthnCredentials.isEmpty
+                            ? Container(
+                                padding: const EdgeInsets.all(24),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surfaceContainerHigh,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: colorScheme.outlineVariant,
                                   ),
                                 ),
-                    ),
-                    const SizedBox(height: 16),
-                    // Add Credential Button
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 52),
-                        foregroundColor: colorScheme.primary,
-                        side: BorderSide(color: colorScheme.outline),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.security,
+                                      color: colorScheme.onSurfaceVariant,
+                                      size: 48,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'No security keys registered yet',
+                                      style: theme.textTheme.titleMedium
+                                          ?.copyWith(
+                                            color: colorScheme.onSurface,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Click "Add Security Key" below to get started',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: colorScheme.onSurfaceVariant,
+                                          ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : Container(
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surfaceContainerHigh,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: colorScheme.outlineVariant,
+                                  ),
+                                ),
+                                child: ListView.separated(
+                                  padding: const EdgeInsets.all(8),
+                                  itemCount: webauthnCredentials.length,
+                                  separatorBuilder: (context, index) => Divider(
+                                    color: colorScheme.outlineVariant,
+                                    height: 1,
+                                  ),
+                                  itemBuilder: (context, index) {
+                                    final cred = webauthnCredentials[index];
+                                    return ListTile(
+                                      leading: Icon(
+                                        Icons.key,
+                                        color: colorScheme.primary,
+                                      ),
+                                      title: Text(
+                                        cred['browser']?.toString() ??
+                                            'Security Key ${index + 1}',
+                                        style: theme.textTheme.bodyLarge
+                                            ?.copyWith(
+                                              color: colorScheme.onSurface,
+                                            ),
+                                      ),
+                                      subtitle: Text(
+                                        'Created: ${cred['created']?.toString() ?? 'Unknown'}',
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color:
+                                                  colorScheme.onSurfaceVariant,
+                                            ),
+                                      ),
+                                      trailing: webauthnCredentials.length > 1
+                                          ? IconButton(
+                                              icon: Icon(
+                                                Icons.delete,
+                                                color: colorScheme.error,
+                                              ),
+                                              onPressed: () =>
+                                                  _deleteCredential(
+                                                    cred['id']?.toString() ??
+                                                        '',
+                                                  ),
+                                            )
+                                          : null,
+                                    );
+                                  },
+                                ),
+                              ),
+                      ),
+                      const SizedBox(height: 16),
+                      // Add Credential Button
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 52),
+                          foregroundColor: colorScheme.primary,
+                          side: BorderSide(color: colorScheme.outline),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: loading ? null : _addCredential,
+                        icon: const Icon(Icons.add),
+                        label: Text(
+                          'Add Security Key',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                      onPressed: loading ? null : _addCredential,
-                      icon: const Icon(Icons.add),
-                      label: Text(
-                        'Add Security Key',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
+                      const SizedBox(height: 12),
+                      // Next Button
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 52),
+                          backgroundColor: colorScheme.primary,
+                          foregroundColor: colorScheme.onPrimary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          disabledBackgroundColor:
+                              colorScheme.surfaceContainerHighest,
+                          disabledForegroundColor: colorScheme.onSurfaceVariant,
+                        ),
+                        onPressed: webauthnCredentials.isEmpty
+                            ? null
+                            : () {
+                                GoRouter.of(context).go('/register/profile');
+                              },
+                        child: Text(
+                          'Next',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Next Button
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 52),
-                        backgroundColor: colorScheme.primary,
-                        foregroundColor: colorScheme.onPrimary,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        disabledBackgroundColor: colorScheme.surfaceContainerHighest,
-                        disabledForegroundColor: colorScheme.onSurfaceVariant,
-                      ),
-                      onPressed: webauthnCredentials.isEmpty
-                          ? null
-                          : () {
-                              GoRouter.of(context).go('/register/profile');
-                            },
-                      child: Text(
-                        'Next',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
                     ],
                   ),
                 ),
@@ -355,4 +385,3 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
     );
   }
 }
-

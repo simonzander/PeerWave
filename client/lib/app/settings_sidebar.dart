@@ -27,7 +27,10 @@ class SettingsSidebar extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     IconButton(
-                      icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
+                      icon: Icon(
+                        Icons.arrow_back,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
                       tooltip: 'Back',
                       onPressed: () => GoRouter.of(context).go('/app'),
                     ),
@@ -42,52 +45,134 @@ class SettingsSidebar extends StatelessWidget {
                 ),
               ),
               ListTile(
-                leading: Icon(Icons.settings, color: Theme.of(context).colorScheme.onSurface),
-                title: Text('General', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+                leading: Icon(
+                  Icons.settings,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                title: Text(
+                  'General',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
                 onTap: () => GoRouter.of(context).go('/app/settings/general'),
               ),
               const Divider(),
               ListTile(
-                leading: Icon(Icons.person, color: Theme.of(context).colorScheme.onSurface),
-                title: Text('Profile', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+                leading: Icon(
+                  Icons.person,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                title: Text(
+                  'Profile',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
                 onTap: () => GoRouter.of(context).go('/app/settings/profile'),
               ),
               ListTile(
-                leading: Icon(Icons.security, color: Theme.of(context).colorScheme.onSurface),
-                title: Text('Credentials', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+                leading: Icon(
+                  Icons.security,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                title: Text(
+                  'Credentials',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
                 onTap: () => GoRouter.of(context).go('/app/settings/webauthn'),
               ),
               ListTile(
-                leading: Icon(Icons.notifications, color: Theme.of(context).colorScheme.onSurface),
-                title: Text('Notifications', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-                onTap: () => GoRouter.of(context).go('/app/settings/notifications'),
+                leading: Icon(
+                  Icons.notifications,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                title: Text(
+                  'Notifications',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                onTap: () =>
+                    GoRouter.of(context).go('/app/settings/notifications'),
               ),
               ListTile(
-                leading: Icon(Icons.palette_outlined, color: Theme.of(context).colorScheme.onSurface),
-                title: Text('Theme', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+                leading: Icon(
+                  Icons.palette_outlined,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                title: Text(
+                  'Theme',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
                 onTap: () => ThemeSelectorDialog.show(context),
               ),
               // Voice & Video Settings
               ListTile(
-                leading: Icon(Icons.videocam, color: Theme.of(context).colorScheme.onSurface),
-                title: Text('Voice & Video', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-                onTap: () => GoRouter.of(context).go('/app/settings/voice-video'),
+                leading: Icon(
+                  Icons.videocam,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                title: Text(
+                  'Voice & Video',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                onTap: () =>
+                    GoRouter.of(context).go('/app/settings/voice-video'),
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.build_circle,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                title: Text(
+                  'Troubleshoot',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                onTap: () =>
+                    GoRouter.of(context).go('/app/settings/troubleshoot'),
               ),
               // System Tray Settings - Only visible on desktop
               if (!kIsWeb)
                 ListTile(
-                  leading: Icon(Icons.launch, color: Theme.of(context).colorScheme.onSurface),
-                  title: Text('System Tray', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-                  onTap: () => GoRouter.of(context).go('/app/settings/system-tray'),
+                  leading: Icon(
+                    Icons.launch,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                  title: Text(
+                    'System Tray',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  onTap: () =>
+                      GoRouter.of(context).go('/app/settings/system-tray'),
                 ),
               const Divider(),
               Consumer<RoleProvider>(
                 builder: (context, roleProvider, child) {
                   if (roleProvider.hasServerPermission('server.manage')) {
                     return ListTile(
-                      leading: Icon(Icons.dns, color: Theme.of(context).colorScheme.onSurface),
-                      title: Text('Server Settings', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-                      onTap: () => GoRouter.of(context).go('/app/settings/server'),
+                      leading: Icon(
+                        Icons.dns,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      title: Text(
+                        'Server Settings',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                      onTap: () =>
+                          GoRouter.of(context).go('/app/settings/server'),
                     );
                   }
                   return const SizedBox.shrink();
@@ -99,9 +184,18 @@ class SettingsSidebar extends StatelessWidget {
                 builder: (context, roleProvider, child) {
                   if (roleProvider.isAdmin) {
                     return ListTile(
-                      leading: Icon(Icons.admin_panel_settings, color: Theme.of(context).colorScheme.onSurface),
-                      title: Text('Role Management', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-                      onTap: () => GoRouter.of(context).go('/app/settings/roles'),
+                      leading: Icon(
+                        Icons.admin_panel_settings,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      title: Text(
+                        'Role Management',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                      onTap: () =>
+                          GoRouter.of(context).go('/app/settings/roles'),
                     );
                   }
                   return const SizedBox.shrink();
@@ -112,9 +206,18 @@ class SettingsSidebar extends StatelessWidget {
                 builder: (context, roleProvider, child) {
                   if (roleProvider.hasServerPermission('user.manage')) {
                     return ListTile(
-                      leading: Icon(Icons.people, color: Theme.of(context).colorScheme.onSurface),
-                      title: Text('User Management', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-                      onTap: () => GoRouter.of(context).go('/app/settings/users'),
+                      leading: Icon(
+                        Icons.people,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      title: Text(
+                        'User Management',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                      onTap: () =>
+                          GoRouter.of(context).go('/app/settings/users'),
                     );
                   }
                   return const SizedBox.shrink();
@@ -128,4 +231,3 @@ class SettingsSidebar extends StatelessWidget {
     );
   }
 }
-

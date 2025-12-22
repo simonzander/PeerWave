@@ -2,10 +2,11 @@ import 'package:flutter/foundation.dart';
 import '../models/ice_server_config.dart';
 import '../services/api_service.dart';
 import '../web_config.dart';
-import 'server_config_web.dart' if (dart.library.io) 'server_config_native.dart';
+import 'server_config_web.dart'
+    if (dart.library.io) 'server_config_native.dart';
 
 /// ICE Server Configuration Service
-/// 
+///
 /// Singleton service that fetches and caches ICE server configuration
 /// from the server's /client/meta endpoint.
 class IceConfigService extends ChangeNotifier {
@@ -17,7 +18,7 @@ class IceConfigService extends ChangeNotifier {
   bool _isLoaded = false;
   DateTime? _lastLoaded;
   String? _serverUrl;
-  
+
   // Cache TTL: Reload config after 12 hours (half of TURN credential lifetime)
   static const Duration _cacheTtl = Duration(hours: 12);
 
@@ -32,13 +33,13 @@ class IceConfigService extends ChangeNotifier {
     if (_clientMeta != null) {
       return _clientMeta!.toWebRtcConfig();
     }
-    
+
     // Fallback to Google STUN
     debugPrint('[ICE CONFIG] No config loaded, using fallback STUN');
     return {
       'iceServers': [
-        {'urls': 'stun:stun.l.google.com:19302'}
-      ]
+        {'urls': 'stun:stun.l.google.com:19302'},
+      ],
     };
   }
 
@@ -48,7 +49,7 @@ class IceConfigService extends ChangeNotifier {
     if (serverUrl != null) {
       _serverUrl = serverUrl;
     }
-    
+
     // Get server URL from appropriate source
     if (_serverUrl == null || _serverUrl!.isEmpty) {
       if (kIsWeb) {
@@ -63,64 +64,77 @@ class IceConfigService extends ChangeNotifier {
         }
       }
     }
-    
+
     // Ensure we have a valid server URL
     if (_serverUrl == null || _serverUrl!.isEmpty) {
       debugPrint('[ICE CONFIG] ⚠️ No server URL available, using fallback');
       _serverUrl = 'http://localhost:3000'; // Fallback
     }
-    
+
     // Ensure server URL has protocol (only add if doesn't have one)
-    if (!_serverUrl!.startsWith('http://') && !_serverUrl!.startsWith('https://')) {
+    if (!_serverUrl!.startsWith('http://') &&
+        !_serverUrl!.startsWith('https://')) {
       _serverUrl = 'https://$_serverUrl';
     }
-    
+
     debugPrint('[ICE CONFIG] Using server URL: $_serverUrl');
-    
+
     // Check if we need to reload (cache expired or forced)
     if (!force && _isLoaded && _lastLoaded != null) {
       final age = DateTime.now().difference(_lastLoaded!);
       if (age < _cacheTtl) {
-        debugPrint('[ICE CONFIG] Using cached config (age: ${age.inMinutes}min)');
+        debugPrint(
+          '[ICE CONFIG] Using cached config (age: ${age.inMinutes}min)',
+        );
         return;
       }
-      debugPrint('[ICE CONFIG] Cache expired (age: ${age.inHours}h), reloading...');
+      debugPrint(
+        '[ICE CONFIG] Cache expired (age: ${age.inHours}h), reloading...',
+      );
     }
 
     try {
       debugPrint('[ICE CONFIG] Loading ICE config from LiveKit...');
-      
+
       // ✅ NEW: Fetch from LiveKit ICE endpoint instead of /client/meta
-      final response = await ApiService.get('$_serverUrl/api/livekit/ice-config');
-      
+      final response = await ApiService.get(
+        '$_serverUrl/api/livekit/ice-config',
+      );
+
       if (response.statusCode == 200) {
         final data = response.data;
-        
+
         // Parse ICE servers from LiveKit response
         final List<IceServer> servers = [];
         if (data['iceServers'] != null) {
           for (var server in data['iceServers']) {
-            servers.add(IceServer(
-              urls: List<String>.from(server['urls']),
-              username: server['username'],
-              credential: server['credential'],
-            ));
+            servers.add(
+              IceServer(
+                urls: List<String>.from(server['urls']),
+                username: server['username'],
+                credential: server['credential'],
+              ),
+            );
           }
         }
-        
+
         _clientMeta = ClientMetaResponse(
           name: 'PeerWave',
           version: '1.0.0',
           iceServers: servers,
         );
-        
+
         _isLoaded = true;
         _lastLoaded = DateTime.now();
-        
+
         debugPrint('[ICE CONFIG] ✅ LiveKit ICE config loaded successfully');
-        debugPrint('[ICE CONFIG] ICE Servers: ${_clientMeta!.iceServers.length}');
-        debugPrint('[ICE CONFIG] TTL: ${data['ttl']}s, Expires: ${data['expiresAt']}');
-        
+        debugPrint(
+          '[ICE CONFIG] ICE Servers: ${_clientMeta!.iceServers.length}',
+        );
+        debugPrint(
+          '[ICE CONFIG] TTL: ${data['ttl']}s, Expires: ${data['expiresAt']}',
+        );
+
         for (var i = 0; i < _clientMeta!.iceServers.length; i++) {
           final server = _clientMeta!.iceServers[i];
           debugPrint('[ICE CONFIG]   [$i] ${server.urls.join(", ")}');
@@ -128,10 +142,12 @@ class IceConfigService extends ChangeNotifier {
             debugPrint('[ICE CONFIG]       Auth: JWT-based (LiveKit)');
           }
         }
-        
+
         notifyListeners();
       } else {
-        debugPrint('[ICE CONFIG] ❌ Failed to load config: ${response.statusCode}');
+        debugPrint(
+          '[ICE CONFIG] ❌ Failed to load config: ${response.statusCode}',
+        );
         _useFallback();
       }
     } catch (e) {
@@ -183,4 +199,3 @@ class IceConfigService extends ChangeNotifier {
     return DateTime.now().difference(_lastLoaded!).inMinutes;
   }
 }
-

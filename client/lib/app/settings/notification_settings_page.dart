@@ -113,9 +113,9 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
       _meetingInviteEmailEnabled = notifService.meetingInviteEmailEnabled;
       _meetingRsvpEmailToOrganizerEnabled =
           notifService.meetingRsvpEmailToOrganizerEnabled;
-        _meetingUpdateEmailEnabled = notifService.meetingUpdateEmailEnabled;
-        _meetingCancelEmailEnabled = notifService.meetingCancelEmailEnabled;
-        _meetingSelfInviteEmailEnabled =
+      _meetingUpdateEmailEnabled = notifService.meetingUpdateEmailEnabled;
+      _meetingCancelEmailEnabled = notifService.meetingCancelEmailEnabled;
+      _meetingSelfInviteEmailEnabled =
           notifService.meetingSelfInviteEmailEnabled;
     });
   }
@@ -749,10 +749,13 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                                   );
                                 } catch (e) {
                                   await NotificationService.instance
-                                      .setMeetingSelfInviteEmailEnabled(previous);
+                                      .setMeetingSelfInviteEmailEnabled(
+                                        previous,
+                                      );
                                   if (!mounted) return;
                                   setState(
-                                    () => _meetingSelfInviteEmailEnabled = previous,
+                                    () => _meetingSelfInviteEmailEnabled =
+                                        previous,
                                   );
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(

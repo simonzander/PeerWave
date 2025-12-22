@@ -105,7 +105,7 @@ class NotificationService {
     _meetingUpdateEmailEnabled = await prefs.loadMeetingUpdateEmailEnabled();
     _meetingCancelEmailEnabled = await prefs.loadMeetingCancelEmailEnabled();
     _meetingSelfInviteEmailEnabled = await prefs
-      .loadMeetingSelfInviteEmailEnabled();
+        .loadMeetingSelfInviteEmailEnabled();
     debugPrint('[NotificationService] Preferences loaded');
   }
 

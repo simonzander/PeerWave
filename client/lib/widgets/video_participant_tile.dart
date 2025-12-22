@@ -49,25 +49,34 @@ class _VideoParticipantTileState extends State<VideoParticipantTile> {
     }
     // Only rebuild profile widget if profile picture changed
     if (oldWidget.profilePicture != widget.profilePicture) {
-      debugPrint('[VideoParticipantTile] Profile picture changed for ${widget.participant?.identity}: old=${oldWidget.profilePicture?.substring(0, 20)}..., new=${widget.profilePicture?.substring(0, 20)}...');
+      debugPrint(
+        '[VideoParticipantTile] Profile picture changed for ${widget.participant?.identity}: old=${oldWidget.profilePicture?.substring(0, 20)}..., new=${widget.profilePicture?.substring(0, 20)}...',
+      );
       _buildProfileWidget();
     }
   }
 
   void _buildProfileWidget() {
     final userId = widget.participant?.identity;
-    debugPrint('[VideoParticipantTile] Building profile widget for $userId: cached=${_cachedProfilePicture?.substring(0, 20)}..., new=${widget.profilePicture?.substring(0, 20)}...');
-    
-    if (widget.profilePicture == _cachedProfilePicture && _cachedProfileWidget != null) {
-      debugPrint('[VideoParticipantTile] Using cached profile widget for $userId');
+    debugPrint(
+      '[VideoParticipantTile] Building profile widget for $userId: cached=${_cachedProfilePicture?.substring(0, 20)}..., new=${widget.profilePicture?.substring(0, 20)}...',
+    );
+
+    if (widget.profilePicture == _cachedProfilePicture &&
+        _cachedProfileWidget != null) {
+      debugPrint(
+        '[VideoParticipantTile] Using cached profile widget for $userId',
+      );
       return; // Already cached
     }
-    
+
     _cachedProfilePicture = widget.profilePicture;
     final displayName = widget.displayName ?? userId ?? 'Unknown';
-    
-    debugPrint('[VideoParticipantTile] Creating new profile widget for $userId with displayName=$displayName, hasPicture=${widget.profilePicture?.isNotEmpty ?? false}');
-    
+
+    debugPrint(
+      '[VideoParticipantTile] Creating new profile widget for $userId with displayName=$displayName, hasPicture=${widget.profilePicture?.isNotEmpty ?? false}',
+    );
+
     _cachedProfileWidget = RepaintBoundary(
       child: _ProfileDisplaySection(
         profilePicture: widget.profilePicture,
@@ -147,12 +156,7 @@ class _VideoParticipantTileState extends State<VideoParticipantTile> {
             else
               Container(
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                child: const Center(
-                  child: Icon(
-                    Icons.videocam_off,
-                    size: 48,
-                  ),
-                ),
+                child: const Center(child: Icon(Icons.videocam_off, size: 48)),
               ),
 
             // Pin indicator
@@ -181,7 +185,9 @@ class _VideoParticipantTileState extends State<VideoParticipantTile> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.6),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.scrim.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Row(
@@ -247,12 +253,7 @@ class _ProfileDisplaySection extends StatelessWidget {
 
     return Container(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: const Center(
-        child: Icon(
-          Icons.videocam_off,
-          size: 48,
-        ),
-      ),
+      child: const Center(child: Icon(Icons.videocam_off, size: 48)),
     );
   }
 }

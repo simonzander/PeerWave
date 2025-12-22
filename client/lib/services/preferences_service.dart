@@ -51,11 +51,11 @@ class PreferencesService {
       'meeting_invite_email_enabled';
   static const String _keyMeetingRsvpEmailToOrganizerEnabled =
       'meeting_rsvp_email_to_organizer_enabled';
-    static const String _keyMeetingUpdateEmailEnabled =
+  static const String _keyMeetingUpdateEmailEnabled =
       'meeting_update_email_enabled';
-    static const String _keyMeetingCancelEmailEnabled =
+  static const String _keyMeetingCancelEmailEnabled =
       'meeting_cancel_email_enabled';
-    static const String _keyMeetingSelfInviteEmailEnabled =
+  static const String _keyMeetingSelfInviteEmailEnabled =
       'meeting_self_invite_email_enabled';
 
   // IndexedDB Config (Web)
@@ -359,19 +359,19 @@ class PreferencesService {
   Future<bool> loadMeetingRsvpEmailToOrganizerEnabled() =>
       loadBoolPref(_keyMeetingRsvpEmailToOrganizerEnabled, defaultValue: true);
 
-    Future<void> saveMeetingUpdateEmailEnabled(bool enabled) =>
+  Future<void> saveMeetingUpdateEmailEnabled(bool enabled) =>
       saveBoolPref(_keyMeetingUpdateEmailEnabled, enabled);
-    Future<bool> loadMeetingUpdateEmailEnabled() =>
+  Future<bool> loadMeetingUpdateEmailEnabled() =>
       loadBoolPref(_keyMeetingUpdateEmailEnabled, defaultValue: true);
 
-    Future<void> saveMeetingCancelEmailEnabled(bool enabled) =>
+  Future<void> saveMeetingCancelEmailEnabled(bool enabled) =>
       saveBoolPref(_keyMeetingCancelEmailEnabled, enabled);
-    Future<bool> loadMeetingCancelEmailEnabled() =>
+  Future<bool> loadMeetingCancelEmailEnabled() =>
       loadBoolPref(_keyMeetingCancelEmailEnabled, defaultValue: true);
 
-    Future<void> saveMeetingSelfInviteEmailEnabled(bool enabled) =>
+  Future<void> saveMeetingSelfInviteEmailEnabled(bool enabled) =>
       saveBoolPref(_keyMeetingSelfInviteEmailEnabled, enabled);
-    Future<bool> loadMeetingSelfInviteEmailEnabled() =>
+  Future<bool> loadMeetingSelfInviteEmailEnabled() =>
       loadBoolPref(_keyMeetingSelfInviteEmailEnabled, defaultValue: false);
 
   // ============================================================================

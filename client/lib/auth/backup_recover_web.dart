@@ -1,4 +1,3 @@
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -6,7 +5,6 @@ import 'package:web/web.dart' as web;
 import '../services/api_service.dart';
 import '../web_config.dart';
 import 'dart:async';
-
 
 class BackupCodeRecoveryPage extends StatefulWidget {
   const BackupCodeRecoveryPage({super.key});
@@ -24,12 +22,12 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
     super.initState();
   }
 
-
   Future<void> _verifyBackupCode() async {
     try {
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
       // Try to include clientId if available (helps server attach device info immediately)
@@ -39,10 +37,13 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
         final jsClientId = web.window.localStorage.getItem('clientId');
         clientId = jsClientId;
       } catch (_) {}
-      final resp = await ApiService.post('$urlString/backupcode/verify', data: {
-        'code': backupCodeController.text,
-        if (clientId != null) 'clientId': clientId,
-      });
+      final resp = await ApiService.post(
+        '$urlString/backupcode/verify',
+        data: {
+          'code': backupCodeController.text,
+          if (clientId != null) 'clientId': clientId,
+        },
+      );
       if (resp.statusCode == 200) {
         setState(() {
           GoRouter.of(context).go('/app/settings/webauthn');
@@ -50,7 +51,9 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
       } else if (resp.statusCode == 429) {
         final waitTime = resp.data['message'];
         setState(() {
-          _waitTime = waitTime is int ? waitTime : int.tryParse(waitTime.toString());
+          _waitTime = waitTime is int
+              ? waitTime
+              : int.tryParse(waitTime.toString());
         });
         _waitTimer?.cancel();
         if (_waitTime != null && _waitTime! > 0) {
@@ -74,6 +77,7 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
       debugPrint('Error fetching backup codes: $e');
     }
   }
+
   final TextEditingController serverController = TextEditingController();
 
   @override
@@ -86,7 +90,7 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
   Widget build(BuildContext context) {
     if (!kIsWeb) return const SizedBox.shrink();
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: Center(
@@ -100,11 +104,17 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Backup Code', style: TextStyle(fontSize: 20, color: colorScheme.onSurface)),
+              Text(
+                'Backup Code',
+                style: TextStyle(fontSize: 20, color: colorScheme.onSurface),
+              ),
               const SizedBox(height: 20),
               Text(
                 'Enter one of your backup codes below to recover your account access. Each code can only be used once.',
-                style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
+                style: TextStyle(
+                  color: colorScheme.onSurfaceVariant,
+                  fontSize: 13,
+                ),
                 textAlign: TextAlign.left,
               ),
               const SizedBox(height: 16),
@@ -124,9 +134,11 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(double.infinity, 45),
                 ),
-                onPressed: (_waitTime != null && _waitTime! > 0) ? null : () {
-                  _verifyBackupCode();
-                },
+                onPressed: (_waitTime != null && _waitTime! > 0)
+                    ? null
+                    : () {
+                        _verifyBackupCode();
+                      },
                 child: (_waitTime != null && _waitTime! > 0)
                     ? Text('Recover your account (${_waitTime!} seconds)')
                     : const Text('Recover your account'),
@@ -138,4 +150,3 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
     );
   }
 }
-

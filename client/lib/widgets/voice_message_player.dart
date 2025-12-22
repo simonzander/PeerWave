@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:just_audio/just_audio.dart';
 import 'package:audioplayers/audioplayers.dart' as ap;
 import 'dart:convert';
@@ -20,7 +21,7 @@ class VoiceMessagePlayer extends StatefulWidget {
     this.durationSeconds,
     this.sizeBytes,
     this.isOwnMessage = false,
-  }) ;
+  });
 
   @override
   State<VoiceMessagePlayer> createState() => _VoiceMessagePlayerState();
@@ -31,14 +32,15 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
   // Use just_audio on other platforms (better web/mobile support)
   AudioPlayer? _justAudioPlayer;
   ap.AudioPlayer? _audioPlayersPlayer;
-  
+
   bool _isPlaying = false;
   Duration _currentPosition = Duration.zero;
   Duration _totalDuration = Duration.zero;
   bool _isLoading = false;
   String? _tempFilePath;
-  
-  bool get _isWindows => !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
+  bool get _isWindows =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
   @override
   void initState() {
@@ -144,26 +146,28 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
       if (kIsWeb) {
         // Web: Try multiple approaches for browser compatibility
         final base64String = base64Encode(audioBytes);
-        
+
         // Try different MIME types in order of browser compatibility
         // Support both Opus (most platforms) and AAC (Windows native)
         final mimeTypes = [
           'audio/webm;codecs=opus', // Best for Chrome
-          'audio/ogg;codecs=opus',  // Good for Firefox
-          'audio/opus',              // Generic Opus fallback
-          'audio/mp4',               // AAC from Windows
-          'audio/aac',               // AAC alternative
+          'audio/ogg;codecs=opus', // Good for Firefox
+          'audio/opus', // Generic Opus fallback
+          'audio/mp4', // AAC from Windows
+          'audio/aac', // AAC alternative
         ];
-        
+
         String? workingUrl;
         Exception? lastError;
-        
+
         for (final mimeType in mimeTypes) {
           try {
             final dataUrl = 'data:$mimeType;base64,$base64String';
             await _justAudioPlayer!.setUrl(dataUrl);
             workingUrl = dataUrl;
-            debugPrint('[VOICE_PLAYER] Audio prepared with MIME type: $mimeType');
+            debugPrint(
+              '[VOICE_PLAYER] Audio prepared with MIME type: $mimeType',
+            );
             break;
           } catch (e) {
             lastError = e as Exception;
@@ -171,18 +175,19 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
             continue;
           }
         }
-        
+
         if (workingUrl != null) {
           _tempFilePath = workingUrl;
         } else {
-          throw lastError ?? Exception('Failed to load audio with any MIME type');
+          throw lastError ??
+              Exception('Failed to load audio with any MIME type');
         }
       } else {
         // Native: Use file system
         // Support multiple formats: .opus (Android/iOS/Linux), .m4a (Windows AAC)
         final tempDir = await getTemporaryDirectory();
         final timestamp = DateTime.now().millisecondsSinceEpoch;
-        
+
         // Detect format from first bytes or use .m4a as universal fallback
         String extension = '.m4a'; // AAC container, widely supported
         if (audioBytes.length > 4) {
@@ -192,7 +197,7 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
             extension = '.opus';
           }
         }
-        
+
         _tempFilePath = '${tempDir.path}/voice_$timestamp$extension';
 
         // Write to file
@@ -210,9 +215,9 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
     } catch (e) {
       debugPrint('[VOICE_PLAYER] Error preparing audio: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading audio: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading audio: $e')));
       }
     } finally {
       if (mounted) {
@@ -266,9 +271,9 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final primaryColor = theme.colorScheme.primary;
-    
-    final displayDuration = _totalDuration.inSeconds > 0 
-        ? _totalDuration 
+
+    final displayDuration = _totalDuration.inSeconds > 0
+        ? _totalDuration
         : Duration(seconds: widget.durationSeconds ?? 0);
 
     final progress = displayDuration.inSeconds > 0
@@ -278,10 +283,14 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: widget.isOwnMessage ? primaryColor.withValues(alpha: 0.15) : theme.colorScheme.surfaceContainerHighest,
+        color: widget.isOwnMessage
+            ? primaryColor.withValues(alpha: 0.15)
+            : theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: widget.isOwnMessage ? primaryColor.withValues(alpha: 0.3) : theme.colorScheme.outline,
+          color: widget.isOwnMessage
+              ? primaryColor.withValues(alpha: 0.3)
+              : theme.colorScheme.outline,
           width: 1,
         ),
       ),
@@ -329,7 +338,11 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                           ? _formatDuration(_currentPosition)
                           : _formatDuration(displayDuration),
                       style: TextStyle(
-                        color: widget.isOwnMessage ? theme.colorScheme.primary : theme.colorScheme.onSurface.withValues(alpha: 0.9),
+                        color: widget.isOwnMessage
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurface.withValues(
+                                alpha: 0.9,
+                              ),
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
@@ -337,7 +350,11 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                     Text(
                       ' / ${_formatDuration(displayDuration)}',
                       style: TextStyle(
-                        color: widget.isOwnMessage ? theme.colorScheme.primary.withValues(alpha: 0.7) : theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        color: widget.isOwnMessage
+                            ? theme.colorScheme.primary.withValues(alpha: 0.7)
+                            : theme.colorScheme.onSurface.withValues(
+                                alpha: 0.6,
+                              ),
                         fontSize: 12,
                       ),
                     ),
@@ -345,13 +362,21 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                       Text(
                         ' • ',
                         style: TextStyle(
-                          color: widget.isOwnMessage ? theme.colorScheme.primary.withValues(alpha: 0.5) : theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                          color: widget.isOwnMessage
+                              ? theme.colorScheme.primary.withValues(alpha: 0.5)
+                              : theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.5,
+                                ),
                         ),
                       ),
                       Text(
                         '${(widget.sizeBytes! / 1024).toStringAsFixed(1)} KB',
                         style: TextStyle(
-                          color: widget.isOwnMessage ? theme.colorScheme.primary.withValues(alpha: 0.7) : theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                          color: widget.isOwnMessage
+                              ? theme.colorScheme.primary.withValues(alpha: 0.7)
+                              : theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.6,
+                                ),
                           fontSize: 12,
                         ),
                       ),
@@ -369,10 +394,10 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
   Widget _buildWaveform(double progress) {
     final theme = Theme.of(context);
     final primaryColor = theme.colorScheme.primary;
-    
+
     // Generate simple waveform bars
     const barCount = 40;
-    
+
     return SizedBox(
       height: 30,
       child: Row(
@@ -381,10 +406,10 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
           // Generate pseudo-random heights for waveform effect
           final seed = widget.base64Audio.hashCode + index;
           final height = 0.3 + ((seed % 70) / 100);
-          
+
           final barProgress = index / barCount;
           final isPlayed = barProgress <= progress;
-          
+
           return Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 1),
@@ -392,7 +417,11 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                 decoration: BoxDecoration(
                   color: isPlayed
                       ? (widget.isOwnMessage ? primaryColor : primaryColor)
-                      : (widget.isOwnMessage ? primaryColor.withValues(alpha: 0.3) : theme.colorScheme.onSurface.withValues(alpha: 0.3)),
+                      : (widget.isOwnMessage
+                            ? primaryColor.withValues(alpha: 0.3)
+                            : theme.colorScheme.onSurface.withValues(
+                                alpha: 0.3,
+                              )),
                   borderRadius: BorderRadius.circular(2),
                 ),
                 height: 30 * height,

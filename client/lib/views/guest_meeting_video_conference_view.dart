@@ -10,7 +10,8 @@ import '../widgets/video_controls_bar.dart';
 import '../models/participant_audio_state.dart';
 
 // Conditional import for web-only storage access
-import '../utils/storage_helper.dart' if (dart.library.io) '../utils/storage_helper_stub.dart';
+import '../utils/storage_helper.dart'
+    if (dart.library.io) '../utils/storage_helper_stub.dart';
 
 /// Minimal video conference view for external guests
 /// No socket connections, no profile loading, no admission controls
@@ -157,7 +158,9 @@ class _GuestMeetingVideoConferenceViewState
           barrierDismissible: false,
           builder: (context) => AlertDialog(
             title: const Text('Meeting Ended'),
-            content: const Text('You have left the meeting. You can close this window.'),
+            content: const Text(
+              'You have left the meeting. You can close this window.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
@@ -415,7 +418,8 @@ class _GuestMeetingVideoConferenceViewState
           displayNameCache: _displayNameCache,
           profilePictureCache: _profilePictureCache,
           maxVisibleParticipants: _maxVisibleParticipants,
-          pendingParticipants: const [], // Guests don't see pending participants
+          pendingParticipants:
+              const [], // Guests don't see pending participants
         );
       },
     );

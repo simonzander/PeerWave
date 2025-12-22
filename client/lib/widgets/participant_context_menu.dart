@@ -53,7 +53,7 @@ class _ParticipantContextMenuContentState
     super.initState();
     final service = VideoConferenceService.instance;
     _audioState = service.getParticipantAudioState(widget.participant.sid);
-    
+
     // Load profile with callback
     final userId = widget.participant.identity;
     final profile = UserProfileService.instance.getProfileOrLoad(
@@ -67,7 +67,7 @@ class _ParticipantContextMenuContentState
         }
       },
     );
-    
+
     // Use cached data if available
     if (profile != null) {
       _displayName = profile['displayName'] as String?;
@@ -268,7 +268,7 @@ class _ParticipantContextMenuState extends State<ParticipantContextMenu> {
     super.initState();
     final service = VideoConferenceService.instance;
     _audioState = service.getParticipantAudioState(widget.participant.sid);
-    
+
     // Load profile with callback
     final userId = widget.participant.identity;
     final profile = UserProfileService.instance.getProfileOrLoad(
@@ -282,7 +282,7 @@ class _ParticipantContextMenuState extends State<ParticipantContextMenu> {
         }
       },
     );
-    
+
     // Use cached data if available
     if (profile != null) {
       _displayName = profile['displayName'] as String?;

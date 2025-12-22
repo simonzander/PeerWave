@@ -64,7 +64,10 @@ class NotificationListenerService {
       }
 
       // Only show notifications for actual content (not system messages)
-      if (type != 'message' && type != 'file' && type != 'voice' && type != 'image') {
+      if (type != 'message' &&
+          type != 'file' &&
+          type != 'voice' &&
+          type != 'image') {
         debugPrint(
           '[NotificationListener] Skipping non-content message type: $type',
         );
@@ -178,7 +181,9 @@ class NotificationListenerService {
     required String message,
     String? messageType,
   }) {
-    debugPrint('[NotificationListener] 💬 Showing 1:1 notification (type: $messageType)');
+    debugPrint(
+      '[NotificationListener] 💬 Showing 1:1 notification (type: $messageType)',
+    );
     NotificationService.instance.notifyNewDirectMessage(
       senderName: senderName,
       messagePreview: message,
@@ -194,7 +199,9 @@ class NotificationListenerService {
     required String message,
     String? messageType,
   }) {
-    debugPrint('[NotificationListener] 💬 Showing group notification (type: $messageType)');
+    debugPrint(
+      '[NotificationListener] 💬 Showing group notification (type: $messageType)',
+    );
 
     // TODO: Fetch actual channel name from service
     final channelName = channelId; // Fallback to ID for now

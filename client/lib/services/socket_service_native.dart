@@ -31,56 +31,61 @@ class SocketService {
   bool _connecting = false;
   bool _listenersRegistered = false;
   Completer<void>? _connectionCompleter;
-  
+
   io.Socket? get socket => _socket;
   bool get isReady => _listenersRegistered && (_socket?.connected ?? false);
-  
+
   bool get isConnected {
     final socketExists = _socket != null;
     final connected = _socket?.connected ?? false;
     final socketId = _socket?.id;
-    
+
     debugPrint('[SOCKET SERVICE] >>> isConnected getter called <<<');
-    debugPrint('[SOCKET SERVICE] socket exists: $socketExists, connected: $connected, id: $socketId');
-    
+    debugPrint(
+      '[SOCKET SERVICE] socket exists: $socketExists, connected: $connected, id: $socketId',
+    );
+
     return connected;
   }
-  
+
   Future<void> connect() async {
     final activeServer = ServerConfigService.getActiveServer();
     if (activeServer == null) {
       debugPrint('[SOCKET SERVICE] No active server configured');
       return;
     }
-    
-    if (_socket != null && _socket!.connected && _currentServerId == activeServer.id) {
+
+    if (_socket != null &&
+        _socket!.connected &&
+        _currentServerId == activeServer.id) {
       debugPrint('[SOCKET SERVICE] Already connected to active server');
       return;
     }
-    
+
     if (_connecting) {
       debugPrint('[SOCKET SERVICE] Connection in progress, waiting...');
       await _connectionCompleter?.future;
       return;
     }
-    
+
     _connecting = true;
     _connectionCompleter = Completer<void>();
-    
+
     try {
       if (_socket != null && _currentServerId != activeServer.id) {
         _socket!.disconnect();
         _socket = null;
       }
-      
+
       debugPrint('[SOCKET SERVICE] Connecting to: ${activeServer.serverUrl}');
       _currentServerId = activeServer.id;
-      
+
       String urlString = activeServer.serverUrl;
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      
+
       _socket = io.io(urlString, <String, dynamic>{
         'transports': ['websocket'],
         'autoConnect': false,
@@ -90,21 +95,29 @@ class SocketService {
         'forceNew': false,
         'timeout': 20000,
       });
-      
+
       _socket!.on('connect', (_) async {
-        debugPrint('[SOCKET SERVICE] ==========================================');
+        debugPrint(
+          '[SOCKET SERVICE] ==========================================',
+        );
         debugPrint('[SOCKET SERVICE] ?? Socket connected event fired');
-        debugPrint('[SOCKET SERVICE]    Socket object exists: ${_socket != null}');
+        debugPrint(
+          '[SOCKET SERVICE]    Socket object exists: ${_socket != null}',
+        );
         debugPrint('[SOCKET SERVICE]    Socket ID: ${_socket?.id}');
-        debugPrint('[SOCKET SERVICE]    Stored listeners count: ${_listeners.length}');
-        debugPrint('[SOCKET SERVICE] ==========================================');
-        
+        debugPrint(
+          '[SOCKET SERVICE]    Stored listeners count: ${_listeners.length}',
+        );
+        debugPrint(
+          '[SOCKET SERVICE] ==========================================',
+        );
+
         // Re-register all stored listeners on connect
         _reregisterAllListeners();
-        
+
         await _authenticate();
       });
-      
+
       _socket!.on('authenticated', (data) {
         debugPrint('[SOCKET SERVICE] ?? Authenticated event received: $data');
         _handleAuthenticated(data);
@@ -112,17 +125,23 @@ class SocketService {
         if (data is Map && data['authenticated'] == true) {
           if (!_connectionCompleter!.isCompleted) {
             _connectionCompleter!.complete();
-            debugPrint('[SOCKET SERVICE] ? Connection and authentication complete');
+            debugPrint(
+              '[SOCKET SERVICE] ? Connection and authentication complete',
+            );
           }
         } else if (data is Map && data['authenticated'] == false) {
-          debugPrint('[SOCKET SERVICE] ? Authentication failed: ${data['error']}');
+          debugPrint(
+            '[SOCKET SERVICE] ? Authentication failed: ${data['error']}',
+          );
           if (!_connectionCompleter!.isCompleted) {
-            _connectionCompleter!.completeError('Authentication failed: ${data['error']}');
+            _connectionCompleter!.completeError(
+              'Authentication failed: ${data['error']}',
+            );
           }
         }
       });
-      
-            _socket!.on('disconnect', (reason) {
+
+      _socket!.on('disconnect', (reason) {
         debugPrint('[SOCKET SERVICE] ? Disconnected: $reason');
         // Don't reset ready state on disconnect - we'll re-send clientReady on reconnect
         // resetReadyState();
@@ -132,8 +151,12 @@ class SocketService {
         await _authenticate();
         // After successful reconnect and auth, notify ready if listeners were registered
         if (_listenersRegistered) {
-          debugPrint('[SOCKET SERVICE] ?? Reconnected - re-sending clientReady');
-          _socket!.emit('clientReady', {'timestamp': DateTime.now().toIso8601String()});
+          debugPrint(
+            '[SOCKET SERVICE] ?? Reconnected - re-sending clientReady',
+          );
+          _socket!.emit('clientReady', {
+            'timestamp': DateTime.now().toIso8601String(),
+          });
         }
       });
       _socket!.on('connect_error', (error) {
@@ -149,7 +172,8 @@ class SocketService {
       });
       _socket!.on('error', (data) {
         debugPrint('[SOCKET SERVICE] Socket error: $data');
-        if (data is Map && (data['message']?.toString().contains('unauthorized') ?? false)) {
+        if (data is Map &&
+            (data['message']?.toString().contains('unauthorized') ?? false)) {
           if (AuthService.isLoggedIn) _socketUnauthorizedCallback?.call();
         }
         // Complete with error if connection fails
@@ -157,16 +181,16 @@ class SocketService {
           _connectionCompleter!.completeError('Socket connection error: $data');
         }
       });
-      
+
       _listeners.forEach((event, callbacks) {
         for (var cb in callbacks) {
           _socket!.on(event, cb);
         }
       });
-      
+
       debugPrint('[SOCKET SERVICE] Starting socket connection...');
       _socket!.connect();
-      
+
       // Wait for authentication to complete (with timeout)
       await _connectionCompleter!.future.timeout(
         Duration(seconds: 10),
@@ -175,8 +199,10 @@ class SocketService {
           throw TimeoutException('Socket connection timeout');
         },
       );
-      
-      debugPrint('[SOCKET SERVICE] ? Connect method completing, socket connected: ${_socket?.connected}');
+
+      debugPrint(
+        '[SOCKET SERVICE] ? Connect method completing, socket connected: ${_socket?.connected}',
+      );
       debugPrint('[SOCKET SERVICE] isConnected getter returns: $isConnected');
       debugPrint('[SOCKET SERVICE] isReady getter returns: $isReady');
     } catch (e) {
@@ -189,29 +215,44 @@ class SocketService {
       _connecting = false;
     }
   }
-  
+
   void _handleAuthenticated(dynamic data) {
     debugPrint('[SOCKET SERVICE] Authenticated: $data');
-    debugPrint('[SOCKET SERVICE] Socket state after auth: connected=${_socket?.connected}, id=${_socket?.id}');
+    debugPrint(
+      '[SOCKET SERVICE] Socket state after auth: connected=${_socket?.connected}, id=${_socket?.id}',
+    );
     if (data is Map && data['authenticated'] == false) {
       if (AuthService.isLoggedIn) _socketUnauthorizedCallback?.call();
       return;
     }
-    if (data is Map && data['authenticated'] == true && data['uuid'] != null && data['deviceId'] != null) {
-      final deviceId = data['deviceId'] is int ? data['deviceId'] : int.parse(data['deviceId'].toString());
+    if (data is Map &&
+        data['authenticated'] == true &&
+        data['uuid'] != null &&
+        data['deviceId'] != null) {
+      final deviceId = data['deviceId'] is int
+          ? data['deviceId']
+          : int.parse(data['deviceId'].toString());
       SignalService.instance.setCurrentUserInfo(data['uuid'], deviceId);
-      debugPrint('[SOCKET SERVICE] User info set, socket still connected: ${_socket?.connected}');
-      
+      debugPrint(
+        '[SOCKET SERVICE] User info set, socket still connected: ${_socket?.connected}',
+      );
+
       // ?? CRITICAL: If listeners are already registered, notify server immediately after auth
       if (_listenersRegistered) {
-        debugPrint('[SOCKET SERVICE] ?? Authentication complete & listeners registered - notifying server');
-        _socket!.emit('clientReady', {'timestamp': DateTime.now().toIso8601String()});
+        debugPrint(
+          '[SOCKET SERVICE] ?? Authentication complete & listeners registered - notifying server',
+        );
+        _socket!.emit('clientReady', {
+          'timestamp': DateTime.now().toIso8601String(),
+        });
       } else {
-        debugPrint('[SOCKET SERVICE] Authentication complete but listeners not yet registered - will notify when ready');
+        debugPrint(
+          '[SOCKET SERVICE] Authentication complete but listeners not yet registered - will notify when ready',
+        );
       }
     }
   }
-  
+
   Future<void> _authenticate() async {
     try {
       debugPrint('[SOCKET SERVICE] Starting authentication...');
@@ -222,9 +263,13 @@ class SocketService {
         requestPath: '/socket.io/auth',
         requestBody: null,
       );
-      debugPrint('[SOCKET SERVICE] Generated auth headers, emitting authenticate event');
+      debugPrint(
+        '[SOCKET SERVICE] Generated auth headers, emitting authenticate event',
+      );
       _socket!.emit('authenticate', authHeaders);
-      debugPrint('[SOCKET SERVICE] Authenticate event emitted, waiting for response...');
+      debugPrint(
+        '[SOCKET SERVICE] Authenticate event emitted, waiting for response...',
+      );
     } catch (e) {
       debugPrint('[SOCKET SERVICE] ? Auth error: $e');
       rethrow;
@@ -240,67 +285,94 @@ class SocketService {
 
   void registerListener(String event, Function(dynamic) callback) {
     debugPrint('[SOCKET SERVICE] ?? registerListener called for event: $event');
-    debugPrint('[SOCKET SERVICE]    Socket exists: ${_socket != null}, connected: ${_socket?.connected}');
-    
+    debugPrint(
+      '[SOCKET SERVICE]    Socket exists: ${_socket != null}, connected: ${_socket?.connected}',
+    );
+
     final callbacks = _listeners.putIfAbsent(event, () => []);
     if (!callbacks.contains(callback)) {
       callbacks.add(callback);
-      debugPrint('[SOCKET SERVICE]    ? Callback stored in _listeners map (total for $event: ${callbacks.length})');
-      
+      debugPrint(
+        '[SOCKET SERVICE]    ? Callback stored in _listeners map (total for $event: ${callbacks.length})',
+      );
+
       // Only register immediately if socket is connected
       if (_socket?.connected ?? false) {
         _socket!.on(event, callback);
-        debugPrint('[SOCKET SERVICE]    ? Callback registered on socket immediately');
+        debugPrint(
+          '[SOCKET SERVICE]    ? Callback registered on socket immediately',
+        );
       } else {
-        debugPrint('[SOCKET SERVICE]    ? Socket not connected, callback stored for later registration');
+        debugPrint(
+          '[SOCKET SERVICE]    ? Socket not connected, callback stored for later registration',
+        );
       }
     } else {
-      debugPrint('[SOCKET SERVICE]    ??  Callback already registered for event: $event');
+      debugPrint(
+        '[SOCKET SERVICE]    ??  Callback already registered for event: $event',
+      );
     }
   }
-  
+
   /// Re-register all stored listeners on the socket
   /// Called when socket connects/reconnects
   void _reregisterAllListeners() {
     if (_socket == null) {
-      debugPrint('[SOCKET SERVICE] ??  Cannot re-register listeners - socket is null');
+      debugPrint(
+        '[SOCKET SERVICE] ??  Cannot re-register listeners - socket is null',
+      );
       return;
     }
-    
-    debugPrint('[SOCKET SERVICE] ?? Re-registering ${_listeners.length} event listeners...');
+
+    debugPrint(
+      '[SOCKET SERVICE] ?? Re-registering ${_listeners.length} event listeners...',
+    );
     int totalCallbacks = 0;
-    
+
     _listeners.forEach((event, callbacks) {
-      debugPrint('[SOCKET SERVICE]    Re-registering $event (${callbacks.length} callbacks)');
+      debugPrint(
+        '[SOCKET SERVICE]    Re-registering $event (${callbacks.length} callbacks)',
+      );
       for (final callback in callbacks) {
         _socket!.on(event, callback);
         totalCallbacks++;
       }
     });
-    
-    debugPrint('[SOCKET SERVICE] ? Re-registered $totalCallbacks total callbacks across ${_listeners.length} events');
+
+    debugPrint(
+      '[SOCKET SERVICE] ? Re-registered $totalCallbacks total callbacks across ${_listeners.length} events',
+    );
   }
-  
+
   void notifyClientReady() {
-    debugPrint('[SOCKET SERVICE] notifyClientReady called - socket connected: ${_socket?.connected}, isConnected: $isConnected');
+    debugPrint(
+      '[SOCKET SERVICE] notifyClientReady called - socket connected: ${_socket?.connected}, isConnected: $isConnected',
+    );
     if (_socket?.connected ?? false) {
       _listenersRegistered = true;
       debugPrint('[SOCKET SERVICE] ?? Client ready - notifying server');
-      _socket!.emit('clientReady', {'timestamp': DateTime.now().toIso8601String()});
+      _socket!.emit('clientReady', {
+        'timestamp': DateTime.now().toIso8601String(),
+      });
     } else {
-      debugPrint('[SOCKET SERVICE] ?? Cannot notify ready - socket not connected');
+      debugPrint(
+        '[SOCKET SERVICE] ?? Cannot notify ready - socket not connected',
+      );
       debugPrint('[SOCKET SERVICE] Socket object exists: ${_socket != null}');
       if (_socket != null) {
-        debugPrint('[SOCKET SERVICE] Socket ID: ${_socket!.id}, Connected: ${_socket!.connected}');
+        debugPrint(
+          '[SOCKET SERVICE] Socket ID: ${_socket!.id}, Connected: ${_socket!.connected}',
+        );
       }
     }
   }
-  
+
   void resetReadyState() => _listenersRegistered = false;
   void unregisterListener(String event, Function(dynamic) callback) {
     _listeners[event]?.remove(callback);
     _socket?.off(event, callback);
   }
+
   void emit(String event, dynamic data) => _socket?.emit(event, data);
   void authenticate() => _authenticate();
 }

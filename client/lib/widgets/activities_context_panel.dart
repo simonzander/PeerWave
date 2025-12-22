@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import '../services/socket_service.dart' if (dart.library.io) '../services/socket_service_native.dart';
+import '../services/socket_service.dart'
+    if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/user_profile_service.dart';
 
 /// Activities Context Panel - Notification List
-/// 
+///
 /// Shows real-time notifications from Signal Protocol messages
 /// Similar to Facebook notifications - displays activity feed
 class ActivitiesContextPanel extends StatefulWidget {
   final String host;
   final Function(String type, Map<String, dynamic> data)? onNotificationTap;
-  
+
   const ActivitiesContextPanel({
     super.key,
     required this.host,
@@ -25,20 +26,20 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
   final List<NotificationItem> _notifications = [];
   StreamSubscription? _socketSubscription;
   bool _isLoading = true;
-  
+
   @override
   void initState() {
     super.initState();
     _initializeNotifications();
     _listenToSocketEvents();
   }
-  
+
   @override
   void dispose() {
     _socketSubscription?.cancel();
     super.dispose();
   }
-  
+
   Future<void> _initializeNotifications() async {
     // Load initial notifications from storage or API
     // For now, just set loading to false
@@ -49,17 +50,17 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
       });
     }
   }
-  
+
   void _listenToSocketEvents() {
     final socketService = SocketService();
     if (socketService.socket == null) {
       debugPrint('[ACTIVITIES_PANEL] Socket not connected');
       return;
     }
-    
+
     // Listen to various Signal Protocol message types
     final socket = socketService.socket!;
-    
+
     // New message notification
     socket.on('signal:message', (data) {
       _handleNotification(
@@ -71,19 +72,20 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
         data: data,
       );
     });
-    
+
     // New group message
     socket.on('signal:groupMessage', (data) {
       _handleNotification(
         type: NotificationType.groupMessage,
         title: 'New group message',
-        message: data['preview'] ?? 'Message in ${data['channelName'] ?? 'group'}',
+        message:
+            data['preview'] ?? 'Message in ${data['channelName'] ?? 'group'}',
         sender: data['sender'],
         timestamp: DateTime.now(),
         data: data,
       );
     });
-    
+
     // File share notification
     socket.on('signal:fileShared', (data) {
       _handleNotification(
@@ -95,7 +97,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
         data: data,
       );
     });
-    
+
     // Channel invitation
     socket.on('signal:channelInvite', (data) {
       _handleNotification(
@@ -107,7 +109,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
         data: data,
       );
     });
-    
+
     // Call notification
     socket.on('signal:call', (data) {
       _handleNotification(
@@ -119,7 +121,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
         data: data,
       );
     });
-    
+
     // Mention notification
     socket.on('signal:mention', (data) {
       _handleNotification(
@@ -131,7 +133,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
         data: data,
       );
     });
-    
+
     // Reaction notification
     socket.on('signal:reaction', (data) {
       _handleNotification(
@@ -144,7 +146,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
       );
     });
   }
-  
+
   void _handleNotification({
     required NotificationType type,
     required String title,
@@ -154,7 +156,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
     required dynamic data,
   }) {
     if (!mounted) return;
-    
+
     final notification = NotificationItem(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       type: type,
@@ -165,7 +167,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
       isRead: false,
       data: data,
     );
-    
+
     setState(() {
       _notifications.insert(0, notification);
       // Keep only last 100 notifications
@@ -174,7 +176,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
       }
     });
   }
-  
+
   void _markAsRead(String id) {
     setState(() {
       final index = _notifications.indexWhere((n) => n.id == id);
@@ -183,17 +185,17 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
       }
     });
   }
-  
+
   void _clearAll() {
     setState(() {
       _notifications.clear();
     });
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Column(
       children: [
         // Header
@@ -201,24 +203,18 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             border: Border(
-              bottom: BorderSide(
-                color: colorScheme.outlineVariant,
-                width: 1,
-              ),
+              bottom: BorderSide(color: colorScheme.outlineVariant, width: 1),
             ),
           ),
           child: Row(
             children: [
-              Icon(
-                Icons.notifications,
-                color: colorScheme.primary,
-              ),
+              Icon(Icons.notifications, color: colorScheme.primary),
               const SizedBox(width: 8),
               Text(
                 'Notifications',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
               const Spacer(),
               if (_notifications.isNotEmpty)
@@ -229,24 +225,24 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
             ],
           ),
         ),
-        
+
         // Notifications list
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
               : _notifications.isEmpty
-                  ? _buildEmptyState()
-                  : ListView.builder(
-                      itemCount: _notifications.length,
-                      itemBuilder: (context, index) {
-                        return _buildNotificationItem(_notifications[index]);
-                      },
-                    ),
+              ? _buildEmptyState()
+              : ListView.builder(
+                  itemCount: _notifications.length,
+                  itemBuilder: (context, index) {
+                    return _buildNotificationItem(_notifications[index]);
+                  },
+                ),
         ),
       ],
     );
   }
-  
+
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -255,14 +251,18 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
           Icon(
             Icons.notifications_none,
             size: 64,
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.4),
           ),
           const SizedBox(height: 16),
           Text(
             'No notifications',
             style: TextStyle(
               fontSize: 18,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
             ),
           ),
           const SizedBox(height: 8),
@@ -270,43 +270,44 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
             'You\'re all caught up!',
             style: TextStyle(
               fontSize: 14,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.5),
             ),
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildNotificationItem(NotificationItem notification) {
     final colorScheme = Theme.of(context).colorScheme;
     final userProfileService = UserProfileService.instance;
-    
+
     // Load sender profile if not cached
-    if (notification.senderUuid != null && 
+    if (notification.senderUuid != null &&
         !userProfileService.isProfileCached(notification.senderUuid!)) {
       userProfileService.loadProfiles([notification.senderUuid!]);
     }
-    
+
     final senderName = notification.senderUuid != null
         ? userProfileService.getDisplayName(notification.senderUuid!)
         : null;
     final senderPicture = notification.senderUuid != null
         ? userProfileService.getPicture(notification.senderUuid!)
         : null;
-    
+
     return InkWell(
       onTap: () {
         _markAsRead(notification.id);
         if (widget.onNotificationTap != null) {
-          widget.onNotificationTap!(
-            notification.type.name,
-            notification.data,
-          );
+          widget.onNotificationTap!(notification.type.name, notification.data);
         }
       },
       child: Container(
-        color: notification.isRead ? null : colorScheme.primaryContainer.withValues(alpha: 0.1),
+        color: notification.isRead
+            ? null
+            : colorScheme.primaryContainer.withValues(alpha: 0.1),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           border: Border(
@@ -322,7 +323,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
             // Avatar or icon
             _buildNotificationIcon(notification, senderPicture),
             const SizedBox(width: 12),
-            
+
             // Content
             Expanded(
               child: Column(
@@ -346,14 +347,16 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
                           notification.title,
                           style: TextStyle(
                             fontSize: 13,
-                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.7),
                           ),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  
+
                   // Message
                   Text(
                     notification.message,
@@ -362,19 +365,21 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
-                  
+
                   // Timestamp
                   Text(
                     _formatTimestamp(notification.timestamp),
                     style: TextStyle(
                       fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                 ],
               ),
             ),
-            
+
             // Unread indicator
             if (!notification.isRead)
               Container(
@@ -391,10 +396,13 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
       ),
     );
   }
-  
-  Widget _buildNotificationIcon(NotificationItem notification, String? senderPicture) {
+
+  Widget _buildNotificationIcon(
+    NotificationItem notification,
+    String? senderPicture,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     // Show sender picture if available
     if (senderPicture != null && senderPicture.isNotEmpty) {
       return CircleAvatar(
@@ -403,12 +411,12 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
         onBackgroundImageError: (_, _) {},
       );
     }
-    
+
     // Otherwise show icon based on notification type
     IconData icon;
     Color backgroundColor;
     Color iconColor;
-    
+
     switch (notification.type) {
       case NotificationType.message:
         icon = Icons.message;
@@ -446,18 +454,18 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
         iconColor = colorScheme.onErrorContainer;
         break;
     }
-    
+
     return CircleAvatar(
       radius: 20,
       backgroundColor: backgroundColor,
       child: Icon(icon, size: 20, color: iconColor),
     );
   }
-  
+
   String _formatTimestamp(DateTime timestamp) {
     final now = DateTime.now();
     final diff = now.difference(timestamp);
-    
+
     if (diff.inMinutes < 1) {
       return 'Just now';
     } else if (diff.inMinutes < 60) {
@@ -482,7 +490,7 @@ class NotificationItem {
   final DateTime timestamp;
   final bool isRead;
   final dynamic data;
-  
+
   NotificationItem({
     required this.id,
     required this.type,
@@ -493,7 +501,7 @@ class NotificationItem {
     required this.isRead,
     required this.data,
   });
-  
+
   NotificationItem copyWith({
     String? id,
     NotificationType? type,

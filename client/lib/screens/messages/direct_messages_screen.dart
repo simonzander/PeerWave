@@ -326,7 +326,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
       final dataMap = data as Map<String, dynamic>?;
       final userId = dataMap?['userId'] as String?;
-      
+
       // If this conversation's messages were deleted, clear the UI
       if (userId == widget.recipientUuid) {
         debugPrint(

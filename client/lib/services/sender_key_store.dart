@@ -14,10 +14,10 @@ class PermanentSenderKeyStore extends SenderKeyStore {
 
   static Future<PermanentSenderKeyStore> create() async {
     final store = PermanentSenderKeyStore();
-    
+
     // Device-scoped database will be created automatically by DeviceScopedStorageService
     // on first putEncrypted() call. No need to pre-create the database.
-    
+
     if (!kIsWeb) {
       // Initialize secure storage for native platforms
       final storage = FlutterSecureStorage();
@@ -26,7 +26,7 @@ class PermanentSenderKeyStore extends SenderKeyStore {
         await storage.write(key: 'sender_key_list', value: jsonEncode([]));
       }
     }
-    
+
     return store;
   }
 
@@ -36,7 +36,10 @@ class PermanentSenderKeyStore extends SenderKeyStore {
   }
 
   @override
-  Future<void> storeSenderKey(SenderKeyName senderKeyName, SenderKeyRecord record) async {
+  Future<void> storeSenderKey(
+    SenderKeyName senderKeyName,
+    SenderKeyRecord record,
+  ) async {
     final key = _getStorageKey(senderKeyName);
     final serialized = base64Encode(record.serialize());
 
@@ -51,9 +54,13 @@ class PermanentSenderKeyStore extends SenderKeyStore {
     if (kIsWeb) {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
-      
+
       // Get existing metadata to preserve messageCount
-      final existingMetadata = await storage.getDecrypted(_storeName, _storeName, metadataKey);
+      final existingMetadata = await storage.getDecrypted(
+        _storeName,
+        _storeName,
+        metadataKey,
+      );
       if (existingMetadata != null) {
         try {
           final existing = jsonDecode(existingMetadata);
@@ -62,12 +69,19 @@ class PermanentSenderKeyStore extends SenderKeyStore {
           // Ignore parse errors, use default metadata
         }
       }
-      
+
       // Store encrypted sender key and metadata
       await storage.putEncrypted(_storeName, _storeName, key, serialized);
-      await storage.putEncrypted(_storeName, _storeName, metadataKey, jsonEncode(metadata));
-      
-      debugPrint('[SENDER_KEY_STORE] Stored encrypted sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
+      await storage.putEncrypted(
+        _storeName,
+        _storeName,
+        metadataKey,
+        jsonEncode(metadata),
+      );
+
+      debugPrint(
+        '[SENDER_KEY_STORE] Stored encrypted sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}',
+      );
     } else {
       final storage = FlutterSecureStorage();
       await storage.write(key: key, value: serialized);
@@ -82,18 +96,22 @@ class PermanentSenderKeyStore extends SenderKeyStore {
           // Ignore parse errors, use default metadata
         }
       }
-      
+
       await storage.write(key: metadataKey, value: jsonEncode(metadata));
 
       // Update key list
       String? keysJson = await storage.read(key: 'sender_key_list');
-      List<String> keys = keysJson != null ? List<String>.from(jsonDecode(keysJson)) : [];
+      List<String> keys = keysJson != null
+          ? List<String>.from(jsonDecode(keysJson))
+          : [];
       if (!keys.contains(key)) {
         keys.add(key);
         await storage.write(key: 'sender_key_list', value: jsonEncode(keys));
       }
-      
-      debugPrint('[SENDER_KEY_STORE] Stored sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
+
+      debugPrint(
+        '[SENDER_KEY_STORE] Stored sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}',
+      );
     }
   }
 
@@ -109,24 +127,32 @@ class PermanentSenderKeyStore extends SenderKeyStore {
       if (value != null) {
         final bytes = base64Decode(value);
         final record = SenderKeyRecord.fromSerialized(bytes);
-        debugPrint('[SENDER_KEY_STORE] Loaded encrypted sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
+        debugPrint(
+          '[SENDER_KEY_STORE] Loaded encrypted sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}',
+        );
         return record;
       }
       // Return new empty record if not found (required by libsignal API)
-      debugPrint('[SENDER_KEY_STORE] No sender key found for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}, returning empty record');
+      debugPrint(
+        '[SENDER_KEY_STORE] No sender key found for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}, returning empty record',
+      );
       return SenderKeyRecord();
     } else {
       final storage = FlutterSecureStorage();
       var value = await storage.read(key: key);
-      
+
       if (value != null) {
         final bytes = base64Decode(value);
         final record = SenderKeyRecord.fromSerialized(bytes);
-        debugPrint('[SENDER_KEY_STORE] Loaded sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
+        debugPrint(
+          '[SENDER_KEY_STORE] Loaded sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}',
+        );
         return record;
       }
       // Return new empty record if not found (required by libsignal API)
-      debugPrint('[SENDER_KEY_STORE] No sender key found for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}, returning empty record');
+      debugPrint(
+        '[SENDER_KEY_STORE] No sender key found for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}, returning empty record',
+      );
       return SenderKeyRecord();
     }
   }
@@ -134,7 +160,7 @@ class PermanentSenderKeyStore extends SenderKeyStore {
   /// Check if sender key exists
   Future<bool> containsSenderKey(SenderKeyName senderKeyName) async {
     final key = _getStorageKey(senderKeyName);
-    
+
     if (kIsWeb) {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
@@ -155,8 +181,10 @@ class PermanentSenderKeyStore extends SenderKeyStore {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
       await storage.deleteEncrypted(_storeName, _storeName, key);
-      
-      debugPrint('[SENDER_KEY_STORE] Removed encrypted sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
+
+      debugPrint(
+        '[SENDER_KEY_STORE] Removed encrypted sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}',
+      );
     } else {
       final storage = FlutterSecureStorage();
       await storage.delete(key: key);
@@ -168,8 +196,10 @@ class PermanentSenderKeyStore extends SenderKeyStore {
         keys.remove(key);
         await storage.write(key: 'sender_key_list', value: jsonEncode(keys));
       }
-      
-      debugPrint('[SENDER_KEY_STORE] Removed sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}');
+
+      debugPrint(
+        '[SENDER_KEY_STORE] Removed sender key for group ${senderKeyName.groupId}, sender ${senderKeyName.sender.getName()}:${senderKeyName.sender.getDeviceId()}',
+      );
     }
   }
 
@@ -178,33 +208,41 @@ class PermanentSenderKeyStore extends SenderKeyStore {
     if (kIsWeb) {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
-      
+
       // Get all keys and filter by group
       final allKeys = await storage.getAllKeys(_storeName, _storeName);
-      final groupKeys = allKeys.where((k) => k.contains('$_keyPrefix$groupId}_'));
-      
+      final groupKeys = allKeys.where(
+        (k) => k.contains('$_keyPrefix$groupId}_'),
+      );
+
       for (final key in groupKeys) {
         await storage.deleteEncrypted(_storeName, _storeName, key);
       }
-      
-      debugPrint('[SENDER_KEY_STORE] Cleared all encrypted sender keys for group $groupId');
+
+      debugPrint(
+        '[SENDER_KEY_STORE] Cleared all encrypted sender keys for group $groupId',
+      );
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'sender_key_list');
-      
+
       if (keysJson != null) {
         List<String> keys = List<String>.from(jsonDecode(keysJson));
-        final groupKeys = keys.where((k) => k.contains('$_keyPrefix$groupId}_')).toList();
-        
+        final groupKeys = keys
+            .where((k) => k.contains('$_keyPrefix$groupId}_'))
+            .toList();
+
         for (final key in groupKeys) {
           await storage.delete(key: key);
           keys.remove(key);
         }
-        
+
         await storage.write(key: 'sender_key_list', value: jsonEncode(keys));
       }
-      
-      debugPrint('[SENDER_KEY_STORE] Cleared all sender keys for group $groupId');
+
+      debugPrint(
+        '[SENDER_KEY_STORE] Cleared all sender keys for group $groupId',
+      );
     }
   }
 
@@ -212,36 +250,36 @@ class PermanentSenderKeyStore extends SenderKeyStore {
   /// Used when Identity Key is regenerated - all SenderKeys become invalid
   Future<void> deleteAllSenderKeys() async {
     debugPrint('[SENDER_KEY_STORE] Deleting ALL sender keys...');
-    
+
     if (kIsWeb) {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
-      
+
       // Get all keys and delete sender keys
       final allKeys = await storage.getAllKeys(_storeName, _storeName);
       final senderKeys = allKeys.where((k) => k.startsWith(_keyPrefix));
-      
+
       int deletedCount = 0;
       for (final key in senderKeys) {
         await storage.deleteEncrypted(_storeName, _storeName, key);
         deletedCount++;
       }
-      
+
       debugPrint('[SENDER_KEY_STORE] ✓ Deleted $deletedCount sender keys');
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'sender_key_list');
-      
+
       if (keysJson != null) {
         List<String> keys = List<String>.from(jsonDecode(keysJson));
         int deletedCount = keys.length;
-        
+
         for (final key in keys) {
           await storage.delete(key: key);
           // Also delete metadata
           await storage.delete(key: '${key}_metadata');
         }
-        
+
         // Clear the list
         await storage.write(key: 'sender_key_list', value: jsonEncode([]));
         debugPrint('[SENDER_KEY_STORE] ✓ Deleted $deletedCount sender keys');
@@ -258,10 +296,10 @@ class PermanentSenderKeyStore extends SenderKeyStore {
     if (kIsWeb) {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
-      
+
       // Get all keys and extract group IDs
       final allKeys = await storage.getAllKeys(_storeName, _storeName);
-      
+
       for (final key in allKeys) {
         if (key.startsWith(_keyPrefix) && !key.endsWith('_metadata')) {
           // Extract groupId from key format: sender_key_<groupId>_<userId>_<deviceId>
@@ -274,7 +312,7 @@ class PermanentSenderKeyStore extends SenderKeyStore {
     } else {
       final storage = FlutterSecureStorage();
       String? keysJson = await storage.read(key: 'sender_key_list');
-      
+
       if (keysJson != null) {
         List<String> keys = List<String>.from(jsonDecode(keysJson));
         for (final key in keys) {
@@ -299,17 +337,26 @@ class PermanentSenderKeyStore extends SenderKeyStore {
     if (kIsWeb) {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
-      
-      final metadataValue = await storage.getDecrypted(_storeName, _storeName, metadataKey);
+
+      final metadataValue = await storage.getDecrypted(
+        _storeName,
+        _storeName,
+        metadataKey,
+      );
       if (metadataValue != null) {
         final metadata = jsonDecode(metadataValue);
         metadata['messageCount'] = (metadata['messageCount'] ?? 0) + 1;
-        await storage.putEncrypted(_storeName, _storeName, metadataKey, jsonEncode(metadata));
+        await storage.putEncrypted(
+          _storeName,
+          _storeName,
+          metadataKey,
+          jsonEncode(metadata),
+        );
       }
     } else {
       final storage = FlutterSecureStorage();
       String? metadataJson = await storage.read(key: metadataKey);
-      
+
       if (metadataJson != null) {
         final metadata = jsonDecode(metadataJson);
         metadata['messageCount'] = (metadata['messageCount'] ?? 0) + 1;
@@ -328,15 +375,19 @@ class PermanentSenderKeyStore extends SenderKeyStore {
     if (kIsWeb) {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
-      
-      final metadataValue = await storage.getDecrypted(_storeName, _storeName, metadataKey);
+
+      final metadataValue = await storage.getDecrypted(
+        _storeName,
+        _storeName,
+        metadataKey,
+      );
       if (metadataValue != null) {
         metadata = jsonDecode(metadataValue);
       }
     } else {
       final storage = FlutterSecureStorage();
       String? metadataJson = await storage.read(key: metadataKey);
-      
+
       if (metadataJson != null) {
         metadata = jsonDecode(metadataJson);
       }
@@ -347,17 +398,23 @@ class PermanentSenderKeyStore extends SenderKeyStore {
     }
 
     // Check age (7 days = 604800 seconds)
-    final lastRotation = DateTime.parse(metadata['lastRotation'] ?? metadata['createdAt']);
+    final lastRotation = DateTime.parse(
+      metadata['lastRotation'] ?? metadata['createdAt'],
+    );
     final age = DateTime.now().difference(lastRotation);
     if (age.inDays >= 7) {
-      debugPrint('[SENDER_KEY_STORE] Sender key age: ${age.inDays} days - rotation needed');
+      debugPrint(
+        '[SENDER_KEY_STORE] Sender key age: ${age.inDays} days - rotation needed',
+      );
       return true;
     }
 
     // Check message count (1000 messages)
     final messageCount = metadata['messageCount'] ?? 0;
     if (messageCount >= 1000) {
-      debugPrint('[SENDER_KEY_STORE] Sender key message count: $messageCount - rotation needed');
+      debugPrint(
+        '[SENDER_KEY_STORE] Sender key message count: $messageCount - rotation needed',
+      );
       return true;
     }
 
@@ -372,29 +429,41 @@ class PermanentSenderKeyStore extends SenderKeyStore {
     if (kIsWeb) {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
-      
-      final metadataValue = await storage.getDecrypted(_storeName, _storeName, metadataKey);
+
+      final metadataValue = await storage.getDecrypted(
+        _storeName,
+        _storeName,
+        metadataKey,
+      );
       if (metadataValue != null) {
         final metadata = jsonDecode(metadataValue);
         metadata['lastRotation'] = DateTime.now().toIso8601String();
         metadata['messageCount'] = 0; // Reset counter
-        await storage.putEncrypted(_storeName, _storeName, metadataKey, jsonEncode(metadata));
+        await storage.putEncrypted(
+          _storeName,
+          _storeName,
+          metadataKey,
+          jsonEncode(metadata),
+        );
       }
-      
-      debugPrint('[SENDER_KEY_STORE] Updated rotation timestamp for group ${senderKeyName.groupId}');
+
+      debugPrint(
+        '[SENDER_KEY_STORE] Updated rotation timestamp for group ${senderKeyName.groupId}',
+      );
     } else {
       final storage = FlutterSecureStorage();
       String? metadataJson = await storage.read(key: metadataKey);
-      
+
       if (metadataJson != null) {
         final metadata = jsonDecode(metadataJson);
         metadata['lastRotation'] = DateTime.now().toIso8601String();
         metadata['messageCount'] = 0; // Reset counter
         await storage.write(key: metadataKey, value: jsonEncode(metadata));
       }
-      
-      debugPrint('[SENDER_KEY_STORE] Updated rotation timestamp for group ${senderKeyName.groupId}');
+
+      debugPrint(
+        '[SENDER_KEY_STORE] Updated rotation timestamp for group ${senderKeyName.groupId}',
+      );
     }
   }
 }
-

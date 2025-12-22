@@ -55,9 +55,7 @@ class _SystemTraySettingsPageState extends State<SystemTraySettingsPage> {
     if (kIsWeb) {
       return Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
-        appBar: AppBar(
-          title: const Text('System Tray Settings'),
-        ),
+        appBar: AppBar(title: const Text('System Tray Settings')),
         body: const Center(
           child: Text('System tray is only available on desktop platforms'),
         ),
@@ -66,9 +64,7 @@ class _SystemTraySettingsPageState extends State<SystemTraySettingsPage> {
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      appBar: AppBar(
-        title: const Text('System Tray Settings'),
-      ),
+      appBar: AppBar(title: const Text('System Tray Settings')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(

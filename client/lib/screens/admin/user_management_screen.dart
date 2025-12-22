@@ -65,7 +65,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   Future<void> _assignRole(UserInfo user, Role role) async {
     try {
       await _userService.assignServerRole(user.uuid, role.uuid);
-      _showSuccess('Role "${role.name}" assigned to ${user.displayName ?? user.email}');
+      _showSuccess(
+        'Role "${role.name}" assigned to ${user.displayName ?? user.email}',
+      );
       await _loadUserRoles(user.uuid);
     } catch (e) {
       _showError('Failed to assign role: $e');
@@ -75,7 +77,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   Future<void> _removeRole(UserInfo user, Role role) async {
     try {
       await _userService.removeServerRole(user.uuid, role.uuid);
-      _showSuccess('Role "${role.name}" removed from ${user.displayName ?? user.email}');
+      _showSuccess(
+        'Role "${role.name}" removed from ${user.displayName ?? user.email}',
+      );
       await _loadUserRoles(user.uuid);
     } catch (e) {
       _showError('Failed to remove role: $e');
@@ -141,7 +145,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: isActive ? Theme.of(context).colorScheme.tertiary : Theme.of(context).colorScheme.primary,
+              backgroundColor: isActive
+                  ? Theme.of(context).colorScheme.tertiary
+                  : Theme.of(context).colorScheme.primary,
             ),
             onPressed: () async {
               Navigator.of(context).pop();
@@ -250,137 +256,164 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       appBar: AppBar(
         title: const Text('User Management'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData),
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('Error: $_errorMessage'),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadData,
-                        child: const Text('Retry'),
-                      ),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Error: $_errorMessage'),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _loadData,
+                    child: const Text('Retry'),
                   ),
-                )
-              : _users.isEmpty
-                  ? const Center(child: Text('No users found'))
-                  : ListView.builder(
-                      itemCount: _users.length,
-                      itemBuilder: (context, index) {
-                        final user = _users[index];
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
+                ],
+              ),
+            )
+          : _users.isEmpty
+          ? const Center(child: Text('No users found'))
+          : ListView.builder(
+              itemCount: _users.length,
+              itemBuilder: (context, index) {
+                final user = _users[index];
+                return Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: user.active
+                          ? null
+                          : Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHighest,
+                      child: Text(
+                        (user.displayName ?? user.email)
+                            .substring(0, 1)
+                            .toUpperCase(),
+                      ),
+                    ),
+                    title: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            user.displayName ?? user.email,
+                            style: TextStyle(
+                              color: user.active
+                                  ? null
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                            ),
                           ),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: user.active ? null : Theme.of(context).colorScheme.surfaceContainerHighest,
-                              child: Text(
-                                (user.displayName ?? user.email)
-                                    .substring(0, 1)
-                                    .toUpperCase(),
+                        ),
+                        if (!user.active)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              'INACTIVE',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                             ),
-                            title: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    user.displayName ?? user.email,
-                                    style: TextStyle(
-                                      color: user.active ? null : Theme.of(context).colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
-                                if (!user.active)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Text(
-                                      'INACTIVE',
+                          ),
+                      ],
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          user.email,
+                          style: TextStyle(
+                            color: user.active
+                                ? null
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        if (user.roles != null && user.roles!.isNotEmpty)
+                          Wrap(
+                            spacing: 4,
+                            children: user.roles!
+                                .map(
+                                  (role) => Chip(
+                                    label: Text(
+                                      role.name,
                                       style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                        fontSize: 12,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onPrimaryContainer,
                                       ),
                                     ),
+                                    backgroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.primaryContainer,
                                   ),
-                              ],
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  user.email,
-                                  style: TextStyle(
-                                    color: user.active ? null : Theme.of(context).colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                if (user.roles != null && user.roles!.isNotEmpty)
-                                  Wrap(
-                                    spacing: 4,
-                                    children: user.roles!
-                                        .map((role) => Chip(
-                                              label: Text(
-                                                role.name,
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                                                ),
-                                              ),
-                                              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                                            ))
-                                        .toList(),
-                                  ),
-                              ],
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (roleProvider.hasServerPermission('role.assign'))
-                                  IconButton(
-                                    icon: const Icon(Icons.admin_panel_settings),
-                                    onPressed: () => _showManageRolesDialog(user),
-                                    tooltip: 'Manage Roles',
-                                  ),
-                                if (roleProvider.hasServerPermission('user.manage'))
-                                  IconButton(
-                                    icon: Icon(
-                                      user.active ? Icons.person_off : Icons.person_add,
-                                      color: user.active ? Theme.of(context).colorScheme.tertiary : Theme.of(context).colorScheme.primary,
-                                    ),
-                                    onPressed: () => _showActivateDeactivateDialog(user),
-                                    tooltip: user.active ? 'Deactivate User' : 'Activate User',
-                                  ),
-                                if (roleProvider.hasServerPermission('user.manage'))
-                                  IconButton(
-                                    icon: Icon(Icons.delete, color: Theme.of(context).colorScheme.error),
-                                    onPressed: () => _showDeleteUserDialog(user),
-                                    tooltip: 'Delete User',
-                                  ),
-                              ],
-                            ),
+                                )
+                                .toList(),
                           ),
-                        );
-                      },
+                      ],
                     ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (roleProvider.hasServerPermission('role.assign'))
+                          IconButton(
+                            icon: const Icon(Icons.admin_panel_settings),
+                            onPressed: () => _showManageRolesDialog(user),
+                            tooltip: 'Manage Roles',
+                          ),
+                        if (roleProvider.hasServerPermission('user.manage'))
+                          IconButton(
+                            icon: Icon(
+                              user.active ? Icons.person_off : Icons.person_add,
+                              color: user.active
+                                  ? Theme.of(context).colorScheme.tertiary
+                                  : Theme.of(context).colorScheme.primary,
+                            ),
+                            onPressed: () =>
+                                _showActivateDeactivateDialog(user),
+                            tooltip: user.active
+                                ? 'Deactivate User'
+                                : 'Activate User',
+                          ),
+                        if (roleProvider.hasServerPermission('user.manage'))
+                          IconButton(
+                            icon: Icon(
+                              Icons.delete,
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                            onPressed: () => _showDeleteUserDialog(user),
+                            tooltip: 'Delete User',
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
     );
   }
 }
@@ -396,7 +429,7 @@ class _ManageUserRolesDialog extends StatelessWidget {
     required this.availableRoles,
     required this.onAssignRole,
     required this.onRemoveRole,
-  }) ;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -494,4 +527,3 @@ class UserInfo {
     );
   }
 }
-

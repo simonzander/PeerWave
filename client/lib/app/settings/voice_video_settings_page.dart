@@ -45,9 +45,7 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        title: const Text('Voice & Video'),
-      ),
+      appBar: AppBar(title: const Text('Voice & Video')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -121,81 +119,85 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          // Camera Quality
-          _buildDropdown(
-            label: 'Camera Quality',
-            value: _videoSettings.cameraPresetId,
-            items: VideoQualityPreset.cameraPresets
-                .map((preset) => DropdownMenuItem(
+            // Camera Quality
+            _buildDropdown(
+              label: 'Camera Quality',
+              value: _videoSettings.cameraPresetId,
+              items: VideoQualityPreset.cameraPresets
+                  .map(
+                    (preset) => DropdownMenuItem(
                       value: preset.id,
                       child: Text(preset.name),
-                    ))
-                .toList(),
-            onChanged: (value) {
-              setState(() {
-                _videoSettings = _videoSettings.copyWith(
-                  cameraPresetId: value,
-                );
-                _applySettings();
-              });
-            },
-          ),
-          const SizedBox(height: 16),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                setState(() {
+                  _videoSettings = _videoSettings.copyWith(
+                    cameraPresetId: value,
+                  );
+                  _applySettings();
+                });
+              },
+            ),
+            const SizedBox(height: 16),
 
-          // Screenshare Quality
-          _buildDropdown(
-            label: 'Screenshare Quality',
-            value: _videoSettings.screensharePresetId,
-            items: VideoQualityPreset.screensharePresets
-                .map((preset) => DropdownMenuItem(
+            // Screenshare Quality
+            _buildDropdown(
+              label: 'Screenshare Quality',
+              value: _videoSettings.screensharePresetId,
+              items: VideoQualityPreset.screensharePresets
+                  .map(
+                    (preset) => DropdownMenuItem(
                       value: preset.id,
                       child: Text(preset.name),
-                    ))
-                .toList(),
-            onChanged: (value) {
-              setState(() {
-                _videoSettings = _videoSettings.copyWith(
-                  screensharePresetId: value,
-                );
-                _applySettings();
-              });
-            },
-          ),
-          const SizedBox(height: 16),
-
-          // Simulcast
-          SwitchListTile(
-            title: const Text('Enable Simulcast'),
-            subtitle: const Text(
-              'Send multiple quality layers for better bandwidth efficiency',
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                setState(() {
+                  _videoSettings = _videoSettings.copyWith(
+                    screensharePresetId: value,
+                  );
+                  _applySettings();
+                });
+              },
             ),
-            value: _videoSettings.simulcastEnabled,
-            onChanged: (value) {
-              setState(() {
-                _videoSettings = _videoSettings.copyWith(
-                  simulcastEnabled: value,
-                );
-                _applySettings();
-              });
-            },
-          ),
+            const SizedBox(height: 16),
 
-          // Adaptive Quality
-          SwitchListTile(
-            title: const Text('Adaptive Quality'),
-            subtitle: const Text(
-              'Automatically adjust quality based on grid size',
+            // Simulcast
+            SwitchListTile(
+              title: const Text('Enable Simulcast'),
+              subtitle: const Text(
+                'Send multiple quality layers for better bandwidth efficiency',
+              ),
+              value: _videoSettings.simulcastEnabled,
+              onChanged: (value) {
+                setState(() {
+                  _videoSettings = _videoSettings.copyWith(
+                    simulcastEnabled: value,
+                  );
+                  _applySettings();
+                });
+              },
             ),
-            value: _videoSettings.adaptiveQualityEnabled,
-            onChanged: (value) {
-              setState(() {
-                _videoSettings = _videoSettings.copyWith(
-                  adaptiveQualityEnabled: value,
-                );
-                _applySettings();
-              });
-            },
-          ),
+
+            // Adaptive Quality
+            SwitchListTile(
+              title: const Text('Adaptive Quality'),
+              subtitle: const Text(
+                'Automatically adjust quality based on grid size',
+              ),
+              value: _videoSettings.adaptiveQualityEnabled,
+              onChanged: (value) {
+                setState(() {
+                  _videoSettings = _videoSettings.copyWith(
+                    adaptiveQualityEnabled: value,
+                  );
+                  _applySettings();
+                });
+              },
+            ),
           ],
         ),
       ),
@@ -211,84 +213,80 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Native WebRTC Processing
-          SwitchListTile(
-            title: const Text('Noise Suppression'),
-            subtitle: const Text('Reduce background noise (WebRTC)'),
-            value: _audioSettings.noiseSuppression,
-            onChanged: (value) {
-              setState(() {
-                _audioSettings = _audioSettings.copyWith(
-                  noiseSuppression: value,
-                );
-                _applySettings();
-              });
-            },
-          ),
-          SwitchListTile(
-            title: const Text('Echo Cancellation'),
-            subtitle: const Text('Remove echo and feedback'),
-            value: _audioSettings.echoCancellation,
-            onChanged: (value) {
-              setState(() {
-                _audioSettings = _audioSettings.copyWith(
-                  echoCancellation: value,
-                );
-                _applySettings();
-              });
-            },
-          ),
-          SwitchListTile(
-            title: const Text('Auto Gain Control'),
-            subtitle: const Text('Automatically normalize volume'),
-            value: _audioSettings.autoGainControl,
-            onChanged: (value) {
-              setState(() {
-                _audioSettings = _audioSettings.copyWith(
-                  autoGainControl: value,
-                );
-                _applySettings();
-              });
-            },
-          ),
-          const Divider(),
+            SwitchListTile(
+              title: const Text('Noise Suppression'),
+              subtitle: const Text('Reduce background noise (WebRTC)'),
+              value: _audioSettings.noiseSuppression,
+              onChanged: (value) {
+                setState(() {
+                  _audioSettings = _audioSettings.copyWith(
+                    noiseSuppression: value,
+                  );
+                  _applySettings();
+                });
+              },
+            ),
+            SwitchListTile(
+              title: const Text('Echo Cancellation'),
+              subtitle: const Text('Remove echo and feedback'),
+              value: _audioSettings.echoCancellation,
+              onChanged: (value) {
+                setState(() {
+                  _audioSettings = _audioSettings.copyWith(
+                    echoCancellation: value,
+                  );
+                  _applySettings();
+                });
+              },
+            ),
+            SwitchListTile(
+              title: const Text('Auto Gain Control'),
+              subtitle: const Text('Automatically normalize volume'),
+              value: _audioSettings.autoGainControl,
+              onChanged: (value) {
+                setState(() {
+                  _audioSettings = _audioSettings.copyWith(
+                    autoGainControl: value,
+                  );
+                  _applySettings();
+                });
+              },
+            ),
+            const Divider(),
 
-          // Input Volume
-          _buildSlider(
-            label: 'Input Volume',
-            value: _audioSettings.inputVolume,
-            min: -20.0,
-            max: 20.0,
-            divisions: 40,
-            unit: 'dB',
-            onChanged: (value) {
-              setState(() {
-                _audioSettings = _audioSettings.copyWith(
-                  inputVolume: value,
-                );
-                _applySettings();
-              });
-            },
-          ),
-          const SizedBox(height: 16),
+            // Input Volume
+            _buildSlider(
+              label: 'Input Volume',
+              value: _audioSettings.inputVolume,
+              min: -20.0,
+              max: 20.0,
+              divisions: 40,
+              unit: 'dB',
+              onChanged: (value) {
+                setState(() {
+                  _audioSettings = _audioSettings.copyWith(inputVolume: value);
+                  _applySettings();
+                });
+              },
+            ),
+            const SizedBox(height: 16),
 
-          // Output Volume
-          _buildSlider(
-            label: 'Output Volume',
-            value: _audioSettings.outputVolume,
-            min: 0.0,
-            max: 2.0,
-            divisions: 20,
-            unit: '%',
-            valueMultiplier: 100,
-            onChanged: (value) {
-              setState(() {
-                _audioSettings = _audioSettings.copyWith(
-                  outputVolume: value,
-                );
-                _applySettings();
-              });
-            },
-          ),
+            // Output Volume
+            _buildSlider(
+              label: 'Output Volume',
+              value: _audioSettings.outputVolume,
+              min: 0.0,
+              max: 2.0,
+              divisions: 20,
+              unit: '%',
+              valueMultiplier: 100,
+              onChanged: (value) {
+                setState(() {
+                  _audioSettings = _audioSettings.copyWith(outputVolume: value);
+                  _applySettings();
+                });
+              },
+            ),
           ],
         ),
       ),
@@ -304,123 +302,131 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Noise Gate
-          SwitchListTile(
-            title: const Text('Noise Gate'),
-            subtitle: const Text('Cut audio below threshold when not speaking'),
-            value: _audioSettings.noiseGate.enabled,
-            onChanged: (value) {
-              setState(() {
-                _audioSettings = _audioSettings.copyWith(
-                  noiseGate: _audioSettings.noiseGate.copyWith(enabled: value),
-                );
-                _applySettings();
-              });
-            },
-          ),
-          if (_audioSettings.noiseGate.enabled) ...[
-            Padding(
-              padding: const EdgeInsets.only(left: 16, right: 16, top: 8),
-              child: _buildSlider(
-                label: 'Threshold',
-                value: _audioSettings.noiseGate.threshold,
-                min: -60.0,
-                max: -20.0,
-                divisions: 40,
-                unit: 'dB',
-                onChanged: (value) {
-                  setState(() {
-                    _audioSettings = _audioSettings.copyWith(
-                      noiseGate: _audioSettings.noiseGate.copyWith(
-                        threshold: value,
-                      ),
-                    );
-                    _applySettings();
-                  });
-                },
+            SwitchListTile(
+              title: const Text('Noise Gate'),
+              subtitle: const Text(
+                'Cut audio below threshold when not speaking',
               ),
+              value: _audioSettings.noiseGate.enabled,
+              onChanged: (value) {
+                setState(() {
+                  _audioSettings = _audioSettings.copyWith(
+                    noiseGate: _audioSettings.noiseGate.copyWith(
+                      enabled: value,
+                    ),
+                  );
+                  _applySettings();
+                });
+              },
             ),
-          ],
-          const Divider(),
+            if (_audioSettings.noiseGate.enabled) ...[
+              Padding(
+                padding: const EdgeInsets.only(left: 16, right: 16, top: 8),
+                child: _buildSlider(
+                  label: 'Threshold',
+                  value: _audioSettings.noiseGate.threshold,
+                  min: -60.0,
+                  max: -20.0,
+                  divisions: 40,
+                  unit: 'dB',
+                  onChanged: (value) {
+                    setState(() {
+                      _audioSettings = _audioSettings.copyWith(
+                        noiseGate: _audioSettings.noiseGate.copyWith(
+                          threshold: value,
+                        ),
+                      );
+                      _applySettings();
+                    });
+                  },
+                ),
+              ),
+            ],
+            const Divider(),
 
-          // Compressor
-          SwitchListTile(
-            title: const Text('Compressor'),
-            subtitle: const Text('Even out audio levels for consistent volume'),
-            value: _audioSettings.compressor.enabled,
-            onChanged: (value) {
-              setState(() {
-                _audioSettings = _audioSettings.copyWith(
-                  compressor: _audioSettings.compressor.copyWith(enabled: value),
-                );
-                _applySettings();
-              });
-            },
-          ),
-          if (_audioSettings.compressor.enabled) ...[
-            Padding(
-              padding: const EdgeInsets.only(left: 16, right: 16, top: 8),
-              child: Column(
-                children: [
-                  _buildSlider(
-                    label: 'Threshold',
-                    value: _audioSettings.compressor.threshold,
-                    min: -40.0,
-                    max: -10.0,
-                    divisions: 30,
-                    unit: 'dB',
-                    onChanged: (value) {
-                      setState(() {
-                        _audioSettings = _audioSettings.copyWith(
-                          compressor: _audioSettings.compressor.copyWith(
-                            threshold: value,
-                          ),
-                        );
-                        _applySettings();
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  _buildSlider(
-                    label: 'Ratio',
-                    value: _audioSettings.compressor.ratio,
-                    min: 1.0,
-                    max: 10.0,
-                    divisions: 18,
-                    unit: ':1',
-                    onChanged: (value) {
-                      setState(() {
-                        _audioSettings = _audioSettings.copyWith(
-                          compressor: _audioSettings.compressor.copyWith(
-                            ratio: value,
-                          ),
-                        );
-                        _applySettings();
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  _buildSlider(
-                    label: 'Makeup Gain',
-                    value: _audioSettings.compressor.makeupGain,
-                    min: 0.0,
-                    max: 20.0,
-                    divisions: 20,
-                    unit: 'dB',
-                    onChanged: (value) {
-                      setState(() {
-                        _audioSettings = _audioSettings.copyWith(
-                          compressor: _audioSettings.compressor.copyWith(
-                            makeupGain: value,
-                          ),
-                        );
-                        _applySettings();
-                      });
-                    },
-                  ),
-                ],
+            // Compressor
+            SwitchListTile(
+              title: const Text('Compressor'),
+              subtitle: const Text(
+                'Even out audio levels for consistent volume',
               ),
+              value: _audioSettings.compressor.enabled,
+              onChanged: (value) {
+                setState(() {
+                  _audioSettings = _audioSettings.copyWith(
+                    compressor: _audioSettings.compressor.copyWith(
+                      enabled: value,
+                    ),
+                  );
+                  _applySettings();
+                });
+              },
             ),
-          ],
+            if (_audioSettings.compressor.enabled) ...[
+              Padding(
+                padding: const EdgeInsets.only(left: 16, right: 16, top: 8),
+                child: Column(
+                  children: [
+                    _buildSlider(
+                      label: 'Threshold',
+                      value: _audioSettings.compressor.threshold,
+                      min: -40.0,
+                      max: -10.0,
+                      divisions: 30,
+                      unit: 'dB',
+                      onChanged: (value) {
+                        setState(() {
+                          _audioSettings = _audioSettings.copyWith(
+                            compressor: _audioSettings.compressor.copyWith(
+                              threshold: value,
+                            ),
+                          );
+                          _applySettings();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    _buildSlider(
+                      label: 'Ratio',
+                      value: _audioSettings.compressor.ratio,
+                      min: 1.0,
+                      max: 10.0,
+                      divisions: 18,
+                      unit: ':1',
+                      onChanged: (value) {
+                        setState(() {
+                          _audioSettings = _audioSettings.copyWith(
+                            compressor: _audioSettings.compressor.copyWith(
+                              ratio: value,
+                            ),
+                          );
+                          _applySettings();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    _buildSlider(
+                      label: 'Makeup Gain',
+                      value: _audioSettings.compressor.makeupGain,
+                      min: 0.0,
+                      max: 20.0,
+                      divisions: 20,
+                      unit: 'dB',
+                      onChanged: (value) {
+                        setState(() {
+                          _audioSettings = _audioSettings.copyWith(
+                            compressor: _audioSettings.compressor.copyWith(
+                              makeupGain: value,
+                            ),
+                          );
+                          _applySettings();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -436,10 +442,7 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
+        Text(label, style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           initialValue: value,
@@ -449,7 +452,10 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
             filled: true,
             fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
             border: const OutlineInputBorder(),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 8,
+            ),
           ),
           isExpanded: true,
         ),
@@ -477,15 +483,12 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              label,
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
+            Text(label, style: Theme.of(context).textTheme.titleSmall),
             Text(
               '$displayValue$unit',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ],
         ),

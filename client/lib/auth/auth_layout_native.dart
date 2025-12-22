@@ -10,7 +10,6 @@ import 'webauthn_js_stub.dart';
 import '../extensions/snackbar_extensions.dart';
 import '../services/api_service.dart';
 
-
 class AuthLayout extends StatefulWidget {
   final String? clientId; // optional to align with web API
   const AuthLayout({super.key, this.clientId});
@@ -31,6 +30,7 @@ class _AuthLayoutState extends State<AuthLayout> {
       }
     }
   }
+
   final TextEditingController emailController = TextEditingController();
   final TextEditingController serverController = TextEditingController();
   StreamSubscription<Uri>? _sub;
@@ -114,8 +114,10 @@ class _AuthLayoutState extends State<AuthLayout> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text("Login",
-                  style: TextStyle(fontSize: 20, color: Colors.white)),
+              const Text(
+                "Login",
+                style: TextStyle(fontSize: 20, color: Colors.white),
+              ),
               const SizedBox(height: 20),
               TextField(
                 controller: serverController,
@@ -136,7 +138,8 @@ class _AuthLayoutState extends State<AuthLayout> {
                 onPressed: () async {
                   final serverUrl = serverController.text.trim();
                   String urlString = serverUrl;
-                  if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+                  if (!urlString.startsWith('http://') &&
+                      !urlString.startsWith('https://')) {
                     urlString = 'https://$urlString';
                   }
                   if (urlString.endsWith('/')) {
@@ -181,20 +184,28 @@ class _AuthLayoutState extends State<AuthLayout> {
                     children: [
                       const Text(
                         'Could not open the login URL. Please copy this in your browser instead:',
-                        style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Row(
                         children: [
                           Expanded(
                             child: TextField(
-                              controller: TextEditingController(text: _loginStatus!),
+                              controller: TextEditingController(
+                                text: _loginStatus!,
+                              ),
                               readOnly: true,
                               style: const TextStyle(color: Colors.white),
                               decoration: const InputDecoration(
                                 border: OutlineInputBorder(),
                                 isDense: true,
-                                contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                                contentPadding: EdgeInsets.symmetric(
+                                  vertical: 8,
+                                  horizontal: 8,
+                                ),
                               ),
                             ),
                           ),
@@ -206,10 +217,18 @@ class _AuthLayoutState extends State<AuthLayout> {
                               padding: EdgeInsets.zero,
                             ),
                             onPressed: () {
-                              Clipboard.setData(ClipboardData(text: _loginStatus!));
-                              context.showSuccessSnackBar('URL copied to clipboard!');
+                              Clipboard.setData(
+                                ClipboardData(text: _loginStatus!),
+                              );
+                              context.showSuccessSnackBar(
+                                'URL copied to clipboard!',
+                              );
                             },
-                            child: const Icon(Icons.copy, color: Colors.white, size: 20),
+                            child: const Icon(
+                              Icons.copy,
+                              color: Colors.white,
+                              size: 20,
+                            ),
                           ),
                         ],
                       ),
@@ -224,4 +243,3 @@ class _AuthLayoutState extends State<AuthLayout> {
     );
   }
 }
-

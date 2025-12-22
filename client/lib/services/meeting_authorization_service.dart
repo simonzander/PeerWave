@@ -3,15 +3,17 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'session_auth_service.dart';
 import '../web_config.dart';
-import 'server_config_web.dart' if (dart.library.io) 'server_config_native.dart';
+import 'server_config_web.dart'
+    if (dart.library.io) 'server_config_native.dart';
 import 'clientid_native.dart' if (dart.library.js) 'clientid_web.dart';
 
 /// Service to check if current user is authorized to access a meeting
 /// Checks if user is owner or participant
 class MeetingAuthorizationService {
-  static final MeetingAuthorizationService _instance = MeetingAuthorizationService._internal();
+  static final MeetingAuthorizationService _instance =
+      MeetingAuthorizationService._internal();
   static MeetingAuthorizationService get instance => _instance;
-  
+
   MeetingAuthorizationService._internal();
 
   /// Check if current user is authorized to access a meeting
@@ -31,7 +33,8 @@ class MeetingAuthorizationService {
       }
 
       // Ensure protocol
-      if (!serverUrl.startsWith('http://') && !serverUrl.startsWith('https://')) {
+      if (!serverUrl.startsWith('http://') &&
+          !serverUrl.startsWith('https://')) {
         serverUrl = 'http://$serverUrl';
       }
 
@@ -40,16 +43,18 @@ class MeetingAuthorizationService {
 
       // Different auth for web vs native
       Map<String, String> headers = {};
-      
+
       if (!kIsWeb) {
         // Native: Use HMAC session auth
         final clientId = await ClientIdService.getClientId();
         debugPrint('[CLIENT_ID] Found current client ID: $clientId');
-        
+
         // Check if session exists before trying to use it
         final hasSession = await SessionAuthService().hasSession(clientId);
         if (!hasSession) {
-          debugPrint('[MEETING_AUTH] ⚠️ No session secret found, skipping HMAC auth');
+          debugPrint(
+            '[MEETING_AUTH] ⚠️ No session secret found, skipping HMAC auth',
+          );
           // For web or when no session, cookies will be used automatically
         } else {
           headers = await SessionAuthService().generateAuthHeaders(
@@ -60,10 +65,7 @@ class MeetingAuthorizationService {
       }
       // Web: Cookies are automatically included by http client
 
-      final response = await http.get(
-        Uri.parse(url),
-        headers: headers,
-      );
+      final response = await http.get(Uri.parse(url), headers: headers);
 
       if (response.statusCode == 404) {
         debugPrint('[MEETING_AUTH] ❌ Meeting not found: $meetingId');
@@ -76,7 +78,9 @@ class MeetingAuthorizationService {
       }
 
       if (response.statusCode != 200) {
-        debugPrint('[MEETING_AUTH] ⚠️ Unexpected status: ${response.statusCode}');
+        debugPrint(
+          '[MEETING_AUTH] ⚠️ Unexpected status: ${response.statusCode}',
+        );
         return false;
       }
 
@@ -105,7 +109,8 @@ class MeetingAuthorizationService {
       }
 
       // Ensure protocol
-      if (!serverUrl.startsWith('http://') && !serverUrl.startsWith('https://')) {
+      if (!serverUrl.startsWith('http://') &&
+          !serverUrl.startsWith('https://')) {
         serverUrl = 'http://$serverUrl';
       }
 
@@ -120,13 +125,12 @@ class MeetingAuthorizationService {
         requestPath: '/api/meetings/$meetingId',
       );
 
-      final response = await http.get(
-        Uri.parse(url),
-        headers: headers,
-      );
+      final response = await http.get(Uri.parse(url), headers: headers);
 
       if (response.statusCode != 200) {
-        debugPrint('[MEETING_AUTH] Failed to get meeting: ${response.statusCode}');
+        debugPrint(
+          '[MEETING_AUTH] Failed to get meeting: ${response.statusCode}',
+        );
         return null;
       }
 

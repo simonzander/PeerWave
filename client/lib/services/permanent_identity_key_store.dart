@@ -134,7 +134,7 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
       await _cleanupDependentKeys();
 
       debugPrint('[IDENTITY] Uploading NEW identity key to server...');
-      
+
       // Try socket emit first (faster)
       if (SocketService().isConnected) {
         debugPrint('[IDENTITY] Socket connected - using emit');
@@ -143,8 +143,12 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
           'registrationId': registrationId,
         });
       } else {
-        debugPrint('[IDENTITY] ⚠️ Socket NOT connected - identity update may be lost!');
-        debugPrint('[IDENTITY] Server will have STALE identity key until next socket connection!');
+        debugPrint(
+          '[IDENTITY] ⚠️ Socket NOT connected - identity update may be lost!',
+        );
+        debugPrint(
+          '[IDENTITY] Server will have STALE identity key until next socket connection!',
+        );
         // TODO: Add HTTP fallback endpoint to ensure identity is always updated
       }
     }

@@ -39,12 +39,17 @@ class VideoQualityManager {
   void _onRoomUpdate() {
     if (_room == null) return;
 
-    final participantCount = _room!.remoteParticipants.length + 1; // +1 for local
-    final hasScreenshare = _room!.remoteParticipants.values
-        .any((p) => p.trackPublications.values.any((pub) => pub.source == TrackSource.screenShareVideo));
+    final participantCount =
+        _room!.remoteParticipants.length + 1; // +1 for local
+    final hasScreenshare = _room!.remoteParticipants.values.any(
+      (p) => p.trackPublications.values.any(
+        (pub) => pub.source == TrackSource.screenShareVideo,
+      ),
+    );
 
     // Check if conditions changed
-    if (participantCount != _lastParticipantCount || hasScreenshare != _isScreenshareActive) {
+    if (participantCount != _lastParticipantCount ||
+        hasScreenshare != _isScreenshareActive) {
       _lastParticipantCount = participantCount;
       _isScreenshareActive = hasScreenshare;
       _updateQualityForAllParticipants();
@@ -57,7 +62,9 @@ class VideoQualityManager {
     final participantCount = _room!.remoteParticipants.length + 1;
     final targetQuality = _determineTargetQuality(participantCount);
 
-    debugPrint('[VideoQuality] Updating quality for $participantCount participants: $targetQuality');
+    debugPrint(
+      '[VideoQuality] Updating quality for $participantCount participants: $targetQuality',
+    );
 
     // Update quality preference for all remote participants
     for (final participant in _room!.remoteParticipants.values) {
@@ -65,28 +72,33 @@ class VideoQualityManager {
     }
   }
 
-  void _updateParticipantQuality(RemoteParticipant participant, VideoQuality quality) {
+  void _updateParticipantQuality(
+    RemoteParticipant participant,
+    VideoQuality quality,
+  ) {
     // With simulcast enabled, LiveKit's SFU automatically serves the appropriate
     // quality layer based on bandwidth and viewport size. We track preferences
     // but the actual quality switching is handled server-side.
-    
-    final targetQuality = (_isScreenshareActive && hasCamera(participant)) 
-        ? VideoQuality.LOW 
+
+    final targetQuality = (_isScreenshareActive && hasCamera(participant))
+        ? VideoQuality.LOW
         : quality;
-    
-    debugPrint('[VideoQuality] Target quality for ${participant.identity}: $targetQuality');
+
+    debugPrint(
+      '[VideoQuality] Target quality for ${participant.identity}: $targetQuality',
+    );
     // Note: Actual quality switching happens server-side with simulcast
   }
-  
+
   bool hasCamera(RemoteParticipant participant) {
     return participant.trackPublications.values.any(
-      (pub) => pub.source == TrackSource.camera && pub.kind == TrackType.VIDEO
+      (pub) => pub.source == TrackSource.camera && pub.kind == TrackType.VIDEO,
     );
   }
 
   VideoQuality _determineTargetQuality(int participantCount) {
     final service = VideoConferenceService.instance;
-    
+
     // Check if adaptive quality is enabled
     if (!service.videoQualitySettings.adaptiveQualityEnabled) {
       return VideoQuality.HIGH; // Default to HIGH if adaptive is disabled
@@ -106,7 +118,9 @@ class VideoQualityManager {
   void setQualityForAll(VideoQuality quality) {
     if (_room == null) return;
 
-    debugPrint('[VideoQuality] Manually setting quality to $quality for all participants');
+    debugPrint(
+      '[VideoQuality] Manually setting quality to $quality for all participants',
+    );
 
     for (final participant in _room!.remoteParticipants.values) {
       _updateParticipantQuality(participant, quality);
@@ -120,7 +134,9 @@ class VideoQualityManager {
     final participant = _room!.remoteParticipants[participantId];
     if (participant != null) {
       _updateParticipantQuality(participant, quality);
-      debugPrint('[VideoQuality] Set quality to $quality for participant $participantId');
+      debugPrint(
+        '[VideoQuality] Set quality to $quality for participant $participantId',
+      );
     }
   }
 }

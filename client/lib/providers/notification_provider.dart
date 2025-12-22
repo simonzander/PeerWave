@@ -5,27 +5,37 @@ import '../services/message_listener_service.dart';
 class NotificationProvider with ChangeNotifier {
   final Map<String, int> _unreadCounts = {}; // channelId/userId -> unread count
   final List<MessageNotification> _recentNotifications = [];
-  final Map<String, DateTime> _lastMessageTimes = {}; // Track last message timestamp
-  
-  int get totalUnreadCount => _unreadCounts.values.fold(0, (sum, count) => sum + count);
-  
+  final Map<String, DateTime> _lastMessageTimes =
+      {}; // Track last message timestamp
+
+  int get totalUnreadCount =>
+      _unreadCounts.values.fold(0, (sum, count) => sum + count);
+
   Map<String, int> get unreadCounts => Map.unmodifiable(_unreadCounts);
-  List<MessageNotification> get recentNotifications => List.unmodifiable(_recentNotifications);
-  Map<String, DateTime> get lastMessageTimes => Map.unmodifiable(_lastMessageTimes);
+  List<MessageNotification> get recentNotifications =>
+      List.unmodifiable(_recentNotifications);
+  Map<String, DateTime> get lastMessageTimes =>
+      Map.unmodifiable(_lastMessageTimes);
 
   NotificationProvider() {
     // Register for message notifications
-    MessageListenerService.instance.registerNotificationCallback(_handleNotification);
+    MessageListenerService.instance.registerNotificationCallback(
+      _handleNotification,
+    );
   }
 
   @override
   void dispose() {
-    MessageListenerService.instance.unregisterNotificationCallback(_handleNotification);
+    MessageListenerService.instance.unregisterNotificationCallback(
+      _handleNotification,
+    );
     super.dispose();
   }
 
   void _handleNotification(MessageNotification notification) {
-    debugPrint('[NOTIFICATION_PROVIDER] Received notification: ${notification.type}');
+    debugPrint(
+      '[NOTIFICATION_PROVIDER] Received notification: ${notification.type}',
+    );
 
     switch (notification.type) {
       case MessageType.direct:
@@ -37,7 +47,9 @@ class NotificationProvider with ChangeNotifier {
       case MessageType.fileShareUpdate:
         // File share updates are handled by FileTransferService
         // No need to create in-app notification here
-        debugPrint('[NOTIFICATION_PROVIDER] File share update notification ignored (handled by FileTransferService)');
+        debugPrint(
+          '[NOTIFICATION_PROVIDER] File share update notification ignored (handled by FileTransferService)',
+        );
         break;
       case MessageType.deliveryReceipt:
       case MessageType.groupDeliveryReceipt:
@@ -60,14 +72,16 @@ class NotificationProvider with ChangeNotifier {
     // Increment unread count for this user
     final key = notification.senderId!;
     _unreadCounts[key] = (_unreadCounts[key] ?? 0) + 1;
-    
+
     // Update last message time
     _lastMessageTimes[key] = DateTime.parse(notification.timestamp);
 
     // Note: RecentConversationsService now queries SQLite directly
     // No need to manually update timestamps
 
-    debugPrint('[NOTIFICATION_PROVIDER] 1:1 message from ${notification.senderId}, unread: ${_unreadCounts[key]}');
+    debugPrint(
+      '[NOTIFICATION_PROVIDER] 1:1 message from ${notification.senderId}, unread: ${_unreadCounts[key]}',
+    );
     notifyListeners();
   }
 
@@ -83,11 +97,13 @@ class NotificationProvider with ChangeNotifier {
     // Increment unread count for this channel
     final key = notification.channelId!;
     _unreadCounts[key] = (_unreadCounts[key] ?? 0) + 1;
-    
+
     // Update last message time
     _lastMessageTimes[key] = DateTime.parse(notification.timestamp);
 
-    debugPrint('[NOTIFICATION_PROVIDER] Group message in ${notification.channelId}, unread: ${_unreadCounts[key]}');
+    debugPrint(
+      '[NOTIFICATION_PROVIDER] Group message in ${notification.channelId}, unread: ${_unreadCounts[key]}',
+    );
     notifyListeners();
   }
 
@@ -130,4 +146,3 @@ class NotificationProvider with ChangeNotifier {
     }).toList();
   }
 }
-

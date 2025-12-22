@@ -11,17 +11,17 @@ import 'api_service.dart';
 
 /// Configuration for a single server connection
 class ServerConfig {
-  final String id;              // Unique ID (hash of URL + timestamp)
-  final String serverUrl;       // Full server URL
-  final String serverHash;      // Hash for database table prefixes
-  final String credentials;     // Encrypted session/auth data
-  final String? iconPath;       // Custom server icon path (optional)
-  final DateTime lastActive;    // Last time this server was used
-  final DateTime createdAt;     // When this server was added
-  int unreadCount;              // Unread message count for badge
-  String? displayName;          // Custom display name (default: extract from URL)
-  String? serverPicture;        // Base64 server picture from /client/meta
-  String? serverName;           // Server name from /client/meta
+  final String id; // Unique ID (hash of URL + timestamp)
+  final String serverUrl; // Full server URL
+  final String serverHash; // Hash for database table prefixes
+  final String credentials; // Encrypted session/auth data
+  final String? iconPath; // Custom server icon path (optional)
+  final DateTime lastActive; // Last time this server was used
+  final DateTime createdAt; // When this server was added
+  int unreadCount; // Unread message count for badge
+  String? displayName; // Custom display name (default: extract from URL)
+  String? serverPicture; // Base64 server picture from /client/meta
+  String? serverName; // Server name from /client/meta
 
   ServerConfig({
     required this.id,
@@ -149,7 +149,9 @@ class ServerConfigService {
     final hasSession = await SessionAuthService().hasSession(clientId);
 
     if (!hasSession && _servers.isNotEmpty) {
-      debugPrint('[ServerConfig] No valid session found - clearing all servers');
+      debugPrint(
+        '[ServerConfig] No valid session found - clearing all servers',
+      );
       _servers.clear();
       await _saveServers();
       _activeServerId = null;
@@ -164,10 +166,10 @@ class ServerConfigService {
       if (json != null) {
         final List<dynamic> decoded = jsonDecode(json);
         _servers = decoded.map((e) => ServerConfig.fromJson(e)).toList();
-        
+
         // Sort by lastActive (most recent first)
         _servers.sort((a, b) => b.lastActive.compareTo(a.lastActive));
-        
+
         debugPrint('[ServerConfig] Loaded ${_servers.length} servers');
       }
     } catch (e) {
@@ -196,7 +198,10 @@ class ServerConfigService {
   /// Save active server ID
   static Future<void> _saveActiveServerId() async {
     if (_activeServerId != null) {
-      await _storage.write(key: _storageKeyActiveServer, value: _activeServerId!);
+      await _storage.write(
+        key: _storageKeyActiveServer,
+        value: _activeServerId!,
+      );
       debugPrint('[ServerConfig] Saved active server: $_activeServerId');
     }
   }
@@ -237,9 +242,11 @@ class ServerConfigService {
         createdAt: DateTime.now(),
       ),
     );
-    
+
     if (existingServer.serverUrl.isNotEmpty) {
-      debugPrint('[ServerConfig] Server already exists, updating credentials for: ${existingServer.getDisplayName()} (${existingServer.id})');
+      debugPrint(
+        '[ServerConfig] Server already exists, updating credentials for: ${existingServer.getDisplayName()} (${existingServer.id})',
+      );
       // Update credentials (HMAC session) for existing server
       await updateCredentials(existingServer.id, credentials);
       await setActiveServer(existingServer.id);
@@ -317,7 +324,9 @@ class ServerConfigService {
       return false;
     }
 
-    debugPrint('[ServerConfig] Deleting server and all data: ${server.getDisplayName()} ($serverId)');
+    debugPrint(
+      '[ServerConfig] Deleting server and all data: ${server.getDisplayName()} ($serverId)',
+    );
 
     try {
       // 1. Delete SQLite databases for this server's device
@@ -326,12 +335,14 @@ class ServerConfigService {
       // So we'll just delete databases if this is the ONLY server being deleted
       final documentsDir = await getApplicationDocumentsDirectory();
       final directory = Directory(documentsDir.path);
-      
+
       // Check if this is the last server
       final isLastServer = _servers.length == 1;
-      
+
       if (isLastServer && await directory.exists()) {
-        debugPrint('[ServerConfig] This is the last server - deleting all SQLite databases');
+        debugPrint(
+          '[ServerConfig] This is the last server - deleting all SQLite databases',
+        );
         final files = await directory.list().toList();
         // Look for peerwave_*.db files
         for (final file in files) {
@@ -341,11 +352,13 @@ class ServerConfigService {
               await file.delete();
               debugPrint('[ServerConfig] Deleted database: ${file.path}');
             } catch (e) {
-              debugPrint('[ServerConfig] Error deleting database ${file.path}: $e');
+              debugPrint(
+                '[ServerConfig] Error deleting database ${file.path}: $e',
+              );
             }
           }
         }
-        
+
         // 2. Delete secure storage keys (only if last server)
         debugPrint('[ServerConfig] Deleting all secure storage keys');
         final allKeys = await _storage.readAll();
@@ -357,12 +370,14 @@ class ServerConfigService {
           'server_list',
           'active_server_id',
         ];
-        
+
         for (final entry in allKeys.entries) {
           final key = entry.key;
-          
+
           // Check if key should be deleted
-          if (keysToDelete.any((prefix) => key.contains(prefix) || key == prefix)) {
+          if (keysToDelete.any(
+            (prefix) => key.contains(prefix) || key == prefix,
+          )) {
             try {
               await _storage.delete(key: key);
               debugPrint('[ServerConfig] Deleted secure storage key: $key');
@@ -372,13 +387,17 @@ class ServerConfigService {
           }
         }
       } else {
-        debugPrint('[ServerConfig] Multiple servers exist - keeping shared data (device identity, encryption keys)');
+        debugPrint(
+          '[ServerConfig] Multiple servers exist - keeping shared data (device identity, encryption keys)',
+        );
       }
 
       // 3. Remove server from config list
       await removeServer(serverId);
 
-      debugPrint('[ServerConfig] ✓ Server and all associated data deleted: $serverId');
+      debugPrint(
+        '[ServerConfig] ✓ Server and all associated data deleted: $serverId',
+      );
       return true;
     } catch (e) {
       debugPrint('[ServerConfig] Error deleting server data: $e');
@@ -394,25 +413,28 @@ class ServerConfigService {
   /// Get active server
   static ServerConfig? getActiveServer() {
     if (_activeServerId == null) return null;
-    return _servers.firstWhere((s) => s.id == _activeServerId, orElse: () => _servers.first);
+    return _servers.firstWhere(
+      (s) => s.id == _activeServerId,
+      orElse: () => _servers.first,
+    );
   }
 
   /// Set active server
   static Future<void> setActiveServer(String serverId) async {
     final server = _servers.firstWhere((s) => s.id == serverId);
     _activeServerId = serverId;
-    
+
     // Update lastActive timestamp
     final index = _servers.indexWhere((s) => s.id == serverId);
     if (index != -1) {
       _servers[index] = server.copyWith(lastActive: DateTime.now());
-      
+
       // Re-sort by lastActive
       _servers.sort((a, b) => b.lastActive.compareTo(a.lastActive));
-      
+
       await _saveServers();
     }
-    
+
     await _saveActiveServerId();
     debugPrint('[ServerConfig] Set active server: $serverId');
   }
@@ -447,7 +469,10 @@ class ServerConfigService {
   }
 
   /// Increment unread count
-  static Future<void> incrementUnreadCount(String serverId, [int amount = 1]) async {
+  static Future<void> incrementUnreadCount(
+    String serverId, [
+    int amount = 1,
+  ]) async {
     final server = getServerById(serverId);
     if (server != null) {
       await updateUnreadCount(serverId, server.unreadCount + amount);
@@ -472,17 +497,25 @@ class ServerConfigService {
   }
 
   /// Update server display name
-  static Future<void> updateDisplayName(String serverId, String displayName) async {
+  static Future<void> updateDisplayName(
+    String serverId,
+    String displayName,
+  ) async {
     final index = _servers.indexWhere((s) => s.id == serverId);
     if (index != -1) {
       _servers[index] = _servers[index].copyWith(displayName: displayName);
       await _saveServers();
-      debugPrint('[ServerConfig] Updated display name for $serverId: $displayName');
+      debugPrint(
+        '[ServerConfig] Updated display name for $serverId: $displayName',
+      );
     }
   }
 
   /// Update server credentials (HMAC session data)
-  static Future<void> updateCredentials(String serverId, String credentials) async {
+  static Future<void> updateCredentials(
+    String serverId,
+    String credentials,
+  ) async {
     final index = _servers.indexWhere((s) => s.id == serverId);
     if (index != -1) {
       _servers[index] = _servers[index].copyWith(credentials: credentials);
@@ -501,27 +534,33 @@ class ServerConfigService {
       }
 
       final server = _servers[index];
-      
+
       // Fetch /client/meta
       final response = await ApiService.get('${server.serverUrl}/client/meta');
-      
+
       if (response.statusCode == 200) {
         final data = response.data;
         final serverName = data['serverName'] as String?;
         final serverPicture = data['serverPicture'] as String?;
-        
+
         // Update server config
         _servers[index] = server.copyWith(
           serverName: serverName,
           serverPicture: serverPicture,
-          displayName: server.displayName ?? serverName, // Use server name as default if no custom name
+          displayName:
+              server.displayName ??
+              serverName, // Use server name as default if no custom name
         );
-        
+
         await _saveServers();
-        debugPrint('[ServerConfig] Updated metadata for ${server.getDisplayName()}: name=$serverName, hasPicture=${serverPicture != null}');
+        debugPrint(
+          '[ServerConfig] Updated metadata for ${server.getDisplayName()}: name=$serverName, hasPicture=${serverPicture != null}',
+        );
       }
     } catch (e) {
-      debugPrint('[ServerConfig] Failed to fetch server metadata for $serverId: $e');
+      debugPrint(
+        '[ServerConfig] Failed to fetch server metadata for $serverId: $e',
+      );
     }
   }
 
@@ -532,7 +571,10 @@ class ServerConfigService {
     int totalDirectMessageUnread,
     int totalActivityNotifications,
   ) async {
-    final total = totalChannelUnread + totalDirectMessageUnread + totalActivityNotifications;
+    final total =
+        totalChannelUnread +
+        totalDirectMessageUnread +
+        totalActivityNotifications;
     await updateUnreadCount(serverId, total);
   }
 

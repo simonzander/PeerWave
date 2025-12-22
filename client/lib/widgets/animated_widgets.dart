@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme_constants.dart';
 
 /// Wiederverwendbare animierte Widgets für konsistente UX
-/// 
+///
 /// Basierend auf PeerWave Design System:
 /// - Fast: 150ms (Hover, Badge)
 /// - Normal: 250ms (Navigation, Selection)
@@ -48,11 +48,11 @@ class _AnimatedSelectionTileState extends State<AnimatedSelectionTile> {
         duration: AppThemeConstants.animationFast,
         curve: AppThemeConstants.animationCurve,
         decoration: BoxDecoration(
-          color: widget.selected 
+          color: widget.selected
               ? AppThemeConstants.activeChannelBackground
-              : (_isHovered 
-                  ? highlightColor.withValues(alpha: 0.05) 
-                  : Colors.transparent),
+              : (_isHovered
+                    ? highlightColor.withValues(alpha: 0.05)
+                    : Colors.transparent),
           borderRadius: AppThemeConstants.borderRadiusStandard,
           border: widget.selected
               ? Border(
@@ -123,7 +123,9 @@ class AnimatedBadge extends StatelessWidget {
           ),
           decoration: BoxDecoration(
             color: backgroundColor ?? Theme.of(context).colorScheme.error,
-            borderRadius: BorderRadius.circular(isSmall ? 6 : AppThemeConstants.radiusSmall),
+            borderRadius: BorderRadius.circular(
+              isSmall ? 6 : AppThemeConstants.radiusSmall,
+            ),
           ),
           constraints: BoxConstraints(
             minWidth: isSmall ? 20 : 24,
@@ -152,11 +154,7 @@ class UnreadBadgeOverlay extends StatelessWidget {
   final int count;
   final Color? borderColor;
 
-  const UnreadBadgeOverlay({
-    super.key,
-    required this.count,
-    this.borderColor,
-  });
+  const UnreadBadgeOverlay({super.key, required this.count, this.borderColor});
 
   @override
   Widget build(BuildContext context) {
@@ -209,10 +207,12 @@ class ContextPanelHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: padding ?? AppThemeConstants.paddingHorizontalSm.copyWith(
-        top: AppThemeConstants.spacingMd,
-        bottom: AppThemeConstants.spacingXs,
-      ),
+      padding:
+          padding ??
+          AppThemeConstants.paddingHorizontalSm.copyWith(
+            top: AppThemeConstants.spacingMd,
+            bottom: AppThemeConstants.spacingXs,
+          ),
       child: Row(
         children: [
           Expanded(
@@ -233,11 +233,7 @@ class SlidePageRoute<T> extends PageRoute<T> {
   final WidgetBuilder builder;
   final Offset? startOffset;
 
-  SlidePageRoute({
-    required this.builder,
-    this.startOffset,
-    super.settings,
-  });
+  SlidePageRoute({required this.builder, this.startOffset, super.settings});
 
   @override
   Color? get barrierColor => null;
@@ -264,13 +260,9 @@ class SlidePageRoute<T> extends PageRoute<T> {
     final begin = startOffset ?? const Offset(1.0, 0.0); // Von rechts
     const end = Offset.zero;
 
-    final slideAnimation = Tween<Offset>(
-      begin: begin,
-      end: end,
-    ).animate(CurvedAnimation(
-      parent: animation,
-      curve: AppThemeConstants.slideCurve,
-    ));
+    final slideAnimation = Tween<Offset>(begin: begin, end: end).animate(
+      CurvedAnimation(parent: animation, curve: AppThemeConstants.slideCurve),
+    );
 
     final fadeAnimation = CurvedAnimation(
       parent: animation,
@@ -279,10 +271,7 @@ class SlidePageRoute<T> extends PageRoute<T> {
 
     return SlideTransition(
       position: slideAnimation,
-      child: FadeTransition(
-        opacity: fadeAnimation,
-        child: child,
-      ),
+      child: FadeTransition(opacity: fadeAnimation, child: child),
     );
   }
 
@@ -320,7 +309,8 @@ class _HoverAnimatedContainerState extends State<HoverAnimatedContainer> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final hoverColor = widget.hoverColor ?? colorScheme.primary.withValues(alpha: 0.05);
+    final hoverColor =
+        widget.hoverColor ?? colorScheme.primary.withValues(alpha: 0.05);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -330,12 +320,14 @@ class _HoverAnimatedContainerState extends State<HoverAnimatedContainer> {
         curve: AppThemeConstants.animationCurve,
         decoration: BoxDecoration(
           color: _isHovered ? hoverColor : Colors.transparent,
-          borderRadius: widget.borderRadius ?? AppThemeConstants.borderRadiusStandard,
+          borderRadius:
+              widget.borderRadius ?? AppThemeConstants.borderRadiusStandard,
         ),
         padding: widget.padding,
         child: InkWell(
           onTap: widget.onTap,
-          borderRadius: widget.borderRadius ?? AppThemeConstants.borderRadiusStandard,
+          borderRadius:
+              widget.borderRadius ?? AppThemeConstants.borderRadiusStandard,
           hoverColor: Colors.transparent, // Wir behandeln Hover selbst
           splashColor: colorScheme.primary.withValues(alpha: 0.1),
           child: widget.child,
@@ -363,8 +355,8 @@ class AnimatedSection extends StatelessWidget {
     return AnimatedCrossFade(
       firstChild: child,
       secondChild: const SizedBox.shrink(),
-      crossFadeState: expanded 
-          ? CrossFadeState.showFirst 
+      crossFadeState: expanded
+          ? CrossFadeState.showFirst
           : CrossFadeState.showSecond,
       duration: duration ?? AppThemeConstants.animationNormal,
       sizeCurve: AppThemeConstants.animationCurve,
@@ -373,4 +365,3 @@ class AnimatedSection extends StatelessWidget {
     );
   }
 }
-

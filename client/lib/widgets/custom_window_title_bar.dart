@@ -7,12 +7,12 @@ import '../services/system_tray_service_web.dart'
 class CustomWindowTitleBar extends StatelessWidget {
   final String title;
   final Color? backgroundColor;
-  
+
   const CustomWindowTitleBar({
     super.key,
     this.title = 'PeerWave',
     this.backgroundColor,
-  }) ;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -20,11 +20,11 @@ class CustomWindowTitleBar extends StatelessWidget {
     if (kIsWeb) {
       return const SizedBox.shrink();
     }
-    
+
     final theme = Theme.of(context);
     final bgColor = backgroundColor ?? theme.colorScheme.surface;
     final textColor = theme.colorScheme.onSurface;
-    
+
     return WindowTitleBarBox(
       child: Container(
         color: bgColor,
@@ -35,7 +35,9 @@ class CustomWindowTitleBar extends StatelessWidget {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     return Container(
-                      constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+                      constraints: BoxConstraints(
+                        maxWidth: constraints.maxWidth,
+                      ),
                       padding: const EdgeInsets.symmetric(horizontal: 12.0),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -86,7 +88,9 @@ class WindowButtons extends StatelessWidget {
     final buttonColors = WindowButtonColors(
       iconNormal: theme.colorScheme.onSurface,
       mouseOver: theme.colorScheme.surfaceContainerHighest,
-      mouseDown: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
+      mouseDown: theme.colorScheme.surfaceContainerHighest.withValues(
+        alpha: 0.8,
+      ),
       iconMouseOver: theme.colorScheme.onSurface,
       iconMouseDown: theme.colorScheme.onSurface,
     );
@@ -106,9 +110,8 @@ class WindowButtons extends StatelessWidget {
         // Custom close button that hides to tray instead of closing
         WindowButton(
           colors: closeButtonColors,
-          iconBuilder: (buttonContext) => CloseIcon(
-            color: buttonContext.iconColor,
-          ),
+          iconBuilder: (buttonContext) =>
+              CloseIcon(color: buttonContext.iconColor),
           onPressed: () async {
             if (!kIsWeb) {
               // Hide to system tray instead of closing
@@ -126,19 +129,19 @@ class WindowButtons extends StatelessWidget {
 class WindowTitleBarWrapper extends StatelessWidget {
   final Widget child;
   final String title;
-  
+
   const WindowTitleBarWrapper({
     super.key,
     required this.child,
     this.title = 'PeerWave',
-  }) ;
+  });
 
   @override
   Widget build(BuildContext context) {
     if (kIsWeb) {
       return child;
     }
-    
+
     return Column(
       children: [
         CustomWindowTitleBar(title: title),

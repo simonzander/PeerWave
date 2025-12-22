@@ -7,13 +7,12 @@ import '../services/role_api_service.dart';
 /// Provider for managing user roles and permissions
 class RoleProvider with ChangeNotifier {
   final RoleApiService _apiService;
-  
+
   UserRoles? _userRoles;
   bool _isLoading = false;
   String? _errorMessage;
 
-  RoleProvider({required RoleApiService apiService})
-      : _apiService = apiService;
+  RoleProvider({required RoleApiService apiService}) : _apiService = apiService;
 
   /// Gets the current user's roles
   UserRoles? get userRoles => _userRoles;
@@ -66,16 +65,24 @@ class RoleProvider with ChangeNotifier {
 
     try {
       _userRoles = await _apiService.getUserRoles();
-      
+
       // Debug log to verify ownedChannelIds are loaded
       debugPrint('[RoleProvider] UserRoles loaded:');
-      debugPrint('[RoleProvider] - Server roles: ${_userRoles?.serverRoles.length ?? 0}');
-      debugPrint('[RoleProvider] - Channel roles: ${_userRoles?.channelRoles.length ?? 0}');
-      debugPrint('[RoleProvider] - Owned channels: ${_userRoles?.ownedChannelIds.length ?? 0}');
+      debugPrint(
+        '[RoleProvider] - Server roles: ${_userRoles?.serverRoles.length ?? 0}',
+      );
+      debugPrint(
+        '[RoleProvider] - Channel roles: ${_userRoles?.channelRoles.length ?? 0}',
+      );
+      debugPrint(
+        '[RoleProvider] - Owned channels: ${_userRoles?.ownedChannelIds.length ?? 0}',
+      );
       if (_userRoles != null && _userRoles!.ownedChannelIds.isNotEmpty) {
-        debugPrint('[RoleProvider] - Owned channel IDs: ${_userRoles!.ownedChannelIds.join(", ")}');
+        debugPrint(
+          '[RoleProvider] - Owned channel IDs: ${_userRoles!.ownedChannelIds.join(", ")}',
+        );
       }
-      
+
       _errorMessage = null;
     } catch (e) {
       _errorMessage = e.toString();
@@ -88,7 +95,8 @@ class RoleProvider with ChangeNotifier {
 
   /// Safely notify listeners - avoids calling during build phase
   void _safeNotifyListeners() {
-    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
       // We're in build phase, schedule notification for after build
       SchedulerBinding.instance.addPostFrameCallback((_) {
         notifyListeners();
@@ -287,7 +295,10 @@ class RoleProvider with ChangeNotifier {
     required String userId,
   }) async {
     try {
-      await _apiService.kickUserFromChannel(channelId: channelId, userId: userId);
+      await _apiService.kickUserFromChannel(
+        channelId: channelId,
+        userId: userId,
+      );
     } catch (e) {
       debugPrint('Error kicking user from channel: $e');
       rethrow;
@@ -306,5 +317,3 @@ class RoleProvider with ChangeNotifier {
     }
   }
 }
-
-

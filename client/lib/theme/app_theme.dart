@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'app_theme_constants.dart';
 
 /// Material 3 Theme Generator für PeerWave
-/// 
+///
 /// Erstellt vollständige ThemeData-Objekte mit PeerWave Design System:
 /// - Spacing: 6 / 12 / 20 / 26
 /// - Radius: 14px Standard
@@ -19,7 +19,7 @@ class AppTheme {
   // ============================================================================
 
   /// Standard Schriftart für die gesamte App
-  /// 
+  ///
   /// Beliebte Optionen:
   /// - 'Inter' (Modern, clean - EMPFOHLEN)
   /// - 'Roboto' (Google Standard)
@@ -29,10 +29,10 @@ class AppTheme {
   /// - 'Manrope' (Clean, readable)
   /// - 'Plus Jakarta Sans' (Modern, elegant)
   /// - 'DM Sans' (Clean, professional)
-  /// 
+  ///
   /// Siehe alle Schriftarten: https://fonts.google.com/
   static const String fontFamily = 'Nunito Sans';
-  
+
   /// Font-Variante für Breite (Width/Stretch)
   /// Für Nunito Sans SemiCondensed verwenden wir die direkte Methode
   /// Andere Varianten: normal, condensed, expanded
@@ -40,7 +40,7 @@ class AppTheme {
 
   /// Monospace Schriftart für Code/technische Inhalte
   static const String monospaceFontFamily = 'Fira Code';
-  
+
   /// Helper: Gibt den korrekten TextStyle mit der richtigen Font-Variante zurück
   static TextStyle _getFontStyle({
     required double fontSize,
@@ -71,17 +71,17 @@ class AppTheme {
   /// Erstellt ein Light Theme mit optionalem ColorScheme
   static ThemeData light({ColorScheme? colorScheme}) {
     final scheme = colorScheme ?? _defaultLightColorScheme();
-    
+
     // Debug info (nur einmal beim ersten Aufruf)
     debugPrintFontInfo();
-    
+
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      
+
       // Typography
       textTheme: _textTheme(scheme),
-      
+
       // Component Themes
       appBarTheme: _appBarTheme(scheme, Brightness.light),
       navigationBarTheme: _navigationBarTheme(scheme),
@@ -101,10 +101,10 @@ class AppTheme {
       dividerTheme: _dividerTheme(scheme),
       iconTheme: _iconTheme(scheme),
       listTileTheme: _listTileTheme(scheme),
-      
+
       // Scaffold (Main View Background)
       scaffoldBackgroundColor: AppThemeConstants.mainViewBackground,
-      
+
       // Splash & Highlight
       splashFactory: InkRipple.splashFactory,
       highlightColor: scheme.primary.withValues(alpha: 0.12),
@@ -115,14 +115,14 @@ class AppTheme {
   /// Erstellt ein Dark Theme mit optionalem ColorScheme
   static ThemeData dark({ColorScheme? colorScheme}) {
     final scheme = colorScheme ?? _defaultDarkColorScheme();
-    
+
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      
+
       // Typography
       textTheme: _textTheme(scheme),
-      
+
       // Component Themes
       appBarTheme: _appBarTheme(scheme, Brightness.dark),
       navigationBarTheme: _navigationBarTheme(scheme),
@@ -142,10 +142,10 @@ class AppTheme {
       dividerTheme: _dividerTheme(scheme),
       iconTheme: _iconTheme(scheme),
       listTileTheme: _listTileTheme(scheme),
-      
+
       // Scaffold (Main View Background)
       scaffoldBackgroundColor: AppThemeConstants.mainViewBackground,
-      
+
       // Splash & Highlight
       splashFactory: InkRipple.splashFactory,
       highlightColor: scheme.primary.withValues(alpha: 0.12),
@@ -182,11 +182,13 @@ class AppTheme {
   static TextTheme _textTheme(ColorScheme scheme) {
     // Debug: Print font info
     debugPrint('🎨 AppTheme: Loading font family: $fontFamily');
-    
+
     // Basis TextTheme mit Google Font
     final baseTextTheme = GoogleFonts.getTextTheme(fontFamily);
-    debugPrint('🎨 AppTheme: Base TextTheme created with family: ${baseTextTheme.bodyMedium?.fontFamily}');
-    
+    debugPrint(
+      '🎨 AppTheme: Base TextTheme created with family: ${baseTextTheme.bodyMedium?.fontFamily}',
+    );
+
     final textTheme = baseTextTheme.copyWith(
       // Display (Largest)
       displayLarge: _getFontStyle(
@@ -205,7 +207,7 @@ class AppTheme {
         fontWeight: FontWeight.w400,
         color: scheme.onSurface,
       ),
-      
+
       // Headline
       headlineLarge: _getFontStyle(
         fontSize: 32,
@@ -222,7 +224,7 @@ class AppTheme {
         fontWeight: FontWeight.w400,
         color: scheme.onSurface,
       ),
-      
+
       // Title
       titleLarge: _getFontStyle(
         fontSize: 22,
@@ -241,7 +243,7 @@ class AppTheme {
         letterSpacing: 0.1,
         color: scheme.onSurface,
       ),
-      
+
       // Body
       bodyLarge: _getFontStyle(
         fontSize: 16,
@@ -261,7 +263,7 @@ class AppTheme {
         letterSpacing: 0.4,
         color: scheme.onSurface,
       ),
-      
+
       // Label
       labelLarge: _getFontStyle(
         fontSize: 14,
@@ -282,13 +284,13 @@ class AppTheme {
         color: scheme.onSurface,
       ),
     );
-    
+
     // Debug: Print loaded font families
     debugPrint('🎨 AppTheme TextTheme created:');
     debugPrint('   displayLarge: ${baseTextTheme.displayLarge?.fontFamily}');
     debugPrint('   bodyMedium: ${baseTextTheme.bodyMedium?.fontFamily}');
     debugPrint('   labelLarge: ${baseTextTheme.labelLarge?.fontFamily}');
-    
+
     return textTheme;
   }
 
@@ -312,29 +314,37 @@ class AppTheme {
     debugPrint('Configured mono font family: $monospaceFontFamily');
     debugPrint('Use SemiCondensed: $useSemiCondensed');
     debugPrint('');
-    
+
     // Test different font weights
     debugPrint('Testing font weights:');
-    for (var weight in [FontWeight.w100, FontWeight.w200, FontWeight.w300, FontWeight.w400, FontWeight.w500]) {
+    for (var weight in [
+      FontWeight.w100,
+      FontWeight.w200,
+      FontWeight.w300,
+      FontWeight.w400,
+      FontWeight.w500,
+    ]) {
       final testStyle = GoogleFonts.nunitoSans(fontWeight: weight);
-      debugPrint('  FontWeight.${weight.toString().split('.').last}: ${testStyle.fontFamily} (actual weight: ${testStyle.fontWeight})');
+      debugPrint(
+        '  FontWeight.${weight.toString().split('.').last}: ${testStyle.fontFamily} (actual weight: ${testStyle.fontWeight})',
+      );
     }
     debugPrint('');
-    
+
     // Test font loading
     final testStyle = GoogleFonts.getFont(fontFamily);
     debugPrint('Test style created:');
     debugPrint('  fontFamily: ${testStyle.fontFamily}');
     debugPrint('  fontFamilyFallback: ${testStyle.fontFamilyFallback}');
     debugPrint('');
-    
+
     // Alternative font loading methods
     final nunitoSans = GoogleFonts.nunitoSans();
     debugPrint('GoogleFonts.nunitoSans():');
     debugPrint('  fontFamily: ${nunitoSans.fontFamily}');
     debugPrint('  fontFamilyFallback: ${nunitoSans.fontFamilyFallback}');
     debugPrint('  fontWeight: ${nunitoSans.fontWeight}');
-    
+
     // Test thin weight
     final nunitoSansThin = GoogleFonts.nunitoSans(fontWeight: FontWeight.w100);
     debugPrint('GoogleFonts.nunitoSans(w100):');
@@ -362,10 +372,7 @@ class AppTheme {
         fontWeight: FontWeight.w500,
         color: scheme.onSurface,
       ),
-      iconTheme: IconThemeData(
-        color: scheme.onSurface,
-        size: 24,
-      ),
+      iconTheme: IconThemeData(color: scheme.onSurface, size: 24),
     );
   }
 
@@ -461,9 +468,7 @@ class AppTheme {
       elevation: 1,
       shadowColor: scheme.shadow,
       surfaceTintColor: scheme.surfaceTint,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       margin: const EdgeInsets.all(8),
     );
   }
@@ -549,9 +554,7 @@ class AppTheme {
       foregroundColor: scheme.onPrimaryContainer,
       elevation: 3,
       highlightElevation: 6,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     );
   }
 
@@ -569,15 +572,24 @@ class AppTheme {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: AppThemeConstants.borderRadiusStandard,
-        borderSide: BorderSide(color: scheme.primary, width: AppThemeConstants.borderWidthStandard),
+        borderSide: BorderSide(
+          color: scheme.primary,
+          width: AppThemeConstants.borderWidthStandard,
+        ),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: AppThemeConstants.borderRadiusStandard,
-        borderSide: BorderSide(color: scheme.error, width: AppThemeConstants.borderWidthStandard),
+        borderSide: BorderSide(
+          color: scheme.error,
+          width: AppThemeConstants.borderWidthStandard,
+        ),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: AppThemeConstants.borderRadiusStandard,
-        borderSide: BorderSide(color: scheme.error, width: AppThemeConstants.borderWidthThick),
+        borderSide: BorderSide(
+          color: scheme.error,
+          width: AppThemeConstants.borderWidthThick,
+        ),
       ),
       contentPadding: AppThemeConstants.paddingSm,
       hintStyle: const TextStyle(color: AppThemeConstants.textSecondary),
@@ -592,9 +604,7 @@ class AppTheme {
       contentTextStyle: TextStyle(color: scheme.onInverseSurface),
       actionTextColor: scheme.inversePrimary,
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       elevation: 3,
     );
   }
@@ -604,9 +614,7 @@ class AppTheme {
       backgroundColor: scheme.surfaceContainerHighest,
       surfaceTintColor: scheme.surfaceTint,
       elevation: 6,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(28),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       titleTextStyle: _getFontStyle(
         fontSize: 24,
         fontWeight: FontWeight.w400,
@@ -641,10 +649,14 @@ class AppTheme {
       disabledColor: scheme.onSurface.withValues(alpha: 0.12),
       selectedColor: scheme.secondaryContainer,
       secondarySelectedColor: scheme.secondaryContainer,
-      labelPadding: EdgeInsets.symmetric(horizontal: AppThemeConstants.spacingXs),
+      labelPadding: EdgeInsets.symmetric(
+        horizontal: AppThemeConstants.spacingXs,
+      ),
       padding: EdgeInsets.all(AppThemeConstants.spacingXs),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppThemeConstants.radiusSmall), // 8px
+        borderRadius: BorderRadius.circular(
+          AppThemeConstants.radiusSmall,
+        ), // 8px
       ),
       labelStyle: const TextStyle(
         fontSize: AppThemeConstants.fontSizeCaption,
@@ -670,10 +682,7 @@ class AppTheme {
   }
 
   static IconThemeData _iconTheme(ColorScheme scheme) {
-    return IconThemeData(
-      color: scheme.onSurface,
-      size: 24,
-    );
+    return IconThemeData(color: scheme.onSurface, size: 24);
   }
 
   static ListTileThemeData _listTileTheme(ColorScheme scheme) {
@@ -693,4 +702,3 @@ class AppTheme {
     );
   }
 }
-

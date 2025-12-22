@@ -12,21 +12,26 @@ class _CachedProfile {
   final DateTime loadedAt;
   String? presenceStatus; // 'online', 'busy', or 'offline'
   DateTime? lastSeen;
-  
-  _CachedProfile(this.data, this.loadedAt, {this.presenceStatus, this.lastSeen});
-  
+
+  _CachedProfile(
+    this.data,
+    this.loadedAt, {
+    this.presenceStatus,
+    this.lastSeen,
+  });
+
   bool get isStale {
     return DateTime.now().difference(loadedAt) > const Duration(hours: 24);
   }
 }
 
 /// Service for loading and caching user profiles (displayName, picture, atName)
-/// 
+///
 /// Smart Loading Strategy:
 /// 1. Load own profile + recent conversation partners on init
 /// 2. Load profiles on-demand when messages arrive from unknown users
 /// 3. Load discover users when People page is opened
-/// 
+///
 /// Cache TTL: 24 hours
 /// Server Offline: Operations fail with exception instead of showing UUIDs
 class UserProfileService {
@@ -35,39 +40,44 @@ class UserProfileService {
 
   // Cache: uuid -> {profile data + timestamp}
   final Map<String, _CachedProfile> _cache = {};
-  
+
   // Track UUIDs currently being loaded (prevent duplicate requests)
   final Set<String> _loadingUuids = {};
-  
+
   // Callbacks waiting for profiles to load: uuid -> List of callbacks
-  final Map<String, List<void Function(Map<String, dynamic>?)>> _pendingCallbacks = {};
-  
+  final Map<String, List<void Function(Map<String, dynamic>?)>>
+  _pendingCallbacks = {};
+
   bool _isInitialLoading = false;
-  
+
   /// Get current user's UUID (from own profile cache)
   /// Returns null if own profile not loaded yet
   String? get currentUserUuid {
-    debugPrint('[UserProfileService] currentUserUuid getter called. Cache size: ${_cache.length}');
-    
+    debugPrint(
+      '[UserProfileService] currentUserUuid getter called. Cache size: ${_cache.length}',
+    );
+
     // Find own profile in cache by checking for the profile that matches current user
     // The own profile is cached during loadOwnProfile()
     for (final entry in _cache.entries) {
       final profile = entry.value.data;
-      debugPrint('[UserProfileService] Checking profile UUID: ${entry.key}, isOwnProfile: ${profile['isOwnProfile']}');
-      
+      debugPrint(
+        '[UserProfileService] Checking profile UUID: ${entry.key}, isOwnProfile: ${profile['isOwnProfile']}',
+      );
+
       if (profile['isOwnProfile'] == true) {
         debugPrint('[UserProfileService] Found own profile: ${entry.key}');
         return entry.key;
       }
     }
-    
+
     // Fallback: check if we have exactly one profile cached (likely our own)
     if (_cache.length == 1) {
       final uuid = _cache.keys.first;
       debugPrint('[UserProfileService] Using fallback (single profile): $uuid');
       return uuid;
     }
-    
+
     debugPrint('[UserProfileService] No own profile found in cache');
     return null;
   }
@@ -75,26 +85,27 @@ class UserProfileService {
   /// Initialize profiles: Load own profile + recent conversation partners
   Future<void> initProfiles() async {
     if (_isInitialLoading) return;
-    
+
     _isInitialLoading = true;
     try {
       debugPrint('[UserProfileService] Starting initial profile load...');
-      
+
       // 1. Load own profile
       await loadOwnProfile();
-      
+
       // 2. Get UUIDs from recent conversations
       final uuidsToLoad = <String>{};
-      
+
       try {
         // Get 1:1 conversation partners
-        final conversationStore = await SqliteRecentConversationsStore.getInstance();
+        final conversationStore =
+            await SqliteRecentConversationsStore.getInstance();
         final conversations = await conversationStore.getRecentConversations();
         for (final conv in conversations) {
           final userId = conv['user_id'] as String?;
           if (userId != null) uuidsToLoad.add(userId);
         }
-        
+
         // Get group message senders
         final groupStore = await SqliteGroupMessageStore.getInstance();
         final channels = await groupStore.getAllChannels();
@@ -107,18 +118,24 @@ class UserProfileService {
             }
           }
         }
-        
-        debugPrint('[UserProfileService] Found ${uuidsToLoad.length} users from recent conversations');
+
+        debugPrint(
+          '[UserProfileService] Found ${uuidsToLoad.length} users from recent conversations',
+        );
       } catch (e) {
-        debugPrint('[UserProfileService] Error loading UUIDs from database: $e');
+        debugPrint(
+          '[UserProfileService] Error loading UUIDs from database: $e',
+        );
       }
-      
+
       // 3. Load profiles for these users
       if (uuidsToLoad.isNotEmpty) {
         await loadProfiles(uuidsToLoad.toList());
       }
-      
-      debugPrint('[UserProfileService] Initial profile load complete. Cached: ${_cache.length} profiles');
+
+      debugPrint(
+        '[UserProfileService] Initial profile load complete. Cached: ${_cache.length} profiles',
+      );
     } catch (e) {
       debugPrint('[UserProfileService] Error during init: $e');
       rethrow;
@@ -130,7 +147,7 @@ class UserProfileService {
   /// Load profiles for a list of UUIDs (batch operation)
   Future<void> loadProfiles(List<String> uuids) async {
     if (uuids.isEmpty) return;
-    
+
     // Filter out already cached (non-stale) UUIDs
     final uuidsToLoad = <String>[];
     for (final uuid in uuids) {
@@ -141,18 +158,22 @@ class UserProfileService {
         }
       }
     }
-    
+
     if (uuidsToLoad.isEmpty) {
-      debugPrint('[UserProfileService] All ${uuids.length} profiles already cached');
+      debugPrint(
+        '[UserProfileService] All ${uuids.length} profiles already cached',
+      );
       return;
     }
-    
+
     // Mark as loading
     _loadingUuids.addAll(uuidsToLoad);
-    
+
     try {
-      debugPrint('[UserProfileService] Loading ${uuidsToLoad.length} profiles...');
-      
+      debugPrint(
+        '[UserProfileService] Loading ${uuidsToLoad.length} profiles...',
+      );
+
       // Get server URL from appropriate source
       String? apiServer;
       if (kIsWeb) {
@@ -165,24 +186,27 @@ class UserProfileService {
           apiServer = activeServer.serverUrl;
         }
       }
-      
+
       if (apiServer == null || apiServer.isEmpty) {
         throw Exception('No API server configured');
       }
-      
+
       String urlString = apiServer;
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      
+
       // Batch request: /people/profiles?uuids=uuid1,uuid2,uuid3
       final uuidsParam = uuidsToLoad.join(',');
       ApiService.init();
-      final resp = await ApiService.get('$urlString/people/profiles?uuids=$uuidsParam');
-      
+      final resp = await ApiService.get(
+        '$urlString/people/profiles?uuids=$uuidsParam',
+      );
+
       if (resp.statusCode == 200) {
         List<dynamic> profiles = [];
-        
+
         if (resp.data is List) {
           profiles = resp.data as List<dynamic>;
         } else if (resp.data is Map) {
@@ -193,7 +217,7 @@ class UserProfileService {
             profiles = data['users'] as List<dynamic>;
           }
         }
-        
+
         // Cache all loaded profiles
         for (final profile in profiles) {
           if (profile is Map && profile['uuid'] != null) {
@@ -201,8 +225,10 @@ class UserProfileService {
             _cacheProfile(uuid, Map<String, dynamic>.from(profile));
           }
         }
-        
-        debugPrint('[UserProfileService] ✓ Loaded ${profiles.length}/${uuidsToLoad.length} profiles');
+
+        debugPrint(
+          '[UserProfileService] ✓ Loaded ${profiles.length}/${uuidsToLoad.length} profiles',
+        );
       } else {
         throw Exception('Failed to load profiles: ${resp.statusCode}');
       }
@@ -223,12 +249,12 @@ class UserProfileService {
   /// Use this before displaying messages from a user.
   Future<void> ensureProfileLoaded(String uuid) async {
     final cached = _cache[uuid];
-    
+
     // Already cached and fresh
     if (cached != null && !cached.isStale) {
       return;
     }
-    
+
     // Already loading
     if (_loadingUuids.contains(uuid)) {
       // Wait for it to finish (simple polling, could use Completer for better approach)
@@ -239,7 +265,7 @@ class UserProfileService {
       }
       return;
     }
-    
+
     // Load it
     try {
       await loadProfile(uuid);
@@ -252,7 +278,7 @@ class UserProfileService {
   /// Ensure multiple profiles are loaded. Throws if server is unavailable.
   Future<void> ensureProfilesLoaded(List<String> uuids) async {
     final uuidsToLoad = <String>[];
-    
+
     for (final uuid in uuids) {
       final cached = _cache[uuid];
       if (cached == null || cached.isStale) {
@@ -261,9 +287,9 @@ class UserProfileService {
         }
       }
     }
-    
+
     if (uuidsToLoad.isEmpty) return;
-    
+
     try {
       await loadProfiles(uuidsToLoad);
     } catch (e) {
@@ -281,7 +307,7 @@ class UserProfileService {
     } else if (picture is Map && picture['data'] != null) {
       pictureData = picture['data'] as String?;
     }
-    
+
     // Extract presence data
     String? presenceStatus;
     DateTime? lastSeen;
@@ -297,7 +323,7 @@ class UserProfileService {
         }
       }
     }
-    
+
     final profileData = {
       'uuid': uuid,
       'displayName': data['displayName'] ?? uuid,
@@ -305,14 +331,14 @@ class UserProfileService {
       'picture': pictureData,
       'isOwnProfile': data['isOwnProfile'], // Preserve isOwnProfile marker
     };
-    
+
     _cache[uuid] = _CachedProfile(
-      profileData, 
+      profileData,
       DateTime.now(),
       presenceStatus: presenceStatus,
       lastSeen: lastSeen,
     );
-    
+
     // Notify any pending callbacks
     final callbacks = _pendingCallbacks.remove(uuid);
     if (callbacks != null) {
@@ -339,16 +365,16 @@ class UserProfileService {
   String getDisplayNameOrUuid(String uuid) {
     return getDisplayName(uuid) ?? uuid;
   }
-  
+
   /// Get profile with automatic loading and callback when ready
-  /// 
+  ///
   /// Returns cached profile immediately if available.
   /// If not cached, triggers async load and calls onLoaded when ready.
-  /// 
+  ///
   /// Usage:
   /// ```dart
   /// String displayName = 'Loading...';
-  /// 
+  ///
   /// final profile = UserProfileService.instance.getProfileOrLoad(
   ///   userId,
   ///   onLoaded: (profile) {
@@ -357,7 +383,7 @@ class UserProfileService {
   ///     });
   ///   },
   /// );
-  /// 
+  ///
   /// if (profile != null) {
   ///   displayName = profile['displayName'] ?? userId;
   /// }
@@ -372,12 +398,12 @@ class UserProfileService {
       // Already cached - return immediately
       return cached.data;
     }
-    
+
     // Not cached - register callback and trigger load
     if (onLoaded != null) {
       _pendingCallbacks.putIfAbsent(uuid, () => []).add(onLoaded);
     }
-    
+
     // Trigger load if not already loading
     if (!_loadingUuids.contains(uuid)) {
       loadProfile(uuid).catchError((e) {
@@ -395,7 +421,7 @@ class UserProfileService {
         }
       });
     }
-    
+
     return null; // Will call onLoaded when ready
   }
 
@@ -446,7 +472,7 @@ class UserProfileService {
 
   /// Get cache size (for debugging)
   int get cacheSize => _cache.length;
-  
+
   /// Find user UUID by atName (searches cache)
   String? findUuidByAtName(String atName) {
     for (final entry in _cache.entries) {
@@ -460,7 +486,7 @@ class UserProfileService {
     }
     return null;
   }
-  
+
   /// Get profile by atName (searches cache)
   Map<String, dynamic>? getProfileByAtName(String atName) {
     final uuid = findUuidByAtName(atName);
@@ -469,7 +495,7 @@ class UserProfileService {
     }
     return null;
   }
-  
+
   /// Get presence status for a UUID ('online', 'busy', 'offline')
   /// Returns cached presence if available, null otherwise
   String? getPresenceStatus(String uuid) {
@@ -477,7 +503,7 @@ class UserProfileService {
     if (cached == null || cached.isStale) return null;
     return cached.presenceStatus ?? 'offline';
   }
-  
+
   /// Get last seen timestamp for a UUID
   /// Returns null if not available or user is currently online
   DateTime? getLastSeen(String uuid) {
@@ -485,21 +511,21 @@ class UserProfileService {
     if (cached == null || cached.isStale) return null;
     return cached.lastSeen;
   }
-  
+
   /// Check if a user is online (online or busy)
   /// Returns false if not cached or offline
   bool isUserOnline(String uuid) {
     final status = getPresenceStatus(uuid);
     return status == 'online' || status == 'busy';
   }
-  
+
   /// Check if a user is busy (in a call)
   /// Returns false if not cached or not busy
   bool isUserBusy(String uuid) {
     final status = getPresenceStatus(uuid);
     return status == 'busy';
   }
-  
+
   /// Update presence status for a user (called from PresenceService real-time updates)
   void updatePresenceStatus(String uuid, String status, DateTime? lastSeen) {
     final cached = _cache[uuid];
@@ -509,7 +535,7 @@ class UserProfileService {
       debugPrint('[UserProfileService] Updated presence for $uuid: $status');
     }
   }
-  
+
   /// Load current user's own profile and cache it
   Future<void> loadOwnProfile() async {
     try {
@@ -525,32 +551,37 @@ class UserProfileService {
           apiServer = activeServer.serverUrl;
         }
       }
-      
+
       if (apiServer == null || apiServer.isEmpty) {
         throw Exception('No API server configured');
       }
-      
+
       String urlString = apiServer;
-      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      
+
       ApiService.init();
       final resp = await ApiService.get('$urlString/client/profile');
-      
+
       if (resp.statusCode == 200) {
         final data = resp.data;
         final uuid = data['uuid'] as String?;
-        
+
         debugPrint('[UserProfileService] loadOwnProfile response: uuid=$uuid');
-        
+
         if (uuid != null) {
           // Mark as own profile for currentUserUuid getter
           final profileData = Map<String, dynamic>.from(data);
           profileData['isOwnProfile'] = true;
-          debugPrint('[UserProfileService] Setting isOwnProfile=true for uuid=$uuid');
+          debugPrint(
+            '[UserProfileService] Setting isOwnProfile=true for uuid=$uuid',
+          );
           _cacheProfile(uuid, profileData);
-          debugPrint('[UserProfileService] ✓ Cached own profile: $uuid with isOwnProfile=${profileData['isOwnProfile']}');
+          debugPrint(
+            '[UserProfileService] ✓ Cached own profile: $uuid with isOwnProfile=${profileData['isOwnProfile']}',
+          );
         } else {
           debugPrint('[UserProfileService] ✗ No uuid in profile response');
         }
@@ -567,8 +598,9 @@ class UserProfileService {
   /// New code should use initProfiles() instead
   @Deprecated('Use initProfiles() instead')
   Future<void> loadAllProfiles() async {
-    debugPrint('[UserProfileService] ⚠️ loadAllProfiles() is deprecated, use initProfiles()');
+    debugPrint(
+      '[UserProfileService] ⚠️ loadAllProfiles() is deprecated, use initProfiles()',
+    );
     return initProfiles();
   }
 }
-

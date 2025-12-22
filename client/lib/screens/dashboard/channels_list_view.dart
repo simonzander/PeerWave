@@ -417,7 +417,10 @@ class _ChannelsListViewState extends State<ChannelsListView>
     }
   }
 
-  Future<void> _showDeleteChannelDialog(String channelId, String channelName) async {
+  Future<void> _showDeleteChannelDialog(
+    String channelId,
+    String channelName,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -449,7 +452,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
   Future<void> _deleteChannelMessages(String channelId) async {
     debugPrint('[CHANNELS_LIST] ===== START DELETING CHANNEL MESSAGES =====');
     debugPrint('[CHANNELS_LIST] Channel ID: $channelId');
-    
+
     try {
       // Delete from sent items store (old storage + SQLite)
       debugPrint('[CHANNELS_LIST] Step 1: Deleting sent items...');
@@ -476,9 +479,13 @@ class _ChannelsListViewState extends State<ChannelsListView>
 
       // Emit event to update UI
       debugPrint('[CHANNELS_LIST] Step 9: Emitting event...');
-      EventBus.instance.emit(AppEvent.conversationDeleted, {'channelId': channelId});
+      EventBus.instance.emit(AppEvent.conversationDeleted, {
+        'channelId': channelId,
+      });
 
-      debugPrint('[CHANNELS_LIST] ✓ Successfully deleted all messages from channel: $channelId');
+      debugPrint(
+        '[CHANNELS_LIST] ✓ Successfully deleted all messages from channel: $channelId',
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -496,12 +503,18 @@ class _ChannelsListViewState extends State<ChannelsListView>
     }
   }
 
-  void _showChannelContextMenu(BuildContext context, Offset position, String channelId, String channelName, String channelType) {
+  void _showChannelContextMenu(
+    BuildContext context,
+    Offset position,
+    String channelId,
+    String channelName,
+    String channelType,
+  ) {
     // Only show delete option for text channels (signal), not video channels (webrtc)
     if (channelType != 'signal') {
       return; // Don't show menu for video channels
     }
-    
+
     showMenu(
       context: context,
       position: RelativeRect.fromLTRB(
@@ -853,7 +866,9 @@ class _ChannelsListViewState extends State<ChannelsListView>
             opacity: _liveAnimation,
             child: AppThemeConstants.squaredIconContainer(
               icon: Icons.videocam,
-              backgroundColor: Theme.of(context).colorScheme.error.withValues(alpha: 0.2),
+              backgroundColor: Theme.of(
+                context,
+              ).colorScheme.error.withValues(alpha: 0.2),
               iconColor: Theme.of(context).colorScheme.error,
               size: 40,
             ),
@@ -880,7 +895,11 @@ class _ChannelsListViewState extends State<ChannelsListView>
                 color: Theme.of(context).colorScheme.error,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(Icons.circle, size: 8, color: Theme.of(context).colorScheme.onError),
+              child: Icon(
+                Icons.circle,
+                size: 8,
+                color: Theme.of(context).colorScheme.onError,
+              ),
             ),
           ),
         ],
@@ -925,10 +944,22 @@ class _ChannelsListViewState extends State<ChannelsListView>
 
     return GestureDetector(
       onSecondaryTapDown: (details) {
-        _showChannelContextMenu(context, details.globalPosition, uuid, name, type);
+        _showChannelContextMenu(
+          context,
+          details.globalPosition,
+          uuid,
+          name,
+          type,
+        );
       },
       onLongPressStart: (details) {
-        _showChannelContextMenu(context, details.globalPosition, uuid, name, type);
+        _showChannelContextMenu(
+          context,
+          details.globalPosition,
+          uuid,
+          name,
+          type,
+        );
       },
       child: AnimatedSelectionTile(
         leading: leading,
@@ -948,7 +979,11 @@ class _ChannelsListViewState extends State<ChannelsListView>
             IconButton(
               icon: Icon(
                 isStarred ? Icons.star : Icons.star_border,
-                color: isStarred ? Theme.of(context).colorScheme.tertiary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                color: isStarred
+                    ? Theme.of(context).colorScheme.tertiary
+                    : Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.5),
                 size: 20,
               ),
               onPressed: () => _toggleStar(uuid),
@@ -995,7 +1030,12 @@ class _ChannelsListViewState extends State<ChannelsListView>
           if (description.isNotEmpty)
             Text(
               description,
-              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1004,7 +1044,11 @@ class _ChannelsListViewState extends State<ChannelsListView>
                 ? '${participants.length} ${participants.length == 1 ? 'participant' : 'participants'} • LIVE'
                 : 'Video channel • No active participants',
             style: TextStyle(
-              color: isLive ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+              color: isLive
+                  ? Theme.of(context).colorScheme.error
+                  : Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.6),
               fontSize: 12,
             ),
           ),
@@ -1026,7 +1070,9 @@ class _ChannelsListViewState extends State<ChannelsListView>
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.6),
                 fontStyle: FontStyle.italic,
               ),
             ),
@@ -1039,7 +1085,9 @@ class _ChannelsListViewState extends State<ChannelsListView>
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ),
             if (lastMessageTime.isNotEmpty)
@@ -1047,7 +1095,9 @@ class _ChannelsListViewState extends State<ChannelsListView>
                 _formatTime(lastMessageTime),
                 style: TextStyle(
                   fontSize: 10,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
               ),
           ] else
@@ -1055,7 +1105,9 @@ class _ChannelsListViewState extends State<ChannelsListView>
               'Text channel',
               style: TextStyle(
                 fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ),
         ],
@@ -1213,7 +1265,11 @@ class _ChannelsListViewState extends State<ChannelsListView>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.inbox_outlined, size: 80, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
+            Icon(
+              Icons.inbox_outlined,
+              size: 80,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+            ),
             const SizedBox(height: 16),
             Text(
               title,
@@ -1226,7 +1282,10 @@ class _ChannelsListViewState extends State<ChannelsListView>
             const SizedBox(height: 8),
             Text(
               message,
-              style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+              style: TextStyle(
+                fontSize: 14,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -1270,7 +1329,7 @@ class _CreateChannelDialog extends StatefulWidget {
   const _CreateChannelDialog({
     required this.host,
     required this.onChannelCreated,
-  }) ;
+  });
 
   @override
   State<_CreateChannelDialog> createState() => _CreateChannelDialogState();
@@ -1393,7 +1452,11 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
             else if (availableRoles.isEmpty)
               Text(
                 'No standard roles available',
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
+                style: TextStyle(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.5),
+                ),
               )
             else
               DropdownButton<Role>(

@@ -31,6 +31,13 @@ import 'app/settings/notification_settings_page.dart';
 import 'app/settings/voice_video_settings_page.dart';
 import 'app/settings/system_tray_settings_page.dart';
 import 'app/webauthn_web.dart' if (dart.library.io) 'app/webauthn_stub.dart';
+// Troubleshoot feature
+import 'features/troubleshoot/presentation/pages/troubleshoot_page.dart';
+import 'features/troubleshoot/presentation/providers/troubleshoot_provider.dart';
+import 'features/troubleshoot/domain/usecases/get_key_metrics.dart';
+import 'features/troubleshoot/data/repositories/troubleshoot_repository_impl.dart';
+import 'features/troubleshoot/data/datasources/troubleshoot_datasource_impl.dart';
+import 'services/signal_service.dart';
 import 'app/backupcode_web.dart'
     if (dart.library.io) 'app/backupcode_web_native.dart';
 import 'app/backupcode_settings_page.dart'
@@ -203,7 +210,7 @@ class MyApp extends StatefulWidget {
     this.initialMagicKey,
     required this.serverUrl,
     required this.themeProvider,
-  }) ;
+  });
 
   // Public static accessor for root navigator key
   static GlobalKey<NavigatorState> get rootNavigatorKey =>
@@ -944,6 +951,28 @@ class _MyAppState extends State<MyApp> {
                           const VoiceVideoSettingsPage(),
                     ),
                     GoRoute(
+                      path: '/app/settings/troubleshoot',
+                      builder: (context, state) {
+                        // Create troubleshoot provider with dependencies
+                        final signalService = SignalService.instance;
+                        final dataSource = TroubleshootDataSourceImpl(
+                          signalService: signalService,
+                        );
+                        final repository = TroubleshootRepositoryImpl(
+                          dataSource: dataSource,
+                        );
+                        final getKeyMetrics = GetKeyMetrics(repository);
+
+                        return ChangeNotifierProvider(
+                          create: (_) => TroubleshootProvider(
+                            getKeyMetrics: getKeyMetrics,
+                            repository: repository,
+                          ),
+                          child: const TroubleshootPage(),
+                        );
+                      },
+                    ),
+                    GoRoute(
                       path: '/app/settings/system-tray',
                       builder: (context, state) =>
                           const SystemTraySettingsPage(),
@@ -1328,6 +1357,28 @@ class _MyAppState extends State<MyApp> {
                           const VoiceVideoSettingsPage(),
                     ),
                     GoRoute(
+                      path: '/app/settings/troubleshoot',
+                      builder: (context, state) {
+                        // Create troubleshoot provider with dependencies
+                        final signalService = SignalService.instance;
+                        final dataSource = TroubleshootDataSourceImpl(
+                          signalService: signalService,
+                        );
+                        final repository = TroubleshootRepositoryImpl(
+                          dataSource: dataSource,
+                        );
+                        final getKeyMetrics = GetKeyMetrics(repository);
+
+                        return ChangeNotifierProvider(
+                          create: (_) => TroubleshootProvider(
+                            getKeyMetrics: getKeyMetrics,
+                            repository: repository,
+                          ),
+                          child: const TroubleshootPage(),
+                        );
+                      },
+                    ),
+                    GoRoute(
                       path: '/app/settings/system-tray',
                       builder: (context, state) =>
                           const SystemTraySettingsPage(),
@@ -1489,7 +1540,8 @@ class _MyAppState extends State<MyApp> {
           // ========================================
           // Skip Signal key checks ONLY for authentication flows when NOT logged in
           // If logged in, we should always run initialization checks
-          final isAuthFlow = !loggedIn &&
+          final isAuthFlow =
+              !loggedIn &&
               (location == '/otp' ||
                   location == '/login' ||
                   location == '/backupcode/recover' ||

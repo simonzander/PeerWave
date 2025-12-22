@@ -14,7 +14,7 @@ class SessionAuthService {
 
   final _secureStorage = SecureSessionStorage();
   final _uuid = const Uuid();
-  
+
   // Cache for used nonces (in-memory, cleared on app restart)
   final Map<String, DateTime> _usedNonces = {};
   static const _nonceCacheMaxAge = Duration(minutes: 10);
@@ -44,14 +44,14 @@ class SessionAuthService {
     String? requestBody,
   }) async {
     final sessionSecret = await getSessionSecret(clientId);
-    
+
     if (sessionSecret == null || sessionSecret.isEmpty) {
       throw Exception('No session secret found for client: $clientId');
     }
 
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final nonce = _uuid.v4();
-    
+
     // Generate signature
     final signature = _generateSignature(
       sessionSecret: sessionSecret,
@@ -80,14 +80,15 @@ class SessionAuthService {
     String? requestBody,
   }) {
     // Create message to sign
-    final message = '$clientId:$timestamp:$nonce:$requestPath:${requestBody ?? ''}';
-    
+    final message =
+        '$clientId:$timestamp:$nonce:$requestPath:${requestBody ?? ''}';
+
     // Generate HMAC-SHA256
     final key = utf8.encode(sessionSecret);
     final bytes = utf8.encode(message);
     final hmac = Hmac(sha256, key);
     final digest = hmac.convert(bytes);
-    
+
     return digest.toString();
   }
 
@@ -109,7 +110,7 @@ class SessionAuthService {
       requestPath: requestPath,
       requestBody: requestBody,
     );
-    
+
     return signature == expectedSignature;
   }
 

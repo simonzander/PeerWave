@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import '../../config/layout_config.dart';
 
 /// Adaptive Scaffold - Material 3 Responsive Layout
-/// 
+///
 /// Automatically switches between three navigation patterns based on screen width:
 /// - Mobile (<600px): Bottom NavigationBar
 /// - Tablet (600-840px): NavigationRail (left side)
 /// - Desktop (>840px): NavigationDrawer (permanent)
-/// 
+///
 /// Usage:
 /// ```dart
 /// AdaptiveScaffold(
@@ -87,7 +87,7 @@ class AdaptiveScaffold extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final layoutType = LayoutConfig.getLayoutType(constraints.maxWidth);
-        
+
         switch (layoutType) {
           case LayoutType.mobile:
             return _buildMobileLayout(context);
@@ -103,7 +103,9 @@ class AdaptiveScaffold extends StatelessWidget {
   /// Mobile layout: Bottom NavigationBar
   Widget _buildMobileLayout(BuildContext context) {
     return Scaffold(
-      appBar: customAppBar ?? (showAppBar ? _buildAppBar(context, AppBarSize.small) : null),
+      appBar:
+          customAppBar ??
+          (showAppBar ? _buildAppBar(context, AppBarSize.small) : null),
       body: body,
       bottomNavigationBar: _buildBottomNavigationBar(context),
       floatingActionButton: floatingActionButton,
@@ -114,7 +116,9 @@ class AdaptiveScaffold extends StatelessWidget {
   /// Tablet layout: NavigationRail (left side)
   Widget _buildTabletLayout(BuildContext context) {
     return Scaffold(
-      appBar: customAppBar ?? (showAppBar ? _buildAppBar(context, AppBarSize.medium) : null),
+      appBar:
+          customAppBar ??
+          (showAppBar ? _buildAppBar(context, AppBarSize.medium) : null),
       body: Row(
         children: [
           _buildNavigationRail(context),
@@ -128,13 +132,13 @@ class AdaptiveScaffold extends StatelessWidget {
   /// Desktop layout: NavigationDrawer (permanent)
   Widget _buildDesktopLayout(BuildContext context) {
     return Scaffold(
-      appBar: customAppBar ?? (showAppBar ? _buildAppBar(context, AppBarSize.large) : null),
+      appBar:
+          customAppBar ??
+          (showAppBar ? _buildAppBar(context, AppBarSize.large) : null),
       body: Row(
         children: [
           _buildNavigationDrawer(context),
-          Expanded(
-            child: body,
-          ),
+          Expanded(child: body),
         ],
       ),
       floatingActionButton: floatingActionButton,
@@ -175,7 +179,7 @@ class AdaptiveScaffold extends StatelessWidget {
   /// Get AppBar text style based on size
   TextStyle? _getAppBarTextStyle(BuildContext context, AppBarSize size) {
     final textTheme = Theme.of(context).textTheme;
-    
+
     switch (size) {
       case AppBarSize.small:
         return textTheme.titleLarge;
@@ -199,23 +203,23 @@ class AdaptiveScaffold extends StatelessWidget {
   /// Build NavigationRail (Tablet)
   Widget _buildNavigationRail(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return NavigationRail(
       selectedIndex: selectedIndex,
       onDestinationSelected: onDestinationSelected,
       extended: navigationRailExtended,
       leading: navigationLeading,
-      trailing: navigationTrailing != null 
-        ? Expanded(
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 16.0),
-                child: navigationTrailing,
+      trailing: navigationTrailing != null
+          ? Expanded(
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: navigationTrailing,
+                ),
               ),
-            ),
-          )
-        : null,
+            )
+          : null,
       destinations: destinations.map((destination) {
         return NavigationRailDestination(
           icon: destination.icon,
@@ -231,7 +235,7 @@ class AdaptiveScaffold extends StatelessWidget {
   /// Build NavigationDrawer (Desktop)
   Widget _buildNavigationDrawer(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return SizedBox(
       width: LayoutConfig.navigationDrawerWidth,
       child: NavigationDrawer(
@@ -246,7 +250,7 @@ class AdaptiveScaffold extends StatelessWidget {
               padding: const EdgeInsets.all(16.0),
               child: navigationLeading,
             ),
-          
+
           // Destinations
           ...destinations.map((destination) {
             return NavigationDrawerDestination(
@@ -255,7 +259,7 @@ class AdaptiveScaffold extends StatelessWidget {
               label: Text(destination.label),
             );
           }),
-          
+
           // Trailing (footer)
           if (navigationTrailing != null) ...[
             const Divider(),
@@ -271,18 +275,18 @@ class AdaptiveScaffold extends StatelessWidget {
 }
 
 /// Adaptive Scaffold with Nested Navigation
-/// 
+///
 /// For apps with primary and secondary navigation levels.
 /// Example: Main nav (Messages/People/Files) + Sub nav (DMs/Channels)
 class AdaptiveNestedScaffold extends StatelessWidget {
   final int primarySelectedIndex;
   final ValueChanged<int> onPrimaryDestinationSelected;
   final List<NavigationDestination> primaryDestinations;
-  
+
   final int? secondarySelectedIndex;
   final ValueChanged<int>? onSecondaryDestinationSelected;
   final List<NavigationDestination>? secondaryDestinations;
-  
+
   final Widget body;
   final dynamic appBarTitle;
   final List<Widget>? appBarActions;
@@ -307,8 +311,9 @@ class AdaptiveNestedScaffold extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final layoutType = LayoutConfig.getLayoutType(constraints.maxWidth);
-        final hasSecondary = secondaryDestinations != null && secondaryDestinations!.isNotEmpty;
-        
+        final hasSecondary =
+            secondaryDestinations != null && secondaryDestinations!.isNotEmpty;
+
         if (layoutType == LayoutType.desktop && hasSecondary) {
           // Desktop: Show both primary (drawer) and secondary (rail)
           return _buildDesktopNestedLayout(context);
@@ -330,10 +335,12 @@ class AdaptiveNestedScaffold extends StatelessWidget {
 
   Widget _buildDesktopNestedLayout(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Scaffold(
       appBar: AppBar(
-        title: appBarTitle is String ? Text(appBarTitle as String) : appBarTitle as Widget?,
+        title: appBarTitle is String
+            ? Text(appBarTitle as String)
+            : appBarTitle as Widget?,
         actions: appBarActions,
         elevation: 0,
         backgroundColor: colorScheme.surface,
@@ -354,7 +361,7 @@ class AdaptiveNestedScaffold extends StatelessWidget {
               }).toList(),
             ),
           ),
-          
+
           // Secondary navigation (rail)
           if (secondaryDestinations != null) ...[
             NavigationRail(
@@ -368,7 +375,7 @@ class AdaptiveNestedScaffold extends StatelessWidget {
               }).toList(),
             ),
           ],
-          
+
           // Content
           Expanded(child: body),
         ],
@@ -381,33 +388,38 @@ class AdaptiveNestedScaffold extends StatelessWidget {
     if (secondaryDestinations == null || secondaryDestinations!.isEmpty) {
       return body;
     }
-    
+
     return Column(
       children: [
         // Secondary navigation tabs
         Container(
           height: 48,
-          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+          color: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: secondaryDestinations!.length,
             itemBuilder: (context, index) {
               final dest = secondaryDestinations![index];
               final isSelected = index == (secondarySelectedIndex ?? 0);
-              
+
               return InkWell(
                 onTap: () => onSecondaryDestinationSelected?.call(index),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
-                    border: isSelected 
-                      ? Border(
-                          bottom: BorderSide(
-                            color: Theme.of(context).colorScheme.primary,
-                            width: 2,
-                          ),
-                        )
-                      : null,
+                    border: isSelected
+                        ? Border(
+                            bottom: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            ),
+                          )
+                        : null,
                   ),
                   child: Row(
                     children: [
@@ -426,4 +438,3 @@ class AdaptiveNestedScaffold extends StatelessWidget {
     );
   }
 }
-

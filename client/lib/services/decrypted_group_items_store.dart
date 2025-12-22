@@ -16,7 +16,7 @@ class DecryptedGroupItemsStore {
 
   static Future<DecryptedGroupItemsStore> getInstance() async {
     if (_instance != null) return _instance!;
-    
+
     _instance = DecryptedGroupItemsStore._();
     return _instance!;
   }
@@ -47,7 +47,7 @@ class DecryptedGroupItemsStore {
     } catch (e) {
       debugPrint('[GROUP ITEMS] ⚠ SQLite failed, using fallback: $e');
     }
-    
+
     // Also store in old storage (dual write for safety)
     final key = '$_keyPrefix${channelId}_$itemId';
     final data = jsonEncode({
@@ -68,7 +68,7 @@ class DecryptedGroupItemsStore {
     } else {
       final storage = FlutterSecureStorage();
       await storage.write(key: key, value: data);
-      
+
       // Track keys
       String? keysJson = await storage.read(key: 'group_item_keys');
       List<String> keys = [];
@@ -88,27 +88,33 @@ class DecryptedGroupItemsStore {
     try {
       final sqliteStore = await SqliteGroupMessageStore.getInstance();
       final messages = await sqliteStore.getChannelMessages(channelId);
-      
+
       if (messages.isNotEmpty) {
-        debugPrint('[GROUP ITEMS] ✓ Loaded ${messages.length} messages from SQLite');
-        
+        debugPrint(
+          '[GROUP ITEMS] ✓ Loaded ${messages.length} messages from SQLite',
+        );
+
         // Convert SQLite format to expected format
-        return messages.map((msg) => {
-          'itemId': msg['item_id'],
-          'channelId': msg['channel_id'],
-          'sender': msg['sender'],
-          'senderDevice': msg['sender_device_id'] ?? 0,
-          'message': msg['message'],
-          'timestamp': msg['timestamp'],
-          'type': msg['type'] ?? 'message',
-          'decryptedAt': msg['decrypted_at'],
-          'reactions': msg['reactions'] ?? '{}', // Include reactions
-        }).toList();
+        return messages
+            .map(
+              (msg) => {
+                'itemId': msg['item_id'],
+                'channelId': msg['channel_id'],
+                'sender': msg['sender'],
+                'senderDevice': msg['sender_device_id'] ?? 0,
+                'message': msg['message'],
+                'timestamp': msg['timestamp'],
+                'type': msg['type'] ?? 'message',
+                'decryptedAt': msg['decrypted_at'],
+                'reactions': msg['reactions'] ?? '{}', // Include reactions
+              },
+            )
+            .toList();
       }
     } catch (e) {
       debugPrint('[GROUP ITEMS] ⚠ SQLite failed, using fallback: $e');
     }
-    
+
     // Fallback to old storage
     final items = <Map<String, dynamic>>[];
     final prefix = '$_keyPrefix$channelId';
@@ -117,7 +123,7 @@ class DecryptedGroupItemsStore {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
       final keys = await storage.getAllKeys(_storeName, _storeName);
-      
+
       for (var key in keys) {
         if (key.startsWith(prefix)) {
           var value = await storage.getDecrypted(_storeName, _storeName, key);
@@ -144,7 +150,9 @@ class DecryptedGroupItemsStore {
                 final item = jsonDecode(value);
                 items.add(item);
               } catch (e) {
-                debugPrint('[DecryptedGroupItemsStore] Error decoding item: $e');
+                debugPrint(
+                  '[DecryptedGroupItemsStore] Error decoding item: $e',
+                );
               }
             }
           }
@@ -152,7 +160,9 @@ class DecryptedGroupItemsStore {
       }
     }
 
-    debugPrint('[GROUP ITEMS] ✓ Loaded ${items.length} messages from fallback storage');
+    debugPrint(
+      '[GROUP ITEMS] ✓ Loaded ${items.length} messages from fallback storage',
+    );
     return items;
   }
 
@@ -202,7 +212,7 @@ class DecryptedGroupItemsStore {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
       final keys = await storage.getAllKeys(_storeName, _storeName);
-      
+
       for (var key in keys) {
         if (key.startsWith(prefix)) {
           await storage.deleteEncrypted(_storeName, _storeName, key);
@@ -214,7 +224,7 @@ class DecryptedGroupItemsStore {
       if (keysJson != null) {
         List<String> keys = List<String>.from(jsonDecode(keysJson));
         List<String> remainingKeys = [];
-        
+
         for (var key in keys) {
           if (key.startsWith(prefix)) {
             await storage.delete(key: key);
@@ -222,8 +232,11 @@ class DecryptedGroupItemsStore {
             remainingKeys.add(key);
           }
         }
-        
-        await storage.write(key: 'group_item_keys', value: jsonEncode(remainingKeys));
+
+        await storage.write(
+          key: 'group_item_keys',
+          value: jsonEncode(remainingKeys),
+        );
       }
     }
   }
@@ -234,7 +247,7 @@ class DecryptedGroupItemsStore {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
       final keys = await storage.getAllKeys(_storeName, _storeName);
-      
+
       for (var key in keys) {
         await storage.deleteEncrypted(_storeName, _storeName, key);
       }
@@ -259,7 +272,7 @@ class DecryptedGroupItemsStore {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
       final keys = await storage.getAllKeys(_storeName, _storeName);
-      
+
       for (var key in keys) {
         // Extract channelId from key format: group_item_{channelId}_{itemId}
         if (key.startsWith(_keyPrefix)) {
@@ -274,7 +287,7 @@ class DecryptedGroupItemsStore {
       String? keysJson = await storage.read(key: 'group_item_keys');
       if (keysJson != null) {
         List<String> keys = List<String>.from(jsonDecode(keysJson));
-        
+
         for (var key in keys) {
           // Extract channelId from key format: group_item_{channelId}_{itemId}
           if (key.startsWith(_keyPrefix)) {
@@ -293,7 +306,7 @@ class DecryptedGroupItemsStore {
   /// Delete all decrypted items for a channel
   Future<void> deleteChannelItems(String channelId) async {
     debugPrint('[GROUP ITEMS] Deleting all items for channel: $channelId');
-    
+
     // Delete from SQLite
     try {
       final sqliteStore = await SqliteGroupMessageStore.getInstance();
@@ -302,7 +315,7 @@ class DecryptedGroupItemsStore {
     } catch (e) {
       debugPrint('[GROUP ITEMS] ⚠ SQLite deletion failed: $e');
     }
-    
+
     // Delete from old storage
     final prefix = '$_keyPrefix$channelId';
     int deletedCount = 0;
@@ -310,7 +323,7 @@ class DecryptedGroupItemsStore {
     if (kIsWeb) {
       final storage = DeviceScopedStorageService.instance;
       final keys = await storage.getAllKeys(_storeName, _storeName);
-      
+
       for (var key in keys) {
         if (key.startsWith(prefix)) {
           await storage.deleteEncrypted(_storeName, _storeName, key);
@@ -323,7 +336,7 @@ class DecryptedGroupItemsStore {
       if (keysJson != null) {
         List<String> keys = List<String>.from(jsonDecode(keysJson));
         List<String> remainingKeys = [];
-        
+
         for (var key in keys) {
           if (key.startsWith(prefix)) {
             await storage.delete(key: key);
@@ -332,13 +345,17 @@ class DecryptedGroupItemsStore {
             remainingKeys.add(key);
           }
         }
-        
+
         // Update keys list
-        await storage.write(key: 'group_item_keys', value: jsonEncode(remainingKeys));
+        await storage.write(
+          key: 'group_item_keys',
+          value: jsonEncode(remainingKeys),
+        );
       }
     }
-    
-    debugPrint('[GROUP ITEMS] ✓ Deleted $deletedCount items from old storage for channel: $channelId');
+
+    debugPrint(
+      '[GROUP ITEMS] ✓ Deleted $deletedCount items from old storage for channel: $channelId',
+    );
   }
 }
-

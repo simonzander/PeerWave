@@ -58,7 +58,10 @@ class Meeting {
   static List<String> _parseInvitedParticipants(dynamic raw) {
     if (raw == null) return const [];
     if (raw is List) {
-      return raw.map((e) => e.toString()).where((e) => e.trim().isNotEmpty).toList();
+      return raw
+          .map((e) => e.toString())
+          .where((e) => e.trim().isNotEmpty)
+          .toList();
     }
     return const [];
   }
@@ -73,11 +76,11 @@ class Meeting {
       description: json['description'] as String?,
       createdBy: json['created_by'] as String,
       scheduledStart: scheduledStartRaw != null
-        ? DateTime.parse(scheduledStartRaw as String)
-        : null,
+          ? DateTime.parse(scheduledStartRaw as String)
+          : null,
       scheduledEnd: scheduledEndRaw != null
-        ? DateTime.parse(scheduledEndRaw as String)
-        : null,
+          ? DateTime.parse(scheduledEndRaw as String)
+          : null,
       startedAt: json['started_at'] != null
           ? DateTime.parse(json['started_at'] as String)
           : null,
@@ -85,11 +88,15 @@ class Meeting {
           ? DateTime.parse(json['ended_at'] as String)
           : null,
       status: json['status'] as String,
-      isInstantCall: json['is_instant_call'] == 1 || json['is_instant_call'] == true,
+      isInstantCall:
+          json['is_instant_call'] == 1 || json['is_instant_call'] == true,
       channelId: json['channel_id'] as String?,
       livekitRoom: json['livekit_room'] as String?,
-      livekitRoomActive: json['livekit_room_active'] == 1 || json['livekit_room_active'] == true,
-      allowExternal: json['allow_external'] == 1 || json['allow_external'] == true,
+      livekitRoomActive:
+          json['livekit_room_active'] == 1 ||
+          json['livekit_room_active'] == true,
+      allowExternal:
+          json['allow_external'] == 1 || json['allow_external'] == true,
       invitationToken: json['invitation_token'] as String?,
       invitationExpiresAt: json['invitation_expires_at'] != null
           ? DateTime.parse(json['invitation_expires_at'] as String)
@@ -98,13 +105,20 @@ class Meeting {
       muteOnJoin: json['mute_on_join'] == 1 || json['mute_on_join'] == true,
       maxParticipants: json['max_participants'] as int?,
       participantCount: json['participant_count'] as int?,
-      invitedParticipants: _parseInvitedParticipants(json['invited_participants']),
+      invitedParticipants: _parseInvitedParticipants(
+        json['invited_participants'],
+      ),
       rsvpSummary: json['rsvp_summary'] is Map
-          ? MeetingRsvpSummary.fromJson((json['rsvp_summary'] as Map).cast<String, dynamic>())
+          ? MeetingRsvpSummary.fromJson(
+              (json['rsvp_summary'] as Map).cast<String, dynamic>(),
+            )
           : null,
       invitedRsvpStatuses: json['invited_rsvp_statuses'] is Map
           ? (json['invited_rsvp_statuses'] as Map).map(
-              (k, v) => MapEntry(k.toString().toLowerCase(), v.toString().toLowerCase()),
+              (k, v) => MapEntry(
+                k.toString().toLowerCase(),
+                v.toString().toLowerCase(),
+              ),
             )
           : null,
       createdAt: DateTime.parse(json['created_at'] as String),

@@ -453,7 +453,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
 
       final dataMap = data as Map<String, dynamic>?;
       final channelId = dataMap?['channelId'] as String?;
-      
+
       // If this channel's messages were deleted, clear the UI
       if (channelId == widget.channelUuid) {
         debugPrint(
@@ -881,9 +881,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           ...sentGroupItems
               .where((m) {
                 final msgType = m['type'] ?? 'message';
-                final isDisplayable = displayableMessageTypes.contains(
-                  msgType,
-                );
+                final isDisplayable = displayableMessageTypes.contains(msgType);
                 if (!isDisplayable) {
                   debugPrint(
                     '[SIGNAL_GROUP] Skipping sent system message type: $msgType',
@@ -904,9 +902,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           ...receivedGroupItems
               .where((m) {
                 final msgType = m['type'] ?? 'message';
-                final isDisplayable = displayableMessageTypes.contains(
-                  msgType,
-                );
+                final isDisplayable = displayableMessageTypes.contains(msgType);
                 if (!isDisplayable) {
                   debugPrint(
                     '[SIGNAL_GROUP] Skipping received system message type: $msgType',

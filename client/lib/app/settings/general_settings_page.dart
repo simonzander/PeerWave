@@ -12,7 +12,7 @@ class GeneralSettingsPage extends StatefulWidget {
 class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
   static const String autoDeleteDaysKey = 'auto_delete_days';
   static const int defaultAutoDeleteDays = 365;
-  
+
   int _autoDeleteDays = defaultAutoDeleteDays;
   bool _loading = true;
   bool _isCleaningUp = false;
@@ -33,7 +33,8 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _autoDeleteDays = prefs.getInt(autoDeleteDaysKey) ?? defaultAutoDeleteDays;
+      _autoDeleteDays =
+          prefs.getInt(autoDeleteDaysKey) ?? defaultAutoDeleteDays;
       _daysController.text = _autoDeleteDays.toString();
       _loading = false;
     });
@@ -46,24 +47,28 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
       _autoDeleteDays = days;
       _daysController.text = days.toString();
     });
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Auto-delete set to ${days > 0 ? "$days days" : "disabled"}')),
+        SnackBar(
+          content: Text(
+            'Auto-delete set to ${days > 0 ? "$days days" : "disabled"}',
+          ),
+        ),
       );
     }
   }
 
   Future<void> _runCleanupNow() async {
     if (_autoDeleteDays <= 0) return;
-    
+
     setState(() {
       _isCleaningUp = true;
     });
 
     try {
       await MessageCleanupService.instance.cleanupOldMessages(_autoDeleteDays);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -96,16 +101,12 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
     final colorScheme = theme.colorScheme;
 
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        title: const Text('General Settings'),
-      ),
+      appBar: AppBar(title: const Text('General Settings')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -141,7 +142,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  
+
                   // Input Field
                   TextField(
                     controller: _daysController,
@@ -170,9 +171,9 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                       _saveAutoDeleteDays(days.clamp(0, 3650)); // Max 10 years
                     },
                   ),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Quick Presets
                   Text(
                     'Quick presets:',
@@ -202,8 +203,8 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                               : colorScheme.onSurface,
                         ),
                         onPressed: () => _saveAutoDeleteDays(0),
-                        backgroundColor: _autoDeleteDays == 0 
-                            ? colorScheme.primaryContainer 
+                        backgroundColor: _autoDeleteDays == 0
+                            ? colorScheme.primaryContainer
                             : colorScheme.surfaceContainerHighest,
                       ),
                       ActionChip(
@@ -223,8 +224,8 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                               : colorScheme.onSurface,
                         ),
                         onPressed: () => _saveAutoDeleteDays(30),
-                        backgroundColor: _autoDeleteDays == 30 
-                            ? colorScheme.primaryContainer 
+                        backgroundColor: _autoDeleteDays == 30
+                            ? colorScheme.primaryContainer
                             : colorScheme.surfaceContainerHighest,
                       ),
                       ActionChip(
@@ -244,8 +245,8 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                               : colorScheme.onSurface,
                         ),
                         onPressed: () => _saveAutoDeleteDays(90),
-                        backgroundColor: _autoDeleteDays == 90 
-                            ? colorScheme.primaryContainer 
+                        backgroundColor: _autoDeleteDays == 90
+                            ? colorScheme.primaryContainer
                             : colorScheme.surfaceContainerHighest,
                       ),
                       ActionChip(
@@ -265,15 +266,15 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                               : colorScheme.onSurface,
                         ),
                         onPressed: () => _saveAutoDeleteDays(365),
-                        backgroundColor: _autoDeleteDays == 365 
-                            ? colorScheme.primaryContainer 
+                        backgroundColor: _autoDeleteDays == 365
+                            ? colorScheme.primaryContainer
                             : colorScheme.surfaceContainerHighest,
                       ),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Current Status
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -286,7 +287,9 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                     child: Row(
                       children: [
                         Icon(
-                          _autoDeleteDays == 0 ? Icons.warning : Icons.check_circle,
+                          _autoDeleteDays == 0
+                              ? Icons.warning
+                              : Icons.check_circle,
                           color: _autoDeleteDays == 0
                               ? colorScheme.onErrorContainer
                               : colorScheme.onPrimaryContainer,
@@ -307,9 +310,9 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                       ],
                     ),
                   ),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Manual Cleanup Button
                   SizedBox(
                     width: double.infinity,
@@ -324,12 +327,14 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.cleaning_services),
-                      label: Text(_isCleaningUp ? 'Cleaning up...' : 'Run Cleanup Now'),
+                      label: Text(
+                        _isCleaningUp ? 'Cleaning up...' : 'Run Cleanup Now',
+                      ),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 8),
-                  
+
                   // Warning text
                   if (_autoDeleteDays > 0 && _autoDeleteDays < 7)
                     Padding(
@@ -357,9 +362,9 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
               ),
             ),
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Info Card
           Card(
             color: colorScheme.surfaceContainerHighest,
@@ -370,15 +375,9 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        Icons.info_outline,
-                        color: colorScheme.primary,
-                      ),
+                      Icon(Icons.info_outline, color: colorScheme.primary),
                       const SizedBox(width: 12),
-                      Text(
-                        'How it works',
-                        style: theme.textTheme.titleMedium,
-                      ),
+                      Text('How it works', style: theme.textTheme.titleMedium),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -423,4 +422,3 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
     );
   }
 }
-

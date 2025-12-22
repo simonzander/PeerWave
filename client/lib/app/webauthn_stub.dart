@@ -22,4 +22,3 @@ class WebauthnPage extends StatelessWidget {
     );
   }
 }
-

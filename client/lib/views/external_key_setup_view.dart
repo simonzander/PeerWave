@@ -1,18 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
-import '../utils/html_stub.dart'
-    if (dart.library.html) 'dart:html' as html;
+import '../utils/html_stub.dart' if (dart.library.html) 'dart:html' as html;
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart' as signal;
 import '../services/external_participant_service.dart';
 
 /// External participant E2EE key setup view
-/// 
+///
 /// Generates Signal Protocol keys for guest users before joining meeting:
 /// - Identity key pair (reusable across meetings)
 /// - Signed pre-key (7 day validity)
 /// - 30 one-time pre-keys
-/// 
+///
 /// Keys stored in sessionStorage for reuse within browser tab.
 /// Progress shown with step-by-step indicators.
 class ExternalKeySetupView extends StatefulWidget {
@@ -80,10 +79,14 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
           final daysSinceCreation = age / (1000 * 60 * 60 * 24);
 
           if (daysSinceCreation > 7) {
-            debugPrint('[KeySetup] Signed pre-key expired (${daysSinceCreation.toStringAsFixed(1)} days old)');
+            debugPrint(
+              '[KeySetup] Signed pre-key expired (${daysSinceCreation.toStringAsFixed(1)} days old)',
+            );
             needNewSignedPre = true;
           } else {
-            debugPrint('[KeySetup] Reusing signed pre-key (${daysSinceCreation.toStringAsFixed(1)} days old)');
+            debugPrint(
+              '[KeySetup] Reusing signed pre-key (${daysSinceCreation.toStringAsFixed(1)} days old)',
+            );
           }
         } catch (e) {
           debugPrint('[KeySetup] Invalid signed pre-key format: $e');
@@ -98,7 +101,9 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
         try {
           final preKeysJson = jsonDecode(storedPreKeys) as List;
           if (preKeysJson.length < 30) {
-            debugPrint('[KeySetup] Pre-keys low (${preKeysJson.length}), generating new batch');
+            debugPrint(
+              '[KeySetup] Pre-keys low (${preKeysJson.length}), generating new batch',
+            );
             needNewPreKeys = true;
           } else {
             debugPrint('[KeySetup] Reusing ${preKeysJson.length} pre-keys');
@@ -229,8 +234,9 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
 
     // Convert to base64 for storage
     final publicKey = base64Encode(identityKeyPair.getPublicKey().serialize());
-    final privateKey =
-        base64Encode(identityKeyPair.getPrivateKey().serialize());
+    final privateKey = base64Encode(
+      identityKeyPair.getPrivateKey().serialize(),
+    );
 
     // Store in sessionStorage
     storage['external_identity_key_public'] = publicKey;
@@ -247,10 +253,13 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
     // Reconstruct identity key pair
     final publicKeyBytes = base64Decode(identityPublic);
     final privateKeyBytes = base64Decode(identityPrivate);
-    
+
     final publicKey = signal.Curve.decodePoint(publicKeyBytes, 0);
     final privateKey = signal.Curve.decodePrivatePoint(privateKeyBytes);
-    final identityKeyPair = signal.IdentityKeyPair(signal.IdentityKey(publicKey), privateKey);
+    final identityKeyPair = signal.IdentityKeyPair(
+      signal.IdentityKey(publicKey),
+      privateKey,
+    );
 
     // Generate signed pre-key
     final signedPreKey = signal.generateSignedPreKey(identityKeyPair, 1);
@@ -258,8 +267,12 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
     // Convert to JSON with timestamp
     final signedPreKeyData = {
       'id': 1,
-      'publicKey': base64Encode(signedPreKey.getKeyPair().publicKey.serialize()),
-      'privateKey': base64Encode(signedPreKey.getKeyPair().privateKey.serialize()),
+      'publicKey': base64Encode(
+        signedPreKey.getKeyPair().publicKey.serialize(),
+      ),
+      'privateKey': base64Encode(
+        signedPreKey.getKeyPair().privateKey.serialize(),
+      ),
       'signature': base64Encode(signedPreKey.signature),
       'timestamp': DateTime.now().millisecondsSinceEpoch,
     };
@@ -302,7 +315,9 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
     storage['external_pre_keys'] = jsonEncode(preKeysJson);
     storage['external_next_pre_key_id'] = (startId + 30).toString();
 
-    debugPrint('[KeySetup] Generated 30 pre-keys (IDs: $startId-${startId + 29})');
+    debugPrint(
+      '[KeySetup] Generated 30 pre-keys (IDs: $startId-${startId + 29})',
+    );
   }
 
   /// Upload keys to server and register the external participant session
@@ -314,7 +329,9 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
     final signedPreKeyStr = storage['external_signed_pre_key'];
     final preKeysStr = storage['external_pre_keys'];
 
-    if (identityPublic == null || signedPreKeyStr == null || preKeysStr == null) {
+    if (identityPublic == null ||
+        signedPreKeyStr == null ||
+        preKeysStr == null) {
       throw Exception('E2EE keys not found in sessionStorage');
     }
 
@@ -419,8 +436,8 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
                   Text(
                     _hasError ? 'Setup Failed' : 'Securing Connection',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
@@ -430,9 +447,9 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
                     _hasError
                         ? 'Encryption setup failed'
                         : 'Setting up end-to-end encryption...',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey[600],
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 40),
@@ -448,8 +465,11 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
                       ),
                       child: Column(
                         children: [
-                          Icon(Icons.error_outline,
-                              color: Colors.red, size: 40),
+                          Icon(
+                            Icons.error_outline,
+                            color: Colors.red,
+                            size: 40,
+                          ),
                           const SizedBox(height: 12),
                           Text(
                             _errorMessage,
@@ -480,8 +500,8 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
                     Text(
                       _currentStep,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w500,
-                          ),
+                        fontWeight: FontWeight.w500,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 8),
@@ -490,9 +510,9 @@ class _ExternalKeySetupViewState extends State<ExternalKeySetupView> {
                     Text(
                       '${(_progress * 100).toInt()}%',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ],

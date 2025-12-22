@@ -24,7 +24,7 @@ import 'device_identity_service.dart';
 import 'web/webauthn_crypto_service.dart';
 import 'native_crypto_service.dart';
 import 'event_bus.dart';
-import 'key_management_metrics.dart';
+import '../core/metrics/key_management_metrics.dart';
 import 'server_config_web.dart'
     if (dart.library.io) 'server_config_native.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';

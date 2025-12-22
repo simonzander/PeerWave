@@ -402,9 +402,9 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      guest.displayName != 'Guest' 
-                        ? '${guest.displayName} (Guest)'
-                        : 'Guest',
+                      guest.displayName != 'Guest'
+                          ? '${guest.displayName} (Guest)'
+                          : 'Guest',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),

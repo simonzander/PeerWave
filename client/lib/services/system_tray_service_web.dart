@@ -1,4 +1,3 @@
-
 /// Stub service for web platform (no-op implementation)
 class SystemTrayService {
   static final SystemTrayService _instance = SystemTrayService._internal();

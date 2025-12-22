@@ -6,7 +6,7 @@ import 'package:path/path.dart';
 import '../device_identity_service.dart';
 
 /// Central database helper for PeerWave with device-scoped storage
-/// 
+///
 /// Database naming: peerwave_{deviceId}.db
 /// - Device isolation: Each device has its own database
 /// - Application-layer encryption: Sensitive columns encrypted
@@ -15,17 +15,20 @@ class DatabaseHelper {
   static Database? _database;
   static bool _factoryInitialized = false;
   static bool _initializing = false;
-  static const String _databaseBaseName = 'peerwave'; // Base name without .db extension
-  static const int _databaseVersion = 7; // Version 7: Add reactions column to messages
-  
-  static final DeviceIdentityService _deviceIdentity = DeviceIdentityService.instance;
-  
+  static const String _databaseBaseName =
+      'peerwave'; // Base name without .db extension
+  static const int _databaseVersion =
+      7; // Version 7: Add reactions column to messages
+
+  static final DeviceIdentityService _deviceIdentity =
+      DeviceIdentityService.instance;
+
   /// Get device-scoped database name
   static String get _databaseName {
     if (!_deviceIdentity.isInitialized) {
       throw Exception('[DATABASE] Device identity not initialized');
     }
-    
+
     final deviceId = _deviceIdentity.deviceId;
     final dbName = '${_databaseBaseName}_$deviceId.db';
     debugPrint('[DATABASE] Device-scoped DB name: $dbName');
@@ -38,7 +41,7 @@ class DatabaseHelper {
       debugPrint('[DATABASE] Returning existing database instance');
       return _database!;
     }
-    
+
     // Prevent multiple simultaneous initializations
     if (_initializing) {
       debugPrint('[DATABASE] Already initializing, waiting...');
@@ -51,7 +54,7 @@ class DatabaseHelper {
         return _database!;
       }
     }
-    
+
     _initializing = true;
     try {
       debugPrint('[DATABASE] ========================================');
@@ -72,69 +75,88 @@ class DatabaseHelper {
         // Web: Use IndexedDB backend (set factory only once)
         if (!_factoryInitialized) {
           debugPrint('[DATABASE] Initializing web database (IndexedDB)...');
-          
+
           // Use the web worker version for better performance
-          debugPrint('[DATABASE] Setting database factory to databaseFactoryFfiWeb...');
+          debugPrint(
+            '[DATABASE] Setting database factory to databaseFactoryFfiWeb...',
+          );
           databaseFactory = databaseFactoryFfiWeb;
           _factoryInitialized = true;
           debugPrint('[DATABASE] ✓ Web database factory initialized');
         }
-        
-        debugPrint('[DATABASE] Opening database: $_databaseName (version $_databaseVersion)');
-        debugPrint('[DATABASE] About to call openDatabase...');
-        
-        final db = await openDatabase(
-          _databaseName,
-          version: _databaseVersion,
-          onCreate: (db, version) async {
-            debugPrint('[DATABASE] ✓ onCreate called - Creating new database v$version');
-            await _onCreate(db, version);
-            debugPrint('[DATABASE] ✓ onCreate completed');
-          },
-          onUpgrade: (db, oldVersion, newVersion) async {
-            debugPrint('[DATABASE] ✓ onUpgrade called - Upgrading from v$oldVersion to v$newVersion');
-            await _onUpgrade(db, oldVersion, newVersion);
-            debugPrint('[DATABASE] ✓ onUpgrade completed');
-          },
-          onOpen: (db) async {
-            debugPrint('[DATABASE] ✓ onOpen called - Database opened successfully');
-            try {
-              final tables = await db.rawQuery(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-              );
-              final tableNames = tables.map((t) => t['name']).toList();
-              debugPrint('[DATABASE] ✓ Existing tables (${tableNames.length}): ${tableNames.join(", ")}');
-            } catch (e) {
-              debugPrint('[DATABASE] ✗ Error listing tables: $e');
-            }
-          },
-        ).timeout(
-          Duration(seconds: 30),
-          onTimeout: () {
-            debugPrint('[DATABASE] ✗ TIMEOUT after 30 seconds!');
-            throw Exception('[DATABASE] Timeout opening database after 30 seconds');
-          },
+
+        debugPrint(
+          '[DATABASE] Opening database: $_databaseName (version $_databaseVersion)',
         );
-        
-        debugPrint('[DATABASE] ✓ openDatabase completed, got database instance');
+        debugPrint('[DATABASE] About to call openDatabase...');
+
+        final db =
+            await openDatabase(
+              _databaseName,
+              version: _databaseVersion,
+              onCreate: (db, version) async {
+                debugPrint(
+                  '[DATABASE] ✓ onCreate called - Creating new database v$version',
+                );
+                await _onCreate(db, version);
+                debugPrint('[DATABASE] ✓ onCreate completed');
+              },
+              onUpgrade: (db, oldVersion, newVersion) async {
+                debugPrint(
+                  '[DATABASE] ✓ onUpgrade called - Upgrading from v$oldVersion to v$newVersion',
+                );
+                await _onUpgrade(db, oldVersion, newVersion);
+                debugPrint('[DATABASE] ✓ onUpgrade completed');
+              },
+              onOpen: (db) async {
+                debugPrint(
+                  '[DATABASE] ✓ onOpen called - Database opened successfully',
+                );
+                try {
+                  final tables = await db.rawQuery(
+                    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+                  );
+                  final tableNames = tables.map((t) => t['name']).toList();
+                  debugPrint(
+                    '[DATABASE] ✓ Existing tables (${tableNames.length}): ${tableNames.join(", ")}',
+                  );
+                } catch (e) {
+                  debugPrint('[DATABASE] ✗ Error listing tables: $e');
+                }
+              },
+            ).timeout(
+              Duration(seconds: 30),
+              onTimeout: () {
+                debugPrint('[DATABASE] ✗ TIMEOUT after 30 seconds!');
+                throw Exception(
+                  '[DATABASE] Timeout opening database after 30 seconds',
+                );
+              },
+            );
+
+        debugPrint(
+          '[DATABASE] ✓ openDatabase completed, got database instance',
+        );
         debugPrint('[DATABASE] ✓ Web database initialization complete');
         return db;
       } else {
         // Native: Use file system with sqflite_common_ffi
         if (!_factoryInitialized) {
-          debugPrint('[DATABASE] Initializing native database factory (sqflite_common_ffi)...');
+          debugPrint(
+            '[DATABASE] Initializing native database factory (sqflite_common_ffi)...',
+          );
           sqfliteFfiInit();
           databaseFactory = databaseFactoryFfi;
           _factoryInitialized = true;
           debugPrint('[DATABASE] ✓ Native database factory initialized');
         }
-        
+
         debugPrint('[DATABASE] Initializing native database...');
         final directory = await getApplicationDocumentsDirectory();
         final path = join(directory.path, _databaseName);
-        
+
         debugPrint('[DATABASE] Database path: $path');
-        
+
         final db = await openDatabase(
           path,
           version: _databaseVersion,
@@ -144,7 +166,7 @@ class DatabaseHelper {
             debugPrint('[DATABASE] Database opened successfully');
           },
         );
-        
+
         debugPrint('[DATABASE] Native database initialization complete');
         return db;
       }
@@ -158,8 +180,10 @@ class DatabaseHelper {
   /// Create database tables
   static Future<void> _onCreate(Database db, int version) async {
     debugPrint('[DATABASE] Creating database schema version $version...');
-    debugPrint('[DATABASE] Using application-layer encryption for sensitive columns');
-    
+    debugPrint(
+      '[DATABASE] Using application-layer encryption for sensitive columns',
+    );
+
     // =============================================
     // MESSAGES TABLE (1:1 and Group Messages)
     // =============================================
@@ -186,13 +210,23 @@ class DatabaseHelper {
 
     // Indexes for fast queries (only on non-encrypted columns)
     await db.execute('CREATE INDEX idx_messages_sender ON messages(sender)');
-    await db.execute('CREATE INDEX idx_messages_channel ON messages(channel_id)');
-    await db.execute('CREATE INDEX idx_messages_timestamp ON messages(timestamp DESC)');
+    await db.execute(
+      'CREATE INDEX idx_messages_channel ON messages(channel_id)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_messages_timestamp ON messages(timestamp DESC)',
+    );
     await db.execute('CREATE INDEX idx_messages_type ON messages(type)');
-    await db.execute('CREATE INDEX idx_messages_direction ON messages(direction)');
-    await db.execute('CREATE INDEX idx_messages_conversation ON messages(sender, channel_id, timestamp DESC)');
-    
-    debugPrint('[DATABASE] ✓ Created messages table with encrypted message column');
+    await db.execute(
+      'CREATE INDEX idx_messages_direction ON messages(direction)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_messages_conversation ON messages(sender, channel_id, timestamp DESC)',
+    );
+
+    debugPrint(
+      '[DATABASE] ✓ Created messages table with encrypted message column',
+    );
 
     // =============================================
     // RECENT CONVERSATIONS TABLE
@@ -210,15 +244,19 @@ class DatabaseHelper {
       )
     ''');
 
-    await db.execute('CREATE INDEX idx_conversations_timestamp ON recent_conversations(last_message_at DESC)');
-    await db.execute('CREATE INDEX idx_conversations_pinned ON recent_conversations(pinned DESC, last_message_at DESC)');
-    
+    await db.execute(
+      'CREATE INDEX idx_conversations_timestamp ON recent_conversations(last_message_at DESC)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_conversations_pinned ON recent_conversations(pinned DESC, last_message_at DESC)',
+    );
+
     debugPrint('[DATABASE] ✓ Created recent_conversations table');
 
     // =============================================
     // SIGNAL PROTOCOL TABLES (encrypted BLOB columns)
     // =============================================
-    
+
     // Sessions - record is encrypted
     await db.execute('''
       CREATE TABLE signal_sessions (
@@ -227,7 +265,7 @@ class DatabaseHelper {
         updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
       )
     ''');
-    
+
     // Identity Keys - identity_key is encrypted
     await db.execute('''
       CREATE TABLE signal_identity_keys (
@@ -237,7 +275,7 @@ class DatabaseHelper {
         updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
       )
     ''');
-    
+
     // Pre Keys - record is encrypted
     await db.execute('''
       CREATE TABLE signal_pre_keys (
@@ -246,7 +284,7 @@ class DatabaseHelper {
         created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
       )
     ''');
-    
+
     // Signed Pre Keys - record is encrypted
     await db.execute('''
       CREATE TABLE signal_signed_pre_keys (
@@ -256,7 +294,7 @@ class DatabaseHelper {
         created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
       )
     ''');
-    
+
     // Sender Keys (for group encryption) - record is encrypted
     await db.execute('''
       CREATE TABLE sender_keys (
@@ -265,7 +303,7 @@ class DatabaseHelper {
         created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
       )
     ''');
-    
+
     debugPrint('[DATABASE] ✓ Created Signal protocol tables');
 
     // =============================================
@@ -279,45 +317,65 @@ class DatabaseHelper {
         starred_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
       )
     ''');
-    
-    await db.execute('CREATE INDEX idx_starred_channels_timestamp ON starred_channels(starred_at DESC)');
-    
+
+    await db.execute(
+      'CREATE INDEX idx_starred_channels_timestamp ON starred_channels(starred_at DESC)',
+    );
+
     debugPrint('[DATABASE] ✓ Created starred_channels table');
 
     debugPrint('[DATABASE] Database schema created successfully!');
   }
 
   /// Handle database upgrades
-  static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    debugPrint('[DATABASE] Upgrading database from version $oldVersion to $newVersion...');
-    
+  static Future<void> _onUpgrade(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    debugPrint(
+      '[DATABASE] Upgrading database from version $oldVersion to $newVersion...',
+    );
+
     // Version 2 → 3: Add status column for sent messages
     if (oldVersion < 3) {
-      debugPrint('[DATABASE] Applying migration: Add status column to messages table');
+      debugPrint(
+        '[DATABASE] Applying migration: Add status column to messages table',
+      );
       await db.execute('''
         ALTER TABLE messages ADD COLUMN status TEXT DEFAULT NULL
       ''');
-      debugPrint('[DATABASE] ✓ Added status column (for tracking sent/delivered/read status)');
+      debugPrint(
+        '[DATABASE] ✓ Added status column (for tracking sent/delivered/read status)',
+      );
     }
-    
+
     // Version 3 → 4: Add read_receipt_sent flag for received messages
     if (oldVersion < 4) {
-      debugPrint('[DATABASE] Applying migration: Add read_receipt_sent column to messages table');
+      debugPrint(
+        '[DATABASE] Applying migration: Add read_receipt_sent column to messages table',
+      );
       await db.execute('''
         ALTER TABLE messages ADD COLUMN read_receipt_sent INTEGER DEFAULT 0
       ''');
-      debugPrint('[DATABASE] ✓ Added read_receipt_sent column (prevents duplicate read receipts)');
+      debugPrint(
+        '[DATABASE] ✓ Added read_receipt_sent column (prevents duplicate read receipts)',
+      );
     }
-    
+
     // Version 4 → 5: Add metadata column for image/voice/notification messages
     if (oldVersion < 5) {
-      debugPrint('[DATABASE] Applying migration: Add metadata column to messages table');
+      debugPrint(
+        '[DATABASE] Applying migration: Add metadata column to messages table',
+      );
       await db.execute('''
         ALTER TABLE messages ADD COLUMN metadata TEXT DEFAULT NULL
       ''');
-      debugPrint('[DATABASE] ✓ Added metadata column (stores JSON metadata for image/voice/mentions)');
+      debugPrint(
+        '[DATABASE] ✓ Added metadata column (stores JSON metadata for image/voice/mentions)',
+      );
     }
-    
+
     // Version 5 → 6: Add starred_channels table
     if (oldVersion < 6) {
       debugPrint('[DATABASE] Applying migration: Add starred_channels table');
@@ -327,17 +385,25 @@ class DatabaseHelper {
           starred_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
         )
       ''');
-      await db.execute('CREATE INDEX idx_starred_channels_timestamp ON starred_channels(starred_at DESC)');
-      debugPrint('[DATABASE] ✓ Added starred_channels table (client-side starred state)');
+      await db.execute(
+        'CREATE INDEX idx_starred_channels_timestamp ON starred_channels(starred_at DESC)',
+      );
+      debugPrint(
+        '[DATABASE] ✓ Added starred_channels table (client-side starred state)',
+      );
     }
-    
+
     // Version 6 → 7: Add reactions column to messages table
     if (oldVersion < 7) {
-      debugPrint('[DATABASE] Applying migration: Add reactions column to messages table');
+      debugPrint(
+        '[DATABASE] Applying migration: Add reactions column to messages table',
+      );
       await db.execute('''
         ALTER TABLE messages ADD COLUMN reactions TEXT DEFAULT '{}'
       ''');
-      debugPrint('[DATABASE] ✓ Added reactions column (stores emoji reactions as JSON map)');
+      debugPrint(
+        '[DATABASE] ✓ Added reactions column (stores emoji reactions as JSON map)',
+      );
     }
   }
 
@@ -364,20 +430,26 @@ class DatabaseHelper {
     try {
       final db = await database;
       final tables = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
       );
       final tableNames = tables.map((t) => t['name'] as String).toList();
-      
+
       // Check for required tables
       final requiredTables = ['messages', 'recent_conversations'];
-      final hasAllTables = requiredTables.every((table) => tableNames.contains(table));
-      
+      final hasAllTables = requiredTables.every(
+        (table) => tableNames.contains(table),
+      );
+
       if (hasAllTables) {
-        debugPrint('[DATABASE] All required tables present: ${tableNames.join(", ")}');
+        debugPrint(
+          '[DATABASE] All required tables present: ${tableNames.join(", ")}',
+        );
       } else {
-        debugPrint('[DATABASE] Missing tables. Found: ${tableNames.join(", ")}');
+        debugPrint(
+          '[DATABASE] Missing tables. Found: ${tableNames.join(", ")}',
+        );
       }
-      
+
       return hasAllTables;
     } catch (e) {
       debugPrint('[DATABASE] Error checking database readiness: $e');
@@ -388,7 +460,7 @@ class DatabaseHelper {
   /// Delete the database (for testing/development)
   static Future<void> deleteDatabase() async {
     await close();
-    
+
     if (kIsWeb) {
       debugPrint('[DATABASE] Deleting web database...');
       await databaseFactoryFfiWeb.deleteDatabase(_databaseName);
@@ -400,7 +472,7 @@ class DatabaseHelper {
       await databaseFactory.deleteDatabase(path);
       debugPrint('[DATABASE] Native database deleted');
     }
-    
+
     _factoryInitialized = false;
     debugPrint('[DATABASE] Database deletion complete');
   }
@@ -409,12 +481,12 @@ class DatabaseHelper {
   /// Use this during development to clean up old data
   static Future<void> deleteAllDatabases() async {
     await close();
-    
+
     if (kIsWeb) {
       debugPrint('[DATABASE] Deleting all web databases...');
       // Delete current device-scoped database
       await databaseFactoryFfiWeb.deleteDatabase(_databaseName);
-      
+
       // Delete old non-scoped database if it exists
       try {
         await databaseFactoryFfiWeb.deleteDatabase('peerwave.db');
@@ -422,16 +494,16 @@ class DatabaseHelper {
       } catch (e) {
         debugPrint('[DATABASE] Old database not found (OK)');
       }
-      
+
       debugPrint('[DATABASE] All web databases deleted');
     } else {
       debugPrint('[DATABASE] Deleting all native databases...');
       final directory = await getApplicationDocumentsDirectory();
-      
+
       // Delete current database
       final path = join(directory.path, _databaseName);
       await databaseFactory.deleteDatabase(path);
-      
+
       // Delete old non-scoped database if it exists
       try {
         final oldPath = join(directory.path, 'peerwave.db');
@@ -440,10 +512,10 @@ class DatabaseHelper {
       } catch (e) {
         debugPrint('[DATABASE] Old database not found (OK)');
       }
-      
+
       debugPrint('[DATABASE] All native databases deleted');
     }
-    
+
     _factoryInitialized = false;
     debugPrint('[DATABASE] All database deletion complete');
   }
@@ -459,28 +531,29 @@ class DatabaseHelper {
   /// Get database info for debugging
   static Future<Map<String, dynamic>> getDatabaseInfo() async {
     final db = await database;
-    
+
     final tables = await db.rawQuery(
-      "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+      "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
     );
-    
+
     final info = <String, dynamic>{
       'version': await db.getVersion(),
       'path': db.path,
       'isOpen': db.isOpen,
       'tables': tables.map((t) => t['name']).toList(),
     };
-    
+
     // Get row counts for each table
     for (final table in tables) {
       final tableName = table['name'] as String;
       if (!tableName.startsWith('sqlite_')) {
-        final count = await db.rawQuery('SELECT COUNT(*) as count FROM $tableName');
+        final count = await db.rawQuery(
+          'SELECT COUNT(*) as count FROM $tableName',
+        );
         info['${tableName}_count'] = count.first['count'];
       }
     }
-    
+
     return info;
   }
 }
-

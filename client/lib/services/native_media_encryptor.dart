@@ -3,10 +3,10 @@ import 'package:pointycastle/export.dart';
 import 'dart:math';
 
 /// Native Media Encryptor for E2EE on platforms that don't support frame encryption
-/// 
+///
 /// This provides AES-256-GCM encryption for media data when LiveKit's BaseKeyProvider
 /// is not available (Windows, Linux, macOS desktop clients).
-/// 
+///
 /// Security Model:
 /// - Uses the same shared key from Signal Protocol key exchange
 /// - AES-256-GCM provides authenticated encryption
@@ -24,13 +24,13 @@ class NativeMediaEncryptor {
   }
 
   /// Encrypt a media frame using AES-256-GCM
-  /// 
+  ///
   /// Format: [12-byte IV][encrypted data][16-byte auth tag]
   Uint8List encryptFrame(Uint8List plaintext) {
     try {
       // Generate unique IV for this frame
       final iv = _generateIV();
-      
+
       // Create GCM cipher
       final cipher = GCMBlockCipher(AESEngine())
         ..init(
@@ -58,7 +58,7 @@ class NativeMediaEncryptor {
   }
 
   /// Decrypt a media frame using AES-256-GCM
-  /// 
+  ///
   /// Expected format: [12-byte IV][encrypted data][16-byte auth tag]
   Uint8List decryptFrame(Uint8List encrypted) {
     try {
@@ -93,22 +93,22 @@ class NativeMediaEncryptor {
   }
 
   /// Generate a unique IV for each frame
-  /// 
+  ///
   /// Uses frame counter + random bytes to ensure uniqueness
   Uint8List _generateIV() {
     final iv = Uint8List(12);
-    
+
     // First 8 bytes: frame counter (ensures uniqueness within session)
     final counterBytes = Uint8List(8);
     final counterView = ByteData.view(counterBytes.buffer);
     counterView.setUint64(0, _frameCounter++, Endian.big);
     iv.setRange(0, 8, counterBytes);
-    
+
     // Last 4 bytes: random (additional entropy)
     for (int i = 8; i < 12; i++) {
       iv[i] = _random.nextInt(256);
     }
-    
+
     return iv;
   }
 

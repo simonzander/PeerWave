@@ -16,81 +16,80 @@ class FilesContextPanel extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-              const Divider(height: 1),
+            const Divider(height: 1),
 
-              // Content
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Title
+            // Content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Title
+                    Text(
+                      'Transfer Statistics',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Active Transfers Summary
+                    _buildSummaryCard(context, stats),
+                    const SizedBox(height: 16),
+
+                    // Upload Speed Section
+                    _buildSpeedSection(
+                      context,
+                      title: 'Upload Speed',
+                      speed: stats.totalUploadSpeed,
+                      icon: Icons.arrow_upward,
+                      color: colorScheme
+                          .error, // Use error/warning color for uploads
+                    ),
+                    const SizedBox(height: 8),
+                    _buildSpeedGraph(
+                      context,
+                      stats.speedHistory,
+                      isUpload: true,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Download Speed Section
+                    _buildSpeedSection(
+                      context,
+                      title: 'Download Speed',
+                      speed: stats.totalDownloadSpeed,
+                      icon: Icons.arrow_downward,
+                      color: colorScheme.primary,
+                    ),
+                    const SizedBox(height: 8),
+                    _buildSpeedGraph(
+                      context,
+                      stats.speedHistory,
+                      isUpload: false,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Recent Activity
+                    if (stats.activeTransfers.isNotEmpty) ...[
                       Text(
-                        'Transfer Statistics',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Active Transfers Summary
-                      _buildSummaryCard(context, stats),
-                      const SizedBox(height: 16),
-
-                      // Upload Speed Section
-                      _buildSpeedSection(
-                        context,
-                        title: 'Upload Speed',
-                        speed: stats.totalUploadSpeed,
-                        icon: Icons.arrow_upward,
-                        color: colorScheme
-                            .error, // Use error/warning color for uploads
+                        'Active Transfers',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 8),
-                      _buildSpeedGraph(
-                        context,
-                        stats.speedHistory,
-                        isUpload: true,
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Download Speed Section
-                      _buildSpeedSection(
-                        context,
-                        title: 'Download Speed',
-                        speed: stats.totalDownloadSpeed,
-                        icon: Icons.arrow_downward,
-                        color: colorScheme.primary,
-                      ),
-                      const SizedBox(height: 8),
-                      _buildSpeedGraph(
-                        context,
-                        stats.speedHistory,
-                        isUpload: false,
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Recent Activity
-                      if (stats.activeTransfers.isNotEmpty) ...[
-                        Text(
-                          'Active Transfers',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        ...stats.activeTransfers
-                            .take(10)
-                            .map(
-                              (transfer) =>
-                                  _buildTransferItem(context, transfer),
-                            ),
-                      ],
+                      ...stats.activeTransfers
+                          .take(10)
+                          .map(
+                            (transfer) => _buildTransferItem(context, transfer),
+                          ),
                     ],
-                  ),
+                  ],
                 ),
               ),
-            ],
+            ),
+          ],
         );
       },
     );
@@ -229,7 +228,9 @@ class FilesContextPanel extends StatelessWidget {
           titlesData: FlTitlesData(show: false),
           borderData: FlBorderData(
             show: true,
-            border: Border.all(color: colorScheme.outline.withValues(alpha: 0.3)),
+            border: Border.all(
+              color: colorScheme.outline.withValues(alpha: 0.3),
+            ),
           ),
           minX: 0,
           maxX: (history.length - 1).toDouble(),

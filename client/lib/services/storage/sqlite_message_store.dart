@@ -481,25 +481,39 @@ class SqliteMessageStore {
     final currentUserId = UserProfileService.instance.currentUserUuid;
 
     if (currentUserId == null) {
-      debugPrint('[SQLITE_MESSAGE_STORE] Cannot delete conversation: current user ID not available');
+      debugPrint(
+        '[SQLITE_MESSAGE_STORE] Cannot delete conversation: current user ID not available',
+      );
       return;
     }
 
-    debugPrint('[SQLITE_MESSAGE_STORE] Deleting conversation: currentUser=$currentUserId, otherUser=$userId');
+    debugPrint(
+      '[SQLITE_MESSAGE_STORE] Deleting conversation: currentUser=$currentUserId, otherUser=$userId',
+    );
 
     // Check sent vs received breakdown
-    final sentCount = await db.rawQuery('''
+    final sentCount = await db.rawQuery(
+      '''
       SELECT COUNT(*) as count FROM messages 
       WHERE sender = ? AND direction = 'sent' AND channel_id IS NULL
-    ''', [userId]);
-    
-    final receivedCount = await db.rawQuery('''
+    ''',
+      [userId],
+    );
+
+    final receivedCount = await db.rawQuery(
+      '''
       SELECT COUNT(*) as count FROM messages 
       WHERE sender = ? AND direction = 'received' AND channel_id IS NULL
-    ''', [userId]);
-    
-    debugPrint('[SQLITE_MESSAGE_STORE] Found ${sentCount.first['count']} sent messages to $userId');
-    debugPrint('[SQLITE_MESSAGE_STORE] Found ${receivedCount.first['count']} received messages from $userId');
+    ''',
+      [userId],
+    );
+
+    debugPrint(
+      '[SQLITE_MESSAGE_STORE] Found ${sentCount.first['count']} sent messages to $userId',
+    );
+    debugPrint(
+      '[SQLITE_MESSAGE_STORE] Found ${receivedCount.first['count']} received messages from $userId',
+    );
 
     // Delete all messages in this conversation (both sent and received)
     // Since sent messages store recipient as sender, both have sender = userId
@@ -510,15 +524,20 @@ class SqliteMessageStore {
     );
 
     // Verify deletion
-    final countAfter = await db.rawQuery('''
+    final countAfter = await db.rawQuery(
+      '''
       SELECT COUNT(*) as count FROM messages 
       WHERE sender = ? AND channel_id IS NULL
-    ''', [userId]);
+    ''',
+      [userId],
+    );
 
     debugPrint(
       '[SQLITE_MESSAGE_STORE] ✓ Deleted $count messages from conversation with: $userId',
     );
-    debugPrint('[SQLITE_MESSAGE_STORE] Remaining messages: ${countAfter.first['count']}');
+    debugPrint(
+      '[SQLITE_MESSAGE_STORE] Remaining messages: ${countAfter.first['count']}',
+    );
   }
 
   /// Delete all messages from a channel

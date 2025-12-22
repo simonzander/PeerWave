@@ -10,7 +10,7 @@ class ServerConnectionService {
 
   final _isConnectedController = StreamController<bool>.broadcast();
   Stream<bool> get isConnectedStream => _isConnectedController.stream;
-  
+
   bool _isConnected = true;
   bool get isConnected => _isConnected;
 
@@ -33,9 +33,11 @@ class ServerConnectionService {
   void reportHttpError(Object error, [StackTrace? stackTrace]) {
     // Check if it's a connection-related error
     final isConnectionError = _isConnectionError(error);
-    
-    debugPrint('[SERVER_CONNECTION] reportHttpError called - isConnectionError: $isConnectionError, error: ${error.toString().substring(0, error.toString().length > 100 ? 100 : error.toString().length)}');
-    
+
+    debugPrint(
+      '[SERVER_CONNECTION] reportHttpError called - isConnectionError: $isConnectionError, error: ${error.toString().substring(0, error.toString().length > 100 ? 100 : error.toString().length)}',
+    );
+
     if (isConnectionError) {
       _updateConnectionStatus(false);
       _scheduleReconnect();
@@ -63,10 +65,12 @@ class ServerConnectionService {
           error.type == DioExceptionType.sendTimeout ||
           error.type == DioExceptionType.receiveTimeout ||
           error.type == DioExceptionType.connectionError) {
-        debugPrint('[SERVER_CONNECTION] DioException connection error detected: ${error.type}');
+        debugPrint(
+          '[SERVER_CONNECTION] DioException connection error detected: ${error.type}',
+        );
         return true;
       }
-      
+
       // Check inner error
       if (error.error != null) {
         if (error.error is SocketException) {
@@ -74,42 +78,48 @@ class ServerConnectionService {
           return true;
         }
         if (error.error is TimeoutException) {
-          debugPrint('[SERVER_CONNECTION] TimeoutException inside DioException');
+          debugPrint(
+            '[SERVER_CONNECTION] TimeoutException inside DioException',
+          );
           return true;
         }
         if (error.error is HandshakeException) {
-          debugPrint('[SERVER_CONNECTION] HandshakeException inside DioException');
+          debugPrint(
+            '[SERVER_CONNECTION] HandshakeException inside DioException',
+          );
           return true;
         }
       }
-      
+
       // Check error message
       final errorMsg = error.toString();
       if (errorMsg != "") {
-        debugPrint('[SERVER_CONNECTION] Connection error in message: ${errorMsg.substring(0, errorMsg.length > 100 ? 100 : errorMsg.length)}');
+        debugPrint(
+          '[SERVER_CONNECTION] Connection error in message: ${errorMsg.substring(0, errorMsg.length > 100 ? 100 : errorMsg.length)}',
+        );
         return true;
       }
-      
+
       return false;
     }
-    
+
     // Network errors, timeouts, refused connections (direct exceptions)
     if (error is SocketException) return true;
     if (error is TimeoutException) return true;
     if (error is HandshakeException) return true;
-    
+
     // HTTP errors that indicate server issues
     if (error.toString().contains('Failed host lookup')) return true;
     if (error.toString().contains('Connection refused')) return true;
     if (error.toString().contains('Network is unreachable')) return true;
-    
+
     return false;
   }
 
   /// Schedule automatic reconnect attempt
   void _scheduleReconnect() {
     _cancelReconnectTimer();
-    
+
     _reconnectTimer = Timer.periodic(_reconnectDelay, (_) {
       // Try to recover connection by checking if server is back
       _attemptReconnect();
@@ -137,11 +147,15 @@ class ServerConnectionService {
   }
 
   void _updateConnectionStatus(bool connected) {
-    debugPrint('[SERVER_CONNECTION] _updateConnectionStatus called - current: $_isConnected, new: $connected');
+    debugPrint(
+      '[SERVER_CONNECTION] _updateConnectionStatus called - current: $_isConnected, new: $connected',
+    );
     if (_isConnected != connected) {
       _isConnected = connected;
       _isConnectedController.add(_isConnected);
-      debugPrint('[SERVER_CONNECTION] ✅ Status changed and broadcasted: $_isConnected');
+      debugPrint(
+        '[SERVER_CONNECTION] ✅ Status changed and broadcasted: $_isConnected',
+      );
     } else {
       debugPrint('[SERVER_CONNECTION] ℹ️ Status unchanged, not broadcasting');
     }

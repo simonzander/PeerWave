@@ -11,10 +11,7 @@ import 'package:peerwave_client/services/sound_service.dart';
 class IncomingCallListener extends StatefulWidget {
   final Widget child;
 
-  const IncomingCallListener({
-    super.key,
-    required this.child,
-  });
+  const IncomingCallListener({super.key, required this.child});
 
   @override
   State<IncomingCallListener> createState() => _IncomingCallListenerState();
@@ -33,29 +30,35 @@ class _IncomingCallListenerState extends State<IncomingCallListener> {
 
   void _setupCallListener() {
     debugPrint('[IncomingCallListener] Setting up call listener callback...');
-    
+
     // Listen for call notifications via Signal Protocol (type: call_notification)
-    SignalService.instance.registerItemCallback('call_notification', (item) async {
-      debugPrint('[IncomingCallListener] ========== Received call_notification ==========');
+    SignalService.instance.registerItemCallback('call_notification', (
+      item,
+    ) async {
+      debugPrint(
+        '[IncomingCallListener] ========== Received call_notification ==========',
+      );
       debugPrint('[IncomingCallListener] Item data: $item');
-      
+
       try {
         // Parse payload (comes as JSON string for system messages with cipherType 0)
         final payloadStr = item['payload'] as String;
         debugPrint('[IncomingCallListener] Payload string: $payloadStr');
-        
+
         final payload = jsonDecode(payloadStr) as Map<String, dynamic>;
         debugPrint('[IncomingCallListener] Decoded payload: $payload');
-        
+
         final callerId = payload['callerId'] as String?;
         final callerName = payload['callerName'] as String? ?? 'Unknown';
         final meetingId = payload['meetingId'] as String?;
         final callType = payload['callType'] as String? ?? 'instant';
         final channelId = payload['channelId'] as String?;
         final channelName = payload['channelName'] as String?;
-        
+
         if (callerId == null || meetingId == null) {
-          debugPrint('[IncomingCallListener] Invalid call notification payload');
+          debugPrint(
+            '[IncomingCallListener] Invalid call notification payload',
+          );
           return;
         }
 
@@ -74,14 +77,18 @@ class _IncomingCallListenerState extends State<IncomingCallListener> {
           setState(() {
             _incomingCalls.add(callData);
           });
-          
+
           // Play ringtone
           _soundService.playRingtone();
-          
-          debugPrint('[IncomingCallListener] Added incoming call to queue: $meetingId from $callerName');
+
+          debugPrint(
+            '[IncomingCallListener] Added incoming call to queue: $meetingId from $callerName',
+          );
         }
       } catch (e, stackTrace) {
-        debugPrint('[IncomingCallListener] Error processing call notification: $e');
+        debugPrint(
+          '[IncomingCallListener] Error processing call notification: $e',
+        );
         debugPrint('[IncomingCallListener] Stack trace: $stackTrace');
       }
     });
@@ -98,24 +105,22 @@ class _IncomingCallListenerState extends State<IncomingCallListener> {
     final callType = callData['callType'] as String;
     final channelId = callData['channelId'] as String?;
     final channelName = callData['channelName'] as String?;
-    
+
     // Send accept event
     _callService.acceptCall(meetingId);
-    
+
     // Stop ringtone
     _soundService.stopRingtone();
-    
+
     // Remove from list
     setState(() {
       _incomingCalls.removeWhere((call) => call['meetingId'] == meetingId);
     });
-    
+
     // Navigate using GoRouter (same pattern as CallTopBar)
     final navigatorContext = MyApp.rootNavigatorKey.currentContext;
     if (navigatorContext != null) {
-      GoRouter.of(navigatorContext).go(
-        '/meeting/prejoin/$meetingId',
-      );
+      GoRouter.of(navigatorContext).go('/meeting/prejoin/$meetingId');
     } else {
       debugPrint('[IncomingCallListener] ERROR: Navigator key has no context');
     }
@@ -123,28 +128,28 @@ class _IncomingCallListenerState extends State<IncomingCallListener> {
 
   void _handleDecline(Map<String, dynamic> callData) {
     final meetingId = callData['meetingId'] as String;
-    
+
     // Send decline event with manual reason
     _callService.declineCall(meetingId, reason: 'declined');
-    
+
     // Stop ringtone
     _soundService.stopRingtone();
-    
+
     // Remove from list
     setState(() {
       _incomingCalls.removeWhere((call) => call['meetingId'] == meetingId);
     });
   }
-  
+
   void _handleTimeout(Map<String, dynamic> callData) {
     final meetingId = callData['meetingId'] as String;
-    
+
     // Send decline event with timeout reason
     _callService.declineCall(meetingId, reason: 'timeout');
-    
+
     // Stop ringtone
     _soundService.stopRingtone();
-    
+
     // Remove from list
     setState(() {
       _incomingCalls.removeWhere((call) => call['meetingId'] == meetingId);
@@ -154,10 +159,10 @@ class _IncomingCallListenerState extends State<IncomingCallListener> {
   void _handleDismiss(Map<String, dynamic> callData) {
     // Just remove from UI, don't send any events
     final meetingId = callData['meetingId'] as String;
-    
+
     // Stop ringtone
     _soundService.stopRingtone();
-    
+
     setState(() {
       _incomingCalls.removeWhere((call) => call['meetingId'] == meetingId);
     });
@@ -171,12 +176,12 @@ class _IncomingCallListenerState extends State<IncomingCallListener> {
           children: [
             // Main app content
             widget.child,
-            
+
             // Incoming call overlays (stack multiple calls from top to bottom)
             ..._incomingCalls.asMap().entries.map((entry) {
               final index = entry.key;
               final callData = entry.value;
-              
+
               return Positioned(
                 top: 20.0 + (index * 90.0), // Stack vertically
                 left: 20,
@@ -217,7 +222,8 @@ class _IncomingCallBar extends StatefulWidget {
   State<_IncomingCallBar> createState() => _IncomingCallBarState();
 }
 
-class _IncomingCallBarState extends State<_IncomingCallBar> with SingleTickerProviderStateMixin {
+class _IncomingCallBarState extends State<_IncomingCallBar>
+    with SingleTickerProviderStateMixin {
   late AnimationController _slideController;
   late Animation<Offset> _slideAnimation;
   Timer? _autoDismissTimer;
@@ -237,10 +243,7 @@ class _IncomingCallBarState extends State<_IncomingCallBar> with SingleTickerPro
     _slideAnimation = Tween<Offset>(
       begin: const Offset(-1.0, 0.0),
       end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: Curves.easeOut,
-    ));
+    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
 
     // Auto-dismiss timer
     _autoDismissTimer = Timer(const Duration(seconds: 60), () {
@@ -290,7 +293,7 @@ class _IncomingCallBarState extends State<_IncomingCallBar> with SingleTickerPro
       widget.onDecline();
     }
   }
-  
+
   Future<void> _handleTimeout() async {
     _autoDismissTimer?.cancel();
     _countdownTimer?.cancel();
@@ -331,7 +334,7 @@ class _IncomingCallBarState extends State<_IncomingCallBar> with SingleTickerPro
                 size: 32,
               ),
               const SizedBox(width: 16),
-              
+
               // Call info
               Expanded(
                 child: Column(
@@ -339,9 +342,9 @@ class _IncomingCallBarState extends State<_IncomingCallBar> with SingleTickerPro
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      isChannel 
-                        ? 'Incoming call in $channelName'
-                        : 'Incoming call from $callerName',
+                      isChannel
+                          ? 'Incoming call in $channelName'
+                          : 'Incoming call from $callerName',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -350,13 +353,15 @@ class _IncomingCallBarState extends State<_IncomingCallBar> with SingleTickerPro
                     Text(
                       'Auto-dismiss in $_remainingSeconds seconds',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.6),
                       ),
                     ),
                   ],
                 ),
               ),
-              
+
               // Action buttons
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -367,9 +372,9 @@ class _IncomingCallBarState extends State<_IncomingCallBar> with SingleTickerPro
                     icon: const Icon(Icons.call_end),
                     color: Colors.red,
                   ),
-                  
+
                   const SizedBox(width: 8),
-                  
+
                   // Accept button
                   IconButton(
                     onPressed: _handleAccept,

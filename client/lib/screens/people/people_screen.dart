@@ -8,7 +8,7 @@ import '../../services/storage/sqlite_message_store.dart';
 import '../../widgets/user_avatar.dart';
 
 /// Modern People Screen with Grid Layout
-/// 
+///
 /// Features:
 /// - Search bar with dynamic filtering (displayName, atName)
 /// - Shows 10 users from recent 1:1 conversations
@@ -26,7 +26,7 @@ class PeopleScreen extends StatefulWidget {
     required this.host,
     required this.onMessageTap,
     this.showRecentSection = true,
-  }) ;
+  });
 
   @override
   State<PeopleScreen> createState() => _PeopleScreenState();
@@ -35,15 +35,15 @@ class PeopleScreen extends StatefulWidget {
 class _PeopleScreenState extends State<PeopleScreen> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounceTimer;
-  
+
   List<Map<String, dynamic>> _recentConversationUsers = [];
   final List<Map<String, dynamic>> _randomUsers = [];
   List<Map<String, dynamic>> _searchResults = [];
-  
+
   bool _isLoadingRecent = false;
   bool _isLoadingRandom = false;
   bool _isSearching = false;
-  
+
   String _searchQuery = '';
   int _randomUsersOffset = 0;
   bool _hasMoreRandomUsers = true;
@@ -66,7 +66,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   /// Handles String, Map, JSArray, and null values
   String _extractPictureData(dynamic picture) {
     if (picture == null) return '';
-    
+
     try {
       if (picture is String) {
         return picture;
@@ -85,7 +85,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   void _onSearchChanged() {
     // Debounce search to avoid too many API calls
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
-    
+
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
       final query = _searchController.text.trim();
       if (query.isEmpty) {
@@ -109,28 +109,31 @@ class _PeopleScreenState extends State<PeopleScreen> {
   /// Load users from recent 1:1 conversations (last 10)
   Future<void> _loadRecentConversationUsers() async {
     if (_isLoadingRecent) return;
-    
+
     if (!mounted) return;
-    
+
     setState(() => _isLoadingRecent = true);
-    
+
     try {
       debugPrint('[PEOPLE_SCREEN] Loading recent conversation users...');
-      
+
       // Get recent conversations from service (SQLite + UserProfileService)
-      final recentConvs = await RecentConversationsService.getRecentConversations();
-      debugPrint('[PEOPLE_SCREEN] RecentConversationsService returned ${recentConvs.length} conversations');
-      
+      final recentConvs =
+          await RecentConversationsService.getRecentConversations();
+      debugPrint(
+        '[PEOPLE_SCREEN] RecentConversationsService returned ${recentConvs.length} conversations',
+      );
+
       // Get message store for fetching last messages
       final messageStore = await SqliteMessageStore.getInstance();
-      
+
       final userList = <Map<String, dynamic>>[];
-      
+
       for (final conv in recentConvs.take(10)) {
         final userId = conv['uuid'];
         final displayName = conv['displayName'];
         final picture = conv['picture'];
-        
+
         if (userId != null && userId.isNotEmpty) {
           // Get last message from SQLite
           String lastMessage = '';
@@ -141,11 +144,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
               limit: 1,
               types: ['message', 'file', 'image', 'voice'],
             );
-            
+
             if (messages.isNotEmpty) {
               final lastMsg = messages.first;
               final msgType = lastMsg['type'] ?? 'message';
-              
+
               // Format message preview based on type
               if (msgType == 'file') {
                 lastMessage = '📎 File';
@@ -160,7 +163,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                   lastMessage = '${lastMessage.substring(0, 50)}...';
                 }
               }
-              
+
               // Format timestamp - pass raw ISO timestamp for Timer-based formatting
               final timestamp = lastMsg['timestamp'];
               if (timestamp != null) {
@@ -168,12 +171,14 @@ class _PeopleScreenState extends State<PeopleScreen> {
               }
             }
           } catch (e) {
-            debugPrint('[PEOPLE_SCREEN] Error loading last message for $userId: $e');
+            debugPrint(
+              '[PEOPLE_SCREEN] Error loading last message for $userId: $e',
+            );
           }
-          
+
           // Get atName from UserProfileService
           final profile = UserProfileService.instance.getProfile(userId);
-          
+
           userList.add({
             'uuid': userId,
             'displayName': displayName ?? userId,
@@ -185,13 +190,15 @@ class _PeopleScreenState extends State<PeopleScreen> {
           });
         }
       }
-      
+
       setState(() {
         _recentConversationUsers = userList;
         _isLoadingRecent = false;
       });
-      
-      debugPrint('[PEOPLE_SCREEN] Loaded ${_recentConversationUsers.length} recent users');
+
+      debugPrint(
+        '[PEOPLE_SCREEN] Loaded ${_recentConversationUsers.length} recent users',
+      );
       debugPrint('[PEOPLE_SCREEN] Users: $_recentConversationUsers');
     } catch (e, stackTrace) {
       debugPrint('[PEOPLE_SCREEN] Error loading recent users: $e');
@@ -203,51 +210,57 @@ class _PeopleScreenState extends State<PeopleScreen> {
   /// Load random users (excluding those with conversations)
   Future<void> _loadRandomUsers({bool reset = false}) async {
     if (_isLoadingRandom) return;
-    
+
     if (!mounted) return;
-    
+
     setState(() => _isLoadingRandom = true);
-    
+
     try {
       if (reset) {
         _randomUsersOffset = 0;
         _randomUsers.clear();
       }
-      
-      debugPrint('[PEOPLE_SCREEN] Loading random users (offset: $_randomUsersOffset)...');
-      
+
+      debugPrint(
+        '[PEOPLE_SCREEN] Loading random users (offset: $_randomUsersOffset)...',
+      );
+
       // Get all users
       ApiService.init();
       final hostUrl = ApiService.ensureHttpPrefix(widget.host);
       final resp = await ApiService.get('$hostUrl/people/list');
-      
+
       if (resp.statusCode == 200) {
-        final List<dynamic> allUsers = resp.data is List 
-            ? resp.data 
+        final List<dynamic> allUsers = resp.data is List
+            ? resp.data
             : (resp.data['users'] ?? []);
-        
+
         // Load profiles for all users if not cached
         try {
           final userUuids = allUsers
               .where((u) => u['uuid'] != null)
               .map((u) => u['uuid'] as String)
               .toList();
-          
+
           if (userUuids.isNotEmpty) {
-            debugPrint('[PEOPLE_SCREEN] Loading profiles for ${userUuids.length} discover users...');
+            debugPrint(
+              '[PEOPLE_SCREEN] Loading profiles for ${userUuids.length} discover users...',
+            );
             await UserProfileService.instance.loadProfiles(userUuids);
             debugPrint('[PEOPLE_SCREEN] ✓ Profiles loaded');
           }
         } catch (e) {
-          debugPrint('[PEOPLE_SCREEN] ⚠ Failed to load profiles (server may be unavailable): $e');
+          debugPrint(
+            '[PEOPLE_SCREEN] ⚠ Failed to load profiles (server may be unavailable): $e',
+          );
           // Continue anyway - UI will show fallback names
         }
-        
+
         // Filter out users who already have conversations
         final recentUserUuids = _recentConversationUsers
             .map((u) => u['uuid'] as String)
             .toSet();
-        
+
         final usersWithoutConversations = allUsers
             .where((user) {
               final uuid = user['uuid'] as String?;
@@ -255,41 +268,50 @@ class _PeopleScreenState extends State<PeopleScreen> {
             })
             .map((user) {
               final userId = user['uuid'] as String;
-              
+
               // Check UserProfileService cache first
               final profile = UserProfileService.instance.getProfile(userId);
-              
+
               return {
                 'uuid': userId,
-                'displayName': profile?['displayName'] ?? user['displayName'] ?? user['username'] ?? 'Unknown',
+                'displayName':
+                    profile?['displayName'] ??
+                    user['displayName'] ??
+                    user['username'] ??
+                    'Unknown',
                 'atName': profile?['atName'] ?? user['atName'] ?? '',
-                'picture': profile?['picture'] ?? _extractPictureData(user['picture']),
+                'picture':
+                    profile?['picture'] ?? _extractPictureData(user['picture']),
                 'isOnline': false, // TODO: Get online status
               };
             })
             .toList();
-        
+
         // Shuffle for randomness
         usersWithoutConversations.shuffle();
-        
+
         // Take next batch (20 on load more, 10 initially)
         final batchSize = reset ? 10 : 20;
-        final endIndex = (_randomUsersOffset + batchSize)
-            .clamp(0, usersWithoutConversations.length);
-        
+        final endIndex = (_randomUsersOffset + batchSize).clamp(
+          0,
+          usersWithoutConversations.length,
+        );
+
         final newUsers = usersWithoutConversations
             .skip(_randomUsersOffset)
             .take(batchSize)
             .toList();
-        
+
         setState(() {
           _randomUsers.addAll(newUsers);
           _randomUsersOffset = endIndex;
           _hasMoreRandomUsers = endIndex < usersWithoutConversations.length;
           _isLoadingRandom = false;
         });
-        
-        debugPrint('[PEOPLE_SCREEN] Loaded ${newUsers.length} random users (total: ${_randomUsers.length})');
+
+        debugPrint(
+          '[PEOPLE_SCREEN] Loaded ${newUsers.length} random users (total: ${_randomUsers.length})',
+        );
       }
     } catch (e) {
       debugPrint('[PEOPLE_SCREEN] Error loading random users: $e');
@@ -300,78 +322,90 @@ class _PeopleScreenState extends State<PeopleScreen> {
   /// Perform search with displayName and atName filter
   Future<void> _performSearch(String query) async {
     if (!mounted) return;
-    
+
     setState(() {
       _searchQuery = query;
       _isSearching = true;
     });
-    
+
     try {
       debugPrint('[PEOPLE_SCREEN] Searching for: $query');
-      
+
       ApiService.init();
       final hostUrl = ApiService.ensureHttpPrefix(widget.host);
       final resp = await ApiService.get('$hostUrl/people/list');
-      
+
       if (resp.statusCode == 200) {
-        final List<dynamic> allUsers = resp.data is List 
-            ? resp.data 
+        final List<dynamic> allUsers = resp.data is List
+            ? resp.data
             : (resp.data['users'] ?? []);
-        
+
         // Load profiles for search results if not cached
         try {
           final userUuids = allUsers
               .where((u) => u['uuid'] != null)
               .map((u) => u['uuid'] as String)
               .toList();
-          
+
           if (userUuids.isNotEmpty) {
-            debugPrint('[PEOPLE_SCREEN] Loading profiles for ${userUuids.length} search result users...');
+            debugPrint(
+              '[PEOPLE_SCREEN] Loading profiles for ${userUuids.length} search result users...',
+            );
             await UserProfileService.instance.loadProfiles(userUuids);
             debugPrint('[PEOPLE_SCREEN] ✓ Profiles loaded');
           }
         } catch (e) {
-          debugPrint('[PEOPLE_SCREEN] ⚠ Failed to load profiles (server may be unavailable): $e');
+          debugPrint(
+            '[PEOPLE_SCREEN] ⚠ Failed to load profiles (server may be unavailable): $e',
+          );
           // Continue anyway - UI will show fallback names
         }
-        
+
         // Filter by displayName or atName
         final queryLower = query.toLowerCase();
         final filtered = allUsers
             .where((user) {
-              final displayName = (user['displayName'] ?? '').toString().toLowerCase();
+              final displayName = (user['displayName'] ?? '')
+                  .toString()
+                  .toLowerCase();
               final atName = (user['atName'] ?? '').toString().toLowerCase();
-              return displayName.contains(queryLower) || atName.contains(queryLower);
+              return displayName.contains(queryLower) ||
+                  atName.contains(queryLower);
             })
             .map((user) {
               final userId = user['uuid'] as String;
-              
+
               // Check UserProfileService cache first
               final profile = UserProfileService.instance.getProfile(userId);
-              
+
               return {
                 'uuid': userId,
-                'displayName': profile?['displayName'] ?? user['displayName'] ?? user['username'] ?? 'Unknown',
+                'displayName':
+                    profile?['displayName'] ??
+                    user['displayName'] ??
+                    user['username'] ??
+                    'Unknown',
                 'atName': profile?['atName'] ?? user['atName'] ?? '',
-                'picture': profile?['picture'] ?? _extractPictureData(user['picture']),
+                'picture':
+                    profile?['picture'] ?? _extractPictureData(user['picture']),
                 'isOnline': false, // TODO: Get online status
               };
             })
             .toList();
-        
+
         if (!mounted) return;
-        
+
         setState(() {
           _searchResults = filtered;
           _isSearching = false;
         });
-        
+
         debugPrint('[PEOPLE_SCREEN] Found ${filtered.length} results');
       }
     } catch (e) {
       debugPrint('[PEOPLE_SCREEN] Search error: $e');
       if (!mounted) return;
-      
+
       setState(() => _isSearching = false);
     }
   }
@@ -380,12 +414,12 @@ class _PeopleScreenState extends State<PeopleScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
+
     // Determine which users to display
     final displayUsers = _searchQuery.isNotEmpty
         ? _searchResults
         : [..._recentConversationUsers, ..._randomUsers];
-    
+
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: Column(
@@ -396,10 +430,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
             decoration: BoxDecoration(
               color: colorScheme.surface,
               border: Border(
-                bottom: BorderSide(
-                  color: colorScheme.outlineVariant,
-                  width: 1,
-                ),
+                bottom: BorderSide(color: colorScheme.outlineVariant, width: 1),
               ),
             ),
             child: TextField(
@@ -408,10 +439,16 @@ class _PeopleScreenState extends State<PeopleScreen> {
               decoration: InputDecoration(
                 hintText: 'Search people by name or @username...',
                 hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
-                prefixIcon: Icon(Icons.search, color: colorScheme.onSurfaceVariant),
+                prefixIcon: Icon(
+                  Icons.search,
+                  color: colorScheme.onSurfaceVariant,
+                ),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
-                        icon: Icon(Icons.clear, color: colorScheme.onSurfaceVariant),
+                        icon: Icon(
+                          Icons.clear,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
                         onPressed: () {
                           _searchController.clear();
                         },
@@ -430,22 +467,23 @@ class _PeopleScreenState extends State<PeopleScreen> {
               ),
             ),
           ),
-          
+
           // Content
-          Expanded(
-            child: _buildContent(displayUsers, colorScheme),
-          ),
+          Expanded(child: _buildContent(displayUsers, colorScheme)),
         ],
       ),
     );
   }
 
-  Widget _buildContent(List<Map<String, dynamic>> users, ColorScheme colorScheme) {
+  Widget _buildContent(
+    List<Map<String, dynamic>> users,
+    ColorScheme colorScheme,
+  ) {
     // Loading state
     if (_isLoadingRecent && _isLoadingRandom && users.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
-    
+
     // Empty state
     if (users.isEmpty && !_isSearching) {
       return Center(
@@ -480,11 +518,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
         ),
       );
     }
-    
+
     return CustomScrollView(
       slivers: [
         // Section headers (only when not searching)
-        if (_searchQuery.isEmpty && widget.showRecentSection && _recentConversationUsers.isNotEmpty) ...[
+        if (_searchQuery.isEmpty &&
+            widget.showRecentSection &&
+            _recentConversationUsers.isNotEmpty) ...[
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
@@ -498,9 +538,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
               ),
             ),
           ),
-          _buildUserGrid(_recentConversationUsers, colorScheme, isRecentSection: true),
+          _buildUserGrid(
+            _recentConversationUsers,
+            colorScheme,
+            isRecentSection: true,
+          ),
         ],
-        
+
         if (_searchQuery.isEmpty && _randomUsers.isNotEmpty) ...[
           SliverToBoxAdapter(
             child: Padding(
@@ -517,7 +561,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
           ),
           _buildUserGrid(_randomUsers, colorScheme, isRecentSection: false),
         ],
-        
+
         // Search results (when searching)
         if (_searchQuery.isNotEmpty) ...[
           SliverToBoxAdapter(
@@ -535,7 +579,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
           ),
           _buildUserGrid(_searchResults, colorScheme, isRecentSection: false),
         ],
-        
+
         // Load More Button (only when not searching)
         if (_searchQuery.isEmpty && _hasMoreRandomUsers && !_isLoadingRandom)
           SliverToBoxAdapter(
@@ -556,7 +600,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
               ),
             ),
           ),
-        
+
         // Loading indicator for Load More
         if (_isLoadingRandom)
           const SliverToBoxAdapter(
@@ -569,7 +613,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
     );
   }
 
-  Widget _buildUserGrid(List<Map<String, dynamic>> users, ColorScheme colorScheme, {bool isRecentSection = false}) {
+  Widget _buildUserGrid(
+    List<Map<String, dynamic>> users,
+    ColorScheme colorScheme, {
+    bool isRecentSection = false,
+  }) {
     return SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       sliver: SliverGrid(
@@ -579,23 +627,20 @@ class _PeopleScreenState extends State<PeopleScreen> {
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
         ),
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-            final user = users[index];
-            return _UserCard(
-              user: user,
-              colorScheme: colorScheme,
-              isRecentSection: isRecentSection,
-              onTap: () {
-                widget.onMessageTap(
-                  user['uuid'] as String,
-                  user['displayName'] as String,
-                );
-              },
-            );
-          },
-          childCount: users.length,
-        ),
+        delegate: SliverChildBuilderDelegate((context, index) {
+          final user = users[index];
+          return _UserCard(
+            user: user,
+            colorScheme: colorScheme,
+            isRecentSection: isRecentSection,
+            onTap: () {
+              widget.onMessageTap(
+                user['uuid'] as String,
+                user['displayName'] as String,
+              );
+            },
+          );
+        }, childCount: users.length),
       ),
     );
   }
@@ -635,7 +680,7 @@ class _UserCardState extends State<_UserCard> {
       }
     });
   }
-  
+
   @override
   void didUpdateWidget(_UserCard oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -645,28 +690,28 @@ class _UserCardState extends State<_UserCard> {
       _updateFormattedTime();
     }
   }
-  
+
   @override
   void dispose() {
     _updateTimer?.cancel();
     super.dispose();
   }
-  
+
   void _updateFormattedTime() {
     final lastMessageTime = widget.user['lastMessageTime'] as String? ?? '';
     setState(() {
       _formattedTime = _formatRelativeTime(lastMessageTime);
     });
   }
-  
+
   String _formatRelativeTime(String timestamp) {
     if (timestamp.isEmpty) return '';
-    
+
     try {
       final messageTime = DateTime.parse(timestamp);
       final now = DateTime.now();
       final difference = now.difference(messageTime);
-      
+
       if (difference.inMinutes < 1) {
         return 'now';
       } else if (difference.inMinutes < 60) {
@@ -691,18 +736,19 @@ class _UserCardState extends State<_UserCard> {
     final userId = widget.user['uuid'] as String? ?? '';
     final pictureData = widget.user['picture'] as String?;
     final hasPicture = pictureData != null && pictureData.isNotEmpty;
-    
+
     // Recent section specific data
     final lastMessage = widget.user['lastMessage'] as String? ?? '';
     final hasLastMessage = widget.isRecentSection && lastMessage.isNotEmpty;
-    
+
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       cursor: SystemMouseCursors.click,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        transform: Matrix4.identity()..scale(_isHovered ? 1.05 : 1.0, _isHovered ? 1.05 : 1.0, 1.0),
+        transform: Matrix4.identity()
+          ..scale(_isHovered ? 1.05 : 1.0, _isHovered ? 1.05 : 1.0, 1.0),
         decoration: BoxDecoration(
           color: widget.colorScheme.onInverseSurface,
           borderRadius: BorderRadius.circular(12),
@@ -800,7 +846,7 @@ class _UserCardState extends State<_UserCard> {
                     ],
                   ),
                 ),
-                
+
                 // Name section at bottom (~40% of card height)
                 Expanded(
                   flex: 2,
@@ -822,9 +868,9 @@ class _UserCardState extends State<_UserCard> {
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                         ),
-                        
+
                         const SizedBox(height: 4),
-                        
+
                         // Recent section: Show last message + time
                         if (hasLastMessage) ...[
                           Row(
@@ -848,7 +894,8 @@ class _UserCardState extends State<_UserCard> {
                                   ' • $_formattedTime',
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: widget.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                                    color: widget.colorScheme.onSurfaceVariant
+                                        .withValues(alpha: 0.7),
                                   ),
                                 ),
                               ],
@@ -883,7 +930,7 @@ class _UserCardState extends State<_UserCard> {
   Widget _buildInitialsBanner(String displayName) {
     final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
     final color = _getColorForUser(displayName);
-    
+
     return Container(
       width: double.infinity,
       height: double.infinity,
@@ -891,10 +938,7 @@ class _UserCardState extends State<_UserCard> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            color,
-            color.withValues(alpha: 0.8),
-          ],
+          colors: [color, color.withValues(alpha: 0.8)],
         ),
       ),
       child: Center(
@@ -933,4 +977,3 @@ class _UserCardState extends State<_UserCard> {
     return colors[hash.abs() % colors.length];
   }
 }
-

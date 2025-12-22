@@ -28,28 +28,30 @@ class AudioSettings {
 
   // Convert to/from JSON for persistence
   Map<String, dynamic> toJson() => {
-        'noiseSuppression': noiseSuppression,
-        'echoCancellation': echoCancellation,
-        'autoGainControl': autoGainControl,
-        'noiseGate': noiseGate.toJson(),
-        'compressor': compressor.toJson(),
-        'inputVolume': inputVolume,
-        'outputVolume': outputVolume,
-      };
+    'noiseSuppression': noiseSuppression,
+    'echoCancellation': echoCancellation,
+    'autoGainControl': autoGainControl,
+    'noiseGate': noiseGate.toJson(),
+    'compressor': compressor.toJson(),
+    'inputVolume': inputVolume,
+    'outputVolume': outputVolume,
+  };
 
   factory AudioSettings.fromJson(Map<String, dynamic> json) => AudioSettings(
-        noiseSuppression: json['noiseSuppression'] as bool? ?? true,
-        echoCancellation: json['echoCancellation'] as bool? ?? true,
-        autoGainControl: json['autoGainControl'] as bool? ?? true,
-        noiseGate: json['noiseGate'] != null
-            ? NoiseGateSettings.fromJson(json['noiseGate'] as Map<String, dynamic>)
-            : const NoiseGateSettings(),
-        compressor: json['compressor'] != null
-            ? CompressorSettings.fromJson(json['compressor'] as Map<String, dynamic>)
-            : const CompressorSettings(),
-        inputVolume: (json['inputVolume'] as num?)?.toDouble() ?? 0.0,
-        outputVolume: (json['outputVolume'] as num?)?.toDouble() ?? 1.0,
-      );
+    noiseSuppression: json['noiseSuppression'] as bool? ?? true,
+    echoCancellation: json['echoCancellation'] as bool? ?? true,
+    autoGainControl: json['autoGainControl'] as bool? ?? true,
+    noiseGate: json['noiseGate'] != null
+        ? NoiseGateSettings.fromJson(json['noiseGate'] as Map<String, dynamic>)
+        : const NoiseGateSettings(),
+    compressor: json['compressor'] != null
+        ? CompressorSettings.fromJson(
+            json['compressor'] as Map<String, dynamic>,
+          )
+        : const CompressorSettings(),
+    inputVolume: (json['inputVolume'] as num?)?.toDouble() ?? 0.0,
+    outputVolume: (json['outputVolume'] as num?)?.toDouble() ?? 1.0,
+  );
 
   AudioSettings copyWith({
     bool? noiseSuppression,
@@ -59,16 +61,15 @@ class AudioSettings {
     CompressorSettings? compressor,
     double? inputVolume,
     double? outputVolume,
-  }) =>
-      AudioSettings(
-        noiseSuppression: noiseSuppression ?? this.noiseSuppression,
-        echoCancellation: echoCancellation ?? this.echoCancellation,
-        autoGainControl: autoGainControl ?? this.autoGainControl,
-        noiseGate: noiseGate ?? this.noiseGate,
-        compressor: compressor ?? this.compressor,
-        inputVolume: inputVolume ?? this.inputVolume,
-        outputVolume: outputVolume ?? this.outputVolume,
-      );
+  }) => AudioSettings(
+    noiseSuppression: noiseSuppression ?? this.noiseSuppression,
+    echoCancellation: echoCancellation ?? this.echoCancellation,
+    autoGainControl: autoGainControl ?? this.autoGainControl,
+    noiseGate: noiseGate ?? this.noiseGate,
+    compressor: compressor ?? this.compressor,
+    inputVolume: inputVolume ?? this.inputVolume,
+    outputVolume: outputVolume ?? this.outputVolume,
+  );
 }
 
 /// Noise gate settings (reduces background noise when not speaking)
@@ -86,11 +87,11 @@ class NoiseGateSettings {
   });
 
   Map<String, dynamic> toJson() => {
-        'enabled': enabled,
-        'threshold': threshold,
-        'attack': attack,
-        'release': release,
-      };
+    'enabled': enabled,
+    'threshold': threshold,
+    'attack': attack,
+    'release': release,
+  };
 
   factory NoiseGateSettings.fromJson(Map<String, dynamic> json) =>
       NoiseGateSettings(
@@ -105,13 +106,12 @@ class NoiseGateSettings {
     double? threshold,
     double? attack,
     double? release,
-  }) =>
-      NoiseGateSettings(
-        enabled: enabled ?? this.enabled,
-        threshold: threshold ?? this.threshold,
-        attack: attack ?? this.attack,
-        release: release ?? this.release,
-      );
+  }) => NoiseGateSettings(
+    enabled: enabled ?? this.enabled,
+    threshold: threshold ?? this.threshold,
+    attack: attack ?? this.attack,
+    release: release ?? this.release,
+  );
 }
 
 /// Compressor settings (evens out audio levels)
@@ -133,13 +133,13 @@ class CompressorSettings {
   });
 
   Map<String, dynamic> toJson() => {
-        'enabled': enabled,
-        'threshold': threshold,
-        'ratio': ratio,
-        'attack': attack,
-        'release': release,
-        'makeupGain': makeupGain,
-      };
+    'enabled': enabled,
+    'threshold': threshold,
+    'ratio': ratio,
+    'attack': attack,
+    'release': release,
+    'makeupGain': makeupGain,
+  };
 
   factory CompressorSettings.fromJson(Map<String, dynamic> json) =>
       CompressorSettings(
@@ -158,15 +158,14 @@ class CompressorSettings {
     double? attack,
     double? release,
     double? makeupGain,
-  }) =>
-      CompressorSettings(
-        enabled: enabled ?? this.enabled,
-        threshold: threshold ?? this.threshold,
-        ratio: ratio ?? this.ratio,
-        attack: attack ?? this.attack,
-        release: release ?? this.release,
-        makeupGain: makeupGain ?? this.makeupGain,
-      );
+  }) => CompressorSettings(
+    enabled: enabled ?? this.enabled,
+    threshold: threshold ?? this.threshold,
+    ratio: ratio ?? this.ratio,
+    attack: attack ?? this.attack,
+    release: release ?? this.release,
+    makeupGain: makeupGain ?? this.makeupGain,
+  );
 }
 
 /// Per-participant audio state (stored separately)
@@ -182,10 +181,10 @@ class ParticipantAudioState {
   });
 
   Map<String, dynamic> toJson() => {
-        'participantId': participantId,
-        'volume': volume,
-        'locallyMuted': locallyMuted,
-      };
+    'participantId': participantId,
+    'volume': volume,
+    'locallyMuted': locallyMuted,
+  };
 
   factory ParticipantAudioState.fromJson(Map<String, dynamic> json) =>
       ParticipantAudioState(
@@ -194,10 +193,7 @@ class ParticipantAudioState {
         locallyMuted: json['locallyMuted'] as bool? ?? false,
       );
 
-  ParticipantAudioState copyWith({
-    double? volume,
-    bool? locallyMuted,
-  }) =>
+  ParticipantAudioState copyWith({double? volume, bool? locallyMuted}) =>
       ParticipantAudioState(
         participantId: participantId,
         volume: volume ?? this.volume,

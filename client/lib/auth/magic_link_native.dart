@@ -8,17 +8,26 @@ class MagicLinkWebPageWithServer extends StatefulWidget {
   final String serverUrl;
   final String? clientId;
 
-  const MagicLinkWebPageWithServer({super.key, required this.serverUrl, this.clientId});
+  const MagicLinkWebPageWithServer({
+    super.key,
+    required this.serverUrl,
+    this.clientId,
+  });
 
   @override
-  State<MagicLinkWebPageWithServer> createState() => _MagicLinkWebPageWithServerState();
+  State<MagicLinkWebPageWithServer> createState() =>
+      _MagicLinkWebPageWithServerState();
 }
 
-class _MagicLinkWebPageWithServerState extends State<MagicLinkWebPageWithServer> {
+class _MagicLinkWebPageWithServerState
+    extends State<MagicLinkWebPageWithServer> {
   @override
   Widget build(BuildContext context) {
     debugPrint('[MagicLinkWebPageWithServer] clientId: ${widget.clientId}');
-    return MagicLinkWebPageWithInjectedServer(serverUrl: widget.serverUrl, clientId: widget.clientId);
+    return MagicLinkWebPageWithInjectedServer(
+      serverUrl: widget.serverUrl,
+      clientId: widget.clientId,
+    );
   }
 }
 
@@ -26,17 +35,28 @@ class _MagicLinkWebPageWithServerState extends State<MagicLinkWebPageWithServer>
 class MagicLinkWebPageWithInjectedServer extends StatefulWidget {
   final String serverUrl;
   final String? clientId;
-  const MagicLinkWebPageWithInjectedServer({super.key, required this.serverUrl, this.clientId});
+  const MagicLinkWebPageWithInjectedServer({
+    super.key,
+    required this.serverUrl,
+    this.clientId,
+  });
 
   @override
-  State<MagicLinkWebPageWithInjectedServer> createState() => _MagicLinkWebPageWithInjectedServerState();
+  State<MagicLinkWebPageWithInjectedServer> createState() =>
+      _MagicLinkWebPageWithInjectedServerState();
 }
 
-class _MagicLinkWebPageWithInjectedServerState extends State<MagicLinkWebPageWithInjectedServer> {
+class _MagicLinkWebPageWithInjectedServerState
+    extends State<MagicLinkWebPageWithInjectedServer> {
   @override
   Widget build(BuildContext context) {
-    debugPrint('[MagicLinkWebPageWithInjectedServer] clientId: ${widget.clientId}');
-    return MagicLinkWebPageWithServerUrl(serverUrl: widget.serverUrl, clientId: widget.clientId);
+    debugPrint(
+      '[MagicLinkWebPageWithInjectedServer] clientId: ${widget.clientId}',
+    );
+    return MagicLinkWebPageWithServerUrl(
+      serverUrl: widget.serverUrl,
+      clientId: widget.clientId,
+    );
   }
 }
 
@@ -44,17 +64,24 @@ class _MagicLinkWebPageWithInjectedServerState extends State<MagicLinkWebPageWit
 class MagicLinkWebPageWithServerUrl extends MagicLinkWebPage {
   final String serverUrl;
 
-  const MagicLinkWebPageWithServerUrl({super.key, required this.serverUrl, super.clientId});
+  const MagicLinkWebPageWithServerUrl({
+    super.key,
+    required this.serverUrl,
+    super.clientId,
+  });
 
   @override
-  State<MagicLinkWebPage> createState() => _MagicLinkWebPageWithServerUrlState();
+  State<MagicLinkWebPage> createState() =>
+      _MagicLinkWebPageWithServerUrlState();
 }
 
 class _MagicLinkWebPageWithServerUrlState extends _MagicLinkWebPageState {
   @override
   void initState() {
     super.initState();
-    debugPrint('[MagicLinkWebPageWithServerUrl] clientId: ${(widget as MagicLinkWebPageWithServerUrl).clientId}');
+    debugPrint(
+      '[MagicLinkWebPageWithServerUrl] clientId: ${(widget as MagicLinkWebPageWithServerUrl).clientId}',
+    );
     serverController.text = (widget as MagicLinkWebPageWithServerUrl).serverUrl;
   }
 }
@@ -108,7 +135,12 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
     });
   }
 
-  Future<void> _evaluateMagicKeyCore(String magicKey, String? clientId, [String? serverUrl, int redirectCount = 0]) async {
+  Future<void> _evaluateMagicKeyCore(
+    String magicKey,
+    String? clientId, [
+    String? serverUrl,
+    int redirectCount = 0,
+  ]) async {
     if (redirectCount > 2) {
       setState(() {
         _status = 'Too many redirects. Please check your server URL.';
@@ -142,7 +174,10 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
       debugPrint('Headers: ${resp.headers}');
       debugPrint('Body: ${resp.body}');
       if (resp.statusCode == 200) {
-        await AuthService().saveHostMailList(hostname, mail); // <-- Add host to persistent list
+        await AuthService().saveHostMailList(
+          hostname,
+          mail,
+        ); // <-- Add host to persistent list
         setState(() {
           _status = 'Magic key evaluated successfully!';
         });
@@ -155,7 +190,12 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
         if (secureServerUrl.startsWith('http://')) {
           secureServerUrl = secureServerUrl.replaceFirst('http://', 'https://');
         }
-        await _evaluateMagicKeyCore(magicKey, clientId, secureServerUrl, redirectCount + 1);
+        await _evaluateMagicKeyCore(
+          magicKey,
+          clientId,
+          secureServerUrl,
+          redirectCount + 1,
+        );
       } else {
         setState(() {
           _status = 'Error: ${resp.statusCode}';
@@ -193,7 +233,10 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Evaluate Magic Key', style: TextStyle(fontSize: 20, color: Colors.white)),
+              const Text(
+                'Evaluate Magic Key',
+                style: TextStyle(fontSize: 20, color: Colors.white),
+              ),
               const SizedBox(height: 20),
               TextField(
                 controller: magicKeyController,
@@ -214,7 +257,9 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
                   backgroundColor: Colors.blueAccent,
                 ),
                 onPressed: _loading ? null : _evaluateMagicKey,
-                child: _loading ? const CircularProgressIndicator(color: Colors.white) : const Text('Evaluate Key'),
+                child: _loading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text('Evaluate Key'),
               ),
               if (_status != null) ...[
                 const SizedBox(height: 20),
