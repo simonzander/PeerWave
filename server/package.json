@@ -19,7 +19,7 @@
     "bcrypt": "^6.0.0",
     "bulma-toast": "^2.4.4",
     "cors": "^2.8.5",
-    "emailjs": "^4.0.3",
+    "emailjs": "^5.0.0",
     "express": "^4.18.2",
     "express-session": "^1.18.0",
     "fido2-lib": "^3.5.3",
