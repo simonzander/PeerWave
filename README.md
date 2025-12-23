@@ -1,4 +1,4 @@
-<div align="center">
+<div align="center>
   <img src="https://github.com/simonzander/PeerWave/blob/main/public/logo_43.png?raw=true" height="100px">
   <h1>
   PeerWave</h1>
@@ -135,9 +135,21 @@ Choose the deployment method that fits your needs:
 Perfect for local development or simple deployments without reverse proxy. Uses pre-built images from Docker Hub.
 
 ```bash
-# 1. Download configuration files
-git clone https://github.com/simonzander/PeerWave.git
-cd PeerWave
+# 1. Download configuration files (recommended)
+# Download only what you need:
+# - docker-compose.yml
+# - docker-compose.traefik.yml (if using Traefik)
+# - server/.env.example or .env.traefik.example
+#
+# You can use:
+#   wget https://raw.githubusercontent.com/simonzander/PeerWave/main/docker-compose.yml
+#   wget https://raw.githubusercontent.com/simonzander/PeerWave/main/docker-compose.traefik.yml
+#   wget https://raw.githubusercontent.com/simonzander/PeerWave/main/server/.env.example
+#   wget https://raw.githubusercontent.com/simonzander/PeerWave/main/.env.traefik.example
+#
+# Or download from GitHub web UI.
+#
+# For developers: clone the repo if you want to build or modify the source.
 
 # 2. Copy environment template
 cp server/.env.example server/.env
@@ -177,9 +189,20 @@ Best for production deployments with automatic HTTPS via Let's Encrypt. Uses pre
 #### Deployment Steps
 
 ```bash
-# 1. Download configuration files
-git clone https://github.com/simonzander/PeerWave.git
-cd PeerWave
+# 1. Download configuration files (recommended)
+# Download only what you need:
+# - docker-compose.traefik.yml
+# - .env.traefik.example
+# - livekit-config.yaml (if customizing TURN domain)
+#
+# You can use:
+#   wget https://raw.githubusercontent.com/simonzander/PeerWave/main/docker-compose.traefik.yml
+#   wget https://raw.githubusercontent.com/simonzander/PeerWave/main/.env.traefik.example
+#   wget https://raw.githubusercontent.com/simonzander/PeerWave/main/livekit-config.yaml
+#
+# Or download from GitHub web UI.
+#
+# For developers: clone the repo if you want to build or modify the source.
 
 # 2. Copy Traefik environment template
 cp .env.traefik.example .env
@@ -283,28 +306,69 @@ chmod +x build-docker.sh
 |----------|-------------|---------|---------|
 | `PORT` | Server port | `3000` | `4000` |
 | `NODE_ENV` | Environment | `production` | `development` |
-| `EMAIL_HOST` | SMTP server | - | `smtp.gmail.com` |
+| `APP_URL` | Base application URL | `http://localhost:3000` | `https://app.yourdomain.com` |
+| `HTTPS` | Enable secure cookies | `false` | `true` |
+| `EMAIL_HOST` | SMTP server (optional) | - | `smtp.gmail.com` |
 | `EMAIL_PORT` | SMTP port | `587` | `587` |
+| `EMAIL_SECURE` | Use SSL/TLS | `false` | `true` |
 | `EMAIL_USER` | SMTP username | - | `your-email@gmail.com` |
 | `EMAIL_PASS` | SMTP password | - | `your-app-password` |
+| `EMAIL_FROM` | From address | `no-reply@domain` | `"PeerWave" <noreply@yourdomain.com>` |
+| `ADMIN_EMAILS` | Comma-separated admin emails | - | `admin@example.com,admin2@example.com` |
+| `ENABLE_BUYMEACOFFEE` | Show support link | `true` | `false` |
+| `ENABLE_DOCUMENTATION` | Show documentation | `true` | `false` |
+| `ENABLE_QUICKHOST` | Enable quick host | `true` | `false` |
+| `ENABLE_CHANNELS` | Enable channels | `true` | `false` |
+| `ENABLE_GITHUB` | Show GitHub link | `true` | `false` |
+| `ENABLE_ABOUT` | Show about page | `true` | `false` |
 | `CORS_ORIGINS` | Allowed origins | Auto | `https://app.yourdomain.com` |
 
 #### Configuration Files
 
 **server/.env** (Simple deployment):
 ```bash
+# Required
 SESSION_SECRET=your-long-random-string-here
 LIVEKIT_API_KEY=your-livekit-key
 LIVEKIT_API_SECRET=your-livekit-secret
+
+# Optional - Email (for meeting invitations)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_SECURE=true
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASS=your-app-password
+EMAIL_FROM="PeerWave" <noreply@yourdomain.com>
+
+# Optional - Admin users
+ADMIN_EMAILS=admin@example.com,admin2@example.com
 ```
 
 **.env** (Traefik deployment):
 ```bash
+# Required
 DOMAIN=app.yourdomain.com
 LIVEKIT_TURN_DOMAIN=app.yourdomain.com
+TRAEFIK_ACME_PATH=/etc/traefik/acme.json
 SESSION_SECRET=your-long-random-string
 LIVEKIT_API_KEY=your-key
 LIVEKIT_API_SECRET=your-secret
+
+# Production settings
+NODE_ENV=production
+HTTPS=true
+APP_URL=https://app.yourdomain.com
+
+# Optional - Email (for meeting invitations)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_SECURE=true
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASS=your-app-password
+EMAIL_FROM="PeerWave" <noreply@yourdomain.com>
+
+# Optional - Admin users
+ADMIN_EMAILS=admin@example.com
 ```
 
 #### Generate Secure Secrets
