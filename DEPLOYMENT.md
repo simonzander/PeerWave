@@ -205,32 +205,99 @@ docker network create proxy
 # Deploy Traefik container with Let's Encrypt
 ```
 
-4. **Generate Let's Encrypt certificates:**
+4. **Get certificates for LiveKit (Choose ONE method):**
+
+#### Method A: Extract from Traefik (Recommended if Traefik already running)
+
+Traefik stores certificates in `acme.json`. Extract them:
+
 ```bash
-sudo certbot certonly --standalone -d app.yourdomain.com
+# Install jq for JSON parsing
+sudo apt install jq
+
+# Find your Traefik acme.json location (common paths)
+# /etc/traefik/acme.json OR ./traefik/acme.json
+
+# Extract certificate
+sudo cat /path/to/acme.json | \
+  jq -r '.http.Certificates[] | select(.domain.main=="app.yourdomain.com") | .certificate' | \
+  base64 -d > ./livekit-certs/turn-cert.pem
+
+# Extract private key
+sudo cat /path/to/acme.json | \
+  jq -r '.http.Certificates[] | select(.domain.main=="app.yourdomain.com") | .key' | \
+  base64 -d > ./livekit-certs/turn-key.pem
+
+# Set permissions
+chmod 644 ./livekit-certs/turn-cert.pem
+chmod 600 ./livekit-certs/turn-key.pem
+chown $(id -u):$(id -g) ./livekit-certs/*.pem
 ```
 
-5. **Copy certificates for LiveKit:**
+**Note:** Traefik auto-renews certificates. Set up a cron job to re-extract:
+
 ```bash
+# Create extraction script
+cat > ~/update-livekit-certs.sh << 'EOF'
+#!/bin/bash
+DOMAIN="app.yourdomain.com"
+ACME_JSON="/path/to/acme.json"
+PEERWAVE_DIR="/path/to/PeerWave"
+
+# Extract certificates
+cat $ACME_JSON | \
+  jq -r ".http.Certificates[] | select(.domain.main==\"$DOMAIN\") | .certificate" | \
+  base64 -d > $PEERWAVE_DIR/livekit-certs/turn-cert.pem
+
+cat $ACME_JSON | \
+  jq -r ".http.Certificates[] | select(.domain.main==\"$DOMAIN\") | .key" | \
+  base64 -d > $PEERWAVE_DIR/livekit-certs/turn-key.pem
+
+# Restart LiveKit
+cd $PEERWAVE_DIR
+docker-compose -f docker-compose.traefik.yml restart peerwave-livekit
+EOF
+
+chmod +x ~/update-livekit-certs.sh
+
+# Add to crontab (run daily at 3 AM)
+(crontab -l 2>/dev/null; echo "0 3 * * * /home/$(whoami)/update-livekit-certs.sh") | crontab -
+```
+
+#### Method B: Generate with DNS Challenge (If Traefik not yet running)
+
+Use DNS challenge instead of standalone (doesn't need port 80):
+
+```bash
+# Stop Traefik temporarily if running
+docker stop traefik
+
+# Generate certificate with DNS challenge
+sudo certbot certonly --manual --preferred-challenges dns -d app.yourdomain.com
+
+# Follow prompts to add DNS TXT record
+# Wait for DNS propagation (1-5 minutes)
+
+# Copy to LiveKit
 mkdir -p livekit-certs
 sudo cp /etc/letsencrypt/live/app.yourdomain.com/fullchain.pem ./livekit-certs/turn-cert.pem
 sudo cp /etc/letsencrypt/live/app.yourdomain.com/privkey.pem ./livekit-certs/turn-key.pem
 sudo chown $(id -u):$(id -g) livekit-certs/*.pem
+
+# Start Traefik
+docker start traefik
 ```
 
-6. **Setup Traefik environment:**
+7. **Deploy with Traefik:**
 ```bash
 cp .env.traefik.example .env
 nano .env  # Configure your domain and secrets
+
+# Update livekit-config.yaml
+nano livekit-config.yaml  # Set turn.domain: app.yourdomain.com
 ```
 
-7. **Update livekit-config.yaml:**
-```yaml
-turn:
-  domain: app.yourdomain.com  # Change from localhost
-```
-
-8. **Deploy with Traefik:**
+8. **Start PeerWave:**
 ```bash
 docker-compose -f docker-compose.traefik.yml up -d
 ```

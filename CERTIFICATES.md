@@ -60,9 +60,104 @@ LiveKit Container
 - **LiveKit** = WebRTC media server (needs direct UDP/TCP access for media)
 - **WebRTC can't go through HTTP proxy** (requires direct peer-to-peer connectivity)
 
-## Quick Setup (Let's Encrypt with Certbot)
+## Quick Setup (Let's Encrypt)
 
-### 1. Install Certbot
+### Option 1: Extract from Traefik (Recommended)
+
+If Traefik is already running and managing certificates, **you can't use certbot standalone** (port 80/443 occupied). Instead, extract certificates from Traefik's storage.
+
+#### 1. Locate Traefik's Certificate Storage
+
+```bash
+# Common locations for acme.json:
+# - /etc/traefik/acme.json
+# - ./traefik/acme.json  
+# - Your Traefik volume mount location
+
+# Find it
+sudo find / -name "acme.json" 2>/dev/null
+```
+
+#### 2. Extract Certificates from acme.json
+
+```bash
+# Install jq (JSON parser)
+sudo apt install jq -y
+
+# Set variables
+DOMAIN="app.peerwave.org"
+ACME_JSON="/path/to/acme.json"  # Adjust path
+
+# Extract certificate (base64 encoded in acme.json)
+sudo cat $ACME_JSON | \
+  jq -r ".http.Certificates[] | select(.domain.main==\"$DOMAIN\") | .certificate" | \
+  base64 -d > ./livekit-certs/turn-cert.pem
+
+# Extract private key
+sudo cat $ACME_JSON | \
+  jq -r ".http.Certificates[] | select(.domain.main==\"$DOMAIN\") | .key" | \
+  base64 -d > ./livekit-certs/turn-key.pem
+
+# Set permissions
+chmod 644 ./livekit-certs/turn-cert.pem
+chmod 600 ./livekit-certs/turn-key.pem
+chown $(id -u):$(id -g) ./livekit-certs/*.pem
+```
+
+#### 3. Automate Certificate Updates
+
+Traefik auto-renews certificates. Create a script to re-extract them:
+
+```bash
+# Create extraction script
+cat > ~/update-livekit-certs.sh << 'EOF'
+#!/bin/bash
+set -e
+
+DOMAIN="app.peerwave.org"
+ACME_JSON="/path/to/traefik/acme.json"  # ADJUST THIS
+PEERWAVE_DIR="/path/to/PeerWave"        # ADJUST THIS
+
+echo "Extracting certificates for $DOMAIN..."
+
+# Extract certificate
+cat $ACME_JSON | \
+  jq -r ".http.Certificates[] | select(.domain.main==\"$DOMAIN\") | .certificate" | \
+  base64 -d > $PEERWAVE_DIR/livekit-certs/turn-cert.pem
+
+# Extract key
+cat $ACME_JSON | \
+  jq -r ".http.Certificates[] | select(.domain.main==\"$DOMAIN\") | .key" | \
+  base64 -d > $PEERWAVE_DIR/livekit-certs/turn-key.pem
+
+# Set permissions
+chmod 644 $PEERWAVE_DIR/livekit-certs/turn-cert.pem
+chmod 600 $PEERWAVE_DIR/livekit-certs/turn-key.pem
+
+# Restart LiveKit to reload certificates
+cd $PEERWAVE_DIR
+docker-compose -f docker-compose.traefik.yml restart peerwave-livekit
+
+echo "✓ Certificates updated and LiveKit restarted"
+EOF
+
+# Make executable
+chmod +x ~/update-livekit-certs.sh
+
+# Test it
+sudo ~/update-livekit-certs.sh
+
+# Add to crontab (run daily at 3 AM)
+(crontab -l 2>/dev/null; echo "0 3 * * * sudo /home/$(whoami)/update-livekit-certs.sh >> /var/log/livekit-cert-update.log 2>&1") | crontab -
+```
+
+---
+
+### Option 2: Certbot with DNS Challenge
+
+If you want to generate certificates **before** starting Traefik, use DNS challenge (doesn't need port 80/443).
+
+#### 1. Install Certbot
 
 ```bash
 # Ubuntu/Debian
@@ -72,20 +167,39 @@ sudo apt install certbot
 sudo yum install certbot
 ```
 
-### 2. Generate Certificates
+#### 2. Generate Certificate with DNS Challenge
+
+**Important:** Use DNS challenge, NOT standalone (standalone requires port 80 which Traefik needs).
 
 ```bash
-# Replace with your domain
-DOMAIN="app.yourdomain.com"
+DOMAIN="app.peerwave.org"
 
-# Generate certificate (standalone - requires port 80 temporarily)
-sudo certbot certonly --standalone -d $DOMAIN
-
-# Or use DNS challenge (if port 80 is occupied)
+# Use DNS challenge (port 80/443 can be in use)
 sudo certbot certonly --manual --preferred-challenges dns -d $DOMAIN
+
+# Follow prompts:
+# 1. Certbot will show a DNS TXT record value
+# 2. Add TXT record to your DNS: _acme-challenge.app.peerwave.org
+# 3. Wait for DNS propagation (check: dig _acme-challenge.app.peerwave.org TXT)
+# 4. Press Enter to continue
 ```
 
-### 3. Copy Certificates to PeerWave
+**Pro Tip:** Use automated DNS validation with your DNS provider:
+
+```bash
+# Example with Cloudflare
+sudo certbot certonly \
+  --dns-cloudflare \
+  --dns-cloudflare-credentials ~/.secrets/cloudflare.ini \
+  -d app.peerwave.org
+
+# Example with Route53 (AWS)
+sudo certbot certonly \
+  --dns-route53 \
+  -d app.peerwave.org
+```
+
+#### 3. Copy Certificates to PeerWave
 
 **Important:** You're copying the SAME certificate to LiveKit, not generating a separate one.
 
@@ -108,9 +222,9 @@ sudo chown $(id -u):$(id -g) ./livekit-certs/*.pem
 - Traefik uses: `/etc/letsencrypt/live/app.peerwave.org/*` (automatic)
 - LiveKit uses: `./livekit-certs/turn-*.pem` (copied from same certificate)
 
-### 4. Auto-Renewal Setup
+#### 4. Auto-Renewal Setup
 
-Create renewal hook to update LiveKit certificates:
+Since you used DNS challenge, certbot won't interfere with Traefik on renewal.
 
 ```bash
 # Create renewal hook script
@@ -145,14 +259,16 @@ Make it executable:
 sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/peerwave-update.sh
 ```
 
-### 5. Test Renewal
+#### 5. Test Renewal
 
 ```bash
 # Dry run
 sudo certbot renew --dry-run
 ```
 
-## Alternative: Self-Signed Certificates (Development Only)
+---
+
+### Option 3: Self-Signed Certificates (Development Only)
 
 ⚠️ **Not recommended for production** - browsers will show warnings
 
