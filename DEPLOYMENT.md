@@ -1,0 +1,334 @@
+# PeerWave Deployment Guide Summary
+
+## Quick Reference
+
+### Deployment Comparison
+
+| Feature | Simple (docker-compose.yml) | Traefik (docker-compose.traefik.yml) |
+|---------|----------------------------|--------------------------------------|
+| **Setup Time** | 5 minutes | 15-30 minutes |
+| **SSL/HTTPS** | Manual | Automatic (Let's Encrypt) |
+| **Best For** | Development, Testing | Production, Public hosting |
+| **Domain Required** | No (localhost) | Yes |
+| **Reverse Proxy** | No | Yes (Traefik) |
+| **Certificate Management** | Manual | Auto-renewal |
+
+---
+
+## File Structure Overview
+
+```
+PeerWave/
+├── docker-compose.yml              # Simple deployment
+├── docker-compose.traefik.yml      # Production with Traefik
+├── .env.traefik.example            # Traefik environment template
+├── server/.env.example             # Simple deployment template
+├── livekit-config.yaml             # LiveKit configuration
+├── livekit-certs/                  # TURN server certificates
+│   ├── turn-cert.pem              # TLS certificate (gitignored)
+│   └── turn-key.pem               # Private key (gitignored)
+├── db/                             # SQLite database (gitignored)
+│   └── peerwave.sqlite
+├── CERTIFICATES.md                 # Certificate setup guide
+└── README.md                       # Main documentation
+```
+
+---
+
+## Key Differences: Simple vs Traefik
+
+### Simple Deployment (docker-compose.yml)
+
+**Pros:**
+- ✅ Quick setup (5 minutes)
+- ✅ No external dependencies
+- ✅ Perfect for development
+- ✅ Works offline
+
+**Cons:**
+- ❌ No automatic HTTPS
+- ❌ Manual certificate management
+- ❌ Exposed ports (3000, 7880)
+- ❌ Not suitable for public hosting
+
+**Use When:**
+- Local development
+- Internal network deployment
+- Testing and debugging
+- No domain/SSL needed
+
+### Traefik Deployment (docker-compose.traefik.yml)
+
+**Pros:**
+- ✅ Automatic HTTPS (Let's Encrypt)
+- ✅ Auto-certificate renewal
+- ✅ Production-ready
+- ✅ Clean URLs (no port numbers)
+- ✅ Better security (reverse proxy)
+
+**Cons:**
+- ❌ Requires Traefik setup
+- ❌ Requires domain
+- ❌ More complex configuration
+- ❌ Need external proxy network
+
+**Use When:**
+- Public-facing deployment
+- Production environment
+- Need automatic SSL
+- Multiple services on same server
+
+---
+
+## Certificate Requirements
+
+### For HTTP Server (Port 443 TCP)
+
+| Deployment | Certificate Management | Provider |
+|------------|------------------------|----------|
+| **Simple** | Manual or none | Self-signed or purchased |
+| **Traefik** | **Automatic** | Let's Encrypt (via Traefik) |
+
+### For TURN Server (Port 5349 TCP/UDP)
+
+| Deployment | Certificate Management | Provider |
+|------------|------------------------|----------|
+| **Both** | **Manual** (same for both) | Let's Encrypt (via Certbot) |
+
+⚠️ **Important:** LiveKit TURN server ALWAYS needs separate TLS certificates, regardless of deployment method.
+
+**Why?** Traefik only handles HTTP/HTTPS (port 443 TCP). TURN uses port 5349 and needs its own TLS setup.
+
+---
+
+## Port Exposure Comparison
+
+### Simple Deployment
+```
+Host Machine               Container
+─────────────────         ──────────
+3000       → (HTTP)   →   3000   (server)
+7880       → (WS)     →   7880   (livekit)
+5349       → (TURN)   →   5349   (livekit)
+443/udp    → (TURN)   →   443    (livekit)
+30100-30400/udp        →   30100-30400 (media)
+```
+
+### Traefik Deployment
+```
+Host Machine               Traefik               Container
+─────────────────         ─────────────         ──────────
+80         → (HTTP)   →   [Traefik] → 443 →    3000   (server)
+443        → (HTTPS)  →   [Traefik]
+7880       → (WS)     →                  →      7880   (livekit)
+5349       → (TURN)   →                  →      5349   (livekit)
+443/udp    → (TURN)   →                  →      443    (livekit)
+30100-30400/udp                          →      30100-30400 (media)
+```
+
+**Note:** In Traefik mode, port 3000 is NOT exposed to the host - only Traefik accesses it via internal network.
+
+---
+
+## When to Use What
+
+### Use Simple Deployment If:
+- ✅ Running locally for development
+- ✅ Internal network only (company intranet)
+- ✅ Don't need HTTPS
+- ✅ Want quick testing
+- ✅ Behind a different reverse proxy (not Traefik)
+
+### Use Traefik Deployment If:
+- ✅ Public-facing deployment
+- ✅ Need automatic HTTPS
+- ✅ Already using Traefik for other services
+- ✅ Want production-grade setup
+- ✅ Need certificate auto-renewal
+
+---
+
+## Migration Path
+
+### From Simple to Traefik
+
+1. **Backup your data:**
+```bash
+cp -r db db.backup
+```
+
+2. **Stop simple deployment:**
+```bash
+docker-compose down
+```
+
+3. **Setup Traefik:**
+```bash
+# Install Traefik (if not already)
+docker network create proxy
+# Deploy Traefik container with Let's Encrypt
+```
+
+4. **Generate Let's Encrypt certificates:**
+```bash
+sudo certbot certonly --standalone -d app.yourdomain.com
+```
+
+5. **Copy certificates for LiveKit:**
+```bash
+mkdir -p livekit-certs
+sudo cp /etc/letsencrypt/live/app.yourdomain.com/fullchain.pem ./livekit-certs/turn-cert.pem
+sudo cp /etc/letsencrypt/live/app.yourdomain.com/privkey.pem ./livekit-certs/turn-key.pem
+sudo chown $(id -u):$(id -g) livekit-certs/*.pem
+```
+
+6. **Setup Traefik environment:**
+```bash
+cp .env.traefik.example .env
+nano .env  # Configure your domain and secrets
+```
+
+7. **Update livekit-config.yaml:**
+```yaml
+turn:
+  domain: app.yourdomain.com  # Change from localhost
+```
+
+8. **Deploy with Traefik:**
+```bash
+docker-compose -f docker-compose.traefik.yml up -d
+```
+
+9. **Verify:**
+```bash
+# Check logs
+docker-compose -f docker-compose.traefik.yml logs -f
+
+# Test HTTPS
+curl -I https://app.yourdomain.com
+```
+
+---
+
+## Common Scenarios
+
+### Scenario 1: Developer Testing
+**Recommended:** Simple deployment
+```bash
+docker-compose up -d
+# Access: http://localhost:3000
+```
+
+### Scenario 2: Company Internal Use
+**Recommended:** Simple deployment with custom domain via /etc/hosts
+```bash
+# Add to /etc/hosts: 192.168.1.100  peerwave.local
+docker-compose up -d
+# Access: http://peerwave.local:3000
+```
+
+### Scenario 3: Small Public Instance
+**Recommended:** Traefik deployment
+```bash
+docker-compose -f docker-compose.traefik.yml up -d
+# Access: https://peerwave.yourdomain.com
+```
+
+### Scenario 4: Enterprise Deployment
+**Recommended:** Traefik + external load balancer
+- Multiple PeerWave instances behind load balancer
+- Shared database (consider PostgreSQL migration)
+- Redis for session storage
+- Separate LiveKit cluster
+
+---
+
+## Environment Variable Cheat Sheet
+
+### Minimal Setup (Development)
+```bash
+SESSION_SECRET=$(openssl rand -base64 32)
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=secret
+```
+
+### Production Setup
+```bash
+DOMAIN=app.yourdomain.com
+LIVEKIT_TURN_DOMAIN=app.yourdomain.com
+SESSION_SECRET=$(openssl rand -base64 32)
+LIVEKIT_API_KEY=$(openssl rand -base64 32)
+LIVEKIT_API_SECRET=$(openssl rand -base64 32)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASS=your-app-password
+```
+
+---
+
+## Troubleshooting Decision Tree
+
+```
+Cannot access PeerWave
+    ├─ Simple deployment?
+    │   ├─ Check: http://localhost:3000
+    │   ├─ Check: docker-compose logs
+    │   └─ Check: port 3000 not blocked
+    │
+    └─ Traefik deployment?
+        ├─ Check: https://yourdomain.com
+        ├─ Check: docker network ls (proxy exists?)
+        ├─ Check: docker logs traefik
+        └─ Check: DNS pointing to server
+
+Video calls not working
+    ├─ Check: docker-compose logs peerwave-livekit
+    ├─ Check: Firewall (UDP ports 30100-30400)
+    ├─ Check: TURN certificates valid
+    ├─ Test: https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/
+    └─ Verify: LIVEKIT_API_KEY matches in server and livekit
+
+Certificate errors
+    ├─ HTTP (port 443 TCP) → Traefik manages (auto)
+    └─ TURN (port 5349) → Manual setup required
+        ├─ Check: livekit-certs/turn-cert.pem exists
+        ├─ Check: Certificate not expired
+        └─ Check: Domain matches LIVEKIT_TURN_DOMAIN
+```
+
+---
+
+## Quick Commands Reference
+
+```bash
+# Start simple
+docker-compose up -d
+
+# Start Traefik
+docker-compose -f docker-compose.traefik.yml up -d
+
+# View logs
+docker-compose logs -f peerwave-server
+
+# Restart LiveKit
+docker-compose restart peerwave-livekit
+
+# Check certificate expiry
+openssl x509 -in livekit-certs/turn-cert.pem -noout -dates
+
+# Generate secret
+openssl rand -base64 32
+
+# Test SMTP
+docker exec -it peerwave-server node -e "require('nodemailer').createTransporter(require('./config/config.js').smtp).verify(console.log)"
+```
+
+---
+
+## Support Resources
+
+- **Certificate Setup**: [CERTIFICATES.md](CERTIFICATES.md)
+- **Full Documentation**: [README.md](README.md)
+- **GitHub Issues**: https://github.com/simonzander/PeerWave/issues
+- **Email**: support@peerwave.org

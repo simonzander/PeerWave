@@ -118,136 +118,194 @@ You can crop the hosted video with an experimental API that has not yet been sta
 You can resize the hosted video with an experimental API that has not yet been standardized. As of 2024-06-19, this API is available in Chrome 94, Edge 94 and Opera 80. 
 ## Getting Started
 
-### Quick Start with Docker Compose (Recommended)
+### Deployment Options
 
-The easiest way to run PeerWave is using Docker Compose:
+Choose the deployment method that fits your needs:
+
+| Method | Use Case | Complexity |
+|--------|----------|------------|
+| **Docker Compose (Simple)** | Local dev, small deployments | ⭐ Easy |
+| **Docker Compose + Traefik** | Production with SSL | ⭐⭐ Medium |
+| **Docker Hub Image** | Quick testing | ⭐ Easy |
+| **Manual Build** | Custom modifications | ⭐⭐⭐ Advanced |
+
+---
+
+### Option 1: Docker Compose (Simple - Recommended for Getting Started)
+
+Perfect for local development or simple deployments without reverse proxy.
 
 ```bash
-# Clone the repository
+# 1. Clone repository
 git clone https://github.com/simonzander/PeerWave.git
 cd PeerWave
 
-# Copy environment template
+# 2. Copy environment template
 cp server/.env.example server/.env
 
-# Edit configuration (see Configuration section below)
+# 3. Edit configuration - CHANGE THE SECRETS!
 nano server/.env
+# Required: SESSION_SECRET, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
 
-# Start all services
+# 4. Generate TLS certificates for TURN server (see CERTIFICATES.md)
+# For development, you can use self-signed:
+mkdir -p livekit-certs
+openssl req -x509 -newkey rsa:4096 -nodes \
+  -keyout livekit-certs/turn-key.pem \
+  -out livekit-certs/turn-cert.pem \
+  -days 365 -subj "/CN=localhost"
+
+# 5. Start all services
 docker-compose up -d
 
-# View logs
-docker-compose logs -f
+# 6. View logs
+docker-compose logs -f peerwave-server
 ```
 
-PeerWave will be available at `http://localhost:3000`
+**Access PeerWave:** `http://localhost:3000`
 
-### Configuration
+---
 
-#### Environment Variables
+### Option 2: Docker Compose + Traefik (Production with SSL)
 
-Copy `server/.env.example` to `server/.env` and adjust values:
-
-```bash
-# Required: Change these in production!
-SESSION_SECRET=your-long-random-string-here
-LIVEKIT_API_KEY=your-livekit-key
-LIVEKIT_API_SECRET=your-livekit-secret
-
-# Optional: Adjust as needed
-PORT=3000
-NODE_ENV=production
-LIVEKIT_TURN_DOMAIN=your-domain.com
-```
-
-Generate secure secrets:
-```bash
-openssl rand -base64 32
-```
-
-#### Configuration File
-
-Alternatively, mount a custom config file:
-
-```yaml
-# docker-compose.yml
-volumes:
-  - ./my-config.js:/usr/src/app/config/config.js:ro
-```
-
-See `server/config/config.example.js` for all available options.
-
-### Manual Deployment
+Best for production deployments with automatic HTTPS via Let's Encrypt.
 
 #### Prerequisites
-- Node.js 22+
-- Flutter 3.27.1+ (for web client)
-- Docker (optional)
 
-#### Build Web Client
+1. **Traefik** running with Let's Encrypt configured
+2. **Domain** pointing to your server
+3. **Ports** 80, 443 open for Traefik
+4. **Proxy network** created: `docker network create proxy`
 
-```bash
-cd client
-flutter pub get
-flutter build web --release
-
-# Copy to server
-cp -r build/web ../server/web
-```
-
-#### Run Server
+#### Deployment Steps
 
 ```bash
-cd server
-npm install
-node server.js
+# 1. Clone repository
+git clone https://github.com/simonzander/PeerWave.git
+cd PeerWave
+
+# 2. Copy Traefik environment template
+cp .env.traefik.example .env
+
+# 3. Edit configuration
+nano .env
 ```
 
-### Building Docker Image
-
-Use the provided build script:
+**Required variables:**
+```bash
+DOMAIN=app.yourdomain.com
+LIVEKIT_TURN_DOMAIN=app.yourdomain.com
+SESSION_SECRET=$(openssl rand -base64 32)
+LIVEKIT_API_KEY=$(openssl rand -base64 32)
+LIVEKIT_API_SECRET=$(openssl rand -base64 32)
+```
 
 ```bash
-# Linux/Mac
-chmod +x build-docker.sh
-./build-docker.sh v1.0.0
+# 4. Setup LiveKit TLS certificates (IMPORTANT!)
+# See CERTIFICATES.md for detailed instructions
+sudo certbot certonly --standalone -d app.yourdomain.com
 
-# Windows
-.\build-docker.ps1 v1.0.0
+# Copy certificates
+mkdir -p livekit-certs
+sudo cp /etc/letsencrypt/live/app.yourdomain.com/fullchain.pem ./livekit-certs/turn-cert.pem
+sudo cp /etc/letsencrypt/live/app.yourdomain.com/privkey.pem ./livekit-certs/turn-key.pem
+sudo chown $(id -u):$(id -g) livekit-certs/*.pem
 
-# With Docker Hub push
-./build-docker.sh v1.0.0 --push
+# 5. Update livekit-config.yaml with your domain
+nano livekit-config.yaml
+# Set: turn.domain: app.yourdomain.com
+
+# 6. Start services
+docker-compose -f docker-compose.traefik.yml up -d
+
+# 7. View logs
+docker-compose -f docker-compose.traefik.yml logs -f
 ```
 
-Or manually:
+**Access PeerWave:** `https://app.yourdomain.com`
 
-```bash
-# Build web client
-cd client && flutter build web --release
-cp -r build/web ../server/web
+**📘 Certificate Management:** See [CERTIFICATES.md](CERTIFICATES.md) for auto-renewal setup
 
-# Build Docker image
-cd ../server
-docker build -t simonzander/peerwave:v1.0.0 .
-```
+---
 
-### Docker Hub
+### Option 3: Docker Hub (Pre-built Image)
 
-Pre-built images: [simonzander/peerwave](https://hub.docker.com/r/simonzander/peerwave)
+Fastest way to test PeerWave without building.
 
 ```bash
 # Pull latest image
 docker pull simonzander/peerwave:latest
 
-# Run with environment variables
+# Run with basic configuration
 docker run -d \
+  --name peerwave \
   -p 3000:3000 \
-  -e SESSION_SECRET=your-secret \
-  -e LIVEKIT_API_KEY=your-key \
-  -e LIVEKIT_API_SECRET=your-secret \
-  -v ./db:/usr/src/app/db \
+  -e SESSION_SECRET=$(openssl rand -base64 32) \
+  -e LIVEKIT_API_KEY=devkey \
+  -e LIVEKIT_API_SECRET=secret \
+  -v $(pwd)/db:/usr/src/app/db \
   simonzander/peerwave:latest
 ```
+
+⚠️ **Note:** This runs only the server. You'll need LiveKit separately for video calls.
+
+**Access PeerWave:** `http://localhost:3000`
+
+---
+
+### Configuration
+
+#### Required Environment Variables
+
+| Variable | Description | Required | Example |
+|----------|-------------|----------|---------|
+| `SESSION_SECRET` | Session encryption key | ✅ Yes | `$(openssl rand -base64 32)` |
+| `LIVEKIT_API_KEY` | LiveKit API key | ✅ Yes | `$(openssl rand -base64 32)` |
+| `LIVEKIT_API_SECRET` | LiveKit API secret | ✅ Yes | `$(openssl rand -base64 32)` |
+| `LIVEKIT_TURN_DOMAIN` | Your domain for TURN | ✅ Prod | `app.yourdomain.com` |
+| `DOMAIN` | Your domain (Traefik) | ✅ Traefik | `app.yourdomain.com` |
+
+#### Optional Environment Variables
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `PORT` | Server port | `3000` | `4000` |
+| `NODE_ENV` | Environment | `production` | `development` |
+| `EMAIL_HOST` | SMTP server | - | `smtp.gmail.com` |
+| `EMAIL_PORT` | SMTP port | `587` | `587` |
+| `EMAIL_USER` | SMTP username | - | `your-email@gmail.com` |
+| `EMAIL_PASS` | SMTP password | - | `your-app-password` |
+| `CORS_ORIGINS` | Allowed origins | Auto | `https://app.yourdomain.com` |
+
+#### Configuration Files
+
+**server/.env** (Simple deployment):
+```bash
+SESSION_SECRET=your-long-random-string-here
+LIVEKIT_API_KEY=your-livekit-key
+LIVEKIT_API_SECRET=your-livekit-secret
+```
+
+**.env** (Traefik deployment):
+```bash
+DOMAIN=app.yourdomain.com
+LIVEKIT_TURN_DOMAIN=app.yourdomain.com
+SESSION_SECRET=your-long-random-string
+LIVEKIT_API_KEY=your-key
+LIVEKIT_API_SECRET=your-secret
+```
+
+#### Generate Secure Secrets
+
+```bash
+# Linux/macOS
+openssl rand -base64 32
+
+# Windows PowerShell
+[Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
+
+---
 
 ### Native Clients
 
@@ -271,51 +329,359 @@ flutter build macos --release
 flutter build linux --release
 ```
 
+---
+
+### Building Docker Image (Advanced)
+
+Use the provided build script:
+
+```bash
+# Linux/macOS
+chmod +x build-docker.sh
+./build-docker.sh v1.0.0
+
+# Windows PowerShell
+.\build-docker.ps1 v1.0.0
+
+# With Docker Hub push
+./build-docker.sh v1.0.0 --push
+```
+
+Or manually:
+
+```bash
+# 1. Build Flutter web client
+cd client
+flutter build web --release
+cp -r build/web ../server/web
+
+# 2. Build Docker image
+cd ../server
+docker build -t simonzander/peerwave:v1.0.0 .
+
+# 3. Push to registry (optional)
+docker push simonzander/peerwave:v1.0.0
+```
+
+---
+
 ### Production Deployment Checklist
 
-- [ ] Change `SESSION_SECRET` to a random 32+ character string
-- [ ] Change `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`
+#### Security (Critical!)
+
+- [ ] Generate new `SESSION_SECRET` (min 32 chars): `openssl rand -base64 32`
+- [ ] Generate new `LIVEKIT_API_KEY`: `openssl rand -base64 32`
+- [ ] Generate new `LIVEKIT_API_SECRET`: `openssl rand -base64 32`
+- [ ] **Never use** `devkey` or `secret` in production
+- [ ] Setup TLS certificates for LiveKit TURN (see [CERTIFICATES.md](CERTIFICATES.md))
+
+#### Configuration
+
 - [ ] Set `NODE_ENV=production`
-- [ ] Configure your domain in `LIVEKIT_TURN_DOMAIN`
-- [ ] Set up SSL certificates (if using HTTPS)
-- [ ] Configure CORS origins for your domains
-- [ ] Set up database backups (volume: `./db`)
-- [ ] Configure firewall rules for required ports
-- [ ] Review rate limiting settings
-- [ ] Enable logging and monitoring
+- [ ] Configure `LIVEKIT_TURN_DOMAIN` with your domain
+- [ ] Set up email (SMTP) for meeting invitations
+- [ ] Configure `CORS_ORIGINS` for your domain(s)
+- [ ] Review and adjust `livekit-config.yaml` port ranges
+
+#### Infrastructure
+
+- [ ] Setup SSL certificates (Traefik + LiveKit)
+- [ ] Configure firewall rules (see Required Ports below)
+- [ ] Setup database backups (volume: `./db`)
+- [ ] Configure monitoring and logging
+- [ ] Test video calls from different networks
+- [ ] Verify TURN server connectivity with [trickle-ice](https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/)
+
+#### Optional Enhancements
+
+- [ ] Setup CDN for static assets
+- [ ] Configure rate limiting
+- [ ] Enable database WAL mode
+- [ ] Setup log rotation
+- [ ] Configure health checks
+- [ ] Setup backup strategy
+
+---
 
 ### Required Ports
 
-| Port Range | Protocol | Service | Required |
-|------------|----------|---------|----------|
-| 3000 | TCP | Web/API | Yes |
-| 7880 | TCP | LiveKit WebRTC | Yes |
-| 7881 | TCP | LiveKit HTTP API | Yes |
-| 5349 | TCP/UDP | TURN/TLS | Yes (P2P) |
-| 443 | UDP | TURN/UDP (QUIC) | Yes (P2P) |
-| 30100-30200 | UDP | RTP (WebRTC media) | Yes |
-| 30300-30400 | UDP | TURN Relay | Yes (P2P) |
+#### For Simple Deployment (docker-compose.yml)
+
+| Port | Protocol | Service | Purpose |
+|------|----------|---------|---------|
+| 3000 | TCP | Web/API Server | Main application |
+| 7880 | TCP | LiveKit WebSocket | WebRTC signaling |
+| 7881 | TCP | LiveKit HTTP API | Internal API |
+| 443 | UDP | TURN/UDP (QUIC) | P2P NAT traversal |
+| 5349 | TCP/UDP | TURN/TLS | Firewall-friendly P2P |
+| 30100-30200 | UDP | RTP Media | WebRTC audio/video |
+| 30300-30400 | UDP | TURN Relay | P2P relay ports |
+
+#### For Traefik Deployment (docker-compose.traefik.yml)
+
+| Port | Protocol | Service | Purpose | Traefik |
+|------|----------|---------|---------|---------|
+| 80 | TCP | HTTP | Redirect to HTTPS | ✅ Managed |
+| 443 | TCP | HTTPS | Web/API Server | ✅ Managed |
+| 7880 | TCP | LiveKit WS | WebRTC signaling | ❌ Direct |
+| 443 | UDP | TURN/UDP | P2P traversal | ❌ Direct |
+| 5349 | TCP/UDP | TURN/TLS | Firewall-friendly | ❌ Direct |
+| 30100-30200 | UDP | RTP Media | WebRTC streams | ❌ Direct |
+| 30300-30400 | UDP | TURN Relay | P2P relay | ❌ Direct |
+
+**Note:** Traefik manages HTTP/HTTPS (ports 80/443 TCP). LiveKit requires direct port access for WebRTC.
+
+---
+
+### Firewall Configuration
+
+#### UFW (Ubuntu/Debian)
+
+```bash
+# Web (Traefik managed)
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+
+# LiveKit WebRTC
+sudo ufw allow 7880/tcp
+sudo ufw allow 443/udp
+sudo ufw allow 5349
+sudo ufw allow 30100:30200/udp
+sudo ufw allow 30300:30400/udp
+```
+
+#### firewalld (CentOS/RHEL)
+
+```bash
+# Web
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-service=https
+
+# LiveKit
+sudo firewall-cmd --permanent --add-port=7880/tcp
+sudo firewall-cmd --permanent --add-port=443/udp
+sudo firewall-cmd --permanent --add-port=5349/tcp
+sudo firewall-cmd --permanent --add-port=5349/udp
+sudo firewall-cmd --permanent --add-port=30100-30200/udp
+sudo firewall-cmd --permanent --add-port=30300-30400/udp
+
+sudo firewall-cmd --reload
+```
+
+---
+
+---
 
 ### Troubleshooting
 
-**Web client not loading:**
-- Ensure `server/web/` folder exists with built Flutter web files
-- Run `./build-docker.sh` to rebuild
+#### Web client not loading
 
-**Video calls not working:**
-- Check LiveKit is running: `docker-compose logs peerwave-livekit`
-- Verify TURN configuration in `.env`
-- Ensure UDP ports 30100-30400 are open
+**Issue:** Blank page or 404 errors
 
-**Database errors:**
-- Check `./db` volume permissions
-- Ensure SQLite file is writable
-- Review logs: `docker-compose logs peerwave-server`
+**Solution:**
+```bash
+# Check web files exist in container
+docker exec peerwave-server ls -la /usr/src/app/web/
 
-**Authentication issues (native clients):**
-- Verify `SESSION_SECRET` is set and persistent
-- Check HMAC configuration in `.env`
-- Review client/server time synchronization
+# Rebuild image with web client
+./build-docker.sh latest
+```
+
+#### Video calls not working
+
+**Issue:** Can't join meetings or see other participants
+
+**Solutions:**
+
+1. **Check LiveKit is running:**
+```bash
+docker-compose logs peerwave-livekit
+# Should show: "LiveKit server started"
+```
+
+2. **Verify API credentials match:**
+```bash
+# server/.env and docker-compose.yml must have same values
+grep LIVEKIT_API server/.env
+```
+
+3. **Test TURN server connectivity:**
+- Visit: https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/
+- Server: `turn:your-domain.com:5349`
+- Username: `test`
+- Credential: (your LIVEKIT_API_SECRET)
+- Should show `relay` candidates
+
+4. **Check firewall rules:**
+```bash
+# Ensure UDP ports are open
+sudo ufw status | grep 30100
+sudo ufw status | grep 443/udp
+```
+
+5. **Verify certificate setup:**
+```bash
+# Check certificates exist and have correct permissions
+ls -lh livekit-certs/
+# turn-cert.pem should be 644, turn-key.pem should be 600
+
+# Check certificate is valid
+openssl x509 -in livekit-certs/turn-cert.pem -noout -dates
+
+# Test TURN/TLS connection
+openssl s_client -connect your-domain.com:5349
+```
+
+#### Database errors
+
+**Issue:** SQLite locked or permission denied
+
+**Solution:**
+```bash
+# Check volume permissions
+ls -la ./db/
+
+# Fix permissions
+sudo chown -R 1000:1000 ./db/
+chmod 755 ./db/
+chmod 644 ./db/peerwave.sqlite
+```
+
+#### Authentication issues (native clients)
+
+**Issue:** "Session expired" or "Unauthorized" errors
+
+**Solutions:**
+
+1. **Verify SESSION_SECRET is persistent:**
+```bash
+# Check .env file exists
+cat server/.env | grep SESSION_SECRET
+
+# Ensure it doesn't change between container restarts
+docker-compose down && docker-compose up -d
+```
+
+2. **Check time synchronization:**
+```bash
+# Server and client clocks must be synchronized (within 5 minutes)
+date
+# Install NTP if needed
+sudo apt install ntp
+```
+
+3. **Clear client cache:**
+- Windows: Delete `%APPDATA%/PeerWave`
+- macOS: Delete `~/Library/Application Support/PeerWave`
+- Linux: Delete `~/.config/PeerWave`
+
+#### Certificate renewal issues
+
+**Issue:** TURN server stops working after Let's Encrypt renewal
+
+**Solution:**
+```bash
+# Manually update certificates
+sudo cp /etc/letsencrypt/live/your-domain.com/fullchain.pem ./livekit-certs/turn-cert.pem
+sudo cp /etc/letsencrypt/live/your-domain.com/privkey.pem ./livekit-certs/turn-key.pem
+sudo chown $(id -u):$(id -g) livekit-certs/*.pem
+
+# Restart LiveKit
+docker-compose restart peerwave-livekit
+
+# Setup auto-renewal (see CERTIFICATES.md)
+```
+
+#### High CPU/Memory usage
+
+**Issue:** Server consuming excessive resources
+
+**Solutions:**
+
+1. **Limit concurrent meetings:**
+```yaml
+# livekit-config.yaml
+room:
+  max_participants: 50  # Reduce if needed
+```
+
+2. **Reduce video quality:**
+```yaml
+# livekit-config.yaml
+video:
+  max_bitrate: 2000000  # 2 Mbps
+```
+
+3. **Enable database WAL mode:**
+```bash
+# In server/.env
+DB_WAL_MODE=true
+```
+
+4. **Monitor resources:**
+```bash
+docker stats peerwave-server peerwave-livekit
+```
+
+#### Email sending fails
+
+**Issue:** Meeting invitations not being sent
+
+**Solution:**
+```bash
+# Test SMTP configuration
+docker exec -it peerwave-server node -e "
+const nodemailer = require('nodemailer');
+const config = require('./config/config.js');
+const transporter = nodemailer.createTransporter(config.smtp);
+transporter.verify((err, success) => {
+  console.log(err ? 'SMTP Error: ' + err.message : 'SMTP OK');
+});
+"
+```
+
+#### Traefik integration issues
+
+**Issue:** 502 Bad Gateway or can't access via domain
+
+**Solutions:**
+
+1. **Verify proxy network exists:**
+```bash
+docker network ls | grep proxy
+# Create if missing: docker network create proxy
+```
+
+2. **Check Traefik labels:**
+```bash
+docker inspect peerwave-server | grep -A 20 Labels
+```
+
+3. **View Traefik logs:**
+```bash
+docker logs traefik
+```
+
+4. **Test direct container access:**
+```bash
+# Should work without Traefik
+curl -I http://localhost:3000
+```
+
+---
+
+### Getting Help
+
+- **Documentation**: Check [CERTIFICATES.md](CERTIFICATES.md) for SSL setup
+- **Issues**: [GitHub Issues](https://github.com/simonzander/PeerWave/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/simonzander/PeerWave/discussions)
+- **Email**: support@peerwave.org
+
+When reporting issues, include:
+- PeerWave version
+- Deployment method (Docker Compose, Traefik, etc.)
+- Browser/client version
+- Relevant logs: `docker-compose logs --tail=100`
 
 ## Limitations
 The main limitation is your upload speed, which is shared with your direct peers. If you are streaming, factors like the codec, resolution, and quick refreshes can increase your CPU (for VP8/VP9) or GPU (for H.264) load and affect your upload speed. The Chrome browser can handle up to 512 data connections and 56 streams.

@@ -1,0 +1,116 @@
+# Docker Compose configuration for PeerWave with Traefik reverse proxy
+# This setup assumes you have Traefik running with Let's Encrypt configured
+#
+# Usage:
+#   docker-compose -f docker-compose.traefik.yml up -d
+#
+# Prerequisites:
+#   - Traefik proxy network: docker network create proxy
+#   - Domain DNS pointing to your server
+#   - .env file with required variables
+
+version: '3.8'
+
+services:
+  # PeerWave Server
+  peerwave-server:
+    image: simonzander/peerwave:latest
+    container_name: peerwave-server
+    restart: unless-stopped
+    
+    volumes:
+      - ./db:/usr/src/app/db
+      - ./server/cert:/usr/src/app/cert:ro
+    
+    environment:
+      # Server Configuration
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      
+      # Database
+      - DB_PATH=/usr/src/app/db/peerwave.sqlite
+      
+      # Security (CHANGE THESE!)
+      - SESSION_SECRET=${SESSION_SECRET}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+      
+      # LiveKit Connection
+      - LIVEKIT_URL=ws://peerwave-livekit:7880
+      - LIVEKIT_TURN_DOMAIN=${LIVEKIT_TURN_DOMAIN}
+      
+      # CORS Origins (your domain)
+      - CORS_ORIGINS=https://${DOMAIN}
+      
+      # Email (optional)
+      - EMAIL_HOST=${EMAIL_HOST}
+      - EMAIL_PORT=${EMAIL_PORT}
+      - EMAIL_SECURE=${EMAIL_SECURE}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASS=${EMAIL_PASS}
+    
+    networks:
+      - proxy
+      - peerwave-internal
+    
+    labels:
+      # Enable Traefik
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      
+      # HTTP → HTTPS Redirect
+      - "traefik.http.routers.peerwave.entrypoints=http"
+      - "traefik.http.routers.peerwave.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.peerwave.middlewares=peerwave-https-redirect"
+      - "traefik.http.middlewares.peerwave-https-redirect.redirectscheme.scheme=https"
+      
+      # HTTPS Router
+      - "traefik.http.routers.peerwave-secure.entrypoints=https"
+      - "traefik.http.routers.peerwave-secure.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.peerwave-secure.tls=true"
+      - "traefik.http.routers.peerwave-secure.tls.certresolver=http"
+      - "traefik.http.routers.peerwave-secure.service=peerwave"
+      
+      # Service
+      - "traefik.http.services.peerwave.loadbalancer.server.port=3000"
+    
+    depends_on:
+      - peerwave-livekit
+
+  # LiveKit Server (SFU for video calls)
+  peerwave-livekit:
+    image: livekit/livekit-server:latest
+    container_name: peerwave-livekit
+    restart: unless-stopped
+    
+    command: --config /etc/livekit.yaml
+    
+    volumes:
+      - ./livekit-config.yaml:/etc/livekit.yaml:ro
+      - ./livekit-certs:/certs:ro
+    
+    # LiveKit needs direct port access for WebRTC and TURN
+    ports:
+      - "7880:7880"           # WebRTC/WebSocket (can be behind Traefik if needed)
+      - "7881:7881"           # HTTP API
+      - "443:443/udp"         # TURN/UDP (QUIC-compatible)
+      - "5349:5349"           # TURN/TLS (firewall-friendly)
+      - "30100-30200:30100-30200/udp"  # RTP (WebRTC media)
+      - "30300-30400:30300-30400/udp"  # TURN relay range
+    
+    environment:
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+    
+    networks:
+      - peerwave-internal
+
+networks:
+  # External Traefik proxy network
+  proxy:
+    external: true
+  
+  # Internal PeerWave network
+  peerwave-internal:
+    driver: bridge
