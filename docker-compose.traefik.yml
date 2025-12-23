@@ -40,6 +40,9 @@ services:
     container_name: peerwave-server
     restart: unless-stopped
     
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    
     volumes:
       - ./db:/usr/src/app/db
       - ./server/cert:/usr/src/app/cert:ro
@@ -59,7 +62,7 @@ services:
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
       
       # LiveKit Connection
-      - LIVEKIT_URL=ws://peerwave-livekit:7880
+      - LIVEKIT_URL=ws://host.docker.internal:7880
       - LIVEKIT_TURN_DOMAIN=${LIVEKIT_TURN_DOMAIN}
       
       # CORS Origins (your domain)
@@ -106,6 +109,9 @@ services:
     container_name: peerwave-livekit
     restart: unless-stopped
     
+    # Use host networking for better WebRTC performance and avoid docker-proxy issues
+    network_mode: host
+    
     command: --config /etc/livekit.yaml
     
     volumes:
@@ -139,17 +145,8 @@ services:
       exec livekit-server --config /etc/livekit.yaml
       "
     
-    # LiveKit needs direct port access for WebRTC and TURN
-    ports:
-      - "7880:7880"           # WebRTC/WebSocket (can be behind Traefik if needed)
-      - "7881:7881"           # HTTP API
-      - "443:443/udp"         # TURN/UDP (QUIC-compatible)
-      - "5349:5349"           # TURN/TLS (firewall-friendly)
-      - "30100-30200:30100-30200/udp"  # RTP (WebRTC media)
-      - "30300-30400:30300-30400/udp"  # TURN relay range
-    
-    networks:
-      - peerwave-internal
+    # Note: Ports bound directly to host (no mapping needed with network_mode: host)
+    # Ports used: 7880, 7881, 443/udp, 5349, 30100-30200/udp, 30300-30400/udp
 
 networks:
   # External Traefik proxy network
