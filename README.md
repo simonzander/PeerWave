@@ -122,21 +122,20 @@ You can resize the hosted video with an experimental API that has not yet been s
 
 Choose the deployment method that fits your needs:
 
-| Method | Use Case | Complexity |
-|--------|----------|------------|
-| **Docker Compose (Simple)** | Local dev, small deployments | ⭐ Easy |
-| **Docker Compose + Traefik** | Production with SSL | ⭐⭐ Medium |
-| **Docker Hub Image** | Quick testing | ⭐ Easy |
-| **Manual Build** | Custom modifications | ⭐⭐⭐ Advanced |
+| Method | Use Case | Complexity | Source |
+|--------|----------|------------|--------|
+| **Docker Compose (Simple)** | Local dev, small deployments | ⭐ Easy | Docker Hub |
+| **Docker Compose + Traefik** | Production with SSL | ⭐⭐ Medium | Docker Hub |
+| **Manual Build** | Custom modifications | ⭐⭐⭐ Advanced | Source Code |
 
 ---
 
 ### Option 1: Docker Compose (Simple - Recommended for Getting Started)
 
-Perfect for local development or simple deployments without reverse proxy.
+Perfect for local development or simple deployments without reverse proxy. Uses pre-built images from Docker Hub.
 
 ```bash
-# 1. Clone repository
+# 1. Download configuration files
 git clone https://github.com/simonzander/PeerWave.git
 cd PeerWave
 
@@ -147,16 +146,18 @@ cp server/.env.example server/.env
 nano server/.env
 # Required: SESSION_SECRET, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
 
-# 4. Start all services (certificates auto-generated)
+# 4. Start all services (images pulled from Docker Hub)
 docker-compose up -d
 
 # 5. View logs
 docker-compose logs -f peerwave-server
 ```
 
+**✅ Images:** Automatically pulled from Docker Hub (no build needed!)
+
 **✅ Certificates:** 
-- **Option A:** Provide your own - place `turn-cert.pem` and `turn-key.pem` in `./livekit-certs/`
-- **Option B:** Auto-generated self-signed (no manual setup needed!)
+- **Option A:** Provide your own - place `turn-cert.pem` and `turn-key.pem` in `./livekit-certs/` and restart
+- **Option B:** Auto-generated self-signed (default, no manual setup needed!)
 
 **Access PeerWave:** `http://localhost:3000`
 
@@ -164,7 +165,7 @@ docker-compose logs -f peerwave-server
 
 ### Option 2: Docker Compose + Traefik (Production with SSL)
 
-Best for production deployments with automatic HTTPS via Let's Encrypt.
+Best for production deployments with automatic HTTPS via Let's Encrypt. Uses pre-built images from Docker Hub.
 
 #### Prerequisites
 
@@ -176,7 +177,7 @@ Best for production deployments with automatic HTTPS via Let's Encrypt.
 #### Deployment Steps
 
 ```bash
-# 1. Clone repository
+# 1. Download configuration files
 git clone https://github.com/simonzander/PeerWave.git
 cd PeerWave
 
@@ -202,39 +203,63 @@ LIVEKIT_API_SECRET=$(openssl rand -base64 32)
 nano livekit-config.yaml
 # Set: turn.domain: app.yourdomain.com
 
-# 5. Start services (certificates extracted automatically!)
+# 5. Start services (images pulled from Docker Hub, certs extracted automatically!)
 docker-compose -f docker-compose.traefik.yml up -d
 
 # 6. View logs
 docker-compose -f docker-compose.traefik.yml logs -f
 ```
 
-**✅ Certificates:** Auto-extracted from Traefik (no manual setup needed!)
+**✅ Images:** Automatically pulled from Docker Hub (no build needed!)
+
+**✅ Certificates:** Auto-extracted from Traefik's acme.json (no manual setup needed!)
 
 **Access PeerWave:** `https://app.yourdomain.com`
 
 ---
 
-### Option 3: Docker Hub (Pre-built Image)
+### Option 3: Manual Build from Source
 
-Fastest way to test PeerWave without building.
+For developers who want to customize PeerWave or contribute to development.
 
 ```bash
-# Pull latest image
-docker pull simonzander/peerwave:latest
+# 1. Clone repository
+git clone https://github.com/simonzander/PeerWave.git
+cd PeerWave
 
-# Run with basic configuration
-docker run -d \
-  --name peerwave \
-  -p 3000:3000 \
-  -e SESSION_SECRET=$(openssl rand -base64 32) \
-  -e LIVEKIT_API_KEY=devkey \
-  -e LIVEKIT_API_SECRET=secret \
-  -v $(pwd)/db:/usr/src/app/db \
-  simonzander/peerwave:latest
+# 2. Build Flutter web client
+cd client
+flutter build web --release
+cp -r build/web ../server/web
+
+# 3. Build Docker image
+cd ../server
+docker build -t peerwave-custom:latest .
+
+# 4. Update docker-compose.yml to use your custom image
+# Change: image: simonzander/peerwave:latest
+# To: image: peerwave-custom:latest
+
+# 5. Configure and start
+cp .env.example .env
+nano .env  # Set your secrets
+cd ..
+docker-compose up -d
 ```
 
-⚠️ **Note:** This runs only the server. You'll need LiveKit separately for video calls.
+**📦 Build Script:** Use the provided build script for easier building:
+
+```bash
+# Linux/macOS
+chmod +x build-docker.sh
+./build-docker.sh v1.0.0
+
+# Windows PowerShell
+.\build-docker.ps1 v1.0.0
+
+# Build and push to Docker Hub
+./build-docker.sh v1.0.0 --push
+```
 
 **Access PeerWave:** `http://localhost:3000`
 
@@ -314,40 +339,6 @@ flutter build macos --release
 
 # Linux
 flutter build linux --release
-```
-
----
-
-### Building Docker Image (Advanced)
-
-Use the provided build script:
-
-```bash
-# Linux/macOS
-chmod +x build-docker.sh
-./build-docker.sh v1.0.0
-
-# Windows PowerShell
-.\build-docker.ps1 v1.0.0
-
-# With Docker Hub push
-./build-docker.sh v1.0.0 --push
-```
-
-Or manually:
-
-```bash
-# 1. Build Flutter web client
-cd client
-flutter build web --release
-cp -r build/web ../server/web
-
-# 2. Build Docker image
-cd ../server
-docker build -t simonzander/peerwave:v1.0.0 .
-
-# 3. Push to registry (optional)
-docker push simonzander/peerwave:v1.0.0
 ```
 
 ---
