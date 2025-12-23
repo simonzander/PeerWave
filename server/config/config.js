@@ -57,17 +57,6 @@ config.cleanup = {
     cronSchedule: process.env.CLEANUP_CRON_SCHEDULE || '0 2 * * *'
 };
 
-// TURN/STUN Server configuration
-config.turn = {
-    secret: process.env.TURN_SECRET,
-    host: process.env.TURN_SERVER_EXTERNAL_HOST || 'localhost',
-    internalHost: process.env.TURN_SERVER_INTERNAL_HOST || 'peerwave-coturn',
-    port: parseInt(process.env.TURN_SERVER_PORT || '3478'),
-    tlsPort: parseInt(process.env.TURN_SERVER_PORT_TLS || '5349'),
-    realm: process.env.TURN_REALM || 'peerwave.local',
-    ttl: parseInt(process.env.TURN_CREDENTIAL_TTL || '86400') // 24 hours default
-};
-
 // LiveKit Server configuration (for meetings/calls)
 config.livekit = {
     url: process.env.LIVEKIT_URL || 'ws://localhost:7880',
