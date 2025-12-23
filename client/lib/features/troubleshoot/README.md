@@ -6,48 +6,44 @@ The Troubleshoot feature provides Signal Protocol diagnostics and maintenance op
 
 ## Architecture
 
-This feature follows **Clean Architecture** principles with clear separation of concerns:
+This feature follows **pragmatic Flutter architecture** with a flat structure:
 
 ```
 features/troubleshoot/
-├── data/                   # Data layer
-│   ├── datasources/        # Data source interfaces and implementations
-│   ├── models/            # Data transfer objects (DTOs)
-│   └── repositories/      # Repository implementations
-├── domain/                # Domain layer (pure Dart, no Flutter)
-│   ├── entities/          # Business objects
-│   ├── repositories/      # Repository interfaces
-│   └── usecases/         # Business logic operations
-└── presentation/          # Presentation layer
-    ├── pages/            # Full-screen UI
-    ├── providers/        # State management (Provider pattern)
-    └── widgets/          # Reusable UI components
+├── pages/          # Full-screen UIs
+│   └── troubleshoot_page.dart
+├── widgets/        # Feature-specific widgets
+│   ├── metrics_card.dart
+│   └── troubleshoot_action_button.dart
+├── state/          # State management
+│   └── troubleshoot_provider.dart
+└── models/         # Feature models
+    └── key_metrics.dart
 ```
+
+**Service Layer:**
+- Business logic is in `services/troubleshoot/troubleshoot_service.dart`
+- The service coordinates with SignalService and metrics collection
 
 ## Components
 
-### Domain Layer
+### Models
 
-**Entities:**
-- `KeyMetrics` - Immutable entity representing Signal Protocol metrics
+**KeyMetrics:**
+- Immutable model representing Signal Protocol key management metrics
+- Contains counts for identity regenerations, pre-key operations, decryption failures, etc.
 
-**Repositories:**
-- `TroubleshootRepository` - Interface for troubleshooting operations
+### State Management
 
-**Use Cases:**
-- `GetKeyMetrics` - Retrieve current key management metrics
-- `DeleteIdentityKey` - Delete and regenerate identity key
+**TroubleshootProvider:**
+- Uses `ChangeNotifier` for state management
+- Coordinates with `TroubleshootService` for all operations
+- Manages loading states, errors, and success messages
+- Methods for key operations: delete, regenerate, rotate
 
-### Data Layer
+### Service
 
-**Models:**
-- `KeyMetricsModel` - DTO that extends KeyMetrics entity
-
-**Data Sources:**
-- `TroubleshootDataSource` - Interface for data operations
-- `TroubleshootDataSourceImpl` - Implementation using SignalService
-
-**Repositories:**
+**TroubleshootService** (`services/troubleshoot/`):
 - `TroubleshootRepositoryImpl` - Implementation of domain repository
 
 ### Presentation Layer

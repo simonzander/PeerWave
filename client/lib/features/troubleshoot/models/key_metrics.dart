@@ -3,7 +3,8 @@ class KeyMetrics {
   final int identityRegenerations;
   final int signedPreKeyRotations;
   final int preKeysRegenerated;
-  final int preKeysConsumed;
+  final int ownPreKeysConsumed;
+  final int remotePreKeysConsumed;
   final int sessionsInvalidated;
   final int decryptionFailures;
   final int serverKeyMismatches;
@@ -12,7 +13,8 @@ class KeyMetrics {
     required this.identityRegenerations,
     required this.signedPreKeyRotations,
     required this.preKeysRegenerated,
-    required this.preKeysConsumed,
+    required this.ownPreKeysConsumed,
+    required this.remotePreKeysConsumed,
     required this.sessionsInvalidated,
     required this.decryptionFailures,
     required this.serverKeyMismatches,
@@ -27,7 +29,8 @@ class KeyMetrics {
     int? identityRegenerations,
     int? signedPreKeyRotations,
     int? preKeysRegenerated,
-    int? preKeysConsumed,
+    int? ownPreKeysConsumed,
+    int? remotePreKeysConsumed,
     int? sessionsInvalidated,
     int? decryptionFailures,
     int? serverKeyMismatches,
@@ -38,7 +41,8 @@ class KeyMetrics {
       signedPreKeyRotations:
           signedPreKeyRotations ?? this.signedPreKeyRotations,
       preKeysRegenerated: preKeysRegenerated ?? this.preKeysRegenerated,
-      preKeysConsumed: preKeysConsumed ?? this.preKeysConsumed,
+      ownPreKeysConsumed: ownPreKeysConsumed ?? this.ownPreKeysConsumed,
+      remotePreKeysConsumed: remotePreKeysConsumed ?? this.remotePreKeysConsumed,
       sessionsInvalidated: sessionsInvalidated ?? this.sessionsInvalidated,
       decryptionFailures: decryptionFailures ?? this.decryptionFailures,
       serverKeyMismatches: serverKeyMismatches ?? this.serverKeyMismatches,

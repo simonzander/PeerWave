@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:uuid/uuid.dart';
 import '../web_config.dart';
+import '../core/metrics/network_metrics.dart';
 import 'signal_service.dart';
 import 'session_auth_service.dart';
 import 'clientid_native.dart' if (dart.library.js) 'clientid_web.dart';
@@ -40,6 +41,7 @@ class SocketService {
   final Map<String, List<void Function(dynamic)>> _listeners = {};
   bool _connecting = false;
   bool _listenersRegistered = false; // 🔒 Track listener registration state
+  bool _isConnected = false; // Internal connection state tracking
 
   // Public getter for socket (needed by SocketFileClient)
   io.Socket? get socket => _socket;
@@ -100,6 +102,9 @@ class SocketService {
           '[SOCKET SERVICE] ==========================================',
         );
 
+        // Set internal connection state
+        _isConnected = true;
+
         // ✅ Report successful socket connection (only on native)
         if (!kIsWeb) {
           ServerConnectionService.instance.reportSuccess();
@@ -151,6 +156,7 @@ class SocketService {
       });
       _socket!.on('disconnect', (_) {
         debugPrint('[SOCKET SERVICE] Socket disconnected');
+        _isConnected = false; // Update internal state
         resetReadyState(); // Reset ready state on disconnect
       });
       _socket!.on('reconnect', (_) {
@@ -240,6 +246,12 @@ class SocketService {
 
     final callbacks = _listeners.putIfAbsent(event, () => []);
     if (!callbacks.contains(callback)) {
+      // Wrap the callback to track socket receives
+      void wrappedCallback(dynamic data) {
+        NetworkMetrics.recordSocketReceive(1);
+        callback(data);
+      }
+
       callbacks.add(callback);
 
       // Check socket state and register accordingly
@@ -249,8 +261,8 @@ class SocketService {
           '[SOCKET SERVICE] 📦 Socket is null, listener for $event stored (will register on connect)',
         );
       } else {
-        // Socket exists - register immediately regardless of connection state
-        _socket!.on(event, callback);
+        // Socket exists - register with wrapped callback
+        _socket!.on(event, wrappedCallback);
         if (_socket!.connected) {
           debugPrint(
             '[SOCKET SERVICE] ✅ Registered listener for $event (socket connected)',
@@ -281,7 +293,13 @@ class SocketService {
     int count = 0;
     _listeners.forEach((event, callbacks) {
       for (final callback in callbacks) {
-        _socket!.on(event, callback);
+        // Wrap callback to track receives
+        void wrappedCallback(dynamic data) {
+          NetworkMetrics.recordSocketReceive(1);
+          callback(data);
+        }
+
+        _socket!.on(event, wrappedCallback);
         count++;
       }
     });
@@ -324,6 +342,8 @@ class SocketService {
 
   void emit(String event, dynamic data) {
     _socket?.emit(event, data);
+    // Track socket emit
+    NetworkMetrics.recordSocketEmit(1);
   }
 
   /// Internal method to authenticate socket connection
@@ -393,5 +413,5 @@ class SocketService {
     _authenticateSocket();
   }
 
-  bool get isConnected => _socket?.connected ?? false;
+  bool get isConnected => _isConnected && (_socket?.connected ?? false);
 }

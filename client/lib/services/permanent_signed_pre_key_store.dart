@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'device_scoped_storage_service.dart';
+import '../core/metrics/key_management_metrics.dart';
 
 /// Wrapper for a signed pre-key and its metadata.
 class StoredSignedPreKey {
@@ -423,6 +424,10 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
 
       // Store new SignedPreKey (automatically uploads to server)
       await storeSignedPreKey(newSignedPreKey.id, newSignedPreKey);
+      
+      // Track metrics for diagnostics
+      KeyManagementMetrics.recordSignedPreKeyRotation(isScheduled: true);
+      
       debugPrint(
         '[SIGNED_PREKEY_ROTATION] ✓ New SignedPreKey generated and stored',
       );

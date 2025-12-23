@@ -1,835 +1,435 @@
-# PeerWave Architecture Guidelines
+﻿# PeerWave Architecture Guidelines
 
-**Version:** 1.0  
-**Last Updated:** December 22, 2025  
-**Status:** Active - Phase 1 Foundation
+**Quick Start for Contributors** | **Last Updated:** December 23, 2025
 
 ---
 
-## Table of Contents
+## Quick Reference: Where Does My Code Go?
 
-1. [Overview](#overview)
-2. [Core Principles](#core-principles)
-3. [Directory Structure](#directory-structure)
-4. [Layer Responsibilities](#layer-responsibilities)
-5. [Naming Conventions](#naming-conventions)
-6. [Code Organization Rules](#code-organization-rules)
-7. [Dependency Management](#dependency-management)
-8. [State Management](#state-management)
-9. [Error Handling](#error-handling)
-10. [Testing Strategy](#testing-strategy)
-11. [Migration Process](#migration-process)
-12. [Code Review Checklist](#code-review-checklist)
+| What are you building? | Where does it go? |
+|------------------------|-------------------|
+| New feature (auth, settings, etc.) | `features/<name>/` with `pages/`, `widgets/`, `state/`, `models/` |
+| Feature-specific widget | `features/<feature>/widgets/` |
+| Reusable button/card/modal | `widgets/<category>/` (buttons, cards, modals, etc.) |
+| Feature state management | `features/<feature>/state/<feature>_provider.dart` |
+| Cross-feature state (theme, etc.) | `providers/<name>_provider.dart` |
+| Business logic (2+ features use it) | `services/<domain>/` (messaging, video, auth, storage) |
+| Feature-specific model | `features/<feature>/models/` |
+| Shared model (User, Message, etc.) | `core/<domain>/models/` |
+| Utilities | `core/utils/` |
 
 ---
 
-## Overview
+## The Architecture in 30 Seconds
 
-PeerWave follows **Clean Architecture** with **Feature-First** organization, aligned with Flutter's architectural principles and Google coding standards.
-
-### Architecture Pattern
+**PeerWave uses pragmatic, Flutter-idiomatic architecture:**
 
 ```
-┌─────────────────────────────────────────┐
-│         Presentation Layer              │
-│  (UI, Widgets, Pages, ViewModels)       │
-├─────────────────────────────────────────┤
-│           Domain Layer                  │
-│  (Use Cases, Entities, Repositories)    │
-├─────────────────────────────────────────┤
-│            Data Layer                   │
-│  (Repository Impl, Data Sources, DTOs)  │
-└─────────────────────────────────────────┘
+UI → State (Provider) → Services → Platform/Network
 ```
 
-**Key Rule:** Dependencies flow **inward only** (Presentation → Domain → Data → Core)
+**Default for most features: Keep it simple and cohesive**
+- Feature folder with pages, widgets, state, models
+- State management with Provider/ChangeNotifier
+- Services for business logic and data access
 
----
+**Use Clean Architecture only when you need:**
+- Security-critical features (crypto, auth)
+- Multiple implementations (web vs native, mock vs real)
+- Complex testability requirements
 
-## Core Principles
-
-### 1. Feature Cohesion
-- **One feature = One directory** containing all its layers
-- All code related to a feature lives in `features/<feature_name>/`
-- Easy to find, understand, and modify feature code
-
-### 2. Separation of Concerns
-- **Presentation:** UI and user interaction only
-- **Domain:** Business logic, platform-agnostic
-- **Data:** External data sources and caching
-
-### 3. Dependency Inversion
-- High-level modules don't depend on low-level modules
-- Both depend on abstractions (interfaces)
-- Widgets depend on ViewModels, not Services directly
-
-### 4. Single Responsibility
-- Each class has one reason to change
-- No God Objects (target: <300 lines per file)
-- Extract responsibilities when classes grow
-
-### 5. Testability First
-- Pure Dart domain layer (no Flutter dependencies)
-- Mock-friendly interfaces
-- Dependency injection for all components
+**Key Rule:** Dependencies flow one way → UI depends on state, state depends on services, service depends on platform
 
 ---
 
 ## Directory Structure
 
-### Target Structure
-
+### Overview
 ```
 lib/
-├── main.dart                          # Entry point (<50 lines)
-├── core/                              # Shared infrastructure
-│   ├── config/                        # App configuration
-│   ├── constants/                     # App-wide constants
-│   ├── di/                            # Dependency injection
-│   ├── error/                         # Error handling
-│   ├── network/                       # HTTP client, interceptors
-│   ├── platform/                      # Platform-specific code
-│   └── utils/                         # Utility functions
-├── features/                          # Feature modules
-│   ├── authentication/
-│   │   ├── data/
-│   │   │   ├── datasources/
-│   │   │   ├── models/
-│   │   │   └── repositories/
-│   │   ├── domain/
-│   │   │   ├── entities/
-│   │   │   ├── repositories/
-│   │   │   └── usecases/
-│   │   └── presentation/
-│   │       ├── pages/
-│   │       ├── widgets/
-│   │       └── providers/
-│   ├── messaging/
-│   ├── video_conferencing/
-│   └── ...
-└── shared/                            # Shared UI components
-    ├── widgets/
-    └── layouts/
+ main.dart
+ features/           # Feature modules (grouped by domain)
+    authentication/
+    messaging/
+    video_conferencing/
+    <feature>/
+        pages/      # Full-screen UIs
+        widgets/    # Feature-specific widgets
+        state/      # Providers/controllers
+        models/     # Feature models
+ services/           # Business logic (grouped by domain)
+    messaging/
+    video/
+    auth/
+    storage/
+ core/              # Shared infrastructure
+    config/
+    error/
+    network/
+    models/        # Shared models (User, Message, etc.)
+ providers/         # Cross-feature state
+ widgets/           # Reusable components (modals, buttons, cards, etc.)
+ utils/             # Utilities
 ```
 
-### Feature Module Template
+### Feature Template
 
-Every feature follows this structure:
+Most features should use this flat structure:
 
 ```
 features/<feature_name>/
-├── data/
-│   ├── datasources/
-│   │   ├── <feature>_remote_datasource.dart
-│   │   └── <feature>_local_datasource.dart
-│   ├── models/
-│   │   └── <model>_model.dart
-│   └── repositories/
-│       └── <feature>_repository_impl.dart
-├── domain/
-│   ├── entities/
-│   │   └── <entity>.dart
-│   ├── repositories/
-│   │   └── <feature>_repository.dart
-│   └── usecases/
-│       ├── <action>_<entity>.dart
-│       └── ...
-└── presentation/
-    ├── pages/
-    │   └── <page>_page.dart
-    ├── widgets/
-    │   └── <widget>.dart
-    └── providers/
-        └── <feature>_provider.dart
+ pages/             # Full screens
+    <feature>_page.dart
+ widgets/           # Feature-specific widgets
+    <widget>_card.dart
+    <widget>_list.dart
+ state/             # State management
+    <feature>_provider.dart
+ models/            # Feature models
+     <feature>_model.dart
 ```
+
+**When to add more:**
+- Logic used by 2+ features → move to `services/<domain>/`
+- Models used across features → move to `core/<domain>/models/`
+- Reusable widgets → move to `widgets/<category>/`
 
 ---
 
-## Layer Responsibilities
+## Core Principles
 
-### Presentation Layer (`presentation/`)
-
-**Purpose:** User interface and user interaction
-
-**Responsibilities:**
-- Display data from ViewModels/Providers
-- Handle user input
-- Navigate between screens
-- Show loading/error states
-
-**Rules:**
-- ✅ Stateless/StatefulWidget only
-- ✅ Use `const` constructors wherever possible
-- ✅ No direct service/repository calls
-- ✅ No business logic
-- ❌ No async work in `build()`
-- ❌ No navigation logic in widgets
-
-**Example:**
-```dart
-class ProfilePage extends StatelessWidget {
-  final String userId;
-  
-  const ProfilePage({required this.userId, super.key});
-  
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<ProfileProvider>(
-      builder: (context, provider, _) {
-        if (provider.isLoading) return const CircularProgressIndicator();
-        if (provider.error != null) return ErrorWidget(provider.error!);
-        
-        return ProfileView(profile: provider.profile);
-      },
-    );
-  }
-}
-```
-
-### Domain Layer (`domain/`)
-
-**Purpose:** Business logic and business rules
-
-**Responsibilities:**
-- Define business entities
-- Define repository interfaces
-- Implement use cases (business operations)
-- Validate business rules
-
-**Rules:**
-- ✅ Pure Dart only (no Flutter dependencies)
-- ✅ Platform-agnostic
-- ✅ 100% testable with unit tests
-- ❌ No UI imports
-- ❌ No implementation details (HTTP, database, etc.)
-
-**Example:**
-```dart
-// Entity
-class UserProfile {
-  final String id;
-  final String displayName;
-  final String? avatarUrl;
-  
-  UserProfile({required this.id, required this.displayName, this.avatarUrl});
-  
-  // Business logic can live here
-  bool get hasAvatar => avatarUrl != null && avatarUrl!.isNotEmpty;
-}
-
-// Repository Interface
-abstract class ProfileRepository {
-  Future<Either<Failure, UserProfile>> getProfile(String userId);
-  Future<Either<Failure, void>> updateProfile(UserProfile profile);
-}
-
-// Use Case
-class GetUserProfile {
-  final ProfileRepository repository;
-  
-  GetUserProfile(this.repository);
-  
-  Future<Either<Failure, UserProfile>> call(String userId) async {
-    return repository.getProfile(userId);
-  }
-}
-```
-
-### Data Layer (`data/`)
-
-**Purpose:** Data access and persistence
-
-**Responsibilities:**
-- Implement repository interfaces
-- Fetch data from remote/local sources
-- Map DTOs to domain entities
-- Cache data
-- Handle network/database errors
-
-**Rules:**
-- ✅ Implements domain repository interfaces
-- ✅ Uses data sources for actual I/O
-- ✅ Maps between models (DTOs) and entities
-- ❌ No business logic
-- ❌ No UI concerns
-
-**Example:**
-```dart
-// Model (DTO)
-class UserProfileModel extends UserProfile {
-  UserProfileModel({
-    required super.id,
-    required super.displayName,
-    super.avatarUrl,
-  });
-  
-  factory UserProfileModel.fromJson(Map<String, dynamic> json) {
-    return UserProfileModel(
-      id: json['id'],
-      displayName: json['display_name'],
-      avatarUrl: json['avatar_url'],
-    );
-  }
-}
-
-// Data Source
-abstract class ProfileRemoteDataSource {
-  Future<UserProfileModel> getProfile(String userId);
-}
-
-// Repository Implementation
-class ProfileRepositoryImpl implements ProfileRepository {
-  final ProfileRemoteDataSource remoteDataSource;
-  final ProfileLocalDataSource localDataSource;
-  
-  ProfileRepositoryImpl({
-    required this.remoteDataSource,
-    required this.localDataSource,
-  });
-  
-  @override
-  Future<Either<Failure, UserProfile>> getProfile(String userId) async {
-    try {
-      final profile = await remoteDataSource.getProfile(userId);
-      await localDataSource.cacheProfile(profile);
-      return Right(profile);
-    } on ServerException {
-      return Left(ServerFailure());
-    }
-  }
-}
-```
+1. **Feature Cohesion:** Keep related code together (UI, state, logic in same feature folder)
+2. **Simple by Default:** Don't over-engineer. Add layers only when complexity justifies it
+3. **One-Way Dependencies:** UI → State → Services → Platform
+4. **Practical Testability:** Test critical logic (crypto, parsing, state). Don't test everything
+5. **No God Objects:** Target <300 lines per file
 
 ---
 
 ## Naming Conventions
 
-### Files
+### Files & Classes
 
 | Type | Convention | Example |
 |------|------------|---------|
-| Dart files | snake_case | `user_profile_page.dart` |
-| Test files | `<name>_test.dart` | `user_profile_page_test.dart` |
-| Models | `<name>_model.dart` | `user_profile_model.dart` |
-| Use cases | `<verb>_<noun>.dart` | `get_user_profile.dart` |
-| Repositories | `<name>_repository.dart` | `profile_repository.dart` |
-| Providers | `<name>_provider.dart` | `profile_provider.dart` |
-
-### Classes
-
-| Type | Convention | Example |
-|------|------------|---------|
-| Classes | PascalCase | `UserProfile` |
-| Interfaces | PascalCase | `ProfileRepository` |
-| Implementations | `<Name>Impl` | `ProfileRepositoryImpl` |
-| Use cases | `<Verb><Noun>` | `GetUserProfile` |
-| Providers | `<Name>Provider` | `ProfileProvider` |
-| Models | `<Name>Model` | `UserProfileModel` |
-
-### Variables
-
-| Type | Convention | Example |
-|------|------------|---------|
-| Variables | camelCase | `isLoading` |
-| Constants | camelCase | `maxRetries` |
+| Dart files | `snake_case.dart` | `user_profile_page.dart` |
+| Classes | `PascalCase` | `UserProfilePage` |
+| Variables | `camelCase` | `isLoading` |
 | Private | `_camelCase` | `_userId` |
-| Static const | camelCase | `defaultTimeout` |
+| Constants | `camelCase` | `maxRetries` |
 
-### Terminology
+### Consistent Terminology
 
-**Consistent naming across the app:**
+Use these terms consistently across the codebase:
 
 - **Page:** Full-screen UI (`login_page.dart`)
-- **Widget:** Reusable UI component (`user_avatar.dart`)
+- **Widget:** UI component (`user_avatar_widget.dart`)
 - **Provider:** State management (`profile_provider.dart`)
-- **Repository:** Data access abstraction (`profile_repository.dart`)
-- **UseCase:** Single business operation (`get_user_profile.dart`)
-- **Entity:** Business object (`user_profile.dart`)
-- **Model:** Data transfer object (`user_profile_model.dart`)
+- **Service:** Business logic (`auth_service.dart`)
+- **Model:** Data structure (`user_model.dart`)
 
 ---
 
-## Code Organization Rules
+## State Management Pattern
 
-### Import Order
-
-```dart
-// 1. Dart imports
-import 'dart:async';
-import 'dart:io';
-
-// 2. Flutter imports
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-
-// 3. Package imports (alphabetical)
-import 'package:provider/provider.dart';
-import 'package:http/http.dart';
-
-// 4. Project imports (alphabetical, use relative for same feature)
-import 'package:peerwave/core/error/failures.dart';
-import 'package:peerwave/features/auth/domain/entities/user.dart';
-
-// 5. Relative imports (same feature only)
-import '../domain/entities/profile.dart';
-```
-
-### Class Structure
+### Provider + ChangeNotifier (Current Standard)
 
 ```dart
-class ExampleClass {
-  // 1. Static constants
-  static const String defaultValue = 'default';
-  
-  // 2. Instance fields
-  final String id;
-  final String name;
-  
-  // 3. Constructor
-  ExampleClass({required this.id, required this.name});
-  
-  // 4. Named constructors
-  ExampleClass.empty() : id = '', name = '';
-  
-  // 5. Getters
-  String get displayName => name.toUpperCase();
-  
-  // 6. Public methods
-  void publicMethod() { }
-  
-  // 7. Private methods
-  void _privateMethod() { }
-  
-  // 8. Overrides
-  @override
-  String toString() => 'ExampleClass($id, $name)';
-}
-```
-
-### Widget Lifecycle
-
-```dart
-class ExampleWidget extends StatefulWidget {
-  // Constructor and fields
-  
-  @override
-  State<ExampleWidget> createState() => _ExampleWidgetState();
-}
-
-class _ExampleWidgetState extends State<ExampleWidget> {
-  // 1. State fields
-  
-  // 2. initState - subscriptions, controllers
-  @override
-  void initState() {
-    super.initState();
-    // Setup code
-  }
-  
-  // 3. didChangeDependencies - inherited widgets
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Access Provider, Theme, etc.
-  }
-  
-  // 4. didUpdateWidget - react to widget changes
-  @override
-  void didUpdateWidget(ExampleWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Handle widget updates
-  }
-  
-  // 5. build - pure function
-  @override
-  Widget build(BuildContext context) {
-    // NO side effects here!
-    return Container();
-  }
-  
-  // 6. dispose - cleanup
-  @override
-  void dispose() {
-    // Dispose controllers, cancel subscriptions
-    super.dispose();
-  }
-}
-```
-
----
-
-## Dependency Management
-
-### Using GetIt for Dependency Injection
-
-```dart
-// core/di/injection_container.dart
-final getIt = GetIt.instance;
-
-Future<void> configureDependencies() async {
-  // External
-  final prefs = await SharedPreferences.getInstance();
-  getIt.registerLazySingleton(() => prefs);
-  
-  // Core
-  getIt.registerLazySingleton(() => ApiClient());
-  getIt.registerLazySingleton<NetworkInfo>(() => NetworkInfoImpl());
-  
-  // Features - Authentication
-  getIt.registerFactory(() => LoginUser(getIt()));
-  getIt.registerLazySingleton<AuthRepository>(
-    () => AuthRepositoryImpl(
-      remoteDataSource: getIt(),
-      localDataSource: getIt(),
-    ),
-  );
-}
-```
-
-### Registration Types
-
-| Type | When to Use | Example |
-|------|-------------|---------|
-| `registerFactory` | Create new instance each time | Use cases, providers |
-| `registerLazySingleton` | Single instance, created when first needed | Repositories, services |
-| `registerSingleton` | Single instance, created immediately | Rare - initialized objects |
-
----
-
-## State Management
-
-### Provider Pattern (Current)
-
-```dart
-// Provider
+// State Provider
 class ProfileProvider extends ChangeNotifier {
-  final GetUserProfile getUserProfile;
+  final ProfileService _service;
   
-  UserProfile? _profile;
-  bool _isLoading = false;
-  String? _error;
-  
-  UserProfile? get profile => _profile;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-  
-  ProfileProvider({required this.getUserProfile});
+  ProfileState _state = ProfileState.initial();
+  ProfileState get state => _state;
   
   Future<void> loadProfile(String userId) async {
-    _isLoading = true;
-    _error = null;
+    _state = _state.copyWith(isLoading: true);
     notifyListeners();
     
-    final result = await getUserProfile(userId);
-    result.fold(
-      (failure) {
-        _error = failure.message;
-        _isLoading = false;
-        notifyListeners();
-      },
-      (profile) {
-        _profile = profile;
-        _isLoading = false;
-        notifyListeners();
-      },
-    );
+    try {
+      final profile = await _service.getProfile(userId);
+      _state = _state.copyWith(profile: profile, isLoading: false);
+    } catch (e) {
+      _state = _state.copyWith(error: e.toString(), isLoading: false);
+    }
+    notifyListeners();
   }
 }
 
-// UI
+// UI Usage
 Consumer<ProfileProvider>(
   builder: (context, provider, _) {
-    if (provider.isLoading) return const LoadingWidget();
-    if (provider.error != null) return ErrorWidget(provider.error!);
-    return ProfileView(profile: provider.profile);
+    if (provider.state.isLoading) return LoadingWidget();
+    if (provider.state.error != null) return ErrorWidget(provider.state.error);
+    return ProfileView(profile: provider.state.profile);
   },
 )
-
-// Or use Selector for granular rebuilds
-Selector<ProfileProvider, String?>(
-  selector: (_, provider) => provider.profile?.displayName,
-  builder: (_, displayName, __) => Text(displayName ?? ''),
-)
 ```
+
+**Best Practices:**
+- Keep providers focused (one responsibility)
+- Use `Selector` for granular rebuilds
+- Dispose resources properly
+- Handle errors explicitly
 
 ---
 
 ## Error Handling
 
-### Failure Pattern
+### Simple Pattern (Most Cases)
 
 ```dart
-// core/error/failures.dart
+try {
+  final result = await service.doSomething();
+  // handle success
+} catch (e) {
+  // handle error, show to user
+  _error = e.toString();
+  notifyListeners();
+}
+```
+
+### Either Pattern (Complex Cases)
+
+For features needing explicit error types (auth, crypto, critical flows):
+
+```dart
+// Define failures
 abstract class Failure {
   final String message;
   const Failure(this.message);
 }
 
-class ServerFailure extends Failure {
-  const ServerFailure([String message = 'Server error']) : super(message);
-}
-
 class NetworkFailure extends Failure {
-  const NetworkFailure([String message = 'No connection']) : super(message);
+  const NetworkFailure() : super('No internet connection');
 }
 
-class CacheFailure extends Failure {
-  const CacheFailure([String message = 'Cache error']) : super(message);
-}
-
-// core/error/exceptions.dart
-class ServerException implements Exception {
-  final String? message;
-  ServerException([this.message]);
-}
-
-class NetworkException implements Exception {}
-class CacheException implements Exception {}
-```
-
-### Using Either for Error Handling
-
-```dart
-import 'package:dartz/dartz.dart';
-
-// Repository
-Future<Either<Failure, UserProfile>> getProfile(String userId) async {
+// Use in service
+Future<Either<Failure, User>> login(String email, String password) async {
   try {
-    final profile = await remoteDataSource.getProfile(userId);
-    return Right(profile);
-  } on ServerException {
-    return Left(ServerFailure());
+    final user = await _api.login(email, password);
+    return Right(user);
   } on SocketException {
     return Left(NetworkFailure());
   }
 }
 
-// Use Case
-final result = await getUserProfile('123');
+// Handle in provider
+final result = await _service.login(email, password);
 result.fold(
-  (failure) => print('Error: ${failure.message}'),
-  (profile) => print('Success: ${profile.displayName}'),
+  (failure) => _state = _state.copyWith(error: failure.message),
+  (user) => _state = _state.copyWith(user: user),
 );
+```
+
+---
+
+## Code Organization
+
+### Import Order
+
+```dart
+// 1. Dart SDK
+import 'dart:async';
+
+// 2. Flutter
+import 'package:flutter/material.dart';
+
+// 3. Packages (alphabetical)
+import 'package:provider/provider.dart';
+
+// 4. Project imports (alphabetical)
+import 'package:peerwave/core/error/failures.dart';
+import 'package:peerwave/features/auth/state/auth_provider.dart';
+
+// 5. Relative imports (same feature only)
+import '../models/profile.dart';
+```
+
+### Class Structure
+
+```dart
+class Example {
+  // 1. Static constants
+  static const defaultValue = 'default';
+  
+  // 2. Instance fields
+  final String id;
+  
+  // 3. Constructor
+  Example({required this.id});
+  
+  // 4. Getters
+  String get displayId => id.toUpperCase();
+  
+  // 5. Public methods
+  void publicMethod() {}
+  
+  // 6. Private methods
+  void _privateMethod() {}
+  
+  // 7. Overrides
+  @override
+  String toString() => 'Example($id)';
+}
 ```
 
 ---
 
 ## Testing Strategy
 
-### Test Structure
+### Test What Matters
 
-```
-test/
-└── features/
-    └── authentication/
-        ├── data/
-        │   ├── datasources/
-        │   │   └── auth_remote_datasource_test.dart
-        │   ├── models/
-        │   │   └── user_model_test.dart
-        │   └── repositories/
-        │       └── auth_repository_impl_test.dart
-        ├── domain/
-        │   └── usecases/
-        │       └── login_user_test.dart
-        └── presentation/
-            └── providers/
-                └── auth_provider_test.dart
-```
+- **Unit Tests:** Critical business logic, state management, complex calculations
+- **Widget Tests:** Complex UI interactions, conditional rendering
+- **Integration Tests:** Key user flows (login, sending messages, video calls)
 
-### Testing Pyramid
+**Don't test:**
+- Simple getters/setters
+- Framework code
+- Third-party libraries
 
-- **70% Unit Tests** - Domain layer (use cases, entities)
-- **20% Widget Tests** - Presentation layer widgets
-- **10% Integration Tests** - End-to-end flows
-
-### Unit Test Template
+### Quick Example
 
 ```dart
-import 'package:flutter_test/flutter_test.dart';
-import 'package:mockito/mockito.dart';
-import 'package:mockito/annotations.dart';
-
-@GenerateMocks([AuthRepository])
 void main() {
-  late LoginUser useCase;
-  late MockAuthRepository mockRepository;
+  late ProfileProvider provider;
+  late MockProfileService mockService;
   
   setUp(() {
-    mockRepository = MockAuthRepository();
-    useCase = LoginUser(mockRepository);
+    mockService = MockProfileService();
+    provider = ProfileProvider(mockService);
   });
   
-  group('LoginUser', () {
-    const tEmail = 'test@example.com';
-    const tPassword = 'password123';
-    final tUser = User(id: '1', email: tEmail);
+  test('loads profile successfully', () async {
+    // Arrange
+    when(mockService.getProfile('123'))
+        .thenAnswer((_) async => testProfile);
     
-    test('should return User when login succeeds', () async {
-      // Arrange
-      when(mockRepository.login(tEmail, tPassword))
-          .thenAnswer((_) async => Right(tUser));
-      
-      // Act
-      final result = await useCase(tEmail, tPassword);
-      
-      // Assert
-      expect(result, Right(tUser));
-      verify(mockRepository.login(tEmail, tPassword));
-      verifyNoMoreInteractions(mockRepository);
-    });
+    // Act
+    await provider.loadProfile('123');
     
-    test('should return Failure when login fails', () async {
-      // Arrange
-      when(mockRepository.login(tEmail, tPassword))
-          .thenAnswer((_) async => Left(ServerFailure()));
-      
-      // Act
-      final result = await useCase(tEmail, tPassword);
-      
-      // Assert
-      expect(result, Left(ServerFailure()));
-    });
+    // Assert
+    expect(provider.state.profile, equals(testProfile));
+    expect(provider.state.isLoading, isFalse);
   });
 }
 ```
 
 ---
 
-## Migration Process
+## Migration Guide
 
-### Phase-by-Phase Migration
+**This is guidance for new code.** Existing code doesn't need immediate refactoring.
 
-**Phase 1: Foundation (Current)**
-- ✅ Create directory structure
-- ✅ Document guidelines
-- ✅ Set up DI framework
-- ⏳ Create core infrastructure
+### When to Migrate
 
-**Phase 2: Pilot Feature**
-- Choose simple feature (User Profile)
-- Implement full Clean Architecture
-- Write tests
-- Document learnings
+Migrate incrementally when you're:
+- Already touching a file for a feature
+- Adding significant new functionality
+- Fixing bugs in hard-to-maintain code
 
-**Phase 3: Critical Features**
-- Authentication
-- Messaging
-- Video Conferencing
+### Migration Priorities
 
-**Phase 4: Remaining Features**
-- Meetings, File Transfer, Settings
+**1. New Features (High Priority)**
+- Always use the new structure for new features
+- Create `features/<name>/` with pages, widgets, state, models
 
-**Phase 5: Cleanup**
-- Remove old code
-- Performance optimization
+**2. Consolidate Presentation (Medium Priority)**
+- We have `pages/`, `screens/`, `views/`, `app/` doing the same thing
+- Move feature-specific UIs to `features/<name>/pages/` when touching them
+- Keep simple standalone pages in `pages/` for now
 
-### Migration Checklist per Feature
+**3. Group Services (Low Priority)**
+- When working on related features, group services by domain:
+  - `services/messaging/` (signal, encryption, etc.)
+  - `services/video/` (conference, call, audio)
+  - `services/auth/` (auth, webauthn)
 
-- [ ] Create feature directory structure
-- [ ] Define domain entities
-- [ ] Define repository interface
-- [ ] Implement use cases
-- [ ] Create data models
-- [ ] Implement data sources
-- [ ] Implement repository
-- [ ] Create provider/ViewModel
-- [ ] Build UI pages/widgets
-- [ ] Write unit tests
-- [ ] Write widget tests
-- [ ] Update imports in consuming code
-- [ ] Remove old implementation
+### Quick Checklist (Per Feature)
+
+- [ ] Create `features/<feature>/` with subfolders
+- [ ] Move pages to `features/<feature>/pages/`
+- [ ] Move feature widgets to `features/<feature>/widgets/`
+- [ ] Move provider to `features/<feature>/state/`
+- [ ] Move models (or to `core/<domain>/models/` if shared)
+- [ ] Update imports
+- [ ] Test thoroughly
 
 ---
 
 ## Code Review Checklist
 
-### Architecture Compliance
-
-- [ ] Feature code is in correct `features/<feature>/` directory
-- [ ] Layers are properly separated (presentation/domain/data)
-- [ ] Dependencies flow inward only
-- [ ] No UI code in domain layer
-- [ ] No business logic in presentation layer
+### Architecture
+- [ ] Code is in the correct folder (`features/`, `services/`, `widgets/`)
+- [ ] Dependencies flow one way (UI → State → Services)
+- [ ] No business logic in UI widgets
+- [ ] Features are cohesive (related code together)
 
 ### Code Quality
-
-- [ ] Classes are <300 lines
-- [ ] Methods are <50 lines
+- [ ] Files are <300 lines
+- [ ] Clear, descriptive names
+- [ ] Proper error handling
 - [ ] No duplicate code
-- [ ] Proper error handling with Either<Failure, T>
-- [ ] All public APIs are documented
-- [ ] No `// TODO` or `// FIXME` in production code
+- [ ] Public APIs documented
 
 ### Flutter Best Practices
-
-- [ ] No side effects in `build()` methods
-- [ ] `const` constructors used where possible
+- [ ] `const` constructors where possible
+- [ ] No side effects in `build()`
 - [ ] Keys used for dynamic lists
-- [ ] Proper disposal of controllers/streams
-- [ ] No memory leaks
+- [ ] Controllers/streams disposed properly
+- [ ] Efficient rebuilds (Selector, const widgets)
 
 ### Testing
-
-- [ ] Unit tests for use cases (domain)
-- [ ] Unit tests for repositories (data)
-- [ ] Widget tests for complex widgets
-- [ ] Test coverage >70%
+- [ ] Critical logic has unit tests
+- [ ] Complex UI has widget tests
 - [ ] No skipped tests without reason
-
-### Performance
-
-- [ ] No expensive operations in build()
-- [ ] Large lists use ListView.builder
-- [ ] Images are cached appropriately
-- [ ] Selector used to limit rebuilds
 
 ---
 
-## Quick Reference
+## Examples from PeerWave
 
-### When to Use What
+### Good Example: Feature Structure
 
-| Scenario | Use |
-|----------|-----|
-| Creating new feature | Follow feature template structure |
-| Sharing code between features | Put in `core/` or `shared/` |
-| Platform-specific code | Put in `core/platform/` with interface |
-| API calls | Create data source in `data/datasources/` |
-| Business logic | Create use case in `domain/usecases/` |
-| Data transformation | Create model in `data/models/` |
-| UI state | Create provider in `presentation/providers/` |
-| Reusable widget | Put in `shared/widgets/` |
-| Feature-specific widget | Put in `features/<feature>/presentation/widgets/` |
-
-### Common Patterns
-
-**Fetching data:**
 ```
-UI → Provider → UseCase → Repository → DataSource → API/DB
+features/troubleshoot/
+ pages/
+    troubleshoot_page.dart          # Main screen
+ widgets/
+    test_card.dart                  # Feature-specific widget
+    result_display.dart
+ state/
+    troubleshoot_provider.dart      # State management
+ models/
+     test_result.dart                # Feature model
 ```
 
-**Error handling:**
-```
-Exception (Data) → Failure (Domain) → Error State (Presentation)
-```
+### Good Example: Service Structure
 
-**State flow:**
 ```
-User Action → Provider Method → UseCase → Repository → Update State → Notify UI
+services/
+ messaging/
+    signal_service.dart
+    message_listener.dart
+    encryption_service.dart
+ video/
+    conference_service.dart
+    audio_processor.dart
+ auth/
+     auth_service.dart
+     webauthn_service.dart
 ```
 
 ---
 
 ## Additional Resources
 
-- [Architecture Review Document](./ARCHITECTURE_REVIEW.md) - Complete analysis
-- [Flutter Architectural Overview](https://docs.flutter.dev/resources/architectural-overview)
-- [Clean Architecture by Uncle Bob](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
-- [Effective Dart](https://dart.dev/guides/language/effective-dart)
+- [Architecture Review](./ARCHITECTURE_REVIEW.md) - Detailed analysis and decisions
+- [Effective Dart Style Guide](https://dart.dev/guides/language/effective-dart/style)
+- [Flutter Best Practices](https://docs.flutter.dev/perf/best-practices)
 
 ---
 
-**Questions or suggestions?** Contact the Architecture Team
+**Questions?** Open an issue or contact the maintainers.
 
-**Last Updated:** December 22, 2025
+**Last Updated:** December 23, 2025

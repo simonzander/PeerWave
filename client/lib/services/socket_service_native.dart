@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:socket_io_client/socket_io_client.dart' as io;
+import '../core/metrics/network_metrics.dart';
 import 'signal_service.dart';
 import 'server_config_native.dart';
 import 'auth_service_native.dart';
@@ -30,6 +31,7 @@ class SocketService {
   final Map<String, List<void Function(dynamic)>> _listeners = {};
   bool _connecting = false;
   bool _listenersRegistered = false;
+  bool _isConnected = false; // Internal connection state tracking
   Completer<void>? _connectionCompleter;
 
   io.Socket? get socket => _socket;
@@ -37,15 +39,15 @@ class SocketService {
 
   bool get isConnected {
     final socketExists = _socket != null;
-    final connected = _socket?.connected ?? false;
+    final socketConnected = _socket?.connected ?? false;
     final socketId = _socket?.id;
 
     debugPrint('[SOCKET SERVICE] >>> isConnected getter called <<<');
     debugPrint(
-      '[SOCKET SERVICE] socket exists: $socketExists, connected: $connected, id: $socketId',
+      '[SOCKET SERVICE] socket exists: $socketExists, socket.connected: $socketConnected, internal: $_isConnected, id: $socketId',
     );
 
-    return connected;
+    return _isConnected && socketConnected;
   }
 
   Future<void> connect() async {
@@ -112,6 +114,9 @@ class SocketService {
           '[SOCKET SERVICE] ==========================================',
         );
 
+        // Set internal connection state
+        _isConnected = true;
+
         // Re-register all stored listeners on connect
         _reregisterAllListeners();
 
@@ -143,6 +148,7 @@ class SocketService {
 
       _socket!.on('disconnect', (reason) {
         debugPrint('[SOCKET SERVICE] ? Disconnected: $reason');
+        _isConnected = false; // Update internal state
         // Don't reset ready state on disconnect - we'll re-send clientReady on reconnect
         // resetReadyState();
       });
@@ -298,7 +304,13 @@ class SocketService {
 
       // Only register immediately if socket is connected
       if (_socket?.connected ?? false) {
-        _socket!.on(event, callback);
+        // Wrap callback to track receives
+        void wrappedCallback(dynamic data) {
+          NetworkMetrics.recordSocketReceive(1);
+          callback(data);
+        }
+
+        _socket!.on(event, wrappedCallback);
         debugPrint(
           '[SOCKET SERVICE]    ? Callback registered on socket immediately',
         );
@@ -334,7 +346,13 @@ class SocketService {
         '[SOCKET SERVICE]    Re-registering $event (${callbacks.length} callbacks)',
       );
       for (final callback in callbacks) {
-        _socket!.on(event, callback);
+        // Wrap callback to track receives
+        void wrappedCallback(dynamic data) {
+          NetworkMetrics.recordSocketReceive(1);
+          callback(data);
+        }
+
+        _socket!.on(event, wrappedCallback);
         totalCallbacks++;
       }
     });
@@ -373,6 +391,11 @@ class SocketService {
     _socket?.off(event, callback);
   }
 
-  void emit(String event, dynamic data) => _socket?.emit(event, data);
+  void emit(String event, dynamic data) {
+    _socket?.emit(event, data);
+    // Track socket emit
+    NetworkMetrics.recordSocketEmit(1);
+  }
+
   void authenticate() => _authenticate();
 }

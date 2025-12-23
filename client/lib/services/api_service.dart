@@ -4,6 +4,7 @@ import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'dart:convert';
 import 'event_bus.dart';
+import '../core/metrics/network_metrics.dart';
 // Import auth service conditionally
 import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
 import 'session_auth_service.dart';
@@ -28,6 +29,9 @@ void setGlobalUnauthorizedHandler(UnauthorizedCallback callback) {
 class UnauthorizedInterceptor extends Interceptor {
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
+    // ✅ Track successful API call
+    NetworkMetrics.recordApiCall(success: true);
+    
     // ✅ Report successful API response (server is reachable)
     if (!kIsWeb) {
       ServerConnectionService.instance.reportSuccess();
@@ -57,6 +61,9 @@ class UnauthorizedInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
+    // ❌ Track failed API call
+    NetworkMetrics.recordApiCall(success: false);
+    
     // ❌ Report connection errors (only on native)
     if (!kIsWeb) {
       ServerConnectionService.instance.reportHttpError(err);

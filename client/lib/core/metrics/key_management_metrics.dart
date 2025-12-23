@@ -8,7 +8,8 @@ class KeyManagementMetrics {
   static int preKeysRegenerated = 0;
   static int decryptionFailures = 0;
   static int serverKeyMismatches = 0;
-  static int preKeysConsumed = 0;
+  static int ownPreKeysConsumed = 0;
+  static int remotePreKeysConsumed = 0;
   static int sessionsInvalidated = 0;
 
   /// Records identity key regeneration event.
@@ -36,9 +37,14 @@ class KeyManagementMetrics {
     serverKeyMismatches++;
   }
 
-  /// Records PreKey consumption event.
-  static void recordPreKeyConsumed(int count) {
-    preKeysConsumed += count;
+  /// Records own PreKey consumption event (when others consume our PreKeys).
+  static void recordOwnPreKeyConsumed(int count) {
+    ownPreKeysConsumed += count;
+  }
+
+  /// Records remote PreKey consumption event (when we consume others' PreKeys).
+  static void recordRemotePreKeyConsumed(int count) {
+    remotePreKeysConsumed += count;
   }
 
   /// Records session invalidation event.
@@ -53,7 +59,8 @@ class KeyManagementMetrics {
     preKeysRegenerated = 0;
     decryptionFailures = 0;
     serverKeyMismatches = 0;
-    preKeysConsumed = 0;
+    ownPreKeysConsumed = 0;
+    remotePreKeysConsumed = 0;
     sessionsInvalidated = 0;
   }
 
@@ -63,7 +70,8 @@ class KeyManagementMetrics {
       'identityRegenerations': identityRegenerations,
       'signedPreKeyRotations': signedPreKeyRotations,
       'preKeysRegenerated': preKeysRegenerated,
-      'preKeysConsumed': preKeysConsumed,
+      'ownPreKeysConsumed': ownPreKeysConsumed,
+      'remotePreKeysConsumed': remotePreKeysConsumed,
       'sessionsInvalidated': sessionsInvalidated,
       'decryptionFailures': decryptionFailures,
       'serverKeyMismatches': serverKeyMismatches,

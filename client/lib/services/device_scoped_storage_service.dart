@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:idb_shim/idb.dart';
 import 'device_identity_service.dart';
@@ -11,6 +12,9 @@ import 'idb_factory_native.dart' as native;
 /// 1. Isolated databases (based on device ID)
 /// 2. Encrypted data at rest (AES-GCM-256)
 /// 3. WebAuthn-derived encryption keys
+///
+/// IMPORTANT: All storage operations wait for device identity to be initialized.
+/// This ensures proper device-scoped encryption is ready before any data access.
 class DeviceScopedStorageService {
   static final DeviceScopedStorageService instance =
       DeviceScopedStorageService._();
@@ -19,6 +23,9 @@ class DeviceScopedStorageService {
   final DeviceIdentityService _deviceIdentity = DeviceIdentityService.instance;
   IdbFactory _idbFactory = _getStaticIdbFactory();
   final EncryptedStorageWrapper _encryption = EncryptedStorageWrapper();
+  
+  // Waiting mechanism for device identity initialization
+  final List<Completer<void>> _waitingForInit = [];
 
   // Cache open databases to avoid closing them prematurely
   final Map<String, Database> _databaseCache = {};
@@ -39,11 +46,38 @@ class DeviceScopedStorageService {
     }
   }
 
-  /// Get device-specific database name
-  String getDeviceDatabaseName(String baseName) {
-    if (!_deviceIdentity.isInitialized) {
-      throw Exception('Device identity not initialized');
+  /// Wait for device identity to be initialized
+  /// Returns immediately if already initialized
+  Future<void> _waitForDeviceIdentity() async {
+    if (_deviceIdentity.isInitialized) {
+      return;
     }
+
+    debugPrint('[DEVICE_STORAGE] ⏳ Waiting for device identity to be initialized...');
+    
+    // Create a completer to wait for initialization
+    final completer = Completer<void>();
+    _waitingForInit.add(completer);
+
+    // Poll for initialization (with timeout)
+    final timeout = DateTime.now().add(const Duration(seconds: 30));
+    while (!_deviceIdentity.isInitialized) {
+      if (DateTime.now().isAfter(timeout)) {
+        _waitingForInit.remove(completer);
+        throw Exception('Timeout waiting for device identity initialization');
+      }
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+
+    debugPrint('[DEVICE_STORAGE] ✓ Device identity initialized, continuing...');
+    _waitingForInit.remove(completer);
+    completer.complete();
+  }
+
+  /// Get device-specific database name
+  /// Waits for device identity to be initialized if needed
+  Future<String> getDeviceDatabaseName(String baseName) async {
+    await _waitForDeviceIdentity();
 
     final deviceId = _deviceIdentity.deviceId;
     return '${baseName}_$deviceId';
@@ -55,7 +89,7 @@ class DeviceScopedStorageService {
     int version = 1,
     required void Function(VersionChangeEvent) onUpgradeNeeded,
   }) async {
-    final dbName = getDeviceDatabaseName(baseName);
+    final dbName = await getDeviceDatabaseName(baseName);
 
     // Check cache first
     if (_databaseCache.containsKey(dbName)) {
@@ -207,9 +241,7 @@ class DeviceScopedStorageService {
     String storeName,
     dynamic key,
   ) async {
-    if (!_deviceIdentity.isInitialized) {
-      throw Exception('Device identity not set. Call setDeviceIdentity first.');
-    }
+    await _waitForDeviceIdentity();
 
     if (key == null) {
       debugPrint('[DEVICE_STORAGE] ⚠️ Attempted to delete null key - skipping');
@@ -248,9 +280,7 @@ class DeviceScopedStorageService {
 
   /// Get all keys from device-scoped database (for iteration)
   Future<List<String>> getAllKeys(String baseName, String storeName) async {
-    if (!_deviceIdentity.isInitialized) {
-      throw Exception('Device identity not set. Call setDeviceIdentity first.');
-    }
+    await _waitForDeviceIdentity();
 
     try {
       final db = await openDeviceDatabase(
@@ -354,7 +384,7 @@ class DeviceScopedStorageService {
     int errorCount = 0;
 
     for (final baseName in baseDatabases) {
-      final dbName = getDeviceDatabaseName(baseName);
+      final dbName = await getDeviceDatabaseName(baseName);
       try {
         await _idbFactory.deleteDatabase(dbName);
         deletedCount++;

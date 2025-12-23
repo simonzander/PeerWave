@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/troubleshoot_provider.dart';
+import '../state/troubleshoot_provider.dart';
 
 /// Displays Signal Protocol key management metrics in a card.
 class MetricsCard extends StatelessWidget {
@@ -117,9 +117,14 @@ class MetricsCard extends StatelessWidget {
           icon: Icons.key,
         ),
         _MetricItem(
-          label: 'PreKeys Consumed',
-          value: metrics.preKeysConsumed.toString(),
+          label: 'Own PreKeys Consumed',
+          value: metrics.ownPreKeysConsumed.toString(),
           icon: Icons.check_circle,
+        ),
+        _MetricItem(
+          label: 'Remote PreKeys Consumed',
+          value: metrics.remotePreKeysConsumed.toString(),
+          icon: Icons.send,
         ),
         _MetricItem(
           label: 'Sessions Invalidated',

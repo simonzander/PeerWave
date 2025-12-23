@@ -1,4 +1,4 @@
-import 'package:socket_io_client/socket_io_client.dart';
+﻿import 'package:socket_io_client/socket_io_client.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -32,11 +32,9 @@ import 'app/settings/voice_video_settings_page.dart';
 import 'app/settings/system_tray_settings_page.dart';
 import 'app/webauthn_web.dart' if (dart.library.io) 'app/webauthn_stub.dart';
 // Troubleshoot feature
-import 'features/troubleshoot/presentation/pages/troubleshoot_page.dart';
-import 'features/troubleshoot/presentation/providers/troubleshoot_provider.dart';
-import 'features/troubleshoot/domain/usecases/get_key_metrics.dart';
-import 'features/troubleshoot/data/repositories/troubleshoot_repository_impl.dart';
-import 'features/troubleshoot/data/datasources/troubleshoot_datasource_impl.dart';
+import 'features/troubleshoot/pages/troubleshoot_page.dart';
+import 'features/troubleshoot/state/troubleshoot_provider.dart';
+import 'services/troubleshoot/troubleshoot_service.dart';
 import 'services/signal_service.dart';
 import 'app/backupcode_web.dart'
     if (dart.library.io) 'app/backupcode_web_native.dart';
@@ -955,18 +953,13 @@ class _MyAppState extends State<MyApp> {
                       builder: (context, state) {
                         // Create troubleshoot provider with dependencies
                         final signalService = SignalService.instance;
-                        final dataSource = TroubleshootDataSourceImpl(
+                        final troubleshootService = TroubleshootService(
                           signalService: signalService,
                         );
-                        final repository = TroubleshootRepositoryImpl(
-                          dataSource: dataSource,
-                        );
-                        final getKeyMetrics = GetKeyMetrics(repository);
 
                         return ChangeNotifierProvider(
                           create: (_) => TroubleshootProvider(
-                            getKeyMetrics: getKeyMetrics,
-                            repository: repository,
+                            service: troubleshootService,
                           ),
                           child: const TroubleshootPage(),
                         );
@@ -1361,18 +1354,13 @@ class _MyAppState extends State<MyApp> {
                       builder: (context, state) {
                         // Create troubleshoot provider with dependencies
                         final signalService = SignalService.instance;
-                        final dataSource = TroubleshootDataSourceImpl(
+                        final troubleshootService = TroubleshootService(
                           signalService: signalService,
                         );
-                        final repository = TroubleshootRepositoryImpl(
-                          dataSource: dataSource,
-                        );
-                        final getKeyMetrics = GetKeyMetrics(repository);
 
                         return ChangeNotifierProvider(
                           create: (_) => TroubleshootProvider(
-                            getKeyMetrics: getKeyMetrics,
-                            repository: repository,
+                            service: troubleshootService,
                           ),
                           child: const TroubleshootPage(),
                         );

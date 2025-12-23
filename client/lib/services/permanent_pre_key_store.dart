@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'device_scoped_storage_service.dart';
 import 'api_service.dart';
+import '../core/metrics/key_management_metrics.dart';
 import '../web_config.dart';
 import 'server_config_web.dart'
     if (dart.library.io) 'server_config_native.dart';
@@ -224,6 +225,13 @@ class PermanentPreKeyStore extends PreKeyStore {
         }
 
         await storePreKeys(newPreKeys);
+        
+        // Track metrics for diagnostics
+        KeyManagementMetrics.recordPreKeyRegeneration(
+          newPreKeys.length,
+          reason: 'Automatic gap filling',
+        );
+        
         debugPrint(
           "[PREKEY STORE] ✓ Generated and stored ${newPreKeys.length} new pre keys (filling gaps with batching)",
         );
@@ -272,7 +280,9 @@ class PermanentPreKeyStore extends PreKeyStore {
   /// Helper: Get all prekey IDs (for both web and native)
   Future<List<int>> _getAllPreKeyIds() async {
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
+    // Storage service will wait for device identity to be initialized
     final storage = DeviceScopedStorageService.instance;
+    
     debugPrint(
       '[PREKEY STORE] Getting all keys from storage (baseName: $_storeName, storeName: $_storeName)',
     );
@@ -528,6 +538,11 @@ class PermanentPreKeyStore extends PreKeyStore {
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
     await storage.deleteEncrypted(_storeName, _storeName, _preKey(preKeyId));
+    
+    // Track metrics for diagnostics (only when actually consumed, not during sync cleanup)
+    if (sendToServer) {
+      KeyManagementMetrics.recordOwnPreKeyConsumed(1);
+    }
 
     /* LEGACY NATIVE STORAGE - DISABLED
     if (kIsWeb) {
