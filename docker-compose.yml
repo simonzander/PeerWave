@@ -52,7 +52,7 @@ services:
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
     volumes:
-      - ./db:/usr/src/app/db
+      - peerwave-db:/usr/src/app/db
       - ./server/cert:/usr/src/app/cert:ro
     environment:
       - NODE_ENV=${NODE_ENV:-development}
@@ -79,3 +79,7 @@ services:
 networks:
   peerwave-network:
     driver: bridge
+
+volumes:
+  # Database volume (preserves db/*.js files)
+  peerwave-db:
