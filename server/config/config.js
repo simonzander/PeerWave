@@ -1,0 +1,79 @@
+const config = {};
+
+config.domain = process.env.DOMAIN || 'localhost';
+config.port = process.env.PORT || 3000;
+config.db = {
+    type: 'sqlite',
+    path: 'db/peerwave.db'
+};
+config.app = {
+    name: 'PeerWave',
+    url: process.env.APP_URL || `http://localhost:${config.port}`,
+    description: 'PeerWave'
+};
+config.buymeacoffee = process.env.ENABLE_BUYMEACOFFEE !== 'false';
+config.documentation = process.env.ENABLE_DOCUMENTATION !== 'false';
+config.quickhost = process.env.ENABLE_QUICKHOST !== 'false';
+config.channels = process.env.ENABLE_CHANNELS !== 'false';
+config.github = process.env.ENABLE_GITHUB !== 'false';
+config.about = process.env.ENABLE_ABOUT !== 'false';
+
+// SMTP Configuration - Optional (for meeting invitations)
+config.smtp = process.env.EMAIL_HOST ? {
+    senderadress: process.env.EMAIL_FROM || `"PeerWave" <no-reply@${config.domain}>`,
+    host: process.env.EMAIL_HOST,
+    port: parseInt(process.env.EMAIL_PORT || '587'),
+    secure: process.env.EMAIL_SECURE === 'true',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+} : null;
+
+config.session = {
+    secret: process.env.SESSION_SECRET || 'your-secret-key-CHANGE-IN-PRODUCTION',
+    resave: false,
+    saveUninitialized: true,
+    cookie: { 
+        secure: process.env.NODE_ENV === 'production' && process.env.HTTPS === 'true'
+    }
+};
+
+// Admin users: Comma-separated list of email addresses that will receive Administrator role
+// Users with these emails will automatically get admin privileges when verified
+config.admin = process.env.ADMIN_EMAILS ? process.env.ADMIN_EMAILS.split(',').map(email => email.trim()) : [];
+
+// Cleanup configuration
+config.cleanup = {
+    // Inactive users: Mark users as inactive after X days without client update
+    inactiveUserDays: parseInt(process.env.CLEANUP_INACTIVE_USER_DAYS || '30'),
+    
+    // ✅ Separate retention periods for different message types
+    deleteSystemMessagesDays: parseInt(process.env.CLEANUP_SYSTEM_MESSAGES_DAYS || '1'),     // read_receipt, senderKeyRequest, fileKeyRequest, etc.
+    deleteRegularMessagesDays: parseInt(process.env.CLEANUP_REGULAR_MESSAGES_DAYS || '7'),    // message, file (buffer for offline devices - 7 days)
+    deleteGroupMessagesDays: parseInt(process.env.CLEANUP_GROUP_MESSAGES_DAYS || '7'),      // Group messages (7 days buffer)
+    
+    // Cronjob schedule (runs every day at 2:00 AM)
+    cronSchedule: process.env.CLEANUP_CRON_SCHEDULE || '0 2 * * *'
+};
+
+// TURN/STUN Server configuration
+config.turn = {
+    secret: process.env.TURN_SECRET,
+    host: process.env.TURN_SERVER_EXTERNAL_HOST || 'localhost',
+    internalHost: process.env.TURN_SERVER_INTERNAL_HOST || 'peerwave-coturn',
+    port: parseInt(process.env.TURN_SERVER_PORT || '3478'),
+    tlsPort: parseInt(process.env.TURN_SERVER_PORT_TLS || '5349'),
+    realm: process.env.TURN_REALM || 'peerwave.local',
+    ttl: parseInt(process.env.TURN_CREDENTIAL_TTL || '86400') // 24 hours default
+};
+
+// LiveKit Server configuration (for meetings/calls)
+config.livekit = {
+    url: process.env.LIVEKIT_URL || 'ws://localhost:7880',
+    // Use internal hostname when running in Docker
+    apiKey: process.env.LIVEKIT_API_KEY || 'devkey',
+    apiSecret: process.env.LIVEKIT_API_SECRET || 'secret',
+};
+
+module.exports = config;
