@@ -154,7 +154,9 @@ docker-compose up -d
 docker-compose logs -f peerwave-server
 ```
 
-**✅ Certificates:** Auto-generated self-signed (no manual setup needed!)
+**✅ Certificates:** 
+- **Option A:** Provide your own - place `turn-cert.pem` and `turn-key.pem` in `./livekit-certs/`
+- **Option B:** Auto-generated self-signed (no manual setup needed!)
 
 **Access PeerWave:** `http://localhost:3000`
 

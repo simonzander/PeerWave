@@ -14,7 +14,7 @@ services:
       - "30300-30400:30300-30400/udp"  # TURN Relay port range (P2P) - 1001 ports
     volumes:
       - ./livekit-config.yaml:/livekit.yaml:ro
-      - livekit-certs:/certs  # Auto-generated self-signed certificates
+      - ./livekit-certs:/certs  # Provide your own certs here, or auto-generated on first run
     environment:
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
@@ -82,7 +82,3 @@ services:
 networks:
   peerwave-network:
     driver: bridge
-
-volumes:
-  # LiveKit certificates (auto-generated self-signed on first run)
-  livekit-certs:
