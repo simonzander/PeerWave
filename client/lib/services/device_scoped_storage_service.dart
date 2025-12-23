@@ -23,7 +23,7 @@ class DeviceScopedStorageService {
   final DeviceIdentityService _deviceIdentity = DeviceIdentityService.instance;
   IdbFactory _idbFactory = _getStaticIdbFactory();
   final EncryptedStorageWrapper _encryption = EncryptedStorageWrapper();
-  
+
   // Waiting mechanism for device identity initialization
   final List<Completer<void>> _waitingForInit = [];
 
@@ -53,8 +53,10 @@ class DeviceScopedStorageService {
       return;
     }
 
-    debugPrint('[DEVICE_STORAGE] ⏳ Waiting for device identity to be initialized...');
-    
+    debugPrint(
+      '[DEVICE_STORAGE] ⏳ Waiting for device identity to be initialized...',
+    );
+
     // Create a completer to wait for initialization
     final completer = Completer<void>();
     _waitingForInit.add(completer);

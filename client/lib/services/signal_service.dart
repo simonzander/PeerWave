@@ -1124,7 +1124,7 @@ class SignalService {
 
       // Update currentStep by total keys generated
       currentStep += missingIds.length;
-      
+
       // Track metrics for diagnostics (if any keys were generated)
       if (keysGeneratedInSession > 0) {
         KeyManagementMetrics.recordPreKeyRegeneration(
@@ -2555,7 +2555,7 @@ class SignalService {
         for (final preKey in newPreKeys) {
           await preKeyStore.storePreKey(preKey.id, preKey);
         }
-        
+
         // Track metrics for diagnostics
         KeyManagementMetrics.recordPreKeyRegeneration(
           newPreKeys.length,
@@ -4254,7 +4254,7 @@ class SignalService {
       // We don't have direct access to session state's local identity,
       // but if OUR identity changed, all our sessions are invalid anyway.
       // This would be caught when we try to decrypt incoming messages.
-      // 
+      //
       // For send validation, checking recipient's identity (above) is sufficient
       // because:
       // - If WE regenerated keys, recipient would fail to decrypt and trigger recovery
@@ -4700,7 +4700,7 @@ class SignalService {
           if (await sessionStore.containsSession(recipientAddress)) {
             await sessionStore.deleteSession(recipientAddress);
             debugPrint('[SIGNAL SERVICE] ✓ Stale session deleted');
-            
+
             // Record metric
             KeyManagementMetrics.recordSessionInvalidation(
               recipientAddress.getName(),

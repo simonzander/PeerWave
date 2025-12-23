@@ -702,4 +702,4 @@ Commercial licenses are based on company size (annual billing):
 **Contact for commercial use:**  
 📧 license@peerwave.org 
 
-⚠️ Note: Versions up to v0.x were licensed under MIT. Starting from v1.0.0, this project is licensed under the PolyForm Shield License 1.0.0.
+⚠️ Note: Versions up to v0.x were licensed under MIT. Starting from v1.0.0, this project is licensed under the PolyForm Shield License 1.0.0.test

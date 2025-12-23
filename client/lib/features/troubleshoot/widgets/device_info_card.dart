@@ -5,10 +5,7 @@ import '../models/device_info.dart';
 class DeviceInfoCard extends StatelessWidget {
   final DeviceInfo deviceInfo;
 
-  const DeviceInfoCard({
-    super.key,
-    required this.deviceInfo,
-  });
+  const DeviceInfoCard({super.key, required this.deviceInfo});
 
   @override
   Widget build(BuildContext context) {
@@ -23,12 +20,7 @@ class DeviceInfoCard extends StatelessWidget {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 16),
-            _buildInfoRow(
-              context,
-              'User ID',
-              deviceInfo.userId,
-              Icons.person,
-            ),
+            _buildInfoRow(context, 'User ID', deviceInfo.userId, Icons.person),
             _buildInfoRow(
               context,
               'Device ID',
@@ -71,16 +63,16 @@ class DeviceInfoCard extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.grey),
                 ),
                 const SizedBox(height: 4),
                 SelectableText(
                   value,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontFamily: 'monospace',
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
                 ),
               ],
             ),

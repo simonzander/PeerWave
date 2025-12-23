@@ -31,7 +31,7 @@ class UnauthorizedInterceptor extends Interceptor {
   void onResponse(Response response, ResponseInterceptorHandler handler) {
     // ✅ Track successful API call
     NetworkMetrics.recordApiCall(success: true);
-    
+
     // ✅ Report successful API response (server is reachable)
     if (!kIsWeb) {
       ServerConnectionService.instance.reportSuccess();
@@ -63,7 +63,7 @@ class UnauthorizedInterceptor extends Interceptor {
   void onError(DioException err, ErrorInterceptorHandler handler) {
     // ❌ Track failed API call
     NetworkMetrics.recordApiCall(success: false);
-    
+
     // ❌ Report connection errors (only on native)
     if (!kIsWeb) {
       ServerConnectionService.instance.reportHttpError(err);

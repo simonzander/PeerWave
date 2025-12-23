@@ -225,13 +225,13 @@ class PermanentPreKeyStore extends PreKeyStore {
         }
 
         await storePreKeys(newPreKeys);
-        
+
         // Track metrics for diagnostics
         KeyManagementMetrics.recordPreKeyRegeneration(
           newPreKeys.length,
           reason: 'Automatic gap filling',
         );
-        
+
         debugPrint(
           "[PREKEY STORE] ✓ Generated and stored ${newPreKeys.length} new pre keys (filling gaps with batching)",
         );
@@ -282,7 +282,7 @@ class PermanentPreKeyStore extends PreKeyStore {
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     // Storage service will wait for device identity to be initialized
     final storage = DeviceScopedStorageService.instance;
-    
+
     debugPrint(
       '[PREKEY STORE] Getting all keys from storage (baseName: $_storeName, storeName: $_storeName)',
     );
@@ -538,7 +538,7 @@ class PermanentPreKeyStore extends PreKeyStore {
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
     await storage.deleteEncrypted(_storeName, _storeName, _preKey(preKeyId));
-    
+
     // Track metrics for diagnostics (only when actually consumed, not during sync cleanup)
     if (sendToServer) {
       KeyManagementMetrics.recordOwnPreKeyConsumed(1);

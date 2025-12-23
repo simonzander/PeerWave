@@ -5,10 +5,7 @@ import '../models/server_config.dart';
 class ServerConfigCard extends StatelessWidget {
   final ServerConfig serverConfig;
 
-  const ServerConfigCard({
-    super.key,
-    required this.serverConfig,
-  });
+  const ServerConfigCard({super.key, required this.serverConfig});
 
   @override
   Widget build(BuildContext context) {
@@ -64,16 +61,16 @@ class ServerConfigCard extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.grey),
                 ),
                 const SizedBox(height: 4),
                 SelectableText(
                   value,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontFamily: 'monospace',
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
                 ),
               ],
             ),
@@ -104,17 +101,17 @@ class ServerConfigCard extends StatelessWidget {
               children: [
                 Text(
                   'Connection Status',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.grey),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   status,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: isConnected ? Colors.green : Colors.red,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    color: isConnected ? Colors.green : Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ],
             ),

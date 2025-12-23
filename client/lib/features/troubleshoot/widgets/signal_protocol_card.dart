@@ -4,10 +4,7 @@ import 'package:flutter/material.dart';
 class SignalProtocolCard extends StatelessWidget {
   final Map<String, int> signalProtocolCounts;
 
-  const SignalProtocolCard({
-    super.key,
-    required this.signalProtocolCounts,
-  });
+  const SignalProtocolCard({super.key, required this.signalProtocolCounts});
 
   @override
   Widget build(BuildContext context) {
@@ -56,16 +53,13 @@ class SignalProtocolCard extends StatelessWidget {
           Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+            child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
           ),
           Text(
             value.toString(),
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
         ],
       ),

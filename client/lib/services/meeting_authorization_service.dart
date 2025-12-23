@@ -55,10 +55,12 @@ class MeetingAuthorizationService {
           debugPrint(
             '[MEETING_AUTH] ⚠️ No session secret found, cannot authenticate',
           );
-          debugPrint('[MEETING_AUTH] ❌ Authentication required to check meeting access');
+          debugPrint(
+            '[MEETING_AUTH] ❌ Authentication required to check meeting access',
+          );
           return false;
         }
-        
+
         headers = await SessionAuthService().generateAuthHeaders(
           clientId: clientId,
           requestPath: '/api/meetings/$meetingId',
@@ -68,7 +70,7 @@ class MeetingAuthorizationService {
       // Web: Cookies are automatically included by http client
 
       final response = await http.get(Uri.parse(url), headers: headers);
-      
+
       debugPrint('[MEETING_AUTH] Response status: ${response.statusCode}');
       if (response.statusCode == 403) {
         debugPrint('[MEETING_AUTH] Response body: ${response.body}');
@@ -81,7 +83,9 @@ class MeetingAuthorizationService {
 
       if (response.statusCode == 403) {
         debugPrint('[MEETING_AUTH] ❌ Access forbidden: $meetingId');
-        debugPrint('[MEETING_AUTH] User is authenticated but not authorized for this meeting');
+        debugPrint(
+          '[MEETING_AUTH] User is authenticated but not authorized for this meeting',
+        );
         return false;
       }
 

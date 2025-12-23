@@ -991,7 +991,9 @@ class VideoConferenceService extends ChangeNotifier {
         '[VideoConf] 🔄 Already in a session (${_currentChannelId}), leaving before joining new session ($channelId)',
       );
       await leaveRoom();
-      debugPrint('[VideoConf] ✓ Left previous session, now joining new session');
+      debugPrint(
+        '[VideoConf] ✓ Left previous session, now joining new session',
+      );
     }
 
     try {

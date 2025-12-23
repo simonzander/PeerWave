@@ -4,18 +4,17 @@ import 'package:flutter/material.dart';
 class NetworkMetricsCard extends StatelessWidget {
   final Map<String, dynamic> networkMetrics;
 
-  const NetworkMetricsCard({
-    super.key,
-    required this.networkMetrics,
-  });
+  const NetworkMetricsCard({super.key, required this.networkMetrics});
 
   @override
   Widget build(BuildContext context) {
     final totalApiCalls = networkMetrics['totalApiCalls'] as int? ?? 0;
-    final successfulApiCalls = networkMetrics['successfulApiCalls'] as int? ?? 0;
+    final successfulApiCalls =
+        networkMetrics['successfulApiCalls'] as int? ?? 0;
     final failedApiCalls = networkMetrics['failedApiCalls'] as int? ?? 0;
     final socketEmitCount = networkMetrics['socketEmitCount'] as int? ?? 0;
-    final socketReceiveCount = networkMetrics['socketReceiveCount'] as int? ?? 0;
+    final socketReceiveCount =
+        networkMetrics['socketReceiveCount'] as int? ?? 0;
 
     return Card(
       child: Padding(
@@ -87,17 +86,14 @@ class NetworkMetricsCard extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+            child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
           ),
           Text(
             value.toString(),
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
         ],
       ),

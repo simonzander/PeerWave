@@ -42,7 +42,8 @@ class KeyMetrics {
           signedPreKeyRotations ?? this.signedPreKeyRotations,
       preKeysRegenerated: preKeysRegenerated ?? this.preKeysRegenerated,
       ownPreKeysConsumed: ownPreKeysConsumed ?? this.ownPreKeysConsumed,
-      remotePreKeysConsumed: remotePreKeysConsumed ?? this.remotePreKeysConsumed,
+      remotePreKeysConsumed:
+          remotePreKeysConsumed ?? this.remotePreKeysConsumed,
       sessionsInvalidated: sessionsInvalidated ?? this.sessionsInvalidated,
       decryptionFailures: decryptionFailures ?? this.decryptionFailures,
       serverKeyMismatches: serverKeyMismatches ?? this.serverKeyMismatches,

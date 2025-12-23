@@ -424,10 +424,10 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
 
       // Store new SignedPreKey (automatically uploads to server)
       await storeSignedPreKey(newSignedPreKey.id, newSignedPreKey);
-      
+
       // Track metrics for diagnostics
       KeyManagementMetrics.recordSignedPreKeyRotation(isScheduled: true);
-      
+
       debugPrint(
         '[SIGNED_PREKEY_ROTATION] ✓ New SignedPreKey generated and stored',
       );

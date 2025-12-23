@@ -22,7 +22,8 @@ class DeviceInfo {
       userId: userId ?? this.userId,
       deviceId: deviceId ?? this.deviceId,
       clientId: clientId ?? this.clientId,
-      identityKeyFingerprint: identityKeyFingerprint ?? this.identityKeyFingerprint,
+      identityKeyFingerprint:
+          identityKeyFingerprint ?? this.identityKeyFingerprint,
     );
   }
 

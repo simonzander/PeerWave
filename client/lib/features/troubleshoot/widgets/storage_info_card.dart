@@ -5,10 +5,7 @@ import '../models/storage_info.dart';
 class StorageInfoCard extends StatelessWidget {
   final StorageInfo storageInfo;
 
-  const StorageInfoCard({
-    super.key,
-    required this.storageInfo,
-  });
+  const StorageInfoCard({super.key, required this.storageInfo});
 
   @override
   Widget build(BuildContext context) {
@@ -77,16 +74,16 @@ class StorageInfoCard extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.grey),
                 ),
                 const SizedBox(height: 4),
                 SelectableText(
                   value,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontFamily: 'monospace',
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
                 ),
               ],
             ),
