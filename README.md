@@ -321,6 +321,11 @@ chmod +x build-docker.sh
 | `ENABLE_CHANNELS` | Enable channels | `true` | `false` |
 | `ENABLE_GITHUB` | Show GitHub link | `true` | `false` |
 | `ENABLE_ABOUT` | Show about page | `true` | `false` |
+| `CLEANUP_INACTIVE_USER_DAYS` | Days until user marked inactive | `30` | `60` |
+| `CLEANUP_SYSTEM_MESSAGES_DAYS` | System message retention | `1` | `3` |
+| `CLEANUP_REGULAR_MESSAGES_DAYS` | Regular message retention | `7` | `14` |
+| `CLEANUP_GROUP_MESSAGES_DAYS` | Group message retention | `7` | `30` |
+| `CLEANUP_CRON_SCHEDULE` | Cleanup cron schedule | `0 2 * * *` | `0 3 * * *` |
 | `CORS_ORIGINS` | Allowed origins | Auto | `https://app.yourdomain.com` |
 
 #### Configuration Files
