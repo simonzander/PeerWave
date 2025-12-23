@@ -44,7 +44,7 @@ services:
       - "host.docker.internal:host-gateway"
     
     volumes:
-      - ./db:/usr/src/app/db
+      - peerwave-db:/usr/src/app/db
       - ./server/cert:/usr/src/app/cert:ro
     
     environment:
@@ -160,3 +160,5 @@ networks:
 volumes:
   # Shared volume for extracted certificates
   cert-data:
+  # Database volume (preserves db/*.js files)
+  peerwave-db:
