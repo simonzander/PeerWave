@@ -1,17 +1,39 @@
 # Docker Compose configuration for PeerWave with Traefik reverse proxy
-# This setup assumes you have Traefik running with Let's Encrypt configured
-#
-# Usage:
-#   docker-compose -f docker-compose.traefik.yml up -d
+# 
+# Simple setup with automatic certificate handling:
+# 1. Set your domain in .env file
+# 2. Point DNS to your server
+# 3. Run: docker-compose -f docker-compose.traefik.yml up -d
+# 4. Done! Certificates are extracted automatically.
 #
 # Prerequisites:
 #   - Traefik proxy network: docker network create proxy
 #   - Domain DNS pointing to your server
-#   - .env file with required variables
+#   - Create .env from .env.traefik.example
 
 version: '3.8'
 
 services:
+  # Certificate Extractor (extracts Traefik certs for LiveKit)
+  traefik-certs-dumper:
+    image: ldez/traefik-certs-dumper:v2.8.3
+    container_name: peerwave-cert-dumper
+    restart: unless-stopped
+    
+    command: file --watch --source /acme.json --dest /output --domain-subdir=true
+    
+    volumes:
+      # Mount Traefik's acme.json (READ-ONLY)
+      - ${TRAEFIK_ACME_PATH:-/etc/traefik/acme.json}:/acme.json:ro
+      # Output directory for extracted certificates
+      - cert-data:/output
+    
+    environment:
+      - DOMAIN=${DOMAIN}
+    
+    networks:
+      - peerwave-internal
+
   # PeerWave Server
   peerwave-server:
     image: simonzander/peerwave:latest
@@ -88,7 +110,34 @@ services:
     
     volumes:
       - ./livekit-config.yaml:/etc/livekit.yaml:ro
-      - ./livekit-certs:/certs:ro
+      # Use extracted certificates from cert-dumper
+      - cert-data:/certs-source:ro
+    
+    environment:
+      # Certificate paths (updated by init script)
+      - CERT_DOMAIN=${DOMAIN}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+    
+    # Wait for certificate extraction
+    depends_on:
+      - traefik-certs-dumper
+    
+    # Copy certs on startup
+    entrypoint: >
+      sh -c "
+      echo 'Waiting for certificates...';
+      while [ ! -f /certs-source/$${CERT_DOMAIN}/certificate.crt ]; do 
+        sleep 2; 
+      done;
+      echo 'Certificates found, starting LiveKit...';
+      mkdir -p /certs;
+      cp /certs-source/$${CERT_DOMAIN}/certificate.crt /certs/turn-cert.pem;
+      cp /certs-source/$${CERT_DOMAIN}/privatekey.key /certs/turn-key.pem;
+      chmod 644 /certs/turn-cert.pem;
+      chmod 600 /certs/turn-key.pem;
+      exec livekit-server --config /etc/livekit.yaml
+      "
     
     # LiveKit needs direct port access for WebRTC and TURN
     ports:
@@ -114,3 +163,7 @@ networks:
   # Internal PeerWave network
   peerwave-internal:
     driver: bridge
+
+volumes:
+  # Shared volume for extracted certificates
+  cert-data:

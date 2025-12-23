@@ -14,11 +14,33 @@ services:
       - "30300-30400:30300-30400/udp"  # TURN Relay port range (P2P) - 1001 ports
     volumes:
       - ./livekit-config.yaml:/livekit.yaml:ro
-      - ./livekit-certs:/certs:ro  # SSL certificates for TURN
+      - livekit-certs:/certs  # Auto-generated self-signed certificates
     environment:
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
-    command: --config /livekit.yaml
+    
+    # Auto-generate self-signed certificates on first startup
+    entrypoint: >
+      sh -c "
+      echo 'Checking TURN certificates...';
+      if [ ! -f /certs/turn-cert.pem ] || [ ! -f /certs/turn-key.pem ]; then
+        echo 'Generating self-signed certificates for TURN server...';
+        apk add --no-cache openssl;
+        openssl req -x509 -newkey rsa:4096 -nodes \
+          -keyout /certs/turn-key.pem \
+          -out /certs/turn-cert.pem \
+          -days 365 \
+          -subj '/CN=turn.peerwave.local' \
+          -addext 'subjectAltName=DNS:localhost,DNS:turn.peerwave.local,IP:127.0.0.1';
+        chmod 644 /certs/turn-cert.pem;
+        chmod 600 /certs/turn-key.pem;
+        echo '✓ Self-signed certificates generated';
+      else
+        echo '✓ Certificates already exist';
+      fi;
+      echo 'Starting LiveKit...';
+      exec livekit-server --config /livekit.yaml
+      "
     networks:
       - peerwave-network
 
@@ -60,3 +82,7 @@ services:
 networks:
   peerwave-network:
     driver: bridge
+
+volumes:
+  # LiveKit certificates (auto-generated self-signed on first run)
+  livekit-certs:

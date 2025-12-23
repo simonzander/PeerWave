@@ -147,20 +147,14 @@ cp server/.env.example server/.env
 nano server/.env
 # Required: SESSION_SECRET, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
 
-# 4. Generate TLS certificates for TURN server (see CERTIFICATES.md)
-# For development, you can use self-signed:
-mkdir -p livekit-certs
-openssl req -x509 -newkey rsa:4096 -nodes \
-  -keyout livekit-certs/turn-key.pem \
-  -out livekit-certs/turn-cert.pem \
-  -days 365 -subj "/CN=localhost"
-
-# 5. Start all services
+# 4. Start all services (certificates auto-generated)
 docker-compose up -d
 
-# 6. View logs
+# 5. View logs
 docker-compose logs -f peerwave-server
 ```
+
+**✅ Certificates:** Auto-generated self-signed (no manual setup needed!)
 
 **Access PeerWave:** `http://localhost:3000`
 
@@ -195,36 +189,27 @@ nano .env
 ```bash
 DOMAIN=app.yourdomain.com
 LIVEKIT_TURN_DOMAIN=app.yourdomain.com
+TRAEFIK_ACME_PATH=/etc/traefik/acme.json  # Your Traefik's acme.json path
 SESSION_SECRET=$(openssl rand -base64 32)
 LIVEKIT_API_KEY=$(openssl rand -base64 32)
 LIVEKIT_API_SECRET=$(openssl rand -base64 32)
 ```
 
 ```bash
-# 4. Setup LiveKit TLS certificates (IMPORTANT!)
-# See CERTIFICATES.md for detailed instructions
-sudo certbot certonly --standalone -d app.yourdomain.com
-
-# Copy certificates
-mkdir -p livekit-certs
-sudo cp /etc/letsencrypt/live/app.yourdomain.com/fullchain.pem ./livekit-certs/turn-cert.pem
-sudo cp /etc/letsencrypt/live/app.yourdomain.com/privkey.pem ./livekit-certs/turn-key.pem
-sudo chown $(id -u):$(id -g) livekit-certs/*.pem
-
-# 5. Update livekit-config.yaml with your domain
+# 4. Update livekit-config.yaml with your domain
 nano livekit-config.yaml
 # Set: turn.domain: app.yourdomain.com
 
-# 6. Start services
+# 5. Start services (certificates extracted automatically!)
 docker-compose -f docker-compose.traefik.yml up -d
 
-# 7. View logs
+# 6. View logs
 docker-compose -f docker-compose.traefik.yml logs -f
 ```
 
-**Access PeerWave:** `https://app.yourdomain.com`
+**✅ Certificates:** Auto-extracted from Traefik (no manual setup needed!)
 
-**📘 Certificate Management:** See [CERTIFICATES.md](CERTIFICATES.md) for auto-renewal setup
+**Access PeerWave:** `https://app.yourdomain.com`
 
 ---
 
