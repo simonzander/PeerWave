@@ -985,9 +985,13 @@ class VideoConferenceService extends ChangeNotifier {
         false, // NEW: Skip Signal Protocol for external guests
     String? guestSessionId, // NEW: Guest session ID for token request
   }) async {
+    // SESSION EXCLUSIVITY: If already in a session, leave it before joining new one
     if (_isConnecting || _isConnected) {
-      debugPrint('[VideoConf] Already connecting or connected');
-      return;
+      debugPrint(
+        '[VideoConf] 🔄 Already in a session (${_currentChannelId}), leaving before joining new session ($channelId)',
+      );
+      await leaveRoom();
+      debugPrint('[VideoConf] ✓ Left previous session, now joining new session');
     }
 
     try {
