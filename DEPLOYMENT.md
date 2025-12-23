@@ -82,22 +82,58 @@ PeerWave/
 
 ## Certificate Requirements
 
-### For HTTP Server (Port 443 TCP)
+### Single Domain, Single Certificate, Different Routing
 
-| Deployment | Certificate Management | Provider |
-|------------|------------------------|----------|
-| **Simple** | Manual or none | Self-signed or purchased |
-| **Traefik** | **Automatic** | Let's Encrypt (via Traefik) |
+**You only need ONE Let's Encrypt certificate for your domain.**
 
-### For TURN Server (Port 5349 TCP/UDP)
+```
+Domain: app.peerwave.org
+Certificate: One Let's Encrypt certificate
+├── Traefik uses it for HTTPS (automatic)
+└── LiveKit uses it for TURN/TLS (manual copy)
+```
 
-| Deployment | Certificate Management | Provider |
-|------------|------------------------|----------|
-| **Both** | **Manual** (same for both) | Let's Encrypt (via Certbot) |
+### Certificate Management by Deployment
 
-⚠️ **Important:** LiveKit TURN server ALWAYS needs separate TLS certificates, regardless of deployment method.
+| Component | Certificate Source | Management | Domain |
+|-----------|-------------------|------------|---------|
+| **Traefik (HTTPS)** | Let's Encrypt | Automatic (Traefik) | app.peerwave.org |
+| **LiveKit (TURN)** | Same certificate | Manual copy | app.peerwave.org |
 
-**Why?** Traefik only handles HTTP/HTTPS (port 443 TCP). TURN uses port 5349 and needs its own TLS setup.
+### Why Manual Copy for LiveKit?
+
+Traefik stores certificates internally and auto-renews them. LiveKit runs in a separate container and needs the certificate files mounted as a volume.
+
+**Solution:** Copy the same certificate to `livekit-certs/` directory and mount it to LiveKit container.
+
+---
+
+## Routing Architecture
+
+### Simple Deployment
+
+```
+Client Browser/App
+    ↓
+http://localhost:3000 ────→ PeerWave Server (port 3000)
+ws://localhost:7880 ───────→ LiveKit (port 7880)
+turns://localhost:5349 ────→ LiveKit TURN (port 5349)
+```
+
+### Traefik Deployment
+
+```
+Client Browser/App
+    ↓
+https://app.peerwave.org ──→ [Traefik] ──→ PeerWave Server (internal)
+                              ↓
+                         (Manages HTTPS with Let's Encrypt)
+
+wss://app.peerwave.org:7880 ────────────→ LiveKit (direct, bypasses Traefik)
+turns://app.peerwave.org:5349 ──────────→ LiveKit TURN (direct, uses copied cert)
+```
+
+**Key Point:** HTTP/HTTPS goes through Traefik. WebRTC traffic goes direct to LiveKit.
 
 ---
 

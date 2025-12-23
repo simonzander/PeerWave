@@ -1,11 +1,64 @@
 # LiveKit Certificate Setup for Production
 
-LiveKit's embedded TURN server requires TLS certificates for the TURN/TLS port (5349). These certificates are **separate** from your Traefik/Let's Encrypt certificates used for HTTPS.
+LiveKit's embedded TURN server requires TLS certificates for the TURN/TLS port (5349). 
 
-## Why Separate Certificates?
+## Certificate Architecture
 
-- **Traefik certificates**: Used for HTTPS (port 443) - managed by Traefik
-- **LiveKit certificates**: Used for TURN/TLS (port 5349) - managed by LiveKit container
+**Good News:** You can use the **SAME Let's Encrypt certificate** for both HTTP/HTTPS and LiveKit TURN.
+
+### Single Domain, Single Certificate:
+
+```
+Domain: app.peerwave.org
+Certificate: /etc/letsencrypt/live/app.peerwave.org/
+├── Used by Traefik for HTTPS (port 443 TCP) → Automatic
+└── Used by LiveKit for TURN/TLS (port 5349) → Manual copy required
+```
+
+### Why Two Setups Are Needed:
+
+1. **Traefik manages HTTP/HTTPS automatically:**
+   - Traefik reads certificates from Let's Encrypt
+   - Auto-renewal handled by Traefik
+   - No manual work needed
+
+2. **LiveKit needs certificate manually copied:**
+   - LiveKit container runs independently
+   - Can't access Traefik's certificate store
+   - Needs certificates mounted as volume
+
+**Result:** One certificate, two locations, same domain.
+
+## Certificate vs Routing
+
+### Common Confusion:
+
+❌ **Wrong thinking:** "Different services need different certificates"
+✅ **Correct:** "One certificate for the domain, different routing for services"
+
+### Traffic Routing:
+
+```
+app.peerwave.org (One Let's Encrypt Certificate)
+
+HTTP/HTTPS (Port 443 TCP)
+   ↓
+[Traefik Reverse Proxy] ← Manages certificate automatically
+   ↓
+PeerWave Server Container
+
+WebRTC/TURN (Ports 7880, 5349, 30100-30400)
+   ↓
+[Direct Port Exposure] ← Needs certificate manually copied
+   ↓
+LiveKit Container
+```
+
+### Why Different Routing?
+
+- **Traefik** = HTTP reverse proxy (handles only HTTP/HTTPS traffic)
+- **LiveKit** = WebRTC media server (needs direct UDP/TCP access for media)
+- **WebRTC can't go through HTTP proxy** (requires direct peer-to-peer connectivity)
 
 ## Quick Setup (Let's Encrypt with Certbot)
 
@@ -34,11 +87,14 @@ sudo certbot certonly --manual --preferred-challenges dns -d $DOMAIN
 
 ### 3. Copy Certificates to PeerWave
 
+**Important:** You're copying the SAME certificate to LiveKit, not generating a separate one.
+
 ```bash
 # Create livekit-certs directory
 mkdir -p livekit-certs
 
-# Copy certificates (adjust paths based on your domain)
+# Copy certificates (use YOUR domain)
+DOMAIN="app.peerwave.org"
 sudo cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem ./livekit-certs/turn-cert.pem
 sudo cp /etc/letsencrypt/live/$DOMAIN/privkey.pem ./livekit-certs/turn-key.pem
 
@@ -47,6 +103,10 @@ sudo chmod 644 ./livekit-certs/turn-cert.pem
 sudo chmod 600 ./livekit-certs/turn-key.pem
 sudo chown $(id -u):$(id -g) ./livekit-certs/*.pem
 ```
+
+**What happens:**
+- Traefik uses: `/etc/letsencrypt/live/app.peerwave.org/*` (automatic)
+- LiveKit uses: `./livekit-certs/turn-*.pem` (copied from same certificate)
 
 ### 4. Auto-Renewal Setup
 
