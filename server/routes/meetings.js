@@ -137,28 +137,31 @@ END:VCALENDAR`.trim();
       to: email,
       subject: `${inviterUsername} invited you to "${meeting.title}" on ${serverName}`,
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #333;">You're Invited to a Meeting!</h2>
-          <p><strong>${inviterUsername}</strong> invited you to a meeting on ${serverName}.</p>
-          <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h3 style="margin-top: 0; color: #555;">Meeting Details</h3>
-            <p><strong>Title:</strong> ${meeting.title}</p>
-            ${meeting.description ? `<p><strong>Description:</strong> ${meeting.description}</p>` : ''}
-            <p><strong>Date:</strong> ${startTime.toLocaleDateString('en-US', dateOptions)}</p>
-            <p><strong>Time:</strong> ${startTime.toLocaleTimeString('en-US', timeOptions)} - ${endTime.toLocaleTimeString('en-US', timeOptions)}</p>
+        <div style="font-family:'Nunito Sans', system-ui, -apple-system, sans-serif; background-color:#0f1419; padding:40px 16px; color:#d6dde3;">
+          <div style="max-width:600px; margin:0 auto; background-color:#141b22; border-radius:12px; padding:32px; box-shadow:0 0 0 1px rgba(0, 188, 212, 0.08);">
+            <h2 style="margin-top:0; color:#2dd4bf; font-weight:600; letter-spacing:0.3px;">You're Invited to a Meeting!</h2>
+            <p style="color:#cbd5dc; line-height:1.6;"><strong style="color:#ffffff;">${inviterUsername}</strong> invited you to a meeting on ${serverName}.</p>
+            <div style="margin:24px 0; padding:20px; background-color:#0f1419; border-radius:10px; border:1px solid rgba(45, 212, 191, 0.15);">
+              <h3 style="margin-top:0; color:#2dd4bf; font-size:16px;">Meeting Details</h3>
+              <p style="margin:0 0 8px 0; color:#cbd5dc;"><strong style="color:#2dd4bf;">Title</strong><br>${meeting.title}</p>
+              ${meeting.description ? `<p style="margin:0 0 8px 0; color:#cbd5dc;"><strong style="color:#2dd4bf;">Description</strong><br>${meeting.description}</p>` : ''}
+              <p style="margin:0 0 8px 0; color:#cbd5dc;"><strong style="color:#2dd4bf;">Date</strong><br>${startTime.toLocaleDateString('en-US', dateOptions)}</p>
+              <p style="margin:0; color:#cbd5dc;"><strong style="color:#2dd4bf;">Time</strong><br>${startTime.toLocaleTimeString('en-US', timeOptions)} – ${endTime.toLocaleTimeString('en-US', timeOptions)}</p>
+            </div>
+            <div style="margin:28px 0;">
+              <a href="${urls.openMeetingsUrl}" style="background-color:#2dd4bf; color:#062726; padding:14px 22px; text-decoration:none; border-radius:8px; font-weight:600; display:inline-block; margin-right:8px;">Open Meetings</a>
+              <a href="${urls.prejoinUrl}" style="background-color:#1f8f78; color:#e6fffa; padding:14px 22px; text-decoration:none; border-radius:8px; font-weight:600; display:inline-block;">Join Meeting</a>
+            </div>
+            <div style="margin:32px 0;">
+              <p style="margin:0 0 12px 0; color:#9fb3bf;"><strong>RSVP</strong></p>
+              <a href="${rsvp.accepted}" style="background-color:#1f8f78; color:#e6fffa; padding:10px 16px; text-decoration:none; border-radius:6px; display:inline-block; margin-right:8px; font-weight:500;">Accept</a>
+              <a href="${rsvp.tentative}" style="background-color:#3b3f46; color:#e5e7eb; padding:10px 16px; text-decoration:none; border-radius:6px; display:inline-block; margin-right:8px; font-weight:500;">Tentative</a>
+              <a href="${rsvp.declined}" style="background-color:#7f1d1d; color:#fee2e2; padding:10px 16px; text-decoration:none; border-radius:6px; display:inline-block; font-weight:500;">Decline</a>
+              <p style="margin-top:12px; font-size:12px; color:#7b8a94;">These links expire in 30 days.</p>
+            </div>
+            <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
+            <p style="font-size:12px; color:#6b7c86; margin:0;">Sent from ${serverName}<br><a href="https://peerwave.org" style="text-decoration: none; display: flex; align-items: center;"><img src="https://peerwave.org/logo_28.png" style="width:24px;height:24px;padding-right: 0.25rem;"/><span style="color:white;">PeerWave</span><span style="color:#4fbfb3;"> - Private communication you fully control.</span></a></p>
           </div>
-          <div style="margin: 24px 0;">
-            <a href="${urls.openMeetingsUrl}" style="background-color:#4CAF50; color:white; padding:12px 18px; text-decoration:none; border-radius:6px; display:inline-block; margin-right: 8px;">Open Meetings</a>
-            <a href="${urls.prejoinUrl}" style="background-color:#1976D2; color:white; padding:12px 18px; text-decoration:none; border-radius:6px; display:inline-block;">Join</a>
-          </div>
-          <div style="margin: 24px 0;">
-            <p style="margin: 0 0 10px 0;"><strong>RSVP:</strong></p>
-            <a href="${rsvp.accepted}" style="background-color:#2e7d32; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block; margin-right:8px;">Accept</a>
-            <a href="${rsvp.tentative}" style="background-color:#f9a825; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block; margin-right:8px;">Tentative</a>
-            <a href="${rsvp.declined}" style="background-color:#c62828; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block;">Decline</a>
-            <p style="color:#666; font-size: 13px; margin-top: 10px;">These links expire in 30 days.</p>
-          </div>
-          <p style="color:#999; font-size: 12px;">Sent from ${serverName}</p>
         </div>
       `,
       alternatives: [
@@ -224,24 +227,27 @@ END:VCALENDAR`.trim();
       to: recipientEmail,
       subject: `Updated: "${meeting.title}" on ${serverName}`,
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color:#333;">Meeting Updated</h2>
-          <p>The meeting <strong>${meeting.title}</strong> was updated.</p>
-          <div style="background-color:#f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <p><strong>Date:</strong> ${startTime.toLocaleDateString('en-US', dateOptions)}</p>
-            <p><strong>Time:</strong> ${startTime.toLocaleTimeString('en-US', timeOptions)} - ${endTime.toLocaleTimeString('en-US', timeOptions)}</p>
+        <div style="font-family:'Nunito Sans', system-ui, -apple-system, sans-serif; background-color:#0f1419; padding:40px 16px; color:#d6dde3;">
+          <div style="max-width:600px; margin:0 auto; background-color:#141b22; border-radius:12px; padding:32px; box-shadow:0 0 0 1px rgba(0, 188, 212, 0.08);">
+            <h2 style="margin-top:0; color:#2dd4bf; font-weight:600; letter-spacing:0.3px;">Meeting Updated</h2>
+            <p style="color:#cbd5dc; line-height:1.6;">The meeting <strong style="color:#ffffff;">${meeting.title}</strong> has been updated.</p>
+            <div style="margin:24px 0; padding:20px; background-color:#0f1419; border-radius:10px; border:1px solid rgba(45, 212, 191, 0.15);">
+              <p style="margin:0 0 8px 0; color:#cbd5dc;"><strong style="color:#2dd4bf;">Date</strong><br>${startTime.toLocaleDateString('en-US', dateOptions)}</p>
+              <p style="margin:0; color:#cbd5dc;"><strong style="color:#2dd4bf;">Time</strong><br>${startTime.toLocaleTimeString('en-US', timeOptions)} – ${endTime.toLocaleTimeString('en-US', timeOptions)}</p>
+            </div>
+            <div style="margin:28px 0;">
+              <a href="${actionUrl}" style="background-color:#2dd4bf; color:#062726; padding:14px 22px; text-decoration:none; border-radius:8px; font-weight:600; display:inline-block;">${actionLabel}</a>
+            </div>
+            <div style="margin:32px 0;">
+              <p style="margin:0 0 12px 0; color:#9fb3bf;"><strong>RSVP</strong></p>
+              <a href="${rsvp.accepted}" style="background-color:#1f8f78; color:#e6fffa; padding:10px 16px; text-decoration:none; border-radius:6px; display:inline-block; margin-right:8px; font-weight:500;">Accept</a>
+              <a href="${rsvp.tentative}" style="background-color:#3b3f46; color:#e5e7eb; padding:10px 16px; text-decoration:none; border-radius:6px; display:inline-block; margin-right:8px; font-weight:500;">Tentative</a>
+              <a href="${rsvp.declined}" style="background-color:#7f1d1d; color:#fee2e2; padding:10px 16px; text-decoration:none; border-radius:6px; display:inline-block; font-weight:500;">Decline</a>
+              <p style="margin-top:12px; font-size:12px; color:#7b8a94;">These links expire in 30 days.</p>
+            </div>
+            <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
+            <p style="font-size:12px; color:#6b7c86; margin:0;">Sent from ${serverName}<br><a href="https://peerwave.org" style="text-decoration: none; display: flex; align-items: center;"><img src="https://peerwave.org/logo_28.png" style="width:24px;height:24px;padding-right: 0.25rem;"/><span style="color:white;">PeerWave</span><span style="color:#4fbfb3;"> - Private communication you fully control.</span></a></p>
           </div>
-          <div style="margin: 24px 0;">
-            <a href="${actionUrl}" style="background-color:#1976D2; color:white; padding:12px 18px; text-decoration:none; border-radius:6px; display:inline-block;">${actionLabel}</a>
-          </div>
-          <div style="margin: 24px 0;">
-            <p style="margin: 0 0 10px 0;"><strong>RSVP:</strong></p>
-            <a href="${rsvp.accepted}" style="background-color:#2e7d32; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block; margin-right:8px;">Accept</a>
-            <a href="${rsvp.tentative}" style="background-color:#f9a825; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block; margin-right:8px;">Tentative</a>
-            <a href="${rsvp.declined}" style="background-color:#c62828; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block;">Decline</a>
-            <p style="color:#666; font-size: 13px; margin-top: 10px;">These links expire in 30 days.</p>
-          </div>
-          <p style="color:#999; font-size: 12px;">Sent from ${serverName}</p>
         </div>
       `,
       alternatives: [
@@ -295,10 +301,13 @@ END:VCALENDAR`.trim();
       to: attendeeEmail,
       subject: `Cancelled: "${meeting.title}" on ${serverName}`,
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color:#333;">Meeting Cancelled</h2>
-          <p><strong>${meeting.title}</strong> was cancelled or you were removed from the invite list.</p>
-          <p style="color:#999; font-size: 12px;">Sent from ${serverName}</p>
+        <div style="font-family:'Nunito Sans', system-ui, -apple-system, sans-serif; background-color:#0f1419; padding:40px 16px; color:#d6dde3;">
+          <div style="max-width:600px; margin:0 auto; background-color:#141b22; border-radius:12px; padding:32px; box-shadow:0 0 0 1px rgba(0, 188, 212, 0.08);">
+            <h2 style="margin-top:0; color:#ef4444; font-weight:600; letter-spacing:0.3px;">Meeting Cancelled</h2>
+            <p style="color:#cbd5dc; line-height:1.6;"><strong style="color:#ffffff;">${meeting.title}</strong> was cancelled or you were removed from the invite list.</p>
+            <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
+            <p style="font-size:12px; color:#6b7c86; margin:0;">Sent from ${serverName}<br><a href="https://peerwave.org" style="text-decoration: none; display: flex; align-items: center;"><img src="https://peerwave.org/logo_28.png" style="width:24px;height:24px;padding-right: 0.25rem;"/><span style="color:white;">PeerWave</span><span style="color:#4fbfb3;"> - Private communication you fully control.</span></a></p>
+          </div>
         </div>
       `,
       alternatives: [
@@ -506,44 +515,34 @@ END:VCALENDAR`.trim();
       to: email,
       subject: `${inviterUsername} invited you to "${meeting.title}" on ${serverName}`,
       html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #333;">You're Invited to a Meeting!</h2>
-            
-            <p><strong>${inviterUsername}</strong> has invited you to join a meeting on ${serverName}.</p>
-            
-            <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-              <h3 style="margin-top: 0; color: #555;">Meeting Details</h3>
-              <p><strong>Title:</strong> ${meeting.title}</p>
-              ${meeting.description ? `<p><strong>Description:</strong> ${meeting.description}</p>` : ''}
-              <p><strong>Date:</strong> ${startTime.toLocaleDateString('en-US', dateOptions)}</p>
-              <p><strong>Time:</strong> ${startTime.toLocaleTimeString('en-US', timeOptions)} - ${endTime.toLocaleTimeString('en-US', timeOptions)}</p>
+          <div style="font-family:'Nunito Sans', system-ui, -apple-system, sans-serif; background-color:#0f1419; padding:40px 16px; color:#d6dde3;">
+            <div style="max-width:600px; margin:0 auto; background-color:#141b22; border-radius:12px; padding:32px; box-shadow:0 0 0 1px rgba(0, 188, 212, 0.08);">
+              <h2 style="margin-top:0; color:#2dd4bf; font-weight:600; letter-spacing:0.3px;">You're Invited to a Meeting!</h2>
+              <p style="color:#cbd5dc; line-height:1.6;"><strong style="color:#ffffff;">${inviterUsername}</strong> has invited you to join a meeting on ${serverName}.</p>
+              <div style="margin:24px 0; padding:20px; background-color:#0f1419; border-radius:10px; border:1px solid rgba(45, 212, 191, 0.15);">
+                <h3 style="margin-top:0; color:#2dd4bf; font-size:16px;">Meeting Details</h3>
+                <p style="margin:0 0 8px 0; color:#cbd5dc;"><strong style="color:#2dd4bf;">Title</strong><br>${meeting.title}</p>
+                ${meeting.description ? `<p style="margin:0 0 8px 0; color:#cbd5dc;"><strong style="color:#2dd4bf;">Description</strong><br>${meeting.description}</p>` : ''}
+                <p style="margin:0 0 8px 0; color:#cbd5dc;"><strong style="color:#2dd4bf;">Date</strong><br>${startTime.toLocaleDateString('en-US', dateOptions)}</p>
+                <p style="margin:0; color:#cbd5dc;"><strong style="color:#2dd4bf;">Time</strong><br>${startTime.toLocaleTimeString('en-US', timeOptions)} – ${endTime.toLocaleTimeString('en-US', timeOptions)}</p>
+              </div>
+              <div style="margin:28px 0;">
+                <a href="${invitationUrl}" style="background-color:#2dd4bf; color:#062726; padding:14px 22px; text-decoration:none; border-radius:8px; font-weight:600; display:inline-block;">Join Meeting</a>
+              </div>
+              <div style="margin:32px 0;">
+                <p style="margin:0 0 12px 0; color:#9fb3bf;"><strong>RSVP</strong></p>
+                <a href="${rsvpAcceptedUrl}" style="background-color:#1f8f78; color:#e6fffa; padding:10px 16px; text-decoration:none; border-radius:6px; display:inline-block; margin-right:8px; font-weight:500;">Accept</a>
+                <a href="${rsvpTentativeUrl}" style="background-color:#3b3f46; color:#e5e7eb; padding:10px 16px; text-decoration:none; border-radius:6px; display:inline-block; margin-right:8px; font-weight:500;">Tentative</a>
+                <a href="${rsvpDeclinedUrl}" style="background-color:#7f1d1d; color:#fee2e2; padding:10px 16px; text-decoration:none; border-radius:6px; display:inline-block; font-weight:500;">Decline</a>
+                <p style="margin-top:12px; font-size:12px; color:#7b8a94;">These links expire in 30 days.</p>
+              </div>
+              <div style="margin:24px 0; padding:16px; background-color:#0f1419; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                <p style="margin:0 0 8px 0; color:#9fb3bf; font-size:13px;">Or copy and paste this link:</p>
+                <a href="${invitationUrl}" style="color:#2dd4bf; word-break:break-all; font-size:13px;">${invitationUrl}</a>
+              </div>
+              <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
+              <p style="font-size:12px; color:#6b7c86; margin:0;">This invitation was sent from ${serverName}. If you received this email in error, please ignore it.<br><a href="https://peerwave.org" style="text-decoration: none; display: flex; align-items: center;"><img src="https://peerwave.org/logo_28.png" style="width:24px;height:24px;padding-right: 0.25rem;"/><span style="color:white;">PeerWave</span><span style="color:#4fbfb3;"> - Private communication you fully control.</span></a></p>
             </div>
-            
-            <div style="margin: 30px 0;">
-              <a href="${invitationUrl}" 
-                 style="background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
-                Join Meeting
-              </a>
-            </div>
-
-            <div style="margin: 24px 0;">
-              <p style="margin: 0 0 10px 0;"><strong>RSVP:</strong></p>
-              <a href="${rsvpAcceptedUrl}" style="background-color:#2e7d32; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block; margin-right:8px;">Accept</a>
-              <a href="${rsvpTentativeUrl}" style="background-color:#f9a825; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block; margin-right:8px;">Tentative</a>
-              <a href="${rsvpDeclinedUrl}" style="background-color:#c62828; color:white; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block;">Decline</a>
-              <p style="color:#666; font-size: 13px; margin-top: 10px;">These links expire in 30 days.</p>
-            </div>
-            
-            <p style="color: #666; font-size: 14px;">
-              Or copy and paste this link into your browser:<br>
-              <a href="${invitationUrl}">${invitationUrl}</a>
-            </p>
-            
-            <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
-            
-            <p style="color: #999; font-size: 12px;">
-              This invitation was sent from ${serverName}. If you received this email in error, please ignore it.
-            </p>
           </div>
         `,
       alternatives: [
@@ -630,11 +629,16 @@ async function maybeEmailOrganizerOnRsvp({ meeting, responderLabel, status }) {
         to: organizer.email,
         subject: `RSVP: ${responderLabel} responded ${status} to "${meeting.title}"`,
         html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color:#333;">Meeting RSVP Updated</h2>
-            <p><strong>${responderLabel}</strong> responded: <strong>${status}</strong></p>
-            <p><strong>Meeting:</strong> ${meeting.title}</p>
-            <p style="color:#999; font-size:12px;">Sent from ${serverName}</p>
+          <div style="font-family:'Nunito Sans', system-ui, -apple-system, sans-serif; background-color:#0f1419; padding:40px 16px; color:#d6dde3;">
+            <div style="max-width:600px; margin:0 auto; background-color:#141b22; border-radius:12px; padding:32px; box-shadow:0 0 0 1px rgba(0, 188, 212, 0.08);">
+              <h2 style="margin-top:0; color:#2dd4bf; font-weight:600; letter-spacing:0.3px;">Meeting RSVP Updated</h2>
+              <p style="color:#cbd5dc; line-height:1.6;"><strong style="color:#ffffff;">${responderLabel}</strong> responded: <strong style="color:#2dd4bf;">${status}</strong></p>
+              <div style="margin:24px 0; padding:16px; background-color:#0f1419; border-radius:8px; border:1px solid rgba(45, 212, 191, 0.15);">
+                <p style="margin:0; color:#cbd5dc;"><strong style="color:#2dd4bf;">Meeting</strong><br>${meeting.title}</p>
+              </div>
+              <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
+              <p style="font-size:12px; color:#6b7c86; margin:0;">Sent from ${serverName}<br><a href="https://peerwave.org" style="text-decoration: none; display: flex; align-items: center;"><img src="https://peerwave.org/logo_28.png" style="width:24px;height:24px;padding-right: 0.25rem;"/><span style="color:white;">PeerWave</span><span style="color:#4fbfb3;"> - Private communication you fully control.</span></a></p>
+            </div>
           </div>
         `,
       },
@@ -681,10 +685,14 @@ END:VCALENDAR`.trim();
         to: attendeeEmail,
         subject: `Cancelled (per your decline): "${meeting.title}"`,
         html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color:#333;">Meeting Removed From Your Calendar</h2>
-            <p>You declined <strong>${meeting.title}</strong>. This email updates your calendar entry.</p>
-            ${baseUrl ? `<p style="color:#666; font-size:14px;">PeerWave: <a href="${baseUrl}">${baseUrl}</a></p>` : ''}
+          <div style="font-family:'Nunito Sans', system-ui, -apple-system, sans-serif; background-color:#0f1419; padding:40px 16px; color:#d6dde3;">
+            <div style="max-width:600px; margin:0 auto; background-color:#141b22; border-radius:12px; padding:32px; box-shadow:0 0 0 1px rgba(0, 188, 212, 0.08);">
+              <h2 style="margin-top:0; color:#f59e0b; font-weight:600; letter-spacing:0.3px;">Meeting Removed From Your Calendar</h2>
+              <p style="color:#cbd5dc; line-height:1.6;">You declined <strong style="color:#ffffff;">${meeting.title}</strong>. This email updates your calendar entry.</p>
+              ${baseUrl ? `<div style="margin:24px 0; padding:16px; background-color:#0f1419; border-radius:8px; border:1px solid rgba(255,255,255,0.06);"><p style="margin:0; color:#9fb3bf; font-size:13px;">PeerWave: <a href="${baseUrl}" style="color:#2dd4bf;">${baseUrl}</a></p></div>` : ''}
+              <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
+              <p style="font-size:12px; color:#6b7c86; margin:0;">Sent from ${serverName}<br><a href="https://peerwave.org" style="text-decoration: none; display: flex; align-items: center;"><img src="https://peerwave.org/logo_28.png" style="width:24px;height:24px;padding-right: 0.25rem;"/><span style="color:white;">PeerWave</span><span style="color:#4fbfb3;"> - Private communication you fully control.</span></a></p>
+            </div>
           </div>
         `,
         alternatives: [
@@ -1280,18 +1288,20 @@ router.get('/meetings/:meetingId/rsvp/:status', async (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>RSVP Confirmation</title>
 </head>
-<body style="font-family: Arial, sans-serif; background: #f7f7f7; padding: 24px;">
-  <div style="max-width: 640px; margin: 0 auto; background: white; padding: 24px; border-radius: 12px;">
-    <h2 style="margin-top: 0; color: #333;">RSVP Confirmed</h2>
-    <p style="color:#444;">You responded: <strong>${status}</strong></p>
-    <div style="background:#f5f5f5; padding:16px; border-radius:8px;">
-      <p style="margin:0;"><strong>Meeting:</strong> ${meeting.title}</p>
-      <p style="margin:8px 0 0 0; color:#666; font-size: 14px;">${serverName}</p>
+<body style="font-family:'Nunito Sans', system-ui, -apple-system, sans-serif; background:#0f1419; padding:40px 16px; margin:0;">
+  <div style="max-width:600px; margin:0 auto; background-color:#141b22; border-radius:12px; padding:32px; box-shadow:0 0 0 1px rgba(0, 188, 212, 0.08);">
+    <h2 style="margin-top:0; color:#2dd4bf; font-weight:600; letter-spacing:0.3px;">RSVP Confirmed</h2>
+    <p style="color:#cbd5dc; line-height:1.6;">You responded: <strong style="color:#2dd4bf;">${status}</strong></p>
+    <div style="margin:24px 0; padding:20px; background-color:#0f1419; border-radius:10px; border:1px solid rgba(45, 212, 191, 0.15);">
+      <p style="margin:0 0 8px 0; color:#cbd5dc;"><strong style="color:#2dd4bf;">Meeting</strong><br>${meeting.title}</p>
+      <p style="margin:0; color:#9fb3bf; font-size:14px;">${serverName}</p>
     </div>
-    <div style="margin-top: 20px;">
-      <a href="${openAppUrl}" style="display:inline-block; padding: 12px 18px; background:#4CAF50; color:white; text-decoration:none; border-radius:6px;">Open PeerWave</a>
+    <div style="margin:28px 0;">
+      <a href="${openAppUrl}" style="display:inline-block; padding:14px 22px; background-color:#2dd4bf; color:#062726; text-decoration:none; border-radius:8px; font-weight:600;">Open PeerWave</a>
     </div>
-    <p style="margin-top: 24px; color:#999; font-size: 12px;">This page does not require login.</p>
+    <p style="margin-top:24px; color:#7b8a94; font-size:12px;">This page does not require login.</p>
+    <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
+    <p style="font-size:12px; color:#6b7c86; margin:0;"><a href="https://peerwave.org" style="text-decoration: none; display: flex; align-items: center;"><img src="https://peerwave.org/logo_28.png" style="width:24px;height:24px;padding-right: 0.25rem;"/><span style="color:white;">PeerWave</span><span style="color:#4fbfb3;"> - Private communication you fully control.</span></a></p>
   </div>
 </body>
 </html>`);

@@ -510,12 +510,34 @@ authRoutes.post("/register", async (req, res) => {
                 if (existingOtp && existingOtp.expiration > Date.now()) {
                     return res.status(200).json({ status: "waitotp", wait: Math.ceil((existingOtp.expiration - Date.now()) / 1000)});
                 } else {
+                    // Format OTP with spaces (e.g., "1 2 3 4 5")
+                    const otpSpaced = otp.toString().split('').join(' ');
+                    
                     // Send email with OTP
                     transporter.sendMail({
-                        from: config.smtp.senderadress, // sender address
-                        to: email, // list of receivers
-                        subject: "Your OTP", // Subject line
-                        text: `Your OTP is ${otp}` // plain text body
+                        from: config.smtp.senderadress,
+                        to: email,
+                        subject: "Your One-Time Password (OTP)",
+                        html: `
+                          <div style="font-family:'Nunito Sans', system-ui, -apple-system, sans-serif; background-color:#0f1419; padding:40px 16px; color:#d6dde3;">
+                            <div style="max-width:600px; margin:0 auto; background-color:#141b22; border-radius:12px; padding:32px; box-shadow:0 0 0 1px rgba(0, 188, 212, 0.08);">
+                              <h2 style="margin-top:0; color:#2dd4bf; font-weight:600; letter-spacing:0.3px;">Your Verification Code</h2>
+                              <p style="color:#cbd5dc; line-height:1.6;">Enter this code to verify your account:</p>
+                              <div style="margin:32px 0; padding:24px; background-color:#0f1419; border-radius:10px; border:2px solid rgba(45, 212, 191, 0.3); text-align:center;">
+                                <div style="font-size:42px; font-weight:700; letter-spacing:12px; color:#2dd4bf; font-family:'Courier New', monospace;">${otpSpaced}</div>
+                              </div>
+                              <div style="margin:24px 0; padding:16px; background-color:#0f1419; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                                <p style="margin:0; color:#9fb3bf; font-size:14px; line-height:1.6;">
+                                  <strong style="color:#f59e0b;">⚠️ Security Notice:</strong><br>
+                                  This code expires in <strong style="color:#2dd4bf;">5 minutes</strong>. Never share this code with anyone.
+                                </p>
+                              </div>
+                              <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
+                              <p style="font-size:12px; color:#6b7c86; margin:0;">Sent from PeerWave<br><a href="https://peerwave.org" style="text-decoration: none; display: flex; align-items: center;"><img src="https://peerwave.org/logo_28.png" style="width:24px;height:24px;padding-right: 0.25rem;"/><span style="color:white;">PeerWave</span><span style="color:#4fbfb3;"> - Private communication you fully control.</span></a></p>
+                            </div>
+                          </div>
+                        `,
+                        text: `Your OTP is ${otp}. This code expires in 5 minutes.`
                     }).then(info => {
                         console.log("Message sent: %s", info.messageId);
                     }).catch(error => {
@@ -1016,12 +1038,34 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
         if(error.code === 401 && error.email) {
             const otp = Math.floor(100000 + Math.random() * 900000); // Generate a 6-digit OTP
             const email = error.email; // Get the registered email
+            
+            // Format OTP with spaces (e.g., "1 2 3 4 5 6")
+            const otpSpaced = otp.toString().split('').join(' ');
 
             transporter.sendMail({
-                from: config.smtp.senderadress, // sender address
-                to: email, // list of receivers
-                subject: "Your OTP", // Subject line
-                text: `Your OTP is ${otp}` // plain text body
+                from: config.smtp.senderadress,
+                to: email,
+                subject: "Your Recovery Code",
+                html: `
+                  <div style="font-family:'Nunito Sans', system-ui, -apple-system, sans-serif; background-color:#0f1419; padding:40px 16px; color:#d6dde3;">
+                    <div style="max-width:600px; margin:0 auto; background-color:#141b22; border-radius:12px; padding:32px; box-shadow:0 0 0 1px rgba(0, 188, 212, 0.08);">
+                      <h2 style="margin-top:0; color:#f59e0b; font-weight:600; letter-spacing:0.3px;">Account Recovery</h2>
+                      <p style="color:#cbd5dc; line-height:1.6;">We received a request to access your account. Use this recovery code to continue:</p>
+                      <div style="margin:32px 0; padding:24px; background-color:#0f1419; border-radius:10px; border:2px solid rgba(245, 158, 11, 0.3); text-align:center;">
+                        <div style="font-size:42px; font-weight:700; letter-spacing:12px; color:#f59e0b; font-family:'Courier New', monospace;">${otpSpaced}</div>
+                      </div>
+                      <div style="margin:24px 0; padding:16px; background-color:#0f1419; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                        <p style="margin:0; color:#9fb3bf; font-size:14px; line-height:1.6;">
+                          <strong style="color:#ef4444;">⚠️ Security Alert:</strong><br>
+                          This code expires in <strong style="color:#f59e0b;">10 minutes</strong>. If you didn't request this, please ignore this email and secure your account.
+                        </p>
+                      </div>
+                      <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
+                      <p style="font-size:12px; color:#6b7c86; margin:0;">Sent from PeerWave<br><a href="https://peerwave.org" style="text-decoration: none; display: flex; align-items: center;"><img src="https://peerwave.org/logo_28.png" style="width:24px;height:24px;padding-right: 0.25rem;"/><span style="color:white;">PeerWave</span><span style="color:#4fbfb3;"> - Private communication you fully control.</span></a></p>
+                    </div>
+                  </div>
+                `,
+                text: `Your recovery code is ${otp}. This code expires in 10 minutes.`
             }).then(info => {
                 console.log("Message sent: %s", info.messageId);
             }).catch(error => {
