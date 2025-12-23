@@ -429,24 +429,7 @@ flutter build linux --release
 - [ ] Set up email (SMTP) for meeting invitations
 - [ ] Configure `CORS_ORIGINS` for your domain(s)
 - [ ] Review and adjust `livekit-config.yaml` port ranges
-
-#### Infrastructure
-
-- [ ] Setup SSL certificates (Traefik + LiveKit)
-- [ ] Configure firewall rules (see Required Ports below)
-- [ ] Setup database backups (volume: `./db`)
-- [ ] Configure monitoring and logging
-- [ ] Test video calls from different networks
 - [ ] Verify TURN server connectivity with [trickle-ice](https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/)
-
-#### Optional Enhancements
-
-- [ ] Setup CDN for static assets
-- [ ] Configure rate limiting
-- [ ] Enable database WAL mode
-- [ ] Setup log rotation
-- [ ] Configure health checks
-- [ ] Setup backup strategy
 
 ---
 
@@ -480,255 +463,23 @@ flutter build linux --release
 
 ---
 
-### Firewall Configuration
-
-#### UFW (Ubuntu/Debian)
-
-```bash
-# Web (Traefik managed)
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-
-# LiveKit WebRTC
-sudo ufw allow 7880/tcp
-sudo ufw allow 443/udp
-sudo ufw allow 5349
-sudo ufw allow 30100:30200/udp
-sudo ufw allow 30300:30400/udp
-```
-
-#### firewalld (CentOS/RHEL)
-
-```bash
-# Web
-sudo firewall-cmd --permanent --add-service=http
-sudo firewall-cmd --permanent --add-service=https
-
-# LiveKit
-sudo firewall-cmd --permanent --add-port=7880/tcp
-sudo firewall-cmd --permanent --add-port=443/udp
-sudo firewall-cmd --permanent --add-port=5349/tcp
-sudo firewall-cmd --permanent --add-port=5349/udp
-sudo firewall-cmd --permanent --add-port=30100-30200/udp
-sudo firewall-cmd --permanent --add-port=30300-30400/udp
-
-sudo firewall-cmd --reload
-```
-
----
-
----
-
 ### Troubleshooting
 
-#### Web client not loading
+For common issues and solutions, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
-**Issue:** Blank page or 404 errors
-
-**Solution:**
+Quick diagnostics:
 ```bash
-# Check web files exist in container
-docker exec peerwave-server ls -la /usr/src/app/web/
+# Check all services are running
+docker-compose ps
 
-# Rebuild image with web client
-./build-docker.sh latest
-```
+# View logs
+docker-compose logs --tail=50
 
-#### Video calls not working
-
-**Issue:** Can't join meetings or see other participants
-
-**Solutions:**
-
-1. **Check LiveKit is running:**
-```bash
-docker-compose logs peerwave-livekit
-# Should show: "LiveKit server started"
-```
-
-2. **Verify API credentials match:**
-```bash
-# server/.env and docker-compose.yml must have same values
-grep LIVEKIT_API server/.env
-```
-
-3. **Test TURN server connectivity:**
-- Visit: https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/
-- Server: `turn:your-domain.com:5349`
-- Username: `test`
-- Credential: (your LIVEKIT_API_SECRET)
-- Should show `relay` candidates
-
-4. **Check firewall rules:**
-```bash
-# Ensure UDP ports are open
-sudo ufw status | grep 30100
-sudo ufw status | grep 443/udp
-```
-
-5. **Verify certificate setup:**
-```bash
-# Check certificates exist and have correct permissions
-ls -lh livekit-certs/
-# turn-cert.pem should be 644, turn-key.pem should be 600
-
-# Check certificate is valid
-openssl x509 -in livekit-certs/turn-cert.pem -noout -dates
-
-# Test TURN/TLS connection
-openssl s_client -connect your-domain.com:5349
-```
-
-#### Database errors
-
-**Issue:** SQLite locked or permission denied
-
-**Solution:**
-```bash
-# Check volume permissions
-ls -la ./db/
-
-# Fix permissions
-sudo chown -R 1000:1000 ./db/
-chmod 755 ./db/
-chmod 644 ./db/peerwave.sqlite
-```
-
-#### Authentication issues (native clients)
-
-**Issue:** "Session expired" or "Unauthorized" errors
-
-**Solutions:**
-
-1. **Verify SESSION_SECRET is persistent:**
-```bash
-# Check .env file exists
-cat server/.env | grep SESSION_SECRET
-
-# Ensure it doesn't change between container restarts
-docker-compose down && docker-compose up -d
-```
-
-2. **Check time synchronization:**
-```bash
-# Server and client clocks must be synchronized (within 5 minutes)
-date
-# Install NTP if needed
-sudo apt install ntp
-```
-
-3. **Clear client cache:**
-- Windows: Delete `%APPDATA%/PeerWave`
-- macOS: Delete `~/Library/Application Support/PeerWave`
-- Linux: Delete `~/.config/PeerWave`
-
-#### Certificate renewal issues
-
-**Issue:** TURN server stops working after Let's Encrypt renewal
-
-**Solution:**
-```bash
-# Manually update certificates
-sudo cp /etc/letsencrypt/live/your-domain.com/fullchain.pem ./livekit-certs/turn-cert.pem
-sudo cp /etc/letsencrypt/live/your-domain.com/privkey.pem ./livekit-certs/turn-key.pem
-sudo chown $(id -u):$(id -g) livekit-certs/*.pem
-
-# Restart LiveKit
-docker-compose restart peerwave-livekit
-
-# Setup auto-renewal (see CERTIFICATES.md)
-```
-
-#### High CPU/Memory usage
-
-**Issue:** Server consuming excessive resources
-
-**Solutions:**
-
-1. **Limit concurrent meetings:**
-```yaml
-# livekit-config.yaml
-room:
-  max_participants: 50  # Reduce if needed
-```
-
-2. **Reduce video quality:**
-```yaml
-# livekit-config.yaml
-video:
-  max_bitrate: 2000000  # 2 Mbps
-```
-
-3. **Enable database WAL mode:**
-```bash
-# In server/.env
-DB_WAL_MODE=true
-```
-
-4. **Monitor resources:**
-```bash
-docker stats peerwave-server peerwave-livekit
-```
-
-#### Email sending fails
-
-**Issue:** Meeting invitations not being sent
-
-**Solution:**
-```bash
-# Test SMTP configuration
-docker exec -it peerwave-server node -e "
-const nodemailer = require('nodemailer');
-const config = require('./config/config.js');
-const transporter = nodemailer.createTransporter(config.smtp);
-transporter.verify((err, success) => {
-  console.log(err ? 'SMTP Error: ' + err.message : 'SMTP OK');
-});
-"
-```
-
-#### Traefik integration issues
-
-**Issue:** 502 Bad Gateway or can't access via domain
-
-**Solutions:**
-
-1. **Verify proxy network exists:**
-```bash
-docker network ls | grep proxy
-# Create if missing: docker network create proxy
-```
-
-2. **Check Traefik labels:**
-```bash
-docker inspect peerwave-server | grep -A 20 Labels
-```
-
-3. **View Traefik logs:**
-```bash
-docker logs traefik
-```
-
-4. **Test direct container access:**
-```bash
-# Should work without Traefik
+# Test connectivity
 curl -I http://localhost:3000
 ```
 
 ---
-
-### Getting Help
-
-- **Documentation**: Check [CERTIFICATES.md](CERTIFICATES.md) for SSL setup
-- **Issues**: [GitHub Issues](https://github.com/simonzander/PeerWave/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/simonzander/PeerWave/discussions)
-- **Email**: support@peerwave.org
-
-When reporting issues, include:
-- PeerWave version
-- Deployment method (Docker Compose, Traefik, etc.)
-- Browser/client version
-- Relevant logs: `docker-compose logs --tail=100`
 
 ## Limitations
 The main limitation is your upload speed, which is shared with your direct peers. If you are streaming, factors like the codec, resolution, and quick refreshes can increase your CPU (for VP8/VP9) or GPU (for H.264) load and affect your upload speed. The Chrome browser can handle up to 512 data connections and 56 streams.
@@ -749,15 +500,7 @@ PeerWave is **Source-Available**.
 
 ### Commercial Licensing
 
-Commercial licenses are based on company size (annual billing):
-
-| Employees | Annual Price |
-|---|---:|
-| 1–5 | 199 € |
-| 6–25 | 499 € |
-| 26–100 | 1,499 € |
-| 101–500 | 4,999 € |
-| > 500 | Contact us |
+Buy your license at https://peerwave.org
 
 **Contact for commercial use:**  
 📧 license@peerwave.org 
