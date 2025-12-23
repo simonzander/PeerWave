@@ -11,12 +11,6 @@ config.app = {
     url: process.env.APP_URL || `http://localhost:${config.port}`,
     description: 'PeerWave'
 };
-config.buymeacoffee = process.env.ENABLE_BUYMEACOFFEE !== 'false';
-config.documentation = process.env.ENABLE_DOCUMENTATION !== 'false';
-config.quickhost = process.env.ENABLE_QUICKHOST !== 'false';
-config.channels = process.env.ENABLE_CHANNELS !== 'false';
-config.github = process.env.ENABLE_GITHUB !== 'false';
-config.about = process.env.ENABLE_ABOUT !== 'false';
 
 // SMTP Configuration - Optional (for meeting invitations)
 config.smtp = process.env.EMAIL_HOST ? {
