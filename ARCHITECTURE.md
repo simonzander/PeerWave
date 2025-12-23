@@ -108,20 +108,55 @@ LiveKit Media Server (ports 30100-30400)
 
 **No certificate needed** (UDP media is encrypted with SRTP/DTLS)
 
-## Certificate File Locations
+## Certificate File Locations & Renewal
+
+### Certificate Lifecycle with Traefik
+
+```
+Traefik Container
+    ↓
+Manages certificates in acme.json
+    ↓
+Auto-renews every 60 days (before 90-day expiry)
+    ↓
+Cron job extracts renewed cert daily
+    ↓
+Copies to ./livekit-certs/
+    ↓
+LiveKit restarts with new certificate
+    ↓
+Zero downtime!
+```
 
 ### On Host Server
 
 ```
-/etc/letsencrypt/live/app.peerwave.org/
-├── fullchain.pem  ─────┬──→ Used by Traefik (automatic)
-└── privkey.pem  ───────┤
-                        │
-                        └──→ Copied to:
-                              ./livekit-certs/turn-cert.pem
-                              ./livekit-certs/turn-key.pem
-                              (used by LiveKit, manual)
+Traefik's Certificate Storage
+├── /path/to/traefik/acme.json
+│   └── Contains all domains + certificates (base64 encoded)
+│       ├── Auto-renewed by Traefik (every 60 days)
+│       └── Used by Traefik automatically
+│
+└── Extracted for LiveKit (via cron job)
+    ↓
+    /path/to/PeerWave/livekit-certs/
+    ├── turn-cert.pem  ← Extracted from acme.json
+    └── turn-key.pem   ← Extracted from acme.json
+        └── Mounted to LiveKit container: /certs/
 ```
+
+### Renewal Process:
+
+| Day | What Happens |
+|-----|--------------|
+| **Day 1** | Traefik generates certificate (90-day expiry) |
+| | You run extraction script → LiveKit gets cert |
+| **Day 2-60** | Cron runs daily, extracts same cert (no change) |
+| **Day 61** | ⚡ Traefik auto-renews certificate! |
+| | Cron detects new cert, extracts it |
+| | LiveKit restarts with new certificate |
+| | No downtime - seamless renewal |
+| **Day 91+** | Still valid! Renewal happened before expiry |
 
 ### In Containers
 

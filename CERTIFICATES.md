@@ -104,9 +104,27 @@ chmod 600 ./livekit-certs/turn-key.pem
 chown $(id -u):$(id -g) ./livekit-certs/*.pem
 ```
 
-#### 3. Automate Certificate Updates
+#### 3. Automate Certificate Updates (CRITICAL!)
 
-Traefik auto-renews certificates. Create a script to re-extract them:
+**Important:** Traefik auto-renews certificates every 60 days, but the extracted copies in `livekit-certs/` do **NOT** update automatically. You **MUST** set up automated re-extraction.
+
+##### Method A: Using the Helper Script (Easiest)
+
+```bash
+# Use the provided script
+chmod +x extract-traefik-certs.sh
+
+# Test extraction
+sudo ./extract-traefik-certs.sh app.peerwave.org /path/to/acme.json
+
+# Add to crontab (runs daily at 3 AM)
+(crontab -l 2>/dev/null; echo "0 3 * * * cd $(pwd) && sudo ./extract-traefik-certs.sh app.peerwave.org /path/to/acme.json >> /var/log/livekit-cert-update.log 2>&1") | crontab -
+
+# Verify cron job was added
+crontab -l | grep extract-traefik-certs
+```
+
+##### Method B: Custom Script
 
 ```bash
 # Create extraction script
@@ -114,11 +132,11 @@ cat > ~/update-livekit-certs.sh << 'EOF'
 #!/bin/bash
 set -e
 
-DOMAIN="app.peerwave.org"
-ACME_JSON="/path/to/traefik/acme.json"  # ADJUST THIS
-PEERWAVE_DIR="/path/to/PeerWave"        # ADJUST THIS
+DOMAIN="app.peerwave.org"              # ← CHANGE THIS
+ACME_JSON="/path/to/traefik/acme.json" # ← CHANGE THIS
+PEERWAVE_DIR="/path/to/PeerWave"       # ← CHANGE THIS
 
-echo "Extracting certificates for $DOMAIN..."
+echo "$(date): Checking certificates for $DOMAIN..."
 
 # Extract certificate
 cat $ACME_JSON | \
@@ -138,17 +156,57 @@ chmod 600 $PEERWAVE_DIR/livekit-certs/turn-key.pem
 cd $PEERWAVE_DIR
 docker-compose -f docker-compose.traefik.yml restart peerwave-livekit
 
-echo "✓ Certificates updated and LiveKit restarted"
+echo "$(date): ✓ Certificates updated and LiveKit restarted"
 EOF
 
 # Make executable
 chmod +x ~/update-livekit-certs.sh
 
-# Test it
+# Test it works
 sudo ~/update-livekit-certs.sh
 
-# Add to crontab (run daily at 3 AM)
+# Schedule with cron (runs daily at 3 AM)
 (crontab -l 2>/dev/null; echo "0 3 * * * sudo /home/$(whoami)/update-livekit-certs.sh >> /var/log/livekit-cert-update.log 2>&1") | crontab -
+
+# Verify cron job
+crontab -l
+```
+
+##### How Auto-Renewal Works:
+
+```
+Day 1:   Traefik generates certificate (90-day expiry)
+         └─ You extract to livekit-certs/
+
+Day 2-60: Cron runs daily, extracts same certificate (no change)
+
+Day 61:  Traefik auto-renews certificate (30 days before expiry)
+         └─ Cron extracts NEW certificate
+         └─ LiveKit restarts with new cert
+
+Day 91+: No downtime! Certificate already renewed.
+```
+
+**Why Daily?**
+- Traefik renews 30 days before expiry (unpredictable timing)
+- Daily checks catch renewal immediately
+- No performance impact (quick extraction)
+- Ensures LiveKit always has valid certificate
+
+##### Verify Auto-Renewal Setup:
+
+```bash
+# Check cron is scheduled
+crontab -l | grep -i cert
+
+# Check log file exists
+sudo tail -f /var/log/livekit-cert-update.log
+
+# Manually trigger to test
+sudo ./extract-traefik-certs.sh app.peerwave.org /path/to/acme.json
+
+# Check LiveKit is using updated cert
+docker exec peerwave-livekit ls -lh /certs/
 ```
 
 ---
