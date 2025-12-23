@@ -62,12 +62,24 @@ RUN if [ -f bin/license-validator-linux ]; then \
 # Create directories for persistent data
 RUN mkdir -p /usr/src/app/db /usr/src/app/cert /usr/src/app/coturn/data
 
+# Create entrypoint script to fix volume permissions
+RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
+    echo 'set -e' >> /docker-entrypoint.sh && \
+    echo '# Fix ownership of mounted volumes' >> /docker-entrypoint.sh && \
+    echo 'chown -R node:node /usr/src/app/db /usr/src/app/cert /usr/src/app/coturn/data 2>/dev/null || true' >> /docker-entrypoint.sh && \
+    echo '# Switch to node user and run command' >> /docker-entrypoint.sh && \
+    echo 'exec su-exec node "$@"' >> /docker-entrypoint.sh && \
+    chmod +x /docker-entrypoint.sh
+
+# Install su-exec for switching users
+RUN apt-get update && apt-get install -y su-exec && rm -rf /var/lib/apt/lists/*
+
 # Health check (Port 3000)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
-# Run as non-root user
-USER node
+# Entrypoint fixes permissions, then runs as node user
+ENTRYPOINT ["/docker-entrypoint.sh"]
 
 # Expose ports
 # 3000: HTTP/WebSocket (Signaling)
