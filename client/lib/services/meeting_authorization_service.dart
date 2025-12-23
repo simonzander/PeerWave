@@ -53,19 +53,26 @@ class MeetingAuthorizationService {
         final hasSession = await SessionAuthService().hasSession(clientId);
         if (!hasSession) {
           debugPrint(
-            '[MEETING_AUTH] ⚠️ No session secret found, skipping HMAC auth',
+            '[MEETING_AUTH] ⚠️ No session secret found, cannot authenticate',
           );
-          // For web or when no session, cookies will be used automatically
-        } else {
-          headers = await SessionAuthService().generateAuthHeaders(
-            clientId: clientId,
-            requestPath: '/api/meetings/$meetingId',
-          );
+          debugPrint('[MEETING_AUTH] ❌ Authentication required to check meeting access');
+          return false;
         }
+        
+        headers = await SessionAuthService().generateAuthHeaders(
+          clientId: clientId,
+          requestPath: '/api/meetings/$meetingId',
+        );
+        debugPrint('[MEETING_AUTH] ✓ Generated HMAC auth headers for native');
       }
       // Web: Cookies are automatically included by http client
 
       final response = await http.get(Uri.parse(url), headers: headers);
+      
+      debugPrint('[MEETING_AUTH] Response status: ${response.statusCode}');
+      if (response.statusCode == 403) {
+        debugPrint('[MEETING_AUTH] Response body: ${response.body}');
+      }
 
       if (response.statusCode == 404) {
         debugPrint('[MEETING_AUTH] ❌ Meeting not found: $meetingId');
@@ -74,6 +81,7 @@ class MeetingAuthorizationService {
 
       if (response.statusCode == 403) {
         debugPrint('[MEETING_AUTH] ❌ Access forbidden: $meetingId');
+        debugPrint('[MEETING_AUTH] User is authenticated but not authorized for this meeting');
         return false;
       }
 

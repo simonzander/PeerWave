@@ -955,8 +955,9 @@ router.get('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
     const isParticipant = meeting.participants.some(p => p.user_id === userId);
     const isSourceUser = meeting.source_user_id === userId;
     const isCreator = meeting.created_by === userId;
+    // invited_participants is an array of strings (user IDs or emails)
     const isInvited = Array.isArray(meeting.invited_participants) 
-      && meeting.invited_participants.some(inv => inv.user_id === userId);
+      && meeting.invited_participants.includes(userId);
     
     if (!isParticipant && !isSourceUser && !isCreator && !isInvited) {
       console.log(`[MEETING] User ${userId} not authorized for meeting ${meetingId}`);
