@@ -12,6 +12,12 @@ config.app = {
     description: 'PeerWave'
 };
 
+// CORS Configuration
+config.cors = {
+    origin: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()) : '*',
+    credentials: true
+};
+
 // SMTP Configuration - Optional (for meeting invitations)
 config.smtp = process.env.EMAIL_HOST ? {
     senderadress: process.env.EMAIL_FROM || `"PeerWave" <no-reply@${config.domain}>`,

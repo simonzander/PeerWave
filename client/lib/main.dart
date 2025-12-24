@@ -158,7 +158,15 @@ Future<void> main() async {
 
   // Load server URL for role management
   String? serverUrl = await loadWebApiServer();
-  serverUrl ??= 'http://localhost:3000'; // Fallback for non-web platforms
+  // Use current origin for web, fallback to localhost for desktop/mobile
+  if (kIsWeb) {
+    if (serverUrl == null || serverUrl.isEmpty) {
+      // Use current domain for web deployments
+      serverUrl = Uri.base.origin;
+    }
+  } else {
+    serverUrl ??= 'http://localhost:3000'; // Fallback for non-web platforms
+  }
 
   // NOTE: ICE server configuration is loaded AFTER login (requires authentication)
   // See auth_layout_web.dart -> successful login callback
