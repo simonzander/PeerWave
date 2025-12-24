@@ -4089,22 +4089,10 @@ io.sockets.on("connection", socket => {
 });
   // SOCKET.IO END
 
+  // Use CORS configuration from config
   app.use(cors({
-  origin: function(origin, callback) {
-      // Allow any localhost port and specifically http://localhost:57044/
-      console.log("CORS Origin:", origin);
-      if (
-        origin === undefined ||
-        origin === "http://localhost:3000" ||
-        origin === 'http://localhost:55831' ||
-        origin === "https://kaylie-physiopathological-kirstie.ngrok-free.dev"
-      ) {
-        callback(null, origin);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    credentials: true
+    origin: config.cors.origin,
+    credentials: config.cors.credentials
   }));
 
   // Register and signin webpages

@@ -6,7 +6,6 @@ const bodyParser = require('body-parser'); // Import body-parser
 const nodemailer = require("nodemailer");
 const crypto = require('crypto');
 const session = require('express-session');
-const cors = require('cors');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const magicLinks = require('../store/magicLinksStore');
 const { User, OTP, Client } = require('../db/model');

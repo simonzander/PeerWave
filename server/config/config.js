@@ -14,8 +14,11 @@ config.app = {
 };
 
 // CORS Configuration
+// If CORS_ORIGINS is not set, use the app URL (for production) or allow all (for development)
 config.cors = {
-    origin: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()) : '*',
+    origin: process.env.CORS_ORIGINS 
+        ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()) 
+        : (process.env.NODE_ENV === 'production' ? config.app.url : '*'),
     credentials: true
 };
 
