@@ -287,6 +287,14 @@ class ApiService {
   static final CookieJar cookieJar = CookieJar();
   static bool _initialized = false;
 
+  /// Set base URL for Dio (used for web platform)
+  static void setBaseUrl(String baseUrl) {
+    dio.options.baseUrl = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
+    debugPrint('[API SERVICE] Base URL set to: ${dio.options.baseUrl}');
+  }
+
   static void init() {
     if (!_initialized) {
       // Add cookie manager for native clients

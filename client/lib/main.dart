@@ -164,6 +164,9 @@ Future<void> main() async {
       // Use current domain for web deployments
       serverUrl = Uri.base.origin;
     }
+    // Set base URL for Dio on web platform
+    ApiService.setBaseUrl(serverUrl);
+    debugPrint('[INIT] ✅ API base URL set to: $serverUrl');
   } else {
     serverUrl ??= 'http://localhost:3000'; // Fallback for non-web platforms
   }
