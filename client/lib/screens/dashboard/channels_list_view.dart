@@ -1156,7 +1156,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
     String channelType,
   ) async {
     try {
-      final resp = await ApiService.joinChannel(widget.host, channelId);
+      final resp = await ApiService.joinChannel(channelId);
 
       if (resp.statusCode == 200) {
         if (mounted) {
@@ -1492,7 +1492,6 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
     try {
       ApiService.init();
       final resp = await ApiService.createChannel(
-        widget.host,
         name: channelName,
         description: channelDescription,
         isPrivate: isPrivate,

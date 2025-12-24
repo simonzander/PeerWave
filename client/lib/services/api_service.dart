@@ -391,17 +391,15 @@ class ApiService {
 
   /// Create a new channel
   /// Automatically emits AppEvent.newChannel on success
-  static Future<Response> createChannel(
-    String host, {
+  static Future<Response> createChannel({
     required String name,
     String? description,
     bool? isPrivate,
     String? type,
     String? defaultRoleId,
   }) async {
-    final url = ensureHttpPrefix(host);
     final response = await post(
-      '$url/client/channels',
+      '/client/channels',
       data: {
         'name': name,
         if (description != null) 'description': description,
@@ -423,16 +421,14 @@ class ApiService {
   /// Update an existing channel
   /// Automatically emits AppEvent.channelUpdated on success
   static Future<Response> updateChannel(
-    String host,
     String channelId, {
     String? name,
     String? description,
     bool? isPrivate,
     String? defaultRoleId,
   }) async {
-    final url = ensureHttpPrefix(host);
     final response = await dio.put(
-      '$url/client/channels/$channelId',
+      '/client/channels/$channelId',
       data: {
         if (name != null) 'name': name,
         if (description != null) 'description': description,
@@ -456,9 +452,8 @@ class ApiService {
 
   /// Delete a channel (owner only)
   /// Automatically emits AppEvent.channelDeleted on success
-  static Future<Response> deleteChannel(String host, String channelId) async {
-    final url = ensureHttpPrefix(host);
-    final response = await delete('$url/api/channels/$channelId');
+  static Future<Response> deleteChannel(String channelId) async {
+    final response = await delete('/api/channels/$channelId');
 
     // Emit event on success
     if (response.statusCode == 200 || response.statusCode == 204) {
@@ -471,9 +466,8 @@ class ApiService {
 
   /// Leave a channel
   /// Automatically emits AppEvent.channelLeft on success
-  static Future<Response> leaveChannel(String host, String channelId) async {
-    final url = ensureHttpPrefix(host);
-    final response = await post('$url/api/channels/$channelId/leave');
+  static Future<Response> leaveChannel(String channelId) async {
+    final response = await post('/api/channels/$channelId/leave');
 
     // Emit event on success
     if (response.statusCode == 200) {
@@ -487,14 +481,10 @@ class ApiService {
   /// Kick a user from a channel (requires owner or user.kick permission)
   /// Automatically emits AppEvent.userKicked on success
   static Future<Response> kickUserFromChannel(
-    String host,
     String channelId,
     String userId,
   ) async {
-    final url = ensureHttpPrefix(host);
-    final response = await delete(
-      '$url/api/channels/$channelId/members/$userId',
-    );
+    final response = await delete('/api/channels/$channelId/members/$userId');
 
     // Emit event on success
     if (response.statusCode == 200) {
@@ -510,9 +500,8 @@ class ApiService {
 
   /// Join a public channel
   /// Automatically emits AppEvent.channelJoined on success
-  static Future<Response> joinChannel(String host, String channelId) async {
-    final url = ensureHttpPrefix(host);
-    final response = await post('$url/client/channels/$channelId/join');
+  static Future<Response> joinChannel(String channelId) async {
+    final response = await post('/client/channels/$channelId/join');
 
     // Emit event on success
     if (response.statusCode == 200) {

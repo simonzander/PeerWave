@@ -114,7 +114,6 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
       ApiService.init();
 
       final resp = await ApiService.updateChannel(
-        widget.host,
         widget.channelId,
         name: _nameController.text.trim(),
         description: _descriptionController.text.trim(),

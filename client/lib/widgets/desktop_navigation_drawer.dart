@@ -695,7 +695,6 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
     try {
       ApiService.init();
       final resp = await ApiService.createChannel(
-        widget.host,
         name: channelName,
         description: channelDescription,
         isPrivate: isPrivate,
