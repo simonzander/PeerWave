@@ -54,6 +54,7 @@ services:
       - HOST=0.0.0.0
       - DOMAIN=${DOMAIN}
       - HTTPS=true
+      - APP_URL=https://${DOMAIN}
       
       # Database
       - DB_PATH=/usr/src/app/db/peerwave.sqlite
