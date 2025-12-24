@@ -68,11 +68,11 @@ RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
     echo '# Fix ownership of mounted volumes' >> /docker-entrypoint.sh && \
     echo 'chown -R node:node /usr/src/app/db /usr/src/app/cert /usr/src/app/coturn/data 2>/dev/null || true' >> /docker-entrypoint.sh && \
     echo '# Switch to node user and run command' >> /docker-entrypoint.sh && \
-    echo 'exec su-exec node "$@"' >> /docker-entrypoint.sh && \
+    echo 'exec gosu node "$@"' >> /docker-entrypoint.sh && \
     chmod +x /docker-entrypoint.sh
 
-# Install su-exec for switching users
-RUN apt-get update && apt-get install -y su-exec && rm -rf /var/lib/apt/lists/*
+# Install gosu for switching users (Debian equivalent of su-exec)
+RUN apt-get update && apt-get install -y gosu && rm -rf /var/lib/apt/lists/*
 
 # Health check (Port 3000)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
