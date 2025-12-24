@@ -69,4 +69,15 @@ config.livekit = {
     apiSecret: process.env.LIVEKIT_API_SECRET || 'secret',
 };
 
+// OTP Configuration
+config.otp = {
+    expirationMinutes: parseInt(process.env.OTP_EXPIRATION_MINUTES || '10'), // How long OTP is valid
+    waitTimeMinutes: parseInt(process.env.OTP_WAIT_TIME_MINUTES || '1'),     // Minimum time before requesting new OTP
+};
+
+// Invitation Configuration
+config.invitation = {
+    expirationHours: parseInt(process.env.INVITATION_EXPIRATION_HOURS || '48'), // How long invitation is valid (default: 48 hours)
+};
+
 module.exports = config;

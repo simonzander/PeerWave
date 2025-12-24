@@ -507,7 +507,13 @@ authRoutes.post("/register", async (req, res) => {
 
             OTP.findOne({ where: { email } }).then(existingOtp => {
                 if (existingOtp && existingOtp.expiration > Date.now()) {
-                    return res.status(200).json({ status: "waitotp", wait: Math.ceil((existingOtp.expiration - Date.now()) / 1000)});
+                    const remainingTime = Math.ceil((existingOtp.expiration - Date.now()) / 1000);
+                    const minWaitTime = config.otp.waitTimeMinutes * 60;
+                    // Only enforce wait if OTP was created less than waitTime ago
+                    if (remainingTime > (config.otp.expirationMinutes - config.otp.waitTimeMinutes) * 60) {
+                        return res.status(200).json({ status: "waitotp", wait: remainingTime });
+                    }
+                    // Wait time passed, allow creating new OTP (old one will be replaced)
                 } else {
                     // Format OTP with spaces (e.g., "1 2 3 4 5")
                     const otpSpaced = otp.toString().split('').join(' ');
@@ -528,7 +534,7 @@ authRoutes.post("/register", async (req, res) => {
                               <div style="margin:24px 0; padding:16px; background-color:#0f1419; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
                                 <p style="margin:0; color:#9fb3bf; font-size:14px; line-height:1.6;">
                                   <strong style="color:#f59e0b;">⚠️ Security Notice:</strong><br>
-                                  This code expires in <strong style="color:#2dd4bf;">5 minutes</strong>. Never share this code with anyone.
+                                  This code expires in <strong style="color:#2dd4bf;">${config.otp.expirationMinutes} minutes</strong>. Never share this code with anyone.
                                 </p>
                               </div>
                               <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
@@ -536,7 +542,7 @@ authRoutes.post("/register", async (req, res) => {
                             </div>
                           </div>
                         `,
-                        text: `Your OTP is ${otp}. This code expires in 5 minutes.`
+                        text: `Your OTP is ${otp}. This code expires in ${config.otp.expirationMinutes} minutes.`
                     }).then(info => {
                         console.log("Message sent: %s", info.messageId);
                     }).catch(error => {
@@ -544,8 +550,8 @@ authRoutes.post("/register", async (req, res) => {
                     });
 
 
-                    // Save the OTP and email in a temporary storage for 5 minutes
-                    const expiration = new Date().getTime() + 5 * 60 * 1000; // 5 minutes from now
+                    // Save the OTP and email in temporary storage
+                    const expiration = new Date().getTime() + config.otp.expirationMinutes * 60 * 1000;
                     writeQueue.enqueue(
                         () => OTP.create({ email, otp, expiration }),
                         'createOTP'
@@ -1056,7 +1062,7 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
                       <div style="margin:24px 0; padding:16px; background-color:#0f1419; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
                         <p style="margin:0; color:#9fb3bf; font-size:14px; line-height:1.6;">
                           <strong style="color:#ef4444;">⚠️ Security Alert:</strong><br>
-                          This code expires in <strong style="color:#f59e0b;">10 minutes</strong>. If you didn't request this, please ignore this email and secure your account.
+                          This code expires in <strong style="color:#f59e0b;">${config.otp.expirationMinutes} minutes</strong>. If you didn't request this, please ignore this email and secure your account.
                         </p>
                       </div>
                       <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
@@ -1064,14 +1070,14 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
                     </div>
                   </div>
                 `,
-                text: `Your recovery code is ${otp}. This code expires in 10 minutes.`
+                text: `Your recovery code is ${otp}. This code expires in ${config.otp.expirationMinutes} minutes.`
             }).then(info => {
                 console.log("Message sent: %s", info.messageId);
             }).catch(error => {
                 console.error(error);
             });
 
-            const expiration = new Date().getTime() + 10 * 60 * 1000; // 10 minutes from now
+            const expiration = new Date().getTime() + config.otp.expirationMinutes * 60 * 1000;
             writeQueue.enqueue(
                 () => OTP.create({ email, otp, expiration }),
                 'createOTPForLogin'

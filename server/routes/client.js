@@ -2534,8 +2534,8 @@ clientRoutes.post("/api/server/invitations/send", verifyAuthEither, async (req, 
         const token = Math.floor(100000 + Math.random() * 900000).toString();
         console.log('[INVITATION] Generated token:', token);
         
-        // Calculate expiry (48 hours from now)
-        const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
+        // Calculate expiry using config (default: 48 hours)
+        const expiresAt = new Date(Date.now() + config.invitation.expirationHours * 60 * 60 * 1000);
         
         const { Invitation } = require('../db/model');
         
@@ -2563,11 +2563,75 @@ clientRoutes.post("/api/server/invitations/send", verifyAuthEither, async (req, 
                 to: email,
                 subject: `You're Invited to Join ${serverName}`,
                 html: `
-                    <h2>You've been invited to join ${serverName}!</h2>
-                    <p>Your invitation code: <strong>${token}</strong></p>
-                    <p>This invitation expires in 48 hours.</p>
-                    <p>To register, visit the server and enter your email and invitation code.</p>
-                `
+                    <div style="font-family: 'Nunito Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0f1419; padding: 40px 16px; color: #d6dde3; margin: 0;">
+                        <div style="max-width: 600px; margin: 0 auto; background-color: #141b22; border-radius: 12px; padding: 32px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(45, 212, 191, 0.08);">
+                            <div style="text-align: center; margin-bottom: 32px;">
+                                <h2 style="margin: 0 0 8px 0; color: #2dd4bf; font-size: 28px; font-weight: 600;">You're Invited!</h2>
+                                <p style="margin: 0; color: #8b949e; font-size: 14px;">Join ${serverName} at <strong style="color: #2dd4bf;">${config.app.url}</strong></p>
+                            </div>
+                            
+                            <div style="margin: 32px 0; padding: 24px; background-color: #0f1419; border-radius: 10px; border: 2px solid rgba(45, 212, 191, 0.3);">
+                                <p style="margin: 0 0 12px 0; color: #cbd5dc; font-size: 14px; text-align: center;">Your invitation code:</p>
+                                <div style="font-size: 42px; font-weight: 700; letter-spacing: 12px; color: #2dd4bf; text-align: center; font-family: 'Courier New', monospace;">${token}</div>
+                            </div>
+                            
+                            <div style="background-color: rgba(45, 212, 191, 0.06); border-left: 3px solid #2dd4bf; padding: 16px; border-radius: 6px; margin: 24px 0;">
+                                <p style="margin: 0 0 8px 0; color: #cbd5dc; font-size: 14px; line-height: 1.6;">
+                                    <strong style="color: #2dd4bf;">⏰ Valid for ${config.invitation.expirationHours} hours</strong>
+                                </p>
+                                <p style="margin: 0; color: #8b949e; font-size: 13px; line-height: 1.5;">
+                                    This invitation code will expire in ${config.invitation.expirationHours} hours. Register soon to secure your account!
+                                </p>
+                            </div>
+                            
+                            <div style="text-align: center; margin: 32px 0;">
+                                <a href="${config.app.url}/register" style="display: inline-block; background: linear-gradient(135deg, #2dd4bf 0%, #14b8a6 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 12px rgba(45, 212, 191, 0.3);">
+                                    Join ${serverName}
+                                </a>
+                            </div>
+                            
+                            <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid rgba(139, 148, 158, 0.2);">
+                                <p style="margin: 0 0 12px 0; color: #cbd5dc; font-size: 14px; line-height: 1.6;">
+                                    To complete your registration:
+                                </p>
+                                <ol style="margin: 0; padding-left: 20px; color: #8b949e; font-size: 13px; line-height: 1.8;">
+                                    <li>Visit <a href="${config.app.url}" style="color: #2dd4bf; text-decoration: none;">${config.app.url}</a></li>
+                                    <li>Click on "Register" or "Sign Up"</li>
+                                    <li>Enter your email address: <strong style="color: #cbd5dc;">${email}</strong></li>
+                                    <li>Enter the invitation code above</li>
+                                </ol>
+                            </div>
+                            
+                            <div style="margin-top: 32px; padding: 16px; background-color: rgba(255, 193, 7, 0.08); border-left: 3px solid #ffc107; border-radius: 6px;">
+                                <p style="margin: 0; color: #8b949e; font-size: 12px; line-height: 1.5;">
+                                    <strong style="color: #ffc107;">⚠️ Security Notice:</strong> If you did not expect this invitation, please ignore this email. Never share your invitation code with anyone.
+                                </p>
+                            </div>
+                            
+                            <div style="margin-top: 32px; text-align: center; color: #6e7681; font-size: 12px; line-height: 1.5;">
+                                <p style="margin: 0;">This is an automated message from ${serverName}</p>
+                                <p style="margin: 8px 0 0 0;">${config.app.url}</p>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                text: `You've been invited to join ${serverName}!
+
+Your invitation code: ${token}
+
+This invitation expires in ${config.invitation.expirationHours} hours.
+
+To register:
+1. Visit ${config.app.url}
+2. Click on "Register" or "Sign Up"
+3. Enter your email: ${email}
+4. Enter the invitation code: ${token}
+
+If you did not expect this invitation, please ignore this email.
+
+---
+${serverName}
+${config.app.url}`
             }
         });
         
