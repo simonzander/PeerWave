@@ -4152,6 +4152,12 @@ function callbackHandler(callback, data) {
   }
 }
 
+// Serve dynamic server_config.json with API server URL
+app.get('/server_config.json', (req, res) => {
+  const apiServer = config.app.url;
+  res.json({ apiServer });
+});
+
 // Serve static files from Flutter web build output
 app.use(express.static(path.resolve(__dirname, 'web')));
 
