@@ -152,6 +152,7 @@ nano .env
 **Required variables:**
 ```bash
 DOMAIN=app.yourdomain.com
+HTTPS=true
 LIVEKIT_TURN_DOMAIN=app.yourdomain.com
 TRAEFIK_ACME_PATH=/etc/traefik/acme.json  # Your Traefik's acme.json path
 SESSION_SECRET=$(openssl rand -base64 32)
@@ -232,11 +233,12 @@ chmod +x build-docker.sh
 
 | Variable | Description | Required | Example |
 |----------|-------------|----------|---------|
+| `DOMAIN` | Your domain | ✅ Traefik | `app.yourdomain.com` |
+| `HTTPS` | Enable HTTPS/secure cookies | ✅ Traefik | `true` |
 | `SESSION_SECRET` | Session encryption key | ✅ Yes | `$(openssl rand -base64 32)` |
 | `LIVEKIT_API_KEY` | LiveKit API key | ✅ Yes | `$(openssl rand -base64 32)` |
 | `LIVEKIT_API_SECRET` | LiveKit API secret | ✅ Yes | `$(openssl rand -base64 32)` |
 | `LIVEKIT_TURN_DOMAIN` | Your domain for TURN | ✅ Prod | `app.yourdomain.com` |
-| `DOMAIN` | Your domain (Traefik) | ✅ Traefik | `app.yourdomain.com` |
 
 #### Optional Environment Variables
 

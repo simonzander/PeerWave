@@ -52,6 +52,8 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - HOST=0.0.0.0
+      - DOMAIN=${DOMAIN}
+      - HTTPS=true
       
       # Database
       - DB_PATH=/usr/src/app/db/peerwave.sqlite

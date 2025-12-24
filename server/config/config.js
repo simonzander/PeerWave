@@ -2,13 +2,14 @@ const config = {};
 
 config.domain = process.env.DOMAIN || 'localhost';
 config.port = process.env.PORT || 3000;
+config.https = process.env.HTTPS === 'true';
 config.db = {
     type: 'sqlite',
     path: 'db/peerwave.db'
 };
 config.app = {
     name: 'PeerWave',
-    url: process.env.APP_URL || `http://localhost:${config.port}`,
+    url: process.env.APP_URL || `${config.https ? 'https' : 'http'}://${config.domain}${config.port !== 3000 && config.port !== 443 ? ':' + config.port : ''}`,
     description: 'PeerWave'
 };
 
@@ -35,7 +36,7 @@ config.session = {
     resave: false,
     saveUninitialized: true,
     cookie: { 
-        secure: process.env.NODE_ENV === 'production' && process.env.HTTPS === 'true'
+        secure: process.env.NODE_ENV === 'production' && config.https
     }
 };
 
