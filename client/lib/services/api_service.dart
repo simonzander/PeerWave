@@ -287,8 +287,15 @@ class ApiService {
   static final CookieJar cookieJar = CookieJar();
   static bool _initialized = false;
 
-  /// Set base URL for Dio (used for web platform)
+  /// Set base URL for Dio (used for native platforms only)
+  /// For web, this is a no-op - relative paths are always used
   static void setBaseUrl(String baseUrl) {
+    if (kIsWeb) {
+      debugPrint(
+        '[API SERVICE] ⚠️ setBaseUrl called on web (ignored - using relative paths)',
+      );
+      return;
+    }
     dio.options.baseUrl = baseUrl.endsWith('/')
         ? baseUrl.substring(0, baseUrl.length - 1)
         : baseUrl;
@@ -360,6 +367,9 @@ class ApiService {
     Map<String, dynamic>? queryParameters,
     Options? options,
   }) {
+    if (kIsWeb) {
+      debugPrint('[API GET] URL: $url, baseUrl: "${dio.options.baseUrl}"');
+    }
     options ??= Options();
     options = options.copyWith(
       contentType: 'application/json',
