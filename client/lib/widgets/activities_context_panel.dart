@@ -3,20 +3,16 @@ import 'dart:async';
 import '../services/socket_service.dart'
     if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/user_profile_service.dart';
+import '../services/api_service.dart';
 
 /// Activities Context Panel - Notification List
 ///
 /// Shows real-time notifications from Signal Protocol messages
 /// Similar to Facebook notifications - displays activity feed
 class ActivitiesContextPanel extends StatefulWidget {
-  final String host;
   final Function(String type, Map<String, dynamic> data)? onNotificationTap;
 
-  const ActivitiesContextPanel({
-    super.key,
-    required this.host,
-    this.onNotificationTap,
-  });
+  const ActivitiesContextPanel({super.key, this.onNotificationTap});
 
   @override
   State<ActivitiesContextPanel> createState() => _ActivitiesContextPanelState();
@@ -407,7 +403,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
     if (senderPicture != null && senderPicture.isNotEmpty) {
       return CircleAvatar(
         radius: 20,
-        backgroundImage: NetworkImage('${widget.host}$senderPicture'),
+        backgroundImage: NetworkImage('${ApiService.buildUrl(senderPicture)}'),
         onBackgroundImageError: (_, _) {},
       );
     }

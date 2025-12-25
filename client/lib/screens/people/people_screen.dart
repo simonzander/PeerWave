@@ -17,13 +17,11 @@ import '../../widgets/user_avatar.dart';
 /// - Load More button for 20 additional random users
 /// - Responsive: showRecentSection controls visibility of "Recent Conversations"
 class PeopleScreen extends StatefulWidget {
-  final String host;
   final Function(String uuid, String displayName) onMessageTap;
   final bool showRecentSection;
 
   const PeopleScreen({
     super.key,
-    required this.host,
     required this.onMessageTap,
     this.showRecentSection = true,
   });
@@ -227,8 +225,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
       // Get all users
       ApiService.init();
-      final hostUrl = ApiService.ensureHttpPrefix(widget.host);
-      final resp = await ApiService.get('$hostUrl/people/list');
+      final resp = await ApiService.get('/people/list');
 
       if (resp.statusCode == 200) {
         final List<dynamic> allUsers = resp.data is List
@@ -332,8 +329,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
       debugPrint('[PEOPLE_SCREEN] Searching for: $query');
 
       ApiService.init();
-      final hostUrl = ApiService.ensureHttpPrefix(widget.host);
-      final resp = await ApiService.get('$hostUrl/people/list');
+      final resp = await ApiService.get('/people/list');
 
       if (resp.statusCode == 200) {
         final List<dynamic> allUsers = resp.data is List

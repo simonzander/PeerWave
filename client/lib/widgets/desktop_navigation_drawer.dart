@@ -167,7 +167,7 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
     try {
       ApiService.init();
       final resp = await ApiService.post(
-        '${widget.host}/client/people/info',
+        '/client/people/info',
         data: {'userIds': userIds},
       );
 
@@ -556,8 +556,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
     try {
       ApiService.init();
       final scope = channelType == 'webrtc' ? 'channelWebRtc' : 'channelSignal';
-      final url = ApiService.ensureHttpPrefix(widget.host);
-      final resp = await ApiService.get('$url/api/roles?scope=$scope');
+      final resp = await ApiService.get('/api/roles?scope=$scope');
 
       if (resp.statusCode == 200) {
         final data = resp.data;

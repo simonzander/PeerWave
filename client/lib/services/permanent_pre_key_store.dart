@@ -36,8 +36,6 @@ class PermanentPreKeyStore extends PreKeyStore {
         serverUrl = activeServer?.serverUrl;
       }
 
-      final urlString = ApiService.ensureHttpPrefix(serverUrl ?? '');
-
       // Prepare payload
       final preKeyPayload = preKeys
           .map(
@@ -50,7 +48,7 @@ class PermanentPreKeyStore extends PreKeyStore {
 
       // Send via HTTP POST
       final response = await ApiService.post(
-        '$urlString/signal/prekeys/batch',
+        '/signal/prekeys/batch',
         data: {'preKeys': preKeyPayload},
       );
 

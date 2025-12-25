@@ -1594,7 +1594,7 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
       ApiService.init();
 
       // Get all users (excluding self)
-      final usersResp = await ApiService.get('$urlString/people/list');
+      final usersResp = await ApiService.get('/people/list');
       if (usersResp.statusCode == 200) {
         final users = usersResp.data is List ? usersResp.data as List : [];
         for (final user in users) {
@@ -1615,7 +1615,7 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
 
       // Get Signal channels (where I'm a member/owner)
       final channelsResp = await ApiService.get(
-        '$urlString/client/channels?type=signal&limit=50',
+        '/client/channels?type=signal&limit=50',
       );
       if (channelsResp.statusCode == 200) {
         // Parse response (could be direct list or wrapped in 'channels' key)

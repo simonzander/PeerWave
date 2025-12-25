@@ -14,16 +14,10 @@ import 'dart:async';
 
 /// Activities View - Shows notifications and recent conversations
 class ActivitiesView extends StatefulWidget {
-  final String host;
   final Function(String uuid, String displayName)? onDirectMessageTap;
   final Function(String uuid, String name, String type)? onChannelTap;
 
-  const ActivitiesView({
-    super.key,
-    required this.host,
-    this.onDirectMessageTap,
-    this.onChannelTap,
-  });
+  const ActivitiesView({super.key, this.onDirectMessageTap, this.onChannelTap});
 
   @override
   State<ActivitiesView> createState() => _ActivitiesViewState();
@@ -195,7 +189,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
       try {
         ApiService.init();
         final resp = await ApiService.post(
-          '${widget.host}/client/people/info',
+          '/client/people/info',
           data: {'userIds': senderIds},
         );
 
@@ -300,7 +294,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
     try {
       // Load WebRTC channels with participants
       final webrtcChannels =
-          await ActivitiesService.getWebRTCChannelParticipants(widget.host);
+          await ActivitiesService.getWebRTCChannelParticipants();
 
       // Load conversations (1:1 + Signal groups)
       await _loadMoreConversations();
@@ -333,7 +327,6 @@ class _ActivitiesViewState extends State<ActivitiesView>
         limit: _conversationsPerPage,
       );
       final groupConvs = await ActivitiesService.getRecentGroupConversations(
-        widget.host,
         limit: _conversationsPerPage,
       );
 
@@ -379,7 +372,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
       try {
         ApiService.init();
         final resp = await ApiService.post(
-          '${widget.host}/client/people/info',
+          '/client/people/info',
           data: {'userIds': userIds},
         );
 
@@ -418,7 +411,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
       try {
         ApiService.init();
         final resp = await ApiService.post(
-          '${widget.host}/client/channels/info',
+          '/client/channels/info',
           data: {'channelIds': channelIds},
         );
 
@@ -498,7 +491,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
       try {
         ApiService.init();
         final resp = await ApiService.post(
-          '${widget.host}/client/people/info',
+          '/client/people/info',
           data: {'userIds': senderIds.toList()},
         );
 
@@ -874,7 +867,9 @@ class _ActivitiesViewState extends State<ActivitiesView>
           imageProvider = NetworkImage(pictureData);
         } else if (pictureData.startsWith('/')) {
           // Relative path
-          imageProvider = NetworkImage('${widget.host}$pictureData');
+          imageProvider = NetworkImage(
+            '${ApiService.dio.options.baseUrl}$pictureData',
+          );
         }
       } catch (e) {
         debugPrint('[ACTIVITIES_VIEW] Error parsing picture: $e');
@@ -1148,7 +1143,6 @@ class _ActivitiesViewState extends State<ActivitiesView>
           context.go(
             '/app/channels/$channelId',
             extra: {
-              'host': widget.host,
               'name': channelName,
               'type': channelType,
               if (targetMessageId != null) 'scrollToMessageId': targetMessageId,
@@ -1162,7 +1156,6 @@ class _ActivitiesViewState extends State<ActivitiesView>
           context.go(
             '/app/messages/$sender',
             extra: {
-              'host': widget.host,
               'displayName': displayName,
               if (targetMessageId != null) 'scrollToMessageId': targetMessageId,
             },
@@ -1179,11 +1172,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
 
           context.go(
             '/app/channels/$channelId',
-            extra: {
-              'host': widget.host,
-              'name': channelName,
-              'type': channelType,
-            },
+            extra: {'name': channelName, 'type': channelType},
           );
         } else if (sender != null) {
           final userInfoData = _userInfo[sender];
@@ -1191,7 +1180,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
 
           context.go(
             '/app/messages/$sender',
-            extra: {'host': widget.host, 'displayName': displayName},
+            extra: {'displayName': displayName},
           );
         }
         break;
@@ -1207,11 +1196,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
 
           context.go(
             '/app/channels/$channelId',
-            extra: {
-              'host': widget.host,
-              'name': channelName,
-              'type': channelType,
-            },
+            extra: {'name': channelName, 'type': channelType},
           );
         }
         break;

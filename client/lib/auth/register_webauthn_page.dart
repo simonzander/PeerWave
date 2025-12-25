@@ -55,7 +55,7 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final resp = await ApiService.get('$urlString/webauthn/list');
+      final resp = await ApiService.get('/webauthn/list');
       if (resp.statusCode == 200 && resp.data != null) {
         if (resp.data is List) {
           setState(() {
@@ -125,7 +125,7 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
         urlString = 'https://$urlString';
       }
       final resp = await ApiService.post(
-        '$urlString/webauthn/delete',
+        '/webauthn/delete',
         data: {'credentialId': credentialId},
       );
       if (resp.statusCode == 200) {

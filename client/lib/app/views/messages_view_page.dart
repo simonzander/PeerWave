@@ -89,7 +89,6 @@ class _MessagesViewPageState extends BaseViewState<MessagesViewPage> {
     // Use same context panel as People view
     return ContextPanel(
       type: ContextPanelType.people,
-      host: widget.host,
       recentPeople: _recentPeople,
       starredPeople: _starredPeople,
       activeContactUuid:
@@ -97,10 +96,7 @@ class _MessagesViewPageState extends BaseViewState<MessagesViewPage> {
       onMessageTap: (uuid, displayName) {
         // Navigate to specific message conversation
         debugPrint('[MESSAGES_VIEW] Navigate to: $uuid ($displayName)');
-        context.go(
-          '/app/messages/$uuid',
-          extra: {'host': widget.host, 'displayName': displayName},
-        );
+        context.go('/app/messages/$uuid', extra: {'displayName': displayName});
       },
       isLoadingPeople: _isLoadingContextPanel,
       onLoadMorePeople: _loadMoreRecentPeople,
@@ -114,7 +110,6 @@ class _MessagesViewPageState extends BaseViewState<MessagesViewPage> {
     if (widget.initialContactUuid != null &&
         widget.initialDisplayName != null) {
       return DirectMessagesScreen(
-        host: widget.host,
         recipientUuid: widget.initialContactUuid!,
         recipientDisplayName: widget.initialDisplayName!,
       );
@@ -122,14 +117,10 @@ class _MessagesViewPageState extends BaseViewState<MessagesViewPage> {
 
     // Otherwise show enriched messages main content with conversation list
     return MessagesMainContent(
-      host: widget.host,
       onConversationTap: (uuid, displayName) {
         // Navigate to specific message conversation
         debugPrint('[MESSAGES_VIEW] Navigate to: $uuid ($displayName)');
-        context.go(
-          '/app/messages/$uuid',
-          extra: {'host': widget.host, 'displayName': displayName},
-        );
+        context.go('/app/messages/$uuid', extra: {'displayName': displayName});
       },
     );
   }

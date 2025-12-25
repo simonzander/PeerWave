@@ -17,7 +17,6 @@ import '../widgets/activities_context_panel.dart';
 /// - Files list when Files is selected (future)
 class ContextPanel extends StatelessWidget {
   final ContextPanelType type;
-  final String host;
   final Function(String uuid, String name, String type)? onChannelTap;
   final Function(String uuid, String displayName)? onMessageTap;
   final VoidCallback? onNavigateToPeople;
@@ -42,7 +41,6 @@ class ContextPanel extends StatelessWidget {
   const ContextPanel({
     super.key,
     required this.type,
-    required this.host,
     this.onChannelTap,
     this.onMessageTap,
     this.onNavigateToPeople,
@@ -74,7 +72,6 @@ class ContextPanel extends StatelessWidget {
     switch (type) {
       case ContextPanelType.channels:
         return ChannelsContextPanel(
-          host: host,
           allChannels: allChannels ?? [],
           activeChannelUuid: activeChannelUuid,
           onChannelTap: onChannelTap ?? (uuid, name, type) {},
@@ -84,14 +81,12 @@ class ContextPanel extends StatelessWidget {
 
       case ContextPanelType.messages:
         return MessagesListView(
-          host: host,
           onMessageTap: onMessageTap ?? (uuid, displayName) {},
           onNavigateToPeople: onNavigateToPeople ?? () {},
         );
 
       case ContextPanelType.people:
         return PeopleContextPanel(
-          host: host,
           recentPeople: recentPeople ?? [],
           starredPeople: starredPeople ?? [],
           activeContactUuid: activeContactUuid,
@@ -105,10 +100,7 @@ class ContextPanel extends StatelessWidget {
         return const FilesContextPanel();
 
       case ContextPanelType.activities:
-        return ActivitiesContextPanel(
-          host: host,
-          onNotificationTap: onNotificationTap,
-        );
+        return ActivitiesContextPanel(onNotificationTap: onNotificationTap);
 
       case ContextPanelType.none:
         return const SizedBox.shrink();

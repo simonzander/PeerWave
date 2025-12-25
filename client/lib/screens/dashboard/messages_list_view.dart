@@ -15,13 +15,11 @@ import '../../services/event_bus.dart';
 
 /// Messages List View - Shows recent 1:1 conversations
 class MessagesListView extends StatefulWidget {
-  final String host;
   final Function(String uuid, String displayName) onMessageTap;
   final VoidCallback onNavigateToPeople;
 
   const MessagesListView({
     super.key,
-    required this.host,
     required this.onMessageTap,
     required this.onNavigateToPeople,
   });
@@ -171,7 +169,7 @@ class _MessagesListViewState extends State<MessagesListView> {
       try {
         ApiService.init();
         final resp = await ApiService.post(
-          '${widget.host}/client/people/info',
+          '/client/people/info',
           data: {'userIds': userIdsToFetch},
         );
 
@@ -458,7 +456,6 @@ class _MessagesListViewState extends State<MessagesListView> {
         children: [
           // Left: Context Panel (Recent Conversations)
           PeopleContextPanel(
-            host: widget.host,
             recentPeople: _recentPeople,
             starredPeople: const [], // No favorites for now
             onPersonTap: (uuid, displayName) {

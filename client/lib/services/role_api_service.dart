@@ -33,7 +33,9 @@ class RoleApiService {
     } else {
       // Native: Use ApiService for HMAC authentication
       ApiService.init();
-      final response = await ApiService.get('$baseUrl/api/user/roles');
+      final response = await ApiService.get(
+        ApiService.buildUrl('/api/user/roles'),
+      );
 
       if (response.statusCode == 200) {
         final data = response.data as Map<String, dynamic>;
@@ -70,7 +72,9 @@ class RoleApiService {
     } else {
       // Native: Use ApiService for HMAC authentication
       ApiService.init();
-      final response = await ApiService.get('$baseUrl/api/roles$scopeParam');
+      final response = await ApiService.get(
+        ApiService.buildUrl('/api/roles$scopeParam'),
+      );
 
       if (response.statusCode == 200) {
         final data = response.data as Map<String, dynamic>;

@@ -113,12 +113,11 @@ class _ChannelsViewPageState extends BaseViewState<ChannelsViewPage> {
     try {
       // Get WebRTC channels with live participants
       final webrtcWithParticipants =
-          await ActivitiesService.getWebRTCChannelParticipants(widget.host);
+          await ActivitiesService.getWebRTCChannelParticipants();
 
       // Get all member/owner channels
       ApiService.init();
-      final hostUrl = ApiService.ensureHttpPrefix(widget.host);
-      final resp = await ApiService.get('$hostUrl/client/channels?limit=1000');
+      final resp = await ApiService.get('/client/channels?limit=1000');
 
       if (resp.statusCode == 200) {
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
@@ -187,7 +186,6 @@ class _ChannelsViewPageState extends BaseViewState<ChannelsViewPage> {
   ) async {
     try {
       final conversations = await ActivitiesService.getRecentGroupConversations(
-        widget.host,
         limit: 100,
       );
 
@@ -224,16 +222,12 @@ class _ChannelsViewPageState extends BaseViewState<ChannelsViewPage> {
     // Use ContextPanel wrapper (provides width constraint) like people/messages views
     return ContextPanel(
       type: ContextPanelType.channels,
-      host: widget.host,
       allChannels: _allChannels,
       activeChannelUuid: widget.initialChannelUuid,
       onChannelTap: (uuid, name, type) {
         // Navigate to specific channel
         debugPrint('[CHANNELS_VIEW] Navigate to: $uuid ($name, type: $type)');
-        context.go(
-          '/app/channels/$uuid',
-          extra: {'host': widget.host, 'name': name, 'type': type},
-        );
+        context.go('/app/channels/$uuid', extra: {'name': name, 'type': type});
       },
       onCreateChannel: () {
         debugPrint('[CHANNELS_VIEW] Create new channel');
@@ -251,7 +245,6 @@ class _ChannelsViewPageState extends BaseViewState<ChannelsViewPage> {
       if (widget.initialChannelType == 'signal') {
         // Show Signal group chat screen
         return SignalGroupChatScreen(
-          host: widget.host,
           channelUuid: widget.initialChannelUuid!,
           channelName: widget.initialChannelName ?? 'Channel',
         );
@@ -299,7 +292,6 @@ class _ChannelsViewPageState extends BaseViewState<ChannelsViewPage> {
 
     // Otherwise show the channels list view
     return ChannelsListView(
-      host: widget.host,
       onChannelTap: (uuid, name, type) {
         // Navigation is now handled by ChannelsListView using context.go()
         debugPrint('[CHANNELS_VIEW] Navigate to: $uuid ($name, type: $type)');

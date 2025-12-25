@@ -107,7 +107,7 @@ class LogoutService {
               // Continue with logout below
             } else {
               final response = await ApiService.dio.get(
-                '$urlString/client/auth/check',
+                '/client/auth/check',
                 options: Options(
                   headers: authHeaders,
                   validateStatus: (status) => true, // Accept any status code
@@ -311,7 +311,7 @@ class LogoutService {
         }
 
         ApiService.init();
-        await ApiService.post('$urlString/logout');
+        await ApiService.post('/logout');
         debugPrint('[LOGOUT] ✓ Server logout successful');
       } catch (e) {
         debugPrint(

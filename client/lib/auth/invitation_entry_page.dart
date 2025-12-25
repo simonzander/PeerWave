@@ -75,14 +75,14 @@ class _InvitationEntryPageState extends State<InvitationEntryPage> {
 
       // Verify invitation token
       final verifyResp = await ApiService.post(
-        '$urlString/api/invitations/verify',
+        '/api/invitations/verify',
         data: {'email': widget.email, 'token': token},
       );
 
       if (verifyResp.statusCode == 200 && verifyResp.data['valid'] == true) {
         // Token is valid, proceed with registration
         final registerResp = await ApiService.post(
-          '$urlString/register',
+          '/register',
           data: {'email': widget.email, 'invitationToken': token},
         );
 

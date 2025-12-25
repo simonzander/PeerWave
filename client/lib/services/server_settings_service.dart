@@ -42,7 +42,7 @@ class ServerSettingsService {
         urlString = server?.serverUrl ?? '';
       }
 
-      final resp = await ApiService.get('$urlString/client/meta');
+      final resp = await ApiService.get('/client/meta');
 
       if (resp.statusCode == 200) {
         final data = resp.data;

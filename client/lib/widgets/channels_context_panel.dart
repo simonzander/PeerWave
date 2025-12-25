@@ -13,7 +13,6 @@ import '../providers/unread_messages_provider.dart';
 /// 3. Channels with unread messages (sorted by newest message)
 /// 4. All other member/owner channels (sorted by name)
 class ChannelsContextPanel extends StatelessWidget {
-  final String host;
   final List<Map<String, dynamic>> allChannels; // All member/owner channels
   final String? activeChannelUuid;
   final Function(String uuid, String name, String type) onChannelTap;
@@ -22,7 +21,6 @@ class ChannelsContextPanel extends StatelessWidget {
 
   const ChannelsContextPanel({
     super.key,
-    required this.host,
     required this.allChannels,
     this.activeChannelUuid,
     required this.onChannelTap,

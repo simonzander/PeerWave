@@ -263,10 +263,7 @@ class _AuthLayoutState extends State<AuthLayout> {
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final resp = await ApiService.post(
-        '$urlString/register',
-        data: {'email': email},
-      );
+      final resp = await ApiService.post('/register', data: {'email': email});
       if (resp.statusCode == 200) {
         final data = resp.data;
         if (!mounted) return;

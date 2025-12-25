@@ -434,10 +434,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
     try {
       ApiService.init();
-      final hostUrl = ApiService.ensureHttpPrefix(widget.host!);
-      final resp = await ApiService.get(
-        '$hostUrl/client/channels/${widget.channelId}',
-      );
+      final resp = await ApiService.get('/client/channels/${widget.channelId}');
 
       if (resp.statusCode == 200) {
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
@@ -792,7 +789,6 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
                           isPrivate: _channelData?['private'] as bool? ?? false,
                           defaultJoinRole:
                               _channelData?['defaultJoinRole'] as String?,
-                          host: widget.host!,
                           isOwner: _isOwner,
                         ),
                       ),

@@ -28,7 +28,6 @@ class _ActivitiesViewPageState extends BaseViewState<ActivitiesViewPage> {
   @override
   Widget buildMainContent() {
     return ActivitiesView(
-      host: widget.host,
       onDirectMessageTap: _handleDirectMessageTap,
       onChannelTap: _handleChannelTap,
     );
@@ -37,10 +36,7 @@ class _ActivitiesViewPageState extends BaseViewState<ActivitiesViewPage> {
   /// Handle tap on direct message activity
   void _handleDirectMessageTap(String uuid, String displayName) {
     debugPrint('[ACTIVITIES_VIEW] Navigate to message: $uuid ($displayName)');
-    context.go(
-      '/app/messages/$uuid',
-      extra: {'host': widget.host, 'displayName': displayName},
-    );
+    context.go('/app/messages/$uuid', extra: {'displayName': displayName});
   }
 
   /// Handle tap on channel activity
@@ -48,9 +44,6 @@ class _ActivitiesViewPageState extends BaseViewState<ActivitiesViewPage> {
     debugPrint(
       '[ACTIVITIES_VIEW] Navigate to channel: $uuid ($name, type: $type)',
     );
-    context.go(
-      '/app/channels/$uuid',
-      extra: {'host': widget.host, 'name': name, 'type': type},
-    );
+    context.go('/app/channels/$uuid', extra: {'name': name, 'type': type});
   }
 }

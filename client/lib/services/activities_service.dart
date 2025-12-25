@@ -12,13 +12,11 @@ import 'dart:convert';
 /// - Recent Signal group conversations
 class ActivitiesService {
   /// Get WebRTC channels where user is member/owner with participants
-  static Future<List<Map<String, dynamic>>> getWebRTCChannelParticipants(
-    String host,
-  ) async {
+  static Future<List<Map<String, dynamic>>>
+  getWebRTCChannelParticipants() async {
     try {
       ApiService.init();
-      final hostUrl = ApiService.ensureHttpPrefix(host);
-      final resp = await ApiService.get('$hostUrl/client/channels?type=webrtc');
+      final resp = await ApiService.get('/client/channels?type=webrtc');
 
       if (resp.statusCode == 200) {
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
@@ -30,7 +28,7 @@ class ActivitiesService {
           // Get participants for each channel
           try {
             final participantsResp = await ApiService.get(
-              '$hostUrl/client/channels/${channel['uuid']}/participants',
+              '/client/channels/${channel['uuid']}/participants',
             );
             if (participantsResp.statusCode == 200) {
               final participantsData = participantsResp.data is String
@@ -203,8 +201,7 @@ class ActivitiesService {
   }
 
   /// Get recent Signal group conversations with last messages
-  static Future<List<Map<String, dynamic>>> getRecentGroupConversations(
-    String host, {
+  static Future<List<Map<String, dynamic>>> getRecentGroupConversations({
     int limit = 20,
   }) async {
     final conversations = <Map<String, dynamic>>[];
@@ -215,9 +212,8 @@ class ActivitiesService {
     try {
       // Get list of Signal channels from API
       ApiService.init();
-      final hostUrl = ApiService.ensureHttpPrefix(host);
       final resp = await ApiService.get(
-        '$hostUrl/client/channels?type=signal&limit=100',
+        '/client/channels?type=signal&limit=100',
       );
 
       if (resp.statusCode != 200) return [];

@@ -334,6 +334,18 @@ class ApiService {
     return 'http://$host';
   }
 
+  /// Build API URL - relative for web (uses baseUrl), full URL for native
+  /// Example: buildUrl('/client/profile') -> '/client/profile' (web) or 'http://server/client/profile' (native)
+  static String buildUrl(String path) {
+    if (kIsWeb) {
+      // Web: Use relative path (baseUrl is already configured in dio.options.baseUrl)
+      return path.startsWith('/') ? path : '/$path';
+    } else {
+      // Native: Return path as-is (SessionAuthInterceptor will handle full URL construction)
+      return path.startsWith('/') ? path : '/$path';
+    }
+  }
+
   static Future<Response> get(
     String url, {
     Map<String, dynamic>? queryParameters,

@@ -32,7 +32,6 @@ const Set<String> displayableMessageTypes = {
 
 /// Screen for Direct Messages (1:1 Signal chats)
 class DirectMessagesScreen extends StatefulWidget {
-  final String host;
   final String recipientUuid;
   final String recipientDisplayName;
   final String?
@@ -40,7 +39,6 @@ class DirectMessagesScreen extends StatefulWidget {
 
   const DirectMessagesScreen({
     super.key,
-    required this.host,
     required this.recipientUuid,
     required this.recipientDisplayName,
     this.scrollToMessageId,

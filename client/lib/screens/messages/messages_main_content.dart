@@ -18,14 +18,9 @@ import 'dart:async';
 /// This is displayed when no specific conversation is selected.
 /// Features larger cards, search, and better organization than the context panel.
 class MessagesMainContent extends StatefulWidget {
-  final String host;
   final Function(String uuid, String displayName) onConversationTap;
 
-  const MessagesMainContent({
-    super.key,
-    required this.host,
-    required this.onConversationTap,
-  });
+  const MessagesMainContent({super.key, required this.onConversationTap});
 
   @override
   State<MessagesMainContent> createState() => _MessagesMainContentState();

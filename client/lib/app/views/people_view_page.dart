@@ -90,7 +90,6 @@ class _PeopleViewPageState extends BaseViewState<PeopleViewPage> {
     // Use existing ContextPanel widget wrapper with people type
     return ContextPanel(
       type: ContextPanelType.people,
-      host: widget.host,
       recentPeople: _recentPeople,
       starredPeople: _starredPeople,
       onMessageTap: _handlePersonTap,
@@ -103,7 +102,6 @@ class _PeopleViewPageState extends BaseViewState<PeopleViewPage> {
   @override
   Widget buildMainContent() {
     return PeopleScreen(
-      host: widget.host,
       onMessageTap: _handlePersonTap,
       showRecentSection: true, // Always show recent section in main content
     );
@@ -172,10 +170,7 @@ class _PeopleViewPageState extends BaseViewState<PeopleViewPage> {
     debugPrint('[PEOPLE_VIEW] Person tapped: $displayName ($uuid)');
 
     // Navigate to messages view with specific conversation
-    context.go(
-      '/app/messages/$uuid',
-      extra: {'host': widget.host, 'displayName': displayName},
-    );
+    context.go('/app/messages/$uuid', extra: {'displayName': displayName});
   }
 
   @override

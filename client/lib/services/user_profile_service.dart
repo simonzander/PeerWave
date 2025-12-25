@@ -191,17 +191,11 @@ class UserProfileService {
         throw Exception('No API server configured');
       }
 
-      String urlString = apiServer;
-      if (!urlString.startsWith('http://') &&
-          !urlString.startsWith('https://')) {
-        urlString = 'https://$urlString';
-      }
-
       // Batch request: /people/profiles?uuids=uuid1,uuid2,uuid3
       final uuidsParam = uuidsToLoad.join(',');
       ApiService.init();
       final resp = await ApiService.get(
-        '$urlString/people/profiles?uuids=$uuidsParam',
+        ApiService.buildUrl('/people/profiles?uuids=$uuidsParam'),
       );
 
       if (resp.statusCode == 200) {
@@ -563,7 +557,7 @@ class UserProfileService {
       }
 
       ApiService.init();
-      final resp = await ApiService.get('$urlString/client/profile');
+      final resp = await ApiService.get(ApiService.buildUrl('/client/profile'));
 
       if (resp.statusCode == 200) {
         final data = resp.data;

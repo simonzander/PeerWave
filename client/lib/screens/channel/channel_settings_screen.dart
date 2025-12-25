@@ -12,7 +12,6 @@ class ChannelSettingsScreen extends StatefulWidget {
   final String? channelDescription;
   final bool isPrivate;
   final String? defaultJoinRole;
-  final String host;
   final bool isOwner;
 
   const ChannelSettingsScreen({
@@ -23,7 +22,6 @@ class ChannelSettingsScreen extends StatefulWidget {
     this.channelDescription,
     required this.isPrivate,
     this.defaultJoinRole,
-    required this.host,
     required this.isOwner,
   });
 
@@ -206,10 +204,9 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
 
     try {
       ApiService.init();
-      final hostUrl = ApiService.ensureHttpPrefix(widget.host);
 
       final resp = await ApiService.delete(
-        '$hostUrl/client/channels/${widget.channelId}',
+        '/client/channels/${widget.channelId}',
       );
 
       if (resp.statusCode == 200) {

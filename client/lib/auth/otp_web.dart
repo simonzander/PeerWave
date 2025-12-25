@@ -47,7 +47,7 @@ class _OtpWebPageState extends State<OtpWebPage> {
       //final dio = ApiService.dio;
 
       final response = await ApiService.post(
-        '$urlString/register',
+        '/register',
         data: {'email': widget.email},
       );
       // Handle response as needed
@@ -86,7 +86,7 @@ class _OtpWebPageState extends State<OtpWebPage> {
       //final dio = ApiService.dio;
 
       final response = await ApiService.post(
-        '$urlString/otp',
+        '/otp',
         data: {
           'email': widget.email,
           'otp': _otpController.text,

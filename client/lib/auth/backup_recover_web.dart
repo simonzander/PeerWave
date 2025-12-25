@@ -38,7 +38,7 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
         clientId = jsClientId;
       } catch (_) {}
       final resp = await ApiService.post(
-        '$urlString/backupcode/verify',
+        '/backupcode/verify',
         data: {
           'code': backupCodeController.text,
           if (clientId != null) 'clientId': clientId,

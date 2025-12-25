@@ -118,10 +118,7 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
             'data:image/${_imageFileName?.split('.').last ?? 'png'};base64,$base64Image';
       }
 
-      final resp = await ApiService.post(
-        '$urlString/client/profile/setup',
-        data: data,
-      );
+      final resp = await ApiService.post('/client/profile/setup', data: data);
 
       if (resp.statusCode == 200 || resp.statusCode == 201) {
         // Registration complete - log out the user and redirect to login

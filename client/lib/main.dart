@@ -1,4 +1,4 @@
-﻿import 'package:socket_io_client/socket_io_client.dart';
+import 'package:socket_io_client/socket_io_client.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -157,18 +157,23 @@ Future<void> main() async {
   }
 
   // Load server URL for role management
+  debugPrint('[INIT] Loading API server configuration...');
   String? serverUrl = await loadWebApiServer();
+
   // Use current origin for web, fallback to localhost for desktop/mobile
   if (kIsWeb) {
     if (serverUrl == null || serverUrl.isEmpty) {
       // Use current domain for web deployments
       serverUrl = Uri.base.origin;
+      debugPrint('[INIT] ⚠️ Using fallback URL (Uri.base.origin): $serverUrl');
+    } else {
+      debugPrint('[INIT] ✅ Using configured API server: $serverUrl');
     }
     // Set base URL for Dio on web platform
     ApiService.setBaseUrl(serverUrl);
-    debugPrint('[INIT] ✅ API base URL set to: $serverUrl');
   } else {
     serverUrl ??= 'http://localhost:3000'; // Fallback for non-web platforms
+    debugPrint('[INIT] ✅ API base URL set to: $serverUrl (non-web platform)');
   }
 
   // NOTE: ICE server configuration is loaded AFTER login (requires authentication)

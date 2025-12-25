@@ -36,7 +36,6 @@ const Set<String> displayableMessageTypes = {
 
 /// Screen for Signal Group Chats (encrypted group conversations)
 class SignalGroupChatScreen extends StatefulWidget {
-  final String host;
   final String channelUuid;
   final String channelName;
   final String?
@@ -44,7 +43,6 @@ class SignalGroupChatScreen extends StatefulWidget {
 
   const SignalGroupChatScreen({
     super.key,
-    required this.host,
     required this.channelUuid,
     required this.channelName,
     this.scrollToMessageId,
@@ -143,9 +141,8 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
   Future<void> _loadChannelDetails() async {
     try {
       ApiService.init();
-      final hostUrl = ApiService.ensureHttpPrefix(widget.host);
       final resp = await ApiService.get(
-        '$hostUrl/client/channels/${widget.channelUuid}',
+        '/client/channels/${widget.channelUuid}',
       );
 
       if (resp.statusCode == 200) {
@@ -1314,7 +1311,6 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                     channelDescription: _channelData?['description'] as String?,
                     isPrivate: _channelData?['private'] as bool? ?? false,
                     defaultJoinRole: _channelData?['defaultRoleId'] as String?,
-                    host: widget.host,
                     isOwner: _isOwner,
                   ),
                 ),

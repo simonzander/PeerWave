@@ -30,7 +30,7 @@ class _FilesViewPageState extends BaseViewState<FilesViewPage> {
 
   @override
   Widget buildContextPanel() {
-    return ContextPanel(type: ContextPanelType.files, host: widget.host);
+    return ContextPanel(type: ContextPanelType.files);
   }
 
   @override

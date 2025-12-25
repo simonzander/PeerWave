@@ -243,16 +243,11 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Future<void> _loadChannels() async {
     try {
-      final host = GoRouterState.of(context).extra as Map?;
-      final hostUrl = ApiService.ensureHttpPrefix(
-        host?['host'] as String? ?? '',
-      );
-
       debugPrint(
-        '[DASHBOARD] Loading channels from: $hostUrl/client/channels?limit=20',
+        '[DASHBOARD] Loading channels from: /client/channels?limit=20',
       );
       ApiService.init();
-      final resp = await ApiService.get('$hostUrl/client/channels?limit=20');
+      final resp = await ApiService.get('/client/channels?limit=20');
       debugPrint('[DASHBOARD] Channel response status: ${resp.statusCode}');
       debugPrint(
         '[DASHBOARD] Channel response data type: ${resp.data.runtimeType}',
@@ -297,9 +292,6 @@ class _DashboardPageState extends State<DashboardPage> {
     });
 
     try {
-      final host = GoRouterState.of(context).extra as Map?;
-      final hostUrl = host?['host'] as String? ?? '';
-
       debugPrint(
         '[DASHBOARD] Loading recent people (limit: $_recentPeopleLimit)...',
       );
@@ -387,14 +379,14 @@ class _DashboardPageState extends State<DashboardPage> {
           .map((entry) => entry.key)
           .toList();
 
-      if (userIdsNeedingNames.isNotEmpty && hostUrl.isNotEmpty) {
+      if (userIdsNeedingNames.isNotEmpty) {
         debugPrint(
           '[DASHBOARD] Fetching display names for ${userIdsNeedingNames.length} users from API...',
         );
         try {
           ApiService.init();
           final resp = await ApiService.post(
-            '$hostUrl/client/people/info',
+            '/client/people/info',
             data: {'userIds': userIdsNeedingNames},
           );
 
@@ -626,7 +618,6 @@ class _DashboardPageState extends State<DashboardPage> {
             if (_shouldShowContextPanel())
               ContextPanel(
                 type: _getContextPanelType(),
-                host: host ?? '',
                 onChannelTap: _onChannelTap,
                 onMessageTap: _onDirectMessageTap,
                 onNavigateToPeople: () {
@@ -826,7 +817,6 @@ class _DashboardPageState extends State<DashboardPage> {
     switch (viewType) {
       case 'activities':
         return ActivitiesView(
-          host: host,
           onDirectMessageTap: _onDirectMessageTap,
           onChannelTap: _onChannelTap,
         );
@@ -841,7 +831,6 @@ class _DashboardPageState extends State<DashboardPage> {
           // Desktop: Show list view to allow selecting conversations
           if (_activeDirectMessageUuid == null) {
             return MessagesListView(
-              host: host,
               onMessageTap: _onDirectMessageTap,
               onNavigateToPeople: () {
                 setState(() {
@@ -852,7 +841,6 @@ class _DashboardPageState extends State<DashboardPage> {
           } else {
             // Show conversation
             return DirectMessagesScreen(
-              host: host,
               recipientUuid: _activeDirectMessageUuid!,
               recipientDisplayName: _activeDirectMessageDisplayName!,
             );
@@ -860,7 +848,6 @@ class _DashboardPageState extends State<DashboardPage> {
         } else if (_activeDirectMessageUuid == null) {
           // Mobile/Tablet: Show list when no active conversation
           return MessagesListView(
-            host: host,
             onMessageTap: _onDirectMessageTap,
             onNavigateToPeople: () {
               setState(() {
@@ -881,7 +868,6 @@ class _DashboardPageState extends State<DashboardPage> {
         } else {
           // Mobile/Tablet: Show active conversation
           return DirectMessagesScreen(
-            host: host,
             recipientUuid: _activeDirectMessageUuid!,
             recipientDisplayName: _activeDirectMessageDisplayName!,
           );
@@ -894,7 +880,6 @@ class _DashboardPageState extends State<DashboardPage> {
           // Desktop: Show list view to allow selecting channels
           if (_activeChannelUuid == null) {
             return ChannelsListView(
-              host: host,
               onChannelTap: _onChannelTap,
               onCreateChannel: () {
                 // Reload channels after creation
@@ -904,7 +889,6 @@ class _DashboardPageState extends State<DashboardPage> {
           } else if (_activeChannelType == 'signal') {
             // Show Signal group chat
             return SignalGroupChatScreen(
-              host: host,
               channelUuid: _activeChannelUuid!,
               channelName: _activeChannelName!,
             );
@@ -939,7 +923,6 @@ class _DashboardPageState extends State<DashboardPage> {
         } else if (_activeChannelUuid == null) {
           // Show channels list view
           return ChannelsListView(
-            host: host,
             onChannelTap: _onChannelTap,
             onCreateChannel: () {
               // TODO: Navigate to channel creation screen
@@ -956,7 +939,6 @@ class _DashboardPageState extends State<DashboardPage> {
           // Use appropriate screen based on channel type
           if (_activeChannelType == 'signal') {
             return SignalGroupChatScreen(
-              host: host,
               channelUuid: _activeChannelUuid!,
               channelName: _activeChannelName!,
             );
@@ -998,7 +980,6 @@ class _DashboardPageState extends State<DashboardPage> {
 
       case 'people':
         return PeopleScreen(
-          host: host,
           onMessageTap: _onDirectMessageTap,
           showRecentSection: true, // Always show recent section
         );

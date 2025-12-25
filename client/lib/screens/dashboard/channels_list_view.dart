@@ -19,13 +19,11 @@ import 'dart:convert';
 
 /// Channels List View - Shows all channels with smart categorization
 class ChannelsListView extends StatefulWidget {
-  final String host;
   final Function(String uuid, String name, String type) onChannelTap;
   final VoidCallback onCreateChannel;
 
   const ChannelsListView({
     super.key,
-    required this.host,
     required this.onChannelTap,
     required this.onCreateChannel,
   });
@@ -112,12 +110,11 @@ class _ChannelsListViewState extends State<ChannelsListView>
     try {
       // Get WebRTC channels with live participants
       final webrtcWithParticipants =
-          await ActivitiesService.getWebRTCChannelParticipants(widget.host);
+          await ActivitiesService.getWebRTCChannelParticipants();
 
       // Get all member/owner channels
       ApiService.init();
-      final hostUrl = ApiService.ensureHttpPrefix(widget.host);
-      final resp = await ApiService.get('$hostUrl/client/channels?limit=1000');
+      final resp = await ApiService.get('/client/channels?limit=1000');
 
       debugPrint('[CHANNELS_LIST] API Response status: ${resp.statusCode}');
 
@@ -186,7 +183,6 @@ class _ChannelsListViewState extends State<ChannelsListView>
   Future<void> _enrichSignalChannelsWithLastMessage() async {
     try {
       final conversations = await ActivitiesService.getRecentGroupConversations(
-        widget.host,
         limit: 100,
       );
 
@@ -227,9 +223,8 @@ class _ChannelsListViewState extends State<ChannelsListView>
 
     try {
       ApiService.init();
-      final hostUrl = ApiService.ensureHttpPrefix(widget.host);
       final resp = await ApiService.get(
-        '$hostUrl/client/channels/discover?limit=$_discoverLimit&offset=$_discoverOffset',
+        '/client/channels/discover?limit=$_discoverLimit&offset=$_discoverOffset',
       );
 
       if (resp.statusCode == 200) {
@@ -1008,7 +1003,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
 
           context.go(
             '/app/channels/$uuid',
-            extra: {'host': widget.host, 'name': name, 'type': type},
+            extra: {'name': name, 'type': type},
           );
         },
       ),
@@ -1175,11 +1170,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
         if (mounted) {
           context.go(
             '/app/channels/$channelId',
-            extra: {
-              'host': widget.host,
-              'name': channelName,
-              'type': channelType,
-            },
+            extra: {'name': channelName, 'type': channelType},
           );
         }
       } else {
@@ -1314,7 +1305,6 @@ class _ChannelsListViewState extends State<ChannelsListView>
     showDialog(
       context: context,
       builder: (context) => _CreateChannelDialog(
-        host: widget.host,
         onChannelCreated: (channelName) => _loadChannels(),
       ),
     );
@@ -1323,13 +1313,9 @@ class _ChannelsListViewState extends State<ChannelsListView>
 
 // Create Channel Dialog
 class _CreateChannelDialog extends StatefulWidget {
-  final String host;
   final Function(String) onChannelCreated;
 
-  const _CreateChannelDialog({
-    required this.host,
-    required this.onChannelCreated,
-  });
+  const _CreateChannelDialog({required this.onChannelCreated});
 
   @override
   State<_CreateChannelDialog> createState() => _CreateChannelDialogState();
@@ -1354,9 +1340,8 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
     setState(() => isLoadingRoles = true);
     try {
       ApiService.init();
-      final hostUrl = ApiService.ensureHttpPrefix(widget.host);
       final scope = channelType == 'webrtc' ? 'channelWebRtc' : 'channelSignal';
-      final resp = await ApiService.get('$hostUrl/api/roles?scope=$scope');
+      final resp = await ApiService.get('/api/roles?scope=$scope');
 
       if (resp.statusCode == 200) {
         final data = resp.data;

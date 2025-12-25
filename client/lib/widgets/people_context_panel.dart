@@ -15,7 +15,6 @@ import '../providers/unread_messages_provider.dart';
 /// On mobile/tablet (where context panel is hidden), this content
 /// is integrated into the main PeopleScreen view.
 class PeopleContextPanel extends StatelessWidget {
-  final String host;
   final List<Map<String, dynamic>> recentPeople;
   final List<Map<String, dynamic>> starredPeople; // Starred conversations
   final String? activeContactUuid; // Currently active conversation
@@ -26,7 +25,6 @@ class PeopleContextPanel extends StatelessWidget {
 
   const PeopleContextPanel({
     super.key,
-    required this.host,
     required this.recentPeople,
     this.starredPeople = const [],
     this.activeContactUuid,

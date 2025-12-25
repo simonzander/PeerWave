@@ -3953,21 +3953,7 @@ class SignalService {
   Future<List<Map<String, dynamic>>> _fetchPreKeyBundleForUserInternal(
     String userId,
   ) async {
-    // Get server URL from appropriate source
-    String? apiServer;
-    if (kIsWeb) {
-      apiServer = await loadWebApiServer();
-    } else {
-      final activeServer = ServerConfigService.getActiveServer();
-      if (activeServer != null) {
-        apiServer = activeServer.serverUrl;
-      }
-    }
-
-    final urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
-    final response = await ApiService.get(
-      '$urlString/signal/prekey_bundle/$userId',
-    );
+    final response = await ApiService.get('/signal/prekey_bundle/$userId');
     debugPrint('[DEBUG] response.statusCode: \\${response.statusCode}');
     debugPrint('[DEBUG] response.data: \\${response.data}');
     debugPrint(
@@ -6169,20 +6155,8 @@ class SignalService {
     int deviceId,
   ) async {
     try {
-      // Get server URL from appropriate source
-      String? apiServer;
-      if (kIsWeb) {
-        apiServer = await loadWebApiServer();
-      } else {
-        final activeServer = ServerConfigService.getActiveServer();
-        if (activeServer != null) {
-          apiServer = activeServer.serverUrl;
-        }
-      }
-
-      final urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
       await ApiService.post(
-        '$urlString/channels/$groupId/request-sender-key',
+        '/channels/$groupId/request-sender-key',
         data: {
           'requesterId': _currentUserId,
           'requesterDeviceId': _currentDeviceId,
@@ -6680,24 +6654,9 @@ class SignalService {
         }
       }
 
-      // Get server URL (platform-specific)
-      String urlString;
-      if (kIsWeb) {
-        final apiServer = await loadWebApiServer();
-        urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
-      } else {
-        // Native: Use active server from ServerConfigService
-        final activeServer = ServerConfigService.getActiveServer();
-        if (activeServer == null) {
-          debugPrint('[SIGNAL_SERVICE] No active server configured');
-          return false;
-        }
-        urlString = activeServer.serverUrl;
-      }
-
       // Load from server via REST API
       final response = await ApiService.get(
-        '$urlString/api/sender-keys/$channelId/$userId/$deviceId',
+        '/api/sender-keys/$channelId/$userId/$deviceId',
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
@@ -6752,23 +6711,7 @@ class SignalService {
         '[SIGNAL_SERVICE] Loading all sender keys for channel $channelId',
       );
 
-      // Get server URL (platform-specific)
-      String urlString;
-      if (kIsWeb) {
-        final apiServer = await loadWebApiServer();
-        urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
-      } else {
-        final activeServer = ServerConfigService.getActiveServer();
-        if (activeServer == null) {
-          debugPrint('[SIGNAL_SERVICE] No active server configured');
-          return result;
-        }
-        urlString = activeServer.serverUrl;
-      }
-
-      final response = await ApiService.get(
-        '$urlString/api/sender-keys/$channelId',
-      );
+      final response = await ApiService.get('/api/sender-keys/$channelId');
 
       if (response.statusCode == 200 && response.data['success'] == true) {
         final senderKeysData = response.data['senderKeys'];
@@ -6874,22 +6817,9 @@ class SignalService {
 
       final senderKeyBase64 = base64Encode(distributionMessage);
 
-      // Get server URL (platform-specific)
-      String urlString;
-      if (kIsWeb) {
-        final apiServer = await loadWebApiServer();
-        urlString = ApiService.ensureHttpPrefix(apiServer ?? '');
-      } else {
-        final activeServer = ServerConfigService.getActiveServer();
-        if (activeServer == null) {
-          throw Exception('No active server configured');
-        }
-        urlString = activeServer.serverUrl;
-      }
-
       // Upload to server
       final response = await ApiService.post(
-        '$urlString/api/sender-keys/$channelId',
+        '/api/sender-keys/$channelId',
         data: {'senderKey': senderKeyBase64, 'deviceId': _currentDeviceId},
       );
 

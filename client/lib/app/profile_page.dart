@@ -88,7 +88,7 @@ class _ProfilePageState extends State<ProfilePage> {
       }
 
       final resp = await ApiService.get(
-        '$urlString/client/profile/check-atname?atName=$atName',
+        '/client/profile/check-atname?atName=$atName',
       );
 
       if (resp.statusCode == 200) {
@@ -128,7 +128,7 @@ class _ProfilePageState extends State<ProfilePage> {
         urlString = server?.serverUrl ?? '';
       }
 
-      final resp = await ApiService.get('$urlString/client/profile');
+      final resp = await ApiService.get('/client/profile');
 
       if (resp.statusCode == 200) {
         final data = resp.data;
@@ -258,10 +258,7 @@ class _ProfilePageState extends State<ProfilePage> {
             'data:image/${_imageFileName?.split('.').last ?? 'png'};base64,$base64Image';
       }
 
-      final resp = await ApiService.post(
-        '$urlString/client/profile/update',
-        data: data,
-      );
+      final resp = await ApiService.post('/client/profile/update', data: data);
 
       if (resp.statusCode == 200) {
         setState(() {
@@ -386,7 +383,7 @@ class _ProfilePageState extends State<ProfilePage> {
         urlString = server?.serverUrl ?? '';
       }
 
-      final resp = await ApiService.delete('$urlString/client/profile/delete');
+      final resp = await ApiService.delete('/client/profile/delete');
 
       if (resp.statusCode == 200) {
         if (mounted) {

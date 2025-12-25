@@ -53,7 +53,7 @@ class _SidebarPanelState extends State<SidebarPanel> {
     try {
       ApiService.init();
       final dio = ApiService.dio;
-      final resp = await dio.get('${widget.host}/client/channels');
+      final resp = await dio.get('/client/channels');
       if (resp.statusCode == 200) {
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
         if (data is List) {
@@ -420,7 +420,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
       ApiService.init();
       final dio = ApiService.dio;
       final scope = channelType == 'webrtc' ? 'channelWebRtc' : 'channelSignal';
-      final resp = await dio.get('${widget.host}/api/roles?scope=$scope');
+      final resp = await dio.get('/api/roles?scope=$scope');
 
       if (resp.statusCode == 200) {
         final data = resp.data;

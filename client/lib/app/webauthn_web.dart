@@ -147,9 +147,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
                     !urlString.startsWith('https://')) {
                   urlString = 'https://$urlString';
                 }
-                final resp = await ApiService.get(
-                  '$urlString/backupcode/regenerate',
-                );
+                final resp = await ApiService.get('/backupcode/regenerate');
                 if (!mounted) return;
                 if (resp.statusCode == 200) {
                   GoRouter.of(context).go('/app/settings/backupcode/list');
@@ -180,7 +178,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final resp = await ApiService.get('$urlString/webauthn/list');
+      final resp = await ApiService.get('/webauthn/list');
       if (resp.statusCode == 200 && resp.data != null) {
         if (resp.data is List) {
           setState(() {
@@ -214,7 +212,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final resp = await ApiService.get('$urlString/client/list');
+      final resp = await ApiService.get('/client/list');
       if (resp.statusCode == 200 && resp.data != null) {
         if (resp.data is List) {
           setState(() {
@@ -247,7 +245,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
         urlString = 'https://$urlString';
       }
       final resp = await ApiService.post(
-        '$urlString/webauthn/delete',
+        '/webauthn/delete',
         data: {'credentialId': credentialId},
       );
       if (resp.statusCode == 200) {
@@ -297,7 +295,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
             !urlString.startsWith('https://')) {
           urlString = 'https://$urlString';
         }
-        final resp = await ApiService.delete('$urlString/client/$clientId');
+        final resp = await ApiService.delete('/client/$clientId');
         if (resp.statusCode == 200) {
           _showSuccess('Device removed successfully');
           _loadClients();
@@ -325,7 +323,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final resp = await ApiService.get('$urlString/backupcode/usage');
+      final resp = await ApiService.get('/backupcode/usage');
       if (resp.statusCode == 200 && resp.data != null) {
         final used = resp.data["usedCount"] ?? 0;
         final total = resp.data["totalCount"] ?? 0;
