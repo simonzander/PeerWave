@@ -16,7 +16,7 @@ version: '3.8'
 services:
   # Certificate Extractor (extracts Traefik certs for LiveKit)
   traefik-certs-dumper:
-    image: ldez/traefik-certs-dumper:v2.8.3
+    image: ldez/traefik-certs-dumper:latest
     container_name: peerwave-cert-dumper
     restart: unless-stopped
     
@@ -32,10 +32,15 @@ services:
       echo 'Certificates found in acme.json, starting dumper...';
       echo '[CERT-DUMPER] Domains found in acme.json:';
       jq -r 'if type==\"object\" then [.[]] else . end | .[] | .Certificates[]? | .domain.main' /acme.json 2>/dev/null | sort -u;
-      traefik-certs-dumper file --version v3 --watch 
-        --source /acme.json 
-        --dest /output 
-        --domain-subdir=true
+      echo '[CERT-DUMPER] Performing initial certificate dump...';
+      traefik-certs-dumper file --version v3 --source /acme.json --dest /output --domain-subdir || echo '[CERT-DUMPER] ERROR: Initial dump failed';
+      echo '[CERT-DUMPER] Contents of /output after initial dump:';
+      ls -laR /output/;
+      echo '[CERT-DUMPER] Starting watch mode...';
+      traefik-certs-dumper file --version v3 --watch \
+        --source /acme.json \
+        --dest /output \
+        --domain-subdir \
         --post-hook 'echo [CERT-DUMPER] Certificate renewed at $$(date); echo [CERT-DUMPER] Available domains:; ls -la /output/; docker restart peerwave-livekit || echo [CERT-DUMPER] Warning: Could not restart LiveKit'
       "
     
@@ -139,18 +144,40 @@ services:
     # Use host networking for better WebRTC performance and avoid docker-proxy issues
     network_mode: host
     
-    command: --config /etc/livekit.yaml
-    
     volumes:
-      - ./livekit-config.yaml:/etc/livekit.yaml:ro
       # Use extracted certificates from cert-dumper
       - cert-data:/certs-source:ro
     
     environment:
-      # Certificate paths (updated by init script)
+      # Certificate domain for extraction
       - CERT_DOMAIN=${DOMAIN}
-      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+      
+      # API Keys (format must be "key: secret" with space after colon)
+      - "LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secret}"
+      
+      # Server Configuration
+      - LIVEKIT_PORT=7880
+      - LIVEKIT_BIND=0.0.0.0
+      - LIVEKIT_RTC_PORT_RANGE_START=30100
+      - LIVEKIT_RTC_PORT_RANGE_END=30400
+      
+      # TURN Server
+      - LIVEKIT_TURN_ENABLED=true
+      - LIVEKIT_TURN_DOMAIN=${LIVEKIT_TURN_DOMAIN}
+      - LIVEKIT_TURN_TLS_PORT=5349
+      - LIVEKIT_TURN_UDP_PORT=443
+      - LIVEKIT_TURN_RELAY_RANGE_START=30300
+      - LIVEKIT_TURN_RELAY_RANGE_END=30400
+      - LIVEKIT_TURN_CERT=/certs/turn-cert.pem
+      - LIVEKIT_TURN_KEY=/certs/turn-key.pem
+      
+      # Room Settings
+      - LIVEKIT_ROOM_EMPTY_TIMEOUT=300
+      - LIVEKIT_ROOM_MAX_PARTICIPANTS=100
+      - LIVEKIT_ROOM_AUTO_CREATE=true
+      
+      # Logging
+      - LIVEKIT_LOG_LEVEL=info
     
     # Wait for certificate extraction
     depends_on:
@@ -178,7 +205,7 @@ services:
       chmod 600 /certs/turn-key.pem;
       echo '[LiveKit] Certificates copied and permissions set';
       echo '[LiveKit] Starting LiveKit server...';
-      exec /livekit-server --config /etc/livekit.yaml
+      exec /livekit-server
       "
     
     # Note: Ports bound directly to host (no mapping needed with network_mode: host)
