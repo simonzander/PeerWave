@@ -296,6 +296,15 @@ class ApiService {
   }
 
   static void init() {
+    // For web: ALWAYS clear baseUrl to ensure relative paths resolve to current origin
+    // This must happen on every init() call, not just first time
+    if (kIsWeb) {
+      dio.options.baseUrl = '';
+      debugPrint(
+        '[API SERVICE] Web platform: baseUrl cleared (using relative paths)',
+      );
+    }
+
     if (!_initialized) {
       // Add cookie manager for native clients
       if (!kIsWeb) {
