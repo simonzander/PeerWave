@@ -167,10 +167,15 @@ Future<void> main() async {
       serverUrl = Uri.base.origin;
       debugPrint('[INIT] ⚠️ Using fallback URL (Uri.base.origin): $serverUrl');
     } else {
-      debugPrint('[INIT] ✅ Using configured API server: $serverUrl');
+      debugPrint(
+        '[INIT] ✅ Loaded API server config: $serverUrl (ignored for web - using relative paths)',
+      );
     }
-    // Set base URL for Dio on web platform
-    ApiService.setBaseUrl(serverUrl);
+    // DO NOT set baseUrl for web - let relative paths resolve to current origin
+    // ApiService.setBaseUrl(''); // This would break relative paths
+    debugPrint(
+      '[INIT] ✅ Web platform: Using relative paths (resolve to ${Uri.base.origin})',
+    );
   } else {
     serverUrl ??= 'http://localhost:3000'; // Fallback for non-web platforms
     debugPrint('[INIT] ✅ API base URL set to: $serverUrl (non-web platform)');
