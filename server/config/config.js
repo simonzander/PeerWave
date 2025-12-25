@@ -5,7 +5,7 @@ config.port = process.env.PORT || 3000;
 config.https = process.env.HTTPS === 'true';
 config.db = {
     type: 'sqlite',
-    path: 'db/peerwave.db'
+    path: process.env.DB_PATH || './data/peerwave.sqlite'
 };
 config.app = {
     name: 'PeerWave',

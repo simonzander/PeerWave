@@ -11,7 +11,7 @@ const { Sequelize } = require('sequelize');
 async function migrate() {
     const sequelize = new Sequelize({
         dialect: 'sqlite',
-        storage: './db/peerwave.sqlite',
+        storage: process.env.DB_PATH || './data/peerwave.sqlite',
         logging: console.log
     });
 

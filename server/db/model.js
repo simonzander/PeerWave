@@ -5,7 +5,7 @@ const { DESCRIBE } = require('sequelize/lib/query-types');
 
 const sequelize = new Sequelize({
     dialect: 'sqlite',
-    storage: './db/peerwave.sqlite',
+    storage: process.env.DB_PATH || './data/peerwave.sqlite',
     pool: {
         max: 1,        // SQLite: Only one writer at a time
         min: 0,

@@ -16,7 +16,7 @@ module.exports = {
   // Database Configuration
   database: {
     // SQLite database path (relative or absolute)
-    path: process.env.DB_PATH || './db/peerwave.sqlite',
+    path: process.env.DB_PATH || './data/peerwave.sqlite',
     // Enable WAL mode for better concurrency
     walMode: process.env.DB_WAL_MODE !== 'false',
   },

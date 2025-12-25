@@ -44,7 +44,7 @@ services:
       - "host.docker.internal:host-gateway"
     
     volumes:
-      - peerwave-db:/usr/src/app/db
+      - peerwave-data:/usr/src/app/data
       - ./server/cert:/usr/src/app/cert:ro
     
     environment:
@@ -57,7 +57,7 @@ services:
       - APP_URL=https://${DOMAIN}
       
       # Database
-      - DB_PATH=/usr/src/app/db/peerwave.sqlite
+      - DB_PATH=/usr/src/app/data/peerwave.sqlite
       
       # Security (CHANGE THESE!)
       - SESSION_SECRET=${SESSION_SECRET}
@@ -73,10 +73,18 @@ services:
       
       # Email (optional)
       - EMAIL_HOST=${EMAIL_HOST}
-      - EMAIL_PORT=${EMAIL_PORT}
-      - EMAIL_SECURE=${EMAIL_SECURE}
+      - EMAIL_PORT=${EMAIL_PORT:-587}
+      - EMAIL_SECURE=${EMAIL_SECURE:-false}
       - EMAIL_USER=${EMAIL_USER}
       - EMAIL_PASS=${EMAIL_PASS}
+      - EMAIL_FROM=${EMAIL_FROM}
+      # Admin Users
+      - ADMIN_EMAILS=${ADMIN_EMAILS}
+      # OTP Configuration
+      - OTP_EXPIRATION_MINUTES=${OTP_EXPIRATION_MINUTES:-10}
+      - OTP_WAIT_TIME_MINUTES=${OTP_WAIT_TIME_MINUTES:-1}
+      # Invitation Configuration
+      - INVITATION_EXPIRATION_HOURS=${INVITATION_EXPIRATION_HOURS:-48}
     
     networks:
       - proxy
@@ -145,7 +153,7 @@ services:
       cp /certs-source/$${CERT_DOMAIN}/privatekey.key /certs/turn-key.pem;
       chmod 644 /certs/turn-cert.pem;
       chmod 600 /certs/turn-key.pem;
-      exec livekit-server --config /etc/livekit.yaml
+      exec /livekit-server --config /etc/livekit.yaml
       "
     
     # Note: Ports bound directly to host (no mapping needed with network_mode: host)
@@ -163,5 +171,5 @@ networks:
 volumes:
   # Shared volume for extracted certificates
   cert-data:
-  # Database volume (preserves db/*.js files)
-  peerwave-db:
+  # Data volume for SQLite database (code files stay in image)
+  peerwave-data:

@@ -21,7 +21,7 @@ const { Sequelize } = require('sequelize');
 // Create sequelize instance (same config as model.js)
 const sequelize = new Sequelize({
     dialect: 'sqlite',
-    storage: './db/peerwave.sqlite',
+    storage: process.env.DB_PATH || './data/peerwave.sqlite',
     logging: false,
     pool: {
         max: 1,

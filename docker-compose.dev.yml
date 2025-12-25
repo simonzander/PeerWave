@@ -39,7 +39,7 @@ services:
         echo '✓ Certificates already exist';
       fi;
       echo 'Starting LiveKit...';
-      exec livekit-server --config /livekit.yaml
+      exec /livekit-server --config /livekit.yaml
       "
     networks:
       - peerwave-network
@@ -55,7 +55,7 @@ services:
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
     volumes:
-      - peerwave-db:/usr/src/app/db
+      - peerwave-data:/usr/src/app/data
       - ./server/cert:/usr/src/app/cert:ro
     environment:
       - NODE_ENV=${NODE_ENV:-development}
@@ -63,6 +63,7 @@ services:
       - DOMAIN=${DOMAIN:-localhost}
       - HTTPS=${HTTPS:-false}
       - SESSION_SECRET=${SESSION_SECRET:-your-secret-key-CHANGE-IN-PRODUCTION}
+      - DB_PATH=/usr/src/app/data/peerwave.sqlite
       # LiveKit Config
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
@@ -101,5 +102,5 @@ networks:
     driver: bridge
 
 volumes:
-  # Database volume (preserves db/*.js files)
-  peerwave-db:
+  # Data volume for SQLite database (code files stay in image)
+  peerwave-data:
