@@ -5,33 +5,23 @@
  * enabling proper multi-device support with HMAC authentication.
  */
 
-const { sequelize } = require('../db/model');
-
-async function up() {
-  console.log('Adding device_id column to client_sessions table...');
-  
-  try {
-    // Check if column already exists
-    const tableInfo = await sequelize.query(
-      "PRAGMA table_info(client_sessions)",
-      { type: sequelize.QueryTypes.SELECT }
-    );
-    const hasDeviceId = tableInfo.some(col => col.name === 'device_id');
-    
-    if (!hasDeviceId) {
-      // Add device_id column
-      await sequelize.query(`
-        ALTER TABLE client_sessions 
-        ADD COLUMN device_id INTEGER
-      `);
-      console.log('✓ device_id column added to client_sessions');
-    } else {
-      console.log('✓ device_id column already exists');
-    }
-  } catch (error) {
-    console.error('Error adding device_id column:', error);
-    throw error;
+async function up({ sequelize, tableExists, columnExists }) {
+  // Skip if table doesn't exist yet (fresh database)
+  if (!(await tableExists('client_sessions'))) {
+    return;
   }
+  
+  // Skip if column already exists
+  if (await columnExists('client_sessions', 'device_id')) {
+    return;
+  }
+  
+  // Add device_id column
+  await sequelize.query(`
+    ALTER TABLE client_sessions 
+    ADD COLUMN device_id INTEGER
+  `);
+  console.log('✓ device_id column added to client_sessions');
 }
 
 async function down() {

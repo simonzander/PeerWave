@@ -117,7 +117,6 @@ class _OtpWebPageState extends State<OtpWebPage> {
   }
 
   @override
-  @override
   void initState() {
     super.initState();
     debugPrint('OtpWebPage initState with wait: ${widget.wait}');

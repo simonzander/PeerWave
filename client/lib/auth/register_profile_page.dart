@@ -183,246 +183,288 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
         ? 500.0
         : 600.0;
 
-    return Scaffold(
-      backgroundColor: colorScheme.surface,
-      body: Column(
-        children: [
-          // Progress Bar
-          const RegistrationProgressBar(currentStep: 4),
-          // Content
-          Expanded(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Container(
-                  padding: const EdgeInsets.all(32),
-                  width: cardWidth,
-                  constraints: const BoxConstraints(maxWidth: 650),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: colorScheme.shadow.withValues(alpha: 0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Setup Your Profile',
-                        style: theme.textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colorScheme.onSurface,
+    return PopScope(
+      canPop: false, // Prevent back navigation during registration
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        // Show dialog to confirm exit
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Exit Registration?'),
+            content: const Text(
+              'Are you sure you want to exit? You will need to start the registration process again.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  GoRouter.of(context).go('/login');
+                },
+                child: const Text('Exit'),
+              ),
+            ],
+          ),
+        );
+      },
+      child: Scaffold(
+        backgroundColor: colorScheme.surface,
+        body: Column(
+          children: [
+            // Progress Bar
+            const RegistrationProgressBar(currentStep: 4),
+            // Content
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Container(
+                    padding: const EdgeInsets.all(32),
+                    width: cardWidth,
+                    constraints: const BoxConstraints(maxWidth: 650),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colorScheme.shadow.withValues(alpha: 0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Complete your profile to finish registration',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Setup Your Profile',
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onSurface,
+                          ),
+                          textAlign: TextAlign.center,
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 32),
-                      // Profile Picture
-                      Center(
-                        child: Stack(
-                          children: [
-                            CircleAvatar(
-                              radius: 60,
-                              backgroundColor: colorScheme.surfaceContainerHigh,
-                              backgroundImage: _imageBytes != null
-                                  ? MemoryImage(_imageBytes!)
-                                  : null,
-                              child: _imageBytes == null
-                                  ? Icon(
-                                      Icons.person,
-                                      size: 60,
-                                      color: colorScheme.onSurfaceVariant,
-                                    )
-                                  : null,
-                            ),
-                            Positioned(
-                              bottom: 0,
-                              right: 0,
-                              child: CircleAvatar(
-                                radius: 20,
-                                backgroundColor: colorScheme.primary,
-                                child: IconButton(
-                                  icon: const Icon(Icons.camera_alt, size: 20),
-                                  color: colorScheme.onPrimary,
-                                  onPressed: _pickImage,
-                                  padding: EdgeInsets.zero,
+                        const SizedBox(height: 12),
+                        Text(
+                          'Complete your profile to finish registration',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 32),
+                        // Profile Picture
+                        Center(
+                          child: Stack(
+                            children: [
+                              CircleAvatar(
+                                radius: 60,
+                                backgroundColor:
+                                    colorScheme.surfaceContainerHigh,
+                                backgroundImage: _imageBytes != null
+                                    ? MemoryImage(_imageBytes!)
+                                    : null,
+                                child: _imageBytes == null
+                                    ? Icon(
+                                        Icons.person,
+                                        size: 60,
+                                        color: colorScheme.onSurfaceVariant,
+                                      )
+                                    : null,
+                              ),
+                              Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: colorScheme.primary,
+                                  child: IconButton(
+                                    icon: const Icon(
+                                      Icons.camera_alt,
+                                      size: 20,
+                                    ),
+                                    color: colorScheme.onPrimary,
+                                    onPressed: _pickImage,
+                                    padding: EdgeInsets.zero,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Click camera icon to upload profile picture (optional)',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                        const SizedBox(height: 8),
+                        Text(
+                          'Click camera icon to upload profile picture (optional)',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 32),
-                      // Display Name Field
-                      TextField(
-                        controller: _displayNameController,
-                        decoration: InputDecoration(
-                          labelText: 'Display Name *',
-                          hintText: 'Enter your display name',
-                          filled: true,
-                          fillColor: colorScheme.surfaceContainerHigh,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: colorScheme.outline),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: colorScheme.outline),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: colorScheme.primary,
-                              width: 2,
+                        const SizedBox(height: 32),
+                        // Display Name Field
+                        TextField(
+                          controller: _displayNameController,
+                          decoration: InputDecoration(
+                            labelText: 'Display Name *',
+                            hintText: 'Enter your display name',
+                            filled: true,
+                            fillColor: colorScheme.surfaceContainerHigh,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: colorScheme.outline,
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: colorScheme.outline,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: colorScheme.primary,
+                                width: 2,
+                              ),
+                            ),
+                            prefixIcon: Icon(
+                              Icons.person_outline,
+                              color: colorScheme.onSurfaceVariant,
                             ),
                           ),
-                          prefixIcon: Icon(
-                            Icons.person_outline,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: colorScheme.onSurface,
+                          ),
+                          onChanged: (value) {
+                            setState(() {});
+                            // Auto-generate atName if not manually edited
+                            if (!_atNameManuallyEdited && value.isNotEmpty) {
+                              final generated = value
+                                  .trim()
+                                  .replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '')
+                                  .toLowerCase();
+                              _atNameController.text = generated.isEmpty
+                                  ? ''
+                                  : generated;
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        // AtName Field
+                        TextField(
+                          controller: _atNameController,
+                          decoration: InputDecoration(
+                            labelText: 'Username (@atName) *',
+                            hintText: 'Enter your username',
+                            helperText:
+                                'Used for mentions and unique identification',
+                            filled: true,
+                            fillColor: colorScheme.surfaceContainerHigh,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: colorScheme.outline,
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: colorScheme.outline,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: colorScheme.primary,
+                                width: 2,
+                              ),
+                            ),
+                            prefixIcon: Icon(
+                              Icons.alternate_email,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: colorScheme.onSurface,
+                          ),
+                          onChanged: (value) {
+                            setState(() {
+                              _atNameManuallyEdited = value.isNotEmpty;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '* Required field',
+                          style: theme.textTheme.bodySmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
                         ),
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: colorScheme.onSurface,
-                        ),
-                        onChanged: (value) {
-                          setState(() {});
-                          // Auto-generate atName if not manually edited
-                          if (!_atNameManuallyEdited && value.isNotEmpty) {
-                            final generated = value
-                                .trim()
-                                .replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '')
-                                .toLowerCase();
-                            _atNameController.text = generated.isEmpty
-                                ? ''
-                                : generated;
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      // AtName Field
-                      TextField(
-                        controller: _atNameController,
-                        decoration: InputDecoration(
-                          labelText: 'Username (@atName) *',
-                          hintText: 'Enter your username',
-                          helperText:
-                              'Used for mentions and unique identification',
-                          filled: true,
-                          fillColor: colorScheme.surfaceContainerHigh,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: colorScheme.outline),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: colorScheme.outline),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: colorScheme.primary,
-                              width: 2,
+                        const SizedBox(height: 24),
+                        if (_error != null)
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(
+                              color: colorScheme.errorContainer,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: colorScheme.error),
                             ),
-                          ),
-                          prefixIcon: Icon(
-                            Icons.alternate_email,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: colorScheme.onSurface,
-                        ),
-                        onChanged: (value) {
-                          setState(() {
-                            _atNameManuallyEdited = value.isNotEmpty;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '* Required field',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      if (_error != null)
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(bottom: 16),
-                          decoration: BoxDecoration(
-                            color: colorScheme.errorContainer,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: colorScheme.error),
-                          ),
-                          child: Text(
-                            _error!,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onErrorContainer,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      // Complete Registration Button
-                      FilledButton(
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 52),
-                          backgroundColor: colorScheme.primary,
-                          foregroundColor: colorScheme.onPrimary,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          disabledBackgroundColor:
-                              colorScheme.surfaceContainerHighest,
-                          disabledForegroundColor: colorScheme.onSurfaceVariant,
-                        ),
-                        onPressed: (_loading || !isFormValid)
-                            ? null
-                            : _completeRegistration,
-                        child: _loading
-                            ? SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  color: colorScheme.onPrimary,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Text(
-                                'Complete Registration',
-                                style: theme.textTheme.labelLarge?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
+                            child: Text(
+                              _error!,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onErrorContainer,
                               ),
-                      ),
-                    ],
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        // Complete Registration Button
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size(double.infinity, 52),
+                            backgroundColor: colorScheme.primary,
+                            foregroundColor: colorScheme.onPrimary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            disabledBackgroundColor:
+                                colorScheme.surfaceContainerHighest,
+                            disabledForegroundColor:
+                                colorScheme.onSurfaceVariant,
+                          ),
+                          onPressed: (_loading || !isFormValid)
+                              ? null
+                              : _completeRegistration,
+                          child: _loading
+                              ? SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    color: colorScheme.onPrimary,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Text(
+                                  'Complete Registration',
+                                  style: theme.textTheme.labelLarge?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

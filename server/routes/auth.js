@@ -133,7 +133,8 @@ const fido2 = new Fido2Lib({
     cryptoParams: [-7, -257],
 });
 
-const transporter = nodemailer.createTransport(config.smtp);
+// Only create transporter if SMTP is configured
+const transporter = config.smtp ? nodemailer.createTransport(config.smtp) : null;
 
 const authRoutes = express.Router();
 
@@ -436,6 +437,7 @@ authRoutes.post("/register", async (req, res) => {
     const email = req.body.email;
     const invitationToken = req.body.invitationToken; // Optional invitation token
     req.session.email = email; // Store email in session for later use
+    req.session.registrationStep = 'otp'; // Track registration progress
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         return res.status(400).json({ error: "Invalid email address" });
@@ -515,39 +517,40 @@ authRoutes.post("/register", async (req, res) => {
                     }
                     // Wait time passed, allow creating new OTP (old one will be replaced)
                 } else {
-                    // Format OTP with spaces (e.g., "1 2 3 4 5")
-                    const otpSpaced = otp.toString().split('').join(' ');
-                    
-                    // Send email with OTP
-                    transporter.sendMail({
-                        from: config.smtp.senderadress,
-                        to: email,
-                        subject: "Your One-Time Password (OTP)",
-                        html: `
-                          <div style="font-family:'Nunito Sans', system-ui, -apple-system, sans-serif; background-color:#0f1419; padding:40px 16px; color:#d6dde3;">
-                            <div style="max-width:600px; margin:0 auto; background-color:#141b22; border-radius:12px; padding:32px; box-shadow:0 0 0 1px rgba(0, 188, 212, 0.08);">
-                              <h2 style="margin-top:0; color:#2dd4bf; font-weight:600; letter-spacing:0.3px;">Your Verification Code</h2>
-                              <p style="color:#cbd5dc; line-height:1.6;">Enter this code to verify your account:</p>
-                              <div style="margin:32px 0; padding:24px; background-color:#0f1419; border-radius:10px; border:2px solid rgba(45, 212, 191, 0.3); text-align:center;">
-                                <div style="font-size:42px; font-weight:700; letter-spacing:12px; color:#2dd4bf; font-family:'Courier New', monospace;">${otpSpaced}</div>
+                    // Send email with OTP (if SMTP is configured)
+                    if (transporter) {
+                        transporter.sendMail({
+                            from: config.smtp.senderadress,
+                            to: email,
+                            subject: "Your One-Time Password (OTP)",
+                            html: `
+                              <div style="font-family:'Nunito Sans', system-ui, -apple-system, sans-serif; background-color:#0f1419; padding:40px 16px; color:#d6dde3;">
+                                <div style="max-width:600px; margin:0 auto; background-color:#141b22; border-radius:12px; padding:32px; box-shadow:0 0 0 1px rgba(0, 188, 212, 0.08);">
+                                  <h2 style="margin-top:0; color:#2dd4bf; font-weight:600; letter-spacing:0.3px;">Your Verification Code</h2>
+                                  <p style="color:#cbd5dc; line-height:1.6;">Enter this code to verify your account:</p>
+                                  <div style="margin:32px 0; padding:24px; background-color:#0f1419; border-radius:10px; border:2px solid rgba(45, 212, 191, 0.3); text-align:center;">
+                                    <div style="font-size:42px; font-weight:700; letter-spacing:12px; color:#2dd4bf; font-family:'Courier New', monospace;">${otp}</div>
+                                  </div>
+                                  <div style="margin:24px 0; padding:16px; background-color:#0f1419; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                                    <p style="margin:0; color:#9fb3bf; font-size:14px; line-height:1.6;">
+                                      <strong style="color:#f59e0b;">⚠️ Security Notice:</strong><br>
+                                      This code expires in <strong style="color:#2dd4bf;">${config.otp.expirationMinutes} minutes</strong>. Never share this code with anyone.
+                                    </p>
+                                  </div>
+                                  <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
+                                  <p style="font-size:12px; color:#6b7c86; margin:0;">Sent from PeerWave<br><a href="https://peerwave.org" style="text-decoration: none; display: flex; align-items: center;"><img src="https://peerwave.org/logo_28.png" style="width:24px;height:24px;padding-right: 0.25rem;"/><span style="color:white;">PeerWave</span><span style="color:#4fbfb3;"> - Private communication you fully control.</span></a></p>
+                                </div>
                               </div>
-                              <div style="margin:24px 0; padding:16px; background-color:#0f1419; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                                <p style="margin:0; color:#9fb3bf; font-size:14px; line-height:1.6;">
-                                  <strong style="color:#f59e0b;">⚠️ Security Notice:</strong><br>
-                                  This code expires in <strong style="color:#2dd4bf;">${config.otp.expirationMinutes} minutes</strong>. Never share this code with anyone.
-                                </p>
-                              </div>
-                              <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
-                              <p style="font-size:12px; color:#6b7c86; margin:0;">Sent from PeerWave<br><a href="https://peerwave.org" style="text-decoration: none; display: flex; align-items: center;"><img src="https://peerwave.org/logo_28.png" style="width:24px;height:24px;padding-right: 0.25rem;"/><span style="color:white;">PeerWave</span><span style="color:#4fbfb3;"> - Private communication you fully control.</span></a></p>
-                            </div>
-                          </div>
-                        `,
-                        text: `Your OTP is ${otp}. This code expires in ${config.otp.expirationMinutes} minutes.`
-                    }).then(info => {
-                        console.log("Message sent: %s", info.messageId);
-                    }).catch(error => {
-                        console.error(error);
-                    });
+                            `,
+                            text: `Your OTP is ${otp}. This code expires in ${config.otp.expirationMinutes} minutes.`
+                        }).then(info => {
+                            console.log("Message sent: %s", info.messageId);
+                        }).catch(error => {
+                            console.error('Error sending OTP email:', error);
+                        });
+                    } else {
+                        console.warn('[OTP] SMTP not configured - OTP email not sent');
+                    }
 
 
                     // Save the OTP and email in temporary storage
@@ -623,6 +626,12 @@ authRoutes.post("/otp", (req, res) => {
             req.session.otp = true;
             req.session.authenticated = true;
             req.session.uuid = updatedUser.uuid; // ensure uuid present
+            // Update registration step based on user status
+            if (!updatedUser.backupCodes) {
+                req.session.registrationStep = 'backup_codes';
+            } else {
+                req.session.registrationStep = 'complete';
+            }
             // Optional: attach client info immediately if provided
             const clientId = req.body && req.body.clientId;
             if (clientId) {
@@ -667,6 +676,7 @@ authRoutes.get("/backupcode/list", async(req, res) => {
         
         const backupCodes = generateBackupCodes();
         await saveBackupCodes(user.email, backupCodes);
+        req.session.registrationStep = 'webauthn';
         res.status(200).json({ status: "ok", backupCodes: backupCodes });
 
     } catch (error) {
@@ -903,6 +913,8 @@ authRoutes.post('/webauthn/register-challenge', async (req, res) => {
 
 // Verify registration response
 authRoutes.post('/webauthn/register', async (req, res) => {
+    // Check if this is the first credential - if so, advance registration step
+    const isFirstCredential = req.session.authenticated && req.session.registrationStep === 'webauthn';
     if(!req.session.otp && !req.session.authenticated && !req.session.email) {
         return res.status(400).json({ status: "error", message: "User not authenticated." });
     }
@@ -986,6 +998,11 @@ authRoutes.post('/webauthn/register', async (req, res) => {
                 'saveWebAuthnCredential'
             );
 
+            // Advance registration step to profile if this is during registration
+            if (isFirstCredential) {
+                req.session.registrationStep = 'profile';
+            }
+
             res.json({ status: "ok" });
         } catch (error) {
             console.error('Error during registration:', error);
@@ -1044,38 +1061,40 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
             const otp = Math.floor(100000 + Math.random() * 900000); // Generate a 6-digit OTP
             const email = error.email; // Get the registered email
             
-            // Format OTP with spaces (e.g., "1 2 3 4 5 6")
-            const otpSpaced = otp.toString().split('').join(' ');
-
-            transporter.sendMail({
-                from: config.smtp.senderadress,
-                to: email,
-                subject: "Your Recovery Code",
-                html: `
-                  <div style="font-family:'Nunito Sans', system-ui, -apple-system, sans-serif; background-color:#0f1419; padding:40px 16px; color:#d6dde3;">
-                    <div style="max-width:600px; margin:0 auto; background-color:#141b22; border-radius:12px; padding:32px; box-shadow:0 0 0 1px rgba(0, 188, 212, 0.08);">
-                      <h2 style="margin-top:0; color:#f59e0b; font-weight:600; letter-spacing:0.3px;">Account Recovery</h2>
-                      <p style="color:#cbd5dc; line-height:1.6;">We received a request to access your account. Use this recovery code to continue:</p>
-                      <div style="margin:32px 0; padding:24px; background-color:#0f1419; border-radius:10px; border:2px solid rgba(245, 158, 11, 0.3); text-align:center;">
-                        <div style="font-size:42px; font-weight:700; letter-spacing:12px; color:#f59e0b; font-family:'Courier New', monospace;">${otpSpaced}</div>
+            // Send recovery email (if SMTP is configured)
+            if (transporter) {
+                transporter.sendMail({
+                    from: config.smtp.senderadress,
+                    to: email,
+                    subject: "Your Recovery Code",
+                    html: `
+                      <div style="font-family:'Nunito Sans', system-ui, -apple-system, sans-serif; background-color:#0f1419; padding:40px 16px; color:#d6dde3;">
+                        <div style="max-width:600px; margin:0 auto; background-color:#141b22; border-radius:12px; padding:32px; box-shadow:0 0 0 1px rgba(0, 188, 212, 0.08);">
+                          <h2 style="margin-top:0; color:#f59e0b; font-weight:600; letter-spacing:0.3px;">Account Recovery</h2>
+                          <p style="color:#cbd5dc; line-height:1.6;">We received a request to access your account. Use this recovery code to continue:</p>
+                          <div style="margin:32px 0; padding:24px; background-color:#0f1419; border-radius:10px; border:2px solid rgba(245, 158, 11, 0.3); text-align:center;">
+                            <div style="font-size:42px; font-weight:700; letter-spacing:12px; color:#f59e0b; font-family:'Courier New', monospace;">${otp}</div>
+                          </div>
+                          <div style="margin:24px 0; padding:16px; background-color:#0f1419; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                            <p style="margin:0; color:#9fb3bf; font-size:14px; line-height:1.6;">
+                              <strong style="color:#ef4444;">⚠️ Security Alert:</strong><br>
+                              This code expires in <strong style="color:#f59e0b;">${config.otp.expirationMinutes} minutes</strong>. If you didn't request this, please ignore this email and secure your account.
+                            </p>
+                          </div>
+                          <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
+                          <p style="font-size:12px; color:#6b7c86; margin:0;">Sent from PeerWave<br><a href="https://peerwave.org" style="text-decoration: none; display: flex; align-items: center;"><img src="https://peerwave.org/logo_28.png" style="width:24px;height:24px;padding-right: 0.25rem;"/><span style="color:white;">PeerWave</span><span style="color:#4fbfb3;"> - Private communication you fully control.</span></a></p>
+                        </div>
                       </div>
-                      <div style="margin:24px 0; padding:16px; background-color:#0f1419; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                        <p style="margin:0; color:#9fb3bf; font-size:14px; line-height:1.6;">
-                          <strong style="color:#ef4444;">⚠️ Security Alert:</strong><br>
-                          This code expires in <strong style="color:#f59e0b;">${config.otp.expirationMinutes} minutes</strong>. If you didn't request this, please ignore this email and secure your account.
-                        </p>
-                      </div>
-                      <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">
-                      <p style="font-size:12px; color:#6b7c86; margin:0;">Sent from PeerWave<br><a href="https://peerwave.org" style="text-decoration: none; display: flex; align-items: center;"><img src="https://peerwave.org/logo_28.png" style="width:24px;height:24px;padding-right: 0.25rem;"/><span style="color:white;">PeerWave</span><span style="color:#4fbfb3;"> - Private communication you fully control.</span></a></p>
-                    </div>
-                  </div>
-                `,
-                text: `Your recovery code is ${otp}. This code expires in ${config.otp.expirationMinutes} minutes.`
-            }).then(info => {
-                console.log("Message sent: %s", info.messageId);
-            }).catch(error => {
-                console.error(error);
-            });
+                    `,
+                    text: `Your recovery code is ${otp}. This code expires in ${config.otp.expirationMinutes} minutes.`
+                }).then(info => {
+                    console.log("Recovery email sent: %s", info.messageId);
+                }).catch(error => {
+                    console.error('Error sending recovery email:', error);
+                });
+            } else {
+                console.warn('[RECOVERY] SMTP not configured - recovery email not sent');
+            }
 
             const expiration = new Date().getTime() + config.otp.expirationMinutes * 60 * 1000;
             writeQueue.enqueue(

@@ -53,37 +53,18 @@ class PresenceService {
       const status = this._getUserStatus(user_id);
       console.log(`[PRESENCE] Calculated status for ${user_id}: ${status}`);
 
-      // Update database
-      const [existing] = await sequelize.query(`
-        SELECT * FROM user_presence WHERE user_id = ?
-      `, {
-        replacements: [user_id]
-      });
-
-      if (existing.length > 0) {
-        await writeQueue.enqueue(
-          () => sequelize.query(`
-            UPDATE user_presence
-            SET status = ?, last_heartbeat = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = ?
-          `, {
-            replacements: [status, user_id]
-          }),
-          'updatePresenceOnConnect'
-        );
-        console.log(`[PRESENCE] Updated existing record for ${user_id}: status=${status}`);
-      } else {
-        await writeQueue.enqueue(
-          () => sequelize.query(`
-            INSERT INTO user_presence (user_id, status, last_heartbeat)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-          `, {
-            replacements: [user_id, status]
-          }),
-          'insertPresenceOnConnect'
-        );
-        console.log(`[PRESENCE] Created new record for ${user_id}: status=${status}`);
-      }
+      // Update database using UPSERT (INSERT OR REPLACE)
+      // This avoids race conditions when multiple connections register simultaneously
+      await writeQueue.enqueue(
+        () => sequelize.query(`
+          INSERT OR REPLACE INTO user_presence (user_id, status, last_heartbeat, updated_at)
+          VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `, {
+          replacements: [user_id, status]
+        }),
+        'upsertPresenceOnConnect'
+      );
+      console.log(`[PRESENCE] Updated record for ${user_id}: status=${status}`);
 
       console.log(`[PRESENCE] User ${user_id} connected (socket ${socket_id}), status: ${status}`);
       return status;

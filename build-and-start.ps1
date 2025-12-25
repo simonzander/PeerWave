@@ -59,12 +59,12 @@ if ($mode -eq "quick") {
     $containerExists = docker ps -a --filter "name=peerwave-server" --format "{{.Names}}"
     if (-not $containerExists) {
         Write-Host " Container doesn't exist! Starting..." -ForegroundColor Yellow
-        docker-compose up -d
+        docker-compose -f docker-compose.dev.yml --env-file .env.develop up -d
         Start-Sleep -Seconds 3
     } else {
         # Stop container to avoid file locking issues
         Write-Host "   Stopping container..." -ForegroundColor Gray
-        docker-compose stop peerwave-server | Out-Null
+        docker-compose -f docker-compose.dev.yml --env-file .env.develop stop peerwave-server | Out-Null
         Start-Sleep -Seconds 1
     }
     
@@ -93,7 +93,7 @@ if ($mode -eq "quick") {
     
     Write-Host ""
     Write-Host " [3/3] Starting container..." -ForegroundColor Yellow
-    docker-compose up -d peerwave-server
+    docker-compose -f docker-compose.dev.yml --env-file .env.develop up -d peerwave-server
     
     Write-Host ""
     Write-Host " QUICK UPDATE DONE!" -ForegroundColor Green
@@ -101,7 +101,7 @@ if ($mode -eq "quick") {
     Write-Host ""
     
     Start-Sleep -Seconds 2
-    docker-compose ps
+    docker-compose -f docker-compose.dev.yml --env-file .env.develop ps
     exit 0
 }
 
@@ -164,7 +164,7 @@ if ($mode -eq "flutter") {
 if ($mode -eq "docker" -or $mode -eq "full") {
     Write-Host ""
     Write-Host " [DOCKER] Building Docker image..." -ForegroundColor Yellow
-    docker-compose build
+    docker-compose -f docker-compose.dev.yml --env-file .env.develop build
     if ($LASTEXITCODE -ne 0) {
         Write-Host " Docker build failed!" -ForegroundColor Red
         exit 1
@@ -173,21 +173,10 @@ if ($mode -eq "docker" -or $mode -eq "full") {
 
     Write-Host ""
     Write-Host " [DOCKER] Starting containers..." -ForegroundColor Yellow
-    docker-compose up -d
+    docker-compose -f docker-compose.dev.yml --env-file .env.develop up -d
     if ($LASTEXITCODE -ne 0) {
         Write-Host " Start failed!" -ForegroundColor Red
         exit 1
-    }
-    
-    Write-Host ""
-    Write-Host " [DB] Running database migrations..." -ForegroundColor Yellow
-    Set-Location server
-    node migrations/migrate.js
-    Set-Location ..
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host " Migrations failed (non-fatal, continuing)..." -ForegroundColor Yellow
-    } else {
-        Write-Host " Migrations completed" -ForegroundColor Green
     }
 }
 
@@ -199,4 +188,4 @@ Write-Host " http://localhost:3000" -ForegroundColor Cyan
 Write-Host ""
 
 Start-Sleep -Seconds 3
-docker-compose ps
+docker-compose -f docker-compose.dev.yml --env-file .env.develop ps

@@ -19,11 +19,6 @@ WORKDIR /usr/src/app
 # Copy ONLY package files first (better layer caching)
 COPY package*.json ./
 
-# Set environment variables to prefer prebuilt binaries
-ENV MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=false \
-    MEDIASOUP_LOCAL_DEV=false \
-    MEDIASOUP_BUILDTYPE=Release
-
 # Install dependencies
 # mediasoup will try prebuilt binary first (fast), compile if needed (slow but works)
 RUN npm ci --only=production && \
@@ -71,7 +66,7 @@ RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
     echo 'exec gosu node "$@"' >> /docker-entrypoint.sh && \
     chmod +x /docker-entrypoint.sh
 
-# Install gosu for switching users (Debian equivalent of su-exec)
+# Install gosu for switching users (Debian)
 RUN apt-get update && apt-get install -y gosu && rm -rf /var/lib/apt/lists/*
 
 # Health check (Port 3000)
@@ -83,9 +78,6 @@ ENTRYPOINT ["/docker-entrypoint.sh"]
 
 # Expose ports
 # 3000: HTTP/WebSocket (Signaling)
-# 40000-40099: RTP/RTCP for mediasoup (UDP + TCP)
 EXPOSE 3000
-EXPOSE 40000-40099/udp
-EXPOSE 40000-40099/tcp
 
 CMD [ "node", "server.js" ]

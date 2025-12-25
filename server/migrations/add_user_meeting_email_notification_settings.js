@@ -15,6 +15,13 @@ async function up() {
   };
 
   const tableName = await getUsersTableName();
+  
+  // Check if Users table exists
+  const allTables = await queryInterface.showAllTables();
+  if (!allTables.includes(tableName)) {
+    console.log('⊙ Users table does not exist yet, skipping migration');
+    return;
+  }
 
   // SQLite column existence check
   const tableInfo = await sequelize.query(

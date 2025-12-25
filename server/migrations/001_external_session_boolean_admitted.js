@@ -15,6 +15,16 @@ async function up() {
   console.log('[MIGRATION] Starting ExternalSession schema migration...');
   
   try {
+    // Check if ExternalSessions table exists
+    const [tables] = await temporaryStorage.query(`
+      SELECT name FROM sqlite_master WHERE type='table' AND name='ExternalSessions';
+    `);
+    
+    if (tables.length === 0) {
+      console.log('[MIGRATION] ⊙ ExternalSessions table does not exist yet, skipping');
+      return;
+    }
+    
     // ExternalSession uses temporaryStorage (in-memory SQLite)
     // Check if columns already exist
     const [columns] = await temporaryStorage.query(`

@@ -28,42 +28,48 @@ const temporaryStorage = new Sequelize({
     storage: ':memory:'
 });
 
-//sequelize.sync({ alter: true });
+// Database sync happens after migrations (in server.js)
+// Migrations modify existing schema, sync creates missing tables
 
-sequelize.authenticate()
-    .then(async () => {
-        console.log('Connection to SQLite database has been established successfully.');
-        
-        // Enable WAL mode and optimizations
-        try {
-            await sequelize.query("PRAGMA journal_mode=WAL");
-            console.log('✓ SQLite WAL mode enabled');
+// Export a promise that resolves when database is ready
+const dbReady = new Promise((resolve, reject) => {
+    sequelize.authenticate()
+        .then(async () => {
+            console.log('✓ Model connected to database');
             
-            await sequelize.query("PRAGMA busy_timeout=5000");
-            console.log('✓ SQLite busy_timeout set to 5000ms');
+            // Sync models to database (alter=false since migrations handle schema updates)
+            await sequelize.sync({ alter: false });
+            console.log('✓ Database schema synced');
             
-            await sequelize.query("PRAGMA synchronous=NORMAL");
-            console.log('✓ SQLite synchronous mode set to NORMAL');
+            // Apply SQLite optimizations
+            try {
+                await sequelize.query("PRAGMA journal_mode=WAL");
+                await sequelize.query("PRAGMA busy_timeout=5000");
+                await sequelize.query("PRAGMA synchronous=NORMAL");
+                await sequelize.query("PRAGMA cache_size=-64000");
+                await sequelize.query("PRAGMA temp_store=MEMORY");
+                console.log('✓ SQLite optimizations applied');
+            } catch (error) {
+                console.warn('⚠ SQLite optimization warning:', error.message);
+            }
             
-            await sequelize.query("PRAGMA cache_size=-64000");
-            console.log('✓ SQLite cache_size set to 64MB');
-            
-            await sequelize.query("PRAGMA temp_store=MEMORY");
-            console.log('✓ SQLite temp_store set to MEMORY');
-        } catch (error) {
-            console.error('Error setting SQLite PRAGMAs:', error);
-        }
-    })
-    .catch(error => {
-        console.error('Unable to connect to the database:', error);
-    });
+            resolve(); // Database is ready
+        })
+        .catch(error => {
+            console.error('Unable to connect to the database:', error);
+            reject(error);
+        });
+});
 
     temporaryStorage.authenticate()
-    .then(() => {
-        console.log('Connection to temp SQLite database has been established successfully.');
+    .then(async () => {
+        console.log('✓ Temporary storage (in-memory) initialized');
+        // Sync in-memory tables
+        await temporaryStorage.sync();
     })
     .catch(error => {
         console.error('Unable to connect to the temp database:', error);
+        process.exit(1);
     });
 
 // Define User model
@@ -996,105 +1002,6 @@ Channel.belongsToMany(User, {
 temporaryStorage.sync({ alter: false })
     .then(() => console.log('Temporary tables created successfully.'))
     .catch(error => console.error('Error creating temporary tables:', error));
-// Create the User table in the database
-// Sync referenced tables first
-sequelize.sync({ alter: false })
-    .then(async () => {
-        console.log('All main tables created successfully.');
-        
-        // Initialize standard roles
-        await initializeStandardRoles();
-    })
-    .catch(error => console.error('Error creating main tables:', error));
-
-// Initialize standard roles
-async function initializeStandardRoles() {
-    try {
-        const standardRoles = [
-            // Server scope roles
-            {
-                name: 'Administrator',
-                description: 'Full server access with all permissions',
-                scope: 'server',
-                permissions: ['*'],
-                standard: true
-            },
-            {
-                name: 'Moderator',
-                description: 'Server moderator with limited admin permissions',
-                scope: 'server',
-                permissions: ['user.manage', 'channel.manage', 'message.moderate', 'role.create', 'role.edit', 'role.delete'],
-                standard: false
-            },
-            {
-                name: 'User',
-                description: 'Standard user role',
-                scope: 'server',
-                permissions: ['channel.join', 'channel.create', 'message.send', 'message.read'],
-                standard: false
-            },
-            // Channel WebRTC scope roles
-            {
-                name: 'Channel Owner',
-                description: 'Owner of a WebRTC channel with full control',
-                scope: 'channelWebRtc',
-                permissions: ['*'],
-                standard: true
-            },
-            {
-                name: 'Channel Moderator',
-                description: 'WebRTC channel moderator',
-                scope: 'channelWebRtc',
-                permissions: ['user.add', 'user.kick', 'user.mute', 'stream.manage', 'role.assign', 'member.view'],
-                standard: false
-            },
-            {
-                name: 'Channel Member',
-                description: 'Regular member of a WebRTC channel',
-                scope: 'channelWebRtc',
-                permissions: ['stream.view', 'stream.send', 'chat.send', 'member.view'],
-                standard: false
-            },
-            // Channel Signal scope roles
-            {
-                name: 'Channel Owner',
-                description: 'Owner of a Signal channel with full control',
-                scope: 'channelSignal',
-                permissions: ['*'],
-                standard: true
-            },
-            {
-                name: 'Channel Moderator',
-                description: 'Signal channel moderator',
-                scope: 'channelSignal',
-                permissions: ['user.add', 'message.delete', 'user.kick', 'user.mute', 'role.assign', 'member.view'],
-                standard: false
-            },
-            {
-                name: 'Channel Member',
-                description: 'Regular member of a Signal channel',
-                scope: 'channelSignal',
-                permissions: ['message.send', 'message.read', 'message.react', 'member.view'],
-                standard: false
-            }
-        ];
-
-        for (const roleData of standardRoles) {
-            await Role.findOrCreate({
-                where: { 
-                    name: roleData.name,
-                    scope: roleData.scope
-                },
-                defaults: roleData
-            });
-        }
-        
-        console.log('✓ Standard roles initialized');
-    } catch (error) {
-        console.error('Error initializing standard roles:', error);
-    }
-}
-
 
 // ServerSettings model (single row configuration)
 const ServerSettings = sequelize.define('ServerSettings', {
@@ -1198,5 +1105,6 @@ module.exports = {
     ServerSettings,
     Invitation,
     sequelize,
-    temporaryStorage
+    temporaryStorage,
+    dbReady
 };

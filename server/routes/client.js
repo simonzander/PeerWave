@@ -1954,6 +1954,9 @@ clientRoutes.post("/client/profile/setup",
 
         console.log(`[PROFILE SETUP] User ${userUuid} completed profile setup with displayName: ${displayName}`);
 
+        // Mark registration as complete
+        req.session.registrationStep = 'complete';
+
         // Clear the registration session - user must log in properly after registration
         req.session.destroy((err) => {
             if (err) {

@@ -11,7 +11,12 @@ const sanitizeHtml = require('sanitize-html');
 const cors = require('cors');
 const session = require('express-session');
 const sharedSession = require('socket.io-express-session');
-const { User, Channel, Thread, Client, SignalSignedPreKey, SignalPreKey, Item, ChannelMembers, SignalSenderKey, GroupItem, GroupItemRead } = require('./db/model');
+
+// Database initialization - MUST happen before loading model
+// This is handled by initializeDatabase() called at the end of the file
+
+let User, Channel, Thread, Client, SignalSignedPreKey, SignalPreKey, Item, ChannelMembers, SignalSenderKey, GroupItem, GroupItemRead;
+
 const path = require('path');
 const writeQueue = require('./db/writeQueue');
 const { initCleanupJob, runCleanup } = require('./jobs/cleanup');
@@ -256,6 +261,51 @@ const sessionMiddleware = session({
 // Use session middleware in Express
 app.use(sessionMiddleware);
 
+// Registration step middleware - redirects to correct step based on session
+app.use((req, res, next) => {
+  // Only check for registration paths
+  if (!req.path.startsWith('/register')) {
+    return next();
+  }
+
+  // Skip API calls and static resources
+  if (req.path.includes('.') || req.path.startsWith('/api/')) {
+    return next();
+  }
+
+  const step = req.session.registrationStep;
+  const currentPath = req.path;
+
+  // Define step to path mapping
+  const stepPaths = {
+    'otp': '/register/otp',
+    'backup_codes': '/register/backupcode',
+    'webauthn': '/register/webauthn',
+    'profile': '/register/profile',
+    'complete': '/app'
+  };
+
+  // If no registration step, allow access to /register (start)
+  if (!step && currentPath === '/register') {
+    return next();
+  }
+
+  // If user has a registration step, redirect to correct page
+  if (step && stepPaths[step]) {
+    const correctPath = stepPaths[step];
+    
+    // If user is on wrong step page, serve correct step
+    if (currentPath !== correctPath && currentPath.startsWith('/register/')) {
+      console.log(`[REGISTRATION] Redirecting from ${currentPath} to ${correctPath} (current step: ${step})`);
+      // Return the correct step page instead
+      req.url = correctPath;
+      req.originalUrl = correctPath;
+    }
+  }
+
+  next();
+});
+
 
   const authRoutes = require('./routes/auth');
   const clientRoutes = require('./routes/client');
@@ -288,54 +338,6 @@ app.use(sessionMiddleware);
     } else {
       next();
     }
-  });
-
-  // Run HMAC auth database migration
-  const { migrate: migrateHmacAuth } = require('./migrations/add_hmac_auth');
-  migrateHmacAuth().catch(err => {
-    console.error('Failed to run HMAC auth migration:', err);
-  });
-
-  // Run device_id migration for client_sessions
-  const { up: migrateDeviceId } = require('./migrations/add_device_id_to_sessions');
-  migrateDeviceId().catch(err => {
-    console.error('Failed to run device_id migration:', err);
-  });
-
-  // Run server settings migration
-  const { up: migrateServerSettings } = require('./migrations/add_server_settings');
-  migrateServerSettings().catch(err => {
-    console.error('Failed to run server settings migration:', err);
-  });
-
-  // Run meetings system migration
-  const { up: migrateMeetingsSystem } = require('./migrations/add_meetings_system');
-  migrateMeetingsSystem().catch(err => {
-    console.error('Failed to run meetings system migration:', err);
-  });
-
-  // Run meeting invitations migration
-  const { up: migrateMeetingInvitations } = require('./migrations/add_meeting_invitations');
-  migrateMeetingInvitations().catch(err => {
-    console.error('Failed to run meeting invitations migration:', err);
-  });
-
-  // Run meeting RSVP storage migration
-  const { up: migrateMeetingRsvps } = require('./migrations/add_meeting_rsvps');
-  migrateMeetingRsvps().catch(err => {
-    console.error('Failed to run meeting RSVP migration:', err);
-  });
-
-  // Run user meeting email notification settings migration
-  const { up: migrateUserMeetingEmailNotificationSettings } = require('./migrations/add_user_meeting_email_notification_settings');
-  migrateUserMeetingEmailNotificationSettings().catch(err => {
-    console.error('Failed to run user meeting email notification settings migration:', err);
-  });
-
-  // Run user meeting notification settings v2 migration
-  const { up: migrateUserMeetingNotificationSettingsV2 } = require('./migrations/add_user_meeting_notification_settings_v2');
-  migrateUserMeetingNotificationSettingsV2().catch(err => {
-    console.error('Failed to run user meeting notification settings v2 migration:', err);
   });
 
   // License info endpoint
@@ -434,7 +436,7 @@ app.use(sessionMiddleware);
 
   //SOCKET.IO
 const rooms = {};
-const port = config.port || 4000;
+const port = config.port || 3000;
 
 const server = http.createServer(app);
 const io = require("socket.io")(server);
@@ -4154,17 +4156,8 @@ app.get('*', (req, res) => {
   res.sendFile(path.resolve(__dirname, 'web', 'index.html'));
 });
 
-// Initialize cleanup cronjob
-initCleanupJob();
-runCleanup();
-
-// Initialize meeting services
-const meetingCleanupService = require('./services/meetingCleanupService');
-const presenceService = require('./services/presenceService');
-
-meetingCleanupService.start();
-presenceService.start();
-console.log('✓ Meeting and presence services initialized');
+// Cleanup and meeting services are initialized in the database initialization sequence
+// (see end of file - after migrations and model are ready)
 
 // Graceful shutdown handler
 process.on('SIGTERM', async () => {
@@ -4189,20 +4182,93 @@ process.on('SIGINT', async () => {
   }
 });
 
-server.listen(port, async () => {
-  console.log(`Server is running on port ${port}`);
+// Initialize database and start server
+(async () => {
+  console.log('\n═'.repeat(35));
+  console.log('DATABASE INITIALIZATION');
+  console.log('═'.repeat(35));
   
-  // Database migrations removed from server startup
-  // Run migrations manually with: node migrations/migrate.js
-  
-  // Start HMAC session auth cleanup jobs
-  const { cleanupNonces, cleanupSessions } = require('./middleware/sessionAuth');
-  
-  // Clean up old nonces every 10 minutes
-  setInterval(cleanupNonces, 10 * 60 * 1000);
-  console.log('✓ HMAC nonce cleanup job started (every 10 minutes)');
-  
-  // Clean up expired sessions every hour
-  setInterval(cleanupSessions, 60 * 60 * 1000);
-  console.log('✓ HMAC session cleanup job started (every hour)');
-});
+  try {
+    // Step 1: Run migrations
+    const { runMigrations } = require('./db/init-database');
+    await runMigrations();
+    console.log('✓ Migrations completed\n');
+    
+    // Step 2: Load model (will sync/create tables)
+    const models = require('./db/model');
+    
+    // Step 3: Wait for model to be ready
+    await models.dbReady;
+    console.log('✓ Model ready');
+    
+    // Assign models to global variables
+    User = models.User;
+    Channel = models.Channel;
+    Thread = models.Thread;
+    Client = models.Client;
+    SignalSignedPreKey = models.SignalSignedPreKey;
+    SignalPreKey = models.SignalPreKey;
+    Item = models.Item;
+    ChannelMembers = models.ChannelMembers;
+    SignalSenderKey = models.SignalSenderKey;
+    GroupItem = models.GroupItem;
+    GroupItemRead = models.GroupItemRead;
+    const Role = models.Role;
+    
+    // Step 4: Initialize standard roles
+    async function initializeStandardRoles() {
+        try {
+            const standardRoles = [
+                // Server scope roles
+                { name: 'Administrator', description: 'Full server access with all permissions', scope: 'server', permissions: ['*'], standard: true },
+                { name: 'Moderator', description: 'Server moderator with limited admin permissions', scope: 'server', permissions: ['user.manage', 'channel.manage', 'message.moderate', 'role.create', 'role.edit', 'role.delete'], standard: false },
+                { name: 'User', description: 'Standard user role', scope: 'server', permissions: ['channel.join', 'channel.create', 'message.send', 'message.read'], standard: false },
+                // Channel WebRTC scope roles
+                { name: 'Channel Owner', description: 'Owner of a WebRTC channel with full control', scope: 'channelWebRtc', permissions: ['*'], standard: true },
+                { name: 'Channel Moderator', description: 'WebRTC channel moderator', scope: 'channelWebRtc', permissions: ['user.add', 'user.kick', 'user.mute', 'stream.manage', 'role.assign', 'member.view'], standard: false },
+                { name: 'Channel Member', description: 'Regular member of a WebRTC channel', scope: 'channelWebRtc', permissions: ['stream.view', 'stream.send', 'chat.send', 'member.view'], standard: false },
+                // Channel Signal scope roles
+                { name: 'Channel Owner', description: 'Owner of a Signal channel with full control', scope: 'channelSignal', permissions: ['*'], standard: true },
+                { name: 'Channel Moderator', description: 'Signal channel moderator', scope: 'channelSignal', permissions: ['user.add', 'message.delete', 'user.kick', 'user.mute', 'role.assign', 'member.view'], standard: false },
+                { name: 'Channel Member', description: 'Regular member of a Signal channel', scope: 'channelSignal', permissions: ['message.send', 'message.read', 'message.react', 'member.view'], standard: false }
+            ];
+            for (const roleData of standardRoles) {
+                await Role.findOrCreate({ where: { name: roleData.name, scope: roleData.scope }, defaults: roleData });
+            }
+        } catch (error) {
+            console.error('Error initializing standard roles:', error);
+            throw error;
+        }
+    }
+    await initializeStandardRoles();
+    console.log('✓ Standard roles initialized\n');
+    
+    // Step 5: Initialize cleanup and meeting services
+    initCleanupJob();
+    runCleanup();
+    const meetingCleanupService = require('./services/meetingCleanupService');
+    const presenceService = require('./services/presenceService');
+    meetingCleanupService.start();
+    presenceService.start();
+    console.log('✓ Meeting and presence services initialized\n');
+    
+    // Step 6: Start server
+    server.listen(port, async () => {
+      console.log(`Server is running on port ${port}`);
+      
+      // Start HMAC session auth cleanup jobs
+      const { cleanupNonces, cleanupSessions } = require('./middleware/sessionAuth');
+      
+      // Clean up old nonces every 10 minutes
+      setInterval(cleanupNonces, 10 * 60 * 1000);
+      console.log('✓ HMAC nonce cleanup job started (every 10 minutes)');
+      
+      // Clean up expired sessions every hour
+      setInterval(cleanupSessions, 60 * 60 * 1000);
+      console.log('✓ HMAC session cleanup job started (every hour)');
+    });
+  } catch (error) {
+    console.error('❌ Database initialization failed:', error);
+    process.exit(1);
+  }
+})();
