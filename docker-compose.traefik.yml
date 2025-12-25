@@ -20,16 +20,32 @@ services:
     container_name: peerwave-cert-dumper
     restart: unless-stopped
     
-    command: file --watch --source /acme.json --dest /output --domain-subdir=true
+    # Wait for acme.json to exist and contain certificates, then start dumper
+    entrypoint: >
+      sh -c "
+      apk add --no-cache docker-cli jq;
+      echo 'Waiting for acme.json with certificates...';
+      while ! [ -e /acme.json ] || ! [ $$(jq 'if type==\"object\" then [.[]] else . end | map(select(.Certificates)) | map(.Certificates) | flatten | length' /acme.json 2>/dev/null || echo 0) -gt 0 ]; do
+        sleep 5;
+        echo 'Still waiting... (acme.json may be empty or Traefik is requesting certificates)';
+      done;
+      echo 'Certificates found in acme.json, starting dumper...';
+      echo '[CERT-DUMPER] Domains found in acme.json:';
+      jq -r 'if type==\"object\" then [.[]] else . end | .[] | .Certificates[]? | .domain.main' /acme.json 2>/dev/null | sort -u;
+      traefik-certs-dumper file --version v3 --watch 
+        --source /acme.json 
+        --dest /output 
+        --domain-subdir=true
+        --post-hook 'echo [CERT-DUMPER] Certificate renewed at $$(date); echo [CERT-DUMPER] Available domains:; ls -la /output/; docker restart peerwave-livekit || echo [CERT-DUMPER] Warning: Could not restart LiveKit'
+      "
     
     volumes:
       # Mount Traefik's acme.json (READ-ONLY)
       - ${TRAEFIK_ACME_PATH:-/etc/traefik/acme.json}:/acme.json:ro
       # Output directory for extracted certificates
       - cert-data:/output
-    
-    environment:
-      - DOMAIN=${DOMAIN}
+      # Mount docker socket to restart LiveKit on cert renewal
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     
     networks:
       - peerwave-internal
@@ -143,16 +159,25 @@ services:
     # Copy certs on startup
     entrypoint: >
       sh -c "
-      echo 'Waiting for certificates...';
+      echo '[LiveKit] Waiting for certificates...';
+      echo '[LiveKit] Looking for domain: '$$CERT_DOMAIN;
+      echo '[LiveKit] Checking /certs-source/ directory...';
+      ls -la /certs-source/ 2>/dev/null || echo '[LiveKit] Directory not yet available';
       while [ ! -f /certs-source/$${CERT_DOMAIN}/certificate.crt ]; do 
-        sleep 2; 
+        sleep 2;
+        echo '[LiveKit] Still waiting for /certs-source/'$$CERT_DOMAIN'/certificate.crt';
+        ls -la /certs-source/ 2>/dev/null || true;
       done;
-      echo 'Certificates found, starting LiveKit...';
+      echo '[LiveKit] ✅ Certificates found for '$$CERT_DOMAIN;
+      echo '[LiveKit] Files available:';
+      ls -la /certs-source/$${CERT_DOMAIN}/;
       mkdir -p /certs;
       cp /certs-source/$${CERT_DOMAIN}/certificate.crt /certs/turn-cert.pem;
       cp /certs-source/$${CERT_DOMAIN}/privatekey.key /certs/turn-key.pem;
       chmod 644 /certs/turn-cert.pem;
       chmod 600 /certs/turn-key.pem;
+      echo '[LiveKit] Certificates copied and permissions set';
+      echo '[LiveKit] Starting LiveKit server...';
       exec /livekit-server --config /etc/livekit.yaml
       "
     
