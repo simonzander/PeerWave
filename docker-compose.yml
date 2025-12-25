@@ -74,7 +74,7 @@ services:
       - EMAIL_PASS=${EMAIL_PASS}
       - EMAIL_FROM=${EMAIL_FROM}
       # Admin Users
-      - ADMIN_EMAILS=${ADMIN_EMAILS}
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
       # OTP Configuration
       - OTP_EXPIRATION_MINUTES=${OTP_EXPIRATION_MINUTES:-10}
       - OTP_WAIT_TIME_MINUTES=${OTP_WAIT_TIME_MINUTES:-1}
