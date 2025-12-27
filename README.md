@@ -379,20 +379,32 @@ Both must use the same values for authentication to work.
 Download pre-built native clients from [GitHub Releases](https://github.com/simonzander/PeerWave/releases):
 
 - **Windows**: `.exe` installer or portable `.zip`
+- **Android**: `.apk`
 - **macOS**: `.dmg` installer (coming soon)
 - **Linux**: AppImage (coming soon)
 
 #### Build from Source
 
+**Windows:**
 ```bash
-# Windows
 cd client
 flutter build windows --release
+```
 
-# macOS  
+**Android:**
+```bash
+cd client
+flutter build apk --release --split-per-abi
+```
+See [ANDROID_BUILD.md](ANDROID_BUILD.md) for detailed Android build instructions.
+
+**macOS:**
+```bash
 flutter build macos --release
+```
 
-# Linux
+**Linux:**
+```bash
 flutter build linux --release
 ```
 

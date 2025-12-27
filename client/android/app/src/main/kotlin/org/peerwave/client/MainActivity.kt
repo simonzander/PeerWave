@@ -1,4 +1,4 @@
-package com.example.peerwave_client
+package org.peerwave.client
 
 import io.flutter.embedding.android.FlutterActivity
 

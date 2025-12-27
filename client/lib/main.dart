@@ -1,6 +1,7 @@
 import 'package:socket_io_client/socket_io_client.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
@@ -108,7 +109,7 @@ import 'services/clientid_native.dart'
     if (dart.library.js) 'services/clientid_web.dart';
 import 'services/session_auth_service.dart';
 import 'debug_storage.dart';
-import 'package:bitsdojo_window/bitsdojo_window.dart';
+import 'utils/window_stub.dart';
 import 'core/storage/app_directories.dart';
 import 'services/system_tray_service_web.dart'
     if (dart.library.io) 'services/system_tray_service.dart';
@@ -201,8 +202,8 @@ Future<void> main() async {
     ),
   );
 
-  // Configure native window appearance
-  if (!kIsWeb) {
+  // Configure native window appearance (desktop only)
+  if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
     // Initialize system tray service first
     final systemTray = SystemTrayService();
     await systemTray.initialize();

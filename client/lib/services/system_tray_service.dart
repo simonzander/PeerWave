@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:tray_manager/tray_manager.dart';
-import 'package:bitsdojo_window/bitsdojo_window.dart';
+import '../utils/window_stub.dart';
 import 'package:launch_at_startup/launch_at_startup.dart';
 import 'package:path/path.dart' as path;
 
@@ -164,18 +164,27 @@ class SystemTrayService with TrayListener {
 
   /// Show the application window
   Future<void> showWindow() async {
-    appWindow.show();
-    appWindow.restore();
+    if (!kIsWeb &&
+        (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
+      appWindow.show();
+      appWindow.restore();
+    }
   }
 
   /// Hide the application window
   Future<void> hideWindow() async {
-    appWindow.hide();
+    if (!kIsWeb &&
+        (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
+      appWindow.hide();
+    }
   }
 
   /// Quit the application completely
   Future<void> quitApp() async {
-    appWindow.close();
+    if (!kIsWeb &&
+        (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
+      appWindow.close();
+    }
   }
 
   // TrayListener implementation

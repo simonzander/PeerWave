@@ -1251,7 +1251,9 @@ authRoutes.get("/magic/generate", (req, res) => {
         // Generate magic key with new format: {serverUrl}:{randomHash}:{timestamp}:{hmacSignature}
         // Use hostname and explicit port to ensure port is included
         const host = req.get('host') || 'localhost:3000';
-        const serverUrl = `${req.protocol}://${host}`;
+        // Check X-Forwarded-Proto header for reverse proxy HTTPS (Nginx, Cloudflare, etc.)
+        const protocol = req.get('x-forwarded-proto') || req.protocol;
+        const serverUrl = `${protocol}://${host}`;
         const randomHash = crypto.randomBytes(32).toString('hex');
         const timestamp = Date.now();
         const expiresAt = timestamp + 5 * 60 * 1000; // 5 min expiry

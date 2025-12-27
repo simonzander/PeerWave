@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:bitsdojo_window/bitsdojo_window.dart';
 import '../services/system_tray_service_web.dart'
@@ -17,7 +18,7 @@ class CustomWindowTitleBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Only show on desktop platforms
-    if (kIsWeb) {
+    if (kIsWeb || Platform.isAndroid || Platform.isIOS) {
       return const SizedBox.shrink();
     }
 
@@ -138,7 +139,8 @@ class WindowTitleBarWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb) {
+    // Only show custom title bar on desktop platforms
+    if (kIsWeb || Platform.isAndroid || Platform.isIOS) {
       return child;
     }
 
