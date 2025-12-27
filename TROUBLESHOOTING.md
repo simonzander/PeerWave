@@ -42,47 +42,6 @@ docker-compose up -d
 
 ## Video Call Issues
 
-### E2EE key exchange fails on second join
-
-**Issue:** "Future already completed" or "GoException" errors when joining a meeting/video channel for the second time
-
-**Symptoms:**
-- First join works fine
-- Second join attempt fails with E2EE key exchange errors
-- Error messages like: `Uncaught : GoException: Exception during redirect: Bad state: Future already completed`
-- Client tries to get E2EE key even when first participant
-
-**Cause:** State from previous session not properly cleaned up, causing completer or KeyProvider conflicts
-
-**Solution:**
-
-This has been fixed in the latest version. If you're experiencing this issue:
-
-1. **Update client code** - Ensure you have the latest version with proper cleanup
-2. **Clear app data** - Force stop and clear cache/data:
-   - **Web:** Clear browser cache and local storage
-   - **Windows:** Delete `%APPDATA%/PeerWave`
-   - **macOS:** Delete `~/Library/Application Support/PeerWave`
-   - **Linux:** Delete `~/.config/PeerWave`
-3. **Rebuild app** - If building from source:
-   ```bash
-   cd client
-   flutter clean
-   flutter pub get
-   flutter build [platform]
-   ```
-
-**For developers:**
-
-The fix ensures proper cleanup of E2EE state in `VideoConferenceService`:
-- Completers are checked and cleaned before creating new ones
-- KeyProvider references are cleared on disconnect/leave
-- Proper error handling for incomplete futures
-
-See [video_conference_service.dart](client/lib/services/video_conference_service.dart) lines around `requestE2EEKey` and `leaveRoom` for implementation details.
-
----
-
 ### Video calls not working
 
 **Issue:** Can't join meetings or see other participants
