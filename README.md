@@ -47,6 +47,7 @@ At no point does the server have access to plaintext messages, files, media stre
 ## Table of Contents
 - [How it works?](#how-it-works)
 - [Table of Contents](#table-of-contents)
+- [Quick Start](#quick-start)
 - [Getting Started](#getting-started)
   - [Node](#node)
   - [Docker Build](#docker-build)
@@ -55,6 +56,22 @@ At no point does the server have access to plaintext messages, files, media stre
 - [Support](#support)
 - [License](#license)
   - [Commercial Licensing](#commercial-licensing)
+
+## Quick Start
+
+**New to PeerWave?** Choose your deployment:
+
+1. **Local Testing:** Use [Docker Compose (Simple)](#option-1-docker-compose-simple---recommended-for-getting-started) - No SSL, runs on localhost
+2. **Production:** Use [Docker Compose + Traefik](#option-2-docker-compose--traefik-production-with-ssl) - Auto SSL with Let's Encrypt
+3. **Custom Build:** Use [Manual Build](#option-3-manual-build-from-source) - For developers
+
+**Files you'll need:**
+- `docker-compose.yml` or `docker-compose.traefik.yml` - Container orchestration
+- `.env` - Your configuration (secrets, domain, etc.)
+- `livekit-config.yaml` - Video server settings
+- `nginx-livekit.conf` - Proxy config (Traefik deployment only)
+
+---
 
 ### Deployment Options
 
@@ -132,11 +149,13 @@ Best for production deployments with automatic HTTPS via Let's Encrypt. Uses pre
 # - docker-compose.traefik.yml
 # - .env.traefik.example
 # - livekit-config.yaml (if customizing TURN domain)
+# - nginx-livekit.conf.example (rename to nginx-livekit.conf)
 #
 # You can use:
 #   wget https://raw.githubusercontent.com/simonzander/PeerWave/main/docker-compose.traefik.yml
 #   wget https://raw.githubusercontent.com/simonzander/PeerWave/main/.env.traefik.example
 #   wget https://raw.githubusercontent.com/simonzander/PeerWave/main/livekit-config.yaml
+#   wget https://raw.githubusercontent.com/simonzander/PeerWave/main/nginx-livekit.conf.example
 #
 # Or download from GitHub web UI.
 #
@@ -145,7 +164,13 @@ Best for production deployments with automatic HTTPS via Let's Encrypt. Uses pre
 # 2. Copy Traefik environment template
 cp .env.traefik.example .env
 
-# 3. Edit configuration
+# 3. Copy nginx proxy configuration
+cp nginx-livekit.conf.example nginx-livekit.conf
+
+# 3. Copy nginx proxy configuration
+cp nginx-livekit.conf.example nginx-livekit.conf
+
+# 4. Edit configuration
 nano .env
 ```
 
@@ -155,20 +180,26 @@ DOMAIN=app.yourdomain.com
 HTTPS=true
 LIVEKIT_TURN_DOMAIN=app.yourdomain.com
 TRAEFIK_ACME_PATH=/etc/traefik/acme.json  # Your Traefik's acme.json path
+LIVEKIT_CONFIG_PATH=/data/compose/25/livekit-config.yaml  # Absolute path
+NGINX_LIVEKIT_CONFIG_PATH=/data/compose/25/nginx-livekit.conf  # Absolute path
 SESSION_SECRET=$(openssl rand -base64 32)
 LIVEKIT_API_KEY=$(openssl rand -base64 32)
 LIVEKIT_API_SECRET=$(openssl rand -base64 32)
 ```
 
 ```bash
-# 4. Update livekit-config.yaml with your domain
+# 5. Update livekit-config.yaml with your domain and API keys
 nano livekit-config.yaml
 # Set: turn.domain: app.yourdomain.com
+# Set: keys section with your LIVEKIT_API_KEY: LIVEKIT_API_SECRET
 
-# 5. Start services (images pulled from Docker Hub, certs extracted automatically!)
+# 6. Verify nginx-livekit.conf (usually no changes needed)
+# Should have: proxy_pass http://172.17.0.1:7880;
+
+# 7. Start services (images pulled from Docker Hub, certs extracted automatically!)
 docker-compose -f docker-compose.traefik.yml up -d
 
-# 6. View logs
+# 8. View logs
 docker-compose -f docker-compose.traefik.yml logs -f
 ```
 
@@ -239,6 +270,9 @@ chmod +x build-docker.sh
 | `LIVEKIT_API_KEY` | LiveKit API key | ✅ Yes | `$(openssl rand -base64 32)` |
 | `LIVEKIT_API_SECRET` | LiveKit API secret | ✅ Yes | `$(openssl rand -base64 32)` |
 | `LIVEKIT_TURN_DOMAIN` | Your domain for TURN | ✅ Prod | `app.yourdomain.com` |
+| `TRAEFIK_ACME_PATH` | Path to Traefik's acme.json | ✅ Traefik | `/etc/traefik/acme.json` |
+| `LIVEKIT_CONFIG_PATH` | Path to livekit-config.yaml | ✅ Traefik | `/data/compose/25/livekit-config.yaml` |
+| `NGINX_LIVEKIT_CONFIG_PATH` | Path to nginx-livekit.conf | ✅ Traefik | `/data/compose/25/nginx-livekit.conf` |
 
 #### Optional Environment Variables
 
@@ -295,6 +329,8 @@ ADMIN_EMAILS=admin@example.com,admin2@example.com
 DOMAIN=app.yourdomain.com
 LIVEKIT_TURN_DOMAIN=app.yourdomain.com
 TRAEFIK_ACME_PATH=/etc/traefik/acme.json
+LIVEKIT_CONFIG_PATH=/data/compose/25/livekit-config.yaml
+NGINX_LIVEKIT_CONFIG_PATH=/data/compose/25/nginx-livekit.conf
 SESSION_SECRET=your-long-random-string
 LIVEKIT_API_KEY=your-key
 LIVEKIT_API_SECRET=your-secret
@@ -325,6 +361,16 @@ openssl rand -base64 32
 # Windows PowerShell
 [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 ```
+
+**Important:** The `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` in your `.env` file must match the keys in `livekit-config.yaml`:
+
+```yaml
+# livekit-config.yaml
+keys:
+  your-api-key-here: your-api-secret-here
+```
+
+Both must use the same values for authentication to work.
 
 ---
 
@@ -389,23 +435,34 @@ flutter build linux --release
 
 #### For Traefik Deployment (docker-compose.traefik.yml)
 
-| Port | Protocol | Service | Purpose | Traefik |
-|------|----------|---------|---------|---------|
-| 80 | TCP | HTTP | Redirect to HTTPS | ✅ Managed |
-| 443 | TCP | HTTPS | Web/API Server | ✅ Managed |
-| 7880 | TCP | LiveKit WS | WebRTC signaling | ❌ Direct |
-| 443 | UDP | TURN/UDP | P2P traversal | ❌ Direct |
-| 5349 | TCP/UDP | TURN/TLS | Firewall-friendly | ❌ Direct |
-| 30100-30200 | UDP | RTP Media | WebRTC streams | ❌ Direct |
-| 30300-30400 | UDP | TURN Relay | P2P relay | ❌ Direct |
+| Port | Protocol | Service | Purpose | Notes |
+|------|----------|---------|---------|-------|
+| 80 | TCP | HTTP | Redirect to HTTPS | Traefik managed |
+| 443 | TCP | HTTPS | Web/API Server | Traefik managed |
+| 7880 | TCP | LiveKit WS | WebRTC signaling | Via nginx proxy |
+| 443 | UDP | TURN/UDP | P2P traversal | Direct to LiveKit |
+| 5349 | TCP/UDP | TURN/TLS | Firewall-friendly | Direct to LiveKit |
+| 30100-30200 | UDP | RTP Media | WebRTC streams | Direct to LiveKit |
+| 30300-30400 | UDP | TURN Relay | P2P relay | Direct to LiveKit |
 
-**Note:** Traefik manages HTTP/HTTPS (ports 80/443 TCP). LiveKit requires direct port access for WebRTC.
+**Architecture Notes:**
+- Traefik manages HTTPS (port 443 TCP) and routes to nginx proxy
+- nginx proxy (bridge network) forwards WebSocket to LiveKit (host network)
+- LiveKit uses **host networking** due to VPS limitations with UDP port ranges
+- Direct UDP ports (443, 5349, 30100-30400) bind to host for WebRTC traffic
+
+**VPS Compatibility:** If your VPS doesn't support bridge networking with UDP ports, this configuration uses host networking for LiveKit while keeping other services on bridge networks.
 
 ---
 
 ### Troubleshooting
 
 For common issues and solutions, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+
+**VPS-Specific Issues:**
+- Bridge networking fails with UDP ports → Use host networking (already configured in docker-compose.traefik.yml)
+- 502 Bad Gateway with LiveKit → Check nginx-livekit.conf uses `172.17.0.1:7880`
+- `host.docker.internal` doesn't work on Linux → Use Docker bridge gateway IP
 
 Quick diagnostics:
 ```bash

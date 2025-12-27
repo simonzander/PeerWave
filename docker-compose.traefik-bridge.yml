@@ -1,11 +1,6 @@
 # Docker Compose configuration for PeerWave with Traefik reverse proxy
+# BRIDGE NETWORKING MODE - LiveKit with direct Traefik routing
 # 
-# Simple setup with automatic certificate handling:
-# 1. Set your domain in .env file
-# 2. Point DNS to your server
-# 3. Run: docker-compose -f docker-compose.traefik.yml up -d
-# 4. Done! Certificates are extracted automatically.
-#
 # Prerequisites:
 #   - Traefik proxy network: docker network create proxy
 #   - Domain DNS pointing to your server
@@ -85,7 +80,7 @@ services:
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
       
-      # LiveKit Connection (via Traefik proxy to host LiveKit)
+      # LiveKit Connection (via Traefik proxy)
       - LIVEKIT_URL=wss://${DOMAIN}/livekit
       - LIVEKIT_TURN_DOMAIN=${LIVEKIT_TURN_DOMAIN}
       
@@ -134,53 +129,30 @@ services:
     
     depends_on:
       - peerwave-livekit
-  
-  # Traefik proxy to LiveKit (host networking workaround)
-  livekit-proxy:
-    image: nginx:alpine
-    container_name: livekit-proxy
-    restart: unless-stopped
-    
-    networks:
-      - proxy
-    
-    volumes:
-      # Mount nginx configuration from absolute path
-      - ${NGINX_LIVEKIT_CONFIG_PATH:-./nginx-livekit.conf}:/etc/nginx/nginx.conf:ro
-    
-    labels:
-      # Enable Traefik
-      - "traefik.enable=true"
-      - "traefik.docker.network=proxy"
-      
-      # WebSocket Router (wss://domain/livekit)
-      - "traefik.http.routers.livekit.entrypoints=https"
-      - "traefik.http.routers.livekit.rule=Host(`${DOMAIN}`) && PathPrefix(`/livekit`)"
-      - "traefik.http.routers.livekit.tls=true"
-      - "traefik.http.routers.livekit.tls.certresolver=http"
-      - "traefik.http.routers.livekit.service=livekit"
-      
-      # Strip /livekit prefix before forwarding
-      - "traefik.http.middlewares.livekit-stripprefix.stripprefix.prefixes=/livekit"
-      - "traefik.http.routers.livekit.middlewares=livekit-stripprefix"
-      
-      # Service (proxy listens on 8080, proxies to host:7880)
-      - "traefik.http.services.livekit.loadbalancer.server.port=8080"
 
-  # LiveKit Server (SFU for video calls)
+  # LiveKit Server (SFU for video calls) - BRIDGE MODE
   peerwave-livekit:
     image: livekit/livekit-server:latest
     container_name: peerwave-livekit
     restart: unless-stopped
-    
-    # Use host networking (recommended for WebRTC performance)
-    network_mode: host
     
     volumes:
       # Use extracted certificates from cert-dumper
       - cert-data:/certs-source:ro
       # Mount LiveKit configuration from absolute path
       - ${LIVEKIT_CONFIG_PATH:-./livekit-config.yaml}:/livekit.yaml:ro
+    
+    networks:
+      - proxy
+      - peerwave-internal
+    
+    ports:
+      # TURN TLS
+      - "5349:5349/tcp"
+      # TURN UDP
+      - "443:443/udp"
+      # WebRTC UDP port range
+      - "30100-30400:30100-30400/udp"
     
     environment:
       # Certificate domain for extraction
@@ -191,9 +163,6 @@ services:
       
       # Server Configuration
       - LIVEKIT_PORT=7880
-      - LIVEKIT_PORT_TLS=7881
-      - LIVEKIT_TLS_CERT=/certs/turn-cert.pem
-      - LIVEKIT_TLS_KEY=/certs/turn-key.pem
       - LIVEKIT_BIND=0.0.0.0
       
       # WebRTC Configuration
@@ -248,8 +217,27 @@ services:
         echo '[LiveKit] Starting server with config file...';
         exec /livekit-server --config /livekit.yaml
     
-    # Note: With host networking, ports are directly accessible on the host
-    # Required firewall ports: 7880 (HTTP), 7881 (WebRTC/TCP), 443/udp (TURN), 5349 (TURN/TLS), 30100-30400/udp (WebRTC)
+    labels:
+      # Enable Traefik
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      
+      # WebSocket Router (wss://domain/livekit)
+      - "traefik.http.routers.livekit.entrypoints=https"
+      - "traefik.http.routers.livekit.rule=Host(`${DOMAIN}`) && PathPrefix(`/livekit`)"
+      - "traefik.http.routers.livekit.tls=true"
+      - "traefik.http.routers.livekit.tls.certresolver=http"
+      - "traefik.http.routers.livekit.service=livekit"
+      
+      # Strip /livekit prefix before forwarding
+      - "traefik.http.middlewares.livekit-stripprefix.stripprefix.prefixes=/livekit"
+      - "traefik.http.routers.livekit.middlewares=livekit-stripprefix"
+      
+      # Service (LiveKit listens on 7880)
+      - "traefik.http.services.livekit.loadbalancer.server.port=7880"
+    
+    # Note: TURN ports exposed directly (not through Traefik)
+    # WebSocket goes through Traefik on standard HTTPS port 443
 
 networks:
   # External Traefik proxy network

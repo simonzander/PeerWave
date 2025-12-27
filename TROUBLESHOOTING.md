@@ -6,6 +6,7 @@ Common issues and solutions for PeerWave deployment and operation.
 
 ## Table of Contents
 
+- [VPS and Network Issues](#vps-and-network-issues)
 - [Web Client Issues](#web-client-issues)
 - [Video Call Issues](#video-call-issues)
 - [Database Issues](#database-issues)
@@ -41,6 +42,47 @@ docker-compose up -d
 
 ## Video Call Issues
 
+### E2EE key exchange fails on second join
+
+**Issue:** "Future already completed" or "GoException" errors when joining a meeting/video channel for the second time
+
+**Symptoms:**
+- First join works fine
+- Second join attempt fails with E2EE key exchange errors
+- Error messages like: `Uncaught : GoException: Exception during redirect: Bad state: Future already completed`
+- Client tries to get E2EE key even when first participant
+
+**Cause:** State from previous session not properly cleaned up, causing completer or KeyProvider conflicts
+
+**Solution:**
+
+This has been fixed in the latest version. If you're experiencing this issue:
+
+1. **Update client code** - Ensure you have the latest version with proper cleanup
+2. **Clear app data** - Force stop and clear cache/data:
+   - **Web:** Clear browser cache and local storage
+   - **Windows:** Delete `%APPDATA%/PeerWave`
+   - **macOS:** Delete `~/Library/Application Support/PeerWave`
+   - **Linux:** Delete `~/.config/PeerWave`
+3. **Rebuild app** - If building from source:
+   ```bash
+   cd client
+   flutter clean
+   flutter pub get
+   flutter build [platform]
+   ```
+
+**For developers:**
+
+The fix ensures proper cleanup of E2EE state in `VideoConferenceService`:
+- Completers are checked and cleaned before creating new ones
+- KeyProvider references are cleared on disconnect/leave
+- Proper error handling for incomplete futures
+
+See [video_conference_service.dart](client/lib/services/video_conference_service.dart) lines around `requestE2EEKey` and `leaveRoom` for implementation details.
+
+---
+
 ### Video calls not working
 
 **Issue:** Can't join meetings or see other participants
@@ -57,9 +99,19 @@ docker-compose logs peerwave-livekit
 #### 2. Verify API credentials match
 
 ```bash
-# server/.env and docker-compose.yml must have same values
-grep LIVEKIT_API server/.env
-docker-compose config | grep LIVEKIT_API
+# Check .env file
+grep LIVEKIT_API .env
+
+# Check livekit-config.yaml
+grep -A 1 "keys:" livekit-config.yaml
+
+# They must match: LIVEKIT_API_KEY: LIVEKIT_API_SECRET in both files
+# Example:
+# .env: LIVEKIT_API_KEY=abc123
+# .env: LIVEKIT_API_SECRET=xyz789
+# livekit-config.yaml:
+#   keys:
+#     abc123: xyz789
 ```
 
 #### 3. Test TURN server connectivity
@@ -356,11 +408,109 @@ EMAIL_PASS=your-password
 
 ---
 
+## VPS and Network Issues
+
+### Bridge networking fails with UDP port ranges
+
+**Issue:** Docker fails to start with error: `failed to start userland proxy for port mapping` or `failed to set up container networking`
+
+**Cause:** Some VPS providers (OpenVZ, LXC containers) have kernel/iptables limitations that prevent Docker from mapping large UDP port ranges in bridge mode.
+
+**Solution:** Use host networking for LiveKit (already configured in docker-compose.traefik.yml):
+
+```yaml
+# LiveKit service uses host networking
+peerwave-livekit:
+  network_mode: host  # Binds directly to host ports
+```
+
+**Trade-off:** Host networking means:
+- ✅ Works around VPS limitations
+- ✅ Better performance (no NAT overhead)
+- ❌ LiveKit can't communicate with bridge network containers
+- ❌ Requires nginx proxy to bridge gap
+
+**Verification:**
+```bash
+# Check if LiveKit is using host networking
+docker inspect peerwave-livekit | grep NetworkMode
+# Should show: "NetworkMode": "host"
+
+# Verify ports are listening on host
+ss -tlnp | grep 7880  # Should show LiveKit process
+```
+
+### 502 Bad Gateway with LiveKit WebSocket
+
+**Issue:** Video calls fail with 502 Bad Gateway when connecting to `wss://domain/livekit/rtc`
+
+**Cause:** nginx proxy can't reach LiveKit because `host.docker.internal` doesn't resolve on Linux VPS.
+
+**Solutions:**
+
+#### 1. Use Docker bridge gateway IP (Recommended)
+
+```nginx
+# nginx-livekit.conf
+location / {
+    proxy_pass http://172.17.0.1:7880;  # Docker bridge gateway IP
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+```
+
+**Why 172.17.0.1?** It's the default Docker bridge gateway IP that always points to the host machine on Linux.
+
+#### 2. Verify Docker bridge gateway IP
+
+```bash
+# Check your Docker bridge gateway IP
+ip addr show docker0
+# Look for: inet 172.17.0.1/16
+
+# Or check Docker network details
+docker network inspect bridge | grep Gateway
+```
+
+#### 3. Test nginx connectivity
+
+```bash
+# Check nginx logs for connection errors
+docker logs livekit-proxy --tail 20
+
+# Test from inside nginx container
+docker exec livekit-proxy wget -O- http://172.17.0.1:7880
+# Should return LiveKit response, not connection refused
+
+# Verify LiveKit is listening on host
+ss -tlnp | grep 7880
+# Should show: 0.0.0.0:7880 LISTEN
+```
+
+#### 4. Architecture overview
+
+```
+Client Browser
+  ↓ wss://domain/livekit/rtc
+Traefik (HTTPS:443 - TLS termination)
+  ↓ HTTP to livekit-proxy:8080 (bridge network)
+nginx-proxy
+  ↓ proxy_pass to 172.17.0.1:7880
+  ↓ (Docker bridge gateway → host)
+LiveKit (host network, port 7880)
+```
+
+**Files to check:**
+- `nginx-livekit.conf` - Must use `172.17.0.1:7880`
+- `docker-compose.traefik.yml` - LiveKit must use `network_mode: host`
+- `.env` - `LIVEKIT_URL` must be `wss://${DOMAIN}/livekit`
+
 ## Traefik Integration Issues
 
 ### 502 Bad Gateway or can't access via domain
 
-**Issue:** 502 Bad Gateway or can't access via domain
+**Issue:** 502 Bad Gateway or can't access via domain (main app, not LiveKit)
 
 **Solutions:**
 

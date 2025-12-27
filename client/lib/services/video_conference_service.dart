@@ -439,22 +439,40 @@ class VideoConferenceService extends ChangeNotifier {
         '[VideoConf][TEST] ⏳ Waiting for key response (10 second timeout)...',
       );
 
+      // Clean up any existing completer before creating a new one
+      if (service._keyReceivedCompleter != null) {
+        debugPrint(
+          '[VideoConf][TEST] ⚠️ Existing completer found - cleaning up...',
+        );
+        if (!service._keyReceivedCompleter!.isCompleted) {
+          service._keyReceivedCompleter!.completeError(
+            Exception('New key request initiated'),
+          );
+        }
+        service._keyReceivedCompleter = null;
+      }
+
       // Wait for key response (handled by MessageListenerService)
       service._keyReceivedCompleter = Completer<bool>();
 
       // Timeout after 10 seconds
-      return await service._keyReceivedCompleter!.future.timeout(
-        Duration(seconds: 10),
-        onTimeout: () {
-          debugPrint(
-            '[VideoConf][TEST] ❌ KEY REQUEST TIMEOUT - No response in 10 seconds',
-          );
-          debugPrint(
-            '═══════════════════════════════════════════════════════════',
-          );
-          return false;
-        },
-      );
+      try {
+        return await service._keyReceivedCompleter!.future.timeout(
+          Duration(seconds: 10),
+          onTimeout: () {
+            debugPrint(
+              '[VideoConf][TEST] ❌ KEY REQUEST TIMEOUT - No response in 10 seconds',
+            );
+            debugPrint(
+              '═══════════════════════════════════════════════════════════',
+            );
+            return false;
+          },
+        );
+      } finally {
+        // Always clean up the completer after waiting
+        service._keyReceivedCompleter = null;
+      }
     } catch (e) {
       debugPrint('[VideoConf][TEST] ❌ ERROR requesting E2EE key: $e');
       debugPrint('═══════════════════════════════════════════════════════════');
@@ -1537,7 +1555,23 @@ class VideoConferenceService extends ChangeNotifier {
     _channelSharedKey = null;
     _keyTimestamp = null;
     _isFirstParticipant = false;
-    _keyReceivedCompleter = null;
+
+    // Clean up completer if still waiting
+    if (_keyReceivedCompleter != null) {
+      if (!_keyReceivedCompleter!.isCompleted) {
+        _keyReceivedCompleter!.completeError(
+          Exception('Disconnected while waiting for key'),
+        );
+      }
+      _keyReceivedCompleter = null;
+    }
+
+    // Clean up KeyProvider
+    if (_keyProvider != null) {
+      debugPrint('[VideoConf] ✓ Clearing KeyProvider reference on disconnect');
+      _keyProvider = null;
+    }
+
     _currentChannelId = null;
 
     notifyListeners();
@@ -1582,7 +1616,22 @@ class VideoConferenceService extends ChangeNotifier {
       _channelSharedKey = null;
       _keyTimestamp = null;
       _isFirstParticipant = false;
-      _keyReceivedCompleter = null;
+
+      // Clean up completer if still waiting
+      if (_keyReceivedCompleter != null) {
+        if (!_keyReceivedCompleter!.isCompleted) {
+          _keyReceivedCompleter!.completeError(
+            Exception('Room left while waiting for key'),
+          );
+        }
+        _keyReceivedCompleter = null;
+      }
+
+      // Clean up KeyProvider to prevent state leakage
+      if (_keyProvider != null) {
+        debugPrint('[VideoConf] ✓ Clearing KeyProvider reference');
+        _keyProvider = null;
+      }
 
       _isConnected = false;
       _isConnecting = false;

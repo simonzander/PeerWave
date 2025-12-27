@@ -1,0 +1,35 @@
+# nginx proxy configuration for LiveKit WebSocket
+# Bridges Traefik (bridge network) to LiveKit (host network)
+# Copy this file to nginx-livekit.conf and update paths in .env
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    server {
+        listen 8080;
+        
+        location / {
+            # Docker bridge gateway IP - points to host on Linux
+            # On some systems this might be different, check with: ip addr show docker0
+            proxy_pass http://172.17.0.1:7880;
+            
+            # WebSocket support
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            
+            # Forward headers
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # Long timeouts for WebSocket connections
+            proxy_connect_timeout 7d;
+            proxy_send_timeout 7d;
+            proxy_read_timeout 7d;
+        }
+    }
+}
