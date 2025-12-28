@@ -61,9 +61,9 @@ class ServerConfigCard extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 SelectableText(
@@ -92,7 +92,9 @@ class ServerConfigCard extends StatelessWidget {
           Icon(
             isConnected ? Icons.check_circle : Icons.cancel,
             size: 20,
-            color: isConnected ? Colors.green : Colors.red,
+            color: isConnected
+                ? const Color(0xFF4CAF50)
+                : const Color(0xFFF44336),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -101,15 +103,17 @@ class ServerConfigCard extends StatelessWidget {
               children: [
                 Text(
                   'Connection Status',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   status,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: isConnected ? Colors.green : Colors.red,
+                    color: isConnected
+                        ? const Color(0xFF4CAF50)
+                        : const Color(0xFFF44336),
                     fontWeight: FontWeight.bold,
                   ),
                 ),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../services/user_profile_service.dart';
+import '../theme/semantic_colors.dart';
+import '../theme/avatar_colors.dart';
 
 /// Widget to display user avatar with picture or initials
 class UserAvatar extends StatefulWidget {
@@ -133,7 +135,7 @@ class _UserAvatarState extends State<UserAvatar> {
                 height: widget.size / 4,
                 decoration: BoxDecoration(
                   color: widget.isOnline
-                      ? Colors.green
+                      ? Theme.of(context).colorScheme.success
                       : colorScheme.onSurface.withValues(alpha: 0.3),
                   shape: BoxShape.circle,
                   border: Border.all(color: colorScheme.surface, width: 2),
@@ -165,18 +167,7 @@ class _UserAvatarState extends State<UserAvatar> {
   /// Generate consistent color for user based on name
   /// Uses theme-compatible pastel colors for better visual harmony
   Color _getColorForUser(String name) {
-    final hash = name.hashCode;
-    final colors = [
-      const Color(0xFF7C4DFF), // Deep Purple (softer)
-      const Color(0xFF5C6BC0), // Indigo (softer)
-      const Color(0xFF42A5F5), // Blue (softer)
-      const Color(0xFF26A69A), // Teal (softer)
-      const Color(0xFF66BB6A), // Green (softer)
-      const Color(0xFFFF7043), // Deep Orange (softer)
-      const Color(0xFFEC407A), // Pink (softer)
-      const Color(0xFFAB47BC), // Purple (softer)
-    ];
-    return colors[hash.abs() % colors.length];
+    return AvatarColors.colorForName(name);
   }
 }
 
@@ -373,7 +364,7 @@ class _SquareUserAvatarState extends State<SquareUserAvatar> {
                 height: widget.size / 4,
                 decoration: BoxDecoration(
                   color: widget.isOnline
-                      ? Colors.green
+                      ? Theme.of(context).colorScheme.success
                       : colorScheme.onSurface.withValues(alpha: 0.3),
                   shape: BoxShape.circle,
                   border: Border.all(color: colorScheme.surface, width: 2),
@@ -395,17 +386,6 @@ class _SquareUserAvatarState extends State<SquareUserAvatar> {
   /// Generate consistent color for user based on name
   /// Uses theme-compatible pastel colors for better visual harmony
   Color _getColorForUser(String name) {
-    final hash = name.hashCode;
-    const colors = [
-      Color(0xFF7C4DFF), // Deep Purple (softer)
-      Color(0xFF5C6BC0), // Indigo (softer)
-      Color(0xFF42A5F5), // Blue (softer)
-      Color(0xFF26A69A), // Teal (softer)
-      Color(0xFF66BB6A), // Green (softer)
-      Color(0xFFFF7043), // Deep Orange (softer)
-      Color(0xFFEC407A), // Pink (softer)
-      Color(0xFFAB47BC), // Purple (softer)
-    ];
-    return colors[hash.abs() % colors.length];
+    return AvatarColors.colorForName(name);
   }
 }

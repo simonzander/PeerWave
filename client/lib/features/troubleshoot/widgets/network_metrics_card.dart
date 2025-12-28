@@ -38,14 +38,14 @@ class NetworkMetricsCard extends StatelessWidget {
               'Successful API Calls',
               successfulApiCalls,
               Icons.check_circle,
-              color: Colors.green,
+              color: const Color(0xFF4CAF50), // Green
             ),
             _buildMetricRow(
               context,
               'Failed API Calls',
               failedApiCalls,
               Icons.error,
-              color: Colors.red,
+              color: const Color(0xFFF44336), // Red
             ),
             const Divider(height: 32),
             _buildMetricRow(
@@ -53,14 +53,14 @@ class NetworkMetricsCard extends StatelessWidget {
               'Socket Messages Sent',
               socketEmitCount,
               Icons.arrow_upward,
-              color: Colors.blue,
+              color: const Color(0xFF2196F3), // Blue
             ),
             _buildMetricRow(
               context,
               'Socket Messages Received',
               socketReceiveCount,
               Icons.arrow_downward,
-              color: Colors.orange,
+              color: const Color(0xFFFF9800), // Orange
             ),
           ],
         ),

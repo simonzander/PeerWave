@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../utils/image_color_extractor.dart';
+import '../theme/avatar_colors.dart';
 
 /// Widget that displays a participant's profile picture with a colored background
 /// when their camera is deactivated
@@ -46,7 +47,7 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
   Future<void> _extractBackgroundColor() async {
     if (widget.profilePictureBase64.isEmpty) {
       setState(() {
-        _backgroundColor = Colors.teal;
+        _backgroundColor = AvatarColors.defaultProfile;
         _isLoading = false;
       });
       return;
@@ -66,7 +67,7 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
       debugPrint('[ParticipantProfileDisplay] Error extracting color: $e');
       if (mounted) {
         setState(() {
-          _backgroundColor = Colors.teal;
+          _backgroundColor = AvatarColors.defaultProfile;
           _isLoading = false;
         });
       }
@@ -90,8 +91,8 @@ class _ParticipantProfileDisplayState extends State<ParticipantProfileDisplay> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Colors.teal.withValues(alpha: 0.6),
-                  Colors.teal.withValues(alpha: 0.3),
+                  AvatarColors.defaultProfile.withValues(alpha: 0.6),
+                  AvatarColors.defaultProfile.withValues(alpha: 0.3),
                 ],
               ),
       ),

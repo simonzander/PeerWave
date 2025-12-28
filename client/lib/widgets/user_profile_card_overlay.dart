@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'user_avatar.dart';
 import '../theme/app_theme_constants.dart';
+import '../theme/semantic_colors.dart';
 
 /// User Profile Card Overlay - Shows on hover over avatar/name
 ///
@@ -140,7 +141,11 @@ class UserProfileCardOverlay extends StatelessWidget {
                           width: 10,
                           height: 10,
                           decoration: BoxDecoration(
-                            color: isOnline ? Colors.green : Colors.grey,
+                            color: isOnline
+                                ? Theme.of(context).colorScheme.success
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -150,7 +155,7 @@ class UserProfileCardOverlay extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 13,
                             color: isOnline
-                                ? Colors.green
+                                ? Theme.of(context).colorScheme.success
                                 : AppThemeConstants.textSecondary,
                             fontWeight: FontWeight.w500,
                           ),

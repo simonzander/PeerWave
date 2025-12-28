@@ -83,9 +83,9 @@ class TroubleshootActionButton extends StatelessWidget {
   Color _getSeverityColor(ColorScheme colorScheme) {
     switch (severity) {
       case ActionSeverity.low:
-        return Colors.green;
+        return colorScheme.primary;
       case ActionSeverity.medium:
-        return Colors.orange;
+        return const Color(0xFFFF9800); // Orange
       case ActionSeverity.high:
         return Colors.deepOrange;
       case ActionSeverity.critical:
