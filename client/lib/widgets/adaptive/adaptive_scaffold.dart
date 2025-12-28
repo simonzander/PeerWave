@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../config/layout_config.dart';
+import '../../services/auth_service_native.dart'
+    if (dart.library.html) '../../services/auth_service_web.dart';
 
 /// Adaptive Scaffold - Material 3 Responsive Layout
 ///
@@ -191,7 +193,12 @@ class AdaptiveScaffold extends StatelessWidget {
   }
 
   /// Build Bottom NavigationBar (Mobile)
-  Widget _buildBottomNavigationBar(BuildContext context) {
+  Widget? _buildBottomNavigationBar(BuildContext context) {
+    // Hide bottom navigation bar when not logged in
+    if (!AuthService.isLoggedIn) {
+      return null;
+    }
+
     return NavigationBar(
       selectedIndex: selectedIndex,
       onDestinationSelected: onDestinationSelected,

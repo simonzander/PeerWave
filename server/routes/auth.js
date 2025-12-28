@@ -1261,13 +1261,13 @@ authRoutes.get("/magic/generate", (req, res) => {
         console.log(`[Magic Key] Generating key with serverUrl: ${serverUrl}`);
         
         // Create HMAC signature using session secret
-        const dataToSign = `${serverUrl}:${randomHash}:${timestamp}`;
+        const dataToSign = `${serverUrl}|${randomHash}|${timestamp}`;
         const hmac = crypto.createHmac('sha256', config.session.secret);
         hmac.update(dataToSign);
         const signature = hmac.digest('hex');
         
-        // Construct magic key in hex format
-        const magicKey = `${serverUrl}:${randomHash}:${timestamp}:${signature}`;
+        // Construct magic key with pipe delimiter (safe for all URL formats including IPv6)
+        const magicKey = `${serverUrl}|${randomHash}|${timestamp}|${signature}`;
         
         // Store in temporary store (one-time use)
         magicLinks[randomHash] = { 

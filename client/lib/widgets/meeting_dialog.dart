@@ -5,6 +5,7 @@ import '../models/meeting.dart';
 import '../services/meeting_service.dart';
 import '../services/api_service.dart';
 import '../services/signal_service.dart';
+import '../theme/semantic_colors.dart';
 
 /// Dialog for creating or editing meetings
 ///
@@ -233,7 +234,9 @@ class _MeetingDialogState extends State<MeetingDialog> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.grey[300]!)),
+        border: Border(
+          bottom: BorderSide(color: Theme.of(context).colorScheme.outline),
+        ),
       ),
       child: Row(
         children: [
@@ -346,7 +349,10 @@ class _MeetingDialogState extends State<MeetingDialog> {
             padding: const EdgeInsets.only(top: 8),
             child: Text(
               'End time must be after start time',
-              style: TextStyle(color: Colors.red[700], fontSize: 12),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.error,
+                fontSize: 12,
+              ),
             ),
           ),
       ],
@@ -460,9 +466,9 @@ class _MeetingDialogState extends State<MeetingDialog> {
         const SizedBox(height: 8),
         Text(
           'Search and add participants to this meeting',
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 12),
 
@@ -533,7 +539,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
           Container(
             constraints: const BoxConstraints(maxHeight: 150),
             decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey[300]!),
+              border: Border.all(color: Theme.of(context).colorScheme.outline),
               borderRadius: BorderRadius.circular(4),
             ),
             child: ListView.builder(
@@ -552,7 +558,10 @@ class _MeetingDialogState extends State<MeetingDialog> {
                   title: Text(user['name']!),
                   subtitle: Text(user['email']!),
                   trailing: isSelected
-                      ? const Icon(Icons.check_circle, color: Colors.green)
+                      ? Icon(
+                          Icons.check_circle,
+                          color: Theme.of(context).colorScheme.success,
+                        )
                       : null,
                   onTap: () => _toggleParticipant(user),
                 );
@@ -586,9 +595,9 @@ class _MeetingDialogState extends State<MeetingDialog> {
           if (chips.isEmpty)
             Text(
               'None',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             )
           else
             Wrap(spacing: 8, runSpacing: 8, children: chips),
@@ -712,9 +721,9 @@ class _MeetingDialogState extends State<MeetingDialog> {
 
     if (!_isValidEmail(email)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a valid email address'),
-          backgroundColor: Colors.red,
+        SnackBar(
+          content: const Text('Please enter a valid email address'),
+          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
       return;
@@ -722,9 +731,9 @@ class _MeetingDialogState extends State<MeetingDialog> {
 
     if (_emailInvitations.contains(email)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Email already added'),
-          backgroundColor: Colors.orange,
+        SnackBar(
+          content: const Text('Email already added'),
+          backgroundColor: Theme.of(context).colorScheme.warning,
         ),
       );
       return;
@@ -741,7 +750,9 @@ class _MeetingDialogState extends State<MeetingDialog> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: Colors.grey[300]!)),
+        border: Border(
+          top: BorderSide(color: Theme.of(context).colorScheme.outline),
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
@@ -775,9 +786,9 @@ class _MeetingDialogState extends State<MeetingDialog> {
     // Validate date/time
     if (_combinedEndDateTime.isBefore(_combinedStartDateTime)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('End time must be after start time'),
-          backgroundColor: Colors.red,
+        SnackBar(
+          content: const Text('End time must be after start time'),
+          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
       return;
@@ -895,7 +906,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to save meeting: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }

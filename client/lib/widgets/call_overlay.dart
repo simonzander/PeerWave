@@ -4,6 +4,7 @@ import 'package:livekit_client/livekit_client.dart';
 import '../services/video_conference_service.dart';
 import '../services/user_profile_service.dart';
 import '../models/participant_audio_state.dart';
+import '../theme/semantic_colors.dart';
 import 'speaking_border_wrapper.dart';
 import 'video_participant_tile.dart';
 
@@ -146,7 +147,7 @@ class _CallOverlayState extends State<CallOverlay> {
                       width: 32,
                       height: 32,
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
+                        color: Theme.of(context).colorScheme.overlayScrim,
                         borderRadius: const BorderRadius.only(
                           topLeft: Radius.circular(8),
                           bottomRight: Radius.circular(8),
@@ -154,7 +155,9 @@ class _CallOverlayState extends State<CallOverlay> {
                       ),
                       child: Icon(
                         Icons.open_in_full,
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.7),
                         size: 16,
                       ),
                     ),
@@ -229,7 +232,7 @@ class _CallOverlayState extends State<CallOverlay> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
+                  color: Theme.of(context).colorScheme.overlayScrim,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Row(
@@ -238,13 +241,17 @@ class _CallOverlayState extends State<CallOverlay> {
                     Icon(
                       Icons.drag_indicator,
                       size: 16,
-                      color: Colors.white.withValues(alpha: 0.7),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       service.channelName ?? 'Video Call',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.9),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.9),
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                       ),
@@ -395,7 +402,7 @@ class _CallOverlayState extends State<CallOverlay> {
       return Center(
         child: Icon(
           Icons.videocam_off,
-          color: Colors.white.withValues(alpha: 0.5),
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
           size: 48,
         ),
       );

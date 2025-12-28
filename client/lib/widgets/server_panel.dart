@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../services/server_config_native.dart';
 import '../services/device_identity_service.dart';
 import '../providers/unread_messages_provider.dart';
+import '../theme/semantic_colors.dart';
 
 /// Discord-like server panel for native clients
 /// Shows list of connected servers with icons and notification badges
@@ -285,9 +286,9 @@ class _ServerPanelState extends State<ServerPanel> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Server deleted successfully'),
-              backgroundColor: Colors.green,
+            SnackBar(
+              content: const Text('Server deleted successfully'),
+              backgroundColor: Theme.of(context).colorScheme.success,
             ),
           );
         }

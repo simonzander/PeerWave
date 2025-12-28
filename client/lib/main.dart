@@ -13,6 +13,7 @@ import 'auth/magic_link_web.dart'
     if (dart.library.io) 'auth/magic_link_native.dart';
 import 'auth/otp_web.dart';
 import 'auth/invitation_entry_page.dart';
+import 'theme/semantic_colors.dart';
 import 'auth/register_webauthn_page.dart'
     if (dart.library.io) 'auth/register_webauthn_page_native.dart';
 import 'auth/register_profile_page.dart';
@@ -582,7 +583,11 @@ class _MyAppState extends State<MyApp> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.error, size: 64, color: Colors.red),
+                          Icon(
+                            Icons.error,
+                            size: 64,
+                            color: Theme.of(context).colorScheme.error,
+                          ),
                           const SizedBox(height: 16),
                           const Text('Invalid invitation link'),
                           const SizedBox(height: 16),
@@ -629,11 +634,13 @@ class _MyAppState extends State<MyApp> {
                             '[EXTERNAL] ERROR: No meeting ID in session storage',
                           );
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
+                            SnackBar(
+                              content: const Text(
                                 'Error: Missing meeting information',
                               ),
-                              backgroundColor: Colors.red,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.error,
                             ),
                           );
                         }
@@ -644,9 +651,11 @@ class _MyAppState extends State<MyApp> {
                   },
                   onDeclined: () {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Your request to join was declined'),
-                        backgroundColor: Colors.red,
+                      SnackBar(
+                        content: const Text(
+                          'Your request to join was declined',
+                        ),
+                        backgroundColor: Theme.of(context).colorScheme.error,
                       ),
                     );
                   },

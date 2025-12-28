@@ -217,7 +217,7 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
 
   Widget _buildVideoPreview() {
     return Container(
-      color: Colors.black,
+      color: Theme.of(context).colorScheme.surface,
       child: _previewTrack != null && _isCameraEnabled
           ? VideoTrackRenderer(_previewTrack!)
           : Center(
@@ -227,7 +227,9 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
                   Icon(
                     Icons.videocam_off,
                     size: 64,
-                    color: Colors.white.withValues(alpha: 0.7),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -235,7 +237,9 @@ class VideoPreJoinWidgetState extends State<VideoPreJoinWidget> {
                         ? 'Select a camera to preview'
                         : 'Camera off',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.7),
                       fontSize: 16,
                     ),
                   ),

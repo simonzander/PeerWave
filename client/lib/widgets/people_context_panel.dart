@@ -6,6 +6,7 @@ import '../theme/app_theme_constants.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/animated_widgets.dart';
 import '../providers/unread_messages_provider.dart';
+import '../theme/semantic_colors.dart';
 
 /// People Context Panel - Shows recent conversations and quick access
 ///
@@ -252,7 +253,7 @@ class PeopleContextPanel extends StatelessWidget {
                                 width: 14,
                                 height: 14,
                                 decoration: BoxDecoration(
-                                  color: Colors.green,
+                                  color: Theme.of(context).colorScheme.success,
                                   shape: BoxShape.circle,
                                   border: Border.all(
                                     color: AppThemeConstants

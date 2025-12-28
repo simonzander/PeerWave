@@ -1359,40 +1359,28 @@ clientRoutes.post("/magic/verify", async (req, res) => {
         return res.status(400).json({ status: "failed", message: "Missing key or client ID" });
     }
     
-    // Parse new magic key format: {serverUrl}:{randomHash}:{timestamp}:{hmacSignature}
-    const parts = key.split(':');
+    // Parse new magic key format: {serverUrl}|{randomHash}|{timestamp}|{hmacSignature}
+    // Using pipe delimiter which is safe for all URL formats (including IPv6)
+    const parts = key.split('|');
+    
     console.log("Key parts:", parts);
     
-    if (parts.length < 4) {
-        return res.status(400).json({ status: "failed", message: "Invalid magic key format" });
+    if (parts.length !== 4) {
+        return res.status(400).json({ status: "failed", message: `Invalid magic key format - expected 4 parts, got ${parts.length}` });
     }
     
-    // Extract components (handle URLs with port)
-    const protocol = parts[0]; // http or https
-    const hostPart = parts[1].replace(/^\/\//, ''); // Remove leading //
-    
-    // Check if next part is a port number
-    let serverUrl = `${protocol}://${hostPart}`;
-    let nextIndex = 2;
-    
-    // If parts[2] is a number and looks like a port (< 65536), include it
-    const possiblePort = parseInt(parts[2]);
-    if (!isNaN(possiblePort) && possiblePort > 0 && possiblePort < 65536) {
-        serverUrl = `${protocol}://${hostPart}:${parts[2]}`;
-        nextIndex = 3;
-    }
-    
-    // Extract randomHash, timestamp, signature
-    const randomHash = parts[nextIndex];
-    const timestamp = parseInt(parts[nextIndex + 1]);
-    const providedSignature = parts.slice(nextIndex + 2).join(':'); // In case signature contains :
+    // Extract components
+    const serverUrl = parts[0];
+    const randomHash = parts[1];
+    const timestamp = parseInt(parts[2]);
+    const providedSignature = parts[3];
     
     console.log("Parsed - serverUrl:", serverUrl, "randomHash:", randomHash, "timestamp:", timestamp);
     
     // Verify HMAC signature
     const config = require('../config/config');
     const crypto = require('crypto');
-    const dataToSign = `${serverUrl}:${randomHash}:${timestamp}`;
+    const dataToSign = `${serverUrl}|${randomHash}|${timestamp}`;
     const hmac = crypto.createHmac('sha256', config.session.secret);
     hmac.update(dataToSign);
     const expectedSignature = hmac.digest('hex');

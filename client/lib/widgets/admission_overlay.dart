@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../models/external_session.dart';
 import '../services/external_participant_service.dart';
+import '../theme/semantic_colors.dart';
 
 /// Admission overlay - shows waiting guests to meeting participants
 ///
@@ -159,7 +160,7 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
             content: Text(
               '${guest.displayName} was already admitted by another participant',
             ),
-            backgroundColor: Colors.orange,
+            backgroundColor: Theme.of(context).colorScheme.warning,
           ),
         );
       }
@@ -177,7 +178,7 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('✓ Admitted ${guest.displayName}'),
-            backgroundColor: Colors.green,
+            backgroundColor: Theme.of(context).colorScheme.success,
           ),
         );
       }
@@ -191,7 +192,7 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
               content: Text(
                 '${guest.displayName} was already processed by another participant',
               ),
-              backgroundColor: Colors.orange,
+              backgroundColor: Theme.of(context).colorScheme.warning,
             ),
           );
         }
@@ -200,7 +201,7 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Failed to admit guest: $e'),
-              backgroundColor: Colors.red,
+              backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
         }
@@ -217,7 +218,7 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
             content: Text(
               '${guest.displayName} was already processed by another participant',
             ),
-            backgroundColor: Colors.orange,
+            backgroundColor: Theme.of(context).colorScheme.warning,
           ),
         );
       }
@@ -246,7 +247,7 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
               content: Text(
                 '${guest.displayName} was already processed by another participant',
               ),
-              backgroundColor: Colors.orange,
+              backgroundColor: Theme.of(context).colorScheme.warning,
             ),
           );
         }
@@ -255,7 +256,7 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Failed to decline guest: $e'),
-              backgroundColor: Colors.red,
+              backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
         }
@@ -332,8 +333,8 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
               ),
               child: Text(
                 '${_waitingGuests.length}',
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onPrimary,
                   fontWeight: FontWeight.bold,
                   fontSize: 12,
                 ),
@@ -342,7 +343,7 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
             const SizedBox(width: 8),
             Icon(
               _isExpanded ? Icons.expand_less : Icons.expand_more,
-              color: Colors.grey[600],
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ],
         ),
@@ -361,7 +362,9 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
           padding: const EdgeInsets.all(16),
           child: Text(
             'No guests waiting',
-            style: TextStyle(color: Colors.grey[600]),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
       );
@@ -411,9 +414,9 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
                     ),
                     Text(
                       _formatWaitTime(guest.createdAt),
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
@@ -429,8 +432,10 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
                   icon: const Icon(Icons.close, size: 16),
                   label: const Text('Decline'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 ),
               ),
@@ -441,8 +446,8 @@ class _AdmissionOverlayState extends State<AdmissionOverlay> {
                   icon: const Icon(Icons.check, size: 16),
                   label: const Text('Admit'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
+                    backgroundColor: Theme.of(context).colorScheme.success,
+                    foregroundColor: Theme.of(context).colorScheme.onSuccess,
                   ),
                 ),
               ),

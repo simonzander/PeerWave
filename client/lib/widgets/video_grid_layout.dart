@@ -5,6 +5,7 @@ import '../widgets/speaking_border_wrapper.dart';
 import '../widgets/hidden_participants_badge.dart';
 import '../widgets/participant_visibility_manager.dart';
 import '../models/participant_audio_state.dart';
+import '../theme/semantic_colors.dart';
 
 /// Reusable video grid layout widget
 /// Handles screen share layouts and regular grid with smart visibility
@@ -412,7 +413,7 @@ class VideoGridLayout extends StatelessWidget {
             Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
-                color: Colors.black.withValues(alpha: 0.6),
+                color: Theme.of(context).colorScheme.overlayScrim,
               ),
               child: Center(
                 child: Column(

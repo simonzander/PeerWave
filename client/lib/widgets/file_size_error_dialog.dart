@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/file_transfer/file_transfer_config.dart';
+import '../theme/semantic_colors.dart';
 
 /// Dialog shown when user tries to upload a file that's too large
 class FileSizeErrorDialog extends StatelessWidget {
@@ -22,11 +23,17 @@ class FileSizeErrorDialog extends StatelessWidget {
     return AlertDialog(
       title: Text(
         isOverRecommended ? 'Large File Warning' : 'File Too Large',
-        style: TextStyle(color: isOverRecommended ? Colors.orange : Colors.red),
+        style: TextStyle(
+          color: isOverRecommended
+              ? Theme.of(context).colorScheme.warning
+              : Theme.of(context).colorScheme.error,
+        ),
       ),
       icon: Icon(
         isOverRecommended ? Icons.warning : Icons.error,
-        color: isOverRecommended ? Colors.orange : Colors.red,
+        color: isOverRecommended
+            ? Theme.of(context).colorScheme.warning
+            : Theme.of(context).colorScheme.error,
         size: 48,
       ),
       content: SingleChildScrollView(
@@ -76,9 +83,20 @@ class FileSizeErrorDialog extends StatelessWidget {
                 style: const TextStyle(fontSize: 14),
               ),
               const SizedBox(height: 12),
-              _buildLimitInfo(context, 'Maximum allowed', maxSize, Colors.red),
-              _buildLimitInfo(context, 'Your file', fileSize, Colors.red),
-            ] else ...[
+              _buildLimitInfo(
+                context,
+                'Maximum allowed',
+                maxSize,
+                Theme.of(context).colorScheme.error,
+              ),
+              _buildLimitInfo(
+                context,
+                'Your file',
+                fileSize,
+                Theme.of(context).colorScheme.error,
+              ),
+            ],
+            if (isOverRecommended) ...[
               Text(
                 'This file is larger than recommended and may cause performance issues.',
                 style: const TextStyle(fontSize: 14),
@@ -88,9 +106,14 @@ class FileSizeErrorDialog extends StatelessWidget {
                 context,
                 'Recommended size',
                 recommendedSize,
-                Colors.orange,
+                Theme.of(context).colorScheme.warning,
               ),
-              _buildLimitInfo(context, 'Your file', fileSize, Colors.orange),
+              _buildLimitInfo(
+                context,
+                'Your file',
+                fileSize,
+                Theme.of(context).colorScheme.warning,
+              ),
               _buildLimitInfo(
                 context,
                 'Maximum allowed',
@@ -216,7 +239,9 @@ class FileSizeErrorDialog extends StatelessWidget {
         if (isOverRecommended)
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.warning,
+            ),
             child: const Text('Continue Anyway'),
           )
         else

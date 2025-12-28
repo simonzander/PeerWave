@@ -6,6 +6,7 @@ import 'package:peerwave_client/main.dart';
 import 'package:peerwave_client/services/call_service.dart';
 import 'package:peerwave_client/services/signal_service.dart';
 import 'package:peerwave_client/services/sound_service.dart';
+import 'package:peerwave_client/theme/semantic_colors.dart';
 
 /// Global widget that listens for incoming calls and displays notifications
 class IncomingCallListener extends StatefulWidget {
@@ -370,7 +371,7 @@ class _IncomingCallBarState extends State<_IncomingCallBar>
                   IconButton(
                     onPressed: _handleDecline,
                     icon: const Icon(Icons.call_end),
-                    color: Colors.red,
+                    color: Theme.of(context).colorScheme.error,
                   ),
 
                   const SizedBox(width: 8),
@@ -379,7 +380,7 @@ class _IncomingCallBarState extends State<_IncomingCallBar>
                   IconButton(
                     onPressed: _handleAccept,
                     icon: const Icon(Icons.call),
-                    color: Colors.green,
+                    color: Theme.of(context).colorScheme.success,
                   ),
                 ],
               ),

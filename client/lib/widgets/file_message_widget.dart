@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/file_message.dart';
+import '../theme/semantic_colors.dart';
 
 /// Widget to display file messages in group chats (LÖSUNG 18)
 ///
@@ -194,23 +195,23 @@ class FileMessageWidget extends StatelessWidget {
 
     if (quality >= 100) {
       // Complete: Green
-      badgeColor = Colors.green;
+      badgeColor = Theme.of(context).colorScheme.success;
       icon = Icons.check_circle;
     } else if (quality >= 75) {
       // Good: Light green
-      badgeColor = Colors.lightGreen;
+      badgeColor = Theme.of(context).colorScheme.success.withValues(alpha: 0.8);
       icon = Icons.cloud_done;
     } else if (quality >= 50) {
       // Medium: Orange
-      badgeColor = Colors.orange;
+      badgeColor = Theme.of(context).colorScheme.warning;
       icon = Icons.cloud_queue;
     } else if (quality >= 25) {
       // Low: Deep orange
-      badgeColor = Colors.deepOrange;
+      badgeColor = Theme.of(context).colorScheme.warning.withValues(alpha: 1.2);
       icon = Icons.cloud_off;
     } else {
       // Very low: Red
-      badgeColor = Colors.red;
+      badgeColor = Theme.of(context).colorScheme.error;
       icon = Icons.error_outline;
     }
 

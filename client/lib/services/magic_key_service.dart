@@ -37,72 +37,35 @@ class MagicKeyVerificationResponse {
 
 /// Service for handling magic key operations
 class MagicKeyService {
-  /// Parse magic key format: {serverUrl}:{randomHash}:{timestamp}:{hmacSignature}
+  /// Parse magic key format: {serverUrl}|{randomHash}|{timestamp}|{hmacSignature}
+  /// Using pipe delimiter which is safe for all URL formats (including IPv6)
   /// Returns null if format is invalid
   static MagicKeyData? parseMagicKey(String magicKey) {
     try {
-      // Split by colon
-      final parts = magicKey.split(':');
+      // Split by pipe delimiter
+      final parts = magicKey.split('|');
 
-      // Need at least 4 parts for basic format (protocol://host:hash:timestamp:signature)
-      if (parts.length < 4) {
+      // Must have exactly 4 parts
+      if (parts.length != 4) {
         debugPrint(
-          '[MagicKey] Invalid format: Expected at least 4 parts, got ${parts.length}',
+          '[MagicKey] Invalid format: Expected 4 parts, got ${parts.length}',
         );
         return null;
       }
 
-      // Extract protocol (http or https)
-      final protocol = parts[0];
-      if (protocol != 'http' && protocol != 'https') {
-        debugPrint('[MagicKey] Invalid protocol: $protocol');
+      // Extract components directly
+      final serverUrl = parts[0];
+      final randomHash = parts[1];
+
+      // Parse timestamp
+      final timestampMs = int.tryParse(parts[2]);
+      if (timestampMs == null) {
+        debugPrint('[MagicKey] Invalid timestamp: ${parts[2]}');
         return null;
       }
 
-      // Extract host (remove leading //)
-      final hostPart = parts[1].replaceAll('//', '');
-
-      // Check if next part is a port number or the hash
-      int serverUrlEndIndex = 2;
-      String serverUrl = '$protocol://$hostPart';
-
-      // If parts[2] is a number and small (< 65536, valid port range), it's likely a port
-      if (parts.length > 2) {
-        final possiblePort = int.tryParse(parts[2]);
-        if (possiblePort != null && possiblePort > 0 && possiblePort < 65536) {
-          serverUrl = '$protocol://$hostPart:${parts[2]}';
-          serverUrlEndIndex = 3;
-        }
-      }
-
-      // Find where timestamp starts (should be a valid integer in reasonable range)
-      int timestampIndex = -1;
-      for (int i = serverUrlEndIndex; i < parts.length; i++) {
-        final possibleTimestamp = int.tryParse(parts[i]);
-        if (possibleTimestamp != null && possibleTimestamp > 1000000000000) {
-          // After year 2001 in milliseconds
-          timestampIndex = i;
-          break;
-        }
-      }
-
-      if (timestampIndex == -1) {
-        debugPrint('[MagicKey] No valid timestamp found');
-        return null;
-      }
-
-      // RandomHash is everything between server URL and timestamp
-      final randomHash = parts
-          .sublist(serverUrlEndIndex, timestampIndex)
-          .join(':');
-
-      // Timestamp
-      final timestamp = DateTime.fromMillisecondsSinceEpoch(
-        int.parse(parts[timestampIndex]),
-      );
-
-      // Signature is everything after timestamp
-      final signature = parts.sublist(timestampIndex + 1).join(':');
+      final timestamp = DateTime.fromMillisecondsSinceEpoch(timestampMs);
+      final signature = parts[3];
 
       debugPrint(
         '[MagicKey] Parsed - serverUrl: $serverUrl, randomHash: $randomHash',

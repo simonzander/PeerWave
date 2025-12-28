@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
+import '../theme/semantic_colors.dart';
 
 /// Reusable video controls bar
 /// Shows audio/video/screenshare/leave buttons with device selection on long press
@@ -277,7 +278,9 @@ class VideoControlsBar extends StatelessWidget {
                           scaffoldMessenger.showSnackBar(
                             SnackBar(
                               content: Text('Switched to ${device.label}'),
-                              backgroundColor: Colors.green,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.success,
                             ),
                           );
                         }

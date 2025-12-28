@@ -4,6 +4,7 @@ import '../services/socket_service.dart'
     if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/user_profile_service.dart';
 import '../services/api_service.dart';
+import '../theme/semantic_colors.dart';
 
 /// Activities Context Panel - Notification List
 ///
@@ -436,8 +437,8 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
         break;
       case NotificationType.call:
         icon = Icons.videocam;
-        backgroundColor = Colors.green.withValues(alpha: 0.2);
-        iconColor = Colors.green.shade700;
+        backgroundColor = colorScheme.success.withValues(alpha: 0.2);
+        iconColor = colorScheme.success;
         break;
       case NotificationType.mention:
         icon = Icons.alternate_email;

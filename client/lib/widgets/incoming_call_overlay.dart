@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../services/call_service.dart';
+import '../theme/semantic_colors.dart';
 
 /// Incoming call overlay - displays at top of screen when receiving a call
 ///
@@ -155,7 +156,7 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
                           meetingTitle,
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(
-                                color: Colors.white,
+                                color: Theme.of(context).colorScheme.onPrimary,
                                 fontWeight: FontWeight.bold,
                               ),
                           maxLines: 1,
@@ -166,7 +167,9 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
                           '$callerName is calling',
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(
-                                color: Colors.white.withValues(alpha: 0.9),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimary.withValues(alpha: 0.9),
                               ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -176,7 +179,9 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
                           'Auto-dismiss in $_remainingSeconds seconds',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
-                                color: Colors.white.withValues(alpha: 0.7),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimary.withValues(alpha: 0.7),
                               ),
                         ),
                       ],
@@ -187,8 +192,9 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
 
                   // Decline button
                   _buildActionButton(
+                    context: context,
                     icon: Icons.call_end,
-                    color: Colors.red,
+                    color: Theme.of(context).colorScheme.error,
                     onPressed: _handleDecline,
                     label: 'Decline',
                   ),
@@ -197,8 +203,9 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
 
                   // Accept button
                   _buildActionButton(
+                    context: context,
                     icon: Icons.call,
-                    color: Colors.green,
+                    color: Theme.of(context).colorScheme.success,
                     onPressed: _handleAccept,
                     label: 'Accept',
                   ),
@@ -208,7 +215,10 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
                   // Dismiss button (X)
                   IconButton(
                     onPressed: _handleDismiss,
-                    icon: const Icon(Icons.close, color: Colors.white),
+                    icon: Icon(
+                      Icons.close,
+                      color: Theme.of(context).colorScheme.onPrimary,
+                    ),
                     tooltip: 'Dismiss',
                   ),
                 ],
@@ -231,12 +241,14 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
+              color: Theme.of(
+                context,
+              ).colorScheme.onPrimary.withValues(alpha: 0.2),
               shape: BoxShape.circle,
             ),
             child: Icon(
               isVideoCall ? Icons.videocam : Icons.phone,
-              color: Colors.white,
+              color: Theme.of(context).colorScheme.onPrimary,
               size: 28,
             ),
           ),
@@ -252,30 +264,33 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
   }
 
   Widget _buildActionButton({
+    required BuildContext context,
     required IconData icon,
     required Color color,
     required VoidCallback onPressed,
     required String label,
   }) {
-    return Tooltip(
-      message: label,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
+    return Builder(
+      builder: (context) => Tooltip(
+        message: label,
+        child: ElevatedButton(
+          onPressed: onPressed,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: color,
+            foregroundColor: Theme.of(context).colorScheme.onPrimary,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
           ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 20),
-            const SizedBox(width: 8),
-            Text(label),
-          ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20),
+              const SizedBox(width: 8),
+              Text(label),
+            ],
+          ),
         ),
       ),
     );

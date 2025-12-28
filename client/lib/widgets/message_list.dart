@@ -13,6 +13,7 @@ import 'mention_text_widget.dart';
 import 'emoji_picker_dialog.dart';
 import 'reaction_badge.dart';
 import '../models/file_message.dart';
+import '../theme/semantic_colors.dart';
 import '../services/signal_service.dart';
 import '../services/user_profile_service.dart';
 
@@ -596,9 +597,7 @@ class _MessageListState extends State<MessageList> {
   Widget _buildIdentityChangeWarning(Map<String, dynamic> msg) {
     final sender = msg['senderDisplayName'] ?? msg['sender'] ?? 'Unknown';
     final theme = Theme.of(context);
-    final warningColor = theme.brightness == Brightness.dark
-        ? const Color(0xFFFFA726) // Amber 400
-        : const Color(0xFFFF8F00); // Amber 900
+    final warningColor = theme.colorScheme.warning;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -661,7 +660,9 @@ class _MessageListState extends State<MessageList> {
                 // Show fullscreen image viewer
                 showDialog(
                   context: context,
-                  barrierColor: Colors.black87,
+                  barrierColor: Theme.of(
+                    context,
+                  ).colorScheme.scrim.withValues(alpha: 0.87),
                   builder: (context) => _FullscreenImageViewer(
                     imageBytes: imageBytes,
                     metadata: metadata,
@@ -1058,9 +1059,15 @@ class _FullscreenImageViewer extends StatelessWidget {
             top: 40,
             right: 20,
             child: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white, size: 32),
+              icon: Icon(
+                Icons.close,
+                color: Theme.of(context).colorScheme.onSurface,
+                size: 32,
+              ),
               style: IconButton.styleFrom(
-                backgroundColor: Colors.black.withValues(alpha: 0.5),
+                backgroundColor: Theme.of(
+                  context,
+                ).colorScheme.surface.withValues(alpha: 0.5),
                 padding: const EdgeInsets.all(8),
               ),
               onPressed: () => Navigator.of(context).pop(),
@@ -1080,7 +1087,9 @@ class _FullscreenImageViewer extends StatelessWidget {
                 ),
                 margin: const EdgeInsets.symmetric(horizontal: 20),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.7),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.surface.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
@@ -1089,8 +1098,8 @@ class _FullscreenImageViewer extends StatelessWidget {
                     if (metadata['filename'] != null)
                       Text(
                         metadata['filename'] as String,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
                           fontSize: 14,
                         ),
                         textAlign: TextAlign.center,

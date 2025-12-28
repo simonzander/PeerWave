@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/semantic_colors.dart';
 
 /// Dialog to warn user about partial download availability
 ///
@@ -30,15 +31,17 @@ class PartialDownloadDialog extends StatelessWidget {
     String warningText;
 
     if (chunkQuality >= 75) {
-      warningColor = Colors.orange;
+      warningColor = Theme.of(context).colorScheme.warning;
       warningIcon = Icons.warning_amber;
       warningText = 'Most of the file is available';
     } else if (chunkQuality >= 50) {
-      warningColor = Colors.deepOrange;
+      warningColor = Theme.of(
+        context,
+      ).colorScheme.warning.withValues(alpha: 1.2);
       warningIcon = Icons.warning;
       warningText = 'About half of the file is available';
     } else {
-      warningColor = Colors.red;
+      warningColor = Theme.of(context).colorScheme.error;
       warningIcon = Icons.error_outline;
       warningText = 'Only a small part of the file is available';
     }
