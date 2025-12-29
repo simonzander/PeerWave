@@ -64,9 +64,13 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add version_config.yaml
           git add client/lib/core/version/version_info.dart
-          git commit -m "chore: bump version to ${{ steps.bump.outputs.version }}
-
-${{ github.event.inputs.changelog_entry }}"
+          COMMIT_MSG=$(cat <<EOF
+          chore: bump version to ${{ steps.bump.outputs.version }}
+          
+          ${{ github.event.inputs.changelog_entry }}
+          EOF
+          )
+          git commit -m "$COMMIT_MSG"
           git tag "v${{ steps.bump.outputs.version }}"
           git push origin main
           git push origin "v${{ steps.bump.outputs.version }}"

@@ -2,32 +2,95 @@ name: Release Build & Publish
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
-  build-windows:
-    name: Build Windows Desktop
-    runs-on: windows-latest
+  build-web-and-docker:
+    name: Build Web & Docker
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
       
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          cache: true
+      
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep "version:" version_config.yaml | awk '{print $2}' | tr -d '"' | tr -d "'")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+      
+      - name: Build Flutter Web
+        working-directory: ./client
+        run: |
+          flutter pub get
+          dart ../tools/generate_version.dart
+          flutter build web --release
+      
+      - name: Copy Web to Server
+        run: |
+          rm -rf server/web
+          cp -r client/build/web server/web
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Login to Docker Hub
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./server
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/peerwave:latest
+            ghcr.io/${{ github.repository_owner }}/peerwave:${{ steps.version.outputs.version }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/peerwave:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/peerwave:${{ steps.version.outputs.version }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/peerwave:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/peerwave:buildcache,mode=max
+
+  build-windows:
+    name: Build Windows Client
+    runs-on: windows-latest
+    needs: build-web-and-docker
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
       
       - name: Install dependencies
         working-directory: ./client
         run: flutter pub get
       
       - name: Generate version info
-        run: |
-          cd tools
-          dart pub get
-          cd ..
-          dart run tools/generate_version.dart
+        run: dart tools/generate_version.dart
       
       - name: Build Windows app
         working-directory: ./client
@@ -36,43 +99,41 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup -y
       
-      - name: Create Windows installer
-        shell: pwsh
-        run: |
-          $version = (Get-Content version_config.yaml | Select-String 'version:\s*"([^"]+)"').Matches.Groups[1].Value
-          $env:APP_VERSION = $version
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /Q windows-installer.iss
-          Write-Host "✅ Created installer for version $version"
+      - name: Create Installer
+        run: iscc windows-installer.iss
       
-      - name: Upload Windows artifact
+      - name: Create ZIP package
+        run: Compress-Archive -Path client/build/windows/x64/runner/Release/* -DestinationPath PeerWave-${{ needs.build-web-and-docker.outputs.version }}-windows-x64.zip
+      
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-installer
-          path: Output/PeerWave-Setup-*.exe
-          if-no-files-found: error
-  
+          name: windows-client
+          path: |
+            Output/PeerWave-Setup.exe
+            PeerWave-*-windows-x64.zip
+          retention-days: 30
+
   build-macos:
-    name: Build macOS Desktop
+    name: Build macOS Client
     runs-on: macos-latest
+    needs: build-web-and-docker
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
       
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          cache: true
       
       - name: Install dependencies
         working-directory: ./client
         run: flutter pub get
       
       - name: Generate version info
-        run: |
-          cd tools
-          dart pub get
-          cd ..
-          dart run tools/generate_version.dart
+        run: dart tools/generate_version.dart
       
       - name: Build macOS app
         working-directory: ./client
@@ -88,157 +149,142 @@ jobs:
             --window-size 800 400 \
             --icon-size 100 \
             --app-drop-link 600 185 \
-            "PeerWave-${{ github.ref_name }}.dmg" \
+            "PeerWave-${{ needs.build-web-and-docker.outputs.version }}-macos.dmg" \
             "peerwave_client.app"
-          echo "✅ Created DMG for ${{ github.ref_name }}"
       
-      - name: Upload macOS artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: macos-dmg
-          path: client/build/macos/Build/Products/Release/PeerWave-*.dmg
-          if-no-files-found: error
-  
-  build-docker:
-    name: Build & Push Docker Image
+          name: macos-client
+          path: client/build/macos/Build/Products/Release/*.dmg
+          retention-days: 30
+
+  build-android:
+    name: Build Android Client
     runs-on: ubuntu-latest
-    permissions:
-      packages: write
-      contents: read
+    needs: build-web-and-docker
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
       
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          cache: true
       
       - name: Install dependencies
         working-directory: ./client
         run: flutter pub get
       
       - name: Generate version info
-        run: |
-          cd tools
-          dart pub get
-          cd ..
-          dart run tools/generate_version.dart
+        run: dart tools/generate_version.dart
       
-      - name: Build Flutter web client
+      - name: Decode keystore
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        working-directory: ./client/android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 --decode > app/upload-keystore.jks
+      
+      - name: Create key.properties
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        working-directory: ./client/android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cat > key.properties <<EOF
+          storePassword=$KEYSTORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
+      
+      - name: Build APK (Debug)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 == '' }}
         working-directory: ./client
-        run: flutter build web --release --web-renderer canvaskit
+        run: flutter build apk --debug
       
-      - name: Copy web build to server
+      - name: Build APK (Release)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        working-directory: ./client
+        run: flutter build apk --release --split-per-abi
+      
+      - name: Build App Bundle
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        working-directory: ./client
+        run: flutter build appbundle --release
+      
+      - name: Rename files
+        working-directory: ./client/build/app/outputs
         run: |
-          rm -rf server/web
-          cp -r client/build/web server/web
-          echo "✅ Web client copied to server/web"
-          ls -la server/web
+          cd flutter-apk
+          for file in *.apk; do
+            if [ -f "$file" ]; then
+              newname=$(echo "$file" | sed "s/app/PeerWave-${{ needs.build-web-and-docker.outputs.version }}/")
+              mv "$file" "$newname"
+            fi
+          done
+          
+          if [ -f "../bundle/release/app-release.aab" ]; then
+            mv ../bundle/release/app-release.aab ../bundle/release/PeerWave-${{ needs.build-web-and-docker.outputs.version }}.aab
+          fi
       
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_TOKEN }}
-      
-      - name: Extract version
-        id: version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "🐳 Building Docker image for version: $VERSION"
-      
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./server
-          push: true
-          tags: |
-            simonzander/peerwave:${{ steps.version.outputs.version }}
-            simonzander/peerwave:latest
-          labels: |
-            org.opencontainers.image.version=${{ steps.version.outputs.version }}
-            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
-            org.opencontainers.image.title=PeerWave
-            org.opencontainers.image.description=Decentralized peer-to-peer communication platform
-      
-      - name: Verify DockerHub push
-        run: |
-          echo "✅ Docker image pushed to DockerHub"
-          echo "   - simonzander/peerwave:${{ steps.version.outputs.version }}"
-          echo "   - simonzander/peerwave:latest"
-  
+          name: android-client
+          path: |
+            client/build/app/outputs/flutter-apk/*.apk
+            client/build/app/outputs/bundle/release/*.aab
+          retention-days: 30
+
   create-release:
     name: Create GitHub Release
-    needs: [build-windows, build-macos, build-docker]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    needs: [build-web-and-docker, build-windows, build-macos, build-android]
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Download Windows artifact
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: windows-installer
           path: ./artifacts
       
-      - name: Download macOS artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-dmg
-          path: ./artifacts
-      
-      - name: List artifacts
-        run: |
-          echo "📦 Artifacts for release:"
-          ls -lh ./artifacts/
-      
-      - name: Generate changelog
-        id: changelog
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "📝 Extracting changelog for version $VERSION"
-          
-          # Extract changelog from version_config.yaml
-          CHANGELOG=$(grep -A 10 "version: \"$VERSION\"" version_config.yaml | grep -A 5 "changes:" | tail -n +2 | sed 's/^      - /- /' || echo "- Version $VERSION release")
-          
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-      
-      - name: Create GitHub Release
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ./artifacts/*
-          body: |
-            ## 🚀 What's Changed
-            ${{ steps.changelog.outputs.changelog }}
-            
-            ## 📥 Downloads
-            - **Windows:** `PeerWave-Setup-${{ github.ref_name }}.exe`
-            - **macOS:** `PeerWave-${{ github.ref_name }}.dmg`
-            - **Docker:** `docker pull simonzander/peerwave:${{ github.ref_name }}`
-            
-            ## 🔗 Docker Hub
-            - **Latest:** `docker pull simonzander/peerwave:latest`
-            - **Specific:** `docker pull simonzander/peerwave:${GITHUB_REF#refs/tags/v}`
-            
-            ## 📋 Server Compatibility
-            See `version_config.yaml` for full client/server compatibility matrix.
-            
-            ---
-            
-            **Full Changelog**: https://github.com/${{ github.repository }}/compare/v${GITHUB_REF#refs/tags/v}...${GITHUB_REF#refs/tags/}
+          tag_name: v${{ needs.build-web-and-docker.outputs.version }}
+          name: PeerWave v${{ needs.build-web-and-docker.outputs.version }}
           draft: false
           prerelease: false
+          generate_release_notes: true
+          files: |
+            artifacts/windows-client/*
+            artifacts/macos-client/*
+            artifacts/android-client/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Release summary
+      - name: Summary
         run: |
-          echo "✅ Release ${{ github.ref_name }} published successfully!"
-          echo "📦 Artifacts uploaded to GitHub Releases"
-          echo "🐳 Docker image available on DockerHub"
+          echo "### ✅ Release Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** v${{ needs.build-web-and-docker.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Published:**" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐳 Docker: ghcr.io & Docker Hub" >> $GITHUB_STEP_SUMMARY
+          echo "- 🪟 Windows installer & ZIP" >> $GITHUB_STEP_SUMMARY
+          echo "- 🍎 macOS DMG" >> $GITHUB_STEP_SUMMARY
+          echo "- 🤖 Android APK & AAB" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release:** https://github.com/${{ github.repository }}/releases/tag/v${{ needs.build-web-and-docker.outputs.version }}" >> $GITHUB_STEP_SUMMARY

@@ -1,19 +1,18 @@
-name: Branch Push Checks
+name: Branch Checks
 
 on:
   push:
     branches:
       - '**'  # All branches
-      - '!main'  # Except main (handled by auto-version.yml)
+      - '!main'  # Except main (handled by release workflow)
     paths-ignore:
       - '**.md'
       - 'docs/**'
-      - '.github/**'
-      - '!.github/workflows/**'
+  workflow_dispatch:
 
 jobs:
-  flutter-validation:
-    name: Flutter Build & Test
+  flutter-checks:
+    name: Flutter Analysis & Format
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -23,28 +22,22 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          cache: true
       
       - name: Install dependencies
         working-directory: ./client
         run: flutter pub get
       
+      - name: Generate version info
+        run: dart tools/generate_version.dart
+      
       - name: Run Flutter analyze
         working-directory: ./client
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+        run: flutter analyze --no-fatal-infos
       
       - name: Check Dart formatting
         working-directory: ./client
         run: dart format --set-exit-if-changed .
-      
-      - name: Run Flutter tests
-        working-directory: ./client
-        run: flutter test --no-pub
-        continue-on-error: true
-      
-      - name: Test Windows build (no artifacts)
-        working-directory: ./client
-        run: |
-          dart run ../tools/generate_version.dart
           flutter build windows --release
         if: runner.os == 'Linux'
         continue-on-error: true
@@ -55,7 +48,7 @@ jobs:
           echo "✅ Code formatting correct"
           echo "ℹ️  No artifacts published (branch build)"
   
-  server-validation:
+  server-checks:
     name: Server Lint & Test
     runs-on: ubuntu-latest
     steps:
@@ -67,27 +60,103 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: './server/package-lock.json'
+          cache-dependency-path: server/package-lock.json
       
       - name: Install dependencies
         working-directory: ./server
         run: npm ci
       
-      - name: Run ESLint
+      - name: Generate server version
+        run: dart tools/generate_version.dart
+      
+      - name: Lint
         working-directory: ./server
-        run: npm run lint
-        continue-on-error: true
+        run: npm run lint --if-present
       
       - name: Run tests
         working-directory: ./server
-        run: npm test
-        continue-on-error: true
+        run: npm test --if-present
+
+  build-windows:
+    name: Try Build Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
       
-      - name: Lint summary
-        run: echo "✅ Server checks passed"
-  
-  test-docker-build:
-    name: Test Docker Build (No Push)
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      
+      - name: Install dependencies
+        working-directory: ./client
+        run: flutter pub get
+      
+      - name: Generate version info
+        run: dart tools/generate_version.dart
+      
+      - name: Build Windows
+        working-directory: ./client
+        run: flutter build windows --release
+
+  build-macos:
+    name: Try Build macOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      
+      - name: Install dependencies
+        working-directory: ./client
+        run: flutter pub get
+      
+      - name: Generate version info
+        run: dart tools/generate_version.dart
+      
+      - name: Build macOS
+        working-directory: ./client
+        run: flutter build macos --release
+
+  build-android:
+    name: Try Build Android
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      
+      - name: Install dependencies
+        working-directory: ./client
+        run: flutter pub get
+      
+      - name: Generate version info
+        run: dart tools/generate_version.dart
+      
+      - name: Build Android APK
+        working-directory: ./client
+        run: flutter build apk --debug
+
+  build-docker:
+    name: Try Build Docker
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -97,64 +166,45 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          cache: true
       
-      - name: Install dependencies
+      - name: Build Flutter Web
         working-directory: ./client
-        run: flutter pub get
-      
-      - name: Generate version info
         run: |
-          cd tools
-          dart pub get
-          cd ..
-          dart run tools/generate_version.dart
+          flutter pub get
+          dart ../tools/generate_version.dart
+          flutter build web --release
       
-      - name: Build Flutter web
-        working-directory: ./client
-        run: flutter build web --release
-      
-      - name: Copy web to server
-        run: |
-          rm -rf server/web
-          cp -r client/build/web server/web
-          echo "✅ Web client built and copied"
-      
-      - name: Test Docker build (no push)
-        working-directory: ./server
-        run: |
-          docker build -t peerwave-test:latest .
-          echo "✅ Docker image built successfully"
-          echo "ℹ️  Image NOT pushed (branch build)"
-      
-      - name: Verify Docker image
-        run: |
-          docker images | grep peerwave-test
-          echo "✅ Docker build verified"
+      - name: Test Docker Build
+        run: docker-compose build
   
-  build-summary:
-    name: Build Summary
-    needs: [flutter-validation, server-validation, test-docker-build]
+  summary:
+    name: Checks Summary
     runs-on: ubuntu-latest
+    needs: [flutter-checks, server-checks, build-windows, build-macos, build-android, build-docker]
     if: always()
     steps:
-      - name: Check build status
+      - name: Check results
         run: |
-          echo "### Branch Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Branch Checks Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "#### Status" >> $GITHUB_STEP_SUMMARY
-          echo "- Flutter: ${{ needs.flutter-validation.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Server: ${{ needs.server-validation.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Docker: ${{ needs.test-docker-build.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "ℹ️  This is a test build - no artifacts published" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ needs.flutter-validation.result }}" == "success" ] && \
-             [ "${{ needs.server-validation.result }}" == "success" ] && \
-             [ "${{ needs.test-docker-build.result }}" == "success" ]; then
-            echo "✅ **All checks passed!** Ready to create PR" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Some checks failed** - please review errors above" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Flutter Analysis | ${{ needs.flutter-checks.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Server Lint & Test | ${{ needs.server-checks.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows Build | ${{ needs.build-windows.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS Build | ${{ needs.build-macos.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Android Build | ${{ needs.build-android.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker Build | ${{ needs.build-docker.result }} |" >> $GITHUB_STEP_SUMMARY
+          
+          # Fail if any required check failed
+          if [[ "${{ needs.flutter-checks.result }}" != "success" ]] || \
+             [[ "${{ needs.server-checks.result }}" != "success" ]] || \
+             [[ "${{ needs.build-windows.result }}" != "success" ]] || \
+             [[ "${{ needs.build-macos.result }}" != "success" ]] || \
+             [[ "${{ needs.build-android.result }}" != "success" ]] || \
+             [[ "${{ needs.build-docker.result }}" != "success" ]]; then
+            echo "❌ One or more checks failed"
+            exit 1
           fi
+          echo "✅ All checks passed"
