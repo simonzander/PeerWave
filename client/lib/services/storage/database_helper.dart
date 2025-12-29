@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite/sqflite.dart' as sqflite_mobile;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart';
+import 'dart:io' show Platform;
 import '../device_identity_service.dart';
 
 /// Central database helper for PeerWave with device-scoped storage
@@ -140,35 +142,77 @@ class DatabaseHelper {
         debugPrint('[DATABASE] ✓ Web database initialization complete');
         return db;
       } else {
-        // Native: Use file system with sqflite_common_ffi
-        if (!_factoryInitialized) {
-          debugPrint(
-            '[DATABASE] Initializing native database factory (sqflite_common_ffi)...',
+        // Native: Use appropriate sqflite based on platform
+        final isDesktop =
+            !kIsWeb &&
+            (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+        final isMobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+        if (isDesktop) {
+          // Desktop: Use sqflite_common_ffi
+          if (!_factoryInitialized) {
+            debugPrint(
+              '[DATABASE] Initializing desktop database factory (sqflite_common_ffi)...',
+            );
+            sqfliteFfiInit();
+            databaseFactory = databaseFactoryFfi;
+            _factoryInitialized = true;
+            debugPrint('[DATABASE] ✓ Desktop database factory initialized');
+          }
+
+          debugPrint('[DATABASE] Initializing desktop database...');
+          final directory = await getApplicationDocumentsDirectory();
+          final path = join(directory.path, _databaseName);
+
+          debugPrint('[DATABASE] Database path: $path');
+
+          final db = await openDatabase(
+            path,
+            version: _databaseVersion,
+            onCreate: _onCreate,
+            onUpgrade: _onUpgrade,
+            onOpen: (db) async {
+              debugPrint('[DATABASE] Database opened successfully');
+            },
           );
-          sqfliteFfiInit();
-          databaseFactory = databaseFactoryFfi;
-          _factoryInitialized = true;
-          debugPrint('[DATABASE] ✓ Native database factory initialized');
+
+          debugPrint('[DATABASE] Desktop database initialization complete');
+          return db;
+        } else if (isMobile) {
+          // Mobile (Android/iOS): Use standard sqflite
+          debugPrint(
+            '[DATABASE] Initializing mobile database (Android/iOS)...',
+          );
+          final directory = await getApplicationDocumentsDirectory();
+          final path = join(directory.path, _databaseName);
+
+          debugPrint('[DATABASE] Database path: $path');
+
+          final db = await sqflite_mobile.openDatabase(
+            path,
+            version: _databaseVersion,
+            onCreate: (db, version) async {
+              debugPrint(
+                '[DATABASE] ✓ onCreate called - Creating new database v$version',
+              );
+              await _onCreate(db, version);
+            },
+            onUpgrade: (db, oldVersion, newVersion) async {
+              debugPrint(
+                '[DATABASE] ✓ onUpgrade called - Upgrading from v$oldVersion to v$newVersion',
+              );
+              await _onUpgrade(db, oldVersion, newVersion);
+            },
+            onOpen: (db) async {
+              debugPrint('[DATABASE] Database opened successfully');
+            },
+          );
+
+          debugPrint('[DATABASE] Mobile database initialization complete');
+          return db;
+        } else {
+          throw Exception('[DATABASE] Unsupported platform');
         }
-
-        debugPrint('[DATABASE] Initializing native database...');
-        final directory = await getApplicationDocumentsDirectory();
-        final path = join(directory.path, _databaseName);
-
-        debugPrint('[DATABASE] Database path: $path');
-
-        final db = await openDatabase(
-          path,
-          version: _databaseVersion,
-          onCreate: _onCreate,
-          onUpgrade: _onUpgrade,
-          onOpen: (db) async {
-            debugPrint('[DATABASE] Database opened successfully');
-          },
-        );
-
-        debugPrint('[DATABASE] Native database initialization complete');
-        return db;
       }
     } catch (e, stackTrace) {
       debugPrint('[DATABASE] *** ERROR initializing database: $e');

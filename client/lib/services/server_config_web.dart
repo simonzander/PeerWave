@@ -11,6 +11,8 @@ class ServerConfig {
   final DateTime createdAt;
   int unreadCount;
   String? displayName;
+  String? serverPicture; // Base64 server picture from /client/meta
+  String? serverName; // Server name from /client/meta
 
   ServerConfig({
     required this.id,
@@ -22,6 +24,8 @@ class ServerConfig {
     required this.createdAt,
     this.unreadCount = 0,
     this.displayName,
+    this.serverPicture,
+    this.serverName,
   });
 
   Map<String, dynamic> toJson() => {};

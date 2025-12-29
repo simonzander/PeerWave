@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../providers/role_provider.dart';
 import '../widgets/theme_selector_dialog.dart';
+import '../config/layout_config.dart';
 
 class SettingsSidebar extends StatelessWidget {
   final Widget child;
@@ -11,6 +12,106 @@ class SettingsSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final layoutType = LayoutConfig.getLayoutType(width);
+
+    if (layoutType == LayoutType.mobile) {
+      return _buildMobileLayout(context);
+    } else {
+      return _buildDesktopLayout(context);
+    }
+  }
+
+  Widget _buildMobileLayout(BuildContext context) {
+    final currentRoute = GoRouterState.of(context).matchedLocation;
+    final roleProvider = Provider.of<RoleProvider>(context);
+
+    // Build list of available settings
+    final settingsItems = _buildSettingsItems(context, roleProvider);
+
+    // Find current selection
+    String currentLabel = 'General';
+    for (final item in settingsItems) {
+      if (currentRoute.contains(item.route)) {
+        currentLabel = item.label;
+        break;
+      }
+    }
+
+    return Column(
+      children: [
+        // Dropdown selector at top
+        Container(
+          color: Theme.of(context).colorScheme.surface,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'Back',
+                onPressed: () => GoRouter.of(context).go('/app'),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: currentRoute,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontSize: 16,
+                  ),
+                  dropdownColor: Theme.of(context).colorScheme.surface,
+                  decoration: InputDecoration(
+                    labelText: 'Settings',
+                    labelStyle: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
+                  items: settingsItems
+                      .map(
+                        (item) => DropdownMenuItem<String>(
+                          value: item.route,
+                          child: Row(
+                            children: [
+                              Icon(
+                                item.icon,
+                                size: 20,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(item.label),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (String? newRoute) {
+                    if (newRoute != null) {
+                      if (newRoute == '/app/settings/theme') {
+                        ThemeSelectorDialog.show(context);
+                      } else {
+                        GoRouter.of(context).go(newRoute);
+                      }
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Content below
+        Expanded(child: child),
+      ],
+    );
+  }
+
+  Widget _buildDesktopLayout(BuildContext context) {
     return Row(
       children: [
         Container(
@@ -230,4 +331,99 @@ class SettingsSidebar extends StatelessWidget {
       ],
     );
   }
+
+  List<_SettingsItem> _buildSettingsItems(
+    BuildContext context,
+    RoleProvider roleProvider,
+  ) {
+    final items = <_SettingsItem>[
+      _SettingsItem(
+        route: '/app/settings/general',
+        label: 'General',
+        icon: Icons.settings,
+      ),
+      _SettingsItem(
+        route: '/app/settings/profile',
+        label: 'Profile',
+        icon: Icons.person,
+      ),
+      _SettingsItem(
+        route: '/app/settings/webauthn',
+        label: 'Credentials',
+        icon: Icons.security,
+      ),
+      _SettingsItem(
+        route: '/app/settings/notifications',
+        label: 'Notifications',
+        icon: Icons.notifications,
+      ),
+      _SettingsItem(
+        route: '/app/settings/theme',
+        label: 'Theme',
+        icon: Icons.palette_outlined,
+      ),
+      _SettingsItem(
+        route: '/app/settings/voice-video',
+        label: 'Voice & Video',
+        icon: Icons.videocam,
+      ),
+      _SettingsItem(
+        route: '/app/settings/troubleshoot',
+        label: 'Troubleshoot',
+        icon: Icons.build_circle,
+      ),
+    ];
+
+    // Add system tray on native
+    if (!kIsWeb) {
+      items.add(
+        _SettingsItem(
+          route: '/app/settings/system-tray',
+          label: 'System Tray',
+          icon: Icons.launch,
+        ),
+      );
+    }
+
+    // Add admin/permission-based items
+    if (roleProvider.hasServerPermission('server.manage')) {
+      items.add(
+        _SettingsItem(
+          route: '/app/settings/server',
+          label: 'Server Settings',
+          icon: Icons.dns,
+        ),
+      );
+    }
+
+    if (roleProvider.isAdmin) {
+      items.add(
+        _SettingsItem(
+          route: '/app/settings/roles',
+          label: 'Role Management',
+          icon: Icons.admin_panel_settings,
+        ),
+      );
+    }
+
+    if (roleProvider.hasServerPermission('user.manage')) {
+      items.add(
+        _SettingsItem(
+          route: '/app/settings/users',
+          label: 'User Management',
+          icon: Icons.people,
+        ),
+      );
+    }
+
+    return items;
+  }
+}
+
+class _SettingsItem {
+  final String route;
+  final String label;
+  final IconData icon;
+
+  _SettingsItem({required this.route, required this.label, required this.icon});
 }
