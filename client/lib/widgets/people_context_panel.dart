@@ -133,13 +133,17 @@ class PeopleContextPanel extends StatelessWidget {
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: AppThemeConstants.textSecondary,
-          letterSpacing: 0.5,
+      child: Builder(
+        builder: (context) => Text(
+          title,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.7),
+            letterSpacing: 0.5,
+          ),
         ),
       ),
     );
@@ -148,32 +152,38 @@ class PeopleContextPanel extends StatelessWidget {
   Widget _buildLoadMoreLink() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-      child: InkWell(
-        onTap: onLoadMore,
-        borderRadius: BorderRadius.circular(4),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Load more',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppThemeConstants.textSecondary.withValues(alpha: 0.9),
-                  decoration: TextDecoration.underline,
-                  decorationColor: AppThemeConstants.textSecondary.withValues(
-                    alpha: 0.4,
+      child: Builder(
+        builder: (context) => InkWell(
+          onTap: onLoadMore,
+          borderRadius: BorderRadius.circular(4),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Load more',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.9),
+                    decoration: TextDecoration.underline,
+                    decorationColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.4),
                   ),
                 ),
-              ),
-              const SizedBox(width: 4),
-              Icon(
-                Icons.arrow_forward_ios,
-                size: 10,
-                color: AppThemeConstants.textSecondary.withValues(alpha: 0.7),
-              ),
-            ],
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.arrow_forward_ios,
+                  size: 10,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -256,8 +266,9 @@ class PeopleContextPanel extends StatelessWidget {
                                   color: Theme.of(context).colorScheme.success,
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: AppThemeConstants
-                                        .contextPanelBackground,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerLow,
                                     width: 2,
                                   ),
                                 ),
@@ -266,8 +277,9 @@ class PeopleContextPanel extends StatelessWidget {
                           // Unread badge (bottom right, squared red badge)
                           UnreadBadgeOverlay(
                             count: unreadCount,
-                            borderColor:
-                                AppThemeConstants.contextPanelBackground,
+                            borderColor: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerLow,
                           ),
                         ],
                       ),
@@ -361,27 +373,33 @@ class PeopleContextPanel extends StatelessWidget {
   }
 
   Widget _buildEmptyState() {
-    return Padding(
-      padding: const EdgeInsets.all(32.0),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.people_outline,
-              size: 48,
-              color: AppThemeConstants.textSecondary,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'No recent conversations',
-              style: TextStyle(
-                fontSize: 14,
-                color: AppThemeConstants.textSecondary,
+    return Builder(
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.people_outline,
+                size: 48,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.5),
               ),
-              textAlign: TextAlign.center,
-            ),
-          ],
+              const SizedBox(height: 12),
+              Text(
+                'No recent conversations',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -460,11 +478,13 @@ class _RelativeTimeWidgetState extends State<_RelativeTimeWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      _formattedTime,
-      style: TextStyle(
-        fontSize: 11,
-        color: AppThemeConstants.textSecondary.withValues(alpha: 0.7),
+    return Builder(
+      builder: (context) => Text(
+        _formattedTime,
+        style: TextStyle(
+          fontSize: 11,
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+        ),
       ),
     );
   }

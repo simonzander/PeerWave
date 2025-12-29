@@ -426,22 +426,52 @@ class _MeetingDialogState extends State<MeetingDialog> {
         const SizedBox(height: 12),
 
         SwitchListTile(
-          title: const Text('Voice Only'),
-          subtitle: const Text('Disable video, audio only'),
+          title: Text(
+            'Voice Only',
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+          ),
+          subtitle: Text(
+            'Disable video, audio only',
+            style: TextStyle(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
+          ),
           value: _voiceOnly,
           onChanged: (value) => setState(() => _voiceOnly = value),
         ),
 
         SwitchListTile(
-          title: const Text('Mute on Join'),
-          subtitle: const Text('Participants join muted'),
+          title: Text(
+            'Mute on Join',
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+          ),
+          subtitle: Text(
+            'Participants join muted',
+            style: TextStyle(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
+          ),
           value: _muteOnJoin,
           onChanged: (value) => setState(() => _muteOnJoin = value),
         ),
 
         SwitchListTile(
-          title: const Text('Allow External Guests'),
-          subtitle: const Text('Generate invitation link for non-users'),
+          title: Text(
+            'Allow External Guests',
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+          ),
+          subtitle: Text(
+            'Generate invitation link for non-users',
+            style: TextStyle(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
+          ),
           value: _allowExternal,
           onChanged: (value) => setState(() => _allowExternal = value),
         ),

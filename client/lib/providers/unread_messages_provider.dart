@@ -29,19 +29,14 @@ class UnreadMessagesProvider extends ChangeNotifier {
       'unread_activity_notifications';
 
   /// Whitelisted message types that should increment badge counts
+  /// Only includes types that are displayed in channel message lists
   static const Set<String> badgeMessageTypes = {
-    'message',
-    'file',
-    'emote',
-    'mention',
-    'missingcall',
-    'addtochannel',
-    'removefromchannel',
-    'permissionchange',
+    'message', // Regular text messages
+    'file', // File uploads
   };
 
-  /// Activity notification types (subset of badge types)
-  /// These are shown in Activities/Notifications tab, not in chat message lists
+  /// Activity notification types (shown in Activities/Notifications tab only)
+  /// These do NOT increment channel badge counts as they don't appear in message lists
   static const Set<String> activityNotificationTypes = {
     'emote',
     'mention',

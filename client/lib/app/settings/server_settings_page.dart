@@ -422,6 +422,10 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
                 // Registration Mode Dropdown
                 DropdownButtonFormField<String>(
                   initialValue: _registrationMode,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                  dropdownColor: Theme.of(context).colorScheme.surface,
                   decoration: InputDecoration(
                     labelText: 'Registration Mode',
                     filled: true,
@@ -430,18 +434,33 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
                     ).colorScheme.surfaceContainerHighest,
                     border: const OutlineInputBorder(),
                   ),
-                  items: const [
+                  items: [
                     DropdownMenuItem(
                       value: 'open',
-                      child: Text('Open - Anyone can register'),
+                      child: Text(
+                        'Open - Anyone can register',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
                     ),
                     DropdownMenuItem(
                       value: 'email_suffix',
-                      child: Text('Email Suffix - Specific domains only'),
+                      child: Text(
+                        'Email Suffix - Specific domains only',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
                     ),
                     DropdownMenuItem(
                       value: 'invitation_only',
-                      child: Text('Invitation Only - Requires invite'),
+                      child: Text(
+                        'Invitation Only - Requires invite',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
                     ),
                   ],
                   onChanged: (value) {

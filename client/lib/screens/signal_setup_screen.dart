@@ -315,7 +315,9 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
             children: [
               // PeerWave Logo
               Image.asset(
-                'assets/images/peerwave.png',
+                Theme.of(context).brightness == Brightness.light
+                    ? 'assets/images/peerwave_dark.png'
+                    : 'assets/images/peerwave.png',
                 width: 200,
                 height: 200,
                 errorBuilder: (context, error, stackTrace) {

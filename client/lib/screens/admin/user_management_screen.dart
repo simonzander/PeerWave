@@ -447,9 +447,21 @@ class _ManageUserRolesDialog extends StatelessWidget {
             final hasRole = userRoleIds.contains(role.uuid);
 
             return CheckboxListTile(
-              title: Text(role.name),
+              title: Text(
+                role.name,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
               subtitle: role.description != null && role.description!.isNotEmpty
-                  ? Text(role.description!)
+                  ? Text(
+                      role.description!,
+                      style: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
+                    )
                   : null,
               value: hasRole,
               onChanged: (value) {

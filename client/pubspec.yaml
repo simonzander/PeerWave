@@ -103,9 +103,9 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/peerwave.png"
-  adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/images/peerwave.png"
+  image_path: "assets/images/peerwave_bg.png"
+  adaptive_icon_background: "#181c21"
+  adaptive_icon_foreground: "assets/images/peerwave_bg.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

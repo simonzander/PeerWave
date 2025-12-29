@@ -585,12 +585,24 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             TextField(
-              decoration: const InputDecoration(labelText: 'Channel Name'),
+              decoration: InputDecoration(
+                labelText: 'Channel Name',
+                filled: true,
+                fillColor: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest,
+              ),
               onChanged: (value) => setState(() => channelName = value),
             ),
             const SizedBox(height: 8),
             TextField(
-              decoration: const InputDecoration(labelText: 'Description'),
+              decoration: InputDecoration(
+                labelText: 'Description',
+                filled: true,
+                fillColor: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest,
+              ),
               maxLines: 3,
               onChanged: (value) => setState(() => channelDescription = value),
             ),
@@ -603,7 +615,12 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
                     setState(() => isPrivate = value ?? false);
                   },
                 ),
-                const Text('Private'),
+                Text(
+                  'Private',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -615,7 +632,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
               children: [
                 Expanded(
                   child: RadioListTile<String>(
-                    title: const Text('WebRTC'),
+                    title: const Text('Video'),
                     value: 'webrtc',
                     groupValue: channelType,
                     onChanged: (value) {
@@ -628,7 +645,7 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
                 ),
                 Expanded(
                   child: RadioListTile<String>(
-                    title: const Text('Signal'),
+                    title: const Text('Text'),
                     value: 'signal',
                     groupValue: channelType,
                     onChanged: (value) {
@@ -662,10 +679,19 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
               DropdownButton<Role>(
                 isExpanded: true,
                 value: selectedRole,
+                dropdownColor: Theme.of(context).colorScheme.surface,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
                 items: availableRoles.map((role) {
                   return DropdownMenuItem<Role>(
                     value: role,
-                    child: Text(role.name),
+                    child: Text(
+                      role.name,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
                   );
                 }).toList(),
                 onChanged: (value) {

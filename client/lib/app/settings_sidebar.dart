@@ -65,6 +65,10 @@ class SettingsSidebar extends StatelessWidget {
                     labelStyle: TextStyle(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
+                    filled: true,
+                    fillColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -85,7 +89,14 @@ class SettingsSidebar extends StatelessWidget {
                                 color: Theme.of(context).colorScheme.onSurface,
                               ),
                               const SizedBox(width: 12),
-                              Text(item.label),
+                              Text(
+                                item.label,
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                ),
+                              ),
                             ],
                           ),
                         ),

@@ -127,7 +127,12 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
                   .map(
                     (preset) => DropdownMenuItem(
                       value: preset.id,
-                      child: Text(preset.name),
+                      child: Text(
+                        preset.name,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
                     ),
                   )
                   .toList(),
@@ -150,7 +155,12 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
                   .map(
                     (preset) => DropdownMenuItem(
                       value: preset.id,
-                      child: Text(preset.name),
+                      child: Text(
+                        preset.name,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
                     ),
                   )
                   .toList(),
@@ -167,9 +177,15 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
 
             // Simulcast
             SwitchListTile(
-              title: const Text('Enable Simulcast'),
-              subtitle: const Text(
+              title: Text(
+                'Enable Simulcast',
+                style: TextStyle(color: theme.colorScheme.onSurface),
+              ),
+              subtitle: Text(
                 'Send multiple quality layers for better bandwidth efficiency',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
               ),
               value: _videoSettings.simulcastEnabled,
               onChanged: (value) {
@@ -184,9 +200,15 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
 
             // Adaptive Quality
             SwitchListTile(
-              title: const Text('Adaptive Quality'),
-              subtitle: const Text(
+              title: Text(
+                'Adaptive Quality',
+                style: TextStyle(color: theme.colorScheme.onSurface),
+              ),
+              subtitle: Text(
                 'Automatically adjust quality based on grid size',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
               ),
               value: _videoSettings.adaptiveQualityEnabled,
               onChanged: (value) {
@@ -214,8 +236,16 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
           children: [
             // Native WebRTC Processing
             SwitchListTile(
-              title: const Text('Noise Suppression'),
-              subtitle: const Text('Reduce background noise (WebRTC)'),
+              title: Text(
+                'Noise Suppression',
+                style: TextStyle(color: theme.colorScheme.onSurface),
+              ),
+              subtitle: Text(
+                'Reduce background noise (WebRTC)',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
               value: _audioSettings.noiseSuppression,
               onChanged: (value) {
                 setState(() {
@@ -227,8 +257,16 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
               },
             ),
             SwitchListTile(
-              title: const Text('Echo Cancellation'),
-              subtitle: const Text('Remove echo and feedback'),
+              title: Text(
+                'Echo Cancellation',
+                style: TextStyle(color: theme.colorScheme.onSurface),
+              ),
+              subtitle: Text(
+                'Remove echo and feedback',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
               value: _audioSettings.echoCancellation,
               onChanged: (value) {
                 setState(() {
@@ -240,8 +278,16 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
               },
             ),
             SwitchListTile(
-              title: const Text('Auto Gain Control'),
-              subtitle: const Text('Automatically normalize volume'),
+              title: Text(
+                'Auto Gain Control',
+                style: TextStyle(color: theme.colorScheme.onSurface),
+              ),
+              subtitle: Text(
+                'Automatically normalize volume',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
               value: _audioSettings.autoGainControl,
               onChanged: (value) {
                 setState(() {
@@ -303,9 +349,15 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
           children: [
             // Noise Gate
             SwitchListTile(
-              title: const Text('Noise Gate'),
-              subtitle: const Text(
+              title: Text(
+                'Noise Gate',
+                style: TextStyle(color: theme.colorScheme.onSurface),
+              ),
+              subtitle: Text(
                 'Cut audio below threshold when not speaking',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
               ),
               value: _audioSettings.noiseGate.enabled,
               onChanged: (value) {
@@ -346,9 +398,15 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
 
             // Compressor
             SwitchListTile(
-              title: const Text('Compressor'),
-              subtitle: const Text(
+              title: Text(
+                'Compressor',
+                style: TextStyle(color: theme.colorScheme.onSurface),
+              ),
+              subtitle: Text(
                 'Even out audio levels for consistent volume',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
               ),
               value: _audioSettings.compressor.enabled,
               onChanged: (value) {
@@ -446,6 +504,8 @@ class _VoiceVideoSettingsPageState extends State<VoiceVideoSettingsPage> {
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           initialValue: value,
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+          dropdownColor: Theme.of(context).colorScheme.surface,
           items: items,
           onChanged: onChanged,
           decoration: InputDecoration(

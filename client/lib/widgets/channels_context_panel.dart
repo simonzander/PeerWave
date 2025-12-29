@@ -191,13 +191,17 @@ class ChannelsContextPanel extends StatelessWidget {
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: AppThemeConstants.textSecondary,
-          letterSpacing: 0.5,
+      child: Builder(
+        builder: (context) => Text(
+          title,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.7),
+            letterSpacing: 0.5,
+          ),
         ),
       ),
     );
@@ -280,7 +284,9 @@ class ChannelsContextPanel extends StatelessWidget {
                       // Unread badge (bottom right, squared red badge)
                       UnreadBadgeOverlay(
                         count: unreadCount,
-                        borderColor: AppThemeConstants.contextPanelBackground,
+                        borderColor: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerLow,
                       ),
                     ],
                   ),
@@ -376,23 +382,33 @@ class ChannelsContextPanel extends StatelessWidget {
   }
 
   Widget _buildEmptyState() {
-    return Padding(
-      padding: const EdgeInsets.all(32.0),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.tag, size: 48, color: AppThemeConstants.textSecondary),
-            const SizedBox(height: 12),
-            Text(
-              'No channels yet',
-              style: TextStyle(
-                fontSize: 14,
-                color: AppThemeConstants.textSecondary,
+    return Builder(
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.tag,
+                size: 48,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.5),
               ),
-              textAlign: TextAlign.center,
-            ),
-          ],
+              const SizedBox(height: 12),
+              Text(
+                'No channels yet',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
       ),
     );

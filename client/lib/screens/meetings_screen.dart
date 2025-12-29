@@ -197,7 +197,10 @@ class _MeetingsScreenState extends State<MeetingsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
         title: const Text('Meetings'),
         bottom: TabBar(
@@ -314,13 +317,21 @@ class _MeetingsScreenState extends State<MeetingsScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 64, color: Colors.grey[400]),
+          Icon(
+            icon,
+            size: 64,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.4),
+          ),
           const SizedBox(height: 16),
           Text(
             message,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(color: Colors.grey[600]),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
@@ -555,7 +566,7 @@ class _MeetingCard extends StatelessWidget {
                 Text(
                   meeting.description!,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey[600],
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -567,13 +578,19 @@ class _MeetingCard extends StatelessWidget {
               // Meeting details
               Row(
                 children: [
-                  Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
+                  Icon(
+                    Icons.access_time,
+                    size: 16,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
                       _formatMeetingTime(),
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.grey[600],
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.6,
+                        ),
                       ),
                     ),
                   ),
@@ -587,12 +604,18 @@ class _MeetingCard extends StatelessWidget {
                   (meeting.participantCount ?? 0) > 0)
                 Row(
                   children: [
-                    Icon(Icons.people, size: 16, color: Colors.grey[600]),
+                    Icon(
+                      Icons.people,
+                      size: 16,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       '${meeting.participantCount} participant${meeting.participantCount != 1 ? 's' : ''} joined',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.grey[600],
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.6,
+                        ),
                       ),
                     ),
                   ],
@@ -610,13 +633,19 @@ class _MeetingCard extends StatelessWidget {
                       0)
                 Row(
                   children: [
-                    Icon(Icons.mail_outline, size: 16, color: Colors.grey[600]),
+                    Icon(
+                      Icons.mail_outline,
+                      size: 16,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         'Invited ${meeting.rsvpSummary!.invited} • Accepted ${meeting.rsvpSummary!.accepted} • Tentative ${meeting.rsvpSummary!.tentative} • Declined ${meeting.rsvpSummary!.declined}',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: Colors.grey[600],
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.6,
+                          ),
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -685,14 +714,22 @@ class _MeetingCard extends StatelessWidget {
       const SizedBox(height: 12),
       Row(
         children: [
-          Icon(Icons.how_to_reg, size: 16, color: Colors.grey[600]),
+          Icon(
+            Icons.how_to_reg,
+            size: 16,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.6),
+          ),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
               'Your RSVP: $label',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -734,16 +771,20 @@ class _MeetingCard extends StatelessWidget {
       textColor = Colors.blue[900]!;
       label = 'Scheduled';
     } else if (meeting.isCompleted) {
-      backgroundColor = Colors.grey[300]!;
-      textColor = Colors.grey[800]!;
+      backgroundColor = Theme.of(context).colorScheme.surfaceContainerHighest;
+      textColor = Theme.of(
+        context,
+      ).colorScheme.onSurface.withValues(alpha: 0.7);
       label = 'Completed';
     } else if (meeting.isCancelled) {
       backgroundColor = Colors.red[100]!;
       textColor = Colors.red[900]!;
       label = 'Cancelled';
     } else {
-      backgroundColor = Colors.grey[200]!;
-      textColor = Colors.grey[700]!;
+      backgroundColor = Theme.of(context).colorScheme.surfaceContainerHigh;
+      textColor = Theme.of(
+        context,
+      ).colorScheme.onSurface.withValues(alpha: 0.8);
       label = meeting.status;
     }
 
@@ -765,18 +806,29 @@ class _MeetingCard extends StatelessWidget {
   }
 
   Widget _buildInfoChip(IconData icon, String label, BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.grey[200],
+        color: theme.colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: Colors.grey[700]),
+          Icon(
+            icon,
+            size: 14,
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+          ),
           const SizedBox(width: 4),
-          Text(label, style: TextStyle(color: Colors.grey[700], fontSize: 11)),
+          Text(
+            label,
+            style: TextStyle(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              fontSize: 11,
+            ),
+          ),
         ],
       ),
     );

@@ -330,7 +330,9 @@ class _AppLayoutState extends State<AppLayout> {
         radius: 16,
         backgroundColor: colorScheme.primaryContainer,
         backgroundImage: activeServer?.serverPicture != null
-            ? MemoryImage(base64Decode(activeServer!.serverPicture!))
+            ? MemoryImage(
+                base64Decode(activeServer!.serverPicture!.split(',').last),
+              )
             : null,
         child: activeServer?.serverPicture == null
             ? Text(
@@ -370,7 +372,9 @@ class _AppLayoutState extends State<AppLayout> {
                 radius: 14,
                 backgroundColor: colorScheme.surfaceContainerHighest,
                 backgroundImage: server.serverPicture != null
-                    ? MemoryImage(base64Decode(server.serverPicture!))
+                    ? MemoryImage(
+                        base64Decode(server.serverPicture!.split(',').last),
+                      )
                     : null,
                 child: server.serverPicture == null
                     ? Text(

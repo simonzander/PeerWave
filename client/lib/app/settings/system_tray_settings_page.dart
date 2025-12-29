@@ -75,10 +75,23 @@ class _SystemTraySettingsPageState extends State<SystemTraySettingsPage> {
                   child: Column(
                     children: [
                       ListTile(
-                        leading: const Icon(Icons.launch),
-                        title: const Text('Start at Login'),
-                        subtitle: const Text(
+                        leading: Icon(
+                          Icons.launch,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                        title: Text(
+                          'Start at Login',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                        subtitle: Text(
                           'Automatically start PeerWave when you log in to your computer',
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.7),
+                          ),
                         ),
                         trailing: Switch(
                           value: _autoStartEnabled,

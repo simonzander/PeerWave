@@ -380,7 +380,12 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
                   const SizedBox(height: 8),
                   Card(
                     child: SwitchListTile(
-                      title: const Text('Private Channel'),
+                      title: Text(
+                        'Private Channel',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
                       subtitle: Text(
                         _isPrivate
                             ? 'Only invited members can access this channel'
@@ -426,6 +431,10 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
                     child: DropdownButtonFormField<String>(
                       initialValue: _selectedDefaultRole,
                       hint: const Text('Select default role for new members'),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      dropdownColor: Theme.of(context).colorScheme.surface,
                       decoration: const InputDecoration(
                         border: InputBorder.none,
                         prefixIcon: Icon(Icons.person_outline),
@@ -438,6 +447,9 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
                           child: Text(
                             role.name,
                             overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
                           ),
                         );
                       }).toList(),
