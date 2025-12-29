@@ -20,7 +20,7 @@
     "bulma-toast": "^2.4.4",
     "cors": "^2.8.5",
     "emailjs": "^4.0.3",
-    "express": "^4.18.2",
+    "express": "^5.2.1",
     "express-session": "^1.18.0",
     "fido2-lib": "^3.5.3",
     "js-yaml": "^4.1.0",
