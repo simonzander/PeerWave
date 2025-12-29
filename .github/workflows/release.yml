@@ -30,11 +30,11 @@ jobs:
           echo "Version: $VERSION"
       
       - name: Build Flutter Web
-        working-directory: ./client
         run: |
+          cd tools && dart pub get && cd ..
+          dart tools/generate_version.dart
+          cd client
           flutter pub get
-          cd ../tools && dart pub get && cd ../client
-          dart ../tools/generate_version.dart
           flutter build web --release
       
       - name: Copy Web to Server
