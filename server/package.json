@@ -39,6 +39,6 @@
     "socket.io-express-session": "^0.1.2"
   },
   "devDependencies": {
-    "eslint": "9.9.1"
+    "eslint": "9.39.2"
   }
 }
