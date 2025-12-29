@@ -33,6 +33,7 @@ jobs:
         working-directory: ./client
         run: |
           flutter pub get
+          cd ../tools && dart pub get && cd ../client
           dart ../tools/generate_version.dart
           flutter build web --release
       
