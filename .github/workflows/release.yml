@@ -25,7 +25,7 @@ jobs:
       - name: Get version
         id: version
         run: |
-          VERSION=$(grep -A1 "^client:" version_config.yaml | grep "version:" | awk '{print $2}' | tr -d '"' | tr -d "'")
+          VERSION=$(awk '/^client:/{flag=1; next} flag && /version:/{print $2; exit}' version_config.yaml | tr -d '"' | tr -d "'")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
       
