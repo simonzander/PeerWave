@@ -54,6 +54,7 @@ jobs:
       
       - name: Login to Docker Hub
         if: vars.DOCKERHUB_USERNAME != ''
+        continue-on-error: true
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -67,10 +68,20 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/peerwave:latest
             ghcr.io/${{ github.repository_owner }}/peerwave:${{ steps.version.outputs.version }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/peerwave:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/peerwave:buildcache,mode=max
+      
+      - name: Push to Docker Hub
+        if: vars.DOCKERHUB_USERNAME != ''
+        continue-on-error: true
+        uses: docker/build-push-action@v5
+        with:
+          context: ./server
+          push: true
+          tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/peerwave:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/peerwave:${{ steps.version.outputs.version }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/peerwave:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/peerwave:buildcache,mode=max
 
   build-windows:
     name: Build Windows Client
