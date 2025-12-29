@@ -52,7 +52,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Login to Docker Hub
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
+        if: vars.DOCKERHUB_USERNAME != ''
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -187,14 +187,14 @@ jobs:
         run: dart tools/generate_version.dart
       
       - name: Decode keystore
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: vars.HAS_ANDROID_SIGNING == 'true'
         working-directory: ./client/android
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: echo "$KEYSTORE_BASE64" | base64 --decode > app/upload-keystore.jks
       
       - name: Create key.properties
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: vars.HAS_ANDROID_SIGNING == 'true'
         working-directory: ./client/android
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -209,17 +209,17 @@ jobs:
           EOF
       
       - name: Build APK (Debug)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 == '' }}
+        if: vars.HAS_ANDROID_SIGNING != 'true'
         working-directory: ./client
         run: flutter build apk --debug
       
       - name: Build APK (Release)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: vars.HAS_ANDROID_SIGNING == 'true'
         working-directory: ./client
         run: flutter build apk --release --split-per-abi
       
       - name: Build App Bundle
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: vars.HAS_ANDROID_SIGNING == 'true'
         working-directory: ./client
         run: flutter build appbundle --release
       
