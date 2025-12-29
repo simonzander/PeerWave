@@ -286,10 +286,22 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          body: |
+            ## 🐳 Docker Images
+            
+            Pull the Docker image:
+            ```bash
+            docker pull ghcr.io/${{ github.repository_owner }}/peerwave:${{ needs.build-web-and-docker.outputs.version }}
+            docker pull ghcr.io/${{ github.repository_owner }}/peerwave:latest
+            ```
+            
+            ## 📦 Downloads
+            
+            Download the client applications for your platform below.
           files: |
             artifacts/windows-client/*
             artifacts/macos-client/*
-            artifacts/android-client/*
+            artifacts/android-client/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       

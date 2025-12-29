@@ -52,7 +52,7 @@ services:
 
   # PeerWave Server
   peerwave-server:
-    image: simonzander/peerwave:latest
+    image: ghcr.io/simonzander/peerwave:latest
     container_name: peerwave-server
     restart: unless-stopped
     
