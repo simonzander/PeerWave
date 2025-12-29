@@ -1,0 +1,103 @@
+services:
+  # LiveKit SFU Server (with embedded TURN)
+  peerwave-livekit:
+    image: livekit/livekit-server:latest
+    container_name: peerwave-livekit
+    restart: unless-stopped
+    ports:
+      - "7880:7880"   # WebRTC (main)
+      - "7881:7881"   # HTTP API
+      - "7882:7882"   # WebRTC TCP fallback
+      - "5349:5349"   # TURN/TLS (replaces Coturn)
+      - "443:443/udp" # TURN/UDP (QUIC-compatible)
+      - "30100-30200:30100-30200/udp"  # RTP port range (WebRTC media) - 1001 ports
+      - "30300-30400:30300-30400/udp"  # TURN Relay port range (P2P) - 1001 ports
+    volumes:
+      - ./livekit-config.yaml:/livekit.yaml:ro
+      - ./livekit-certs:/certs  # Provide your own certs here, or auto-generated on first run
+    environment:
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+    
+    # Auto-generate self-signed certificates on first startup
+    entrypoint: >
+      sh -c "
+      echo 'Checking TURN certificates...';
+      if [ ! -f /certs/turn-cert.pem ] || [ ! -f /certs/turn-key.pem ]; then
+        echo 'Generating self-signed certificates for TURN server...';
+        apk add --no-cache openssl;
+        openssl req -x509 -newkey rsa:4096 -nodes \
+          -keyout /certs/turn-key.pem \
+          -out /certs/turn-cert.pem \
+          -days 365 \
+          -subj '/CN=turn.peerwave.local' \
+          -addext 'subjectAltName=DNS:localhost,DNS:turn.peerwave.local,IP:127.0.0.1';
+        chmod 644 /certs/turn-cert.pem;
+        chmod 600 /certs/turn-key.pem;
+        echo '✓ Self-signed certificates generated';
+      else
+        echo '✓ Certificates already exist';
+      fi;
+      echo 'Starting LiveKit...';
+      exec /livekit-server --config /livekit.yaml
+      "
+    networks:
+      - peerwave-network
+
+  # PeerWave Node.js Server
+  peerwave-server:
+    image: simonzander/peerwave:latest
+    container_name: peerwave-server
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    volumes:
+      - peerwave-data:/usr/src/app/data
+      - ./server/cert:/usr/src/app/cert:ro
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=${PORT:-3000}
+      - DOMAIN=${DOMAIN:-localhost}
+      - HTTPS=${HTTPS:-false}
+      - SESSION_SECRET=${SESSION_SECRET:-your-secret-key-CHANGE-IN-PRODUCTION}
+      - DB_PATH=/usr/src/app/data/peerwave.sqlite
+      # LiveKit Config
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://peerwave-livekit:7880}
+      - LIVEKIT_TURN_DOMAIN=${LIVEKIT_TURN_DOMAIN:-localhost}
+      # Email Configuration
+      - EMAIL_HOST=${EMAIL_HOST}
+      - EMAIL_PORT=${EMAIL_PORT:-587}
+      - EMAIL_SECURE=${EMAIL_SECURE:-false}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASS=${EMAIL_PASS}
+      - EMAIL_FROM=${EMAIL_FROM}
+      # Admin Users
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
+      # OTP Configuration
+      - OTP_EXPIRATION_MINUTES=${OTP_EXPIRATION_MINUTES:-10}
+      - OTP_WAIT_TIME_MINUTES=${OTP_WAIT_TIME_MINUTES:-1}
+      # Invitation Configuration
+      - INVITATION_EXPIRATION_HOURS=${INVITATION_EXPIRATION_HOURS:-48}
+    # Resource Limits für Video Processing
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - peerwave-network
+    depends_on:
+      - peerwave-livekit
+
+networks:
+  peerwave-network:
+    driver: bridge
+
+volumes:
+  # Data volume for SQLite database (code files stay in image)
+  peerwave-data:

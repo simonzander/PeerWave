@@ -1,0 +1,78 @@
+# LiveKit Server Configuration
+# Production configuration for app.peerwave.org
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+# Keys for JWT authentication
+# Generate with: openssl rand -base64 32
+# Must match LIVEKIT_API_KEY and LIVEKIT_API_SECRET in .env
+keys:
+  your-api-key-here: your-api-secret-here
+
+rtc:
+  # Port range for WebRTC connections (RTP media streams)
+  # Range: 4001 ports for ~4000 concurrent media streams
+  # Each peer connection uses ~1-2 ports (audio + video)
+  port_range_start: 30100
+  port_range_end: 30400
+  
+  # Use server's actual external IP (production)
+  use_external_ip: true
+  
+  # STUN servers for NAT traversal
+  stun_servers:
+    - stun.l.google.com:19302
+    - stun1.l.google.com:19302
+  
+# Room settings
+room:
+  # Enable empty timeout (close empty rooms after 5 minutes)
+  empty_timeout: 300
+  # Maximum number of participants per room
+  max_participants: 100
+  # Enable auto-create rooms
+  auto_create: true
+
+# Logging
+logging:
+  level: info
+  # Available levels: debug, info, warn, error
+  sample: false
+
+# ============================================================
+# TURN Server (for P2P NAT traversal)
+# Replaces Coturn - embedded TURN server with JWT auth
+# ============================================================
+turn:
+  enabled: true
+  domain: app.peerwave.org
+  
+  # TURN/TLS - looks like HTTPS, passes corporate firewalls
+  tls_port: 5349
+  
+  # TURN/UDP - modern QUIC-compatible, best performance
+  udp_port: 443
+  
+  # TURN Relay port range (for P2P data relay)
+  # Range: 4000 ports for ~4000 concurrent P2P connections
+  # Each TURN relay connection uses 1 port
+  relay_range_start: 30300
+  relay_range_end: 30400
+  
+  # SSL certificates (extracted from Traefik)
+  cert_file: /certs/turn-cert.pem
+  key_file: /certs/turn-key.pem
+  
+  # Important: LiveKit handles TLS itself (not external proxy)
+  external_tls: false
+
+# Webhook (optional - for room events)
+# webhook:
+#   urls:
+#     - http://server:3000/api/livekit/webhook
+#   api_key: devkey
+
+# Redis (optional - for scaling multiple LiveKit instances)
+# redis:
+#   address: redis:6379

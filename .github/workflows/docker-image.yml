@@ -1,40 +1,20 @@
-name: Publish Docker image
+name: Publish Docker image (DEPRECATED - Use docker-build-web.yml)
+
+# This workflow is deprecated and kept for reference only
+# Use docker-build-web.yml instead, which includes Flutter web build
 
 on:
-  release:
-    types: [published]
+  # Disabled - use docker-build-web.yml instead
+  workflow_dispatch:
 
 jobs:
-  push_to_registry:
-    name: Push Docker image to Docker Hub
+  deprecated:
+    name: This workflow is deprecated
     runs-on: ubuntu-latest
-    permissions:
-      packages: write
-      contents: read
-      attestations: write
-      id-token: write
     steps:
-      - name: Check out the repo
-        uses: actions/checkout@v4
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@f4ef78c080cd8ba55a85445d5b36e214a81df20a
-        with:
-          username: ${{ secrets.USERNAME }}
-          password: ${{ secrets.TOKEN }}
-
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
-        with:
-          images: simonzander/peerwave
-
-      - name: Build and push Docker image
-        id: push
-        uses: docker/build-push-action@3b5e8027fcad23fda98b2e3ac259d8d67585f671
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+      - name: Notice
+        run: |
+          echo "⚠️  This workflow is DEPRECATED"
+          echo "Use docker-build-web.yml instead"
+          echo "It includes Flutter web client build before Docker image creation"
+          exit 1

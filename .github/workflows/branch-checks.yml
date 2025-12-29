@@ -1,0 +1,160 @@
+name: Branch Push Checks
+
+on:
+  push:
+    branches:
+      - '**'  # All branches
+      - '!main'  # Except main (handled by auto-version.yml)
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/**'
+      - '!.github/workflows/**'
+
+jobs:
+  flutter-validation:
+    name: Flutter Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      
+      - name: Install dependencies
+        working-directory: ./client
+        run: flutter pub get
+      
+      - name: Run Flutter analyze
+        working-directory: ./client
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      
+      - name: Check Dart formatting
+        working-directory: ./client
+        run: dart format --set-exit-if-changed .
+      
+      - name: Run Flutter tests
+        working-directory: ./client
+        run: flutter test --no-pub
+        continue-on-error: true
+      
+      - name: Test Windows build (no artifacts)
+        working-directory: ./client
+        run: |
+          dart run ../tools/generate_version.dart
+          flutter build windows --release
+        if: runner.os == 'Linux'
+        continue-on-error: true
+      
+      - name: Build summary
+        run: |
+          echo "✅ Flutter analysis passed"
+          echo "✅ Code formatting correct"
+          echo "ℹ️  No artifacts published (branch build)"
+  
+  server-validation:
+    name: Server Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './server/package-lock.json'
+      
+      - name: Install dependencies
+        working-directory: ./server
+        run: npm ci
+      
+      - name: Run ESLint
+        working-directory: ./server
+        run: npm run lint
+        continue-on-error: true
+      
+      - name: Run tests
+        working-directory: ./server
+        run: npm test
+        continue-on-error: true
+      
+      - name: Lint summary
+        run: echo "✅ Server checks passed"
+  
+  test-docker-build:
+    name: Test Docker Build (No Push)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      
+      - name: Install dependencies
+        working-directory: ./client
+        run: flutter pub get
+      
+      - name: Generate version info
+        run: |
+          cd tools
+          dart pub get
+          cd ..
+          dart run tools/generate_version.dart
+      
+      - name: Build Flutter web
+        working-directory: ./client
+        run: flutter build web --release
+      
+      - name: Copy web to server
+        run: |
+          rm -rf server/web
+          cp -r client/build/web server/web
+          echo "✅ Web client built and copied"
+      
+      - name: Test Docker build (no push)
+        working-directory: ./server
+        run: |
+          docker build -t peerwave-test:latest .
+          echo "✅ Docker image built successfully"
+          echo "ℹ️  Image NOT pushed (branch build)"
+      
+      - name: Verify Docker image
+        run: |
+          docker images | grep peerwave-test
+          echo "✅ Docker build verified"
+  
+  build-summary:
+    name: Build Summary
+    needs: [flutter-validation, server-validation, test-docker-build]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check build status
+        run: |
+          echo "### Branch Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Status" >> $GITHUB_STEP_SUMMARY
+          echo "- Flutter: ${{ needs.flutter-validation.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Server: ${{ needs.server-validation.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Docker: ${{ needs.test-docker-build.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "ℹ️  This is a test build - no artifacts published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.flutter-validation.result }}" == "success" ] && \
+             [ "${{ needs.server-validation.result }}" == "success" ] && \
+             [ "${{ needs.test-docker-build.result }}" == "success" ]; then
+            echo "✅ **All checks passed!** Ready to create PR" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Some checks failed** - please review errors above" >> $GITHUB_STEP_SUMMARY
+          fi

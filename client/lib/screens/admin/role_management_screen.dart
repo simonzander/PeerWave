@@ -1,0 +1,447 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../models/role.dart';
+import '../../providers/role_provider.dart';
+import '../../extensions/snackbar_extensions.dart';
+
+class RoleManagementScreen extends StatefulWidget {
+  const RoleManagementScreen({super.key});
+
+  @override
+  State<RoleManagementScreen> createState() => _RoleManagementScreenState();
+}
+
+class _RoleManagementScreenState extends State<RoleManagementScreen> {
+  RoleScope _selectedScope = RoleScope.server;
+  List<Role> _roles = [];
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRoles();
+  }
+
+  Future<void> _loadRoles() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final roleProvider = Provider.of<RoleProvider>(context, listen: false);
+      final roles = await roleProvider.getRolesByScope(_selectedScope);
+      setState(() {
+        _roles = roles;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _showCreateRoleDialog() async {
+    final nameController = TextEditingController();
+    final descriptionController = TextEditingController();
+    final permissionsController = TextEditingController();
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Create New Role'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Role Name',
+                  hintText: 'e.g., Custom Moderator',
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: descriptionController,
+                decoration: const InputDecoration(
+                  labelText: 'Description',
+                  hintText: 'Brief description of the role',
+                ),
+                maxLines: 2,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: permissionsController,
+                decoration: const InputDecoration(
+                  labelText: 'Permissions (comma-separated)',
+                  hintText: 'e.g., user.manage, channel.create',
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Scope: ${_selectedScope.displayName}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      final name = nameController.text.trim();
+      final description = descriptionController.text.trim();
+      final permissionsText = permissionsController.text.trim();
+      final permissions = permissionsText
+          .split(',')
+          .map((p) => p.trim())
+          .where((p) => p.isNotEmpty)
+          .toList();
+
+      if (name.isEmpty) {
+        _showError('Role name is required');
+        return;
+      }
+
+      if (permissions.isEmpty) {
+        _showError('At least one permission is required');
+        return;
+      }
+
+      try {
+        final roleProvider = Provider.of<RoleProvider>(context, listen: false);
+        await roleProvider.createRole(
+          name: name,
+          description: description,
+          scope: _selectedScope,
+          permissions: permissions,
+        );
+        if (!mounted) return;
+        _showSuccess('Role created successfully');
+        _loadRoles();
+      } catch (e) {
+        _showError(e.toString());
+      }
+    }
+  }
+
+  Future<void> _showEditRoleDialog(Role role) async {
+    if (role.standard) {
+      _showError('Cannot edit standard roles');
+      return;
+    }
+
+    final nameController = TextEditingController(text: role.name);
+    final descriptionController = TextEditingController(
+      text: role.description ?? '',
+    );
+    final permissionsController = TextEditingController(
+      text: role.permissions.join(', '),
+    );
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Role'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Role Name'),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: descriptionController,
+                decoration: const InputDecoration(labelText: 'Description'),
+                maxLines: 2,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: permissionsController,
+                decoration: const InputDecoration(
+                  labelText: 'Permissions (comma-separated)',
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      final name = nameController.text.trim();
+      final description = descriptionController.text.trim();
+      final permissionsText = permissionsController.text.trim();
+      final permissions = permissionsText
+          .split(',')
+          .map((p) => p.trim())
+          .where((p) => p.isNotEmpty)
+          .toList();
+
+      try {
+        final roleProvider = Provider.of<RoleProvider>(context, listen: false);
+        await roleProvider.updateRole(
+          roleId: role.uuid,
+          name: name.isNotEmpty ? name : null,
+          description: description.isNotEmpty ? description : null,
+          permissions: permissions.isNotEmpty ? permissions : null,
+        );
+        if (!mounted) return;
+        _showSuccess('Role updated successfully');
+        _loadRoles();
+      } catch (e) {
+        _showError(e.toString());
+      }
+    }
+  }
+
+  Future<void> _showDeleteRoleDialog(Role role) async {
+    if (role.standard) {
+      _showError('Cannot delete standard roles');
+      return;
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Role'),
+        content: Text(
+          'Are you sure you want to delete the role "${role.name}"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      try {
+        final roleProvider = Provider.of<RoleProvider>(context, listen: false);
+        await roleProvider.deleteRole(role.uuid);
+        if (!mounted) return;
+        _showSuccess('Role deleted successfully');
+        _loadRoles();
+      } catch (e) {
+        _showError(e.toString());
+      }
+    }
+  }
+
+  void _showError(String message) {
+    context.showErrorSnackBar(message);
+  }
+
+  void _showSuccess(String message) {
+    context.showSuccessSnackBar(message);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      appBar: AppBar(title: const Text('Role Management')),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SegmentedButton<RoleScope>(
+                    segments: const [
+                      ButtonSegment(
+                        value: RoleScope.server,
+                        label: Text('Server'),
+                      ),
+                      ButtonSegment(
+                        value: RoleScope.channelWebRtc,
+                        label: Text('WebRTC'),
+                      ),
+                      ButtonSegment(
+                        value: RoleScope.channelSignal,
+                        label: Text('Signal'),
+                      ),
+                    ],
+                    selected: {_selectedScope},
+                    onSelectionChanged: (Set<RoleScope> newSelection) {
+                      setState(() {
+                        _selectedScope = newSelection.first;
+                      });
+                      _loadRoles();
+                    },
+                  ),
+                ),
+                const SizedBox(width: 16),
+                FloatingActionButton(
+                  onPressed: _showCreateRoleDialog,
+                  child: const Icon(Icons.add),
+                ),
+              ],
+            ),
+          ),
+          if (_errorMessage != null)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                _errorMessage!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          if (_isLoading)
+            const Expanded(child: Center(child: CircularProgressIndicator()))
+          else
+            Expanded(
+              child: ListView.builder(
+                itemCount: _roles.length,
+                itemBuilder: (context, index) {
+                  final role = _roles[index];
+                  return Card(
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: ListTile(
+                      title: Text(
+                        role.name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: role.standard
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.7)
+                              : Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (role.description != null)
+                            Text(
+                              role.description!,
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.8),
+                              ),
+                            ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Permissions: ${role.permissions.join(", ")}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ],
+                      ),
+                      trailing: role.standard
+                          ? Chip(
+                              label: Text(
+                                'Standard',
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                ),
+                              ),
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
+                            )
+                          : PopupMenuButton(
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(
+                                  value: 'edit',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.edit),
+                                      SizedBox(width: 8),
+                                      Text('Edit'),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'delete',
+                                  child: Builder(
+                                    builder: (context) => Row(
+                                      children: [
+                                        Icon(
+                                          Icons.delete,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.error,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Delete',
+                                          style: TextStyle(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.error,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              onSelected: (value) {
+                                if (value == 'edit') {
+                                  _showEditRoleDialog(role);
+                                } else if (value == 'delete') {
+                                  _showDeleteRoleDialog(role);
+                                }
+                              },
+                            ),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

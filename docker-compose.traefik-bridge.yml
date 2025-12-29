@@ -1,0 +1,255 @@
+# Docker Compose configuration for PeerWave with Traefik reverse proxy
+# BRIDGE NETWORKING MODE - LiveKit with direct Traefik routing
+# 
+# Prerequisites:
+#   - Traefik proxy network: docker network create proxy
+#   - Domain DNS pointing to your server
+#   - Create .env from .env.traefik.example
+
+version: '3.8'
+
+services:
+  # Certificate Extractor (extracts Traefik certs for LiveKit)
+  traefik-certs-dumper:
+    image: ldez/traefik-certs-dumper:latest
+    container_name: peerwave-cert-dumper
+    restart: unless-stopped
+    
+    # Wait for acme.json to exist and contain certificates, then start dumper
+    entrypoint: >
+      sh -c "
+      apk add --no-cache docker-cli jq;
+      echo 'Waiting for acme.json with certificates...';
+      while ! [ -e /acme.json ] || ! [ $$(jq 'if type==\"object\" then [.[]] else . end | map(select(.Certificates)) | map(.Certificates) | flatten | length' /acme.json 2>/dev/null || echo 0) -gt 0 ]; do
+        sleep 5;
+        echo 'Still waiting... (acme.json may be empty or Traefik is requesting certificates)';
+      done;
+      echo 'Certificates found in acme.json, starting dumper...';
+      echo '[CERT-DUMPER] Domains found in acme.json:';
+      jq -r 'if type==\"object\" then [.[]] else . end | .[] | .Certificates[]? | .domain.main' /acme.json 2>/dev/null | sort -u;
+      echo '[CERT-DUMPER] Performing initial certificate dump...';
+      traefik-certs-dumper file --version v3 --source /acme.json --dest /output --domain-subdir || echo '[CERT-DUMPER] ERROR: Initial dump failed';
+      echo '[CERT-DUMPER] Contents of /output after initial dump:';
+      ls -laR /output/;
+      echo '[CERT-DUMPER] Starting watch mode...';
+      traefik-certs-dumper file --version v3 --watch \
+        --source /acme.json \
+        --dest /output \
+        --domain-subdir \
+        --post-hook 'echo [CERT-DUMPER] Certificate renewed at $$(date); echo [CERT-DUMPER] Available domains:; ls -la /output/; docker restart peerwave-livekit || echo [CERT-DUMPER] Warning: Could not restart LiveKit'
+      "
+    
+    volumes:
+      # Mount Traefik's acme.json (READ-ONLY)
+      - ${TRAEFIK_ACME_PATH:-/etc/traefik/acme.json}:/acme.json:ro
+      # Output directory for extracted certificates
+      - cert-data:/output
+      # Mount docker socket to restart LiveKit on cert renewal
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    
+    networks:
+      - peerwave-internal
+
+  # PeerWave Server
+  peerwave-server:
+    image: simonzander/peerwave:latest
+    container_name: peerwave-server
+    restart: unless-stopped
+    
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    
+    volumes:
+      - peerwave-data:/usr/src/app/data
+      - ./server/cert:/usr/src/app/cert:ro
+    
+    environment:
+      # Server Configuration
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - DOMAIN=${DOMAIN}
+      - HTTPS=true
+      - APP_URL=https://${DOMAIN}
+      
+      # Database
+      - DB_PATH=/usr/src/app/data/peerwave.sqlite
+      
+      # Security (CHANGE THESE!)
+      - SESSION_SECRET=${SESSION_SECRET}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+      
+      # LiveKit Connection (via Traefik proxy)
+      - LIVEKIT_URL=wss://${DOMAIN}/livekit
+      - LIVEKIT_TURN_DOMAIN=${LIVEKIT_TURN_DOMAIN}
+      
+      # CORS Origins (your domain)
+      - CORS_ORIGINS=https://${DOMAIN}
+      
+      # Email (optional)
+      - EMAIL_HOST=${EMAIL_HOST}
+      - EMAIL_PORT=${EMAIL_PORT:-587}
+      - EMAIL_SECURE=${EMAIL_SECURE:-false}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASS=${EMAIL_PASS}
+      - EMAIL_FROM=${EMAIL_FROM}
+      # Admin Users
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
+      # OTP Configuration
+      - OTP_EXPIRATION_MINUTES=${OTP_EXPIRATION_MINUTES:-10}
+      - OTP_WAIT_TIME_MINUTES=${OTP_WAIT_TIME_MINUTES:-1}
+      # Invitation Configuration
+      - INVITATION_EXPIRATION_HOURS=${INVITATION_EXPIRATION_HOURS:-48}
+    
+    networks:
+      - proxy
+      - peerwave-internal
+    
+    labels:
+      # Enable Traefik
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      
+      # HTTP → HTTPS Redirect
+      - "traefik.http.routers.peerwave.entrypoints=http"
+      - "traefik.http.routers.peerwave.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.peerwave.middlewares=peerwave-https-redirect"
+      - "traefik.http.middlewares.peerwave-https-redirect.redirectscheme.scheme=https"
+      
+      # HTTPS Router
+      - "traefik.http.routers.peerwave-secure.entrypoints=https"
+      - "traefik.http.routers.peerwave-secure.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.peerwave-secure.tls=true"
+      - "traefik.http.routers.peerwave-secure.tls.certresolver=http"
+      - "traefik.http.routers.peerwave-secure.service=peerwave"
+      
+      # Service
+      - "traefik.http.services.peerwave.loadbalancer.server.port=3000"
+    
+    depends_on:
+      - peerwave-livekit
+
+  # LiveKit Server (SFU for video calls) - BRIDGE MODE
+  peerwave-livekit:
+    image: livekit/livekit-server:latest
+    container_name: peerwave-livekit
+    restart: unless-stopped
+    
+    volumes:
+      # Use extracted certificates from cert-dumper
+      - cert-data:/certs-source:ro
+      # Mount LiveKit configuration from absolute path
+      - ${LIVEKIT_CONFIG_PATH:-./livekit-config.yaml}:/livekit.yaml:ro
+    
+    networks:
+      - proxy
+      - peerwave-internal
+    
+    ports:
+      # TURN TLS
+      - "5349:5349/tcp"
+      # TURN UDP
+      - "443:443/udp"
+      # WebRTC UDP port range
+      - "30100-30400:30100-30400/udp"
+    
+    environment:
+      # Certificate domain for extraction
+      - CERT_DOMAIN=${DOMAIN}
+      
+      # API Keys (format must be "key: secret" with space after colon)
+      - "LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secret}"
+      
+      # Server Configuration
+      - LIVEKIT_PORT=7880
+      - LIVEKIT_BIND=0.0.0.0
+      
+      # WebRTC Configuration
+      - LIVEKIT_RTC_PORT_RANGE_START=30100
+      - LIVEKIT_RTC_PORT_RANGE_END=30400
+      
+      # TURN Server
+      - LIVEKIT_TURN_ENABLED=true
+      - LIVEKIT_TURN_DOMAIN=${LIVEKIT_TURN_DOMAIN}
+      - LIVEKIT_TURN_TLS_PORT=5349
+      - LIVEKIT_TURN_UDP_PORT=443
+      - LIVEKIT_TURN_RELAY_RANGE_START=30300
+      - LIVEKIT_TURN_RELAY_RANGE_END=30400
+      - LIVEKIT_TURN_CERT=/certs/turn-cert.pem
+      - LIVEKIT_TURN_KEY=/certs/turn-key.pem
+      
+      # Room Settings
+      - LIVEKIT_ROOM_EMPTY_TIMEOUT=300
+      - LIVEKIT_ROOM_MAX_PARTICIPANTS=100
+      - LIVEKIT_ROOM_AUTO_CREATE=true
+      
+      # Logging
+      - LIVEKIT_LOG_LEVEL=info
+    
+    # Wait for certificate extraction
+    depends_on:
+      - traefik-certs-dumper
+    
+    # Copy certs on startup and start with config file
+    entrypoint:
+      - sh
+      - -c
+      - |
+        echo '[LiveKit] Waiting for certificates...';
+        echo '[LiveKit] Looking for domain: '$$CERT_DOMAIN;
+        echo '[LiveKit] Checking /certs-source/ directory...';
+        ls -la /certs-source/ 2>/dev/null || echo '[LiveKit] Directory not yet available';
+        while [ ! -f /certs-source/$${CERT_DOMAIN}/certificate.crt ]; do 
+          sleep 2;
+          echo '[LiveKit] Still waiting for /certs-source/'$$CERT_DOMAIN'/certificate.crt';
+          ls -la /certs-source/ 2>/dev/null || true;
+        done;
+        echo '[LiveKit] ✅ Certificates found for '$$CERT_DOMAIN;
+        echo '[LiveKit] Files available:';
+        ls -la /certs-source/$${CERT_DOMAIN}/;
+        mkdir -p /certs;
+        cp /certs-source/$${CERT_DOMAIN}/certificate.crt /certs/turn-cert.pem;
+        cp /certs-source/$${CERT_DOMAIN}/privatekey.key /certs/turn-key.pem;
+        chmod 644 /certs/turn-cert.pem;
+        chmod 600 /certs/turn-key.pem;
+        echo '[LiveKit] Certificates copied and permissions set';
+        echo '[LiveKit] Starting server with config file...';
+        exec /livekit-server --config /livekit.yaml
+    
+    labels:
+      # Enable Traefik
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      
+      # WebSocket Router (wss://domain/livekit)
+      - "traefik.http.routers.livekit.entrypoints=https"
+      - "traefik.http.routers.livekit.rule=Host(`${DOMAIN}`) && PathPrefix(`/livekit`)"
+      - "traefik.http.routers.livekit.tls=true"
+      - "traefik.http.routers.livekit.tls.certresolver=http"
+      - "traefik.http.routers.livekit.service=livekit"
+      
+      # Strip /livekit prefix before forwarding
+      - "traefik.http.middlewares.livekit-stripprefix.stripprefix.prefixes=/livekit"
+      - "traefik.http.routers.livekit.middlewares=livekit-stripprefix"
+      
+      # Service (LiveKit listens on 7880)
+      - "traefik.http.services.livekit.loadbalancer.server.port=7880"
+    
+    # Note: TURN ports exposed directly (not through Traefik)
+    # WebSocket goes through Traefik on standard HTTPS port 443
+
+networks:
+  # External Traefik proxy network
+  proxy:
+    external: true
+  
+  # Internal PeerWave network
+  peerwave-internal:
+    driver: bridge
+
+volumes:
+  # Shared volume for extracted certificates
+  cert-data:
+  # Data volume for SQLite database (code files stay in image)
+  peerwave-data:

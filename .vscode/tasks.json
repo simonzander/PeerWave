@@ -1,0 +1,136 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		// ========================================
+		// 🐳 DOCKER TASKS
+		// ========================================
+		{
+			"label": "Build & Start (Flutter + Docker)",
+			"type": "shell",
+			"command": ".\\build-and-start.ps1",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "Docker: Build All",
+			"type": "shell",
+			"command": "docker-compose build",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "Docker: Start",
+			"type": "shell",
+			"command": "docker-compose up -d",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "Docker: Stop",
+			"type": "shell",
+			"command": "docker-compose down",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "Docker: Logs",
+			"type": "shell",
+			"command": "docker-compose logs -f",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			},
+			"problemMatcher": [],
+			"isBackground": true
+		},
+		{
+			"label": "Docker: Restart",
+			"type": "shell",
+			"command": "docker-compose restart",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			},
+			"problemMatcher": []
+		},
+
+		// ========================================
+		// 🏗️ BUILD TASKS
+		// ========================================
+		{
+			"label": "Flutter: Build Web",
+			"type": "shell",
+			"command": "flutter build web --release",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			},
+			"options": {
+				"cwd": "${workspaceFolder}/client"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "Flutter: Build Windows",
+			"type": "shell",
+			"command": "flutter build windows --release",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			},
+			"options": {
+				"cwd": "${workspaceFolder}/client"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "Flutter: Run Windows",
+			"type": "shell",
+			"command": "flutter run -d windows",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			},
+			"options": {
+				"cwd": "${workspaceFolder}/client"
+			},
+			"problemMatcher": [],
+			"isBackground": true
+		},
+		{
+			"label": "Flutter: Rebuild",
+			"type": "shell",
+			"command": ".\\rebuild-flutter.ps1",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			},
+			"problemMatcher": []
+		}
+	]
+}

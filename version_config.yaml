@@ -1,0 +1,35 @@
+# PeerWave Version Configuration
+# Single source of truth for all version numbers
+
+project:
+  name: "PeerWave"
+  description: "Decentralized peer-to-peer communication platform"
+  repository: "https://github.com/simonzander/PeerWave"
+
+client:
+  # Semantic versioning: MAJOR.MINOR.PATCH
+  version: "1.0.0"
+  build_number: 1
+  
+  # Server compatibility range
+  min_server_version: "1.0.0"
+  max_server_version: "1.1.0"  # Accepts any 1.x.x server version
+
+server:
+  # Semantic versioning: MAJOR.MINOR.PATCH
+  version: "1.0.0"
+  
+  # Client compatibility range
+  min_client_version: "0.9.0"
+  max_client_version: "1.1.0"  # Accepts any 1.x.x client version
+
+# Version history and changelog
+changelog:
+  - version: "1.0.0"
+    date: "2025-11-24"
+    changes:
+      - "Initial release"
+      - "End-to-end encryption support"
+      - "Group video calls with LiveKit"
+      - "File sharing and persistence"
+      - "Windows, OSX and Android native clients"

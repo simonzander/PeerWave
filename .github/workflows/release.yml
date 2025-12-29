@@ -1,0 +1,244 @@
+name: Release Build & Publish
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-windows:
+    name: Build Windows Desktop
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      
+      - name: Install dependencies
+        working-directory: ./client
+        run: flutter pub get
+      
+      - name: Generate version info
+        run: |
+          cd tools
+          dart pub get
+          cd ..
+          dart run tools/generate_version.dart
+      
+      - name: Build Windows app
+        working-directory: ./client
+        run: flutter build windows --release
+      
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+      
+      - name: Create Windows installer
+        shell: pwsh
+        run: |
+          $version = (Get-Content version_config.yaml | Select-String 'version:\s*"([^"]+)"').Matches.Groups[1].Value
+          $env:APP_VERSION = $version
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /Q windows-installer.iss
+          Write-Host "✅ Created installer for version $version"
+      
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: Output/PeerWave-Setup-*.exe
+          if-no-files-found: error
+  
+  build-macos:
+    name: Build macOS Desktop
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      
+      - name: Install dependencies
+        working-directory: ./client
+        run: flutter pub get
+      
+      - name: Generate version info
+        run: |
+          cd tools
+          dart pub get
+          cd ..
+          dart run tools/generate_version.dart
+      
+      - name: Build macOS app
+        working-directory: ./client
+        run: flutter build macos --release
+      
+      - name: Create DMG
+        run: |
+          brew install create-dmg
+          cd client/build/macos/Build/Products/Release
+          create-dmg \
+            --volname "PeerWave" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --app-drop-link 600 185 \
+            "PeerWave-${{ github.ref_name }}.dmg" \
+            "peerwave_client.app"
+          echo "✅ Created DMG for ${{ github.ref_name }}"
+      
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: client/build/macos/Build/Products/Release/PeerWave-*.dmg
+          if-no-files-found: error
+  
+  build-docker:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      
+      - name: Install dependencies
+        working-directory: ./client
+        run: flutter pub get
+      
+      - name: Generate version info
+        run: |
+          cd tools
+          dart pub get
+          cd ..
+          dart run tools/generate_version.dart
+      
+      - name: Build Flutter web client
+        working-directory: ./client
+        run: flutter build web --release --web-renderer canvaskit
+      
+      - name: Copy web build to server
+        run: |
+          rm -rf server/web
+          cp -r client/build/web server/web
+          echo "✅ Web client copied to server/web"
+          ls -la server/web
+      
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+      
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "🐳 Building Docker image for version: $VERSION"
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./server
+          push: true
+          tags: |
+            simonzander/peerwave:${{ steps.version.outputs.version }}
+            simonzander/peerwave:latest
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
+            org.opencontainers.image.title=PeerWave
+            org.opencontainers.image.description=Decentralized peer-to-peer communication platform
+      
+      - name: Verify DockerHub push
+        run: |
+          echo "✅ Docker image pushed to DockerHub"
+          echo "   - simonzander/peerwave:${{ steps.version.outputs.version }}"
+          echo "   - simonzander/peerwave:latest"
+  
+  create-release:
+    name: Create GitHub Release
+    needs: [build-windows, build-macos, build-docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: ./artifacts
+      
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-dmg
+          path: ./artifacts
+      
+      - name: List artifacts
+        run: |
+          echo "📦 Artifacts for release:"
+          ls -lh ./artifacts/
+      
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "📝 Extracting changelog for version $VERSION"
+          
+          # Extract changelog from version_config.yaml
+          CHANGELOG=$(grep -A 10 "version: \"$VERSION\"" version_config.yaml | grep -A 5 "changes:" | tail -n +2 | sed 's/^      - /- /' || echo "- Version $VERSION release")
+          
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./artifacts/*
+          body: |
+            ## 🚀 What's Changed
+            ${{ steps.changelog.outputs.changelog }}
+            
+            ## 📥 Downloads
+            - **Windows:** `PeerWave-Setup-${{ github.ref_name }}.exe`
+            - **macOS:** `PeerWave-${{ github.ref_name }}.dmg`
+            - **Docker:** `docker pull simonzander/peerwave:${{ github.ref_name }}`
+            
+            ## 🔗 Docker Hub
+            - **Latest:** `docker pull simonzander/peerwave:latest`
+            - **Specific:** `docker pull simonzander/peerwave:${GITHUB_REF#refs/tags/v}`
+            
+            ## 📋 Server Compatibility
+            See `version_config.yaml` for full client/server compatibility matrix.
+            
+            ---
+            
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/v${GITHUB_REF#refs/tags/v}...${GITHUB_REF#refs/tags/}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Release summary
+        run: |
+          echo "✅ Release ${{ github.ref_name }} published successfully!"
+          echo "📦 Artifacts uploaded to GitHub Releases"
+          echo "🐳 Docker image available on DockerHub"

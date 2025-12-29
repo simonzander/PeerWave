@@ -1,0 +1,69 @@
+{
+  // Performance optimizations
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.dart_tool/**": true,
+    "**/build/**": true,
+    "**/server/web/**": true,
+    "**/client/build/**": true,
+    "**/*.js.map": true,
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/build": true,
+    "**/.dart_tool": true,
+    "**/server/web": true,
+    "**/client/build": true,
+    "**/*.js.map": true
+  },
+  "files.exclude": {
+    "**/.dart_tool": true,
+    "**/build/web": true,
+    "**/*.js.map": true
+  },
+  
+  // Copilot optimizations
+  "github.copilot.enable": {
+    "*": true,
+    "yaml": false,
+    "plaintext": false,
+    "markdown": false,
+    "json": false
+  },
+  
+  // TypeScript/JavaScript - REDUZIERT auf 2GB
+  "typescript.tsserver.maxTsServerMemory": 2048,
+  "javascript.validate.enable": false,
+  "typescript.validate.enable": false,
+  
+  // Disable npm auto-detect
+  "npm.autoDetect": "off",
+  
+  // Git optimizations - weniger Overhead
+  "git.decorations.enabled": false,
+  "git.autorefresh": false,
+  "git.autofetch": false,
+  
+  // Dart/Flutter optimizations
+  "dart.analysisServerFolding": false,
+  "dart.previewFlutterUiGuidesCustomTracking": false,
+  
+  // Editor optimizations
+  "editor.minimap.enabled": false,
+  "editor.quickSuggestions": {
+    "other": true,
+    "comments": false,
+    "strings": false
+  },
+  "editor.suggestOnTriggerCharacters": false,
+  
+  // Limit open editors
+  "workbench.editor.limit.enabled": true,
+  "workbench.editor.limit.value": 10,
+  "workbench.editor.limit.perEditorGroup": true,
+  
+  // Disable telemetry
+  "telemetry.telemetryLevel": "off"
+}

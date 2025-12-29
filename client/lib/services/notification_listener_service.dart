@@ -1,0 +1,228 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'event_bus.dart';
+import 'notification_service.dart';
+import 'user_profile_service.dart';
+
+/// Listens to EventBus events and triggers appropriate notifications
+///
+/// This service bridges the EventBus (central event system) with:
+/// - NotificationService (system notifications + sounds for messages)
+/// - SoundService (subtle sounds for video conference events)
+class NotificationListenerService {
+  static final NotificationListenerService _instance =
+      NotificationListenerService._internal();
+  static NotificationListenerService get instance => _instance;
+
+  NotificationListenerService._internal();
+
+  bool _isInitialized = false;
+  StreamSubscription<Map<String, dynamic>>? _newMessageSub;
+  StreamSubscription<Map<String, dynamic>>? _newNotificationSub;
+
+  /// Initialize and start listening to EventBus events
+  Future<void> initialize() async {
+    if (_isInitialized) {
+      debugPrint('[NotificationListener] Already initialized');
+      return;
+    }
+
+    debugPrint('[NotificationListener] Initializing...');
+
+    // Listen for new messages (direct & group)
+    _newMessageSub = EventBus.instance
+        .on<Map<String, dynamic>>(AppEvent.newMessage)
+        .listen(_handleNewMessage);
+
+    // Listen for activity notifications
+    _newNotificationSub = EventBus.instance
+        .on<Map<String, dynamic>>(AppEvent.newNotification)
+        .listen(_handleNewNotification);
+
+    _isInitialized = true;
+    debugPrint(
+      '[NotificationListener] ✓ Initialized and listening to EventBus',
+    );
+  }
+
+  /// Handle new message events (1:1 and group messages)
+  void _handleNewMessage(Map<String, dynamic> data) {
+    try {
+      debugPrint('[NotificationListener] 📬 New message event received');
+      debugPrint('[NotificationListener] Data: $data');
+
+      final type = data['type'] as String?;
+      final sender = data['sender'] as String?;
+      final message = data['message'] as String?;
+      final channel = data['channel'] as String?;
+      final isOwnMessage = data['isOwnMessage'] as bool? ?? false;
+
+      // Don't show notifications for own messages
+      if (isOwnMessage) {
+        debugPrint('[NotificationListener] Skipping own message');
+        return;
+      }
+
+      // Only show notifications for actual content (not system messages)
+      if (type != 'message' &&
+          type != 'file' &&
+          type != 'voice' &&
+          type != 'image') {
+        debugPrint(
+          '[NotificationListener] Skipping non-content message type: $type',
+        );
+        return;
+      }
+
+      // Get sender display name
+      final senderId = sender ?? 'Unknown';
+      final senderName =
+          UserProfileService.instance.getDisplayName(senderId) ?? senderId;
+
+      // Get appropriate message preview based on type
+      String messagePreview;
+      switch (type) {
+        case 'voice':
+          messagePreview = 'Voice message';
+          break;
+        case 'image':
+          messagePreview = 'Image';
+          break;
+        case 'file':
+          messagePreview = 'File';
+          break;
+        case 'message':
+        default:
+          messagePreview = message ?? 'New message';
+      }
+
+      if (channel != null) {
+        // Group message
+        _showGroupMessageNotification(
+          channelId: channel,
+          senderName: senderName,
+          message: messagePreview,
+          messageType: type,
+        );
+      } else {
+        // Direct message
+        _showDirectMessageNotification(
+          senderId: senderId,
+          senderName: senderName,
+          message: messagePreview,
+          messageType: type,
+        );
+      }
+    } catch (e) {
+      debugPrint('[NotificationListener] ❌ Error handling new message: $e');
+    }
+  }
+
+  /// Handle activity notification events (mentions, reactions, etc.)
+  void _handleNewNotification(Map<String, dynamic> data) {
+    try {
+      debugPrint('[NotificationListener] 🔔 New notification event received');
+
+      final type = data['type'] as String?;
+      final sender = data['sender'] as String?;
+      final message = data['message'] as String?;
+      final isOwnMessage = data['isOwnMessage'] as bool? ?? false;
+
+      // Don't show notifications for own actions
+      if (isOwnMessage) {
+        return;
+      }
+
+      // Get sender display name
+      final senderId = sender ?? 'Unknown';
+      final senderName =
+          UserProfileService.instance.getDisplayName(senderId) ?? senderId;
+
+      String title = '';
+      String body = message ?? '';
+
+      switch (type) {
+        case 'mention':
+          title = '$senderName mentioned you';
+          break;
+        case 'emote':
+          title = '$senderName reacted';
+          break;
+        case 'missingcall':
+          title = 'Missed call from $senderName';
+          break;
+        case 'addtochannel':
+          title = '$senderName added you to a channel';
+          break;
+        case 'removefromchannel':
+          title = '$senderName removed you from a channel';
+          break;
+        case 'permissionchange':
+          title = 'Permissions changed by $senderName';
+          break;
+        default:
+          title = 'Notification from $senderName';
+      }
+
+      NotificationService.instance.notifyGeneral(
+        title: title,
+        message: body,
+        identifier: 'notification_${data['itemId']}',
+      );
+    } catch (e) {
+      debugPrint('[NotificationListener] ❌ Error handling notification: $e');
+    }
+  }
+
+  /// Show notification for direct message
+  void _showDirectMessageNotification({
+    required String senderId,
+    required String senderName,
+    required String message,
+    String? messageType,
+  }) {
+    debugPrint(
+      '[NotificationListener] 💬 Showing 1:1 notification (type: $messageType)',
+    );
+    NotificationService.instance.notifyNewDirectMessage(
+      senderName: senderName,
+      messagePreview: message,
+      senderId: senderId,
+      messageType: messageType,
+    );
+  }
+
+  /// Show notification for group message
+  void _showGroupMessageNotification({
+    required String channelId,
+    required String senderName,
+    required String message,
+    String? messageType,
+  }) {
+    debugPrint(
+      '[NotificationListener] 💬 Showing group notification (type: $messageType)',
+    );
+
+    // TODO: Fetch actual channel name from service
+    final channelName = channelId; // Fallback to ID for now
+
+    NotificationService.instance.notifyNewGroupMessage(
+      channelName: channelName,
+      senderName: senderName,
+      messagePreview: message,
+      channelId: channelId,
+      messageType: messageType,
+    );
+  }
+
+  /// Dispose and clean up subscriptions
+  void dispose() {
+    debugPrint('[NotificationListener] Disposing...');
+    _newMessageSub?.cancel();
+    _newNotificationSub?.cancel();
+    _newMessageSub = null;
+    _newNotificationSub = null;
+    _isInitialized = false;
+    debugPrint('[NotificationListener] ✓ Disposed');
+  }
+}

@@ -1,0 +1,61 @@
+# Node.js
+node_modules
+npm-debug.log
+yarn-debug.log*
+yarn-error.log*
+.npm
+
+# Git
+.git
+.gitignore
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Documentation
+*.md
+README.md
+CHANGELOG.md
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Database (use volumes instead)
+db/*.sqlite
+db/*.sqlite-shm
+db/*.sqlite-wal
+
+# coturn data (use volumes instead)
+coturn/data/
+
+# Certificates (mount as volume)
+cert/*.pem
+cert/*.key
+
+# Build artifacts
+dist/
+build/
+
+# Logs
+*.log
+logs/
+
+# Testing
+test/
+tests/
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
