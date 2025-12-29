@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:universal_html/html.dart' as html;
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/api_service.dart';
 import '../../services/server_config_web.dart'
     if (dart.library.io) '../../services/server_config_native.dart';
@@ -36,10 +37,19 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
   String _registrationMode = 'open';
   List<dynamic> _invitations = [];
 
+  // License information
+  bool _loadingLicense = true;
+  String _licenseType = 'non-commercial';
+  String? _licenseExpires;
+  int? _maxUsers;
+  int? _currentUsers;
+  int? _gracePeriod;
+
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    _loadLicenseInfo();
   }
 
   @override
@@ -155,6 +165,41 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
           'Image selection not yet implemented for native clients',
         );
       }
+    }
+  }
+
+  Future<void> _loadLicenseInfo() async {
+    setState(() => _loadingLicense = true);
+
+    try {
+      final resp = await ApiService.get('/api/license-info');
+
+      if (resp.statusCode == 200) {
+        final data = resp.data;
+        setState(() {
+          _licenseType = data['type'] ?? 'non-commercial';
+
+          // Only load detailed info for commercial licenses
+          if (_licenseType == 'commercial') {
+            _licenseExpires = data['expires'];
+            _maxUsers = data['maxUsers'];
+            _currentUsers = data['activeUsers'];
+            _gracePeriod = data['gracePeriod'];
+          }
+
+          _loadingLicense = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading license info: $e');
+      setState(() => _loadingLicense = false);
+    }
+  }
+
+  Future<void> _openBuyLicense() async {
+    final url = Uri.parse('https://peerwave.org');
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
     }
   }
 
@@ -326,6 +371,7 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
 
     if (!isAdmin) {
       return Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(title: const Text('Server Settings')),
         body: const Center(
           child: Text('You do not have permission to access server settings'),
@@ -335,12 +381,14 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
 
     if (_loadingSettings) {
       return Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(title: const Text('Server Settings')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: const Text('Server Settings'),
         leading: IconButton(
@@ -525,6 +573,144 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
                         : const Text('Save Settings'),
                   ),
                 ),
+
+                // License Section
+                const SizedBox(height: 32),
+                const Divider(),
+                const SizedBox(height: 24),
+
+                Text(
+                  'License',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 16),
+
+                if (_loadingLicense)
+                  const Center(child: CircularProgressIndicator())
+                else
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // License Type
+                          Row(
+                            children: [
+                              Text(
+                                'Type: ',
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                _licenseType == 'commercial'
+                                    ? 'Commercial'
+                                    : 'Non-Commercial',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ],
+                          ),
+
+                          // Commercial license details
+                          if (_licenseType == 'commercial') ...[
+                            const SizedBox(height: 12),
+                            if (_licenseExpires != null) ...[
+                              Row(
+                                children: [
+                                  Text(
+                                    'Expires: ',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    DateTime.parse(
+                                      _licenseExpires!,
+                                    ).toString().split(' ')[0],
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                            if (_maxUsers != null) ...[
+                              Row(
+                                children: [
+                                  Text(
+                                    'Maximum Active Users: ',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    _maxUsers.toString(),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                            if (_currentUsers != null) ...[
+                              Row(
+                                children: [
+                                  Text(
+                                    'Current Active Users: ',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    _currentUsers.toString(),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                            if (_gracePeriod != null) ...[
+                              Row(
+                                children: [
+                                  Text(
+                                    'Grace Period: ',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    '$_gracePeriod days',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+
+                          // Buy License Button
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _openBuyLicense,
+                              icon: const Icon(Icons.shopping_cart),
+                              label: const Text('Buy License'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
 
                 // Conditional: Invitation Management
                 if (_registrationMode == 'invitation_only') ...[

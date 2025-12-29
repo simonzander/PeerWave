@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../widgets/license_footer.dart';
 import '../services/signal_service.dart';
 import '../services/signal_setup_service.dart';
 import '../services/logout_service.dart';
@@ -399,6 +400,10 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
                     ),
                   ],
                 ),
+
+              // License Footer
+              const SizedBox(height: 40),
+              const LicenseFooter(),
             ],
           ),
         ),

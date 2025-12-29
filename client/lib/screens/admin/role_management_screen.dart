@@ -278,6 +278,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: const Text('Role Management')),
       body: Column(
         children: [
@@ -345,14 +346,24 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           color: role.standard
-                              ? Theme.of(context).colorScheme.onSurfaceVariant
-                              : null,
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.7)
+                              : Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (role.description != null) Text(role.description!),
+                          if (role.description != null)
+                            Text(
+                              role.description!,
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.8),
+                              ),
+                            ),
                           const SizedBox(height: 4),
                           Text(
                             'Permissions: ${role.permissions.join(", ")}',
@@ -360,7 +371,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                               fontSize: 12,
                               color: Theme.of(
                                 context,
-                              ).colorScheme.onSurfaceVariant,
+                              ).colorScheme.onSurface.withValues(alpha: 0.7),
                             ),
                           ),
                         ],

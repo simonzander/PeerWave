@@ -245,6 +245,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     // Check if user has permission to manage users
     if (!roleProvider.hasServerPermission('user.manage')) {
       return Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(title: const Text('User Management')),
         body: const Center(
           child: Text('You do not have permission to manage users'),
@@ -253,6 +254,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     }
 
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: const Text('User Management'),
         actions: [
@@ -306,10 +308,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                             user.displayName ?? user.email,
                             style: TextStyle(
                               color: user.active
-                                  ? null
-                                  : Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
+                                  ? Theme.of(context).colorScheme.onSurface
+                                  : Theme.of(context).colorScheme.onSurface
+                                        .withValues(alpha: 0.6),
                             ),
                           ),
                         ),
@@ -345,10 +346,11 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                           user.email,
                           style: TextStyle(
                             color: user.active
-                                ? null
-                                : Theme.of(
+                                ? Theme.of(
                                     context,
-                                  ).colorScheme.onSurfaceVariant,
+                                  ).colorScheme.onSurface.withValues(alpha: 0.7)
+                                : Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.5),
                           ),
                         ),
                         const SizedBox(height: 4),

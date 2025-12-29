@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'user_avatar.dart';
+import 'license_footer.dart';
 import '../services/api_service.dart';
 import '../services/storage/sqlite_message_store.dart';
 import '../services/storage/sqlite_recent_conversations_store.dart';
@@ -266,6 +267,8 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
               child: widget.trailing,
             ),
           ],
+          // License Footer
+          const LicenseFooter(),
         ],
       ),
     );

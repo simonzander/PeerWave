@@ -29,15 +29,6 @@ class SettingsSidebar extends StatelessWidget {
     // Build list of available settings
     final settingsItems = _buildSettingsItems(context, roleProvider);
 
-    // Find current selection
-    String currentLabel = 'General';
-    for (final item in settingsItems) {
-      if (currentRoute.contains(item.route)) {
-        currentLabel = item.label;
-        break;
-      }
-    }
-
     return Column(
       children: [
         // Dropdown selector at top
@@ -117,7 +108,12 @@ class SettingsSidebar extends StatelessWidget {
           ),
         ),
         // Content below
-        Expanded(child: child),
+        Expanded(
+          child: Container(
+            color: Theme.of(context).colorScheme.surface,
+            child: child,
+          ),
+        ),
       ],
     );
   }
@@ -338,7 +334,12 @@ class SettingsSidebar extends StatelessWidget {
             ],
           ),
         ),
-        Expanded(child: child),
+        Expanded(
+          child: Container(
+            color: Theme.of(context).colorScheme.surface,
+            child: child,
+          ),
+        ),
       ],
     );
   }

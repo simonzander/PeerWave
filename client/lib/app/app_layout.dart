@@ -15,6 +15,7 @@ import '../services/server_config_web.dart'
     if (dart.library.io) '../services/server_config_native.dart';
 import '../services/server_connection_service.dart';
 import '../config/layout_config.dart';
+import '../widgets/license_footer.dart';
 import 'package:go_router/go_router.dart';
 
 class AppLayout extends StatefulWidget {
@@ -500,6 +501,8 @@ class _AppLayoutState extends State<AppLayout> {
               },
             ),
           ],
+          // License Footer
+          const LicenseFooter(),
         ],
       ),
     );

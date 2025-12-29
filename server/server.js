@@ -344,16 +344,64 @@ app.use((req, res, next) => {
   app.get('/api/license-info', async (req, res) => {
     const license = await licenseValidator.validate();
     
+    // Calculate unique active users from deviceSockets
+    const activeUserIds = new Set();
+    for (const [key] of deviceSockets.entries()) {
+      const userId = key.split(':')[0]; // Extract userId from "userId:deviceId"
+      activeUserIds.add(userId);
+    }
+    const activeUserCount = activeUserIds.size;
+    
+    // Check if license is expired
+    if (license.error === 'EXPIRED') {
+      return res.json({
+        type: 'commercial',
+        showNotice: true,
+        message: 'License expired',
+        isError: true
+      });
+    }
+    
     if (license.valid) {
-      res.json({
-        type: license.type,
-        showNotice: license.type === 'commercial' ? false : true,
+      // Check if license has maxUsers limit and if it's exceeded
+      const maxUsers = license.features?.maxUsers;
+      const isExceeded = maxUsers && activeUserCount > maxUsers;
+      
+      // Commercial license
+      if (license.type === 'commercial') {
+        if (isExceeded) {
+          // Show error message for exceeded license
+          return res.json({
+            type: 'commercial',
+            showNotice: true,
+            message: 'License limit exceeded',
+            isError: true,
+            expires: license.expires,
+            maxUsers: maxUsers,
+            activeUsers: activeUserCount,
+            gracePeriodDays: license.features?.gracePeriodDays || 30
+          });
+        } else {
+          // Valid commercial license - hide footer but send data for settings page
+          return res.json({
+            type: 'commercial',
+            showNotice: false,
+            message: '',
+            isError: false,
+            expires: license.expires,
+            maxUsers: maxUsers,
+            activeUsers: activeUserCount,
+            gracePeriodDays: license.features?.gracePeriodDays || 30
+          });
+        }
+      }
+      
+      // Non-commercial license
+      return res.json({
+        type: 'non-commercial',
+        showNotice: true,
         message: 'Private/Non-Commercial Use',
-        customer: license.customer,
-        expires: license.expires,
-        daysRemaining: license.daysRemaining,
-        gracePeriod: license.gracePeriod || false,
-        features: license.features
+        isError: false
       });
     } else {
       // Fallback to non-commercial
@@ -361,7 +409,7 @@ app.use((req, res, next) => {
         type: 'non-commercial',
         showNotice: true,
         message: 'Private/Non-Commercial Use',
-        features: {}
+        isError: false
       });
     }
   });

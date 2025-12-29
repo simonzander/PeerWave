@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../widgets/license_footer.dart';
 import 'package:go_router/go_router.dart';
 import 'package:universal_html/html.dart' as html;
 import '../services/api_service.dart';
@@ -677,6 +678,10 @@ class _ProfilePageState extends State<ProfilePage> {
                     ],
                   ),
                 ),
+
+                // License Footer
+                const SizedBox(height: 24),
+                const LicenseFooter(),
               ],
             ),
           ),
