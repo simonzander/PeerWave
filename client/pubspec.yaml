@@ -54,7 +54,7 @@ dependencies:
   intl: ^0.20.2
   flutter_markdown_plus: ^1.0.1  # Replaced discontinued flutter_markdown
   path_provider: ^2.1.5
-  image: ^4.5.4
+  image: ^4.7.2
   crypto: ^3.0.6
   pointycastle: ^4.0.0
   flutter_webrtc: ^1.2.0  # Required by livekit_client for E2EE on native platforms
