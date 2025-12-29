@@ -91,7 +91,9 @@ jobs:
         run: flutter pub get
       
       - name: Generate version info
-        run: dart tools/generate_version.dart
+        run: |
+          cd tools && dart pub get && cd ..
+          dart tools/generate_version.dart
       
       - name: Build Windows app
         working-directory: ./client
@@ -134,7 +136,9 @@ jobs:
         run: flutter pub get
       
       - name: Generate version info
-        run: dart tools/generate_version.dart
+        run: |
+          cd tools && dart pub get && cd ..
+          dart tools/generate_version.dart
       
       - name: Build macOS app
         working-directory: ./client
@@ -185,7 +189,9 @@ jobs:
         run: flutter pub get
       
       - name: Generate version info
-        run: dart tools/generate_version.dart
+        run: |
+          cd tools && dart pub get && cd ..
+          dart tools/generate_version.dart
       
       - name: Decode keystore
         if: vars.HAS_ANDROID_SIGNING == 'true'
