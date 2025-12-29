@@ -35,7 +35,7 @@
     "pug": "^3.0.3",
     "sanitize-html": "^2.13.0",
     "sequelize": "^6.37.7",
-    "socket.io": "^4.6.1",
+    "socket.io": "^4.8.3",
     "socket.io-express-session": "^0.1.2"
   },
   "devDependencies": {
