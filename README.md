@@ -1,5 +1,5 @@
 <div align="center>
-  <img src="https://github.com/simonzander/PeerWave/blob/main/public/logo_43.png?raw=true" height="100px">
+  <img src="https://github.com/simonzander/PeerWave/blob/main/client/assets/images/peerwave.png?raw=true" height="100px" width="100px">
   <h1>
   PeerWave</h1>
   <strong>
@@ -11,9 +11,10 @@
   </span>
 </div>
 <br>
+
 <p align="center">
-  <a href="https://github.com/simonzander/PeerWave/actions/workflows/docker-image.yml">
-    <img src="https://github.com/simonzander/peerwave/actions/workflows/docker-image.yml/badge.svg" alt="Build Status">
+  <a href="https://github.com/simonzander/PeerWave/actions/workflows/release.yml">
+    <img src="https://github.com/simonzander/PeerWave/actions/workflows/release.yml/badge.svg" alt="Build Status">
   </a>
   <img src="https://img.shields.io/github/last-commit/simonzander/peerwave" alt="GitHub last commit">
   <a href="https://github.com/simonzander/PeerWave/issues?q=is:issue+is:open+label:bug">
