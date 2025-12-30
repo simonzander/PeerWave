@@ -2,7 +2,7 @@
 
 This Commercial License Agreement ("Agreement") is made between:
 
-Licensor: Simon Zander
+Licensor: PeerWave Labs (Simon Zander)
 Software: PeerWave
 Contact: license@peerwave.org
 
@@ -30,17 +30,10 @@ By purchasing a commercial license, the Licensee agrees to the following terms:
 5. Term and Renewal  
    The license is valid for one year and renews with annual payment.
 
-6. Pricing (based on company size):
-   - 1–5 employees: 199 € / year
-   - 6–25 employees: 499 € / year
-   - 26–100 employees: 1,499 € / year
-   - 101–500 employees: 4,999 € / year
-   - > 500 employees: contact Licensor for enterprise terms
-
-7. Termination  
+6. Termination  
    Upon breach of this Agreement, all rights to use the Software terminate immediately.
 
-8. Governing Law  
+7. Governing Law  
    This Agreement is governed by the laws of Germany.
 
-© 2025 Simon Zander. All rights reserved.
+© 2025 PeerWave Labs - Simon Zander. All rights reserved.
