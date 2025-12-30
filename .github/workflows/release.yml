@@ -112,6 +112,9 @@ jobs:
         working-directory: ./client
         run: flutter build windows --release
       
+      - name: Copy tray icon to release
+        run: Copy-Item client/windows/runner/resources/app_icon.ico client/build/windows/x64/runner/Release/app_icon.ico
+      
       - name: Install Inno Setup
         run: choco install innosetup -y
       
@@ -126,7 +129,7 @@ jobs:
         with:
           name: windows-client
           path: |
-            Output/PeerWave-Setup.exe
+            PeerWave-*-windows-installer.exe
             PeerWave-*-windows-x64.zip
           retention-days: 30
 
