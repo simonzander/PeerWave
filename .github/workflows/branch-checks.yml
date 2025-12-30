@@ -40,7 +40,7 @@ jobs:
       
       - name: Check Dart formatting
         working-directory: ./client
-        run: dart format --set-exit-if-changed .
+        run: dart format --set-exit-if-changed $(find . -name "*.dart" ! -path "*/config/version_info.dart" ! -path "*/build/*" ! -path "*/.dart_tool/*")
       
       - name: Build summary
         run: |
