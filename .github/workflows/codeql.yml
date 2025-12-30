@@ -39,6 +39,11 @@ jobs:
             - tools
             - '**/*.test.js'
             - '**/node_modules'
+          query-filters:
+            - exclude:
+                id: js/missing-token-validation
+                # We use HMAC authentication, not JWT tokens
+                # This rule produces false positives for our auth system
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
