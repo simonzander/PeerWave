@@ -32,6 +32,7 @@ jobs:
         run: |
           cd tools && dart pub get && cd ..
           dart tools/generate_version.dart
+          dart format client/lib/config/version_info.dart
       
       - name: Run Flutter analyze
         working-directory: ./client
