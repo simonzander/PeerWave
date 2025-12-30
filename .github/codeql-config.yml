@@ -1,0 +1,6 @@
+# Disable GitHub's default CodeQL auto-setup
+# We use a custom workflow in .github/workflows/codeql.yml
+# that only scans server JavaScript/TypeScript code
+
+version: 2
+languages: []

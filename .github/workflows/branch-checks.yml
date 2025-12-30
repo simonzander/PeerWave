@@ -38,6 +38,13 @@ jobs:
         working-directory: ./client
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
       
+      - name: Run Dart security audit
+        working-directory: ./client
+        continue-on-error: true
+        run: |
+          dart pub global activate pana
+          dart pub global run pana --no-warning --source path .
+      
       - name: Check Dart formatting
         working-directory: ./client
         run: dart format --set-exit-if-changed $(find . -name "*.dart" ! -name "version_info.dart" ! -path "*/build/*" ! -path "*/.dart_tool/*")

@@ -1,0 +1,31 @@
+# CodeQL Configuration for PeerWave
+# Scans only server JavaScript/TypeScript code
+# Excludes Flutter auto-generated native code
+#
+# NOTE: CodeQL does not support Dart language scanning
+# Dart code security is handled by:
+# - flutter analyze (in branch-checks.yml)
+# - dart pub global run pana (security audit tool)
+
+name: "PeerWave Security Scan"
+
+# Disable auto-detection of languages
+disable-default-queries: false
+
+# Only scan server directory
+paths:
+  - server
+
+# Ignore client (Flutter), tools, and test files
+paths-ignore:
+  - client
+  - tools
+  - db
+  - '**/*.test.js'
+  - '**/node_modules'
+  - '**/build'
+  - '**/dist'
+
+# Use default queries plus security extras
+queries:
+  - uses: security-and-quality
