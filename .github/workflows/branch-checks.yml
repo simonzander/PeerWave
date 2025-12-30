@@ -199,7 +199,7 @@ jobs:
           flutter build web --release
       
       - name: Test Docker Build
-        run: docker-compose build
+        run: docker compose build
   
   summary:
     name: Checks Summary
