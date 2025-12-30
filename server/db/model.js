@@ -1075,9 +1075,9 @@ const Invitation = sequelize.define('Invitation', {
     updatedAt: false,
     tableName: 'Invitations',
     indexes: [
-        { fields: ['email'] },
-        { fields: ['token'], unique: true },
-        { fields: ['expires_at'] }
+        { name: 'invitations_email', fields: ['email'] },
+        { name: 'invitations_token', fields: ['token'], unique: true },
+        { name: 'invitations_expires_at', fields: ['expires_at'] }
     ]
 });
 
