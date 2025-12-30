@@ -70,7 +70,7 @@ async function runMigrations() {
     // Get all migration files
     const files = await fs.readdir(migrationsDir);
     const migrationFiles = files
-      .filter(f => f.endsWith('.js') && f !== 'migrate.js' && f !== 'index.js')
+      .filter(f => f.endsWith('.js') && f !== 'migrate.js' && f !== 'index.js' && !f.startsWith('_'))
       .sort(); // Alphabetical order
 
     if (migrationFiles.length === 0) {

@@ -2,143 +2,140 @@
 
 ## Overview
 
-Database migrations are now **manual** and run separately from server startup to avoid race conditions and startup failures.
+This directory contains database schema migrations for PeerWave. Migrations are run automatically on server startup and are **idempotent** (safe to run multiple times).
 
-## Running Migrations
+## Migration Strategy
 
-### Using the build script (recommended)
+### Source of Truth
+- **Models (`db/model.js`)**: Define complete schema including columns, types, and indexes
+- **Migrations**: Handle schema evolution for existing databases
 
-```bash
-.\build-and-start.ps1
-```
+### How It Works
+1. Server starts → Migrations run first (in alphabetical order)
+2. Each migration checks if changes already exist before applying
+3. After migrations → `sequelize.sync({ alter: false })` creates any missing tables
+4. Result: Fresh installs and migrated databases have identical schemas
 
-The build script automatically runs migrations on the host machine after starting Docker containers.
+### Key Principles
+- ✅ Migrations must be **idempotent** - check before modifying
+- ✅ Index names in migrations **must match** model definitions exactly
+- ✅ Never use `sync({ alter: true })` - migrations handle all schema changes
+- ✅ Test migrations on both fresh and existing databases
 
-### Manual execution (recommended approach)
+## Creating a New Migration
 
-Run migrations on the host machine (the SQLite database is mounted from the host):
+1. **Copy the template:**
+   ```bash
+   cp TEMPLATE.js add_my_feature.js
+   ```
 
-```bash
-cd server
-node migrations/migrate.js
-```
+2. **Name your migration descriptively:**
+   - `add_<table>_<column>.js` - Adding a column
+   - `create_<table>.js` - Creating a new table
+   - `update_<feature>.js` - Complex multi-table changes
+   - Optional: Prefix with date `20251230_add_user_avatar.js`
 
-### Inside Docker container (not recommended)
+3. **Edit the migration:**
+   - Use helper functions (`tableExists`, `columnExists`, `indexExists`)
+   - Always check before modifying
+   - Match index names to model definitions
 
-You can also run migrations inside the container, but it's better to run on the host:
+4. **Test thoroughly:**
+   ```bash
+   # Test on fresh database
+   rm data/peerwave.sqlite
+   npm start
+   
+   # Test on existing database
+   npm start
+   ```
 
-```bash
-docker-compose exec server node migrations/migrate.js
-```
+5. **Update the model:**
+   - Add corresponding model definition in `db/model.js`
+   - Ensure index names match migration exactly
 
-## Migration Files
+## Example Migration Flow
 
-Migrations are located in `server/migrations/` and run in this order:
+### Adding a new column:
 
-1. **add_hmac_auth.js** - Creates HMAC session authentication tables
-   - `client_sessions` - Client session storage with HMAC secrets
-   - `nonce_cache` - Replay attack prevention
-   - Indexes for performance
-
-2. **add_meetings_system.js** - Creates meetings and participants tables
-   - `meetings` - Meeting metadata (scheduled + instant calls)
-   - `meeting_participants` - Meeting participant roles
-   - Indexes for queries
-
-3. **add_server_settings.js** - Server configuration tables
-   - `ServerSettings` - Server name, registration mode, etc.
-   - `Invitations` - Email invitations for closed registration
-
-4. **update_meetings_hybrid_storage.js** - Migrates to hybrid storage model
-   - Adds `invited_participants` JSON column to meetings
-   - Removes runtime-only columns (`status`, `max_participants`, etc.)
-   - Drops `meeting_participants` table (moved to memory)
-
-## Special Cases
-
-### ExternalSessions Table
-
-The `ExternalSessions` table is **in-memory only** (created by `temporaryStorage` on server startup). 
-
-Changes to ExternalSession schema should be made in:
-- `server/db/model.js` - Update the Sequelize model definition
-
-**Do NOT** create migrations for ExternalSessions as the table doesn't persist between restarts.
-
-### Migration Files NOT Run
-
-These files exist but are excluded from the migration runner:
-
-- `001_external_session_boolean_admitted.js` - ExternalSession is in-memory only
-- `add_device_id_to_sessions.js` - Already handled by add_hmac_auth.js
-- `add_meeting_invitations.js` - Duplicate of add_meetings_system.js functionality
-- `run_hybrid_storage_migration.js.standalone` - Standalone test script
-- `index.js` - Old auto-runner (deprecated)
-
-## Creating New Migrations
-
-1. Create a new file in `server/migrations/`
-2. Export an `up()` and optional `down()` function:
-
+**1. Create migration:** `migrations/add_user_bio.js`
 ```javascript
-const { sequelize } = require('../db/model');
-
-async function up() {
-  const queryInterface = sequelize.getQueryInterface();
-  
-  // Check if table/column/index exists first
-  const tableExists = async (tableName) => {
-    const tables = await queryInterface.showAllTables();
-    return tables.includes(tableName);
-  };
-  
-  if (!(await tableExists('my_table'))) {
-    await queryInterface.createTable('my_table', {
-      // ... column definitions
+if (await tableExists('Users')) {
+  if (!(await columnExists('Users', 'bio'))) {
+    await queryInterface.addColumn('Users', 'bio', {
+      type: sequelize.Sequelize.TEXT,
+      allowNull: true
     });
   }
 }
-
-async function down() {
-  // Optional rollback logic
-}
-
-module.exports = { up, down };
 ```
 
-3. Add to `server/migrations/migrate.js` runner
-4. Test with `node server/migrations/migrate.js`
+**2. Update model:** `db/model.js`
+```javascript
+const User = sequelize.define('User', {
+  // ... existing fields
+  bio: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  }
+});
+```
 
-## Best Practices
+**3. Commit both files together**
 
-✅ **DO:**
-- Check if table/column/index exists before creating
-- Use `CREATE TABLE IF NOT EXISTS`
-- Use `CREATE INDEX IF NOT EXISTS`
-- Make migrations idempotent (safe to run multiple times)
-- Test rollback logic if provided
+## Running Migrations
 
-❌ **DON'T:**
-- Run migrations automatically on server startup
-- Assume tables/columns don't exist
-- Create migrations for in-memory tables (temporaryStorage)
-- Modify old migrations after they've been run in production
+Migrations run automatically on server startup via `db/init-database.js`.
+
+**Manual execution (for testing):**
+```bash
+# Run specific migration
+node migrations/add_user_bio.js
+
+# Run all migrations
+node db/init-database.js
+```
+
+## Current Migrations
+
+| File | Description |
+|------|-------------|
+| `001_external_session_boolean_admitted.js` | Add admitted boolean to external sessions |
+| `add_device_id_to_sessions.js` | Add device tracking to client sessions |
+| `add_hmac_auth.js` | Implement HMAC authentication system |
+| `add_meetings_system.js` | Create meetings and related tables |
+| `add_meeting_invitations.js` | Add meeting invitation links |
+| `add_meeting_rsvps.js` | Add RSVP functionality |
+| `add_server_settings.js` | Create server settings and invitations |
+| `add_user_meeting_email_notification_settings.js` | Email notification preferences |
+| `add_user_meeting_notification_settings_v2.js` | Enhanced notification settings |
+| `update_meetings_hybrid_storage.js` | Migrate to hybrid storage model |
 
 ## Troubleshooting
 
-**"Table already exists" error:**
-- Migration is not idempotent
-- Add existence checks before creating tables/indexes
+### Error: Index already exists
+**Cause:** Index name mismatch between migration and model  
+**Fix:** Ensure index names in model match migration exactly
 
-**"Column doesn't exist" error:**
-- Another migration removed the column
-- Add column existence check before creating indexes on it
+### Error: Column already exists
+**Cause:** Migration not checking before adding column  
+**Fix:** Add `columnExists` check before `addColumn`
 
-**Migration fails in Docker:**
-- Check Docker container logs: `docker-compose logs server`
-- Run migration manually: `docker-compose exec server node migrations/migrate.js`
-- Verify database file permissions
+### Different schemas on fresh vs migrated install
+**Cause:** Model missing definitions that migrations create  
+**Fix:** Ensure model includes ALL schema elements (especially indexes)
 
-**ExternalSession migration fails:**
-- This is expected - ExternalSession is in-memory only
-- Make schema changes in `server/db/model.js` instead
+## Best Practices
+
+1. **Always commit migrations with model changes**
+2. **Never modify existing migrations** - create new ones
+3. **Test on both fresh and existing databases**
+4. **Use semantic names** that describe the change
+5. **Keep migrations focused** - one logical change per file
+6. **Document complex migrations** with comments
+
+## Need Help?
+
+- See `TEMPLATE.js` for a complete example
+- Check existing migrations for patterns
+- Review `db/init-database.js` for migration runner logic

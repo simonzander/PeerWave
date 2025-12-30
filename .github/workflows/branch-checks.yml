@@ -54,6 +54,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 'stable'
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -77,6 +82,13 @@ jobs:
       - name: Run tests
         working-directory: ./server
         run: npm test --if-present
+      
+      - name: Test server startup
+        working-directory: ./server
+        timeout-minutes: 1
+        run: |
+          timeout 10s node server.js || [ $? -eq 124 ]
+          echo "✅ Server starts without errors"
 
   build-windows:
     name: Try Build Windows
