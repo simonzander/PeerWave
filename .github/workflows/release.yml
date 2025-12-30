@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'version_config.yaml'
   workflow_dispatch:
 
 jobs:
