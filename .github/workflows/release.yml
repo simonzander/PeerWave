@@ -119,6 +119,8 @@ jobs:
         run: choco install innosetup -y
       
       - name: Create Installer
+        env:
+          APP_VERSION: ${{ needs.build-web-and-docker.outputs.version }}
         run: iscc windows-installer.iss
       
       - name: Create ZIP package
