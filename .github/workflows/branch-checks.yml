@@ -40,9 +40,6 @@ jobs:
       - name: Check Dart formatting
         working-directory: ./client
         run: dart format --set-exit-if-changed .
-          flutter build windows --release
-        if: runner.os == 'Linux'
-        continue-on-error: true
       
       - name: Build summary
         run: |
