@@ -18,10 +18,13 @@ const path = require('path');
 const fs = require('fs').promises;
 const { Sequelize } = require('sequelize');
 
+// Resolve absolute path to database (same as model.js)
+const dbPath = process.env.DB_PATH || path.join(__dirname, '../data/peerwave.sqlite');
+
 // Create sequelize instance (same config as model.js)
 const sequelize = new Sequelize({
     dialect: 'sqlite',
-    storage: process.env.DB_PATH || './data/peerwave.sqlite',
+    storage: dbPath,
     logging: false,
     pool: {
         max: 1,
@@ -120,12 +123,12 @@ async function syncModelTables() {
   
   try {
     // Import model to register all table definitions
-    const model = require('./model');
+    const { sequelize: modelSequelize } = require('./model');
     
-    // Sync models to database
+    // Sync models to database using the model's sequelize instance
     // alter: true - updates existing tables to match models
     // This is safe because migrations have already run
-    await sequelize.sync({ alter: true });
+    await modelSequelize.sync({ alter: true });
     
     console.log('✓ Model tables synced\n');
   } catch (error) {

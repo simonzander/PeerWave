@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../web_config.dart';
 
 /// Socket service for external guests connecting to /external namespace
@@ -15,13 +15,12 @@ class ExternalGuestSocketService {
   factory ExternalGuestSocketService() => _instance;
   ExternalGuestSocketService._internal();
 
-  IO.Socket? _socket;
+  io.Socket? _socket;
   final Map<String, List<void Function(dynamic)>> _listeners = {};
   bool _connecting = false;
   bool _connected = false;
 
   String? _sessionId;
-  String? _token;
   String? _meetingId;
 
   // DEPRECATED: _registeredMeetingEvents removed - was only used by deprecated plaintext handlers
@@ -84,7 +83,6 @@ class ExternalGuestSocketService {
 
     _connecting = true;
     _sessionId = sessionId;
-    _token = token;
     _meetingId = meetingId;
 
     try {
@@ -99,7 +97,7 @@ class ExternalGuestSocketService {
       final namespace = '$urlString/external';
       debugPrint('[GUEST SOCKET] Connecting to namespace: $namespace');
 
-      _socket = IO.io(namespace, <String, dynamic>{
+      _socket = io.io(namespace, <String, dynamic>{
         'transports': ['websocket'],
         'autoConnect': false,
         'reconnection': true,
@@ -195,7 +193,6 @@ class ExternalGuestSocketService {
     _connected = false;
     _connecting = false;
     _sessionId = null;
-    _token = null;
     _meetingId = null;
     _listeners.clear();
   }

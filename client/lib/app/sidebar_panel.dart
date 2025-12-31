@@ -416,29 +416,59 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
             Row(
               children: [
                 Expanded(
-                  child: RadioListTile<String>(
-                    title: const Text('WebRTC'),
-                    value: 'webrtc',
-                    groupValue: channelType,
-                    onChanged: (value) {
+                  child: InkWell(
+                    onTap: () {
                       setState(() {
-                        channelType = value!;
+                        channelType = 'webrtc';
                         _loadRoles();
                       });
                     },
+                    child: Row(
+                      children: [
+                        // ignore: deprecated_member_use
+                        Radio<String>(
+                          value: 'webrtc',
+                          // ignore: deprecated_member_use
+                          groupValue: channelType,
+                          // ignore: deprecated_member_use
+                          onChanged: (value) {
+                            setState(() {
+                              channelType = value!;
+                              _loadRoles();
+                            });
+                          },
+                        ),
+                        const Text('WebRTC'),
+                      ],
+                    ),
                   ),
                 ),
                 Expanded(
-                  child: RadioListTile<String>(
-                    title: const Text('Signal'),
-                    value: 'signal',
-                    groupValue: channelType,
-                    onChanged: (value) {
+                  child: InkWell(
+                    onTap: () {
                       setState(() {
-                        channelType = value!;
+                        channelType = 'signal';
                         _loadRoles();
                       });
                     },
+                    child: Row(
+                      children: [
+                        // ignore: deprecated_member_use
+                        Radio<String>(
+                          value: 'signal',
+                          // ignore: deprecated_member_use
+                          groupValue: channelType,
+                          // ignore: deprecated_member_use
+                          onChanged: (value) {
+                            setState(() {
+                              channelType = value!;
+                              _loadRoles();
+                            });
+                          },
+                        ),
+                        const Text('Signal'),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -521,10 +551,12 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
 
       if (resp.statusCode == 201) {
         widget.onChannelCreated(channelName);
+        if (!mounted) return;
         Navigator.of(context).pop();
       }
     } catch (e) {
       debugPrint('Error creating channel: $e');
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error creating channel: $e')));

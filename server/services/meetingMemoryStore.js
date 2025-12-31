@@ -11,7 +11,6 @@
  */
 
 const { sanitizeForLog } = require('../utils/logSanitizer');
- */
 
 class MeetingMemoryStore {
   constructor() {

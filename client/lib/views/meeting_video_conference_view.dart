@@ -620,12 +620,15 @@ class _MeetingVideoConferenceViewState
                 data: {'email': email},
               );
               if (mounted) {
+                // ignore: use_build_context_synchronously
                 context.showSuccessSnackBar('Invitation sent to $email');
+                // ignore: use_build_context_synchronously
                 Navigator.of(context).pop();
               }
             } catch (e) {
               debugPrint('[AddParticipants] Error sending invitation: $e');
               if (mounted) {
+                // ignore: use_build_context_synchronously
                 context.showErrorSnackBar('Failed to send invitation');
               }
             }
@@ -659,16 +662,19 @@ class _MeetingVideoConferenceViewState
               }
 
               if (mounted) {
+                // ignore: use_build_context_synchronously
                 context.showSuccessSnackBar(
                   isOnline
                       ? 'Calling ${user['displayName']}...'
                       : '${user['displayName']} added to meeting',
                 );
+                // ignore: use_build_context_synchronously
                 Navigator.of(context).pop();
               }
             } catch (e) {
               debugPrint('[AddParticipants] Error adding participant: $e');
               if (mounted) {
+                // ignore: use_build_context_synchronously
                 context.showErrorSnackBar('Failed to add participant');
               }
             }

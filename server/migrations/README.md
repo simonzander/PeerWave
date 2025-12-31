@@ -98,18 +98,9 @@ node db/init-database.js
 
 ## Current Migrations
 
-| File | Description |
-|------|-------------|
-| `001_external_session_boolean_admitted.js` | Add admitted boolean to external sessions |
-| `add_device_id_to_sessions.js` | Add device tracking to client sessions |
-| `add_hmac_auth.js` | Implement HMAC authentication system |
-| `add_meetings_system.js` | Create meetings and related tables |
-| `add_meeting_invitations.js` | Add meeting invitation links |
-| `add_meeting_rsvps.js` | Add RSVP functionality |
-| `add_server_settings.js` | Create server settings and invitations |
-| `add_user_meeting_email_notification_settings.js` | Email notification preferences |
-| `add_user_meeting_notification_settings_v2.js` | Enhanced notification settings |
-| `update_meetings_hybrid_storage.js` | Migrate to hybrid storage model |
+No active migrations. All schema is defined in `db/model.js`.
+
+_(Legacy migrations were removed in database cleanup - see commit 29775191b3b0158912c29e02992ef5a501a8f915)_
 
 ## Troubleshooting
 

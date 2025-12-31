@@ -852,6 +852,85 @@ const MeetingRsvp = sequelize.define('MeetingRsvp', {
     ]
 });
 
+// Meetings table - persistent storage for scheduled meetings
+// Note: Instant calls are memory-only, not stored here
+// Runtime state (participants, status, LiveKit rooms) is in MeetingMemoryStore
+const Meeting = sequelize.define('Meeting', {
+    meeting_id: {
+        type: DataTypes.STRING(255),
+        primaryKey: true,
+        allowNull: false
+    },
+    title: {
+        type: DataTypes.STRING(255),
+        allowNull: false
+    },
+    description: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    created_by: {
+        type: DataTypes.STRING(255),
+        allowNull: false
+    },
+    start_time: {
+        type: DataTypes.DATE,
+        allowNull: false
+    },
+    end_time: {
+        type: DataTypes.DATE,
+        allowNull: false
+    },
+    is_instant_call: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
+    allow_external: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
+    invitation_token: {
+        type: DataTypes.STRING(255),
+        allowNull: true
+    },
+    invited_participants: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        get() {
+            const raw = this.getDataValue('invited_participants');
+            return raw ? JSON.parse(raw) : [];
+        },
+        set(value) {
+            this.setDataValue('invited_participants', JSON.stringify(value));
+        }
+    },
+    voice_only: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
+    mute_on_join: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    }
+}, {
+    timestamps: true,
+    underscored: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
+    tableName: 'meetings',
+    indexes: [
+        { fields: ['created_by'] },
+        { fields: ['start_time'] },
+        { fields: ['end_time'] },
+        { fields: ['is_instant_call'] },
+        { fields: ['invitation_token'] }
+    ]
+});
+
 // Client Sessions table for HMAC authentication (native clients)
 const ClientSession = sequelize.define('ClientSession', {
     client_id: {
@@ -1104,6 +1183,9 @@ module.exports = {
     NonceCache,
     ServerSettings,
     Invitation,
+    Meeting,
+    MeetingInvitation,
+    MeetingRsvp,
     sequelize,
     temporaryStorage,
     dbReady

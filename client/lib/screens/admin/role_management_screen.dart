@@ -125,6 +125,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
       }
 
       try {
+        // ignore: use_build_context_synchronously
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         await roleProvider.createRole(
           name: name,
@@ -209,6 +210,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
           .toList();
 
       try {
+        // ignore: use_build_context_synchronously
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         await roleProvider.updateRole(
           roleId: role.uuid,
@@ -256,6 +258,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
 
     if (result == true) {
       try {
+        // ignore: use_build_context_synchronously
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         await roleProvider.deleteRole(role.uuid);
         if (!mounted) return;

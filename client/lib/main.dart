@@ -13,7 +13,6 @@ import 'auth/magic_link_web.dart'
     if (dart.library.io) 'auth/magic_link_native.dart';
 import 'auth/otp_web.dart';
 import 'auth/invitation_entry_page.dart';
-import 'theme/semantic_colors.dart';
 import 'auth/register_webauthn_page.dart'
     if (dart.library.io) 'auth/register_webauthn_page_native.dart';
 import 'auth/register_profile_page.dart';
@@ -1644,9 +1643,12 @@ class _MyAppState extends State<MyApp> {
 
                   try {
                     // Capture providers before any async operations
+                    // ignore: use_build_context_synchronously
                     final unreadProvider = context
                         .read<UnreadMessagesProvider>();
+                    // ignore: use_build_context_synchronously
                     final roleProvider = context.read<RoleProvider>();
+                    // ignore: use_build_context_synchronously
                     final statsProvider = context
                         .read<FileTransferStatsProvider>();
 
@@ -1712,8 +1714,11 @@ class _MyAppState extends State<MyApp> {
 
                 try {
                   // Capture providers before any async operations
+                  // ignore: use_build_context_synchronously
                   final unreadProvider = context.read<UnreadMessagesProvider>();
+                  // ignore: use_build_context_synchronously
                   final roleProvider = context.read<RoleProvider>();
+                  // ignore: use_build_context_synchronously
                   final statsProvider = context
                       .read<FileTransferStatsProvider>();
 
@@ -1773,6 +1778,7 @@ class _MyAppState extends State<MyApp> {
 
           // Clear roles on logout
           try {
+            // ignore: use_build_context_synchronously
             final roleProvider = context.read<RoleProvider>();
             roleProvider.clearRoles();
           } catch (e) {

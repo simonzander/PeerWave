@@ -150,6 +150,8 @@ class _WebauthnPageState extends State<WebauthnPage> {
                 final resp = await ApiService.get('/backupcode/regenerate');
                 if (!mounted) return;
                 if (resp.statusCode == 200) {
+                  if (!mounted) return;
+                  // ignore: use_build_context_synchronously
                   GoRouter.of(context).go('/app/settings/backupcode/list');
                 }
               } catch (e) {

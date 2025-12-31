@@ -45,7 +45,7 @@ class SettingsSidebar extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: currentRoute,
+                  initialValue: currentRoute,
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurface,
                     fontSize: 16,

@@ -17,7 +17,6 @@ class SessionAuthService {
 
   // Cache for used nonces (in-memory, cleared on app restart)
   final Map<String, DateTime> _usedNonces = {};
-  static const _nonceCacheMaxAge = Duration(minutes: 10);
 
   /// Initialize session with secret received from server
   Future<void> initializeSession(String clientId, String sessionSecret) async {
@@ -131,14 +130,6 @@ class SessionAuthService {
     await _secureStorage.deleteAllSessionSecrets();
     _usedNonces.clear();
     debugPrint('[SessionAuth] All sessions cleared');
-  }
-
-  /// Clean up old nonces from cache
-  void _cleanupNonces() {
-    final now = DateTime.now();
-    _usedNonces.removeWhere((nonce, timestamp) {
-      return now.difference(timestamp) > _nonceCacheMaxAge;
-    });
   }
 
   /// Generate a random session secret (256 bits)

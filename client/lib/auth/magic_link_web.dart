@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 // Remove http import, use JS interop for fetch
 import 'dart:convert';
-import 'package:js/js.dart';
+import 'dart:js_interop';
 //import 'package:js/js_util.dart';
 import '../services/api_service.dart';
 import '../web_config.dart';
 
 @JS('window.open')
-external dynamic openWindow(String url, String target);
+external JSAny? openWindow(String url, String target);
 
 /*@JS('fetchMagicKey')
 external dynamic fetchMagicKeyJS(String url);*/

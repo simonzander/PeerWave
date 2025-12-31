@@ -99,36 +99,13 @@ class MeetingCleanupService {
 
   /**
    * Cleanup expired external participant sessions
-   * Delete sessions where expires_at has passed OR meeting has been deleted
+   * NOTE: External sessions are stored in temporary (in-memory) storage, not the main database.
+   * They are automatically cleaned up by their TTL and don't need database cleanup.
+   * This method is kept for backward compatibility but does nothing.
    */
   async cleanupExternalSessions() {
-    try {
-      const now = new Date();
-      const [expiredSessions] = await sequelize.query(`
-        SELECT session_id FROM external_participants
-        WHERE expires_at < ?
-        OR meeting_id NOT IN (SELECT meeting_id FROM meetings)
-      `, {
-        replacements: [now]
-      });
-
-      if (expiredSessions.length > 0) {
-        const sessionIds = expiredSessions.map(s => s.session_id);
-        console.log(`[MEETING CLEANUP] Deleting ${sessionIds.length} expired external sessions`);
-
-        for (const sessionId of sessionIds) {
-          await writeQueue.enqueue(
-            () => sequelize.query('DELETE FROM external_participants WHERE session_id = ?', {
-              replacements: [sessionId]
-            }),
-            'cleanupExpiredSession'
-          );
-        }
-      }
-
-    } catch (error) {
-      console.error('[MEETING CLEANUP] Error cleaning up external sessions:', error);
-    }
+    // No-op: External sessions are in temporaryStorage (memory-only)
+    // They expire automatically and are cleaned up by the temp storage system
   }
 
   /**

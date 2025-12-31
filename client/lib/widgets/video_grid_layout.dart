@@ -370,7 +370,6 @@ class VideoGridLayout extends StatelessWidget {
     // Handle pending participants (invited but not joined yet)
     if (isPending && pendingData != null) {
       final displayName = pendingData['displayName'] as String? ?? 'Unknown';
-      final profilePicture = pendingData['picture'] as String?;
 
       return Container(
         decoration: BoxDecoration(

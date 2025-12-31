@@ -35,9 +35,6 @@ function sanitizeForLog(value) {
     .substring(0, 1000); // Limit length to prevent log flooding
 }
 
-const writeQueue = require('./db/writeQueue');
-const { initCleanupJob, runCleanup } = require('./jobs/cleanup');
-
 // Initialize license validator
 const licenseValidator = new LicenseValidator();
 

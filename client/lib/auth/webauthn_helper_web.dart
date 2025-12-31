@@ -1,8 +1,9 @@
 // webauthn_helper_web.dart
 // This file provides the web implementation for calling the JS WebAuthn function.
 
-import 'dart:js' as js;
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 
 void webauthnLogin(String serverUrl, String email) {
-  js.context.callMethod('webauthnLogin', [serverUrl, email]);
+  globalContext.callMethod('webauthnLogin'.toJS, serverUrl.toJS, email.toJS);
 }

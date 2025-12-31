@@ -137,6 +137,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
     if (result == true && selectedRole != null) {
       try {
+        // ignore: use_build_context_synchronously
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         await roleProvider.assignChannelRole(
           userId: member.userId,
@@ -177,6 +178,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
     if (result == true) {
       try {
+        // ignore: use_build_context_synchronously
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         await roleProvider.removeChannelRole(
           userId: member.userId,
@@ -397,10 +399,12 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
     if (result == true) {
       try {
+        // ignore: use_build_context_synchronously
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         await roleProvider.leaveChannel(widget.channelId);
         if (mounted) {
           _showSuccess('Left channel successfully');
+          // ignore: use_build_context_synchronously
           Navigator.of(context).pop(); // Go back to previous screen
         }
       } catch (e) {
@@ -438,10 +442,12 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
     if (result == true) {
       try {
+        // ignore: use_build_context_synchronously
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         await roleProvider.deleteChannel(widget.channelId);
         if (mounted) {
           _showSuccess('Channel deleted successfully');
+          // ignore: use_build_context_synchronously
           Navigator.of(context).pop(); // Go back to previous screen
         }
       } catch (e) {
@@ -477,6 +483,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
     if (result == true) {
       try {
+        // ignore: use_build_context_synchronously
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         await roleProvider.kickUserFromChannel(
           channelId: widget.channelId,

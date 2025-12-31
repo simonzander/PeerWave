@@ -743,8 +743,11 @@ class _UserCardState extends State<_UserCard> {
       cursor: SystemMouseCursors.click,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        transform: Matrix4.identity()
-          ..scale(_isHovered ? 1.05 : 1.0, _isHovered ? 1.05 : 1.0, 1.0),
+        transform: _isHovered
+            ? (Matrix4.identity()
+                ..setEntry(0, 0, 1.05)
+                ..setEntry(1, 1, 1.05))
+            : Matrix4.identity(),
         decoration: BoxDecoration(
           color: widget.colorScheme.onInverseSurface,
           borderRadius: BorderRadius.circular(12),

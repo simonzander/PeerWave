@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'package:collection/collection.dart';
 import 'api_service.dart';
-import '../web_config.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'offline_message_queue.dart';
 import 'package:uuid/uuid.dart';
@@ -256,75 +255,6 @@ class SignalService {
       debugPrint(
         '[SIGNAL SERVICE] Consumed PreKeys deleted, will regenerate as needed',
       );
-    }
-  }
-
-  /// Helper: Test if PreKey decryption failures are systemic or isolated
-  /// Returns true if at least one PreKey can be decrypted, false if all fail (systemic issue)
-  Future<bool> _testPreKeyDecryption() async {
-    try {
-      final ids = await preKeyStore.getAllPreKeyIds();
-      if (ids.isEmpty) {
-        debugPrint('[SIGNAL SERVICE] No PreKeys to test');
-        return false;
-      }
-
-      debugPrint(
-        '[SIGNAL SERVICE] Testing PreKey decryption on ${ids.length > 3 ? 3 : ids.length} random PreKeys...',
-      );
-
-      // Test up to 3 random PreKeys
-      final testCount = ids.length > 3 ? 3 : ids.length;
-      int successCount = 0;
-
-      for (int i = 0; i < testCount; i++) {
-        try {
-          await preKeyStore.loadPreKey(ids[i]);
-          successCount++;
-          debugPrint(
-            '[SIGNAL SERVICE] ✓ PreKey ${ids[i]} decryption successful',
-          );
-        } catch (e) {
-          debugPrint(
-            '[SIGNAL SERVICE] ✗ PreKey ${ids[i]} decryption failed: $e',
-          );
-        }
-      }
-
-      final isSystemic = successCount == 0;
-      debugPrint(
-        '[SIGNAL SERVICE] PreKey test result: $successCount/$testCount successful (systemic: $isSystemic)',
-      );
-      return !isSystemic; // Return true if at least one works
-    } catch (e) {
-      debugPrint('[SIGNAL SERVICE] Error testing PreKey decryption: $e');
-      return false; // Assume systemic if test itself fails
-    }
-  }
-
-  /// Helper: Handle single PreKey decryption failure with smart regeneration
-  Future<void> _handlePreKeyDecryptionFailure(int preKeyId) async {
-    debugPrint(
-      '[SIGNAL SERVICE] PreKey $preKeyId decryption failed, testing for systemic issue...',
-    );
-
-    final canDecryptOthers = await _testPreKeyDecryption();
-
-    if (!canDecryptOthers) {
-      // Systemic issue - encryption key changed, clear all
-      debugPrint(
-        '[SIGNAL SERVICE] ⚠️ SYSTEMIC: All PreKeys fail decryption - encryption key changed',
-      );
-      await clearAllSignalData(
-        reason: 'Encryption key changed - all PreKeys corrupted',
-      );
-    } else {
-      // Isolated issue - regenerate only this PreKey
-      debugPrint(
-        '[SIGNAL SERVICE] ℹ️ ISOLATED: Only PreKey $preKeyId failed - regenerating that key',
-      );
-      await preKeyStore.removePreKey(preKeyId);
-      // Note: Will be regenerated on next batch generation
     }
   }
 

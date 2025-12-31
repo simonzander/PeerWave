@@ -103,9 +103,6 @@ class _IncomingCallListenerState extends State<IncomingCallListener> {
 
   void _handleAccept(Map<String, dynamic> callData) {
     final meetingId = callData['meetingId'] as String;
-    final callType = callData['callType'] as String;
-    final channelId = callData['channelId'] as String?;
-    final channelName = callData['channelName'] as String?;
 
     // Send accept event
     _callService.acceptCall(meetingId);

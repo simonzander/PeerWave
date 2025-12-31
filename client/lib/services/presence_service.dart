@@ -122,7 +122,7 @@ class PresenceService {
           lastSeen,
         );
 
-        final presence = UserPresence(
+        UserPresence(
           userId: userId,
           lastHeartbeat: lastSeen ?? DateTime.now(),
           createdAt: DateTime.now(),
@@ -178,7 +178,7 @@ class PresenceService {
   // ============================================================================
 
   /// Check online status for multiple users (bulk check via API)
-  /// Returns Map<userId, status> where status is 'online', 'busy', or 'offline'
+  /// Returns Map&lt;userId, status&gt; where status is 'online', 'busy', or 'offline'
   ///
   /// Use this before initiating instant calls to verify recipients are online
   Future<Map<String, String>> checkOnlineStatus(List<String> userIds) async {

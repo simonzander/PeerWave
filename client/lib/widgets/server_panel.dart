@@ -165,46 +165,6 @@ class _ServerPanelState extends State<ServerPanel> {
     );
   }
 
-  void _showEditServerDialog(ServerConfig server) {
-    final controller = TextEditingController(
-      text: server.displayName ?? server.getDisplayName(),
-    );
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Server'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'Display Name',
-            hintText: 'Enter server name',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              await ServerConfigService.updateDisplayName(
-                server.id,
-                controller.text,
-              );
-              _loadServers();
-              if (!mounted) return;
-              if (mounted) {
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _logoutFromServer(ServerConfig server) async {
     final confirm = await showDialog<bool>(
       context: context,
