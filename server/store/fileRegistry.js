@@ -8,6 +8,7 @@
  * - Automatic cleanup of expired entries
  */
 
+const { sanitizeForLog } = require('../utils/logSanitizer');
 class FileRegistry {
   constructor() {
     // Map: fileId -> FileMetadata
@@ -49,7 +50,7 @@ class FileRegistry {
       // ========================================
       // NEW FILE - First Announcement (Uploader)
       // ========================================
-      console.log(`[FILE REGISTRY] NEW FILE: ${fileId.substring(0, 8)} uploaded by ${userId}`);
+      console.log(`[FILE REGISTRY] NEW FILE: ${fileId.substring(0, 8)} uploaded by ${sanitizeForLog(userId)}`);
       
       file = {
         fileId,
@@ -77,7 +78,7 @@ class FileRegistry {
       this.fileLeechers.set(fileId, new Set());
       
       console.log(`[FILE REGISTRY] File ${fileId.substring(0, 8)} created with canonical checksum: ${checksum.substring(0, 16)}...`);
-      console.log(`[FILE REGISTRY] Checksum set by ${userId} and shared with: [${Array.from(file.sharedWith).join(', ')}]`);
+      console.log(`[FILE REGISTRY] Checksum set by ${sanitizeForLog(userId)} and shared with: [${Array.from(file.sharedWith).map(sanitizeForLog).join(', ')}]`);
       
     } else {
       // ========================================
@@ -86,19 +87,19 @@ class FileRegistry {
       
       // SECURITY CHECK: User must have permission to announce this file
       if (!this.canAccess(userId, fileId)) {
-        console.error(`[SECURITY] ❌ User ${userId} DENIED announce for ${fileId.substring(0, 8)} - NOT in sharedWith!`);
-        console.error(`[SECURITY] Authorized users: [${Array.from(file.sharedWith).join(', ')}]`);
+        console.error(`[SECURITY] ❌ User ${sanitizeForLog(userId)} DENIED announce for ${fileId.substring(0, 8)} - NOT in sharedWith!`);
+        console.error(`[SECURITY] Authorized users: [${Array.from(file.sharedWith).map(sanitizeForLog).map(sanitizeForLog).join(', ')}]`);
         return null; // ❌ REJECT unauthorized announce
       }
       
-      console.log(`[FILE REGISTRY] ✓ User ${userId} authorized to announce ${fileId.substring(0, 8)}`);
+      console.log(`[FILE REGISTRY] ✓ User ${sanitizeForLog(userId)} authorized to announce ${fileId.substring(0, 8)}`);
       
       // User has permission - continue with announce
       
       // Auto-add seeder to sharedWith (if not already there)
       if (!file.sharedWith.has(userId)) {
         file.sharedWith.add(userId);
-        console.log(`[FILE REGISTRY] Seeder ${userId} auto-added to sharedWith for ${fileId.substring(0, 8)}`);
+        console.log(`[FILE REGISTRY] Seeder ${sanitizeForLog(userId)} auto-added to sharedWith for ${fileId.substring(0, 8)}`);
       }
       
       // If from creator: Merge with payload sharedWith (add new users)
@@ -106,16 +107,16 @@ class FileRegistry {
         sharedWith.forEach(id => {
           if (!file.sharedWith.has(id)) {
             file.sharedWith.add(id);
-            console.log(`[FILE REGISTRY] Added ${id} to sharedWith for ${fileId.substring(0, 8)} (from creator)`);
+            console.log(`[FILE REGISTRY] Added ${sanitizeForLog(id)} to sharedWith for ${fileId.substring(0, 8)} (from creator)`);
           }
         });
       }
       
       // Checksum verification (prevent malicious data)
       if (file.checksum !== checksum) {
-        console.error(`[SECURITY] ❌ Checksum mismatch from ${userId} for ${fileId.substring(0, 8)}`);
-        console.error(`[SECURITY] Canonical checksum: ${file.checksum} (set by ${file.checksumSetBy} at ${new Date(file.checksumSetAt).toISOString()})`);
-        console.error(`[SECURITY] Received checksum: ${checksum} (from ${userId})`);
+        console.error(`[SECURITY] ❌ Checksum mismatch from ${sanitizeForLog(userId)} for ${fileId.substring(0, 8)}`);
+        console.error(`[SECURITY] Canonical checksum: ${checksum.substring(0, 16)}... (set by ${sanitizeForLog(file.checksumSetBy)} at ${new Date(file.checksumSetAt).toISOString()})`);
+        console.error(`[SECURITY] Received checksum: ${checksum.substring(0, 16)}... (from ${sanitizeForLog(userId)})`);
         console.error(`[SECURITY] REJECT: File integrity compromised or wrong file announced!`);
         return null; // ❌ REJECT mismatched checksum
       }
@@ -199,7 +200,7 @@ class FileRegistry {
     
     file.lastActivity = Date.now();
     
-    console.log(`[FileRegistry] Reannounced ${fileId.substring(0, 8)} by ${seederUserId}:${seederDeviceId}`);
+    console.log(`[FileRegistry] Reannounced ${fileId.substring(0, 8)} by ${sanitizeForLog(seederUserId)}:${sanitizeForLog(seederDeviceId)}`);
     console.log(`[FileRegistry] Merged sharedWith: ${file.sharedWith.size} users`);
     
     return {
@@ -238,7 +239,7 @@ class FileRegistry {
     }
     file.sharedWith.add(targetUserId);
     
-    console.log(`[FILE REGISTRY] File ${fileId} shared with ${targetUserId} by ${creatorId}`);
+    console.log(`[FILE REGISTRY] File ${fileId} shared with ${sanitizeForLog(targetUserId)} by ${sanitizeForLog(creatorId)}`);
     file.lastActivity = Date.now();
     
     return true;
@@ -258,7 +259,7 @@ class FileRegistry {
     
     // Only creator can unshare
     if (file.creator !== creatorId) {
-      console.log(`[FILE REGISTRY] User ${creatorId} is not creator of ${fileId}, cannot unshare`);
+      console.log(`[FILE REGISTRY] User ${sanitizeForLog(creatorId)} is not creator of ${fileId}, cannot unshare`);
       return false;
     }
     
@@ -273,7 +274,7 @@ class FileRegistry {
       file.sharedWith.delete(targetUserId);
     }
     
-    console.log(`[FILE REGISTRY] File ${fileId} unshared from ${targetUserId} by ${creatorId}`);
+    console.log(`[FILE REGISTRY] File ${fileId} unshared from ${sanitizeForLog(targetUserId)} by ${sanitizeForLog(creatorId)}`);
     file.lastActivity = Date.now();
     
     return true;
@@ -333,7 +334,7 @@ class FileRegistry {
     
     if (isCreator) {
       // Creator wants to delete - remove file completely
-      console.log(`[FILE REGISTRY] Creator ${userId} deleting file ${fileId} completely`);
+      console.log(`[FILE REGISTRY] Creator ${sanitizeForLog(userId)} deleting file ${fileId} completely`);
       
       // Remove file from registry
       this.files.delete(fileId);

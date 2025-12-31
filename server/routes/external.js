@@ -1,6 +1,7 @@
 const express = require('express');
 const externalParticipantService = require('../services/externalParticipantService');
 const meetingService = require('../services/meetingService');
+const { sanitizeForLog } = require('../utils/logSanitizer');
 
 module.exports = function(io) {
   const router = express.Router();
@@ -327,7 +328,7 @@ router.get('/meetings/:meetingId/livekit-participants', async (req, res) => {
         // Parse device ID - if missing or invalid, log warning
         const deviceId = parseInt(deviceIdStr);
         if (!deviceIdStr || isNaN(deviceId)) {
-          console.warn(`[EXTERNAL] ⚠️ Invalid LiveKit identity format: "${p.identity}" (expected "userId:deviceId")`);
+          console.warn(`[EXTERNAL] ⚠️ Invalid LiveKit identity format: "${sanitizeForLog(p.identity)}" (expected "userId:deviceId")`);
           return null; // Skip participants with malformed identities
         }
         
@@ -402,7 +403,7 @@ router.post('/meetings/:meetingId/external/:sessionId/request-admission', async 
         admitted: false,
         created_at: session.createdAt || new Date().toISOString()
       });
-      console.log(`[EXTERNAL] Guest ${sessionId} requested admission to ${meetingId}`);
+      console.log(`[EXTERNAL] Guest ${sanitizeForLog(sessionId)} requested admission to ${sanitizeForLog(meetingId)}`);
     }
     
     res.json({ 
@@ -460,7 +461,7 @@ router.post('/meetings/:meetingId/external/:sessionId/request-admission', async 
         admitted: false,
         created_at: session.createdAt || new Date().toISOString()
       });
-      console.log(`[EXTERNAL] Guest ${sessionId} requested admission to ${meetingId}`);
+      console.log(`[EXTERNAL] Guest ${sanitizeForLog(sessionId)} requested admission to ${sanitizeForLog(meetingId)}`);
     }
     
     res.json({ 
@@ -600,7 +601,7 @@ router.post('/meetings/:meetingId/external/:sessionId/admit', async (req, res) =
         admitted_by: admitted_by
       });
       
-      console.log(`[EXTERNAL] Guest ${sessionId} ADMITTED to ${meetingId} by ${admitted_by}`);
+      console.log(`[EXTERNAL] Guest ${sanitizeForLog(sessionId)} ADMITTED to ${sanitizeForLog(meetingId)} by ${sanitizeForLog(admitted_by)}`);
     }
 
     res.json(updated);
@@ -664,7 +665,7 @@ router.post('/meetings/:meetingId/external/:sessionId/decline', async (req, res)
         reason: 'Host declined your request'
       });
       
-      console.log(`[EXTERNAL] Guest ${sessionId} DECLINED from ${meetingId} by ${declined_by}`);
+      console.log(`[EXTERNAL] Guest ${sanitizeForLog(sessionId)} DECLINED from ${sanitizeForLog(meetingId)} by ${sanitizeForLog(declined_by)}`);
     }
 
     res.json(updated);

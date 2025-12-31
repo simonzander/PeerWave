@@ -10,6 +10,9 @@
  * - Scheduled meetings: Hybrid (DB persistent + memory runtime)
  */
 
+const { sanitizeForLog } = require('../utils/logSanitizer');
+ */
+
 class MeetingMemoryStore {
   constructor() {
     // Map<meeting_id, runtimeState>
@@ -72,7 +75,7 @@ class MeetingMemoryStore {
   addParticipant(meetingId, participant) {
     const meeting = this.get(meetingId);
     if (!meeting) {
-      console.warn(`[Memory] Meeting ${meetingId} not found`);
+      console.warn(`[Memory] Meeting ${sanitizeForLog(meetingId)} not found`);
       return null;
     }
 
@@ -95,7 +98,7 @@ class MeetingMemoryStore {
     meeting.participant_count = meeting.participants.length;
     this.set(meetingId, meeting);
 
-    console.log(`[Memory] Added participant ${participant.user_id} to meeting ${meetingId}. Total: ${meeting.participant_count}`);
+    console.log(`[Memory] Added participant ${sanitizeForLog(participant.user_id)} to meeting ${sanitizeForLog(meetingId)}. Total: ${meeting.participant_count}`);
     return meeting;
   }
 
@@ -116,7 +119,7 @@ class MeetingMemoryStore {
     meeting.participant_count = meeting.participants.length;
     this.set(meetingId, meeting);
 
-    console.log(`[Memory] Removed participant ${userId} from meeting ${meetingId}. Count: ${beforeCount} → ${meeting.participant_count}`);
+    console.log(`[Memory] Removed participant ${sanitizeForLog(userId)} from meeting ${sanitizeForLog(meetingId)}. Count: ${beforeCount} → ${meeting.participant_count}`);
 
     // Return whether meeting is now empty
     return {
@@ -236,7 +239,7 @@ class MeetingMemoryStore {
       if (meeting.is_instant_call && status === 'ended') {
         this.delete(meetingId);
         cleaned++;
-        console.log(`[Memory Cleanup] Deleted instant call: ${meetingId}`);
+        console.log(`[Memory Cleanup] Deleted instant call: ${sanitizeForLog(meetingId)}`);
         continue;
       }
 
@@ -248,7 +251,7 @@ class MeetingMemoryStore {
         if (timeSinceEnd > eightHoursMs && status === 'ended') {
           this.delete(meetingId);
           cleaned++;
-          console.log(`[Memory Cleanup] Deleted scheduled meeting: ${meetingId} (${Math.round(timeSinceEnd / 3600000)}h after end)`);
+          console.log(`[Memory Cleanup] Deleted scheduled meeting: ${sanitizeForLog(meetingId)} (${Math.round(timeSinceEnd / 3600000)}h after end)`);
         }
       }
     }

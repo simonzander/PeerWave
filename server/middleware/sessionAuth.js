@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { sequelize } = require('../db/model');
+const { sanitizeForLog } = require('../utils/logSanitizer');
 
 /**
  * HMAC-based session authentication middleware for native clients
@@ -66,7 +67,7 @@ async function verifySessionAuth(req, res, next) {
     );
 
     if (!sessions || sessions.length === 0) {
-      console.log(`[SessionAuth] No session found for client: ${clientId}`);
+      console.log(`[SessionAuth] No session found for client: ${sanitizeForLog(clientId)}`);
       return res.status(401).json({ 
         error: 'no_session',
         message: 'No active session for this client' 
@@ -77,7 +78,7 @@ async function verifySessionAuth(req, res, next) {
 
     // Check if session expired
     if (new Date(session.expires_at) < new Date()) {
-      console.log(`[SessionAuth] Session expired for client: ${clientId}`);
+      console.log(`[SessionAuth] Session expired for client: ${sanitizeForLog(clientId)}`);
       return res.status(401).json({ 
         error: 'session_expired',
         message: 'Session has expired, please re-authenticate' 
@@ -104,7 +105,7 @@ async function verifySessionAuth(req, res, next) {
     
     if (signatureBuffer.length !== expectedBuffer.length || 
         !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
-      console.log(`[SessionAuth] Signature mismatch for client: ${clientId}`);
+      console.log(`[SessionAuth] Signature mismatch for client: ${sanitizeForLog(clientId)}`);
       console.log(`[SessionAuth] Expected: ${expectedSignature}`);
       console.log(`[SessionAuth] Received: ${signature}`);
       console.log(`[SessionAuth] Message: ${message}`);
@@ -126,7 +127,7 @@ async function verifySessionAuth(req, res, next) {
     req.deviceId = session.device_id;
     req.sessionAuth = true;
 
-    console.log(`[SessionAuth] ✓ Client ${clientId} authenticated successfully`);
+    console.log(`[SessionAuth] ✓ Client ${sanitizeForLog(clientId)} authenticated successfully`);
     next();
   } catch (err) {
     console.error('[SessionAuth] Verification error:', err);
@@ -140,9 +141,13 @@ async function verifySessionAuth(req, res, next) {
 /**
  * Middleware that allows both session auth (native) and cookie auth (web)
  * This should be used on all protected routes to support both client types
+ * 
+ * SECURITY: Both authentication paths (HMAC session auth and Express session)
+ * are cryptographically secure. This function routes to the appropriate method.
  */
 async function verifyAuthEither(req, res, next) {
   // Try session auth first (for native clients)
+  // HMAC signature verification happens in verifySessionAuth()
   const hasSessionHeaders = req.headers['x-client-id'] && req.headers['x-signature'];
   
   if (hasSessionHeaders) {
@@ -151,6 +156,7 @@ async function verifyAuthEither(req, res, next) {
   }
   
   // Fall back to cookie/session auth (for web clients)
+  // Session is cryptographically signed by Express session middleware
   if (req.session && req.session.uuid) {
     console.log(`[AuthEither] Web client detected, using cookie auth`);
     req.userId = req.session.uuid;

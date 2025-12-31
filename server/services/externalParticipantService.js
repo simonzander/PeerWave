@@ -1,6 +1,7 @@
 const { sequelize, ExternalSession, MeetingInvitation } = require('../db/model');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
+const { sanitizeForLog } = require('../utils/logSanitizer');
 
 /**
  * ExternalParticipantService - Manages external guest sessions for meetings
@@ -639,7 +640,7 @@ class ExternalParticipantService {
     try {
       const { Client, SignalSignedPreKey, SignalPreKey } = require('../db/model');
 
-      console.log(`[EXTERNAL] getParticipantKeybundle called: userId=${userId}, deviceId=${deviceId} (${typeof deviceId})`);
+      console.log(`[EXTERNAL] getParticipantKeybundle called: userId=${sanitizeForLog(userId)}, deviceId=${sanitizeForLog(deviceId)} (${typeof deviceId})`);
 
       // Get identity key from Clients table (using device_id INTEGER, not clientid UUID)
       const client = await Client.findOne({
@@ -649,10 +650,10 @@ class ExternalParticipantService {
         }
       });
 
-      console.log(`[EXTERNAL] Client query result:`, client ? `found clientid=${client.clientid}, has_key=${!!client.public_key}` : 'NOT FOUND');
+      console.log(`[EXTERNAL] Client query result:`, client ? `found clientid=${sanitizeForLog(client.clientid)}, has_key=${!!client.public_key}` : 'NOT FOUND');
 
       if (!client || !client.public_key) {
-        console.log(`[EXTERNAL] No client found for user ${userId}, device ${deviceId}`);
+        console.log(`[EXTERNAL] No client found for user ${sanitizeForLog(userId)}, device ${sanitizeForLog(deviceId)}`);
         return null;
       }
 
@@ -666,7 +667,7 @@ class ExternalParticipantService {
       });
 
       if (!signedPreKey) {
-        console.log(`[EXTERNAL] No signed pre-key found for user ${userId}, device ${deviceId}`);
+        console.log(`[EXTERNAL] No signed pre-key found for user ${sanitizeForLog(userId)}, device ${sanitizeForLog(deviceId)}`);
         return null;
       }
 

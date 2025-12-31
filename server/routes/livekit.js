@@ -11,6 +11,7 @@ const express = require('express');
 const router = express.Router();
 const livekitWrapper = require('../lib/livekit-wrapper');
 const { verifyAuthEither } = require('../middleware/sessionAuth');
+const { sanitizeForLog } = require('../utils/logSanitizer');
 
 // Import models from db/model
 const { Channel, ChannelMembers } = require('../db/model');
@@ -47,7 +48,7 @@ router.post('/token', verifyAuthEither, async (req, res) => {
       return res.status(400).json({ error: 'channelId required' });
     }
 
-    console.log(`[LiveKit] Token request: userId=${userId}, channelId=${channelId}`);
+    console.log(`[LiveKit] Token request: userId=${sanitizeForLog(userId)}, channelId=${sanitizeForLog(channelId)}`);
 
     // Verify user has access to this channel
     const channel = await Channel.findByPk(channelId);
@@ -178,7 +179,7 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
       return res.status(400).json({ error: 'meetingId required' });
     }
 
-    console.log(`[LiveKit Meeting] Token request: userId=${userId}, meetingId=${meetingId}`);
+    console.log(`[LiveKit Meeting] Token request: userId=${sanitizeForLog(userId)}, meetingId=${sanitizeForLog(meetingId)}`);
 
     // Get meeting from hybrid storage (memory + DB)
     const meeting = await meetingService.getMeeting(meetingId);
@@ -226,13 +227,13 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
       if (client) {
         deviceId = client.device_id;
         req.session.device_id = deviceId; // Cache in session for future requests
-        console.log(`[LiveKit Meeting] Loaded device_id ${deviceId} from database for clientId ${req.session.clientId}`);
+        console.log(`[LiveKit Meeting] Loaded device_id ${sanitizeForLog(deviceId)} from database for clientId ${sanitizeForLog(req.session.clientId)}`);
       }
     }
     
     // Final fallback: if still no device_id, this is an error condition
     if (!deviceId) {
-      console.error(`[LiveKit Meeting] ERROR: No device_id found for user ${userId}. Session deviceId: ${req.session?.device_id}, clientId: ${req.session?.clientId}`);
+      console.error(`[LiveKit Meeting] ERROR: No device_id found for user ${sanitizeForLog(userId)}. Session deviceId: ${sanitizeForLog(req.session?.device_id)}, clientId: ${sanitizeForLog(req.session?.clientId)}`);
       return res.status(400).json({ 
         error: 'Device not registered',
         message: 'Please refresh the page and log in again to register your device.'
@@ -283,7 +284,7 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
     try {
       // Device ID already obtained above for LiveKit identity
       await meetingService.updateParticipantStatus(meetingId, userId, deviceId, 'joined');
-      console.log(`[LiveKit Meeting] Updated participant ${userId}:${deviceId} status to joined`);
+      console.log(`[LiveKit Meeting] Updated participant ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} status to joined`);
     } catch (statusError) {
       console.error('[LiveKit Meeting] Failed to update participant status:', statusError);
       // Don't fail the token generation if status update fails
@@ -341,7 +342,7 @@ router.post('/guest-token', async (req, res) => {
       return res.status(400).json({ error: 'meetingId and sessionId required' });
     }
 
-    console.log(`[LiveKit Guest] Token request: sessionId=${sessionId}, meetingId=${meetingId}`);
+    console.log(`[LiveKit Guest] Token request: sessionId=${sanitizeForLog(sessionId)}, meetingId=${sanitizeForLog(meetingId)}`);
 
     // 1. Validate guest session exists and get participant info
     const guest = await ExternalSession.findOne({
@@ -413,7 +414,7 @@ router.post('/guest-token', async (req, res) => {
     // Generate JWT
     const jwt = await token.toJwt();
 
-    console.log(`[LiveKit Guest] Token generated for ${guest.display_name} in ${meetingId}`);
+    console.log(`[LiveKit Guest] Token generated for ${sanitizeForLog(guest.display_name)} in ${sanitizeForLog(meetingId)}`);
 
     res.json({
       token: jwt,
@@ -464,7 +465,7 @@ router.get('/ice-config', verifyAuthEither, async (req, res) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    console.log(`[LiveKit ICE] Config request: userId=${userId}, username=${username}`);
+    console.log(`[LiveKit ICE] Config request: userId=${sanitizeForLog(userId)}, username=${sanitizeForLog(username)}`);
 
     // Get LiveKit configuration from environment
     const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
@@ -517,7 +518,7 @@ router.get('/ice-config', verifyAuthEither, async (req, res) => {
     const ttl = 3600 * 24;
     const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
 
-    console.log(`[LiveKit ICE] Generated ICE config for user ${userId}:`, {
+    console.log(`[LiveKit ICE] Generated ICE config for user ${sanitizeForLog(userId)}:`, {
       turnDomain,
       serversCount: iceServers.length,
       expiresAt

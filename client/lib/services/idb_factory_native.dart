@@ -2,10 +2,44 @@ import 'package:idb_sqflite/idb_sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite/sqflite.dart' as sqflite_mobile;
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'dart:io' show Platform;
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'dart:io' show Platform, Directory;
 
 IdbFactory? _cachedFactory;
 bool _initialized = false;
+bool _pathEnsured = false;
+
+/// Ensure the database directory exists before initializing
+Future<void> _ensureDatabasePath() async {
+  if (_pathEnsured) return;
+
+  try {
+    // Get the path that sqflite_common_ffi uses by default
+    final appDataDir = await getApplicationSupportDirectory();
+    final defaultDbPath = p.join(
+      appDataDir.path,
+      'sqflite_common_ffi',
+      'databases',
+    );
+    debugPrint('[IDB_FACTORY] Ensuring database directory: $defaultDbPath');
+
+    // Create directory if it doesn't exist
+    final dbDir = Directory(defaultDbPath);
+    if (!dbDir.existsSync()) {
+      dbDir.createSync(recursive: true);
+      debugPrint('[IDB_FACTORY] ✓ Created database directory');
+    } else {
+      debugPrint('[IDB_FACTORY] ✓ Database directory already exists');
+    }
+
+    _pathEnsured = true;
+  } catch (e) {
+    debugPrint('[IDB_FACTORY] ⚠️ Error ensuring database path: $e');
+    // Don't throw - let sqflite try with its default behavior
+    _pathEnsured = true; // Mark as attempted to avoid repeated failures
+  }
+}
 
 IdbFactory getIdbFactoryNative() {
   if (_cachedFactory != null) {
@@ -20,8 +54,15 @@ IdbFactory getIdbFactoryNative() {
 
     if (isDesktop) {
       debugPrint('[IDB_FACTORY] Initializing sqflite FFI for desktop platform');
+
+      // Initialize sqflite FFI
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
+
+      // Ensure database path exists (async, but don't wait)
+      _ensureDatabasePath().catchError((e) {
+        debugPrint('[IDB_FACTORY] Background path setup failed: $e');
+      });
     } else if (isMobile) {
       debugPrint(
         '[IDB_FACTORY] Initializing standard sqflite for mobile platform',

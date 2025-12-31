@@ -21,6 +21,23 @@ const path = require('path');
 const writeQueue = require('./db/writeQueue');
 const { initCleanupJob, runCleanup } = require('./jobs/cleanup');
 
+// ==================== SECURITY: FORMAT STRING SANITIZATION ====================
+// Helper function to safely log user-controlled values
+// Prevents format string injection attacks (CodeQL js/tainted-format-string)
+// Prevents log injection attacks (CodeQL js/log-injection)
+function sanitizeForLog(value) {
+  if (value === null || value === undefined) return 'null';
+  // Convert to string, remove newlines (log injection), and escape % (format string)
+  return String(value)
+    .replace(/[\n\r]/g, '') // Remove newlines to prevent log injection
+    .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
+    .replace(/%/g, '%%') // Escape % to prevent format string interpretation
+    .substring(0, 1000); // Limit length to prevent log flooding
+}
+
+const writeQueue = require('./db/writeQueue');
+const { initCleanupJob, runCleanup } = require('./jobs/cleanup');
+
 // Initialize license validator
 const licenseValidator = new LicenseValidator();
 
@@ -130,9 +147,9 @@ function emitToUser(io, userId, event, data) {
   });
   
   if (emittedCount === 0) {
-    console.log(`[EMIT_TO_USER] User ${userId} has no connected devices for event: ${event}`);
+    console.log(`[EMIT_TO_USER] User ${sanitizeForLog(userId)} has no connected devices for event: ${event}`);
   } else {
-    console.log(`[EMIT_TO_USER] Emitted '${event}' to ${emittedCount} device(s) for user ${userId}`);
+    console.log(`[EMIT_TO_USER] Emitted '${event}' to ${emittedCount} device(s) for user ${sanitizeForLog(userId)}`);
   }
   
   return emittedCount;
@@ -140,8 +157,8 @@ function emitToUser(io, userId, event, data) {
 
 // 🚀 Flush pending messages when client becomes ready
 function flushPendingMessages(io, socket, userId, deviceId) {
-  const deviceKey = `${userId}:${deviceId}`;
-  const pending = pendingMessages.get(deviceKey);
+  const deviceKey = `${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)}`;
+  const pending = pendingMessages.get(`${userId}:${deviceId}`);
   
   if (!pending || pending.length === 0) {
     console.log(`[SAFE_EMIT] No pending messages for ${deviceKey}`);
@@ -156,7 +173,7 @@ function flushPendingMessages(io, socket, userId, deviceId) {
     socket.emit(msg.event, msg.data);
   }
   
-  pendingMessages.delete(deviceKey);
+  pendingMessages.delete(`${userId}:${deviceId}`);
   console.log(`[SAFE_EMIT] ✅ All pending messages delivered to ${deviceKey}`);
 }
 
@@ -166,7 +183,7 @@ function flushPendingMessages(io, socket, userId, deviceId) {
  */
 async function sendSharedWithUpdateSignal(fileId, sharedWith) {
   try {
-    console.log(`[SIGNAL] Sending sharedWith update for ${fileId.substring(0, 8)} to ${sharedWith.length} users`);
+    console.log(`[SIGNAL] Sending sharedWith update for ${sanitizeForLog(fileId.substring(0, 8))} to ${sharedWith.length} users`);
     
     for (const userId of sharedWith) {
       try {
@@ -176,18 +193,18 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
         });
         
         if (clients.length === 0) {
-          console.log(`[SIGNAL] No devices found for user ${userId}`);
+          console.log(`[SIGNAL] No devices found for user ${sanitizeForLog(userId)}`);
           continue;
         }
         
-        console.log(`[SIGNAL] Found ${clients.length} devices for user ${userId}`);
+        console.log(`[SIGNAL] Found ${clients.length} devices for user ${sanitizeForLog(userId)}`);
         
         // Send to each device
         for (const client of clients) {
           try {
             // Validate device_id exists
             if (!client.device_id) {
-              console.log(`[SIGNAL] ⚠️ Skipping client with missing device_id for user ${userId}`);
+              console.log(`[SIGNAL] ⚠️ Skipping client with missing device_id for user ${sanitizeForLog(userId)}`);
               continue;
             }
             
@@ -215,7 +232,7 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
               });
             }, `sharedWith-update-${userId}-${recipientDeviceId}-${Date.now()}`);
             
-            console.log(`[SIGNAL] ✓ Message stored for ${userId}:${recipientDeviceId}`);
+            console.log(`[SIGNAL] ✓ Message stored for ${sanitizeForLog(userId)}:${sanitizeForLog(recipientDeviceId)}`);
             
             // Try to deliver immediately if online
             const targetSocketId = deviceSockets.get(`${userId}:${recipientDeviceId}`);
@@ -229,21 +246,21 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
                 cipherType: 0,
                 itemId: `sharedWith-${fileId}-${Date.now()}`
               });
-              console.log(`[SIGNAL] ✓ Delivered immediately to online device ${userId}:${recipientDeviceId}`);
+              console.log(`[SIGNAL] ✓ Delivered immediately to online device ${sanitizeForLog(userId)}:${sanitizeForLog(recipientDeviceId)}`);
             }
             
           } catch (err) {
-            console.error(`[SIGNAL] Failed to send to device ${recipientDeviceId || 'unknown'}:`, err);
+            console.error(`[SIGNAL] Failed to send to device ${sanitizeForLog(recipientDeviceId || 'unknown')}:`, err);
           }
         }
         
       } catch (err) {
-        console.error(`[SIGNAL] Failed to process user ${userId}:`, err);
+        console.error(`[SIGNAL] Failed to process user ${sanitizeForLog(userId)}:`, err);
         // Continue with other users
       }
     }
     
-    console.log(`[SIGNAL] Completed sending sharedWith updates for ${fileId.substring(0, 8)}`);
+    console.log(`[SIGNAL] Completed sending sharedWith updates for ${sanitizeForLog(fileId.substring(0, 8))}`);
   } catch (error) {
     console.error('[SIGNAL] Error in sendSharedWithUpdateSignal:', error);
   }
@@ -319,6 +336,61 @@ app.use((req, res, next) => {
   // External routes need io instance for notifications
   const createExternalRoutes = require('./routes/external');
 
+  // Rate limiting middleware
+  const { 
+    apiLimiter, 
+    authLimiter, 
+    registrationLimiter, 
+    passwordResetLimiter, 
+    queryLimiter,
+    fileLimiter 
+  } = require('./middleware/rateLimiter');
+
+  // Apply general rate limiting to all API routes (fallback)
+  app.use('/api', apiLimiter);
+
+  // === AUTHENTICATION & REGISTRATION (Strict) ===
+  app.use('/login', authLimiter);
+  app.use('/logout', authLimiter);
+  app.use('/register', registrationLimiter);
+  app.use('/otp', authLimiter);
+  app.use('/webauthn/authenticate', authLimiter);
+  app.use('/webauthn/authenticate-challenge', authLimiter);
+  app.use('/backupcode/verify', authLimiter);
+  
+  // === PASSWORD RESET (Very Strict) ===
+  app.use('/api/auth/reset-password', passwordResetLimiter);
+  app.use('/api/auth/forgot-password', passwordResetLimiter);
+  
+  // === DATABASE QUERIES (Moderate) ===
+  app.use('/api/presence', queryLimiter);
+  app.use('/api/sender-keys', queryLimiter);
+  app.use('/api/group-items', queryLimiter);
+  app.use('/api/livekit/room', queryLimiter);
+  
+  // === MEETINGS & CALLS (Moderate for creation, lenient for reads) ===
+  app.use('/api/meetings', (req, res, next) => {
+    // Apply stricter limit to POST/PUT/DELETE, lenient for GET
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+      return apiLimiter(req, res, next);
+    }
+    next();
+  });
+  app.use('/api/calls', (req, res, next) => {
+    if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
+      return apiLimiter(req, res, next);
+    }
+    next();
+  });
+  
+  // === FILE OPERATIONS (Moderate) ===
+  // Note: Socket.IO file sharing already has its own rate limiting
+  // This covers any HTTP file endpoints if they exist
+  
+  // === EXTERNAL GUEST ENDPOINTS (Lenient but monitored) ===
+  // External routes don't require auth, but still need rate limiting
+  app.use('/api/meetings/external', apiLimiter);
+  
   app.use(clientRoutes);
   app.use('/api', roleRoutes);
   app.use('/api/group-items', groupItemRoutes);
@@ -546,7 +618,7 @@ function addVideoParticipant(channelId, userId, socketId) {
         hasE2EEKey: false
     });
     
-    console.log(`[VIDEO PARTICIPANTS] Added ${userId} to channel ${channelId} (total: ${participants.size})`);
+    console.log(`[VIDEO PARTICIPANTS] Added ${sanitizeForLog(userId)} to channel ${sanitizeForLog(channelId)} (total: ${participants.size})`);
 }
 
 /**
@@ -568,9 +640,9 @@ function removeVideoParticipant(channelId, socketId) {
     // Cleanup empty channels
     if (participants.size === 0) {
         activeVideoParticipants.delete(channelId);
-        console.log(`[VIDEO PARTICIPANTS] Channel ${channelId} empty - removed from tracking`);
+        console.log(`[VIDEO PARTICIPANTS] Channel ${sanitizeForLog(channelId)} empty - removed from tracking`);
     } else if (removedUserId) {
-        console.log(`[VIDEO PARTICIPANTS] Removed ${removedUserId} from channel ${channelId} (remaining: ${participants.size})`);
+        console.log(`[VIDEO PARTICIPANTS] Removed ${sanitizeForLog(removedUserId)} from channel ${sanitizeForLog(channelId)} (remaining: ${participants.size})`);
     }
 }
 
@@ -594,7 +666,7 @@ function updateParticipantKeyStatus(channelId, socketId, hasKey) {
     participants.forEach(p => {
         if (p.socketId === socketId) {
             p.hasE2EEKey = hasKey;
-            console.log(`[VIDEO PARTICIPANTS] Updated ${p.userId} key status: ${hasKey}`);
+            console.log(`[VIDEO PARTICIPANTS] Updated ${sanitizeForLog(p.userId)} key status: ${hasKey}`);
         }
     });
 }
@@ -817,13 +889,13 @@ io.sockets.on("connection", socket => {
         });
         
         if (pendingCount > 0) {
-          console.log(`[SIGNAL SERVER] ✉️  ${pendingCount} pending messages for ${userId}:${deviceId}`);
+          console.log(`[SIGNAL SERVER] ✉️  ${pendingCount} pending messages for ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)}`);
           socket.emit("pendingMessagesAvailable", {
             count: pendingCount,
             timestamp: new Date().toISOString()
           });
         } else {
-          console.log(`[SIGNAL SERVER] ✓ No pending messages for ${userId}:${deviceId}`);
+          console.log(`[SIGNAL SERVER] ✓ No pending messages for ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)}`);
         }
       }
     } catch (error) {
@@ -844,7 +916,7 @@ io.sockets.on("connection", socket => {
       const deviceId = getDeviceId();
       const { limit = 20, offset = 0 } = data;
 
-      console.log(`[SIGNAL SERVER] Fetching pending messages: userId=${userId}, deviceId=${deviceId}, limit=${limit}, offset=${offset}`);
+      console.log(`[SIGNAL SERVER] Fetching pending messages: userId=${sanitizeForLog(userId)}, deviceId=${sanitizeForLog(deviceId)}, limit=${limit}, offset=${offset}`);
 
       // Fetch messages with pagination
       const items = await Item.findAll({
@@ -965,8 +1037,8 @@ io.sockets.on("connection", socket => {
         const reason = data.reason || 'Unknown';
         const timestamp = data.timestamp || new Date().toISOString();
         
-        console.log(`[SIGNAL SERVER] ⚠️  CRITICAL: Deleting ALL Signal keys for user ${uuid}, client ${clientId}`);
-        console.log(`[SIGNAL SERVER] Reason: ${reason}, Timestamp: ${timestamp}`);
+        console.log(`[SIGNAL SERVER] ⚠️  CRITICAL: Deleting ALL Signal keys for user ${sanitizeForLog(uuid)}, client ${sanitizeForLog(clientId)}`);
+        console.log(`[SIGNAL SERVER] Reason: ${sanitizeForLog(reason)}, Timestamp: ${timestamp}`);
         
         let deletedPreKeys = 0;
         let deletedSignedPreKeys = 0;
@@ -1193,7 +1265,7 @@ io.sockets.on("connection", socket => {
         const userId = getUserId();
         const clientId = getClientId();
         
-        console.log(`[SIGNAL SERVER] signalStatus: userId=${userId}, clientId=${clientId}`);
+        console.log(`[SIGNAL SERVER] signalStatus: userId=${sanitizeForLog(userId)}, clientId=${sanitizeForLog(clientId)}`);
         
         // Identity: check if public_key and registration_id are present
         const client = await Client.findOne({
@@ -1205,7 +1277,7 @@ io.sockets.on("connection", socket => {
         const preKeysCount = await SignalPreKey.count({
           where: { owner: userId, client: clientId }
         });
-        console.log(`[SIGNAL SERVER] signalStatus: User ${userId}, Client ${clientId} has ${preKeysCount} PreKeys on server`);
+        console.log(`[SIGNAL SERVER] signalStatus: User ${sanitizeForLog(userId)}, Client ${sanitizeForLog(clientId)} has ${preKeysCount} PreKeys on server`);
 
         // SignedPreKey: latest
         const signedPreKey = await SignalSignedPreKey.findOne({
@@ -1271,8 +1343,8 @@ io.sockets.on("connection", socket => {
           return;
         }
         
-        console.log(`[SIGNAL SERVER] 📤 Forwarding session recovery request to sender ${senderUserId}:${senderDeviceId}`);
-        console.log(`[SIGNAL SERVER] Reason: ${reason} (recipient: ${recipientUserId}:${recipientDeviceId})`);
+        console.log(`[SIGNAL SERVER] 📤 Forwarding session recovery request to sender ${sanitizeForLog(senderUserId)}:${sanitizeForLog(senderDeviceId)}`);
+        console.log(`[SIGNAL SERVER] Reason: ${sanitizeForLog(reason)} (recipient: ${sanitizeForLog(recipientUserId)}:${sanitizeForLog(recipientDeviceId)})`);
         
         // Forward notification to the sender who needs to resend
         safeEmitToDevice(io, senderUserId, senderDeviceId, "sessionRecoveryRequested", {
@@ -1282,7 +1354,7 @@ io.sockets.on("connection", socket => {
           requestedAt: new Date().toISOString()
         });
         
-        console.log(`[SIGNAL SERVER] ✓ Session recovery notification sent to ${senderUserId}:${senderDeviceId}`);
+        console.log(`[SIGNAL SERVER] ✓ Session recovery notification sent to ${sanitizeForLog(senderUserId)}:${sanitizeForLog(senderDeviceId)}`);
       } else {
         console.error('[SIGNAL SERVER] ❌ sessionRecoveryNeeded blocked - not authenticated');
       }
@@ -1308,7 +1380,7 @@ io.sockets.on("connection", socket => {
         // Store ALL 1:1 messages in the database (including PreKey for offline recipients)
         // NOTE: Item table is for 1:1 messages ONLY (no channel field)
         // Group messages use sendGroupItem event and GroupItem table instead
-        console.log(`[SIGNAL SERVER] Storing 1:1 message in DB: cipherType=${cipherType}, itemId=${itemId}`);
+        console.log(`[SIGNAL SERVER] Storing 1:1 message in DB: cipherType=${cipherType}, itemId=${sanitizeForLog(itemId)}`);
         const storedItem = await writeQueue.enqueue(async () => {
           return await Item.create({
             sender: senderUserId,
@@ -1333,7 +1405,7 @@ io.sockets.on("connection", socket => {
             recipientDeviceId: recipientDeviceId,
             deliveredAt: new Date().toISOString()
           });
-          console.log(`[SIGNAL SERVER] ✓ Delivery receipt sent to sender ${senderUserId}:${senderDeviceId} (message stored in DB)`);
+          console.log(`[SIGNAL SERVER] ✓ Delivery receipt sent to sender ${sanitizeForLog(senderUserId)}:${sanitizeForLog(senderDeviceId)} (message stored in DB)`);
         }
 
         // Sende die Nachricht an das spezifische Gerät (recipientDeviceId),
@@ -1341,7 +1413,7 @@ io.sockets.on("connection", socket => {
         const targetSocketId = deviceSockets.get(`${recipientUserId}:${recipientDeviceId}`);
         const isSelfMessage = (recipientUserId === senderUserId && recipientDeviceId === senderDeviceId);
         
-        console.log(`[SIGNAL SERVER] Target device: ${recipientUserId}:${recipientDeviceId}, socketId: ${targetSocketId}`);
+        console.log(`[SIGNAL SERVER] Target device: ${sanitizeForLog(recipientUserId)}:${sanitizeForLog(recipientDeviceId)}, socketId: ${targetSocketId}`);
         console.log(`[SIGNAL SERVER] Is self-message: ${isSelfMessage}`);
         console.log(`[SIGNAL SERVER] cipherType`, cipherType);
         if (targetSocketId) {
@@ -1357,7 +1429,7 @@ io.sockets.on("connection", socket => {
             // NOTE: channel is NOT included - receiveItem is for 1:1 messages ONLY
             // Group messages use groupItem event instead
           });
-          console.log(`[SIGNAL SERVER] 1:1 message sent to device ${recipientUserId}:${recipientDeviceId}`);
+          console.log(`[SIGNAL SERVER] 1:1 message sent to device ${sanitizeForLog(recipientUserId)}:${sanitizeForLog(recipientDeviceId)}`);
           
           // Update delivery timestamp in database (recipient received the message)
           await writeQueue.enqueue(async () => {
@@ -1367,7 +1439,7 @@ io.sockets.on("connection", socket => {
             );
           }, `deliveryUpdate-${itemId}`);
         } else {
-          console.log(`[SIGNAL SERVER] Target device ${recipientUserId}:${recipientDeviceId} is offline, message stored in DB`);
+          console.log(`[SIGNAL SERVER] Target device ${sanitizeForLog(recipientUserId)}:${sanitizeForLog(recipientDeviceId)} is offline, message stored in DB`);
         }
        } else {
          console.error('[SIGNAL SERVER] ERROR: sendItem blocked - not authenticated');
@@ -1440,7 +1512,7 @@ io.sockets.on("connection", socket => {
       }, `groupMessageRead-${itemId}-${readerDeviceId}`);
 
       if (updatedCount[0] > 0) {
-        console.log(`[SIGNAL SERVER] Message ${itemId} marked as read by ${readerUserId}:${readerDeviceId}`);
+        console.log(`[SIGNAL SERVER] Message ${sanitizeForLog(itemId)} marked as read by ${sanitizeForLog(readerUserId)}:${sanitizeForLog(readerDeviceId)}`);
 
         // Get all Items for this message to calculate read statistics
         const allItems = await Item.findAll({
@@ -1487,7 +1559,7 @@ io.sockets.on("connection", socket => {
               });
             }, `deleteReadGroupMessage-${itemId}`);
             
-            console.log(`[SIGNAL SERVER] ✓ Group message ${itemId} read by all ${totalDevices} devices and deleted from server`);
+            console.log(`[SIGNAL SERVER] ✓ Group message ${sanitizeForLog(itemId)} read by all ${totalDevices} devices and deleted from server`);
           }
         }
       }
@@ -1540,7 +1612,7 @@ io.sockets.on("connection", socket => {
         await stored.update({ sender_key: senderKey });
       }
 
-      console.log(`[SIGNAL SERVER] Stored sender key for ${userId}:${deviceId} in group ${groupId}`);
+      console.log(`[SIGNAL SERVER] Stored sender key for ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} in group ${sanitizeForLog(groupId)}`);
       
       // Send confirmation
       socket.emit("senderKeyStored", { groupId, success: true });
@@ -1561,7 +1633,7 @@ io.sockets.on("connection", socket => {
       const userId = getUserId();
       const deviceId = getDeviceId();
 
-      console.log(`[SIGNAL SERVER] Broadcasting sender key for ${userId}:${deviceId} to group ${groupId}`);
+      console.log(`[SIGNAL SERVER] Broadcasting sender key for ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} to group ${sanitizeForLog(groupId)}`);
 
       // Get all channel members (same approach as sendGroupItem)
       const members = await ChannelMembers.findAll({
@@ -1569,7 +1641,7 @@ io.sockets.on("connection", socket => {
       });
 
       if (!members || members.length === 0) {
-        console.log(`[SIGNAL SERVER] No members found for group ${groupId}`);
+        console.log(`[SIGNAL SERVER] No members found for group ${sanitizeForLog(groupId)}`);
         return;
       }
 
@@ -1628,7 +1700,7 @@ io.sockets.on("connection", socket => {
       });
 
       if (!client) {
-        console.error(`[SIGNAL SERVER] ERROR: Client not found for getSenderKey: ${requestedUserId}:${requestedDeviceId}`);
+        console.error(`[SIGNAL SERVER] ERROR: Client not found for getSenderKey: ${sanitizeForLog(requestedUserId)}:${sanitizeForLog(requestedDeviceId)}`);
         socket.emit("senderKeyResponse", { groupId, requestedUserId, requestedDeviceId, senderKey: null });
         return;
       }
@@ -1642,7 +1714,7 @@ io.sockets.on("connection", socket => {
       });
 
       if (senderKeyRecord) {
-        console.log(`[SIGNAL SERVER] Retrieved sender key for ${requestedUserId}:${requestedDeviceId} in group ${groupId}`);
+        console.log(`[SIGNAL SERVER] Retrieved sender key for ${sanitizeForLog(requestedUserId)}:${sanitizeForLog(requestedDeviceId)} in group ${sanitizeForLog(groupId)}`);
         socket.emit("senderKeyResponse", {
           groupId,
           requestedUserId,
@@ -1651,7 +1723,7 @@ io.sockets.on("connection", socket => {
           success: true
         });
       } else {
-        console.log(`[SIGNAL SERVER] Sender key not found for ${requestedUserId}:${requestedDeviceId} in group ${groupId}`);
+        console.log(`[SIGNAL SERVER] Sender key not found for ${sanitizeForLog(requestedUserId)}:${sanitizeForLog(requestedDeviceId)} in group ${sanitizeForLog(groupId)}`);
         socket.emit("senderKeyResponse", {
           groupId,
           requestedUserId,
@@ -1730,10 +1802,17 @@ io.sockets.on("connection", socket => {
     socket.join(room);
     const seeders = Object.entries(roomData.seeders);
 
+    // Sanitize filename to prevent prototype pollution
+    if (!filename || typeof filename !== 'string') {
+        callbackHandler(callback, {message: "Invalid filename", room});
+        return;
+    }
+    const safeFilename = '$' + filename;
+
     for (const [seeder, value] of seeders) {
         let fileSeeders;
-        if (roomData.share.files[filename]) {
-            fileSeeders = roomData.share.files[filename].seeders;
+        if (roomData.share.files[safeFilename]) {
+            fileSeeders = roomData.share.files[safeFilename].seeders;
         }
         if (!fileSeeders || !fileSeeders.includes(seeder) || value.slots <= value.peers || seeder === socket.id) continue;
 
@@ -1834,7 +1913,7 @@ io.sockets.on("connection", socket => {
       const deviceId = getDeviceId();
       const { fileId, mimeType, fileSize, checksum, chunkCount, availableChunks, sharedWith } = data;
 
-      console.log(`[P2P FILE] Device ${userId}:${deviceId} announcing file: ${fileId.substring(0, 16)}... (${mimeType}, ${fileSize} bytes)`);
+      console.log(`[P2P FILE] Device ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} announcing file: ${sanitizeForLog(fileId.substring(0, 16))}... (${mimeType}, ${fileSize} bytes)`);
       if (sharedWith) {
         console.log(`[P2P FILE] Shared with: ${sharedWith.join(', ')}`);
       }
@@ -1846,7 +1925,7 @@ io.sockets.on("connection", socket => {
         // ========================================
         // REANNOUNCEMENT - Use merge logic
         // ========================================
-        console.log(`[P2P FILE] Reannouncing existing file: ${fileId.substring(0, 8)}`);
+        console.log(`[P2P FILE] Reannouncing existing file: ${sanitizeForLog(fileId.substring(0, 8))}`);
         
         const result = fileRegistry.reannounceFile(fileId, userId, deviceId, {
           availableChunks,
@@ -1854,7 +1933,7 @@ io.sockets.on("connection", socket => {
         });
         
         if (!result) {
-          console.error(`[P2P FILE] ❌ Reannouncement failed for ${fileId.substring(0, 8)}`);
+          console.error(`[P2P FILE] ❌ Reannouncement failed for ${sanitizeForLog(fileId.substring(0, 8))}`);
           return callback?.({ success: false, error: "Reannouncement failed" });
         }
         
@@ -1933,7 +2012,7 @@ io.sockets.on("connection", socket => {
         // SECURITY: Check if announce was denied
         // ========================================
         if (!fileInfo) {
-          console.error(`[SECURITY] ❌ Announce REJECTED for user ${userId} - file ${fileId.substring(0, 16)}`);
+          console.error(`[SECURITY] ❌ Announce REJECTED for user ${sanitizeForLog(userId)} - file ${sanitizeForLog(fileId.substring(0, 16))}`);
           return callback?.({ 
             success: false, 
             error: "Permission denied: You don't have access to this file" 
@@ -2026,7 +2105,7 @@ io.sockets.on("connection", socket => {
       const deviceId = getDeviceId();
       const { fileId } = data;
 
-      console.log(`[P2P FILE] Device ${userId}:${deviceId} unannouncing file: ${fileId}`);
+      console.log(`[P2P FILE] Device ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} unannouncing file: ${sanitizeForLog(fileId)}`);
 
       const success = fileRegistry.unannounceFile(userId, deviceId, fileId);
       callback?.({ success });
@@ -2074,7 +2153,7 @@ io.sockets.on("connection", socket => {
       const deviceId = getDeviceId();
       const { fileId, availableChunks } = data;
 
-      console.log(`[P2P FILE] Device ${userId}:${deviceId} updating chunks for ${fileId.substring(0, 8)}: ${availableChunks.length} chunks`);
+      console.log(`[P2P FILE] Device ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} updating chunks for ${sanitizeForLog(fileId.substring(0, 8))}: ${availableChunks.length} chunks`);
 
       const success = fileRegistry.updateAvailableChunks(userId, deviceId, fileId, availableChunks);
       
@@ -2132,7 +2211,7 @@ io.sockets.on("connection", socket => {
       
       // Check permission
       if (!fileRegistry.canAccess(userId, fileId)) {
-        console.log(`[P2P FILE] User ${userId} denied access to file ${fileId}`);
+        console.log(`[P2P FILE] User ${sanitizeForLog(userId)} denied access to file ${sanitizeForLog(fileId)}`);
         return callback?.({ success: false, error: "Access denied" });
       }
 
@@ -2169,11 +2248,11 @@ io.sockets.on("connection", socket => {
 
       // Check permission
       if (!fileRegistry.canAccess(userId, fileId)) {
-        console.log(`[P2P FILE] User ${userId} denied download access to file ${fileId}`);
+        console.log(`[P2P FILE] User ${sanitizeForLog(userId)} denied download access to file ${sanitizeForLog(fileId)}`);
         return callback?.({ success: false, error: "Access denied" });
       }
 
-      console.log(`[P2P FILE] Device ${userId}:${deviceId} downloading file: ${fileId}`);
+      console.log(`[P2P FILE] Device ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} downloading file: ${sanitizeForLog(fileId)}`);
 
       const success = fileRegistry.registerLeecher(userId, deviceId, fileId);
       callback?.({ success });
@@ -2250,7 +2329,7 @@ io.sockets.on("connection", socket => {
       
       // Check permission
       if (!fileRegistry.canAccess(userId, fileId)) {
-        console.log(`[P2P FILE] User ${userId} denied access to chunks for file ${fileId}`);
+        console.log(`[P2P FILE] User ${sanitizeForLog(userId)} denied access to chunks for file ${sanitizeForLog(fileId)}`);
         return callback?.({ success: false, error: "Access denied" });
       }
 
@@ -2283,7 +2362,7 @@ io.sockets.on("connection", socket => {
         return callback?.({ success: false, error: "Missing fileId or targetUserId" });
       }
 
-      console.log(`[P2P FILE] User ${userId} sharing file ${fileId} with ${targetUserId}`);
+      console.log(`[P2P FILE] User ${sanitizeForLog(userId)} sharing file ${sanitizeForLog(fileId)} with ${sanitizeForLog(targetUserId)}`);
 
       const success = fileRegistry.shareFile(fileId, userId, targetUserId);
       fileRegistry.shareFile(fileId, userId, userId); // Ensure sharer retains access
@@ -2359,7 +2438,7 @@ io.sockets.on("connection", socket => {
       }
 
       if (socket._shareRateLimit.count >= 10) {
-        console.log(`[P2P FILE] Rate limit exceeded for user ${userId}`);
+        console.log(`[P2P FILE] Rate limit exceeded for user ${sanitizeForLog(userId)}`);
         return callback?.({ success: false, error: "Rate limit: max 10 share operations per minute" });
       }
 
@@ -2377,7 +2456,7 @@ io.sockets.on("connection", socket => {
       const isSeeder = fileInfo.seeders.some(s => s.startsWith(`${userId}:`));
 
       if (!isCreator && !hasAccess && !isSeeder) {
-        console.log(`[P2P FILE] User ${userId} has no permission to modify shares for ${fileId}`);
+        console.log(`[P2P FILE] User ${sanitizeForLog(userId)} has no permission to modify shares for ${sanitizeForLog(fileId)}`);
         return callback?.({ success: false, error: "Permission denied" });
       }
 
@@ -2389,12 +2468,12 @@ io.sockets.on("connection", socket => {
         }
         // Self-revoke: User can remove themselves
         else if (userIds.length === 1 && userIds[0] === userId) {
-          console.log(`[P2P FILE] ✓ Self-revoke: User ${userId} removing self from ${fileId.substring(0, 8)}`);
+          console.log(`[P2P FILE] ✓ Self-revoke: User ${sanitizeForLog(userId)} removing self from ${sanitizeForLog(fileId.substring(0, 8))}`);
           // OK - Self-revoke allowed
         }
         // Non-creator cannot revoke others
         else {
-          console.log(`[P2P FILE] ❌ User ${userId} cannot revoke others from ${fileId.substring(0, 8)} (not creator)`);
+          console.log(`[P2P FILE] ❌ User ${sanitizeForLog(userId)} cannot revoke others from ${sanitizeForLog(fileId.substring(0, 8))} (not creator)`);
           return callback?.({ 
             success: false, 
             error: "Only creator can revoke others. You can only remove yourself." 
@@ -2408,12 +2487,12 @@ io.sockets.on("connection", socket => {
         const newSize = currentSize + userIds.length;
         
         if (newSize > 1000) {
-          console.log(`[P2P FILE] Share limit exceeded for ${fileId}: ${newSize} > 1000`);
+          console.log(`[P2P FILE] Share limit exceeded for ${sanitizeForLog(fileId)}: ${newSize} > 1000`);
           return callback?.({ success: false, error: "Maximum 1000 users per file" });
         }
       }
 
-      console.log(`[P2P FILE] User ${userId} ${action}ing ${userIds.length} users for file ${fileId.substring(0, 8)}`);
+      console.log(`[P2P FILE] User ${sanitizeForLog(userId)} ${action}ing ${userIds.length} users for file ${sanitizeForLog(fileId.substring(0, 8))}`);
 
       // Execute action
       let successCount = 0;
@@ -2493,7 +2572,7 @@ io.sockets.on("connection", socket => {
         return callback?.({ success: false, error: "Missing fileId or targetUserId" });
       }
 
-      console.log(`[P2P FILE] User ${userId} unsharing file ${fileId} from ${targetUserId}`);
+      console.log(`[P2P FILE] User ${sanitizeForLog(userId)} unsharing file ${sanitizeForLog(fileId)} from ${sanitizeForLog(targetUserId)}`);
 
       const success = fileRegistry.unshareFile(fileId, userId, targetUserId);
       
@@ -2559,7 +2638,7 @@ io.sockets.on("connection", socket => {
     try {
       const { targetUserId, targetDeviceId, fileId, offer } = data;
       
-      console.log(`[P2P WEBRTC] Relaying offer for file ${fileId} to ${targetUserId}:${targetDeviceId || 'broadcast'}`);
+      console.log(`[P2P WEBRTC] Relaying offer for file ${sanitizeForLog(fileId)} to ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId || 'broadcast')}`);
       
       // Route to specific device if deviceId provided (and not empty string)
       if (targetDeviceId && targetDeviceId !== '') {
@@ -2573,9 +2652,9 @@ io.sockets.on("connection", socket => {
             fileId,
             offer
           });
-          console.log(`[P2P WEBRTC] ✓ Offer relayed to specific device ${targetUserId}:${targetDeviceId}`);
+          console.log(`[P2P WEBRTC] ✓ Offer relayed to specific device ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
         } else {
-          console.warn(`[P2P WEBRTC] ✗ Target device ${targetUserId}:${targetDeviceId} not found online`);
+          console.warn(`[P2P WEBRTC] ✗ Target device ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)} not found online`);
         }
       } else {
         // Broadcast to all devices of the user
@@ -2596,9 +2675,9 @@ io.sockets.on("connection", socket => {
               });
             }
           });
-          console.log(`[P2P WEBRTC] ✓ Offer broadcast to ${targetSockets.length} device(s) of user ${targetUserId}`);
+          console.log(`[P2P WEBRTC] ✓ Offer broadcast to ${targetSockets.length} device(s) of user ${sanitizeForLog(targetUserId)}`);
         } else {
-          console.warn(`[P2P WEBRTC] ✗ Target user ${targetUserId} has no devices online`);
+          console.warn(`[P2P WEBRTC] ✗ Target user ${sanitizeForLog(targetUserId)} has no devices online`);
         }
       }
     } catch (error) {
@@ -2613,7 +2692,7 @@ io.sockets.on("connection", socket => {
     try {
       const { targetUserId, targetDeviceId, fileId, answer } = data;
       
-      console.log(`[P2P WEBRTC] Relaying answer for file ${fileId} to ${targetUserId}:${targetDeviceId}`);
+      console.log(`[P2P WEBRTC] Relaying answer for file ${sanitizeForLog(fileId)} to ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
       
       // Route to specific device if deviceId provided
       if (targetDeviceId) {
@@ -2627,9 +2706,9 @@ io.sockets.on("connection", socket => {
             fileId,
             answer
           });
-          console.log(`[P2P WEBRTC] Answer relayed to ${targetUserId}:${targetDeviceId}`);
+          console.log(`[P2P WEBRTC] Answer relayed to ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
         } else {
-          console.warn(`[P2P WEBRTC] Target device ${targetUserId}:${targetDeviceId} not found online`);
+          console.warn(`[P2P WEBRTC] Target device ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)} not found online`);
         }
       } else {
         // Broadcast to all devices (fallback)
@@ -2652,7 +2731,7 @@ io.sockets.on("connection", socket => {
           });
           console.log(`[P2P WEBRTC] Answer broadcast to ${targetSockets.length} devices`);
         } else {
-          console.warn(`[P2P WEBRTC] Target user ${targetUserId} not found online`);
+          console.warn(`[P2P WEBRTC] Target user ${sanitizeForLog(targetUserId)} not found online`);
         }
       }
     } catch (error) {
@@ -2667,7 +2746,7 @@ io.sockets.on("connection", socket => {
     try {
       const { targetUserId, targetDeviceId, fileId, candidate } = data;
       
-      console.log(`[P2P WEBRTC] Relaying ICE candidate for file ${fileId} to ${targetUserId}:${targetDeviceId}`);
+      console.log(`[P2P WEBRTC] Relaying ICE candidate for file ${sanitizeForLog(fileId)} to ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
       
       // Route to specific device if deviceId provided
       if (targetDeviceId) {
@@ -2682,7 +2761,7 @@ io.sockets.on("connection", socket => {
             candidate
           });
         } else {
-          console.warn(`[P2P WEBRTC] Target device ${targetUserId}:${targetDeviceId} not found online`);
+          console.warn(`[P2P WEBRTC] Target device ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)} not found online`);
         }
       } else {
         // Broadcast to all devices (fallback)
@@ -2704,7 +2783,7 @@ io.sockets.on("connection", socket => {
             }
           });
         } else {
-          console.warn(`[P2P WEBRTC] Target user ${targetUserId} not found online`);
+          console.warn(`[P2P WEBRTC] Target user ${sanitizeForLog(targetUserId)} not found online`);
         }
       }
     } catch (error) {
@@ -2725,7 +2804,7 @@ io.sockets.on("connection", socket => {
       const { targetUserId, fileId } = data;
       const requesterId = getUserId();
       
-      console.log(`[P2P KEY] User ${requesterId} requesting key for file ${fileId} from ${targetUserId}`);
+      console.log(`[P2P KEY] User ${sanitizeForLog(requesterId)} requesting key for file ${sanitizeForLog(fileId)} from ${sanitizeForLog(targetUserId)}`);
       
       // Find seeder's socket and relay the key request
       const targetSockets = Array.from(io.sockets.sockets.values())
@@ -2741,9 +2820,9 @@ io.sockets.on("connection", socket => {
             });
           }
         });
-        console.log(`[P2P KEY] Key request relayed to ${targetUserId}`);
+        console.log(`[P2P KEY] Key request relayed to ${sanitizeForLog(targetUserId)}`);
       } else {
-        console.warn(`[P2P KEY] Seeder ${targetUserId} not found online`);
+        console.warn(`[P2P KEY] Seeder ${sanitizeForLog(targetUserId)} not found online`);
         // Send error back to requester
         socket.emit("file:key-response", {
           fromUserId: targetUserId,
@@ -2769,7 +2848,7 @@ io.sockets.on("connection", socket => {
       const { targetUserId, fileId, key, error } = data;
       const seederId = getUserId();
       
-      console.log(`[P2P KEY] User ${seederId} sending key for file ${fileId} to ${targetUserId}`);
+      console.log(`[P2P KEY] User ${sanitizeForLog(seederId)} sending key for file ${sanitizeForLog(fileId)} to ${sanitizeForLog(targetUserId)}`);
       
       // Find requester's socket and relay the key response
       const targetSockets = Array.from(io.sockets.sockets.values())
@@ -2787,9 +2866,9 @@ io.sockets.on("connection", socket => {
             });
           }
         });
-        console.log(`[P2P KEY] Key response relayed to ${targetUserId}`);
+        console.log(`[P2P KEY] Key response relayed to ${sanitizeForLog(targetUserId)}`);
       } else {
-        console.warn(`[P2P KEY] Requester ${targetUserId} not found online`);
+        console.warn(`[P2P KEY] Requester ${sanitizeForLog(targetUserId)} not found online`);
       }
     } catch (error) {
       console.error('[P2P KEY] Error relaying key response:', error);
@@ -2810,7 +2889,7 @@ io.sockets.on("connection", socket => {
       const { targetUserId, channelId, signalMessage } = data;
       const requesterId = getUserId();
       
-      console.log(`[VIDEO E2EE] User ${requesterId} requesting key for channel ${channelId} from ${targetUserId}`);
+      console.log(`[VIDEO E2EE] User ${sanitizeForLog(requesterId)} requesting key for channel ${sanitizeForLog(channelId)} from ${sanitizeForLog(targetUserId)}`);
       
       // Find target participant's socket and relay the key request
       const targetSockets = Array.from(io.sockets.sockets.values())
@@ -2827,9 +2906,9 @@ io.sockets.on("connection", socket => {
             });
           }
         });
-        console.log(`[VIDEO E2EE] Key request relayed to ${targetUserId}`);
+        console.log(`[VIDEO E2EE] Key request relayed to ${sanitizeForLog(targetUserId)}`);
       } else {
-        console.warn(`[VIDEO E2EE] Participant ${targetUserId} not found online`);
+        console.warn(`[VIDEO E2EE] Participant ${sanitizeForLog(targetUserId)} not found online`);
         // Send error back to requester
         socket.emit("video:key-response", {
           fromUserId: targetUserId,
@@ -2856,7 +2935,7 @@ io.sockets.on("connection", socket => {
       const { targetUserId, channelId, signalMessage, error } = data;
       const senderId = getUserId();
       
-      console.log(`[VIDEO E2EE] User ${senderId} sending key for channel ${channelId} to ${targetUserId}`);
+      console.log(`[VIDEO E2EE] User ${sanitizeForLog(senderId)} sending key for channel ${sanitizeForLog(channelId)} to ${sanitizeForLog(targetUserId)}`);
       
       // Find requester's socket and relay the key response
       const targetSockets = Array.from(io.sockets.sockets.values())
@@ -2874,9 +2953,9 @@ io.sockets.on("connection", socket => {
             });
           }
         });
-        console.log(`[VIDEO E2EE] Key response relayed to ${targetUserId}`);
+        console.log(`[VIDEO E2EE] Key response relayed to ${sanitizeForLog(targetUserId)}`);
       } else {
-        console.warn(`[VIDEO E2EE] Requester ${targetUserId} not found online`);
+        console.warn(`[VIDEO E2EE] Requester ${sanitizeForLog(targetUserId)} not found online`);
       }
     } catch (error) {
       console.error('[VIDEO E2EE] Error relaying key response:', error);
@@ -2947,7 +3026,7 @@ io.sockets.on("connection", socket => {
         // Filter out requesting user from count (they're not "in" yet)
         const otherParticipants = participants.filter(p => p.userId !== userId);
         
-        console.log(`[VIDEO PARTICIPANTS] Check for meeting ${channelId}: ${otherParticipants.length} active participants`);
+        console.log(`[VIDEO PARTICIPANTS] Check for meeting ${sanitizeForLog(channelId)}: ${otherParticipants.length} active participants`);
         
         socket.emit("video:participants-info", {
           channelId: channelId,
@@ -2980,7 +3059,7 @@ io.sockets.on("connection", socket => {
         // Filter out requesting user from count (they're not "in" yet)
         const otherParticipants = participants.filter(p => p.userId !== userId);
         
-        console.log(`[VIDEO PARTICIPANTS] Check for channel ${channelId}: ${otherParticipants.length} active participants`);
+        console.log(`[VIDEO PARTICIPANTS] Check for channel ${sanitizeForLog(channelId)}: ${otherParticipants.length} active participants`);
 
         socket.emit("video:participants-info", {
           channelId: channelId,
@@ -3063,7 +3142,7 @@ io.sockets.on("connection", socket => {
           console.error('[PRESENCE] Error marking user as busy:', err);
         });
 
-        console.log(`[VIDEO PARTICIPANTS] User ${userId} registered for meeting ${channelId}`);
+        console.log(`[VIDEO PARTICIPANTS] User ${sanitizeForLog(userId)} registered for meeting ${sanitizeForLog(channelId)}`);
 
       } else {
         // Channel video call registration
@@ -3079,7 +3158,7 @@ io.sockets.on("connection", socket => {
           return;
         }
 
-        console.log(`[VIDEO PARTICIPANTS] User ${userId} registered for channel ${channelId}`);
+        console.log(`[VIDEO PARTICIPANTS] User ${sanitizeForLog(userId)} registered for channel ${sanitizeForLog(channelId)}`);
       }
 
       // Add to Socket.IO room tracking (for both channels and meetings)
@@ -3126,7 +3205,7 @@ io.sockets.on("connection", socket => {
         userId: userId
       });
 
-      console.log(`[VIDEO PARTICIPANTS] User ${userId} confirmed E2EE key for channel ${channelId}`);
+      console.log(`[VIDEO PARTICIPANTS] User ${sanitizeForLog(userId)} confirmed E2EE key for channel ${sanitizeForLog(channelId)}`);
     } catch (error) {
       console.error('[VIDEO PARTICIPANTS] Error confirming key:', error);
     }
@@ -3163,7 +3242,7 @@ io.sockets.on("connection", socket => {
         if (result.isEmpty) {
           // Last participant left, mark room as inactive
           meetingService.updateLiveKitRoom(channelId, false, []);
-          console.log(`[VIDEO PARTICIPANTS] Meeting ${channelId} now empty`);
+          console.log(`[VIDEO PARTICIPANTS] Meeting ${sanitizeForLog(channelId)} now empty`);
         }
         
         // Mark user as no longer in room (recalculate presence)
@@ -3189,7 +3268,7 @@ io.sockets.on("connection", socket => {
         userId: userId
       });
 
-      console.log(`[VIDEO PARTICIPANTS] User ${userId} left ${isMeeting ? 'meeting' : 'channel'} ${channelId}`);
+      console.log(`[VIDEO PARTICIPANTS] User ${sanitizeForLog(userId)} left ${isMeeting ? 'meeting' : 'channel'} ${sanitizeForLog(channelId)}`);
     } catch (error) {
       console.error('[VIDEO PARTICIPANTS] Error leaving channel:', error);
     }
@@ -3279,7 +3358,7 @@ io.sockets.on("connection", socket => {
       });
 
       if (existing) {
-        console.log(`[GROUP ITEM] Item ${itemId} already exists, skipping`);
+        console.log(`[GROUP ITEM] Item ${sanitizeForLog(itemId)} already exists, skipping`);
         socket.emit("groupItemDelivered", { itemId: itemId, existing: true });
         return;
       }
@@ -3298,7 +3377,7 @@ io.sockets.on("connection", socket => {
         });
       }, `createGroupItem-${itemId}`);
 
-      console.log(`[GROUP ITEM] ✓ Created group item ${itemId} in channel ${channelId}`);
+      console.log(`[GROUP ITEM] ✓ Created group item ${sanitizeForLog(itemId)} in channel ${sanitizeForLog(channelId)}`);
 
       // Get all channel members
       const members = await ChannelMembers.findAll({
@@ -3376,7 +3455,7 @@ io.sockets.on("connection", socket => {
       });
 
       if (!groupItem) {
-        console.log(`[GROUP ITEM DELETE] Item ${itemId} not found`);
+        console.log(`[GROUP ITEM DELETE] Item ${sanitizeForLog(itemId)} not found`);
         return callback?.({ success: true, deletedCount: 0 });
       }
 
@@ -3392,7 +3471,7 @@ io.sockets.on("connection", socket => {
         });
       }, `deleteGroupItem-${itemId}-${userId}`);
 
-      console.log(`[GROUP ITEM DELETE] ✓ Deleted group item ${itemId} (count: ${deletedCount})`);
+      console.log('[GROUP ITEM DELETE] ✓ Deleted group item %s (count: %s)', sanitizeForLog(itemId), deletedCount);
       callback?.({ success: true, deletedCount });
 
     } catch (error) {
@@ -3470,7 +3549,7 @@ io.sockets.on("connection", socket => {
 
       const allRead = readCount >= memberCount;
 
-      console.log(`[GROUP ITEM READ] ✓ Item ${itemId}: ${readCount}/${memberCount} members read`);
+      console.log(`[GROUP ITEM READ] ✓ Item ${sanitizeForLog(itemId)}: ${readCount}/${memberCount} members read`);
 
       // Notify the sender about read status
       const senderSocketId = deviceSockets.get(`${groupItem.sender}:${groupItem.senderDevice}`);
@@ -3487,7 +3566,7 @@ io.sockets.on("connection", socket => {
 
       // If all members have read, delete from server (privacy feature)
       if (allRead) {
-        console.log(`[GROUP ITEM READ] ✓ Item ${itemId} read by all members - deleting from server`);
+        console.log(`[GROUP ITEM READ] ✓ Item ${sanitizeForLog(itemId)} read by all members - deleting from server`);
         
         // Delete all read receipts first
         await writeQueue.enqueue(async () => {
@@ -3501,7 +3580,7 @@ io.sockets.on("connection", socket => {
           await groupItem.destroy();
         }, `deleteGroupItem-${itemId}`);
         
-        console.log(`[GROUP ITEM READ] ✓ Item ${itemId} and all read receipts deleted`);
+        console.log(`[GROUP ITEM READ] ✓ Item ${sanitizeForLog(itemId)} and all read receipts deleted`);
       }
 
     } catch (error) {
@@ -3542,7 +3621,7 @@ io.sockets.on("connection", socket => {
 
       // Join the meeting socket room
       socket.join(`meeting:${meeting_id}`);
-      console.log(`[MEETING:JOIN-ROOM] ✓ User ${userId} joined room: meeting:${meeting_id}`);
+      console.log(`[MEETING:JOIN-ROOM] ✓ User ${sanitizeForLog(userId)} joined room: meeting:${sanitizeForLog(meeting_id)}`);
       
       // List all rooms this socket is in
       console.log('[MEETING:JOIN-ROOM] Socket rooms:', Array.from(socket.rooms));
@@ -3577,7 +3656,7 @@ io.sockets.on("connection", socket => {
       
       // Leave meeting room
       socket.leave(`meeting:${meeting_id}`);
-      console.log(`[MEETING:LEAVE] ✓ User ${userId} left room: meeting:${meeting_id}`);
+      console.log(`[MEETING:LEAVE] ✓ User ${sanitizeForLog(userId)} left room: meeting:${sanitizeForLog(meeting_id)}`);
 
       // Notify other participants
       socket.to(`meeting:${meeting_id}`).emit('meeting:participant_left', {
@@ -3619,7 +3698,7 @@ io.sockets.on("connection", socket => {
         request_id 
       } = data;
 
-      console.log(`[PARTICIPANT] ${userId}:${deviceId} sending Signal-encrypted E2EE key to guest ${guest_session_id}`);
+      console.log(`[PARTICIPANT] ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} sending Signal-encrypted E2EE key to guest ${sanitizeForLog(guest_session_id)}`);
 
       // Send encrypted response to guest's personal room on /external namespace
       io.of('/external').to(`guest:${guest_session_id}`).emit('participant:meeting_e2ee_key_response', {
@@ -3632,7 +3711,7 @@ io.sockets.on("connection", socket => {
         timestamp: Date.now()
       });
 
-      console.log(`[PARTICIPANT] ✓ Signal-encrypted E2EE key sent to guest:${guest_session_id}`);
+      console.log(`[PARTICIPANT] ✓ Signal-encrypted E2EE key sent to guest:${sanitizeForLog(guest_session_id)}`);
     } catch (error) {
       console.error('[PARTICIPANT] Error sending Signal E2EE key to guest:', error);
     }
@@ -3653,7 +3732,7 @@ io.sockets.on("connection", socket => {
 
       const { guest_session_id, encrypted_message, message_type } = data;
 
-      console.log(`[PARTICIPANT] ${userId}:${deviceId} sending Signal message (${message_type}) to guest ${guest_session_id}`);
+      console.log(`[PARTICIPANT] ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} sending Signal message (${sanitizeForLog(message_type)}) to guest ${sanitizeForLog(guest_session_id)}`);
 
       // Send directly to guest's personal room
       io.of('/external').to(`guest:${guest_session_id}`).emit('participant:signal_message', {
@@ -3664,7 +3743,7 @@ io.sockets.on("connection", socket => {
         timestamp: Date.now()
       });
 
-      console.log(`[PARTICIPANT] ✓ Signal message sent to guest:${guest_session_id}`);
+      console.log(`[PARTICIPANT] ✓ Signal message sent to guest:${sanitizeForLog(guest_session_id)}`);
     } catch (error) {
       console.error('[PARTICIPANT] Error sending Signal message to guest:', error);
     }
@@ -3695,11 +3774,11 @@ io.sockets.on("connection", socket => {
 
       // Send call notification to each recipient
       for (const recipientId of recipient_ids) {
-        console.log(`[CALL] Processing notification for recipient: ${recipientId}`);
+        console.log('[CALL] Processing notification for recipient: %s', recipientId);
         
         // Check if user is online
         const isOnline = await presenceService.isOnline(recipientId);
-        console.log(`[CALL] Recipient ${recipientId} online status: ${isOnline}`);
+        console.log('[CALL] Recipient %s online status: %s', recipientId, isOnline);
         
         if (isOnline) {
           // Update participant status to ringing
@@ -3752,12 +3831,12 @@ io.sockets.on("connection", socket => {
               });
               
               if (success) {
-                console.log(`[CALL] ✓ Sent call notification to ${recipientId}:${client.device_id}`);
+                console.log('[CALL] ✓ Sent call notification to %s:%s', recipientId, client.device_id);
               } else {
-                console.log(`[CALL] ✗ Failed to send call notification to ${recipientId}:${client.device_id} (device not connected)`);
+                console.log('[CALL] ✗ Failed to send call notification to %s:%s (device not connected)', recipientId, client.device_id);
               }
             } catch (e) {
-              console.error(`[CALL] Error sending notification to ${recipientId}:${client.device_id}:`, e);
+              console.error('[CALL] Error sending notification to %s:%s:', recipientId, client.device_id, e);
             }
           }
 
@@ -3826,7 +3905,7 @@ io.sockets.on("connection", socket => {
     const userId = socket.handshake.session?.uuid;
     const deviceId = socket.handshake.session?.deviceId;
     
-    console.log(`[SOCKET] Client disconnected: ${socket.id} (User: ${userId}, Device: ${deviceId})`);
+    console.log(`[SOCKET] Client disconnected: ${socket.id} (User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)})`);
     
     // Handle meeting/call participant disconnect
     if (userId) {
@@ -3887,7 +3966,7 @@ io.sockets.on("connection", socket => {
         socket.to(channelId).emit("video:participant-left", {
           userId: userId
         });
-        console.log(`[VIDEO PARTICIPANTS] User ${userId} removed from channel ${channelId} due to disconnect`);
+        console.log(`[VIDEO PARTICIPANTS] User ${sanitizeForLog(userId)} removed from channel ${sanitizeForLog(channelId)} due to disconnect`);
       }
     });
 
@@ -3944,6 +4023,8 @@ io.sockets.on("connection", socket => {
   socket.on("setSlots", (room, slots) => {
     if (!isValidUUID(room) || !rooms[room]) return;
 
+    // socket.id is trusted (generated by Socket.IO), but ensure it exists
+    if (!socket.id || typeof socket.id !== 'string') return;
     const seeder = rooms[room].seeders[socket.id] || (rooms[room].seeders[socket.id] = { peers: 0, slots: 0 });
 
     seeder.slots = Number(slots);
@@ -3957,6 +4038,8 @@ io.sockets.on("connection", socket => {
   socket.on("setPeers", (room, peers) => {
     if (!isValidUUID(room) || !rooms[room]) return;
 
+    // socket.id is trusted (generated by Socket.IO), but ensure it exists
+    if (!socket.id || typeof socket.id !== 'string') return;
     const seeder = rooms[room].seeders[socket.id] || (rooms[room].seeders[socket.id] = { peers: 0 });
 
     seeder.peers += peers;
@@ -3976,6 +4059,8 @@ io.sockets.on("connection", socket => {
   socket.on("stream", (room, host) => {
     if (!isValidUUID(room) || !rooms[room]) return;
 
+    // socket.id is trusted (generated by Socket.IO), but ensure it exists
+    if (!socket.id || typeof socket.id !== 'string') return;
     const seeder = rooms[room].seeders[socket.id] || (rooms[room].seeders[socket.id] = {});
 
     if (rooms[room].host === socket.id) {
@@ -4000,19 +4085,23 @@ io.sockets.on("connection", socket => {
   socket.on("offerFile", (room, file) => {
     if (!isValidUUID(room) || !rooms[room]) return;
 
+    // Sanitize filename to prevent prototype pollution
+    if (!file || !file.name || typeof file.name !== 'string') return;
+    const safeFilename = '$' + file.name;
+
     const roomFiles = rooms[room].share.files || {};
 
     if (rooms[room].host === socket.id) {
-        roomFiles[file.name] = { size: file.size, seeders: [socket.id] };
-    } else if (roomFiles[file.name] &&
-        roomFiles[file.name].size === file.size &&
-        !roomFiles[file.name].seeders.includes(socket.id)) {
-        roomFiles[file.name].seeders.push(socket.id);
+        roomFiles[safeFilename] = { size: file.size, seeders: [socket.id], originalName: file.name };
+    } else if (roomFiles[safeFilename] &&
+        roomFiles[safeFilename].size === file.size &&
+        !roomFiles[safeFilename].seeders.includes(socket.id)) {
+        roomFiles[safeFilename].seeders.push(socket.id);
     }
 
     rooms[room].share.files = roomFiles;
     socket.to(room).emit("getFiles", roomFiles);
-    socket.to(rooms[room].host).emit("currentFilePeers", file.name, Object.keys(rooms[room].share.files[file.name].seeders).length);
+    socket.to(rooms[room].host).emit("currentFilePeers", file.name, Object.keys(rooms[room].share.files[safeFilename].seeders).length);
   });
 
   /**
@@ -4036,11 +4125,15 @@ io.sockets.on("connection", socket => {
    * @param {string} filename - The name of the file to delete
    */
   socket.on("deleteFile", (filename) => {
+    // Sanitize filename to prevent prototype pollution
+    const safeFilename = typeof filename === 'string' ? '$' + filename : null;
+    if (!safeFilename) return;
+    
     Object.entries(rooms).forEach(([id, room]) => {
         if (room.host !== socket.id) return;
-        if (!room.share.files || !room.share.files[filename]) return;
+        if (!room.share.files || !room.share.files[safeFilename]) return;
 
-        delete room.share.files[filename];
+        delete room.share.files[safeFilename];
         socket.to(id).emit("getFiles", room.share.files);
     });
   });
@@ -4140,10 +4233,22 @@ io.sockets.on("connection", socket => {
   // SOCKET.IO END
 
   // Use CORS configuration from config
+  // SECURITY: Validate CORS configuration to prevent permissive settings
+  const corsOrigin = config.cors.origin;
+  const isWildcard = corsOrigin === '*' || corsOrigin === true;
+  
+  if (isWildcard && config.cors.credentials) {
+    console.error('❌ SECURITY ERROR: CORS origin cannot be "*" or true when credentials are enabled!');
+    console.error('   Please set CORS_ORIGINS environment variable to a comma-separated list of allowed origins.');
+    process.exit(1);
+  }
+  
   app.use(cors({
-    origin: config.cors.origin,
+    origin: corsOrigin,
     credentials: config.cors.credentials
   }));
+  
+  console.log('✓ CORS configured with origins:', Array.isArray(corsOrigin) ? corsOrigin.join(', ') : corsOrigin);
 
   // Register and signin webpages
   app.use(authRoutes);

@@ -5,6 +5,7 @@ const { Fido2Lib } = require('fido2-lib');
 const bodyParser = require('body-parser'); // Import body-parser
 const nodemailer = require("nodemailer");
 const crypto = require('crypto');
+const { sanitizeForLog } = require('../utils/logSanitizer');
 const session = require('express-session');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const magicLinks = require('../store/magicLinksStore');
@@ -96,10 +97,16 @@ async function getLocationFromIp(ip) {
 
 // Helper functions for URL-safe base64 encoding and decoding
 function base64UrlEncode(buffer) {
-    return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+    let result = btoa(String.fromCharCode(...new Uint8Array(buffer)))
         .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
+        .replace(/\//g, '_');
+    
+    // Remove padding - base64 only has 0-2 trailing '=' chars
+    // Using while loop to avoid ReDoS vulnerability
+    while (result.endsWith('=')) {
+        result = result.slice(0, -1);
+    }
+    return result;
 }
 
 function base64UrlDecode(base64) {
@@ -620,7 +627,7 @@ authRoutes.post("/otp", (req, res) => {
                     'markInvitationUsed'
                 );
                 delete req.session.pendingInvitationId;
-                console.log(`[INVITATION] Marked invitation ${req.session.pendingInvitationId} as used for ${email}`);
+                console.log(`[INVITATION] Marked invitation ${sanitizeForLog(req.session.pendingInvitationId)} as used for ${sanitizeForLog(email)}`);
             }
             
             req.session.otp = true;
@@ -802,7 +809,7 @@ authRoutes.post("/logout", async (req, res) => {
     const deviceId = req.deviceId || req.session.deviceId;
     const clientId = req.clientId || req.session.clientId;
     
-    console.log(`[AUTH] Logout request from user ${userId}, device ${deviceId}`);
+    console.log(`[AUTH] Logout request from user ${sanitizeForLog(userId)}, device ${sanitizeForLog(deviceId)}`);
     
     // If HMAC auth (native client), delete the HMAC session from database
     if (req.userId && clientId) {
@@ -812,7 +819,7 @@ authRoutes.post("/logout", async (req, res) => {
                 'DELETE FROM client_sessions WHERE client_id = ?',
                 { replacements: [clientId] }
             );
-            console.log(`[AUTH] ✓ HMAC session deleted for client ${clientId}`);
+            console.log(`[AUTH] ✓ HMAC session deleted for client ${sanitizeForLog(clientId)}`);
             return res.json({ success: true, message: 'Logged out successfully' });
         } catch (error) {
             console.error('[AUTH] Error deleting HMAC session:', error);
@@ -835,7 +842,7 @@ authRoutes.post("/logout", async (req, res) => {
             sameSite: 'strict'
         });
         
-        console.log(`[AUTH] ✓ Session destroyed for user ${userId}, device ${deviceId}`);
+        console.log(`[AUTH] ✓ Session destroyed for user ${sanitizeForLog(userId)}, device ${sanitizeForLog(deviceId)}`);
         res.json({ success: true, message: 'Logged out successfully' });
     });
 });

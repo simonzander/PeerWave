@@ -61,7 +61,7 @@ class WriteQueue {
           return opResult;
         } catch (error) {
           const duration = Date.now() - startTime;
-          console.error(`[WRITE QUEUE] ✗ Failed: ${name} (${duration}ms)`, error.message);
+          console.error('[WRITE QUEUE] ✗ Failed: %s (%sms)', name, duration, error.message);
           this.stats.totalFailed++;
           throw error;
         }
@@ -69,7 +69,7 @@ class WriteQueue {
       
       return result;
     } catch (error) {
-      console.error(`[WRITE QUEUE] Error enqueuing operation: ${name}`, error.message);
+      console.error('[WRITE QUEUE] Error enqueuing operation: %s', name, error.message);
       throw error;
     }
   }

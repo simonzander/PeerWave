@@ -14,13 +14,37 @@ config.app = {
 };
 
 // CORS Configuration
-// If CORS_ORIGINS is not set, use the app URL (for production) or allow all (for development)
+// SECURITY: Always use explicit origin whitelist, never '*' with credentials
+// If CORS_ORIGINS is not set:
+//   - Production: Use app URL only
+//   - Development: Use safe localhost defaults based on configured ports
+const protocol = config.https ? 'https' : 'http';
+const viteDevPort = parseInt(process.env.VITE_DEV_PORT || '5173');
+const developmentOrigins = [
+    `${protocol}://localhost:${config.port}`,
+    `${protocol}://127.0.0.1:${config.port}`,
+    `http://localhost:${viteDevPort}`, // Vite dev server (typically HTTP even if main app is HTTPS)
+    `http://127.0.0.1:${viteDevPort}`
+];
+
 config.cors = {
     origin: process.env.CORS_ORIGINS 
-        ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()) 
-        : (process.env.NODE_ENV === 'production' ? config.app.url : '*'),
+        ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()).filter(o => o && o !== '*')
+        : (process.env.NODE_ENV === 'production' ? [config.app.url] : developmentOrigins),
     credentials: true
 };
+
+// Validation: Warn if production uses localhost
+if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
+    const hasLocalhost = config.cors.origin.some(url => 
+        url.includes('localhost') || url.includes('127.0.0.1')
+    );
+    if (hasLocalhost) {
+        console.warn('⚠️  WARNING: Production mode detected with localhost CORS origin!');
+        console.warn('   Please set CORS_ORIGINS or APP_URL environment variable for production.');
+        console.warn('   Example: CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com');
+    }
+}
 
 // SMTP Configuration - Optional (for meeting invitations)
 config.smtp = process.env.EMAIL_HOST ? {

@@ -5,6 +5,7 @@ const { Fido2Lib } = require('fido2-lib');
 const bodyParser = require('body-parser'); // Import body-parser
 const nodemailer = require("nodemailer");
 const crypto = require('crypto');
+const { sanitizeForLog } = require('../utils/logSanitizer');
 const session = require('express-session');
 const fs = require('fs');
 const path = require('path');
@@ -134,8 +135,8 @@ clientRoutes.get("/direct/messages/:userId", verifyAuthEither, async (req, res) 
             model: Item,
             mapToModel: true
         });
-        console.log(`[CLIENT.JS] Direct messages (1:1 only) for device ${sessionDeviceId}:`, result.length);
-        console.log(`[CLIENT.JS] Query params: deviceReceiver=${sessionDeviceId}, receiver=${sessionUuid}, sender=${userId} OR sender=${sessionUuid}`);
+        console.log(`[CLIENT.JS] Direct messages (1:1 only) for device ${sanitizeForLog(sessionDeviceId)}:`, result.length);
+        console.log(`[CLIENT.JS] Query params: deviceReceiver=${sanitizeForLog(sessionDeviceId)}, receiver=${sanitizeForLog(sessionUuid)}, sender=${sanitizeForLog(userId)} OR sender=${sanitizeForLog(sessionUuid)}`);
         if (result.length > 0) {
             console.log(`[CLIENT.JS] Sample messages:`, result.slice(0, 3).map(r => ({
                 sender: r.sender,
@@ -251,7 +252,7 @@ clientRoutes.get("/channels/:channelId/messages", verifyAuthEither, async (req, 
             mapToModel: true
         });
         
-        console.log(`[CLIENT.JS] Channel messages for device ${sessionDeviceId}, channel ${channelId}:`, result.length);
+        console.log('[CLIENT.JS] Channel messages for device %s, channel %s:', sessionDeviceId, channelId, result.length);
         res.status(200).json(result);
     } catch (error) {
         console.error('Error fetching channel messages:', error);
@@ -310,7 +311,7 @@ clientRoutes.get("/channels/messages/all", verifyAuthEither, async (req, res) =>
             mapToModel: true
         });
         
-        console.log(`[CLIENT.JS] All channel messages for device ${sessionDeviceId} across ${channelIds.length} channels:`, result.length);
+        console.log(`[CLIENT.JS] All channel messages for device ${sanitizeForLog(sessionDeviceId)} across ${channelIds.length} channels:`, result.length);
         res.status(200).json(result);
     } catch (error) {
         console.error('Error fetching all channel messages:', error);
@@ -388,7 +389,7 @@ clientRoutes.post("/channels/:channelId/group-messages", verifyAuthEither, async
         // Bulk create all items
         if (items.length > 0) {
             await Item.bulkCreate(items);
-            console.log(`[CLIENT.JS] Created ${items.length} group message items for channel ${channelId}`);
+            console.log(`[CLIENT.JS] Created ${items.length} group message items for channel ${sanitizeForLog(channelId)}`);
         }
         
         // TODO: Emit WebSocket event to online members
@@ -606,7 +607,7 @@ clientRoutes.post("/signal/prekeys/batch", verifyAuthEither, async (req, res) =>
         
         if (result && result.timeout) {
             // Write is queued but not completed within timeout
-            console.log(`[SIGNAL PREKEYS BATCH] User ${sessionUuid} device ${sessionDeviceId} - write queued (${preKeys.length} PreKeys)`);
+            console.log(`[SIGNAL PREKEYS BATCH] User ${sanitizeForLog(sessionUuid)} device ${sanitizeForLog(sessionDeviceId)} - write queued (${preKeys.length} PreKeys)`);
             
             // Let the write continue in background (don't await)
             writePromise.then(() => {
@@ -622,7 +623,7 @@ clientRoutes.post("/signal/prekeys/batch", verifyAuthEither, async (req, res) =>
             });
         } else {
             // Write completed quickly
-            console.log(`[SIGNAL PREKEYS BATCH] User ${sessionUuid} device ${sessionDeviceId} stored ${preKeys.length} PreKeys`);
+            console.log(`[SIGNAL PREKEYS BATCH] User ${sanitizeForLog(sessionUuid)} device ${sanitizeForLog(sessionDeviceId)} stored ${preKeys.length} PreKeys`);
             
             res.status(200).json({ 
                 status: "success", 
@@ -1268,7 +1269,7 @@ clientRoutes.get("/client/channels/:channelUuid/participants", verifyAuthEither,
             livekitParticipants = await roomService.listParticipants(roomName);
         } catch (error) {
             // Room might not exist or have no participants
-            console.log(`No active LiveKit room for channel ${channelUuid}:`, error.message);
+            console.log('No active LiveKit room for channel %s:', channelUuid, error.message);
         }
         
         // Enrich participant data with user information from database
@@ -1376,6 +1377,10 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     }
     
     // Check if key exists and not expired
+    // Validate randomHash doesn't access prototype properties
+    if (!randomHash || typeof randomHash !== 'string' || randomHash.includes('__')) {
+        return res.status(400).json({ status: "failed", message: "Invalid magic link format" });
+    }
     const entry = magicLinks[randomHash];
     if (!entry) {
         return res.status(400).json({ status: "failed", message: "Invalid or expired magic link" });
@@ -1409,7 +1414,7 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     const existingClient = await Client.findOne({ where: { clientid: clientid } });
     if (existingClient && existingClient.owner !== entry.uuid) {
         // Client is switching accounts - delete old client entry and associated keys
-        console.log(`[MAGIC LINK] Client ${clientid} switching from user ${existingClient.owner} to ${entry.uuid}`);
+        console.log(`[MAGIC LINK] Client ${sanitizeForLog(clientid)} switching from user ${sanitizeForLog(existingClient.owner)} to ${sanitizeForLog(entry.uuid)}`);
         await writeQueue.enqueue(async () => {
             // Delete Signal Protocol keys
             await SignalPreKey.destroy({ where: { client: clientid } });
@@ -1445,7 +1450,7 @@ clientRoutes.post("/magic/verify", async (req, res) => {
         await autoAssignRoles(entry.email, entry.uuid);
     }
     
-    // Delete used magic link
+    // Delete used magic link (randomHash already validated above)
     delete magicLinks[randomHash];
     
     // Generate session secret for native clients (HMAC authentication)
@@ -1470,7 +1475,7 @@ clientRoutes.post("/magic/verify", async (req, res) => {
             ),
             'createClientSession'
         );
-        console.log(`[MagicKey] Session created for client: ${clientid}`);
+        console.log(`[MagicKey] Session created for client: ${sanitizeForLog(clientid)}`);
     } catch (sessionErr) {
         console.error('[MagicKey] Error creating session:', sessionErr);
         // Continue anyway - web clients don't need sessions
@@ -1506,7 +1511,7 @@ clientRoutes.post("/client/login", async (req, res) => {
         const existingClient = await Client.findOne({ where: { clientid: clientid } });
         if (existingClient && existingClient.owner !== owner.uuid) {
             // Client is switching accounts - delete old client entry and associated keys
-            console.log(`[CLIENT LOGIN] Client ${clientid} switching from user ${existingClient.owner} to ${owner.uuid}`);
+            console.log(`[CLIENT LOGIN] Client ${sanitizeForLog(clientid)} switching from user ${sanitizeForLog(existingClient.owner)} to ${sanitizeForLog(owner.uuid)}`);
             await writeQueue.enqueue(async () => {
                 // Delete Signal Protocol keys
                 await SignalPreKey.destroy({ where: { client: clientid } });
@@ -1826,7 +1831,7 @@ clientRoutes.delete("/items/:itemId", verifyAuthEither, async (req, res) => {
                 }),
                 'deleteItemForSpecificDevice'
             );
-            console.log(`[CLEANUP] Item ${itemId} for user ${receiverUserId} device ${receiverDeviceId} deleted by ${req.session.uuid}`);
+            console.log(`[CLEANUP] Item ${sanitizeForLog(itemId)} for user ${sanitizeForLog(receiverUserId)} device ${sanitizeForLog(receiverDeviceId)} deleted by ${sanitizeForLog(req.session.uuid)}`);
         } else if (receiverDeviceId !== null) {
             // Legacy: only deviceId provided (might delete wrong user's message!)
             await writeQueue.enqueue(
@@ -1838,14 +1843,14 @@ clientRoutes.delete("/items/:itemId", verifyAuthEither, async (req, res) => {
                 }),
                 'deleteItemForDevice'
             );
-            console.log(`[CLEANUP] Item ${itemId} for device ${receiverDeviceId} deleted by user ${sessionUuid}`);
+            console.log(`[CLEANUP] Item ${sanitizeForLog(itemId)} for device ${sanitizeForLog(receiverDeviceId)} deleted by user ${sanitizeForLog(sessionUuid)}`);
         } else {
             // Delete all items with this itemId (all device versions)
             await writeQueue.enqueue(
                 () => Item.destroy({ where: { itemId: itemId } }),
                 'deleteItemAllDevices'
             );
-            console.log(`[CLEANUP] Item ${itemId} (all devices) deleted by user ${sessionUuid}`);
+            console.log(`[CLEANUP] Item ${sanitizeForLog(itemId)} (all devices) deleted by user ${sanitizeForLog(sessionUuid)}`);
         }
         
         res.status(200).json({ status: "ok", message: "Item deleted successfully" });
@@ -2173,7 +2178,7 @@ clientRoutes.get("/client/auth/check", async (req, res) => {
         );
 
         if (!sessions || sessions.length === 0) {
-            console.log(`[AUTH CHECK] No session found for client: ${clientId}`);
+            console.log(`[AUTH CHECK] No session found for client: ${sanitizeForLog(clientId)}`);
             return res.status(200).json({
                 authenticated: false,
                 reason: 'no_session',
@@ -2185,7 +2190,7 @@ clientRoutes.get("/client/auth/check", async (req, res) => {
 
         // Check if session expired
         if (new Date(session.expires_at) < new Date()) {
-            console.log(`[AUTH CHECK] Session expired for client: ${clientId}`);
+            console.log(`[AUTH CHECK] Session expired for client: ${sanitizeForLog(clientId)}`);
             return res.status(200).json({
                 authenticated: false,
                 reason: 'session_expired',
@@ -2206,7 +2211,7 @@ clientRoutes.get("/client/auth/check", async (req, res) => {
 
         if (signatureBuffer.length !== expectedBuffer.length ||
             !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
-            console.log(`[AUTH CHECK] Signature mismatch for client: ${clientId}`);
+            console.log(`[AUTH CHECK] Signature mismatch for client: ${sanitizeForLog(clientId)}`);
             return res.status(200).json({
                 authenticated: false,
                 reason: 'invalid_signature',
@@ -2241,7 +2246,7 @@ clientRoutes.get("/client/auth/check", async (req, res) => {
         }
 
         // All checks passed - session is valid
-        console.log(`[AUTH CHECK] ✓ Client ${clientId} authenticated successfully`);
+        console.log(`[AUTH CHECK] ✓ Client ${sanitizeForLog(clientId)} authenticated successfully`);
         
         // Check user permissions for logout prevention scenarios
         const hasChannelCreatePermission = await hasServerPermission(session.user_id, 'channel.create');
@@ -2315,7 +2320,7 @@ clientRoutes.delete("/client/profile/delete", async (req, res) => {
             return res.status(404).json({ status: "error", message: "User not found" });
         }
 
-        console.log(`[ACCOUNT DELETE] User ${userUuid} (${user.email}) is deleting their account`);
+        console.log(`[ACCOUNT DELETE] User ${sanitizeForLog(userUuid)} (${sanitizeForLog(user.email)}) is deleting their account`);
 
         // Delete associated data
         await Client.destroy({ where: { userUuid } });
@@ -2609,7 +2614,7 @@ ${config.app.url}`
             }
         });
         
-        console.log(`[INVITATION] Successfully sent to ${email} by ${userUuid}, token: ${token}`);
+        console.log(`[INVITATION] Successfully sent to ${sanitizeForLog(email)} by ${sanitizeForLog(userUuid)}, token: ${sanitizeForLog(token)}`);
         
         res.json({
             status: "ok",
@@ -2728,13 +2733,13 @@ clientRoutes.delete("/client/:clientId", verifyAuthEither, async (req, res) => {
             });
         }
         
-        console.log(`[CLIENT DELETE] User ${userUuid} deleting client ${clientId}`);
+        console.log(`[CLIENT DELETE] User ${sanitizeForLog(userUuid)} deleting client ${sanitizeForLog(clientId)}`);
         
         // Delete associated Signal keys
         await writeQueue.enqueue(async () => {
             await SignalPreKey.destroy({ where: { client: clientId } });
             await SignalSignedPreKey.destroy({ where: { client: clientId } });
-            console.log(`[CLIENT DELETE] Deleted Signal keys for client ${clientId}`);
+            console.log(`[CLIENT DELETE] Deleted Signal keys for client ${sanitizeForLog(clientId)}`);
         }, 'deleteClientSignalKeys');
         
         // Delete session from database
@@ -2756,7 +2761,7 @@ clientRoutes.delete("/client/:clientId", verifyAuthEither, async (req, res) => {
             'deleteClient'
         );
         
-        console.log(`[CLIENT DELETE] Successfully deleted client ${clientId} and all associated data`);
+        console.log(`[CLIENT DELETE] Successfully deleted client ${sanitizeForLog(clientId)} and all associated data`);
         
         res.status(200).json({ 
             status: "ok", 

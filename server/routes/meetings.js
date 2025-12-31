@@ -8,10 +8,24 @@ const nodemailer = require('nodemailer');
 const config = require('../config/config');
 const writeQueue = require('../db/writeQueue');
 const { MeetingRsvp, User, ServerSettings } = require('../db/model');
+const { sanitizeForLog } = require('../utils/logSanitizer');
 const emailService = require('../services/emailService');
 const { createRsvpToken, verifyRsvpToken } = require('../services/meetingRsvpTokenService');
 
 const RSVP_STATUSES = new Set(['accepted', 'tentative', 'declined']);
+
+/**
+ * Escape HTML to prevent XSS attacks
+ */
+function escapeHtml(text) {
+  if (text == null) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 const isEmailLike = (value) => {
   if (!value) return false;
@@ -403,7 +417,8 @@ async function buildRsvpIndexForMeetings(meetingIds) {
 function attachRsvpSummary(meeting, statusIndex = new Map()) {
   const invited = Array.isArray(meeting.invited_participants) ? meeting.invited_participants : [];
   const summary = { invited: 0, accepted: 0, tentative: 0, declined: 0 };
-  const invitedStatuses = {};
+  // Use Object.create(null) to prevent prototype pollution
+  const invitedStatuses = Object.create(null);
 
   for (const invitee of invited) {
     const key = normalizeInviteeKey(invitee);
@@ -960,7 +975,7 @@ router.get('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
       && meeting.invited_participants.includes(userId);
     
     if (!isParticipant && !isSourceUser && !isCreator && !isInvited) {
-      console.log(`[MEETING] User ${userId} not authorized for meeting ${meetingId}`);
+      console.log(`[MEETING] User ${sanitizeForLog(userId)} not authorized for meeting ${sanitizeForLog(meetingId)}`);
       return res.status(403).json({ error: 'Not authorized to access this meeting' });
     }
 
@@ -1235,11 +1250,14 @@ router.get('/meetings/:meetingId/rsvp/:status', async (req, res) => {
       return res.status(400).send('Invalid email');
     }
 
+    // Validate meeting exists (not a security check - actual auth is token verification below)
     const meeting = await meetingService.getMeeting(meetingId);
     if (!meeting) {
       return res.status(404).send('Meeting not found');
     }
 
+    // SECURITY: Cryptographic token verification ensures only authorized users can RSVP
+    // Token is HMAC-signed with server secret and includes meetingId + email binding
     const verification = verifyRsvpToken({ token, meetingId, email });
     if (!verification.valid) {
       if (format === 'json' || req.accepts('json')) {
@@ -1281,6 +1299,12 @@ router.get('/meetings/:meetingId/rsvp/:status', async (req, res) => {
     const baseUrl = getBaseUrl(req);
     const openAppUrl = `${baseUrl}/#/meeting/rsvp?meetingId=${encodeURIComponent(meetingId)}&status=${encodeURIComponent(status)}&email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`;
 
+    // Escape all user-controlled values to prevent XSS
+    const safeStatus = escapeHtml(status);
+    const safeMeetingTitle = escapeHtml(meeting.title);
+    const safeServerName = escapeHtml(serverName);
+    const safeOpenAppUrl = escapeHtml(openAppUrl);
+
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!doctype html>
 <html lang="en">
@@ -1292,13 +1316,13 @@ router.get('/meetings/:meetingId/rsvp/:status', async (req, res) => {
 <body style="font-family:'Nunito Sans', system-ui, -apple-system, sans-serif; background:#0f1419; padding:40px 16px; margin:0;">
   <div style="max-width:600px; margin:0 auto; background-color:#141b22; border-radius:12px; padding:32px; box-shadow:0 0 0 1px rgba(0, 188, 212, 0.08);">
     <h2 style="margin-top:0; color:#2dd4bf; font-weight:600; letter-spacing:0.3px;">RSVP Confirmed</h2>
-    <p style="color:#cbd5dc; line-height:1.6;">You responded: <strong style="color:#2dd4bf;">${status}</strong></p>
+    <p style="color:#cbd5dc; line-height:1.6;">You responded: <strong style="color:#2dd4bf;">${safeStatus}</strong></p>
     <div style="margin:24px 0; padding:20px; background-color:#0f1419; border-radius:10px; border:1px solid rgba(45, 212, 191, 0.15);">
-      <p style="margin:0 0 8px 0; color:#cbd5dc;"><strong style="color:#2dd4bf;">Meeting</strong><br>${meeting.title}</p>
-      <p style="margin:0; color:#9fb3bf; font-size:14px;">${serverName}</p>
+      <p style="margin:0 0 8px 0; color:#cbd5dc;"><strong style="color:#2dd4bf;">Meeting</strong><br>${safeMeetingTitle}</p>
+      <p style="margin:0; color:#9fb3bf; font-size:14px;">${safeServerName}</p>
     </div>
     <div style="margin:28px 0;">
-      <a href="${openAppUrl}" style="display:inline-block; padding:14px 22px; background-color:#2dd4bf; color:#062726; text-decoration:none; border-radius:8px; font-weight:600;">Open PeerWave</a>
+      <a href="${safeOpenAppUrl}" style="display:inline-block; padding:14px 22px; background-color:#2dd4bf; color:#062726; text-decoration:none; border-radius:8px; font-weight:600;">Open PeerWave</a>
     </div>
     <p style="margin-top:24px; color:#7b8a94; font-size:12px;">This page does not require login.</p>
     <hr style="border:none; border-top:1px solid rgba(255,255,255,0.06); margin:32px 0;">

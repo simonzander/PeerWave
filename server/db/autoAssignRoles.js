@@ -1,6 +1,7 @@
 const config = require('../config/config');
 const { Role, User } = require('./model');
 const { assignServerRole } = require('./roleHelpers');
+const { sanitizeForLog } = require('../utils/logSanitizer');
 
 /**
  * Automatically assign roles to a user based on configuration
@@ -31,9 +32,9 @@ async function autoAssignRoles(userEmail, userId) {
             if (adminRole) {
                 const [userRole, created] = await assignServerRole(userId, adminRole.uuid);
                 if (created) {
-                    console.log(`✓ Administrator role assigned to user: ${userEmail}`);
+                    console.log(`✓ Administrator role assigned to user: ${sanitizeForLog(userEmail)}`);
                 } else {
-                    console.log(`ℹ Administrator role already assigned to: ${userEmail}`);
+                    console.log(`ℹ Administrator role already assigned to: ${sanitizeForLog(userEmail)}`);
                 }
             } else {
                 console.error('Administrator role not found in database');
@@ -47,16 +48,16 @@ async function autoAssignRoles(userEmail, userId) {
             if (userRole) {
                 const [role, created] = await assignServerRole(userId, userRole.uuid);
                 if (created) {
-                    console.log(`✓ User role assigned to user: ${userEmail}`);
+                    console.log(`✓ User role assigned to user: ${sanitizeForLog(userEmail)}`);
                 } else {
-                    console.log(`ℹ User role already assigned to: ${userEmail}`);
+                    console.log(`ℹ User role already assigned to: ${sanitizeForLog(userEmail)}`);
                 }
             } else {
                 console.error('User role not found in database');
             }
         }
     } catch (error) {
-        console.error(`Error auto-assigning roles for ${userEmail}:`, error);
+        console.error('Error auto-assigning roles for %s:', userEmail, error);
         // Don't throw - role assignment failure shouldn't block verification
     }
 }
