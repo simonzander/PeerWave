@@ -1252,24 +1252,33 @@ clientRoutes.get("/client/channels/:channelUuid/participants", verifyAuthEither,
             return res.status(403).json({ status: "error", message: "Access denied. You are not a member of this channel." });
         }
         
-        // Get LiveKit configuration
-        const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
-        const apiSecret = process.env.LIVEKIT_API_SECRET || 'secret';
-        const livekitUrl = process.env.LIVEKIT_URL || 'ws://localhost:7880';
-        
-        // Initialize LiveKit RoomServiceClient (dynamically loaded)
-        const RoomServiceClient = await livekitWrapper.getRoomServiceClient();
-        const roomService = new RoomServiceClient(livekitUrl, apiKey, apiSecret);
-        
-        // Get current participants from LiveKit room
-        const roomName = `channel-${channelUuid}`;
+        // Only fetch LiveKit participants for WebRTC channels
         let livekitParticipants = [];
+        let roomName = null; // Initialize roomName for response
         
-        try {
-            livekitParticipants = await roomService.listParticipants(roomName);
-        } catch (error) {
-            // Room might not exist or have no participants
-            console.log('No active LiveKit room for channel %s:', channelUuid, error.message);
+        if (channel.type === 'webrtc') {
+            // Get LiveKit configuration
+            const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
+            const apiSecret = process.env.LIVEKIT_API_SECRET || 'secret';
+            const livekitUrl = process.env.LIVEKIT_URL || 'ws://localhost:7880';
+            
+            // Initialize LiveKit RoomServiceClient (dynamically loaded)
+            const RoomServiceClient = await livekitWrapper.getRoomServiceClient();
+            const roomService = new RoomServiceClient(livekitUrl, apiKey, apiSecret);
+            
+            // Get current participants from LiveKit room
+            roomName = `channel-${channelUuid}`;
+            
+            try {
+                livekitParticipants = await roomService.listParticipants(roomName);
+            } catch (error) {
+                // Room might not exist or have no participants
+                console.log('No active LiveKit room for channel %s:', channelUuid, error.message);
+            }
+        } else if (channel.type === 'signal') {
+            // For Signal (text) channels, return channel members instead of LiveKit participants
+            // Signal channels don't use LiveKit, so no active room participants
+            console.log('Channel %s is Signal type, skipping LiveKit participant check', channelUuid);
         }
         
         // Enrich participant data with user information from database

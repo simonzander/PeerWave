@@ -3393,9 +3393,15 @@ io.sockets.on("connection", socket => {
         }
       });
 
-      // Broadcast to all member devices
+      // Broadcast to all member devices EXCEPT ALL of the sender's devices
+      // This prevents the sender from receiving their own message on any of their devices
       let deliveredCount = 0;
       for (const client of memberClients) {
+        // Skip all sender's devices to prevent duplicate messages
+        if (client.owner === userId) {
+          continue;
+        }
+        
         const targetSocketId = deviceSockets.get(`${client.owner}:${client.device_id}`);
         if (targetSocketId) {
           safeEmitToDevice(io, client.owner, client.device_id, "groupItem", {
@@ -4240,12 +4246,66 @@ io.sockets.on("connection", socket => {
     process.exit(1);
   }
   
-  app.use(cors({
-    origin: corsOrigin,
-    credentials: config.cors.credentials
-  }));
+  // Dynamic CORS handler to support mobile apps
+  // Mobile apps identify themselves via X-PeerWave-App-Secret header
+  // Web apps must match the whitelist
+  const mobileAppSecret = process.env.MOBILE_APP_SECRET || 'peerwave-mobile-app-2026';
+  
+  // Custom CORS middleware to access request headers
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    const appSecret = req.headers['x-peerwave-app-secret'];
+    const isTrustedMobileApp = appSecret === mobileAppSecret;
+    
+    // Allow trusted mobile apps (identified by secret header)
+    if (isTrustedMobileApp) {
+      res.setHeader('Access-Control-Allow-Origin', origin || '*');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-PeerWave-App-Secret');
+      
+      if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+      }
+      return next();
+    }
+    
+    // Allow localhost for development
+    if (origin && (
+        origin.startsWith('http://localhost') ||
+        origin.startsWith('http://127.0.0.1') ||
+        origin.startsWith('http://10.0.2.2'))) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-PeerWave-App-Secret');
+      
+      if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+      }
+      return next();
+    }
+    
+    // Check against whitelist for web origins
+    const allowedOrigins = Array.isArray(corsOrigin) ? corsOrigin : [corsOrigin];
+    if (origin && allowedOrigins.indexOf(origin) !== -1) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-PeerWave-App-Secret');
+      
+      if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+      }
+      return next();
+    }
+    
+    // Reject unknown origins
+    res.status(403).send('Origin not allowed by CORS policy');
+  });
   
   console.log('✓ CORS configured with origins:', Array.isArray(corsOrigin) ? corsOrigin.join(', ') : corsOrigin);
+  console.log('✓ CORS allows trusted mobile apps with secret:', mobileAppSecret.substring(0, 10) + '...');
 
   // Register and signin webpages
   app.use(authRoutes);
