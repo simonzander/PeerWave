@@ -103,6 +103,8 @@ import 'services/meeting_authorization_service.dart';
 import 'screens/meeting_rsvp_confirmation_screen.dart';
 // Native server selection
 import 'screens/server_selection_screen.dart';
+import 'screens/mobile_webauthn_login_screen.dart';
+import 'screens/mobile_server_selection_screen.dart';
 import 'services/server_config_web.dart'
     if (dart.library.io) 'services/server_config_native.dart';
 import 'services/clientid_native.dart'
@@ -131,6 +133,16 @@ Future<void> main() async {
   if (!kIsWeb) {
     await AppDirectories.initialize();
     debugPrint('[INIT] ✅ AppDirectories initialized');
+
+    // Detect autostart scenario (presence of session without explicit login action)
+    // This helps identify cases where window appears before initialization completes
+    final bool isAutostart = await _detectAutostart();
+    if (isAutostart) {
+      debugPrint('[INIT] 🚀 AUTOSTART DETECTED - Window opened automatically');
+      debugPrint(
+        '[INIT] ⚠️ Using enhanced initialization checks to prevent premature navigation',
+      );
+    }
   }
 
   // Initialize server config service for native (multi-server support)
@@ -461,9 +473,94 @@ class _MyAppState extends State<MyApp> {
   GoRouter _createRouter() {
     debugPrint('[MAIN] 🏗️ Creating GoRouter...');
 
+    // Common routes shared across all platforms (registration flow, mobile auth)
+    final List<GoRoute> commonRoutes = [
+      // Mobile server selection route (Android/iOS only)
+      GoRoute(
+        path: '/mobile-server-selection',
+        pageBuilder: (context, state) {
+          return const MaterialPage(child: MobileServerSelectionScreen());
+        },
+      ),
+      // Mobile WebAuthn login route (Android/iOS only)
+      GoRoute(
+        path: '/mobile-webauthn',
+        pageBuilder: (context, state) {
+          final serverUrl = state.extra as String?;
+          return MaterialPage(
+            child: MobileWebAuthnLoginScreen(serverUrl: serverUrl),
+          );
+        },
+      ),
+      // OTP verification (used by both web and mobile registration)
+      GoRoute(
+        path: '/otp',
+        builder: (context, state) {
+          final extra = state.extra;
+          String email = '';
+          String serverUrl = '';
+          int wait = 0;
+          if (extra is Map<String, dynamic>) {
+            email = extra['email'] ?? '';
+            serverUrl = extra['serverUrl'] ?? '';
+            wait = extra['wait'] ?? 0;
+          }
+          if (email.isEmpty || serverUrl.isEmpty) {
+            return Scaffold(
+              body: Center(child: Text('Missing email or serverUrl')),
+            );
+          }
+          return OtpWebPage(
+            email: email,
+            serverUrl: serverUrl,
+            clientId: _clientId,
+            wait: wait,
+          );
+        },
+      ),
+      // Registration routes (shared by web and mobile)
+      GoRoute(
+        path: '/register/invitation',
+        builder: (context, state) {
+          final extra = state.extra as Map?;
+          final email = extra?['email'] as String? ?? '';
+          if (email.isEmpty) {
+            return Scaffold(
+              body: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('Email required'),
+                    TextButton(
+                      onPressed: () => context.go('/login'),
+                      child: const Text('Back to Login'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          return InvitationEntryPage(email: email);
+        },
+      ),
+      GoRoute(
+        path: '/register/backupcode',
+        builder: (context, state) => const BackupCodeListPage(),
+      ),
+      GoRoute(
+        path: '/register/webauthn',
+        builder: (context, state) => const RegisterWebauthnPage(),
+      ),
+      GoRoute(
+        path: '/register/profile',
+        builder: (context, state) => const RegisterProfilePage(),
+      ),
+    ];
+
     // Use ShellRoute for native, flat routes for web
     final List<RouteBase> routes = kIsWeb
         ? [
+            ...commonRoutes, // Add common registration & mobile routes
             GoRoute(path: '/', redirect: (context, state) => '/app'),
             GoRoute(
               path: '/magic-link',
@@ -497,72 +594,6 @@ class _MyAppState extends State<MyApp> {
                   child: ServerSelectionScreen(isAddingServer: isAddingServer),
                 );
               },
-            ),
-            GoRoute(
-              path: '/otp',
-              builder: (context, state) {
-                // Extract email and serverUrl from state.extra
-                final extra = state.extra;
-                String email = '';
-                String serverUrl = '';
-                int wait = 0;
-                if (extra is Map<String, dynamic>) {
-                  email = extra['email'] ?? '';
-                  serverUrl = extra['serverUrl'] ?? '';
-                  wait = extra['wait'] ?? 0;
-                }
-                debugPrint(
-                  'Navigating to OtpWebPage with email: $email, serverUrl: $serverUrl, wait: $wait',
-                );
-                if (email.isEmpty || serverUrl.isEmpty) {
-                  // Optionally show an error page or message
-                  return Scaffold(
-                    body: Center(child: Text('Missing email or serverUrl')),
-                  );
-                }
-                return OtpWebPage(
-                  email: email,
-                  serverUrl: serverUrl,
-                  clientId: _clientId,
-                  wait: wait,
-                );
-              },
-            ),
-            GoRoute(
-              path: '/register/invitation',
-              builder: (context, state) {
-                final extra = state.extra as Map?;
-                final email = extra?['email'] as String? ?? '';
-                if (email.isEmpty) {
-                  return Scaffold(
-                    body: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text('Email required'),
-                          TextButton(
-                            onPressed: () => context.go('/login'),
-                            child: const Text('Back to Login'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-                return InvitationEntryPage(email: email);
-              },
-            ),
-            GoRoute(
-              path: '/register/backupcode',
-              builder: (context, state) => const BackupCodeListPage(),
-            ),
-            GoRoute(
-              path: '/register/webauthn',
-              builder: (context, state) => const RegisterWebauthnPage(),
-            ),
-            GoRoute(
-              path: '/register/profile',
-              builder: (context, state) => const RegisterProfilePage(),
             ),
             GoRoute(
               path: '/signal-setup',
@@ -1044,6 +1075,29 @@ class _MyAppState extends State<MyApp> {
             ),
           ]
         : [
+            // Mobile server selection route (outside ShellRoute - no navbar)
+            GoRoute(
+              path: '/mobile-server-selection',
+              pageBuilder: (context, state) {
+                return const MaterialPage(
+                  fullscreenDialog: true,
+                  child: MobileServerSelectionScreen(),
+                );
+              },
+            ),
+            // Mobile WebAuthn login route (outside ShellRoute - no navbar)
+            GoRoute(
+              path: '/mobile-webauthn',
+              pageBuilder: (context, state) {
+                final serverUrl = state.extra as String?;
+                return MaterialPage(
+                  fullscreenDialog: true,
+                  child: MobileWebAuthnLoginScreen(serverUrl: serverUrl),
+                );
+              },
+            ),
+            // Add common registration routes for native platforms
+            ...commonRoutes,
             ShellRoute(
               builder: (context, state, child) => AppLayout(child: child),
               routes: [
@@ -1445,7 +1499,9 @@ class _MyAppState extends State<MyApp> {
     debugPrint('[MAIN] 🏗️ Creating GoRouter...');
     final GoRouter router = GoRouter(
       navigatorKey: _rootNavigatorKey,
-      initialLocation: '/login',
+      initialLocation: !kIsWeb && (Platform.isAndroid || Platform.isIOS)
+          ? '/mobile-server-selection'
+          : '/login',
       routes: routes,
       redirect: (context, state) async {
         final location = state.matchedLocation;
@@ -1462,10 +1518,21 @@ class _MyAppState extends State<MyApp> {
         }
 
         // Native: Check if server selection is needed (no servers configured)
-        if (!kIsWeb && location != '/server-selection') {
+        if (!kIsWeb &&
+            location != '/server-selection' &&
+            location != '/mobile-server-selection' &&
+            location != '/mobile-webauthn') {
           if (!ServerConfigService.hasServers()) {
+            // Mobile: Redirect to mobile server selection screen
+            if (Platform.isAndroid || Platform.isIOS) {
+              debugPrint(
+                '[ROUTER] 📱 Mobile: No servers configured, redirecting to mobile server selection',
+              );
+              return '/mobile-server-selection';
+            }
+            // Desktop: Redirect to server selection
             debugPrint(
-              '[ROUTER] 📱 Native: No servers configured, redirecting to server selection',
+              '[ROUTER] 🖥️ Desktop: No servers configured, redirecting to server selection',
             );
             return '/server-selection';
           }
@@ -1854,10 +1921,26 @@ class _MyAppState extends State<MyApp> {
           return '/login';
         }
 
-        // Native: If not logged in and not on auth flow, redirect to server-selection
-        if (!kIsWeb && !loggedIn && location != '/server-selection') {
+        // Native: If not logged in and not on auth flow, redirect to appropriate screen
+        if (!kIsWeb &&
+            !loggedIn &&
+            location != '/server-selection' &&
+            location != '/mobile-server-selection' &&
+            location != '/mobile-webauthn' &&
+            location != '/register' &&
+            location != '/login' &&
+            !location.startsWith('/register/') &&
+            !location.startsWith('/otp')) {
+          // Mobile: Redirect to mobile server selection
+          if (Platform.isAndroid || Platform.isIOS) {
+            debugPrint(
+              '[ROUTER] ⚠️ Mobile: Not logged in, redirecting to mobile server selection',
+            );
+            return '/mobile-server-selection';
+          }
+          // Desktop: Redirect to server selection
           debugPrint(
-            '[ROUTER] ⚠️ Native: Not logged in, redirecting to server-selection for re-authentication',
+            '[ROUTER] ⚠️ Desktop: Not logged in, redirecting to server-selection for re-authentication',
           );
           return '/server-selection';
         }
@@ -1870,5 +1953,32 @@ class _MyAppState extends State<MyApp> {
     debugPrint('[MAIN] ✅ GoRouter created');
 
     return router;
+  }
+}
+
+/// Detects if the app was started via autostart (Windows startup)
+///
+/// Returns true if:
+/// - A valid session exists (user was previously logged in)
+/// - No explicit login action was taken (not launched via magic link or deep link)
+///
+/// This helps identify scenarios where the window appears before
+/// initialization completes, which is common with autostart.
+Future<bool> _detectAutostart() async {
+  try {
+    // Check if a session exists (indicates autostart scenario)
+    final clientId = await ClientIdService.getClientId();
+    final sessionAuth = SessionAuthService();
+    final hasSession = await sessionAuth.hasSession(clientId);
+
+    if (hasSession) {
+      debugPrint('[INIT] Session found - likely autostart scenario');
+      return true;
+    }
+
+    return false;
+  } catch (e) {
+    debugPrint('[INIT] Error detecting autostart: $e');
+    return false; // Assume not autostart on error
   }
 }

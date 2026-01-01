@@ -1423,9 +1423,10 @@ class SignalService {
             'permissionchange',
           };
 
-          if (type == 'message' || type == 'file') {
+          // Only emit newMessage event for messages from OTHER users
+          if ((type == 'message' || type == 'file') && !isOwnMsg) {
             debugPrint(
-              '[SIGNAL SERVICE] → EVENT_BUS: newMessage (group) - type=$type, channel=$channel',
+              '[SIGNAL SERVICE] → EVENT_BUS: newMessage (group) - type=$type, channel=$channel, isOwnMsg=$isOwnMsg',
             );
             EventBus.instance.emit(AppEvent.newMessage, data);
           } else if (activityTypes.contains(type) && !isOwnMsg) {

@@ -8,12 +8,14 @@ import '../widgets/adaptive/adaptive_scaffold.dart';
 import '../widgets/navigation_badge.dart';
 import '../widgets/sync_progress_banner.dart';
 import '../widgets/server_panel.dart';
+import '../widgets/initialization_overlay.dart';
 import '../services/logout_service.dart';
 import '../services/auth_service_web.dart'
     if (dart.library.io) '../services/auth_service_native.dart';
 import '../services/server_config_web.dart'
     if (dart.library.io) '../services/server_config_native.dart';
 import '../services/server_connection_service.dart';
+import '../services/post_login_init_service.dart';
 import '../config/layout_config.dart';
 import '../widgets/license_footer.dart';
 import 'package:go_router/go_router.dart';
@@ -121,6 +123,23 @@ class _AppLayoutState extends State<AppLayout> {
   }
 
   void _onNavigationSelected(int index) {
+    // Check if initialization is complete before allowing navigation
+    // This prevents "unable to open database" errors during autostart
+    if (!PostLoginInitService.instance.isInitialized) {
+      debugPrint(
+        '[APP_LAYOUT] ⏸ Navigation blocked - initialization in progress',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please wait, initializing...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() {
       _selectedIndex = index;
     });
@@ -510,6 +529,10 @@ class _AppLayoutState extends State<AppLayout> {
 
   @override
   Widget build(BuildContext context) {
+    return InitializationOverlay(child: _buildContent(context));
+  }
+
+  Widget _buildContent(BuildContext context) {
     // If server is unavailable (native only), show error screen
     if (_showServerError && !kIsWeb) {
       final colorScheme = Theme.of(context).colorScheme;

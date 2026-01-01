@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'signal_service.dart';
@@ -6,7 +7,8 @@ import 'ice_config_service.dart';
 import 'user_profile_service.dart';
 import 'message_cleanup_service.dart';
 import 'message_listener_service.dart';
-import 'notification_service.dart';
+import 'notification_service.dart' as desktop;
+import 'notification_service_android.dart';
 import 'notification_listener_service.dart';
 import 'sound_service.dart';
 import 'recent_conversations_service.dart';
@@ -49,6 +51,9 @@ class PostLoginInitService {
 
   bool _isInitialized = false;
   bool _isInitializing = false;
+  String? _lastError;
+  DateTime? _initStartTime;
+  DateTime? _initCompleteTime;
 
   // P2P services (initialized during post-login)
   FileStorageInterface? _fileStorage;
@@ -68,6 +73,11 @@ class PostLoginInitService {
 
   bool get isInitialized => _isInitialized;
   bool get isInitializing => _isInitializing;
+  String? get lastError => _lastError;
+  Duration? get initDuration =>
+      _initStartTime != null && _initCompleteTime != null
+      ? _initCompleteTime!.difference(_initStartTime!)
+      : null;
 
   /// Initialize all post-login services in the correct order
   ///
@@ -93,8 +103,11 @@ class PostLoginInitService {
     }
 
     _isInitializing = true;
+    _lastError = null;
+    _initStartTime = DateTime.now();
     debugPrint('[POST_LOGIN_INIT] ========================================');
     debugPrint('[POST_LOGIN_INIT] Starting post-login initialization...');
+    debugPrint('[POST_LOGIN_INIT] Start time: $_initStartTime');
     debugPrint('[POST_LOGIN_INIT] ========================================');
 
     try {
@@ -133,14 +146,25 @@ class PostLoginInitService {
       // PHASE 2: Core Services (SEQUENTIAL)
       // ========================================
 
-      // Step 3: Initialize Database
+      // Step 3: Initialize Database with retry logic
       currentStep++;
       onProgress?.call('Initializing database...', currentStep, totalSteps);
       debugPrint(
         '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing database...',
       );
-      await DatabaseHelper.database;
-      debugPrint('[POST_LOGIN_INIT] ✓ Database initialized');
+      try {
+        await DatabaseHelper.waitUntilReady(
+          maxAttempts: 3,
+          retryDelay: Duration(seconds: 2),
+        );
+        debugPrint('[POST_LOGIN_INIT] ✓ Database initialized and ready');
+      } catch (e) {
+        debugPrint(
+          '[POST_LOGIN_INIT] ✗ Database initialization failed after retries: $e',
+        );
+        _lastError = 'Database initialization failed: $e';
+        throw Exception('Failed to initialize database: $e');
+      }
 
       // Step 3.5: Initialize Starred Channels Service (uses database)
       onProgress?.call('Loading preferences...', currentStep, totalSteps);
@@ -267,11 +291,20 @@ class PostLoginInitService {
 
       // Initialize notification services
       await SoundService.instance.initialize();
-      await NotificationService.instance.initialize();
-      // Request permission on web
-      if (kIsWeb) {
-        await NotificationService.instance.requestPermission();
+
+      // Use platform-specific notification service
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        await NotificationServiceAndroid.instance.initialize();
+        // Request permission on Android 13+
+        await NotificationServiceAndroid.instance.requestPermission();
+      } else {
+        await desktop.NotificationService.instance.initialize();
+        // Request permission on web
+        if (kIsWeb) {
+          await desktop.NotificationService.instance.requestPermission();
+        }
       }
+
       await NotificationListenerService.instance.initialize();
       debugPrint('[POST_LOGIN_INIT] ✓ Notification services ready');
 
@@ -503,10 +536,18 @@ class PostLoginInitService {
       }
 
       _isInitialized = true;
+      _initCompleteTime = DateTime.now();
+      final duration = _initCompleteTime!.difference(_initStartTime!);
       debugPrint('[POST_LOGIN_INIT] ========================================');
       debugPrint('[POST_LOGIN_INIT] ✅ All services initialized successfully!');
+      debugPrint('[POST_LOGIN_INIT] Completion time: $_initCompleteTime');
+      debugPrint(
+        '[POST_LOGIN_INIT] Total duration: ${duration.inMilliseconds}ms',
+      );
       debugPrint('[POST_LOGIN_INIT] ========================================');
     } catch (e, stackTrace) {
+      _lastError = e.toString();
+      _initCompleteTime = DateTime.now();
       debugPrint('[POST_LOGIN_INIT] ========================================');
       debugPrint('[POST_LOGIN_INIT] ❌ Initialization failed: $e');
       debugPrint('[POST_LOGIN_INIT] $stackTrace');

@@ -332,6 +332,22 @@ class _VideoConferencePreJoinViewState
       debugPrint('[PreJoin] 🔑 LOADING SENDER KEYS FOR CHANNEL');
       debugPrint('[PreJoin] Channel: ${widget.channelId}');
 
+      // First, check if this is a WebRTC channel
+      // Only WebRTC channels have LiveKit participants
+      final channelInfoResp = await ApiService.dio.get(
+        '/client/channels/${widget.channelId}',
+      );
+
+      final channelType = channelInfoResp.data?['type'] ?? 'webrtc';
+      debugPrint('[PreJoin] Channel type: $channelType');
+
+      if (channelType != 'webrtc') {
+        debugPrint(
+          '[PreJoin] ⚠️ Channel is not WebRTC type, skipping participants fetch',
+        );
+        return;
+      }
+
       // Get all participants' user IDs and device IDs
       final response = await ApiService.dio.get(
         '/client/channels/${widget.channelId}/participants',
