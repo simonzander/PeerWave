@@ -950,14 +950,23 @@ authRoutes.post('/webauthn/register', async (req, res) => {
 
             const host = req.hostname;
             
+            // Decode clientDataJSON to check the actual origin
+            const clientData = JSON.parse(Buffer.from(attestation.response.clientDataJSON, 'base64').toString('utf8'));
+            const actualOrigin = clientData.origin;
+            
             // All clients (web and mobile) use standard WebAuthn validation
             const allowedOrigins = [
                 "http://localhost:3000",
                 "http://localhost:55831",
                 `https://${host}`
             ];
-            const origin = req.headers.origin || `https://${host}`;
-            if (!allowedOrigins.includes(origin)) {
+            
+            // Android passkeys send "android:apk-key-hash:..." origin
+            // This is valid and matches our Digital Asset Links configuration
+            const isAndroidOrigin = actualOrigin && actualOrigin.startsWith('android:apk-key-hash:');
+            const origin = isAndroidOrigin ? actualOrigin : (req.headers.origin || `https://${host}`);
+            
+            if (!isAndroidOrigin && !allowedOrigins.includes(origin)) {
                 console.warn("Unexpected origin for WebAuthn:", origin);
             }
 
@@ -1175,14 +1184,22 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
 
         const host = req.hostname;
         
+        // Decode clientDataJSON to check the actual origin
+        const clientData = JSON.parse(Buffer.from(assertion.response.clientDataJSON, 'base64').toString('utf8'));
+        const actualOrigin = clientData.origin;
+        
         // All clients (web and mobile) use standard WebAuthn validation
         const allowedOrigins = [
             "http://localhost:3000",
             "http://localhost:55831",
             `https://${host}`
         ];
-        const origin = req.headers.origin || `https://${host}`;
-        if (!allowedOrigins.includes(origin)) {
+        
+        // Android passkeys send "android:apk-key-hash:..." origin
+        const isAndroidOrigin = actualOrigin && actualOrigin.startsWith('android:apk-key-hash:');
+        const origin = isAndroidOrigin ? actualOrigin : (req.headers.origin || `https://${host}`);
+        
+        if (!isAndroidOrigin && !allowedOrigins.includes(origin)) {
             console.warn("Unexpected origin for WebAuthn:", origin);
         }
 
