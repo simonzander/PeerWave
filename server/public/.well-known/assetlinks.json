@@ -1,0 +1,11 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls",
+               "delegate_permission/common.get_login_creds"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "org.peerwave.client",
+    "sha256_cert_fingerprints": [
+      "32:1E:57:C1:DB:39:56:C6:00:EA:36:FF:A5:A5:C9:72:E9:8E:6C:0B:E6:01:14:6F:A9:42:25:77:5B:20:03:26"
+    ]
+  }
+}]

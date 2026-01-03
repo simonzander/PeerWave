@@ -4364,6 +4364,9 @@ app.get('/server_config.json', (req, res) => {
   res.json({ apiServer });
 });
 
+// Serve .well-known directory for Digital Asset Links (Android passkeys)
+app.use('/.well-known', express.static(path.resolve(__dirname, 'public/.well-known')));
+
 // Serve static files from Flutter web build output
 app.use(express.static(path.resolve(__dirname, 'web')));
 
