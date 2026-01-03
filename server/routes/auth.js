@@ -1005,6 +1005,7 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             user.credentials.push({
                 id: base64UrlEncode(regResult.authnrData.get("credId")),
                 publicKey: regResult.authnrData.get("credentialPublicKeyPem"),
+                transports: attestation.response.transports || ["internal", "hybrid"], // Store actual transports
                 browser: userAgent,
                 created: timestamp,
                 location: (location ? `${location.city}, ${location.region}, ${location.country} (${location.org})` : "Location not found"),
@@ -1076,6 +1077,7 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
         challenge.allowCredentials = user.credentials.map(cred => ({
             id: cred.id,
             type: "public-key",
+            transports: cred.transports || ["internal", "hybrid"], // Use stored transports or fallback
         }));
 
         challenge.challenge = base64UrlEncode(challenge.challenge);

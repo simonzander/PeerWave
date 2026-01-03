@@ -305,7 +305,7 @@ class MobileWebAuthnService {
 
       // 3. Request authentication challenge from server
       final challengeResponse = await ApiService.dio.post(
-        '$serverUrl/webauthn/auth-challenge',
+        '$serverUrl/webauthn/authenticate-challenge',
         data: {'email': userEmail},
       );
 
@@ -318,9 +318,41 @@ class MobileWebAuthnService {
 
       final challengeData = challengeResponse.data as Map<String, dynamic>;
       debugPrint('[MobileWebAuthn] Received challenge from server');
+      debugPrint('[MobileWebAuthn] Challenge keys: ${challengeData.keys}');
+      debugPrint(
+        '[MobileWebAuthn] allowCredentials: ${challengeData['allowCredentials']}',
+      );
+      debugPrint('[MobileWebAuthn] extensions: ${challengeData['extensions']}');
+
+      // Fix null values that might cause parsing issues
+      // Ensure allowCredentials is a list (not null)
+      if (challengeData['allowCredentials'] == null) {
+        debugPrint('[MobileWebAuthn] Fixing null allowCredentials');
+        challengeData['allowCredentials'] = [];
+      }
+
+      // Ensure extensions is a map (not null)
+      if (challengeData['extensions'] == null) {
+        debugPrint('[MobileWebAuthn] Fixing null extensions');
+        challengeData['extensions'] = {};
+      }
+
+      debugPrint('[MobileWebAuthn] Fixed challenge data: $challengeData');
 
       // 4. Create AuthenticateRequestType from server challenge
-      final authRequest = AuthenticateRequestType.fromJson(challengeData);
+      late final AuthenticateRequestType authRequest;
+      try {
+        authRequest = AuthenticateRequestType.fromJson(challengeData);
+        debugPrint(
+          '[MobileWebAuthn] AuthenticateRequestType created successfully',
+        );
+      } catch (e, stackTrace) {
+        debugPrint(
+          '[MobileWebAuthn] Error creating AuthenticateRequestType: $e',
+        );
+        debugPrint('[MobileWebAuthn] Stack trace: $stackTrace');
+        rethrow;
+      }
 
       // 5. Use passkeys package to sign challenge (with hardware key)
       final authResponse = await _passkeysAuth.authenticate(authRequest);
