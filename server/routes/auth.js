@@ -906,11 +906,12 @@ authRoutes.post('/webauthn/register-challenge', async (req, res) => {
         displayName: user.email,
     };
 
-    // Challenge auf beides vorbereiten
+    // Allow both platform (phone fingerprint) and cross-platform (Google Password Manager, YubiKey)
     challenge.authenticatorSelection = {
-        authenticatorAttachment: "platform",
-        userVerification: "required"  // damit PIN/Windows Hello angezeigt wird
-        // authenticatorAttachment NICHT setzen → erlaubt Plattform + Roaming
+        // authenticatorAttachment: removed to allow all authenticator types
+        userVerification: "preferred",  // Prefer biometric/PIN but allow fallback
+        residentKey: "preferred",  // Prefer discoverable credentials (passwordless)
+        requireResidentKey: false  // But don't force it
     };
 
     // Optional: andere Policies
