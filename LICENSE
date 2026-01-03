@@ -1,17 +1,29 @@
-PolyForm Shield License 1.0.0
-
-This license prohibits using the software to provide a publicly available
-hosted or cloud service.
-
-You are free to read, modify, and privately use this software for personal,
-non-commercial purposes.
-
-Commercial use, including use within a company, distribution to others,
-or offering this software as part of a product, service, or SaaS platform,
-requires a commercial license from the copyright holder.
-
-For commercial licensing, contact: license@peerwave.org
+GNU AFFERO GENERAL PUBLIC LICENSE
+Version 3, 19 November 2007
 
 Copyright (c) 2025 Simon Zander
 
-For the complete license text, see: https://polyformproject.org/licenses/shield/1.0.0/
+PeerWave is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+PeerWave is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with PeerWave. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+Commercial Support and Hosting Services Available
+
+For priority support, managed hosting, and enterprise services,
+visit: https://peerwave.org or contact: license@peerwave.org
+
+---
+
+For the complete AGPL-3.0 license text, see:
+https://www.gnu.org/licenses/agpl-3.0.html

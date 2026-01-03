@@ -1,39 +1,74 @@
-# PeerWave Commercial License Agreement
+# PeerWave Support and Services Agreement
 
-This Commercial License Agreement ("Agreement") is made between:
+PeerWave is free and open source software licensed under AGPL-3.0.
 
-Licensor: PeerWave Labs (Simon Zander)
+This Support Agreement ("Agreement") is made between:
+
+Provider: PeerWave Labs (Simon Zander)
 Software: PeerWave
 Contact: license@peerwave.org
+Website: https://peerwave.org
 
-By purchasing a commercial license, the Licensee agrees to the following terms:
+## Overview
 
-1. Grant of License  
-   Licensor grants Licensee a non-exclusive, non-transferable license to use
-   the Software for internal business purposes within one legal entity.
+PeerWave is available in two editions:
 
-2. Firm-Based Licensing  
-   The license applies to a single legal organization.  
-   Subsidiaries, sister companies, parent companies, clients, or contractors
-   require separate licenses.
+### Open Source Edition (Free)
+- Licensed under AGPL-3.0
+- Self-hosted deployment
+- Community support only
+- Access to source code
+- Self-service updates
 
-3. Restrictions  
-   The Licensee MAY NOT:
-   - Offer the Software as a hosted service or SaaS.
-   - Redistribute, resell, sublicense, or make the Software available to third parties.
-   - Use the Software to build or operate a competing product or service.
+### Supported Edition (Subscription)
+- All Open Source Edition features
+- Priority technical support
+- Managed updates and security patches
+- Compiled application binaries
+- Email support with SLA
+- Optional: Managed hosting services
 
-4. Modifications  
-   The Licensee may modify the Software for internal use only.
-   Modified versions may not be distributed.
+## Support Agreement Terms
 
-5. Term and Renewal  
-   The license is valid for one year and renews with annual payment.
+By purchasing a support subscription, the Customer agrees to:
 
-6. Termination  
-   Upon breach of this Agreement, all rights to use the Software terminate immediately.
+1. **Grant of Support Services**  
+   Provider grants Customer access to priority support, managed updates,
+   and compiled binaries for the duration of the active subscription.
 
-7. Governing Law  
+2. **Organization-Based Licensing**  
+   Support subscriptions are per legal entity. Subsidiaries, affiliates,
+   or separate legal entities require separate subscriptions.
+
+3. **Software Rights**  
+   The Software remains AGPL-3.0 licensed. Customers retain all rights
+   granted by AGPL-3.0, including source code access, modification,
+   and redistribution rights.
+
+4. **Support Services Include**  
+   - Priority email support
+   - Security and stability updates
+   - Bug fix assistance
+   - Compiled application binaries
+   - Update notifications
+
+5. **Optional Managed Hosting**  
+   Managed hosting services available as an add-on.
+   Includes deployment, monitoring, backups, and infrastructure management.
+
+6. **Term and Renewal**  
+   Support subscriptions are annual and renew automatically unless cancelled.
+   Pricing available at https://peerwave.org
+
+7. **Termination**  
+   Customer may cancel anytime. Upon cancellation, support services end
+   but AGPL-3.0 software rights remain unchanged.
+
+8. **Governing Law**  
    This Agreement is governed by the laws of Germany.
+
+---
+
+For pricing and subscription details, visit: https://peerwave.org
 
 © 2025 PeerWave Labs - Simon Zander. All rights reserved.

@@ -21,9 +21,9 @@
   </a>
 </p>
 
-![License: Source-Available](https://img.shields.io/badge/license-Source--Available-blue.svg)
-![Commercial Use Requires License](https://img.shields.io/badge/commercial%20use-requires%20license-red.svg)
-![Not for SaaS Hosting](https://img.shields.io/badge/Hosting%2FSaaS-Requires%20Commercial%20License-orange)
+![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
+![Open Source](https://img.shields.io/badge/Open%20Source-Free%20Forever-green.svg)
+![Support Available](https://img.shields.io/badge/Professional%20Support-Available-orange)
 
 ## How it works
 
@@ -55,7 +55,7 @@ At no point does the server have access to plaintext messages, files, media stre
 - [Limitations](#limitations)
 - [Support](#support)
 - [License](#license)
-  - [Commercial Licensing](#commercial-licensing)
+  - [Professional Support](#professional-support)
 
 ## Quick Start
 
@@ -486,20 +486,36 @@ curl -I http://localhost:3000
 
 ## License
 
-PeerWave is **Source-Available**.
+PeerWave is **free and open source software** licensed under **AGPL-3.0**.
 
-- Private, educational and personal use: **free**
-- Viewing, studying, and modifying the source: **allowed**
-- Commercial use (including company internal use): **requires a paid license**
-- Hosting or offering PeerWave as a public service (SaaS / cloud / multi-tenant): **not permitted without a commercial license**
+### Open Source Edition (Free)
+- ✅ Use for any purpose (personal, commercial, internal)
+- ✅ View, study, and modify source code
+- ✅ Deploy and host yourself
+- ✅ Community support
+- ✅ Self-service updates
 
-### Commercial Licensing
+### Professional Support (Optional)
+- Priority technical support
+- Managed updates and security patches
+- Compiled application binaries
+- Email support with SLA
+- Optional managed hosting services
 
-Buy your license at https://peerwave.org
+### Professional Support
 
-**Contact for commercial use:**  
+For pricing and subscription details, visit: **https://peerwave.org**
+
+**Contact for support inquiries:**  
 📧 license@peerwave.org 
 
-⚠️ Note: Versions up to v0.x were licensed under MIT.
+⚠️ Note: Versions up to v0.x were licensed under MIT. Current version uses AGPL-3.0.
 
-**This project is licensed under the PolyForm Shield License 1.0.0**
+**This project is licensed under the GNU Affero General Public License v3.0**  
+See [LICENSE](LICENSE) for full details.
+
+---
+
+## Trademark Notice
+
+"PeerWave" is a trademark of PeerWave Labs (Simon Zander). Use of the AGPL-3.0 licensed code does not grant trademark rights. Modified versions must be rebranded.
