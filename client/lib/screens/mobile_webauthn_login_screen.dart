@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:local_auth/local_auth.dart';
 import '../services/api_service.dart';
 import '../services/webauthn_service_mobile.dart';
 import '../services/clientid_native.dart';
@@ -30,9 +29,7 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
   String? _serverUrl;
   bool _isLoading = false;
   bool _isBiometricAvailable = false;
-  List<BiometricType> _availableBiometrics = [];
   String? _errorMessage;
-  bool _loadingSettings = false;
   String _registrationMode = 'open';
 
   @override
@@ -56,17 +53,12 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
   Future<void> _checkBiometricAvailability() async {
     final available = await MobileWebAuthnService.instance
         .isBiometricAvailable();
-    final biometrics = await MobileWebAuthnService.instance
-        .getAvailableBiometrics();
 
     setState(() {
       _isBiometricAvailable = available;
-      _availableBiometrics = biometrics;
     });
 
-    debugPrint(
-      '[MobileWebAuthnLogin] Biometric available: $available, types: $biometrics',
-    );
+    debugPrint('[MobileWebAuthnLogin] Biometric available: $available');
   }
 
   Future<void> _loadSavedServer() async {
@@ -87,10 +79,6 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
       return;
     }
 
-    setState(() {
-      _loadingSettings = true;
-    });
-
     try {
       final response = await ApiService.dio.get('$_serverUrl/client/meta');
 
@@ -98,21 +86,13 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
         final data = response.data;
         setState(() {
           _registrationMode = data['registrationMode'] ?? 'open';
-          _loadingSettings = false;
         });
         debugPrint(
           '[MobileWebAuthnLogin] Registration mode: $_registrationMode',
         );
-      } else {
-        setState(() {
-          _loadingSettings = false;
-        });
       }
     } catch (e) {
       debugPrint('[MobileWebAuthnLogin] Failed to load server settings: $e');
-      setState(() {
-        _loadingSettings = false;
-      });
     }
   }
 
@@ -272,26 +252,13 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
     }
   }
 
-  String _getBiometricIcon() {
-    if (_availableBiometrics.contains(BiometricType.face)) {
-      return '👤'; // Face ID
-    } else if (_availableBiometrics.contains(BiometricType.fingerprint)) {
-      return '👆'; // Fingerprint
-    } else if (_availableBiometrics.contains(BiometricType.iris)) {
-      return '👁️'; // Iris
-    }
-    return '🔒'; // Generic
-  }
-
   String _getBiometricName() {
-    if (_availableBiometrics.contains(BiometricType.face)) {
-      return Platform.isIOS ? 'Face ID' : 'Face Recognition';
-    } else if (_availableBiometrics.contains(BiometricType.fingerprint)) {
-      return Platform.isIOS ? 'Touch ID' : 'Fingerprint';
-    } else if (_availableBiometrics.contains(BiometricType.iris)) {
-      return 'Iris Scan';
+    // Passkeys uses platform-specific biometrics
+    if (Platform.isIOS) {
+      return 'Face ID or Touch ID';
+    } else {
+      return 'Biometric';
     }
-    return 'Biometric';
   }
 
   @override
@@ -456,9 +423,12 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
                     ),
                     child: Row(
                       children: [
-                        Text(
-                          _getBiometricIcon(),
-                          style: const TextStyle(fontSize: 24),
+                        Icon(
+                          Platform.isIOS ? Icons.face : Icons.fingerprint,
+                          size: 24,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
                         ),
                         const SizedBox(width: 12),
                         Expanded(

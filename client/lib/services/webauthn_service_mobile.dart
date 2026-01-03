@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:passkeys/authenticator.dart';
 import 'package:passkeys/types.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:dio/dio.dart';
 import 'api_service.dart';
 
 /// Mobile WebAuthn service for iOS and Android
@@ -22,11 +23,61 @@ class MobileWebAuthnService {
   /// Check if passkey/biometric authentication is available on this device
   Future<bool> isBiometricAvailable() async {
     try {
-      final availability = await _passkeysAuth.getAvailability();
-      return availability.isSupported;
+      final availability = _passkeysAuth.getAvailability();
+      // Check platform-specific availability
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        final androidAvailability = await availability.android();
+        return androidAvailability.hasPasskeySupport;
+      } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+        final iosAvailability = await availability.iOS();
+        return iosAvailability.hasPasskeySupport;
+      }
+      return false;
     } catch (e) {
       debugPrint('[MobileWebAuthn] Error checking passkey availability: $e');
       return false;
+    }
+  }
+
+  /// Fetch current user's email from server session
+  ///
+  /// [serverUrl] - The PeerWave server URL
+  /// Returns email address from active session, null if not authenticated
+  Future<String?> getCurrentUserEmail(String serverUrl) async {
+    try {
+      debugPrint('[MobileWebAuthn] Fetching user email from session');
+      final response = await ApiService.dio.get('$serverUrl/api/user/me');
+
+      debugPrint('[MobileWebAuthn] Response status: ${response.statusCode}');
+      debugPrint(
+        '[MobileWebAuthn] Response data type: ${response.data.runtimeType}',
+      );
+      debugPrint('[MobileWebAuthn] Response data: ${response.data}');
+
+      if (response.statusCode == 200) {
+        // Handle different response formats
+        if (response.data is Map<String, dynamic>) {
+          final data = response.data as Map<String, dynamic>;
+          final email = data['email'] as String?;
+          debugPrint('[MobileWebAuthn] Current user email: $email');
+          return email;
+        } else if (response.data is String) {
+          // Server might return email directly as string
+          final email = response.data as String;
+          debugPrint('[MobileWebAuthn] Current user email (string): $email');
+          return email;
+        } else {
+          debugPrint(
+            '[MobileWebAuthn] Unexpected response format: ${response.data.runtimeType}',
+          );
+          return null;
+        }
+      }
+      return null;
+    } catch (e, stackTrace) {
+      debugPrint('[MobileWebAuthn] Error fetching user email: $e');
+      debugPrint('[MobileWebAuthn] Stack trace: $stackTrace');
+      return null;
     }
   }
 
@@ -91,14 +142,23 @@ class MobileWebAuthnService {
   /// Register a new WebAuthn credential with passkey (hardware-backed key)
   ///
   /// [serverUrl] - The PeerWave server URL
-  /// [email] - User's email address
+  /// [email] - User's email address (optional - will fetch from server session if empty)
   /// Returns credential ID on success, null on failure
-  Future<String?> register({
-    required String serverUrl,
-    required String email,
-  }) async {
+  Future<String?> register({required String serverUrl, String? email}) async {
     try {
-      debugPrint('[MobileWebAuthn] Starting passkey registration for $email');
+      // Fetch email from server session if not provided
+      String? userEmail = email;
+      if (userEmail == null || userEmail.isEmpty) {
+        userEmail = await getCurrentUserEmail(serverUrl);
+        if (userEmail == null || userEmail.isEmpty) {
+          debugPrint('[MobileWebAuthn] Failed to get user email from session');
+          return null;
+        }
+      }
+
+      debugPrint(
+        '[MobileWebAuthn] Starting passkey registration for $userEmail',
+      );
 
       // 1. Check passkey availability
       if (!await isBiometricAvailable()) {
@@ -107,6 +167,9 @@ class MobileWebAuthnService {
       }
 
       // 2. Request registration challenge from server
+      debugPrint(
+        '[MobileWebAuthn] Requesting challenge from: $serverUrl/webauthn/register-challenge',
+      );
       final challengeResponse = await ApiService.dio.post(
         '$serverUrl/webauthn/register-challenge',
         data: {}, // Email comes from session
@@ -116,22 +179,54 @@ class MobileWebAuthnService {
         debugPrint(
           '[MobileWebAuthn] Failed to get challenge: ${challengeResponse.statusCode}',
         );
+        debugPrint('[MobileWebAuthn] Response data: ${challengeResponse.data}');
         return null;
       }
 
       final challengeData = challengeResponse.data as Map<String, dynamic>;
       debugPrint('[MobileWebAuthn] Received challenge from server');
+      debugPrint('[MobileWebAuthn] Challenge data keys: ${challengeData.keys}');
 
-      // 3. Create RegisterRequest from server challenge
-      final registerRequest = RegisterRequest.fromJson(challengeData);
+      // Fix null values in authenticatorSelection (server may not send all fields)
+      if (challengeData['authenticatorSelection'] != null) {
+        final authSelection =
+            challengeData['authenticatorSelection'] as Map<String, dynamic>;
+        // Set defaults for null boolean fields required by passkeys package
+        authSelection['requireResidentKey'] ??= false;
+        authSelection['residentKey'] ??= 'preferred';
+        authSelection['userVerification'] ??= 'preferred';
+      } else {
+        // No authenticatorSelection provided - use defaults
+        challengeData['authenticatorSelection'] = {
+          'requireResidentKey': false,
+          'residentKey': 'preferred',
+          'userVerification': 'preferred',
+        };
+      }
+
+      debugPrint(
+        '[MobileWebAuthn] Fixed challenge data: ${challengeData['authenticatorSelection']}',
+      );
+
+      // 3. Create RegisterRequestType from server challenge
+      debugPrint(
+        '[MobileWebAuthn] Creating RegisterRequestType from challenge',
+      );
+      final registerRequest = RegisterRequestType.fromJson(challengeData);
 
       // 4. Use passkeys package to create credential (generates key in hardware)
+      debugPrint(
+        '[MobileWebAuthn] Calling passkeys.register() - biometric prompt should appear',
+      );
       final registerResponse = await _passkeysAuth.register(registerRequest);
 
-      debugPrint('[MobileWebAuthn] Passkey created successfully');
+      debugPrint(
+        '[MobileWebAuthn] Passkey created successfully, credential ID: ${registerResponse.id}',
+      );
 
       // 5. Send attestation to server
       final registerResponseJson = registerResponse.toJson();
+      debugPrint('[MobileWebAuthn] Sending attestation to server');
       final serverResponse = await ApiService.dio.post(
         '$serverUrl/webauthn/register',
         data: {'attestation': registerResponseJson},
@@ -141,6 +236,7 @@ class MobileWebAuthnService {
         debugPrint(
           '[MobileWebAuthn] Registration failed: ${serverResponse.statusCode}',
         );
+        debugPrint('[MobileWebAuthn] Response data: ${serverResponse.data}');
         return null;
       }
 
@@ -148,14 +244,21 @@ class MobileWebAuthnService {
       final credentialId = registerResponse.id;
       await _storeCredential(
         serverUrl: serverUrl,
-        email: email,
+        email: userEmail,
         credentialId: credentialId,
       );
 
       debugPrint('[MobileWebAuthn] ✓ Registration successful');
       return credentialId;
-    } catch (e) {
+    } on DioException catch (e) {
+      debugPrint('[MobileWebAuthn] API error during registration:');
+      debugPrint('  Status: ${e.response?.statusCode}');
+      debugPrint('  Data: ${e.response?.data}');
+      debugPrint('  Message: ${e.message}');
+      return null;
+    } catch (e, stackTrace) {
       debugPrint('[MobileWebAuthn] Registration error: $e');
+      debugPrint('  Stack trace: $stackTrace');
       return null;
     }
   }
@@ -163,14 +266,27 @@ class MobileWebAuthnService {
   /// Authenticate with existing WebAuthn credential using passkey
   ///
   /// [serverUrl] - The PeerWave server URL
-  /// [email] - User's email address
+  /// [email] - User's email address (optional - will fetch from stored credentials)
   /// Returns authentication response data on success, null on failure
   Future<Map<String, dynamic>?> authenticate({
     required String serverUrl,
-    required String email,
+    String? email,
   }) async {
     try {
-      debugPrint('[MobileWebAuthn] Starting authentication for $email');
+      // If email not provided, try to find stored credential for this server
+      String? userEmail = email;
+      if (userEmail == null || userEmail.isEmpty) {
+        // Try to fetch from server session
+        userEmail = await getCurrentUserEmail(serverUrl);
+        if (userEmail == null || userEmail.isEmpty) {
+          debugPrint(
+            '[MobileWebAuthn] No email provided and session not found',
+          );
+          return null;
+        }
+      }
+
+      debugPrint('[MobileWebAuthn] Starting authentication for $userEmail');
 
       // 1. Check passkey availability
       if (!await isBiometricAvailable()) {
@@ -179,10 +295,10 @@ class MobileWebAuthnService {
       }
 
       // 2. Check if credential exists for this server/email
-      final storedCredential = await _getStoredCredential(serverUrl, email);
+      final storedCredential = await _getStoredCredential(serverUrl, userEmail);
       if (storedCredential == null) {
         debugPrint(
-          '[MobileWebAuthn] No credential found for $email @ $serverUrl',
+          '[MobileWebAuthn] No credential found for $userEmail @ $serverUrl',
         );
         return null;
       }
@@ -190,7 +306,7 @@ class MobileWebAuthnService {
       // 3. Request authentication challenge from server
       final challengeResponse = await ApiService.dio.post(
         '$serverUrl/webauthn/auth-challenge',
-        data: {'email': email},
+        data: {'email': userEmail},
       );
 
       if (challengeResponse.statusCode != 200) {
@@ -203,8 +319,8 @@ class MobileWebAuthnService {
       final challengeData = challengeResponse.data as Map<String, dynamic>;
       debugPrint('[MobileWebAuthn] Received challenge from server');
 
-      // 4. Create AuthenticateRequest from server challenge
-      final authRequest = AuthenticateRequest.fromJson(challengeData);
+      // 4. Create AuthenticateRequestType from server challenge
+      final authRequest = AuthenticateRequestType.fromJson(challengeData);
 
       // 5. Use passkeys package to sign challenge (with hardware key)
       final authResponse = await _passkeysAuth.authenticate(authRequest);

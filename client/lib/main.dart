@@ -560,7 +560,8 @@ class _MyAppState extends State<MyApp> {
         builder: (context, state) {
           final extra = state.extra as Map<String, dynamic>?;
           final serverUrl = extra?['serverUrl'] as String?;
-          return BackupCodeListPage(serverUrl: serverUrl);
+          final email = extra?['email'] as String?;
+          return BackupCodeListPage(serverUrl: serverUrl, email: email);
         },
       ),
       GoRoute(
@@ -568,7 +569,8 @@ class _MyAppState extends State<MyApp> {
         builder: (context, state) {
           final extra = state.extra as Map<String, dynamic>?;
           final serverUrl = extra?['serverUrl'] as String?;
-          return RegisterWebauthnPage(serverUrl: serverUrl);
+          final email = extra?['email'] as String?;
+          return RegisterWebauthnPage(serverUrl: serverUrl, email: email);
         },
       ),
       GoRoute(

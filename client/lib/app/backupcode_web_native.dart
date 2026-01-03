@@ -11,10 +11,10 @@ import '../widgets/registration_progress_bar.dart';
 /// Backup codes are available for mobile WebAuthn (iOS/Android)
 /// Desktop native uses magic key authentication (no backup codes)
 class BackupCodeListPage extends StatefulWidget {
-  final String?
-  serverUrl; // Server URL for mobile registration (before server is saved)
+  final String? serverUrl; // Server URL for mobile registration
+  final String? email; // Email from OTP verification
 
-  const BackupCodeListPage({super.key, this.serverUrl});
+  const BackupCodeListPage({super.key, this.serverUrl, this.email});
 
   @override
   State<BackupCodeListPage> createState() => _BackupCodeListPageState();
@@ -192,6 +192,7 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
                                               '/register/webauthn',
                                               extra: {
                                                 'serverUrl': widget.serverUrl,
+                                                'email': widget.email,
                                               },
                                             );
                                           } else {

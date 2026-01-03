@@ -12,8 +12,10 @@ import '../widgets/registration_progress_bar.dart';
 class BackupCodeListPage extends StatefulWidget {
   final String?
   serverUrl; // Not used on web, but kept for API compatibility with native
+  final String?
+  email; // Email from OTP verification (not used on web but kept for compatibility)
 
-  const BackupCodeListPage({super.key, this.serverUrl});
+  const BackupCodeListPage({super.key, this.serverUrl, this.email});
 
   @override
   State<BackupCodeListPage> createState() => _BackupCodeListPageState();

@@ -15,8 +15,9 @@ import '../extensions/snackbar_extensions.dart';
 
 class RegisterWebauthnPage extends StatefulWidget {
   final String? serverUrl;
+  final String? email; // Email from registration flow
 
-  const RegisterWebauthnPage({super.key, this.serverUrl});
+  const RegisterWebauthnPage({super.key, this.serverUrl, this.email});
 
   @override
   State<RegisterWebauthnPage> createState() => _RegisterWebauthnPageState();
@@ -106,19 +107,34 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
       final clientId = await ClientIdService.getClientId();
 
       // Register the WebAuthn credential with biometric
-      // The server will get the email from the session
+      // Pass email from registration flow
+      debugPrint('[WebAuthnRegister] Starting registration process...');
       final credentialId = await MobileWebAuthnService.instance.register(
         serverUrl: _serverUrl!,
-        email: '', // Email comes from session
+        email: widget.email, // Use email from navigation state
       );
 
       if (credentialId == null) {
-        throw Exception('Failed to register biometric credential');
+        debugPrint(
+          '[WebAuthnRegister] Registration returned null - check logs above for details',
+        );
+        throw Exception(
+          'Failed to register biometric credential. '
+          'Check logs for details. Common issues:\n'
+          '1. Server not responding or session expired\n'
+          '2. Biometric prompt was cancelled\n'
+          '3. Challenge generation failed',
+        );
       }
 
-      // Set device identity (email will be retrieved from session/storage)
+      debugPrint(
+        '[WebAuthnRegister] Registration successful, credential ID: $credentialId',
+      );
+
+      // Set device identity
+      // Email will be retrieved from server session by the service
       await DeviceIdentityService.instance.setDeviceIdentity(
-        '', // Email not needed here as it's in secure storage
+        '', // Email retrieved from session internally
         credentialId,
         clientId,
         serverUrl: _serverUrl,

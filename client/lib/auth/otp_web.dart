@@ -112,10 +112,12 @@ class _OtpWebPageState extends State<OtpWebPage> {
         // New user registration - go to backup codes
         if (!mounted) return;
         context.showSuccessSnackBar('OTP Verified!');
-        // Pass serverUrl for mobile to make API calls during registration
+        // Pass serverUrl AND email for mobile to make API calls during registration
         GoRouter.of(context).go(
           '/register/backupcode',
-          extra: kIsWeb ? null : {'serverUrl': widget.serverUrl},
+          extra: kIsWeb
+              ? null
+              : {'serverUrl': widget.serverUrl, 'email': widget.email},
         );
       } else {
         setState(() {

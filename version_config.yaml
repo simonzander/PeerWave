@@ -8,20 +8,20 @@ project:
 
 client:
   # Semantic versioning: MAJOR.MINOR.PATCH
-  version: "1.0.3"
-  build_number: 4
+  version: "1.1.0"
+  build_number: 9
   
   # Server compatibility range
-  min_server_version: "1.0.0"
-  max_server_version: "1.1.0"  # Accepts any 1.x.x server version
+  min_server_version: "1.1.0"
+  max_server_version: "1.2.0"  # Accepts any 1.x.x server version
 
 server:
   # Semantic versioning: MAJOR.MINOR.PATCH
-  version: "1.0.3"
+  version: "1.1.0"
   
   # Client compatibility range
-  min_client_version: "0.9.0"
-  max_client_version: "1.1.0"  # Accepts any 1.x.x client version
+  min_client_version: "1.1.0"
+  max_client_version: "1.2.0"  # Accepts any 1.x.x client version
 
 # Version history and changelog
 changelog:

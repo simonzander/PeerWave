@@ -27,8 +27,10 @@ Future<bool> webauthnRegister(String serverUrl, String email) async {
 
 class RegisterWebauthnPage extends StatefulWidget {
   final String? serverUrl; // For consistency with native, but not used in web
+  final String?
+  email; // Email from registration flow (not used on web but kept for compatibility)
 
-  const RegisterWebauthnPage({super.key, this.serverUrl});
+  const RegisterWebauthnPage({super.key, this.serverUrl, this.email});
 
   @override
   State<RegisterWebauthnPage> createState() => _RegisterWebauthnPageState();
