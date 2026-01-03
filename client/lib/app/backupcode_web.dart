@@ -10,7 +10,10 @@ import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
 
 class BackupCodeListPage extends StatefulWidget {
-  const BackupCodeListPage({super.key});
+  final String?
+  serverUrl; // Not used on web, but kept for API compatibility with native
+
+  const BackupCodeListPage({super.key, this.serverUrl});
 
   @override
   State<BackupCodeListPage> createState() => _BackupCodeListPageState();

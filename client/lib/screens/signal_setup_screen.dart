@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 // ignore_for_file: use_build_context_synchronously
 
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../widgets/license_footer.dart';
@@ -130,7 +131,11 @@ class _SignalSetupScreenState extends State<SignalSetupScreen> {
             debugPrint(
               '[SIGNAL SETUP SCREEN] Authentication required, redirecting to server-selection...',
             );
-            GoRouter.of(context).go('/server-selection');
+            if (Platform.isAndroid || Platform.isIOS) {
+              GoRouter.of(context).go('/mobile-server-selection');
+            } else {
+              GoRouter.of(context).go('/server-selection');
+            }
           }
         }
         return;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'dart:io' show Platform;
 import 'package:universal_html/html.dart' as html show window;
 import 'package:go_router/go_router.dart';
 import 'package:dio/dio.dart';
@@ -436,18 +437,26 @@ class LogoutService {
             '[LOGOUT] Native: Redirecting to server selection for re-authentication',
           );
 
-          // Navigate to server-selection (works for both re-auth and adding new servers)
-          GoRouter.of(context).go('/server-selection');
+          // Navigate to platform-specific server selection
+          if (Platform.isAndroid || Platform.isIOS) {
+            // Mobile: Redirect to mobile server selection with WebAuthn
+            GoRouter.of(context).go('/mobile-server-selection');
+          } else {
+            // Desktop: Redirect to server selection with magic key
+            GoRouter.of(context).go('/server-selection');
+          }
 
           // Show message after navigation
           Future.delayed(const Duration(milliseconds: 300), () {
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
+                SnackBar(
                   content: Text(
-                    'Session expired. Please scan a new magic key to re-authenticate.',
+                    Platform.isAndroid || Platform.isIOS
+                        ? 'Session expired. Please re-authenticate.'
+                        : 'Session expired. Please scan a new magic key to re-authenticate.',
                   ),
-                  duration: Duration(seconds: 5),
+                  duration: const Duration(seconds: 5),
                   backgroundColor: Colors.orange,
                 ),
               );
@@ -506,17 +515,23 @@ class LogoutService {
             '[LOGOUT] Native: Redirecting to server selection for re-authentication',
           );
           ScaffoldMessenger.of(validContext).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text(
-                'Session expired. Please scan a new magic key to re-authenticate.',
+                Platform.isAndroid || Platform.isIOS
+                    ? 'Session expired. Please re-authenticate.'
+                    : 'Session expired. Please scan a new magic key to re-authentication.',
               ),
-              duration: Duration(seconds: 5),
+              duration: const Duration(seconds: 5),
               backgroundColor: Colors.orange,
             ),
           );
           await Future.delayed(const Duration(milliseconds: 100));
           if (!validContext.mounted) return;
-          GoRouter.of(validContext).go('/server-selection');
+          if (Platform.isAndroid || Platform.isIOS) {
+            GoRouter.of(validContext).go('/mobile-server-selection');
+          } else {
+            GoRouter.of(validContext).go('/server-selection');
+          }
         } else {
           // Web: Show login link
           ScaffoldMessenger.of(validContext).showSnackBar(

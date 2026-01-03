@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:local_auth/local_auth.dart';
+import '../services/api_service.dart';
 import '../services/webauthn_service_mobile.dart';
 import '../services/clientid_native.dart';
 import '../services/device_identity_service.dart';
@@ -23,6 +24,7 @@ class MobileWebAuthnLoginScreen extends StatefulWidget {
 
 class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
   final _emailController = TextEditingController();
+  final _invitationTokenController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   String? _serverUrl;
@@ -30,6 +32,8 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
   bool _isBiometricAvailable = false;
   List<BiometricType> _availableBiometrics = [];
   String? _errorMessage;
+  bool _loadingSettings = false;
+  String _registrationMode = 'open';
 
   @override
   void initState() {
@@ -39,11 +43,13 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
       _loadSavedServer();
     }
     _checkBiometricAvailability();
+    _loadServerSettings();
   }
 
   @override
   void dispose() {
     _emailController.dispose();
+    _invitationTokenController.dispose();
     super.dispose();
   }
 
@@ -73,6 +79,40 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
       }
     } catch (e) {
       debugPrint('[MobileWebAuthnLogin] Error loading saved server: $e');
+    }
+  }
+
+  Future<void> _loadServerSettings() async {
+    if (_serverUrl == null || _serverUrl!.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _loadingSettings = true;
+    });
+
+    try {
+      final response = await ApiService.dio.get('$_serverUrl/client/meta');
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        setState(() {
+          _registrationMode = data['registrationMode'] ?? 'open';
+          _loadingSettings = false;
+        });
+        debugPrint(
+          '[MobileWebAuthnLogin] Registration mode: $_registrationMode',
+        );
+      } else {
+        setState(() {
+          _loadingSettings = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[MobileWebAuthnLogin] Failed to load server settings: $e');
+      setState(() {
+        _loadingSettings = false;
+      });
     }
   }
 
@@ -186,12 +226,49 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
       return;
     }
 
-    // Navigate to OTP page to start registration (same as web)
-    if (mounted) {
-      context.go(
-        '/otp',
-        extra: {'email': email, 'serverUrl': _serverUrl!, 'wait': 0},
-      );
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      debugPrint('[MobileWebAuthnLogin] Calling /register for email: $email');
+      debugPrint('[MobileWebAuthnLogin] Server URL: $_serverUrl');
+
+      // Prepare registration data
+      final Map<String, dynamic> registrationData = {'email': email};
+
+      // Add invitation token if provided and in invitation-only mode
+      final invitationToken = _invitationTokenController.text.trim();
+      if (invitationToken.isNotEmpty) {
+        registrationData['invitationToken'] = invitationToken;
+      }
+
+      // Call /register endpoint to send OTP email
+      final response = await MobileWebAuthnService.instance
+          .sendRegistrationRequestWithData(
+            serverUrl: _serverUrl!,
+            data: registrationData,
+          );
+
+      debugPrint('[MobileWebAuthnLogin] Register response: $response');
+
+      // Navigate to OTP page with wait time from server
+      if (mounted) {
+        final wait = response['wait'] ?? 0;
+        debugPrint('[MobileWebAuthnLogin] Navigating to OTP with wait: $wait');
+
+        context.go(
+          '/otp',
+          extra: {'email': email, 'serverUrl': _serverUrl!, 'wait': wait},
+        );
+      }
+    } catch (e) {
+      debugPrint('[MobileWebAuthnLogin] Registration error: $e');
+      setState(() {
+        _errorMessage = 'Registration failed: ${e.toString()}';
+        _isLoading = false;
+      });
     }
   }
 
@@ -220,6 +297,7 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
@@ -234,10 +312,12 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
                 Center(
                   child: Column(
                     children: [
-                      Icon(
-                        Icons.waves,
-                        size: 64,
-                        color: Theme.of(context).colorScheme.primary,
+                      Image.asset(
+                        Theme.of(context).brightness == Brightness.dark
+                            ? 'assets/images/peerwave.png'
+                            : 'assets/images/peerwave_dark.png',
+                        width: 100,
+                        height: 100,
                       ),
                       const SizedBox(height: 16),
                       Text(
@@ -273,17 +353,59 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
                 // Email input
                 TextFormField(
                   controller: _emailController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Email',
+                    labelStyle: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                     hintText: 'you@example.com',
-                    prefixIcon: Icon(Icons.email),
-                    border: OutlineInputBorder(),
+                    hintStyle: TextStyle(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant.withOpacity(0.6),
+                    ),
+                    prefixIcon: const Icon(Icons.email),
+                    border: const OutlineInputBorder(),
+                    filled: true,
+                    fillColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                   ),
                   keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.done,
+                  textInputAction: _registrationMode == 'invitation_only'
+                      ? TextInputAction.next
+                      : TextInputAction.done,
                   validator: _validateEmail,
                   enabled: !_isLoading,
                 ),
+
+                // Invitation token field (only for invitation_only mode)
+                if (_registrationMode == 'invitation_only') ...[
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _invitationTokenController,
+                    decoration: InputDecoration(
+                      labelText: 'Invitation Token',
+                      labelStyle: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      hintText: 'Enter your invitation token',
+                      hintStyle: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurfaceVariant.withOpacity(0.6),
+                      ),
+                      prefixIcon: const Icon(Icons.vpn_key),
+                      border: const OutlineInputBorder(),
+                      filled: true,
+                      fillColor: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                    ),
+                    textInputAction: TextInputAction.done,
+                    enabled: !_isLoading,
+                  ),
+                ],
 
                 const SizedBox(height: 24),
 
@@ -292,14 +414,10 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.error.withValues(alpha: 0.1),
+                      color: Theme.of(context).colorScheme.errorContainer,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.error.withValues(alpha: 0.3),
+                        color: Theme.of(context).colorScheme.error,
                       ),
                     ),
                     child: Row(
@@ -313,7 +431,9 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
                           child: Text(
                             _errorMessage!,
                             style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onErrorContainer,
                             ),
                           ),
                         ),
@@ -328,14 +448,10 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.primary.withValues(alpha: 0.1),
+                      color: Theme.of(context).colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.primary.withValues(alpha: 0.3),
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                     child: Row(
@@ -349,7 +465,9 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
                           child: Text(
                             '${_getBiometricName()} is ready',
                             style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onPrimaryContainer,
                             ),
                           ),
                         ),
@@ -360,14 +478,10 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.tertiary.withValues(alpha: 0.1),
+                      color: Theme.of(context).colorScheme.tertiaryContainer,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.tertiary.withValues(alpha: 0.3),
+                        color: Theme.of(context).colorScheme.tertiary,
                       ),
                     ),
                     child: Row(
@@ -381,7 +495,9 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
                           child: Text(
                             'Biometric authentication not available',
                             style: TextStyle(
-                              color: Theme.of(context).colorScheme.tertiary,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onTertiaryContainer,
                             ),
                           ),
                         ),
@@ -428,6 +544,25 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
                 // Fallback to magic key
                 const Divider(),
                 const SizedBox(height: 16),
+
+                // Backup code login button
+                Center(
+                  child: TextButton.icon(
+                    onPressed: _isLoading
+                        ? null
+                        : () {
+                            context.go(
+                              '/mobile-backupcode-login',
+                              extra: {'serverUrl': _serverUrl},
+                            );
+                          },
+                    icon: const Icon(Icons.vpn_key),
+                    label: const Text('Login with Backup Code'),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
                 Center(
                   child: TextButton.icon(
                     onPressed: _isLoading

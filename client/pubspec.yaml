@@ -82,6 +82,7 @@ dependencies:
   mobile_scanner: ^7.1.4  # QR code scanning for native (optional)
   local_notifier: ^0.1.6  # Desktop notifications for native
   universal_html: ^2.3.0
+  passkeys: ^2.8.2  # Proper WebAuthn/FIDO2 for mobile (Android/iOS)
   bitsdojo_window:
     # Desktop-only: Custom window frame
     # Not available on Android/iOS - conditional import with stub fallback

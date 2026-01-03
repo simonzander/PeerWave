@@ -3,6 +3,8 @@ import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'package:path_provider/path_provider.dart';
 import 'event_bus.dart';
 import '../core/metrics/network_metrics.dart';
 // Import auth service conditionally
@@ -106,7 +108,9 @@ class SessionAuthInterceptor extends Interceptor {
         // Skip session auth for authentication endpoints
         if (options.path.contains('/magic/verify') ||
             options.path.contains('/magic/send')) {
-          debugPrint('[SessionAuth] Skipping auth for magic link endpoint');
+          debugPrint(
+            '[SessionAuth] Skipping session auth for magic link endpoint',
+          );
           return super.onRequest(options, handler);
         }
 
@@ -132,10 +136,13 @@ class SessionAuthInterceptor extends Interceptor {
           // Get client ID from device
           final clientId = await ClientIdService.getClientId();
 
-          // Check if we have a session
+          // Check if we have an HMAC session (indicates magic key login)
+          // - If true: User logged in via magic key → Use HMAC authentication
+          // - If false: User logged in via WebAuthn → Use session cookies (handled by CookieManager)
           final hasSession = await SessionAuthService().hasSession(clientId);
 
           if (hasSession) {
+            // Magic key login: Add HMAC authentication headers
             // Extract just the path from the full URL for signature calculation
             // Dio's options.path contains the full URL, but server expects just the path part
             final uri = Uri.parse(options.path);
@@ -153,10 +160,13 @@ class SessionAuthInterceptor extends Interceptor {
             // Add headers to request
             options.headers.addAll(authHeaders);
             debugPrint(
-              '[SessionAuth] Added auth headers for request: ${options.path} (path: $pathOnly)',
+              '[SessionAuth] Added HMAC auth headers (magic key login): ${options.path} (path: $pathOnly)',
             );
           } else {
-            debugPrint('[SessionAuth] No session found for client: $clientId');
+            // WebAuthn login: Session cookies are automatically sent by CookieManager
+            debugPrint(
+              '[SessionAuth] No HMAC session - using session cookies (WebAuthn login)',
+            );
           }
         }
       } catch (e) {
@@ -284,8 +294,37 @@ class RetryInterceptor extends Interceptor {
 
 class ApiService {
   static final Dio dio = Dio();
-  static final CookieJar cookieJar = CookieJar();
+  static CookieJar? _cookieJar;
   static bool _initialized = false;
+
+  /// Get or create cookie jar (persistent for mobile, memory-only for others)
+  static Future<CookieJar> getCookieJar() async {
+    if (_cookieJar != null) {
+      return _cookieJar!;
+    }
+
+    if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
+      // Mobile: Use persistent cookie jar to save session cookies
+      try {
+        final appDocDir = await getApplicationDocumentsDirectory();
+        final cookiePath = '${appDocDir.path}/.cookies/';
+        _cookieJar = PersistCookieJar(
+          storage: FileStorage(cookiePath),
+          ignoreExpires: false,
+        );
+        debugPrint('[API SERVICE] Using persistent cookie jar: $cookiePath');
+      } catch (e) {
+        debugPrint('[API SERVICE] Error creating persistent cookie jar: $e');
+        _cookieJar = CookieJar();
+      }
+    } else {
+      // Web and desktop: Use memory-only cookie jar
+      _cookieJar = CookieJar();
+      debugPrint('[API SERVICE] Using memory-only cookie jar');
+    }
+
+    return _cookieJar!;
+  }
 
   /// Set base URL for Dio (used for native platforms only)
   /// For web, this is a no-op - relative paths are always used
@@ -302,7 +341,7 @@ class ApiService {
     debugPrint('[API SERVICE] Base URL set to: ${dio.options.baseUrl}');
   }
 
-  static void init() {
+  static Future<void> init() async {
     // For web: ALWAYS clear baseUrl to ensure relative paths resolve to current origin
     // This must happen on every init() call, not just first time
     if (kIsWeb) {
@@ -315,6 +354,7 @@ class ApiService {
     if (!_initialized) {
       // Add cookie manager for native clients
       if (!kIsWeb) {
+        final cookieJar = await getCookieJar();
         dio.interceptors.add(CookieManager(cookieJar));
       }
 

@@ -633,6 +633,7 @@ authRoutes.post("/otp", (req, res) => {
             req.session.otp = true;
             req.session.authenticated = true;
             req.session.uuid = updatedUser.uuid; // ensure uuid present
+            req.session.email = updatedUser.email; // Store email for backup codes
             // Update registration step based on user status
             if (!updatedUser.backupCodes) {
                 req.session.registrationStep = 'backup_codes';
@@ -948,23 +949,24 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             const challenge = base64UrlDecode(req.session.challenge);
 
             const host = req.hostname;
+            
+            // All clients (web and mobile) use standard WebAuthn validation
             const allowedOrigins = [
                 "http://localhost:3000",
                 "http://localhost:55831",
                 `https://${host}`
             ];
-            let origin = req.headers.origin || `https://${host}`;
+            const origin = req.headers.origin || `https://${host}`;
             if (!allowedOrigins.includes(origin)) {
                 console.warn("Unexpected origin for WebAuthn:", origin);
-                origin = `https://${host}`;
             }
 
+            // Standard WebAuthn validation for all clients
             const attestationExpectations = {
                 challenge: challenge,
                 origin: origin,
                 factor: "either",
             };
-
             const regResult = await fido2.attestationResult(attestation, attestationExpectations);
 
             const user = await User.findOne({ where: { email: req.session.email } });
@@ -1172,17 +1174,19 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
         const challenge = base64UrlDecode(req.session.challenge);
 
         const host = req.hostname;
+        
+        // All clients (web and mobile) use standard WebAuthn validation
         const allowedOrigins = [
             "http://localhost:3000",
             "http://localhost:55831",
             `https://${host}`
         ];
-        let origin = req.headers.origin || `https://${host}`;
+        const origin = req.headers.origin || `https://${host}`;
         if (!allowedOrigins.includes(origin)) {
             console.warn("Unexpected origin for WebAuthn:", origin);
-            origin = `https://${host}`;
         }
 
+        // Standard WebAuthn validation for all clients
         const assertionExpectations = {
             challenge: challenge,
             origin: origin,
@@ -1191,7 +1195,6 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             prevCounter: 0,
             userHandle: assertion.response.userHandle,
         };
-
         const authnResult = await fido2.assertionResult(assertion, assertionExpectations);
 
         if (authnResult.audit.complete) {

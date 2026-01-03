@@ -104,6 +104,7 @@ import 'screens/meeting_rsvp_confirmation_screen.dart';
 // Native server selection
 import 'screens/server_selection_screen.dart';
 import 'screens/mobile_webauthn_login_screen.dart';
+import 'screens/mobile_backupcode_login_screen.dart';
 import 'screens/mobile_server_selection_screen.dart';
 import 'services/server_config_web.dart'
     if (dart.library.io) 'services/server_config_native.dart';
@@ -122,7 +123,7 @@ import 'services/idb_factory_web.dart'
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  ApiService.init();
+  await ApiService.init();
   String? initialMagicKey;
 
   // NOTE: Client ID generation moved to POST-LOGIN flow
@@ -492,6 +493,17 @@ class _MyAppState extends State<MyApp> {
           );
         },
       ),
+      // Mobile Backup Code login route (Android/iOS only)
+      GoRoute(
+        path: '/mobile-backupcode-login',
+        pageBuilder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          final serverUrl = extra?['serverUrl'] as String?;
+          return MaterialPage(
+            child: MobileBackupcodeLoginScreen(serverUrl: serverUrl),
+          );
+        },
+      ),
       // OTP verification (used by both web and mobile registration)
       GoRoute(
         path: '/otp',
@@ -545,11 +557,19 @@ class _MyAppState extends State<MyApp> {
       ),
       GoRoute(
         path: '/register/backupcode',
-        builder: (context, state) => const BackupCodeListPage(),
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          final serverUrl = extra?['serverUrl'] as String?;
+          return BackupCodeListPage(serverUrl: serverUrl);
+        },
       ),
       GoRoute(
         path: '/register/webauthn',
-        builder: (context, state) => const RegisterWebauthnPage(),
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          final serverUrl = extra?['serverUrl'] as String?;
+          return RegisterWebauthnPage(serverUrl: serverUrl);
+        },
       ),
       GoRoute(
         path: '/register/profile',
@@ -1521,7 +1541,11 @@ class _MyAppState extends State<MyApp> {
         if (!kIsWeb &&
             location != '/server-selection' &&
             location != '/mobile-server-selection' &&
-            location != '/mobile-webauthn') {
+            location != '/mobile-webauthn' &&
+            location != '/otp' && // Allow OTP during registration
+            !location.startsWith('/register/')) {
+          // Allow registration routes
+          debugPrint('[ROUTER] 🔍 Checking servers for location: $location');
           if (!ServerConfigService.hasServers()) {
             // Mobile: Redirect to mobile server selection screen
             if (Platform.isAndroid || Platform.isIOS) {
@@ -1536,6 +1560,8 @@ class _MyAppState extends State<MyApp> {
             );
             return '/server-selection';
           }
+        } else if (!kIsWeb) {
+          debugPrint('[ROUTER] ✅ Skipping server check for: $location');
         }
 
         // Only check session on initial load (when going to root or login page)

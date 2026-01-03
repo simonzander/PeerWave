@@ -208,6 +208,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -219,10 +220,12 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // App Logo/Title
-                  Icon(
-                    Icons.cloud,
-                    size: 80,
-                    color: Theme.of(context).colorScheme.primary,
+                  Image.asset(
+                    Theme.of(context).brightness == Brightness.dark
+                        ? 'assets/images/peerwave.png'
+                        : 'assets/images/peerwave_dark.png',
+                    width: 120,
+                    height: 120,
                   ),
                   const SizedBox(height: 16),
                   Text(

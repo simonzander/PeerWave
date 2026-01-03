@@ -10,7 +10,7 @@ Thank you for your interest in contributing!
 
 ## Licensing
 By contributing, you agree to the Contributor License Agreement (see `CLA.md`).
-All contributions are licensed under the PolyForm Shield License 1.0.0.
+All contributions are licensed under the GNU Affero General Public License (AGPL-3.0).
 
 ## Code Guidelines
 - Keep commits focused and descriptive

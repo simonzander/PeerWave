@@ -12,7 +12,7 @@ class LicenseFooter extends StatefulWidget {
 class _LicenseFooterState extends State<LicenseFooter> {
   bool _showNotice = true;
   bool _isLoading = true;
-  String _message = 'Private/Non-Commercial Use';
+  String _message = 'AGPL-3.0 • Community Edition • No Professional Support';
   bool _isError = false;
 
   @override
@@ -31,16 +31,18 @@ class _LicenseFooterState extends State<LicenseFooter> {
         final data = resp.data;
         setState(() {
           _showNotice = data['showNotice'] ?? true;
-          _message = data['message'] ?? 'Private/Non-Commercial Use';
+          _message =
+              data['message'] ??
+              'AGPL-3.0 • Community Edition • No Professional Support';
           _isError = data['isError'] ?? false;
           _isLoading = false;
         });
       }
     } catch (e) {
-      // Default to non-commercial if request fails
+      // Default to AGPL notice if request fails
       setState(() {
         _showNotice = true;
-        _message = 'Private/Non-Commercial Use';
+        _message = 'AGPL-3.0 • Community Edition • No Professional Support';
         _isError = false;
         _isLoading = false;
       });

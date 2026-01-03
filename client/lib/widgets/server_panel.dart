@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -196,7 +197,11 @@ class _ServerPanelState extends State<ServerPanel> {
 
       // If no servers left, go to server selection
       if (_servers.isEmpty && mounted) {
-        context.go('/server-selection');
+        if (Platform.isAndroid || Platform.isIOS) {
+          context.go('/mobile-server-selection');
+        } else {
+          context.go('/server-selection');
+        }
       }
     }
   }
@@ -255,7 +260,11 @@ class _ServerPanelState extends State<ServerPanel> {
 
         // If no servers left, go to server selection
         if (_servers.isEmpty && mounted) {
-          context.go('/server-selection');
+          if (Platform.isAndroid || Platform.isIOS) {
+            context.go('/mobile-server-selection');
+          } else {
+            context.go('/server-selection');
+          }
         }
       } catch (e) {
         if (mounted) {

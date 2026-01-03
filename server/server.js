@@ -38,15 +38,15 @@ function sanitizeForLog(value) {
 // Initialize license validator
 const licenseValidator = new LicenseValidator();
 
-// Validate license on startup
+// Validate support subscription on startup
 (async () => {
-  console.log('\n🔐 Validating PeerWave License...');
+  console.log('\n🔐 Validating PeerWave Support Subscription...');
   const license = await licenseValidator.validate();
   
   if (license.valid) {
-    console.log('✅ License Valid');
+    console.log('✅ Support Subscription Active');
     console.log(`   Customer: ${license.customer}`);
-    console.log(`   Type: ${license.type}`);
+    console.log(`   Edition: Supported Edition`);
     console.log(`   Expires: ${license.expires.toISOString().split('T')[0]} (${license.daysRemaining} days)`);
     
     if (license.gracePeriod) {
@@ -59,15 +59,16 @@ const licenseValidator = new LicenseValidator();
     
     console.log(`   Grace Period: ${license.gracePeriodDays} days after expiration`);
   } else if (license.error === 'EXPIRED') {
-    // License expired and grace period is over - STOP SERVER
-    console.error('\n❌ FATAL: License has expired!');
+    // Support subscription expired and grace period is over - STOP SERVER
+    console.error('\n❌ FATAL: Support subscription has expired!');
     console.error(`   ${license.message}`);
-    console.error(`   Server cannot start with expired license.`);
-    console.error(`   Please renew your license or contact support.\n`);
+    console.error(`   Server cannot start with expired subscription.`);
+    console.error(`   Please renew your subscription at https://peerwave.org\n`);
     process.exit(1);
   } else {
-    console.log(`⚠️  No valid license found: ${license.message}`);
-    console.log(`   Running in non-commercial mode`);
+    console.log(`ℹ️  No support subscription found: ${license.message}`);
+    console.log(`   Running Community Edition (AGPL-3.0)`);
+    console.log(`   For professional support, visit: https://peerwave.org`);
   }
   console.log('');
 })();
@@ -409,7 +410,7 @@ app.use((req, res, next) => {
     }
   });
 
-  // License info endpoint
+  // Support subscription info endpoint
   app.get('/api/license-info', async (req, res) => {
     const license = await licenseValidator.validate();
     
@@ -421,29 +422,29 @@ app.use((req, res, next) => {
     }
     const activeUserCount = activeUserIds.size;
     
-    // Check if license is expired
+    // Check if subscription is expired
     if (license.error === 'EXPIRED') {
       return res.json({
         type: 'commercial',
         showNotice: true,
-        message: 'License expired',
+        message: 'Support subscription expired • Visit https://peerwave.org',
         isError: true
       });
     }
     
     if (license.valid) {
-      // Check if license has maxUsers limit and if it's exceeded
+      // Check if subscription has maxUsers limit and if it's exceeded
       const maxUsers = license.features?.maxUsers;
       const isExceeded = maxUsers && activeUserCount > maxUsers;
       
-      // Commercial license
+      // Supported Edition (commercial subscription)
       if (license.type === 'commercial') {
         if (isExceeded) {
-          // Show error message for exceeded license
+          // Show error message for exceeded subscription limit
           return res.json({
             type: 'commercial',
             showNotice: true,
-            message: 'License limit exceeded',
+            message: `User limit exceeded (${activeUserCount}/${maxUsers}) • Contact support`,
             isError: true,
             expires: license.expires,
             maxUsers: maxUsers,
@@ -451,7 +452,7 @@ app.use((req, res, next) => {
             gracePeriodDays: license.features?.gracePeriodDays || 30
           });
         } else {
-          // Valid commercial license - hide footer but send data for settings page
+          // Valid support subscription - hide footer but send data for settings page
           return res.json({
             type: 'commercial',
             showNotice: false,
@@ -465,19 +466,19 @@ app.use((req, res, next) => {
         }
       }
       
-      // Non-commercial license
+      // Legacy non-commercial license (should not occur with AGPL-3.0)
       return res.json({
-        type: 'non-commercial',
+        type: 'community',
         showNotice: true,
-        message: 'Private/Non-Commercial Use',
+        message: 'AGPL-3.0 • Community Edition • No Professional Support',
         isError: false
       });
     } else {
-      // Fallback to non-commercial
+      // No subscription - Community Edition (AGPL-3.0)
       res.json({
-        type: 'non-commercial',
+        type: 'community',
         showNotice: true,
-        message: 'Private/Non-Commercial Use',
+        message: 'AGPL-3.0 • Community Edition • No Professional Support',
         isError: false
       });
     }
@@ -4249,13 +4250,18 @@ io.sockets.on("connection", socket => {
   // Dynamic CORS handler to support mobile apps
   // Mobile apps identify themselves via X-PeerWave-App-Secret header
   // Web apps must match the whitelist
-  const mobileAppSecret = process.env.MOBILE_APP_SECRET || 'peerwave-mobile-app-2026';
+  const mobileAppSecret = 'peerwave-mobile-app';
   
   // Custom CORS middleware to access request headers
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     const appSecret = req.headers['x-peerwave-app-secret'];
     const isTrustedMobileApp = appSecret === mobileAppSecret;
+    
+    // Allow same-origin requests (no Origin header)
+    if (!origin) {
+      return next();
+    }
     
     // Allow trusted mobile apps (identified by secret header)
     if (isTrustedMobileApp) {

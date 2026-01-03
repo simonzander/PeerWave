@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/server_config_native.dart';
@@ -83,12 +82,22 @@ class _MobileServerSelectionScreenState
 
     try {
       var serverUrl = _serverUrlController.text.trim();
+      debugPrint('[MobileServerSelection] Input URL: $serverUrl');
 
       // Normalize server URL
       if (!serverUrl.startsWith('http://') &&
           !serverUrl.startsWith('https://')) {
-        serverUrl = 'https://$serverUrl';
+        // Use http:// for localhost/emulator addresses, https:// for others
+        if (serverUrl.startsWith('localhost') ||
+            serverUrl.startsWith('127.0.0.1') ||
+            serverUrl.startsWith('10.0.2.2')) {
+          serverUrl = 'http://$serverUrl';
+        } else {
+          serverUrl = 'https://$serverUrl';
+        }
       }
+      debugPrint('[MobileServerSelection] After protocol: $serverUrl');
+
       serverUrl = serverUrl.replaceAll(
         RegExp(r'/+$'),
         '',
@@ -99,12 +108,8 @@ class _MobileServerSelectionScreenState
 
       debugPrint('[MobileServerSelection] Server URL validated: $serverUrl');
 
-      // Save the server URL to config (credentials will be set during login/register)
-      await ServerConfigService.addServer(
-        serverUrl: serverUrl,
-        credentials:
-            '', // Empty credentials - will be set during authentication
-      );
+      // Don't save server yet - it will be saved after successful authentication
+      // Just pass the URL through the registration flow
 
       if (mounted) {
         // Navigate to mobile WebAuthn screen (will show login/register options)
@@ -127,6 +132,7 @@ class _MobileServerSelectionScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
@@ -141,10 +147,12 @@ class _MobileServerSelectionScreenState
                 Center(
                   child: Column(
                     children: [
-                      Icon(
-                        Icons.waves,
-                        size: 80,
-                        color: Theme.of(context).colorScheme.primary,
+                      Image.asset(
+                        Theme.of(context).brightness == Brightness.dark
+                            ? 'assets/images/peerwave.png'
+                            : 'assets/images/peerwave_dark.png',
+                        width: 120,
+                        height: 120,
                       ),
                       const SizedBox(height: 24),
                       Text(
@@ -175,11 +183,25 @@ class _MobileServerSelectionScreenState
                   controller: _serverUrlController,
                   decoration: InputDecoration(
                     labelText: 'Server URL',
+                    labelStyle: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                     hintText: 'app.peerwave.org',
+                    hintStyle: TextStyle(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant.withOpacity(0.6),
+                    ),
                     prefixIcon: const Icon(Icons.dns),
                     border: const OutlineInputBorder(),
                     helperText: 'Your PeerWave server address',
+                    helperStyle: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                     filled: true,
+                    fillColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                   ),
                   keyboardType: TextInputType.url,
                   textInputAction: TextInputAction.done,
@@ -195,14 +217,10 @@ class _MobileServerSelectionScreenState
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.error.withValues(alpha: 0.1),
+                      color: Theme.of(context).colorScheme.errorContainer,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.error.withValues(alpha: 0.3),
+                        color: Theme.of(context).colorScheme.error,
                       ),
                     ),
                     child: Row(
@@ -216,7 +234,9 @@ class _MobileServerSelectionScreenState
                           child: Text(
                             _errorMessage!,
                             style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onErrorContainer,
                             ),
                           ),
                         ),
