@@ -892,9 +892,12 @@ authRoutes.post('/webauthn/register-challenge', async (req, res) => {
         "http://localhost:55831",
         `https://${host}`
     ];
+    
+    // For Android passkeys, rpId must be the domain without protocol
+    // Android will hash this and compare with authenticator data
     challenge.rp = {
         name: "PeerWave",
-        id: host   // muss exakt zum Browser-Origin passen!
+        id: host   // Domain only: "app.peerwave.org" or "localhost"
     };
 
     challenge.user = {
@@ -971,10 +974,12 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             }
 
             // Standard WebAuthn validation for all clients
+            // rpId is required for validating the RP ID hash in authenticator data
             const attestationExpectations = {
                 challenge: challenge,
                 origin: origin,
                 factor: "either",
+                rpId: host,
             };
             const regResult = await fido2.attestationResult(attestation, attestationExpectations);
 
@@ -1204,6 +1209,7 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
         }
 
         // Standard WebAuthn validation for all clients
+        // rpId is required for validating the RP ID hash in authenticator data
         const assertionExpectations = {
             challenge: challenge,
             origin: origin,
@@ -1211,6 +1217,7 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             publicKey: credential.publicKey,
             prevCounter: 0,
             userHandle: assertion.response.userHandle,
+            rpId: host,
         };
         const authnResult = await fido2.assertionResult(assertion, assertionExpectations);
 
