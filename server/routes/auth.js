@@ -1024,6 +1024,9 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             // Advance registration step to profile if this is during registration
             if (isFirstCredential) {
                 req.session.registrationStep = 'profile';
+                // Mark session as authenticated so profile setup page is accessible
+                req.session.authenticated = true;
+                req.session.uuid = user.uuid;
             }
 
             res.json({ status: "ok" });

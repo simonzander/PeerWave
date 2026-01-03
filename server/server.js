@@ -7,6 +7,10 @@ const express = require("express");
 const { randomUUID } = require('crypto');
 const http = require("http");
 const app = express();
+
+// Trust proxy headers (required for rate limiting and IP detection behind Docker/nginx)
+app.set('trust proxy', true);
+
 const sanitizeHtml = require('sanitize-html');
 const cors = require('cors');
 const session = require('express-session');
