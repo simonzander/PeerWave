@@ -4369,7 +4369,14 @@ app.get('/server_config.json', (req, res) => {
 });
 
 // Serve .well-known directory for Digital Asset Links (Android passkeys)
-app.use('/.well-known', express.static(path.resolve(__dirname, 'public/.well-known')));
+app.use('/.well-known', express.static(path.resolve(__dirname, 'public/.well-known'), {
+  setHeaders: (res, path) => {
+    if (path.endsWith('assetlinks.json')) {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+  }
+}));
 
 // Serve static files from Flutter web build output
 app.use(express.static(path.resolve(__dirname, 'web')));
