@@ -136,13 +136,14 @@ class SessionAuthInterceptor extends Interceptor {
           // Get client ID from device
           final clientId = await ClientIdService.getClientId();
 
-          // Check if we have an HMAC session (indicates magic key login)
-          // - If true: User logged in via magic key → Use HMAC authentication
-          // - If false: User logged in via WebAuthn → Use session cookies (handled by CookieManager)
+          // Check if we have an HMAC session (mobile persistent authentication)
+          // - If true: Use HMAC authentication (works after app restart)
+          // - If false: Use session cookies (works within same session, handled by CookieManager)
+          // Note: Both WebAuthn and Magic Key logins create HMAC sessions for mobile
           final hasSession = await SessionAuthService().hasSession(clientId);
 
           if (hasSession) {
-            // Magic key login: Add HMAC authentication headers
+            // HMAC authentication: Add signature headers for persistent mobile auth
             // Extract just the path from the full URL for signature calculation
             // Dio's options.path contains the full URL, but server expects just the path part
             final uri = Uri.parse(options.path);
@@ -160,13 +161,12 @@ class SessionAuthInterceptor extends Interceptor {
             // Add headers to request
             options.headers.addAll(authHeaders);
             debugPrint(
-              '[SessionAuth] Added HMAC auth headers (magic key login): ${options.path} (path: $pathOnly)',
+              '[SessionAuth] Added HMAC auth headers: ${options.path} (path: $pathOnly)',
             );
           } else {
-            // WebAuthn login: Session cookies are automatically sent by CookieManager
-            debugPrint(
-              '[SessionAuth] No HMAC session - using session cookies (WebAuthn login)',
-            );
+            // Session cookies: Automatically sent by CookieManager
+            // Used during initial login/registration before HMAC session is created
+            debugPrint('[SessionAuth] No HMAC session - using session cookies');
           }
         }
       } catch (e) {

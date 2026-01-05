@@ -144,8 +144,11 @@ class MobileWebAuthnService {
   ///
   /// [serverUrl] - The PeerWave server URL
   /// [email] - User's email address (optional - will fetch from server session if empty)
-  /// Returns credential ID on success, null on failure
-  Future<String?> register({required String serverUrl, String? email}) async {
+  /// Returns map with credentialId and serverResponse on success, null on failure
+  Future<Map<String, dynamic>?> register({
+    required String serverUrl,
+    String? email,
+  }) async {
     try {
       // Fetch email from server session if not provided
       String? userEmail = email;
@@ -228,12 +231,16 @@ class MobileWebAuthnService {
         '[MobileWebAuthn] Passkey created successfully, credential ID: ${registerResponse.id}',
       );
 
-      // 5. Send attestation to server
+      // 5. Send attestation to server with clientId for HMAC session
       final registerResponseJson = registerResponse.toJson();
+
+      // Add clientId to request for server to create HMAC session
+      final clientId = await _getClientId();
+
       debugPrint('[MobileWebAuthn] Sending attestation to server');
       final serverResponse = await ApiService.dio.post(
         '$serverUrl/webauthn/register',
-        data: {'attestation': registerResponseJson},
+        data: {'attestation': registerResponseJson, 'clientId': clientId},
       );
 
       if (serverResponse.statusCode != 200) {
@@ -253,7 +260,12 @@ class MobileWebAuthnService {
       );
 
       debugPrint('[MobileWebAuthn] ✓ Registration successful');
-      return credentialId;
+
+      // Return credential ID and server response for HMAC session handling
+      return {
+        'credentialId': credentialId,
+        'serverResponse': serverResponse.data,
+      };
     } on DioException catch (e) {
       debugPrint('[MobileWebAuthn] API error during registration:');
       debugPrint('  Status: ${e.response?.statusCode}');

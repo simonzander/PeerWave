@@ -6,6 +6,7 @@ import '../services/clientid_native.dart';
 import '../services/device_identity_service.dart';
 import '../services/server_config_native.dart';
 import '../services/api_service.dart';
+import '../services/session_auth_service.dart';
 import '../widgets/registration_progress_bar.dart';
 import '../extensions/snackbar_extensions.dart';
 
@@ -109,12 +110,12 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
       // Register the WebAuthn credential with biometric
       // Pass email from registration flow
       debugPrint('[WebAuthnRegister] Starting registration process...');
-      final credentialId = await MobileWebAuthnService.instance.register(
+      final result = await MobileWebAuthnService.instance.register(
         serverUrl: _serverUrl!,
         email: widget.email, // Use email from navigation state
       );
 
-      if (credentialId == null) {
+      if (result == null) {
         debugPrint(
           '[WebAuthnRegister] Registration returned null - check logs above for details',
         );
@@ -127,9 +128,28 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
         );
       }
 
+      // Extract credential ID and server response
+      final credentialId = result['credentialId'] as String?;
+      final serverResponse = result['serverResponse'] as Map<String, dynamic>?;
+
+      if (credentialId == null) {
+        throw Exception('No credential ID returned from registration');
+      }
+
       debugPrint(
         '[WebAuthnRegister] Registration successful, credential ID: $credentialId',
       );
+
+      // Store HMAC session if provided (for mobile authentication)
+      if (serverResponse != null) {
+        final sessionSecret = serverResponse['sessionSecret'] as String?;
+        if (sessionSecret != null && sessionSecret.isNotEmpty) {
+          await SessionAuthService().initializeSession(clientId, sessionSecret);
+          debugPrint(
+            '[WebAuthnRegister] ✓ HMAC session stored for mobile authentication',
+          );
+        }
+      }
 
       // Set device identity
       // Email will be retrieved from server session by the service

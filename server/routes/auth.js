@@ -1046,8 +1046,62 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             } else {
                 console.log('[WEBAUTHN] Additional credential registered - not first credential');
             }
+            
+            // Handle client info and create HMAC session for mobile (same as authentication)
+            const clientId = req.body && req.body.clientId;
+            let sessionSecret = null;
+            
+            if (clientId) {
+                const { sequelize } = require('../db/model');
+                const maxDevice = await Client.max('device_id', { where: { owner: user.uuid } });
+                const [client] = await Client.findOrCreate({
+                    where: { owner: user.uuid, clientid: clientId },
+                    defaults: { owner: user.uuid, clientid: clientId, device_id: maxDevice ? maxDevice + 1 : 1 }
+                });
+                
+                // Generate session secret for native clients (HMAC authentication)
+                sessionSecret = crypto.randomBytes(32).toString('base64url');
+                const userAgent = req.headers['user-agent'] || '';
+                const registrationIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+                const registrationLocation = await getLocationFromIp(registrationIp);
+                const locationString = registrationLocation 
+                    ? `${registrationLocation.city}, ${registrationLocation.region}, ${registrationLocation.country} (${registrationLocation.org})`
+                    : "Location not found";
+                
+                // Store session in database
+                try {
+                    await writeQueue.enqueue(
+                        () => sequelize.query(
+                            `INSERT OR REPLACE INTO client_sessions 
+                             (client_id, session_secret, user_id, device_id, device_info, expires_at, last_used, created_at)
+                             VALUES (?, ?, ?, ?, ?, datetime('now', '+30 days'), datetime('now'), datetime('now'))`,
+                            { 
+                                replacements: [
+                                    clientId, 
+                                    sessionSecret, 
+                                    user.uuid,
+                                    client.device_id, 
+                                    JSON.stringify({ userAgent, ip: registrationIp, location: locationString })
+                                ] 
+                            }
+                        ),
+                        'createClientSessionOnRegistration'
+                    );
+                    console.log(`[WEBAUTHN] HMAC session created for client on registration: ${sanitizeForLog(clientId)}`);
+                } catch (sessionErr) {
+                    console.error('[WEBAUTHN] Error creating HMAC session on registration:', sessionErr);
+                }
+            }
+            
+            // Return session secret for mobile clients
+            const response = { status: "ok" };
+            if (sessionSecret) {
+                response.sessionSecret = sessionSecret;
+                response.userId = user.uuid;
+                response.email = user.email;
+            }
 
-            res.json({ status: "ok" });
+            res.json(response);
         } catch (error) {
             console.error('Error during registration:', error);
             res.json({ status: "error" });
