@@ -46,8 +46,19 @@ clientRoutes.use((req, res, next) => {
     if (req.path === '/client/profile/update' && req.method === 'POST') {
         return next();
     }
-    bodyParser.urlencoded({ extended: true })(req, res, () => {
-        bodyParser.json()(req, res, next);
+    
+    // Capture raw body for HMAC signature verification
+    bodyParser.urlencoded({ 
+        extended: true,
+        verify: (req, res, buf) => {
+            req.rawBody = buf;
+        }
+    })(req, res, () => {
+        bodyParser.json({ 
+            verify: (req, res, buf) => {
+                req.rawBody = buf;
+            }
+        })(req, res, next);
     });
 });
 
@@ -1872,7 +1883,12 @@ clientRoutes.delete("/items/:itemId", verifyAuthEither, async (req, res) => {
 // Profile setup endpoint for initial registration - with increased body limit for images
 clientRoutes.post("/client/profile/setup", 
     verifyAuthEither,
-    bodyParser.json({ limit: '2mb' }), // Allow up to 2MB for base64 encoded images
+    bodyParser.json({ 
+        limit: '2mb', // Allow up to 2MB for base64 encoded images
+        verify: (req, res, buf) => {
+            req.rawBody = buf;
+        }
+    }),
     async (req, res) => {
     try {
         const { displayName, picture, atName } = req.body;

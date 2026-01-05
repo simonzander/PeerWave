@@ -86,11 +86,18 @@ async function verifySessionAuth(req, res, next) {
     }
 
     // 4. Generate expected signature
-    // For GET requests or empty bodies, use empty string (not '{}')
+    // IMPORTANT: Body might not be parsed yet (middleware order)
+    // Read from req.rawBody if available, otherwise use empty string
     let requestBody = '';
-    if (req.body && Object.keys(req.body).length > 0) {
-        requestBody = JSON.stringify(req.body);
+    
+    if (req.rawBody && req.rawBody.length > 0) {
+      // Use raw body if available (set by body-parser with verify option)
+      requestBody = req.rawBody.toString('utf8');
+    } else if (req.body && Object.keys(req.body).length > 0) {
+      // Fall back to parsed body if raw not available
+      requestBody = JSON.stringify(req.body);
     }
+    
     // Use full path (e.g., /api/livekit/token) not relative path (e.g., /token)
     const fullPath = req.originalUrl.split('?')[0];
     const message = `${clientId}:${timestamp}:${nonce}:${fullPath}:${requestBody}`;

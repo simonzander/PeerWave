@@ -427,8 +427,17 @@ Client.sync({ alter: true })
     });
 */
 // Add body-parser middleware
-authRoutes.use(bodyParser.urlencoded({ extended: true }));
-authRoutes.use(bodyParser.json());
+authRoutes.use(bodyParser.urlencoded({ 
+    extended: true,
+    verify: (req, res, buf) => {
+        req.rawBody = buf;
+    }
+}));
+authRoutes.use(bodyParser.json({
+    verify: (req, res, buf) => {
+        req.rawBody = buf;
+    }
+}));
 
 // Configure session middleware
 authRoutes.use(session({
@@ -1144,6 +1153,11 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
         };
 
         user.credentials = JSON.parse(user.credentials);
+
+        console.log('[WEBAUTHN AUTH] Found credentials for user:', user.credentials.length);
+        user.credentials.forEach((cred, idx) => {
+            console.log(`[WEBAUTHN AUTH] Credential ${idx}: id=${cred.id}, transports=${JSON.stringify(cred.transports)}`);
+        });
 
         // Include all registered credentials with enhanced transports
         challenge.allowCredentials = user.credentials.map(cred => {
