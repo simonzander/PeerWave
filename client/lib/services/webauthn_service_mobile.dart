@@ -5,6 +5,7 @@ import 'package:passkeys/types.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:dio/dio.dart';
 import 'api_service.dart';
+import 'clientid_native.dart';
 
 /// Mobile WebAuthn service for iOS and Android
 ///
@@ -192,14 +193,17 @@ class MobileWebAuthnService {
         final authSelection =
             challengeData['authenticatorSelection'] as Map<String, dynamic>;
         // Set defaults for null boolean fields required by passkeys package
+        // IMPORTANT: Don't override residentKey if server already set it!
         authSelection['requireResidentKey'] ??= false;
-        authSelection['residentKey'] ??= 'preferred';
+        authSelection['residentKey'] ??=
+            'required'; // Changed to 'required' for Google Password Manager
         authSelection['userVerification'] ??= 'preferred';
       } else {
-        // No authenticatorSelection provided - use defaults
+        // No authenticatorSelection provided - use defaults that enable passkey sync
         challengeData['authenticatorSelection'] = {
           'requireResidentKey': false,
-          'residentKey': 'preferred',
+          'residentKey':
+              'required', // Changed to 'required' for Google Password Manager
           'userVerification': 'preferred',
         };
       }
@@ -359,8 +363,13 @@ class MobileWebAuthnService {
 
       debugPrint('[MobileWebAuthn] Challenge signed successfully');
 
-      // 6. Send assertion to server
+      // 6. Send assertion to server with clientId for HMAC session
       final authResponseJson = authResponse.toJson();
+
+      // Add clientId to request for server to create HMAC session
+      final clientId = await _getClientId();
+      authResponseJson['clientId'] = clientId;
+
       final serverResponse = await ApiService.dio.post(
         '$serverUrl/webauthn/authenticate',
         data: authResponseJson,
@@ -390,6 +399,11 @@ class MobileWebAuthnService {
   Future<bool> hasCredential(String serverUrl, String email) async {
     final credential = await _getStoredCredential(serverUrl, email);
     return credential != null;
+  }
+
+  /// Get client ID (needed for HMAC authentication)
+  Future<String> _getClientId() async {
+    return await ClientIdService.getClientId();
   }
 
   /// Delete stored credential for server/email

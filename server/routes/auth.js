@@ -1171,6 +1171,7 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
 // Verify authentication response
 authRoutes.post('/webauthn/authenticate', async (req, res) => {
     try {
+        const { sequelize } = require('../db/model');
         const { email, assertion } = req.body;
         req.session.email = email;
         //const user = users[username];
@@ -1278,8 +1279,10 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                 await autoAssignRoles(email, user.uuid);
             }
             
-            // Optional: attach client info immediately if provided
+            // Handle client info and create HMAC session for mobile
             const clientId = req.body && req.body.clientId;
+            let sessionSecret = null;
+            
             if (clientId) {
                 const maxDevice = await Client.max('device_id', { where: { owner: user.uuid } });
                 const [client] = await Client.findOrCreate({
@@ -1288,17 +1291,65 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                 });
                 req.session.deviceId = client.device_id || (client.get ? client.get('device_id') : undefined);
                 req.session.clientId = client.clientid || (client.get ? client.get('clientid') : undefined);
+                
+                // Generate session secret for native clients (HMAC authentication)
+                sessionSecret = crypto.randomBytes(32).toString('base64url');
+                const userAgent = req.headers['user-agent'] || '';
+                const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+                const location = await getLocationFromIp(ip);
+                const locationString = location 
+                    ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
+                    : "Location not found";
+                
+                // Store session in database
+                try {
+                    await writeQueue.enqueue(
+                        () => sequelize.query(
+                            `INSERT OR REPLACE INTO client_sessions 
+                             (client_id, session_secret, user_id, device_id, device_info, expires_at, last_used, created_at)
+                             VALUES (?, ?, ?, ?, ?, datetime('now', '+30 days'), datetime('now'), datetime('now'))`,
+                            { 
+                                replacements: [
+                                    clientId, 
+                                    sessionSecret, 
+                                    user.uuid,
+                                    client.device_id, 
+                                    JSON.stringify({ userAgent, ip, location: locationString })
+                                ] 
+                            }
+                        ),
+                        'createClientSession'
+                    );
+                    console.log(`[WEBAUTHN] HMAC session created for client: ${sanitizeForLog(clientId)}`);
+                } catch (sessionErr) {
+                    console.error('[WEBAUTHN] Error creating HMAC session:', sessionErr);
+                    // Continue anyway - web clients don't need HMAC sessions
+                }
             }
+            
             // Persist session now
             return req.session.save(err => {
                 if (err) {
                     console.error('Session save error (/webauthn/authenticate):', err);
                     return res.status(500).json({ status: "error", message: "Session save error" });
                 }
+                
+                const response = { 
+                    status: "ok", 
+                    message: "Authentication successful"
+                };
+                
+                // Include session secret for mobile clients
+                if (sessionSecret) {
+                    response.sessionSecret = sessionSecret;
+                    response.userId = user.uuid;
+                    response.email = email;
+                }
+                
                 if(!user.backupCodes) {
-                    res.status(202).json({ status: "ok", message: "Authentication successful" });
+                    res.status(202).json(response);
                 } else {
-                    res.status(200).json({ status: "ok", message: "Authentication successful" });
+                    res.status(200).json(response);
                 }
             });
         } else {

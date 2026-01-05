@@ -1871,11 +1871,12 @@ clientRoutes.delete("/items/:itemId", verifyAuthEither, async (req, res) => {
 
 // Profile setup endpoint for initial registration - with increased body limit for images
 clientRoutes.post("/client/profile/setup", 
+    verifyAuthEither,
     bodyParser.json({ limit: '2mb' }), // Allow up to 2MB for base64 encoded images
     async (req, res) => {
     try {
-        const { displayName, picture } = req.body;
-        const userUuid = req.session.uuid;
+        const { displayName, picture, atName } = req.body;
+        const userUuid = req.userId || req.session.uuid;
 
         if (!userUuid) {
             return res.status(401).json({ status: "error", message: "Not authenticated" });
@@ -1911,6 +1912,29 @@ clientRoutes.post("/client/profile/setup",
             displayName: displayName.trim()
         };
 
+        // Validate and update atName if provided
+        if (atName && atName.trim() !== '') {
+            const trimmedAtName = atName.trim();
+            
+            // Check if atName is already taken by another user
+            if (trimmedAtName !== user.atName) {
+                const existingUser = await User.findOne({
+                    where: {
+                        atName: trimmedAtName,
+                        uuid: { [Op.ne]: userUuid }
+                    }
+                });
+                if (existingUser) {
+                    return res.status(409).json({
+                        status: "error",
+                        message: "@name already taken"
+                    });
+                }
+            }
+            
+            updateData.atName = trimmedAtName;
+        }
+
         // Handle picture if provided (base64 data URL)
         if (picture && picture.startsWith('data:image')) {
             try {
@@ -1939,17 +1963,19 @@ clientRoutes.post("/client/profile/setup",
 
         console.log(`[PROFILE SETUP] User ${userUuid} completed profile setup with displayName: ${displayName}`);
 
-        // Mark registration as complete
-        req.session.registrationStep = 'complete';
+        // Mark registration as complete (only for session-based auth)
+        if (req.session && req.session.registrationStep) {
+            req.session.registrationStep = 'complete';
 
-        // Clear the registration session - user must log in properly after registration
-        req.session.destroy((err) => {
-            if (err) {
-                console.error('[PROFILE SETUP] Error destroying session:', err);
-            } else {
-                console.log('[PROFILE SETUP] Registration session cleared - user must log in');
-            }
-        });
+            // Clear the registration session - user must log in properly after registration
+            req.session.destroy((err) => {
+                if (err) {
+                    console.error('[PROFILE SETUP] Error destroying session:', err);
+                } else {
+                    console.log('[PROFILE SETUP] Registration session cleared - user must log in');
+                }
+            });
+        }
 
         res.status(200).json({ 
             status: "ok", 

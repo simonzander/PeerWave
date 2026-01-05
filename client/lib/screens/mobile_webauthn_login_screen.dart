@@ -6,6 +6,7 @@ import '../services/webauthn_service_mobile.dart';
 import '../services/clientid_native.dart';
 import '../services/device_identity_service.dart';
 import '../services/server_config_native.dart';
+import '../services/session_auth_service.dart';
 
 /// Mobile WebAuthn login screen for iOS/Android
 ///
@@ -159,19 +160,40 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
         return;
       }
 
-      // Save server URL (TODO: Add server to ServerConfigService)
-      // await ServerConfigService.addServer(serverUrl);
+      // Extract server response data
+      final authData = authResult['authData'] as Map<String, dynamic>;
+      final sessionSecret = authData['sessionSecret'] as String?;
+      final userId = authData['userId'] as String?;
+
+      debugPrint(
+        '[MobileWebAuthnLogin] Auth response - has sessionSecret: ${sessionSecret != null}, has userId: ${userId != null}',
+      );
+
+      // Get client ID and store HMAC session for mobile authentication
+      final clientId = await ClientIdService.getClientId();
+
+      if (sessionSecret != null && sessionSecret.isNotEmpty) {
+        // Store HMAC session for authenticated API requests
+        await SessionAuthService().initializeSession(clientId, sessionSecret);
+        debugPrint(
+          '[MobileWebAuthnLogin] ✓ HMAC session stored for mobile authentication',
+        );
+      } else {
+        debugPrint(
+          '[MobileWebAuthnLogin] ⚠️ No sessionSecret in response - HMAC auth will not work!',
+        );
+      }
 
       // Set device identity and encryption key
-      final clientId = await ClientIdService.getClientId();
       DeviceIdentityService.instance.setDeviceIdentity(
         email,
         authResult['credentialId'],
         clientId,
       );
 
-      // Try to authenticate with server (TODO: Implement proper session verification)
-      // For now, auto-navigate to app on successful WebAuthn
+      // Save server URL (TODO: Add server to ServerConfigService)
+      // await ServerConfigService.addServer(serverUrl);
+
       debugPrint('[MobileWebAuthnLogin] ✓ Login successful');
       if (mounted) {
         context.go('/app');
