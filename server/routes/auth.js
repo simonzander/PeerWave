@@ -927,6 +927,7 @@ authRoutes.post('/webauthn/register-challenge', async (req, res) => {
 authRoutes.post('/webauthn/register', async (req, res) => {
     // Check if this is during registration flow (first credential)
     const isFirstCredential = req.session.registrationStep === 'webauthn';
+    console.log('[WEBAUTHN] Registration request - isFirstCredential:', isFirstCredential, 'registrationStep:', req.session.registrationStep, 'authenticated:', req.session.authenticated);
     if(!req.session.otp && !req.session.authenticated && !req.session.email) {
         return res.status(400).json({ status: "error", message: "User not authenticated." });
     }
@@ -1036,6 +1037,14 @@ authRoutes.post('/webauthn/register', async (req, res) => {
                 // Mark session as authenticated so profile setup page is accessible
                 req.session.authenticated = true;
                 req.session.uuid = user.uuid;
+                console.log('[WEBAUTHN] First credential registered - session authenticated:', {
+                    uuid: user.uuid,
+                    email: user.email,
+                    registrationStep: req.session.registrationStep,
+                    authenticated: req.session.authenticated
+                });
+            } else {
+                console.log('[WEBAUTHN] Additional credential registered - not first credential');
             }
 
             res.json({ status: "ok" });
