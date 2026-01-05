@@ -1020,8 +1020,10 @@ authRoutes.post('/webauthn/register', async (req, res) => {
                 transports.push("hybrid");
             }
             
+            // Use the credential ID as sent by the client (already base64url encoded)
+            // This ensures the ID matches what the authenticator expects in allowCredentials
             user.credentials.push({
-                id: base64UrlEncode(regResult.authnrData.get("credId")),
+                id: attestation.id,
                 publicKey: regResult.authnrData.get("credentialPublicKeyPem"),
                 transports: transports,
                 browser: userAgent,

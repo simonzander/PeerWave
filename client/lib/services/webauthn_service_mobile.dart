@@ -371,9 +371,42 @@ class MobileWebAuthnService {
       }
 
       // 5. Use passkeys package to sign challenge (with hardware key)
-      final authResponse = await _passkeysAuth.authenticate(authRequest);
+      late final AuthenticateResponseType authResponse;
+      try {
+        authResponse = await _passkeysAuth.authenticate(authRequest);
+        debugPrint('[MobileWebAuthn] Challenge signed successfully');
+      } catch (e) {
+        debugPrint('[MobileWebAuthn] Authentication error: $e');
 
-      debugPrint('[MobileWebAuthn] Challenge signed successfully');
+        // If specific credential not found, try discoverable authentication (no allowCredentials)
+        if (e.toString().contains('NoCredentialsAvailableException')) {
+          debugPrint(
+            '[MobileWebAuthn] Retrying with discoverable authentication (no allowCredentials)',
+          );
+
+          // Remove allowCredentials to let user pick from all available passkeys
+          challengeData['allowCredentials'] = [];
+          final discoverableRequest = AuthenticateRequestType.fromJson(
+            challengeData,
+          );
+
+          try {
+            authResponse = await _passkeysAuth.authenticate(
+              discoverableRequest,
+            );
+            debugPrint(
+              '[MobileWebAuthn] ✓ Discoverable authentication successful',
+            );
+          } catch (retryError) {
+            debugPrint(
+              '[MobileWebAuthn] ✗ Discoverable authentication also failed: $retryError',
+            );
+            rethrow;
+          }
+        } else {
+          rethrow;
+        }
+      }
 
       // 6. Send assertion to server with clientId for HMAC session
       final authResponseJson = authResponse.toJson();
