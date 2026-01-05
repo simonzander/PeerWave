@@ -1075,16 +1075,18 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
 
         user.credentials = JSON.parse(user.credentials);
 
-        // Use empty allowCredentials to enable discoverable credentials (Google Password Manager)
-        // This allows cross-platform authenticators to work properly
-        challenge.allowCredentials = [];
+        // Include all registered credentials - this allows both platform and cross-platform authenticators
+        challenge.allowCredentials = user.credentials.map(cred => ({
+            id: cred.id,
+            type: "public-key",
+            transports: cred.transports || ["internal", "hybrid"],
+        }));
         
-        // Add user verification preference
+        // Add user verification preference for flexibility
         challenge.userVerification = "preferred";
 
         challenge.challenge = base64UrlEncode(challenge.challenge);
         req.session.challenge = challenge.challenge;
-        req.session.userCredentials = user.credentials; // Store for verification
         res.json(challenge);
     } catch (error) {
         console.error('Error:', error);
@@ -1163,16 +1165,12 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
 
         const user = await User.findOne({ where: { email: email } });
         console.log(user);
-        
-        // Get stored credentials from session (set during challenge generation)
-        const userCredentials = req.session.userCredentials || JSON.parse(user.credentials);
-        const credential = userCredentials.find(cred => cred.id === assertion.id);
+        user.credentials = JSON.parse(user.credentials);
+        const credential = user.credentials.find(cred => cred.id === assertion.id);
         
         if (!credential) {
             throw new AppError("Credential not found for this user", 404);
         }
-        
-        user.credentials = JSON.parse(user.credentials);
 
         if (credential) {
             // Credential found, proceed with authentication
