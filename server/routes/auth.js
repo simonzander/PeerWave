@@ -1003,10 +1003,17 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             const pad = n => n.toString().padStart(2, '0');
             const timestamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
             const location = await getLocationFromIp(ip);
+            // Get transports from attestation, ensuring hybrid is always included for cross-device support
+            const transports = attestation.response.transports || ["internal", "hybrid"];
+            // Ensure hybrid is always present to enable Google Password Manager and other cross-device options
+            if (!transports.includes("hybrid")) {
+                transports.push("hybrid");
+            }
+            
             user.credentials.push({
                 id: base64UrlEncode(regResult.authnrData.get("credId")),
                 publicKey: regResult.authnrData.get("credentialPublicKeyPem"),
-                transports: attestation.response.transports || ["internal", "hybrid"], // Store actual transports
+                transports: transports,
                 browser: userAgent,
                 created: timestamp,
                 location: (location ? `${location.city}, ${location.region}, ${location.country} (${location.org})` : "Location not found"),
@@ -1075,12 +1082,19 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
 
         user.credentials = JSON.parse(user.credentials);
 
-        // Include all registered credentials - this allows both platform and cross-platform authenticators
-        challenge.allowCredentials = user.credentials.map(cred => ({
-            id: cred.id,
-            type: "public-key",
-            transports: cred.transports || ["internal", "hybrid"],
-        }));
+        // Include all registered credentials with enhanced transports
+        challenge.allowCredentials = user.credentials.map(cred => {
+            const transports = cred.transports || ["internal", "hybrid"];
+            // Ensure hybrid is always present to enable cross-device and Google Password Manager
+            if (!transports.includes("hybrid")) {
+                transports.push("hybrid");
+            }
+            return {
+                id: cred.id,
+                type: "public-key",
+                transports: transports,
+            };
+        });
         
         // Add user verification preference for flexibility
         challenge.userVerification = "preferred";
