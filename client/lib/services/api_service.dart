@@ -150,12 +150,18 @@ class SessionAuthInterceptor extends Interceptor {
             final pathOnly = uri.path;
 
             // Generate auth headers
+            final bodyForSignature = options.data != null
+                ? json.encode(options.data)
+                : null;
+
+            debugPrint(
+              '[SessionAuth] Body for signature: ${bodyForSignature?.substring(0, bodyForSignature.length > 100 ? 100 : bodyForSignature.length)}...',
+            );
+
             final authHeaders = await SessionAuthService().generateAuthHeaders(
               clientId: clientId,
               requestPath: pathOnly,
-              requestBody: options.data != null
-                  ? json.encode(options.data)
-                  : null,
+              requestBody: bodyForSignature,
             );
 
             // Add headers to request

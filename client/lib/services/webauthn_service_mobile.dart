@@ -230,6 +230,23 @@ class MobileWebAuthnService {
       debugPrint(
         '[MobileWebAuthn] Passkey created successfully, credential ID: ${registerResponse.id}',
       );
+      debugPrint('[MobileWebAuthn] Credential ID details:');
+      debugPrint('[MobileWebAuthn]   - Length: ${registerResponse.id.length}');
+      debugPrint(
+        '[MobileWebAuthn]   - Contains +: ${registerResponse.id.contains('+')}',
+      );
+      debugPrint(
+        '[MobileWebAuthn]   - Contains /: ${registerResponse.id.contains('/')}',
+      );
+      debugPrint(
+        '[MobileWebAuthn]   - Contains =: ${registerResponse.id.contains('=')}',
+      );
+      debugPrint(
+        '[MobileWebAuthn]   - Contains _: ${registerResponse.id.contains('_')}',
+      );
+      debugPrint(
+        '[MobileWebAuthn]   - Contains -: ${registerResponse.id.contains('-')}',
+      );
 
       // 5. Send attestation to server with clientId for HMAC session
       final registerResponseJson = registerResponse.toJson();
@@ -338,6 +355,28 @@ class MobileWebAuthnService {
       debugPrint(
         '[MobileWebAuthn] allowCredentials: ${challengeData['allowCredentials']}',
       );
+
+      // Log each credential ID in detail
+      if (challengeData['allowCredentials'] is List) {
+        final credentials = challengeData['allowCredentials'] as List;
+        debugPrint(
+          '[MobileWebAuthn] Server sent ${credentials.length} credential(s):',
+        );
+        for (var i = 0; i < credentials.length; i++) {
+          final cred = credentials[i];
+          debugPrint(
+            '[MobileWebAuthn]   [$i] ID: ${cred['id']}, type: ${cred['type']}, transports: ${cred['transports']}',
+          );
+          // Check if ID is base64url encoded correctly
+          if (cred['id'] is String) {
+            final idString = cred['id'] as String;
+            debugPrint(
+              '[MobileWebAuthn]   [$i] ID length: ${idString.length}, contains +: ${idString.contains('+')}, contains /: ${idString.contains('/')}, contains =: ${idString.contains('=')}',
+            );
+          }
+        }
+      }
+
       debugPrint('[MobileWebAuthn] extensions: ${challengeData['extensions']}');
 
       // Fix null values that might cause parsing issues

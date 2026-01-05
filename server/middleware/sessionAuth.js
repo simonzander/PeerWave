@@ -93,9 +93,13 @@ async function verifySessionAuth(req, res, next) {
     if (req.rawBody && req.rawBody.length > 0) {
       // Use raw body if available (set by body-parser with verify option)
       requestBody = req.rawBody.toString('utf8');
+      console.log(`[SessionAuth] Using raw body (${req.rawBody.length} bytes): ${requestBody.substring(0, 100)}...`);
     } else if (req.body && Object.keys(req.body).length > 0) {
       // Fall back to parsed body if raw not available
       requestBody = JSON.stringify(req.body);
+      console.log(`[SessionAuth] Using parsed body: ${requestBody.substring(0, 100)}...`);
+    } else {
+      console.log(`[SessionAuth] No body available - req.rawBody: ${req.rawBody ? 'exists but empty' : 'undefined'}, req.body: ${JSON.stringify(req.body)}`);
     }
     
     // Use full path (e.g., /api/livekit/token) not relative path (e.g., /token)
