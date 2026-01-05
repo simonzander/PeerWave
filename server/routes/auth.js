@@ -910,8 +910,8 @@ authRoutes.post('/webauthn/register-challenge', async (req, res) => {
     challenge.authenticatorSelection = {
         // authenticatorAttachment: removed to allow all authenticator types
         userVerification: "preferred",  // Prefer biometric/PIN but allow fallback
-        residentKey: "preferred",  // Prefer discoverable credentials (passwordless)
-        requireResidentKey: false  // But don't force it
+        residentKey: "required",  // Require discoverable credentials for passwordless login
+        requireResidentKey: false  // Deprecated field, keep false for backwards compatibility
     };
 
     // Optional: andere Policies
@@ -925,8 +925,8 @@ authRoutes.post('/webauthn/register-challenge', async (req, res) => {
 
 // Verify registration response
 authRoutes.post('/webauthn/register', async (req, res) => {
-    // Check if this is the first credential - if so, advance registration step
-    const isFirstCredential = req.session.authenticated && req.session.registrationStep === 'webauthn';
+    // Check if this is during registration flow (first credential)
+    const isFirstCredential = req.session.registrationStep === 'webauthn';
     if(!req.session.otp && !req.session.authenticated && !req.session.email) {
         return res.status(400).json({ status: "error", message: "User not authenticated." });
     }
