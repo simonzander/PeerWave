@@ -1162,10 +1162,9 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
             throw new AppError("Invalid hostname for authentication - server misconfiguration", 500);
         }
         
-        challenge.rp = {
-            name: "PeerWave",
-            id: host,
-        };
+        // IMPORTANT: Do NOT set challenge.rp for authentication (assertionOptions)
+        // rp is ONLY for registration (attestationOptions)
+        // Android Credential Manager strictly enforces this WebAuthn spec requirement
 
         user.credentials = JSON.parse(user.credentials);
 
@@ -1175,16 +1174,16 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
         });
 
         // Android vs Web: Different allowCredentials handling
-        // - Android: Empty allowCredentials required for discoverable passkeys (shows passkey picker)
+        // - Android: Field must not exist for discoverable passkeys (shows passkey picker)
         // - Web: Populated allowCredentials preferred (filters to user's passkeys in password manager)
         const userAgent = req.headers['user-agent'] || '';
         const isAndroid = userAgent.includes('Android') || req.body.platform === 'android';
         
         if (isAndroid) {
-            // Android Credential Manager: MUST be empty for discoverable credentials
-            // Setting credential IDs forces Android into "classic security key" mode = fails
-            challenge.allowCredentials = [];
-            console.log('[WEBAUTHN AUTH] Android detected - using empty allowCredentials for discoverable authentication');
+            // Android Credential Manager: Field must NOT EXIST for discoverable credentials
+            // Delete the field entirely (not just set to empty array)
+            delete challenge.allowCredentials;
+            console.log('[WEBAUTHN AUTH] Android detected - removed allowCredentials for discoverable authentication');
         } else {
             // Web/Desktop: Include credential IDs so password managers (Bitwarden, 1Password) filter correctly
             challenge.allowCredentials = user.credentials.map(cred => {

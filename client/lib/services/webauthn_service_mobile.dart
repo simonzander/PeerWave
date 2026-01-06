@@ -327,19 +327,20 @@ class MobileWebAuthnService {
         return null;
       }
 
-      // 2. Check if credential exists for this server/email
-      final storedCredential = await _getStoredCredential(serverUrl, userEmail);
-      if (storedCredential == null) {
-        debugPrint(
-          '[MobileWebAuthn] No credential found for $userEmail @ $serverUrl',
-        );
-        return null;
-      }
+      // 2. Skip local credential check - use discoverable authentication
+      // Android Credential Manager will show available passkeys regardless of local metadata
+      debugPrint(
+        '[MobileWebAuthn] Using discoverable authentication (no local credential check)',
+      );
 
       // 3. Request authentication challenge from server
+      // Send platform parameter so server knows to use empty allowCredentials
       final challengeResponse = await ApiService.dio.post(
         '$serverUrl/webauthn/authenticate-challenge',
-        data: {'email': userEmail},
+        data: {
+          'email': userEmail,
+          'platform': 'android', // Explicit platform for server-side detection
+        },
       );
 
       if (challengeResponse.statusCode != 200) {
@@ -442,6 +443,10 @@ class MobileWebAuthnService {
       final clientId = await _getClientId();
       authResponseJson['clientId'] = clientId;
 
+      // Extract credential ID from the response
+      final credentialId = authResponse.id;
+      debugPrint('[MobileWebAuthn] Credential ID used: $credentialId');
+
       final serverResponse = await ApiService.dio.post(
         '$serverUrl/webauthn/authenticate',
         data: authResponseJson,
@@ -457,10 +462,14 @@ class MobileWebAuthnService {
       final responseData = serverResponse.data as Map<String, dynamic>;
       debugPrint('[MobileWebAuthn] ✓ Authentication successful');
 
-      return {
-        'credentialId': storedCredential['credentialId'],
-        'authData': responseData,
-      };
+      // Store credential metadata for future use (if not already stored)
+      await _storeCredential(
+        serverUrl: serverUrl,
+        email: userEmail,
+        credentialId: credentialId,
+      );
+
+      return {'credentialId': credentialId, 'authData': responseData};
     } catch (e) {
       debugPrint('[MobileWebAuthn] Authentication error: $e');
       return null;

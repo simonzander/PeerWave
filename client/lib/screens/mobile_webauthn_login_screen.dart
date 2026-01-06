@@ -73,15 +73,11 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
     if (_serverUrl == null || _isLoading) return;
 
     try {
-      // This will show Google Password Manager with available passkeys
+      // Trigger authentication which will show the passkey picker
+      // No need to check hasCredential - let Credential Manager handle it
       final email = _emailController.text.trim();
       if (email.isNotEmpty) {
-        final hasCredential = await MobileWebAuthnService.instance
-            .hasCredential(_serverUrl!, email);
-        if (hasCredential) {
-          // Trigger authentication which will show the passkey picker
-          await _handleWebAuthnLogin(email: email);
-        }
+        await _handleWebAuthnLogin(email: email);
       }
     } catch (e) {
       debugPrint('[MobileWebAuthnLogin] Auto-auth failed: $e');
@@ -171,23 +167,11 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
     });
 
     try {
-      // Check if credential exists
-      final hasCredential = await MobileWebAuthnService.instance.hasCredential(
-        _serverUrl!,
-        email,
-      );
+      // Skip hasCredential check - let Android Credential Manager show available passkeys
+      // This allows discoverable credentials to work even if local metadata is missing
+      debugPrint('[MobileWebAuthnLogin] Starting authentication for $email');
 
-      if (!hasCredential) {
-        // No credential - need to register first
-        setState(() {
-          _errorMessage =
-              'No credential found. Please register your device first.';
-          _isLoading = false;
-        });
-        return;
-      }
-
-      // Authenticate with WebAuthn
+      // Authenticate with WebAuthn (will show passkey picker if credentials exist)
       final authResult = await MobileWebAuthnService.instance.authenticate(
         serverUrl: _serverUrl!,
         email: email,
