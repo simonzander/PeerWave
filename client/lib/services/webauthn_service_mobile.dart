@@ -394,12 +394,27 @@ class MobileWebAuthnService {
 
       debugPrint('[MobileWebAuthn] Fixed challenge data: $challengeData');
 
+      // Log RP information for debugging
+      debugPrint('[MobileWebAuthn] RP from server: ${challengeData['rp']}');
+      if (challengeData['rp'] is Map) {
+        final rp = challengeData['rp'] as Map;
+        debugPrint('[MobileWebAuthn]   - RP name: ${rp['name']}');
+        debugPrint('[MobileWebAuthn]   - RP id: ${rp['id']}');
+      }
+
       // 4. Create AuthenticateRequestType from server challenge
       late final AuthenticateRequestType authRequest;
       try {
         authRequest = AuthenticateRequestType.fromJson(challengeData);
         debugPrint(
           '[MobileWebAuthn] AuthenticateRequestType created successfully',
+        );
+        debugPrint('[MobileWebAuthn]   - Calling passkeys.authenticate()...');
+        debugPrint(
+          '[MobileWebAuthn]   - This will trigger Android Credential Manager',
+        );
+        debugPrint(
+          '[MobileWebAuthn]   - Expected behavior: Show passkey picker with registered passkeys',
         );
       } catch (e, stackTrace) {
         debugPrint(
