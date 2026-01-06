@@ -380,11 +380,12 @@ class MobileWebAuthnService {
       debugPrint('[MobileWebAuthn] extensions: ${challengeData['extensions']}');
 
       // Fix null values that might cause parsing issues
-      // Ensure allowCredentials is a list (not null)
-      if (challengeData['allowCredentials'] == null) {
-        debugPrint('[MobileWebAuthn] Fixing null allowCredentials');
-        challengeData['allowCredentials'] = [];
-      }
+      // ALWAYS use empty allowCredentials for discoverable authentication
+      // This forces Android to show ALL registered passkeys for this rpId
+      debugPrint(
+        '[MobileWebAuthn] Forcing empty allowCredentials (discoverable authentication)',
+      );
+      challengeData['allowCredentials'] = [];
 
       // Ensure extensions is a map (not null)
       if (challengeData['extensions'] == null) {
@@ -431,35 +432,7 @@ class MobileWebAuthnService {
         debugPrint('[MobileWebAuthn] Challenge signed successfully');
       } catch (e) {
         debugPrint('[MobileWebAuthn] Authentication error: $e');
-
-        // If specific credential not found, try discoverable authentication (no allowCredentials)
-        if (e.toString().contains('NoCredentialsAvailableException')) {
-          debugPrint(
-            '[MobileWebAuthn] Retrying with discoverable authentication (no allowCredentials)',
-          );
-
-          // Remove allowCredentials to let user pick from all available passkeys
-          challengeData['allowCredentials'] = [];
-          final discoverableRequest = AuthenticateRequestType.fromJson(
-            challengeData,
-          );
-
-          try {
-            authResponse = await _passkeysAuth.authenticate(
-              discoverableRequest,
-            );
-            debugPrint(
-              '[MobileWebAuthn] ✓ Discoverable authentication successful',
-            );
-          } catch (retryError) {
-            debugPrint(
-              '[MobileWebAuthn] ✗ Discoverable authentication also failed: $retryError',
-            );
-            rethrow;
-          }
-        } else {
-          rethrow;
-        }
+        rethrow;
       }
 
       // 6. Send assertion to server with clientId for HMAC session
