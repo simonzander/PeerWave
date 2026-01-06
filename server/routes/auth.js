@@ -894,7 +894,10 @@ authRoutes.post('/webauthn/register-challenge', async (req, res) => {
 
     const challenge = await fido2.attestationOptions();
 
-    const host = req.hostname; // "localhost" oder deine ngrok-domain
+    // Use environment variable for production, fallback to req.hostname for local dev
+    const host = process.env.DOMAIN || req.hostname || 'localhost';
+    console.log(`[WEBAUTHN REG] RP ID: ${host}`);
+    
     // Allow ngrok and localhost for WebAuthn
     const allowedOrigins = [
         "http://localhost:3000",
@@ -1027,7 +1030,7 @@ authRoutes.post('/webauthn/register', async (req, res) => {
                 publicKey: regResult.authnrData.get("credentialPublicKeyPem"),
                 transports: transports,
                 browser: userAgent,
-                created: timestamp,
+                createdAt: timestamp,
                 location: (location ? `${location.city}, ${location.region}, ${location.country} (${location.org})` : "Location not found"),
                 ip: ip,
                 lastLogin: ""
@@ -1143,12 +1146,20 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
 
         const challenge = await fido2.assertionOptions();
 
-        // Domain/Origin dynamisch bestimmen
-        const host = req.hostname; // z. B. "localhost" oder "abc123.ngrok-free.app"
+        // Use environment variable for production (most reliable)
+        // Fallback to req.hostname for local development
+        const host = process.env.DOMAIN || req.hostname || req.get('host')?.split(':')[0] || 'localhost';
         const protocol = req.secure ? "https" : "http";
         const origin = `${protocol}://${host}`;
 
-        // RP Infos überschreiben
+        console.log(`[WEBAUTHN AUTH] RP ID: ${host}, Origin: ${origin}`);
+
+        // Validate host is never empty (critical for Google Play Services)
+        if (!host || host.trim() === '') {
+            console.error('[WEBAUTHN AUTH] ERROR: Host is empty! Check DOMAIN env variable');
+            throw new AppError("Invalid hostname for authentication - server misconfiguration", 500);
+        }
+        
         challenge.rp = {
             name: "PeerWave",
             id: host,
@@ -1493,7 +1504,7 @@ authRoutes.get("/webauthn/list", async (req, res) => {
                 browser: cred.browser || null,
                 ip: cred.ip || null,
                 location: cred.location || null,
-                created: cred.created || null,
+                createdAt: cred.createdAt || cred.created || null,  // Support both old and new field names
                 lastLogin: cred.lastLogin || null
             }));
             res.status(200).json({ status: "ok", credentials: credentials });
