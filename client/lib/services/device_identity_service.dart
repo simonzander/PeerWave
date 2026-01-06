@@ -265,14 +265,19 @@ class DeviceIdentityService {
     }
   }
 
-  /// Generate stable device ID from email + credential ID + client ID
+  /// Generate stable device ID from email + client ID
   ///
+  /// CRITICAL: deviceId represents the DEVICE, not individual passkeys!
   /// This ensures:
   /// - Same user on different devices → different deviceId (different clientId)
-  /// - Same user with different authenticators → different deviceId (different credentialId)
-  /// - Same authenticator on different browsers → different deviceId (different clientId)
+  /// - Multiple passkeys on same device → SAME deviceId (same clientId)
+  /// - Database and encryption keys remain stable when adding passkeys
+  ///
+  /// Note: credentialId is NOT included in deviceId hash, as the device identity
+  /// should remain stable even when registering additional security keys
   String _generateDeviceId(String email, String credentialId, String clientId) {
-    final combined = '$email:$credentialId:$clientId';
+    // Device ID based ONLY on email + clientId (stable per device)
+    final combined = '$email:$clientId';
     final bytes = utf8.encode(combined);
     final digest = sha256.convert(bytes);
 
