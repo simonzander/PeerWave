@@ -1174,12 +1174,32 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
             console.log(`[WEBAUTHN AUTH] Credential ${idx}: id=${cred.id}, transports=${JSON.stringify(cred.transports)}`);
         });
 
-        // For discoverable credentials (residentKey: "required"), allowCredentials MUST be empty
-        // Android Credential Manager requires this to show passkey picker
-        // Setting allowCredentials forces Android into "classic security key" mode which fails
-        challenge.allowCredentials = [];
+        // Android vs Web: Different allowCredentials handling
+        // - Android: Empty allowCredentials required for discoverable passkeys (shows passkey picker)
+        // - Web: Populated allowCredentials preferred (filters to user's passkeys in password manager)
+        const userAgent = req.headers['user-agent'] || '';
+        const isAndroid = userAgent.includes('Android') || req.body.platform === 'android';
         
-        console.log('[WEBAUTHN AUTH] Using empty allowCredentials for discoverable authentication');
+        if (isAndroid) {
+            // Android Credential Manager: MUST be empty for discoverable credentials
+            // Setting credential IDs forces Android into "classic security key" mode = fails
+            challenge.allowCredentials = [];
+            console.log('[WEBAUTHN AUTH] Android detected - using empty allowCredentials for discoverable authentication');
+        } else {
+            // Web/Desktop: Include credential IDs so password managers (Bitwarden, 1Password) filter correctly
+            challenge.allowCredentials = user.credentials.map(cred => {
+                const transports = cred.transports || ["internal", "hybrid"];
+                if (!transports.includes("hybrid")) {
+                    transports.push("hybrid");
+                }
+                return {
+                    id: cred.id,
+                    type: "public-key",
+                    transports: transports,
+                };
+            });
+            console.log('[WEBAUTHN AUTH] Web/Desktop detected - including credential IDs for password manager filtering');
+        }
         
         // Add user verification preference for flexibility
         challenge.userVerification = "preferred";
