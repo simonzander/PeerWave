@@ -280,6 +280,18 @@ const sessionMiddleware = session({
 // Use session middleware in Express
 app.use(sessionMiddleware);
 
+// ==================== RAW BODY CAPTURE ====================
+// CRITICAL: Capture raw body BEFORE any route handlers
+// This is required for HMAC signature verification in sessionAuth
+// Must run before verifyAuthEither middleware
+const bodyParser = require('body-parser');
+app.use(bodyParser.json({
+  verify: (req, res, buf, encoding) => {
+    // Store raw body buffer for HMAC signature calculation
+    req.rawBody = buf;
+  }
+}));
+
 // Registration step middleware - redirects to correct step based on session
 app.use((req, res, next) => {
   // Only check for registration paths

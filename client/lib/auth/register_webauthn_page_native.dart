@@ -151,10 +151,9 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
         }
       }
 
-      // Set device identity
-      // Email will be retrieved from server session by the service
+      // Set device identity with email from registration flow
       await DeviceIdentityService.instance.setDeviceIdentity(
-        '', // Email retrieved from session internally
+        widget.email ?? '', // Use email from registration flow
         credentialId,
         clientId,
         serverUrl: _serverUrl,

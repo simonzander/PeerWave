@@ -32,6 +32,7 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
   bool _isBiometricAvailable = false;
   String? _errorMessage;
   String _registrationMode = 'open';
+  bool _hasAttemptedAutoAuth = false;
 
   @override
   void initState() {
@@ -42,13 +43,50 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
     }
     _checkBiometricAvailability();
     _loadServerSettings();
+    // Auto-trigger passkey authentication on email field focus
+    _emailController.addListener(_onEmailFocusChanged);
   }
 
   @override
   void dispose() {
+    _emailController.removeListener(_onEmailFocusChanged);
     _emailController.dispose();
     _invitationTokenController.dispose();
     super.dispose();
+  }
+
+  /// Trigger passkey selection when user starts typing email
+  void _onEmailFocusChanged() {
+    if (!_hasAttemptedAutoAuth && _emailController.text.isNotEmpty) {
+      _hasAttemptedAutoAuth = true;
+      // Small delay to let user see they're typing
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && _isBiometricAvailable) {
+          _attemptDiscoverableAuth();
+        }
+      });
+    }
+  }
+
+  /// Attempt discoverable authentication (shows passkey picker)
+  Future<void> _attemptDiscoverableAuth() async {
+    if (_serverUrl == null || _isLoading) return;
+
+    try {
+      // This will show Google Password Manager with available passkeys
+      final email = _emailController.text.trim();
+      if (email.isNotEmpty) {
+        final hasCredential = await MobileWebAuthnService.instance
+            .hasCredential(_serverUrl!, email);
+        if (hasCredential) {
+          // Trigger authentication which will show the passkey picker
+          await _handleWebAuthnLogin(email: email);
+        }
+      }
+    } catch (e) {
+      debugPrint('[MobileWebAuthnLogin] Auto-auth failed: $e');
+      // Silently fail - user can still click login button
+    }
   }
 
   Future<void> _checkBiometricAvailability() async {
@@ -110,9 +148,14 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
     return null;
   }
 
-  Future<void> _handleWebAuthnLogin() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
+  /// Handles WebAuthn login with automatic credential discovery
+  /// If email is provided, uses it. Otherwise attempts discoverable authentication.
+  Future<void> _handleWebAuthnLogin({String? email}) async {
+    if (email == null || email.isEmpty) {
+      if (!_formKey.currentState!.validate()) {
+        return;
+      }
+      email = _emailController.text.trim();
     }
 
     if (_serverUrl == null || _serverUrl!.isEmpty) {
@@ -128,8 +171,6 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
     });
 
     try {
-      final email = _emailController.text.trim();
-
       // Check if credential exists
       final hasCredential = await MobileWebAuthnService.instance.hasCredential(
         _serverUrl!,
@@ -339,9 +380,13 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
 
                 const SizedBox(height: 48),
 
-                // Email input
+                // Email input with passkey autofill support
                 TextFormField(
                   controller: _emailController,
+                  autofillHints: const [
+                    AutofillHints.email,
+                    AutofillHints.username,
+                  ],
                   decoration: InputDecoration(
                     labelText: 'Email',
                     labelStyle: TextStyle(

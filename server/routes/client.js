@@ -1883,12 +1883,6 @@ clientRoutes.delete("/items/:itemId", verifyAuthEither, async (req, res) => {
 // Profile setup endpoint for initial registration - with increased body limit for images
 clientRoutes.post("/client/profile/setup", 
     verifyAuthEither,
-    bodyParser.json({ 
-        limit: '2mb', // Allow up to 2MB for base64 encoded images
-        verify: (req, res, buf) => {
-            req.rawBody = buf;
-        }
-    }),
     async (req, res) => {
     try {
         const { displayName, picture, atName } = req.body;
