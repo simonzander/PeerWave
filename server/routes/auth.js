@@ -1149,10 +1149,12 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
         // Use environment variable for production (most reliable)
         // Fallback to req.hostname for local development
         const host = process.env.DOMAIN || req.hostname || req.get('host')?.split(':')[0] || 'localhost';
-        const protocol = req.secure ? "https" : "http";
+        // Check X-Forwarded-Proto for reverse proxy (Nginx, Cloudflare, Traefik)
+        // req.secure is often false behind proxies
+        const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
         const origin = `${protocol}://${host}`;
 
-        console.log(`[WEBAUTHN AUTH] RP ID: ${host}, Origin: ${origin}`);
+        console.log(`[WEBAUTHN AUTH] RP ID: ${host}, Origin: ${origin}, Protocol source: ${req.headers['x-forwarded-proto'] ? 'x-forwarded-proto' : 'req.secure'}`);
 
         // Validate host is never empty (critical for Google Play Services)
         if (!host || host.trim() === '') {
@@ -1172,19 +1174,12 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
             console.log(`[WEBAUTHN AUTH] Credential ${idx}: id=${cred.id}, transports=${JSON.stringify(cred.transports)}`);
         });
 
-        // Include all registered credentials with enhanced transports
-        challenge.allowCredentials = user.credentials.map(cred => {
-            const transports = cred.transports || ["internal", "hybrid"];
-            // Ensure hybrid is always present to enable cross-device and Google Password Manager
-            if (!transports.includes("hybrid")) {
-                transports.push("hybrid");
-            }
-            return {
-                id: cred.id,
-                type: "public-key",
-                transports: transports,
-            };
-        });
+        // For discoverable credentials (residentKey: "required"), allowCredentials MUST be empty
+        // Android Credential Manager requires this to show passkey picker
+        // Setting allowCredentials forces Android into "classic security key" mode which fails
+        challenge.allowCredentials = [];
+        
+        console.log('[WEBAUTHN AUTH] Using empty allowCredentials for discoverable authentication');
         
         // Add user verification preference for flexibility
         challenge.userVerification = "preferred";
