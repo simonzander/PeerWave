@@ -34,6 +34,8 @@ external set _onWebAuthnSignature(SignatureCallback callback);
 external void localStorageSetItem(String key, String value);
 @JS('window.localStorage.getItem')
 external String? localStorageGetItem(String key);
+@JS('window.location.hash')
+external String? getWindowLocationHash();
 
 // JS function to change window location (for deep links)
 @JS('eval')
@@ -262,33 +264,73 @@ class _AuthLayoutState extends State<AuthLayout> {
       // Parse fragment (hash) to extract query parameters
       // URL format: http://server/#/login?from=app&email=...
       final uri = Uri.base;
-      final fragment = uri.fragment; // e.g., "/login?from=app&email=..."
 
-      debugPrint('[AUTH] Fragment: $fragment');
+      debugPrint('[AUTH] Full URI: $uri');
+      debugPrint('[AUTH] URI path: ${uri.path}');
+      debugPrint('[AUTH] URI fragment: ${uri.fragment}');
+      debugPrint('[AUTH] URI query: ${uri.query}');
 
-      // Extract query parameters from fragment
-      Map<String, String> queryParams = {};
-      if (fragment.contains('?')) {
-        final queryString = fragment.split('?').last;
-        queryParams = Uri.splitQueryString(queryString);
+      // Try multiple ways to get the parameters
+      String? fromParam;
+      String? emailParam;
+
+      // Method 1: Check URI query parameters (standard location)
+      if (uri.queryParameters.containsKey('from')) {
+        fromParam = uri.queryParameters['from'];
+        emailParam = uri.queryParameters['email'];
+        debugPrint(
+          '[AUTH] Method 1 (query): from=$fromParam, email=$emailParam',
+        );
       }
 
-      final fromApp = queryParams['from'] == 'app';
-      final email = queryParams['email'];
+      // Method 2: Parse fragment for query parameters (hash routing)
+      if (fromParam == null && uri.fragment.contains('?')) {
+        final fragment = uri.fragment;
+        final queryString = fragment.split('?').last;
+        final queryParams = Uri.splitQueryString(queryString);
+        fromParam = queryParams['from'];
+        emailParam = queryParams['email'];
+        debugPrint(
+          '[AUTH] Method 2 (fragment): from=$fromParam, email=$emailParam, fragment=$fragment',
+        );
+      }
 
-      debugPrint('[AUTH] Query params: $queryParams');
-      debugPrint('[AUTH] From app: $fromApp, Email: $email');
+      // Method 3: Use window.location.hash via JS interop
+      if (fromParam == null) {
+        try {
+          final hash = getWindowLocationHash();
+          debugPrint('[AUTH] Method 3 (JS hash): $hash');
+          if (hash != null && hash.contains('?')) {
+            final queryString = hash.split('?').last;
+            final queryParams = Uri.splitQueryString(queryString);
+            fromParam = queryParams['from'];
+            emailParam = queryParams['email'];
+            debugPrint(
+              '[AUTH] Method 3 parsed: from=$fromParam, email=$emailParam',
+            );
+          }
+        } catch (e) {
+          debugPrint('[AUTH] Method 3 failed: $e');
+        }
+      }
+
+      final fromApp = fromParam == 'app';
+
+      debugPrint(
+        '[AUTH] Final result - From app: $fromApp, Email: $emailParam',
+      );
 
       setState(() {
         _isFromMobileApp = fromApp;
-        if (fromApp && email != null && email.isNotEmpty) {
-          // _mobileAppEmail = email; // Store for future use
-          emailController.text = email;
+        if (fromApp && emailParam != null && emailParam.isNotEmpty) {
+          emailController.text = emailParam;
         }
       });
 
       if (fromApp) {
-        debugPrint('[AUTH] ✓ Opened from mobile app, email: $email');
+        debugPrint('[AUTH] ✓ Opened from mobile app, email: $emailParam');
+      } else {
+        debugPrint('[AUTH] ✗ Not from mobile app (showing register button)');
       }
     }
   }
