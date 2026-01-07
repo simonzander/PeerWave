@@ -106,8 +106,16 @@ class _AuthLayoutState extends State<AuthLayout> {
 
     // Prefer query params provided by GoRouter (works reliably with hash routing).
     _isFromMobileApp = widget.fromApp;
-    if (widget.initialEmail != null && widget.initialEmail!.trim().isNotEmpty) {
-      final email = widget.initialEmail!.trim();
+    final initialEmailFromRoute = widget.initialEmail?.trim();
+    final hasInitialEmailFromRoute =
+        initialEmailFromRoute != null && initialEmailFromRoute.isNotEmpty;
+
+    debugPrint(
+      '[AUTH] ctor params: fromApp=${widget.fromApp}, initialEmail=$initialEmailFromRoute',
+    );
+
+    if (hasInitialEmailFromRoute) {
+      final email = initialEmailFromRoute;
       _lastEmail = email;
       emailController.text = email;
       localStorageSetItem('email', email);
@@ -125,7 +133,9 @@ class _AuthLayoutState extends State<AuthLayout> {
     // The clientId will be fetched/created after WebAuthn authentication
     // and stored paired with the user's email address
     final storedEmail = localStorageGetItem('email');
-    if (storedEmail != null && storedEmail.isNotEmpty) {
+    if (!hasInitialEmailFromRoute &&
+        storedEmail != null &&
+        storedEmail.isNotEmpty) {
       _lastEmail = storedEmail;
       emailController.text = storedEmail;
     }
@@ -286,7 +296,14 @@ class _AuthLayoutState extends State<AuthLayout> {
     if (!kIsWeb) return;
 
     final qp = GoRouterState.of(context).uri.queryParameters;
-    final fromApp = (qp['from'] ?? '').trim().toLowerCase() == 'app';
+    final fromRaw = qp['from'];
+    if (fromRaw == null) {
+      // Don't override constructor-provided value if the router hasn't
+      // provided query params for some reason.
+      return;
+    }
+
+    final fromApp = fromRaw.trim().toLowerCase() == 'app';
     final emailParam = qp['email']?.trim();
 
     debugPrint(
