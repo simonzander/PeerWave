@@ -25,6 +25,7 @@
     "express-session": "^1.18.0",
     "fido2-lib": "^3.5.3",
     "js-yaml": "^4.1.0",
+    "jsonwebtoken": "^9.0.3",
     "livekit-server-sdk": "^2.7.2",
     "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",

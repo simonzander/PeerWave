@@ -35,6 +35,10 @@ external void localStorageSetItem(String key, String value);
 @JS('window.localStorage.getItem')
 external String? localStorageGetItem(String key);
 
+// JS function to change window location (for deep links)
+@JS('eval')
+external void jsEval(String code);
+
 @JS()
 extension type AuthCallback(JSFunction _) {}
 @JS()
@@ -83,10 +87,13 @@ class _AuthLayoutState extends State<AuthLayout> {
   String? _lastEmail;
   Map<String, dynamic>? _serverSettings;
   bool _loadingSettings = true;
+  bool _isFromMobileApp = false;
+  // String? _mobileAppEmail; // Reserved for future use
 
   @override
   void initState() {
     super.initState();
+    _checkIfFromMobileApp();
     // Load server settings
     _loadServerSettings();
     // NOTE: clientId is no longer persisted here - it's managed after login
@@ -189,7 +196,22 @@ class _AuthLayoutState extends State<AuthLayout> {
           '[AUTH] ✓ Navigating to /app (initialization will continue there)',
         );
         if (!mounted) return;
-        if (fromParam == 'magic-link') {
+
+        // If opened from mobile app, redirect back with deep link
+        if (_isFromMobileApp) {
+          debugPrint('[AUTH] Login successful, redirecting to mobile app');
+          // Trigger deep link to return to app
+          if (kIsWeb) {
+            try {
+              jsEval(
+                "window.location.href = 'peerwave://auth/callback?success=true';",
+              );
+            } catch (e) {
+              debugPrint('[AUTH] Failed to trigger deep link: $e');
+              context.go('/app');
+            }
+          }
+        } else if (fromParam == 'magic-link') {
           context.go('/magic-link');
         } else {
           context.go('/app');
@@ -232,6 +254,43 @@ class _AuthLayoutState extends State<AuthLayout> {
   void dispose() {
     _sub?.cancel();
     super.dispose();
+  }
+
+  /// Check if opened from mobile app via Chrome Custom Tab
+  void _checkIfFromMobileApp() {
+    if (kIsWeb) {
+      // Parse fragment (hash) to extract query parameters
+      // URL format: http://server/#/login?from=app&email=...
+      final uri = Uri.base;
+      final fragment = uri.fragment; // e.g., "/login?from=app&email=..."
+
+      debugPrint('[AUTH] Fragment: $fragment');
+
+      // Extract query parameters from fragment
+      Map<String, String> queryParams = {};
+      if (fragment.contains('?')) {
+        final queryString = fragment.split('?').last;
+        queryParams = Uri.splitQueryString(queryString);
+      }
+
+      final fromApp = queryParams['from'] == 'app';
+      final email = queryParams['email'];
+
+      debugPrint('[AUTH] Query params: $queryParams');
+      debugPrint('[AUTH] From app: $fromApp, Email: $email');
+
+      setState(() {
+        _isFromMobileApp = fromApp;
+        if (fromApp && email != null && email.isNotEmpty) {
+          // _mobileAppEmail = email; // Store for future use
+          emailController.text = email;
+        }
+      });
+
+      if (fromApp) {
+        debugPrint('[AUTH] ✓ Opened from mobile app, email: $email');
+      }
+    }
   }
 
   Future<void> _loadServerSettings() async {
@@ -345,7 +404,18 @@ class _AuthLayoutState extends State<AuthLayout> {
     String clientId,
   ) async {
     if (kIsWeb) {
-      await webauthnLoginJs(serverUrl, email, clientId).toDart;
+      debugPrint(
+        '[AUTH] Calling webauthnLoginJs with serverUrl: $serverUrl, email: $email',
+      );
+      try {
+        await webauthnLoginJs(serverUrl, email, clientId).toDart;
+        debugPrint('[AUTH] webauthnLoginJs completed');
+      } catch (e) {
+        debugPrint('[AUTH] webauthnLoginJs error: $e');
+        setState(() {
+          _loginStatus = 'WebAuthn error: $e';
+        });
+      }
     } else {
       debugPrint('WebAuthn is only available on Flutter web.');
     }
@@ -519,12 +589,15 @@ class _AuthLayoutState extends State<AuthLayout> {
                     elevation: 2,
                   ),
                   onPressed: () async {
+                    debugPrint('[AUTH] Login button pressed');
                     final email = emailController.text.trim();
+                    debugPrint('[AUTH] Email: $email');
                     _lastEmail = email;
                     localStorageSetItem('email', email);
                     if (kIsWeb) {
                       try {
                         final apiServer = await loadWebApiServer();
+                        debugPrint('[AUTH] API Server: $apiServer');
                         String urlString = apiServer ?? '';
                         if (!urlString.startsWith('http://') &&
                             !urlString.startsWith('https://')) {
@@ -539,9 +612,14 @@ class _AuthLayoutState extends State<AuthLayout> {
                         );
 
                         // ClientId is passed directly to WebAuthn JS function (no localStorage needed)
+                        debugPrint('[AUTH] About to call webauthnLogin...');
                         await webauthnLogin(urlString, email, clientId);
+                        debugPrint('[AUTH] webauthnLogin call completed');
                       } catch (e) {
                         debugPrint('WebAuthn JS call failed: $e');
+                        setState(() {
+                          _loginStatus = 'Login error: $e';
+                        });
                       }
                     }
                   },
@@ -553,66 +631,99 @@ class _AuthLayoutState extends State<AuthLayout> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 52),
-                    foregroundColor: colorScheme.primary,
-                    side: BorderSide(color: colorScheme.outline),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                // Show Register OR Abort button based on context
+                if (_isFromMobileApp)
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 52),
+                      foregroundColor: colorScheme.error,
+                      side: BorderSide(color: colorScheme.outline),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                  ),
-                  onPressed: _loadingSettings
-                      ? null
-                      : () async {
-                          final email = emailController.text.trim();
+                    onPressed: () {
+                      // Redirect back to app with cancellation
+                      if (kIsWeb) {
+                        debugPrint('[AUTH] User aborted from mobile');
+                        try {
+                          jsEval(
+                            "window.location.href = 'peerwave://auth/callback?cancelled=true';",
+                          );
+                        } catch (e) {
+                          debugPrint('[AUTH] Failed to trigger deep link: $e');
+                          context.go('/');
+                        }
+                      }
+                    },
+                    child: Text(
+                      "Cancel",
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  )
+                else
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 52),
+                      foregroundColor: colorScheme.primary,
+                      side: BorderSide(color: colorScheme.outline),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: _loadingSettings
+                        ? null
+                        : () async {
+                            final email = emailController.text.trim();
 
-                          // Validate email format
-                          if (email.isEmpty || !email.contains('@')) {
-                            setState(
-                              () => _loginStatus = 'Invalid email address',
-                            );
-                            return;
-                          }
-
-                          // Check registration mode
-                          final mode =
-                              _serverSettings?['registrationMode'] ?? 'open';
-
-                          // Handle email_suffix mode
-                          if (mode == 'email_suffix') {
-                            final suffixes =
-                                _serverSettings?['allowedEmailSuffixes']
-                                    as List? ??
-                                [];
-                            if (!_validateEmailSuffix(email, suffixes)) {
+                            // Validate email format
+                            if (email.isEmpty || !email.contains('@')) {
                               setState(
-                                () => _loginStatus =
-                                    'Registration is restricted to specific email domains',
+                                () => _loginStatus = 'Invalid email address',
                               );
                               return;
                             }
-                          }
 
-                          // Handle invitation_only mode
-                          if (mode == 'invitation_only') {
-                            context.go(
-                              '/register/invitation',
-                              extra: {'email': email},
-                            );
-                            return;
-                          }
+                            // Check registration mode
+                            final mode =
+                                _serverSettings?['registrationMode'] ?? 'open';
 
-                          // Open mode or email_suffix passed validation
-                          await _proceedWithRegistration(email);
-                        },
-                  child: Text(
-                    'Register',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
+                            // Handle email_suffix mode
+                            if (mode == 'email_suffix') {
+                              final suffixes =
+                                  _serverSettings?['allowedEmailSuffixes']
+                                      as List? ??
+                                  [];
+                              if (!_validateEmailSuffix(email, suffixes)) {
+                                setState(
+                                  () => _loginStatus =
+                                      'Registration is restricted to specific email domains',
+                                );
+                                return;
+                              }
+                            }
+
+                            // Handle invitation_only mode
+                            if (mode == 'invitation_only') {
+                              context.go(
+                                '/register/invitation',
+                                extra: {'email': email},
+                              );
+                              return;
+                            }
+
+                            // Open mode or email_suffix passed validation
+                            await _proceedWithRegistration(email);
+                          },
+                    child: Text(
+                      'Register',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),

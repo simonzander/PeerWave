@@ -33,7 +33,7 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
   bool _isBiometricAvailable = false;
   String? _errorMessage;
   String _registrationMode = 'open';
-  bool _hasAttemptedAutoAuth = false;
+  // bool _hasAttemptedAutoAuth = false; // Removed - auto-auth disabled
 
   @override
   void initState() {
@@ -44,19 +44,21 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
     }
     _checkBiometricAvailability();
     _loadServerSettings();
-    // Auto-trigger passkey authentication on email field focus
-    _emailController.addListener(_onEmailFocusChanged);
+    // Auto-auth disabled - user must manually click login button
+    // _emailController.addListener(_onEmailFocusChanged);
   }
 
   @override
   void dispose() {
-    _emailController.removeListener(_onEmailFocusChanged);
+    // _emailController.removeListener(_onEmailFocusChanged);
     _emailController.dispose();
     _invitationTokenController.dispose();
     super.dispose();
   }
 
   /// Trigger passkey selection when user starts typing email
+  /// DISABLED - Auto-auth removed per user request
+  /*
   void _onEmailFocusChanged() {
     if (!_hasAttemptedAutoAuth && _emailController.text.isNotEmpty) {
       _hasAttemptedAutoAuth = true;
@@ -68,8 +70,11 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
       });
     }
   }
+  */
 
   /// Attempt discoverable authentication (shows passkey picker)
+  /// DISABLED - Auto-auth removed per user request
+  /*
   Future<void> _attemptDiscoverableAuth() async {
     if (_serverUrl == null || _isLoading) return;
 
@@ -85,6 +90,7 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
       // Silently fail - user can still click login button
     }
   }
+  */
 
   Future<void> _checkBiometricAvailability() async {
     final available = await MobileWebAuthnService.instance
@@ -176,6 +182,7 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
       // This allows full WebAuthn spec compliance and cross-RP passkey support
       final success = await CustomTabAuthService.instance.authenticate(
         serverUrl: _serverUrl!,
+        email: email,
       );
 
       if (!success) {
@@ -520,7 +527,7 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
 
                 // Register button
                 OutlinedButton.icon(
-                  onPressed: _isLoading || !_isBiometricAvailable
+                  onPressed: !_isBiometricAvailable
                       ? null
                       : _handleWebAuthnRegister,
                   icon: const Icon(Icons.add_moderator),
@@ -539,14 +546,12 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
                 // Backup code login button
                 Center(
                   child: TextButton.icon(
-                    onPressed: _isLoading
-                        ? null
-                        : () {
-                            context.go(
-                              '/mobile-backupcode-login',
-                              extra: {'serverUrl': _serverUrl},
-                            );
-                          },
+                    onPressed: () {
+                      context.go(
+                        '/mobile-backupcode-login',
+                        extra: {'serverUrl': _serverUrl},
+                      );
+                    },
                     icon: const Icon(Icons.vpn_key),
                     label: const Text('Login with Backup Code'),
                   ),
@@ -556,11 +561,9 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
 
                 Center(
                   child: TextButton.icon(
-                    onPressed: _isLoading
-                        ? null
-                        : () {
-                            context.go('/mobile-server-selection');
-                          },
+                    onPressed: () {
+                      context.go('/mobile-server-selection');
+                    },
                     icon: const Icon(Icons.arrow_back),
                     label: const Text('Change Server'),
                   ),

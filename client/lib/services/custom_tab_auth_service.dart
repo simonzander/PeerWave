@@ -32,7 +32,19 @@ class CustomTabAuthService {
             uri.host == 'auth' &&
             uri.path == '/callback') {
           final token = uri.queryParameters['token'];
-          if (token != null && token.isNotEmpty) {
+          final cancelled = uri.queryParameters['cancelled'];
+          final success = uri.queryParameters['success'];
+
+          if (cancelled == 'true') {
+            debugPrint('[CustomTabAuth] ✗ User cancelled authentication');
+            _completeAuth(null);
+          } else if (success == 'true') {
+            debugPrint(
+              '[CustomTabAuth] ✓ Authentication successful (session-based)',
+            );
+            // Return a marker token to indicate success without JWT
+            _completeAuth('SESSION_AUTH_SUCCESS');
+          } else if (token != null && token.isNotEmpty) {
             debugPrint('[CustomTabAuth] ✓ Auth token received from callback');
             _completeAuth(token);
           } else {
@@ -76,6 +88,7 @@ class CustomTabAuthService {
   /// Returns authentication token on success, null on failure/timeout
   Future<String?> startPasskeyLogin({
     required String serverUrl,
+    String? email,
     Duration timeout = const Duration(minutes: 2),
   }) async {
     if (_authCompleter != null) {
@@ -92,9 +105,23 @@ class CustomTabAuthService {
     });
 
     try {
-      final uri = Uri.parse(
-        '$serverUrl/auth/passkey',
-      ).replace(queryParameters: {'from': 'app'});
+      // Build URL with hash-based routing: #/login?from=app&email=...
+      // Query parameters MUST be after the hash for Flutter web routing to work
+      final queryParams = <String, String>{'from': 'app'};
+      if (email != null && email.isNotEmpty) {
+        queryParams['email'] = email;
+      }
+
+      // Build query string manually
+      final queryString = queryParams.entries
+          .map(
+            (e) =>
+                '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}',
+          )
+          .join('&');
+
+      // Use Flutter web login page with hash routing
+      final uri = Uri.parse('$serverUrl/#/login?$queryString');
 
       debugPrint('[CustomTabAuth] Opening Custom Tab: $uri');
 
@@ -165,16 +192,26 @@ class CustomTabAuthService {
   /// Convenience method that combines startPasskeyLogin and finishLogin
   Future<bool> authenticate({
     required String serverUrl,
+    String? email,
     Duration timeout = const Duration(minutes: 2),
   }) async {
     final token = await startPasskeyLogin(
       serverUrl: serverUrl,
+      email: email,
       timeout: timeout,
     );
 
     if (token == null) {
       debugPrint('[CustomTabAuth] ✗ No token received');
       return false;
+    }
+
+    // Handle session-based auth (no token exchange needed)
+    if (token == 'SESSION_AUTH_SUCCESS') {
+      debugPrint(
+        '[CustomTabAuth] ✓ Using existing session (no token exchange)',
+      );
+      return true;
     }
 
     return await finishLogin(token: token, serverUrl: serverUrl);

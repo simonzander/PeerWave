@@ -60,11 +60,15 @@
 
 
     window.webauthnLogin = async function(serverUrl, email, clientId) {
+        console.log('[WEBAUTHN] webauthnLogin called with:', { serverUrl, email, clientId });
         try {
             // Check if WebAuthn is supported by the browser
             if (!window.PublicKeyCredential) {
+                console.error('[WEBAUTHN] WebAuthn not supported');
                 throw new Error('WebAuthn is not supported');
             }
+            
+            console.log('[WEBAUTHN] Fetching authentication challenge...');
 
             // Request a new WebAuthn credential from the server
             const credential = await fetch(serverUrl + '/webauthn/authenticate-challenge', {
@@ -75,14 +79,15 @@
                 credentials: 'include',
                 body: JSON.stringify({ email: email })
             }).then(response => {
-                console.log('Response status:', response.status);
+                console.log('[WEBAUTHN] Challenge response status:', response.status);
                 if (response.status !== 200) {
+                    console.warn('[WEBAUTHN] Non-200 status, calling onWebAuthnSuccess');
                     window.onWebAuthnSuccess(response.status)
                 }
                 return response.json();
             });
 
-            console.log("credential:", credential);
+            console.log("[WEBAUTHN] credential:", credential);
 
             // Create a new PublicKeyCredential object
             credential.challenge = base64UrlDecode(credential.challenge);

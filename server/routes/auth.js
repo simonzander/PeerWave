@@ -7,12 +7,14 @@ const nodemailer = require("nodemailer");
 const crypto = require('crypto');
 const { sanitizeForLog } = require('../utils/logSanitizer');
 const session = require('express-session');
+const rateLimit = require('express-rate-limit');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const magicLinks = require('../store/magicLinksStore');
 const { User, OTP, Client } = require('../db/model');
 const bcrypt = require("bcrypt");
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
+const { generateAuthToken, verifyAuthToken, revokeToken, generateState } = require('../utils/jwtHelper');
 
 class AppError extends Error {
     constructor(message, code, email = "") {
@@ -81,6 +83,27 @@ async function verifyBackupCode(email, enteredCode) {
 
     return false; // Kein Treffer
 }
+
+// Rate limiters for security-sensitive endpoints
+const tokenExchangeLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // 5 requests per IP per window
+    message: { error: 'Too many token exchange attempts, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    // Use clientId as key for better tracking
+    keyGenerator: (req) => {
+        return req.body.clientId || req.ip;
+    }
+});
+
+const tokenRevocationLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // 10 revocations per IP per window
+    message: { error: 'Too many revocation attempts, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 async function getLocationFromIp(ip) {
     const response = await fetch(`https://ipapi.co/${ip}/json/`);
@@ -1267,7 +1290,25 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
 authRoutes.post('/webauthn/authenticate', async (req, res) => {
     try {
         const { sequelize } = require('../db/model');
-        const { email, assertion } = req.body;
+        const { email, assertion, fromCustomTab, state } = req.body;
+        
+        // Verify CSRF state for Custom Tab requests
+        if (fromCustomTab) {
+            const sessionState = req.session.customTabState;
+            if (!sessionState || sessionState !== state) {
+                console.error('[CUSTOM TAB AUTH] CSRF validation failed', { 
+                    hasSessionState: !!sessionState, 
+                    stateMatch: sessionState === state 
+                });
+                return res.status(403).json({ 
+                    status: "error", 
+                    message: "CSRF validation failed" 
+                });
+            }
+            // Clear state after use
+            delete req.session.customTabState;
+        }
+        
         req.session.email = email;
         //const user = users[username];
 
@@ -1434,8 +1475,19 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                     message: "Authentication successful"
                 };
                 
+                // Generate secure signed JWT for Custom Tab authentication
+                if (fromCustomTab) {
+                    const authToken = generateAuthToken({
+                        userId: user.uuid,
+                        email: email,
+                        state: state // Include state for additional verification
+                    });
+                    
+                    response.authToken = authToken;
+                    console.log('[CUSTOM TAB AUTH] ✓ Generated secure JWT token for user', user.email);
+                }
                 // Include session secret for mobile clients
-                if (sessionSecret) {
+                else if (sessionSecret) {
                     response.sessionSecret = sessionSecret;
                     response.userId = user.uuid;
                     response.email = email;
@@ -1981,6 +2033,104 @@ authRoutes.post("/api/invitations/verify", async (req, res) => {
             valid: false, 
             message: "Internal server error" 
         });
+    }
+});
+
+// REMOVED: /auth/passkey endpoint - Using Flutter web login page (/#/login?from=app) instead
+
+// Token Exchange Endpoint
+// POST /auth/token/exchange
+// Exchanges short-lived auth token for session
+// Rate limited to prevent brute force attacks
+authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
+    try {
+        const { token, clientId } = req.body;
+        
+        if (!token || !clientId) {
+            return res.status(400).json({ error: 'Token and clientId required' });
+        }
+        
+        console.log('[TOKEN EXCHANGE] Request received', { 
+            hasToken: !!token, 
+            clientId: clientId ? clientId.substring(0, 8) + '...' : 'missing'
+        });
+        
+        // Verify JWT signature, expiration, and one-time use
+        const decoded = verifyAuthToken(token);
+        
+        if (!decoded) {
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+        
+        const { userId, email } = decoded;
+        console.log('[TOKEN EXCHANGE] ✓ Token verified', { 
+            userId: userId ? userId.substring(0, 8) + '...' : 'missing',
+            email: email 
+        });
+        
+        // Get user from database
+        const user = await User.findOne({ where: { id: userId } });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        // Generate session secret
+        const sessionSecret = crypto.randomBytes(32).toString('hex');
+        
+        // Store session in database
+        await writeQueue.enqueue(
+            () => Client.upsert({
+                clientId,
+                userId: user.id,
+                sessionSecret,
+                lastSeen: new Date()
+            })
+        );
+        
+        console.log('[TOKEN EXCHANGE] ✓ Session created for user', user.email);
+        
+        res.json({
+            sessionSecret,
+            userId: user.id,
+            email: user.email
+        });
+        
+    } catch (error) {
+        console.error('[TOKEN EXCHANGE] Error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Token Revocation Endpoint
+// POST /auth/token/revoke
+// Revokes a JWT token (invalidates it before expiration)
+// Rate limited to prevent abuse
+authRoutes.post('/token/revoke', tokenRevocationLimiter, async (req, res) => {
+    try {
+        const { token } = req.body;
+        
+        if (!token) {
+            return res.status(400).json({ error: 'Token required' });
+        }
+        
+        console.log('[TOKEN REVOKE] Revocation requested');
+        
+        const success = revokeToken(token);
+        
+        if (success) {
+            res.json({ 
+                status: 'ok',
+                message: 'Token revoked successfully' 
+            });
+        } else {
+            res.status(400).json({ 
+                error: 'Failed to revoke token - token may be invalid or already expired' 
+            });
+        }
+        
+    } catch (error) {
+        console.error('[TOKEN REVOKE] Error:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
