@@ -74,7 +74,15 @@ void setupWebAuthnSignatureCallback(void Function(String, String) callback) {
 
 class AuthLayout extends StatefulWidget {
   final String? clientId; // Optional - will be fetched/created after login
-  const AuthLayout({super.key, this.clientId});
+  final bool fromApp;
+  final String? initialEmail;
+
+  const AuthLayout({
+    super.key,
+    this.clientId,
+    this.fromApp = false,
+    this.initialEmail,
+  });
 
   @override
   State<AuthLayout> createState() => _AuthLayoutState();
@@ -95,7 +103,22 @@ class _AuthLayoutState extends State<AuthLayout> {
   @override
   void initState() {
     super.initState();
-    _checkIfFromMobileApp();
+
+    // Prefer query params provided by GoRouter (works reliably with hash routing).
+    _isFromMobileApp = widget.fromApp;
+    if (widget.initialEmail != null && widget.initialEmail!.trim().isNotEmpty) {
+      final email = widget.initialEmail!.trim();
+      _lastEmail = email;
+      emailController.text = email;
+      localStorageSetItem('email', email);
+    }
+
+    // In web + hash routing, the fragment/query can be finalized slightly after
+    // Flutter initializes. Checking after the first frame avoids missing params.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _checkIfFromMobileApp();
+    });
     // Load server settings
     _loadServerSettings();
     // NOTE: clientId is no longer persisted here - it's managed after login
@@ -260,79 +283,26 @@ class _AuthLayoutState extends State<AuthLayout> {
 
   /// Check if opened from mobile app via Chrome Custom Tab
   void _checkIfFromMobileApp() {
-    if (kIsWeb) {
-      // Parse fragment (hash) to extract query parameters
-      // URL format: http://server/#/login?from=app&email=...
-      final uri = Uri.base;
+    if (!kIsWeb) return;
 
-      debugPrint('[AUTH] Full URI: $uri');
-      debugPrint('[AUTH] URI path: ${uri.path}');
-      debugPrint('[AUTH] URI fragment: ${uri.fragment}');
-      debugPrint('[AUTH] URI query: ${uri.query}');
+    final qp = GoRouterState.of(context).uri.queryParameters;
+    final fromApp = (qp['from'] ?? '').trim().toLowerCase() == 'app';
+    final emailParam = qp['email']?.trim();
 
-      // Try multiple ways to get the parameters
-      String? fromParam;
-      String? emailParam;
+    debugPrint(
+      '[AUTH] GoRouter params: from=${qp['from']}, email=${qp['email']}',
+    );
+    debugPrint('[AUTH] Final result - From app: $fromApp, Email: $emailParam');
 
-      // Method 1: Check URI query parameters (standard location)
-      if (uri.queryParameters.containsKey('from')) {
-        fromParam = uri.queryParameters['from'];
-        emailParam = uri.queryParameters['email'];
-        debugPrint(
-          '[AUTH] Method 1 (query): from=$fromParam, email=$emailParam',
-        );
+    if (!mounted) return;
+    setState(() {
+      _isFromMobileApp = fromApp;
+      if (fromApp && emailParam != null && emailParam.isNotEmpty) {
+        _lastEmail = emailParam;
+        emailController.text = emailParam;
+        localStorageSetItem('email', emailParam);
       }
-
-      // Method 2: Parse fragment for query parameters (hash routing)
-      if (fromParam == null && uri.fragment.contains('?')) {
-        final fragment = uri.fragment;
-        final queryString = fragment.split('?').last;
-        final queryParams = Uri.splitQueryString(queryString);
-        fromParam = queryParams['from'];
-        emailParam = queryParams['email'];
-        debugPrint(
-          '[AUTH] Method 2 (fragment): from=$fromParam, email=$emailParam, fragment=$fragment',
-        );
-      }
-
-      // Method 3: Use window.location.hash via JS interop
-      if (fromParam == null) {
-        try {
-          final hash = getWindowLocationHash();
-          debugPrint('[AUTH] Method 3 (JS hash): $hash');
-          if (hash != null && hash.contains('?')) {
-            final queryString = hash.split('?').last;
-            final queryParams = Uri.splitQueryString(queryString);
-            fromParam = queryParams['from'];
-            emailParam = queryParams['email'];
-            debugPrint(
-              '[AUTH] Method 3 parsed: from=$fromParam, email=$emailParam',
-            );
-          }
-        } catch (e) {
-          debugPrint('[AUTH] Method 3 failed: $e');
-        }
-      }
-
-      final fromApp = fromParam == 'app';
-
-      debugPrint(
-        '[AUTH] Final result - From app: $fromApp, Email: $emailParam',
-      );
-
-      setState(() {
-        _isFromMobileApp = fromApp;
-        if (fromApp && emailParam != null && emailParam.isNotEmpty) {
-          emailController.text = emailParam;
-        }
-      });
-
-      if (fromApp) {
-        debugPrint('[AUTH] ✓ Opened from mobile app, email: $emailParam');
-      } else {
-        debugPrint('[AUTH] ✗ Not from mobile app (showing register button)');
-      }
-    }
+    });
   }
 
   Future<void> _loadServerSettings() async {
@@ -699,7 +669,7 @@ class _AuthLayoutState extends State<AuthLayout> {
                       }
                     },
                     child: Text(
-                      "Cancel",
+                      "Abort",
                       style: theme.textTheme.labelLarge?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),

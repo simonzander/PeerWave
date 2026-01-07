@@ -603,7 +603,17 @@ class _MyAppState extends State<MyApp> {
             GoRoute(
               path: '/login',
               pageBuilder: (context, state) {
-                return MaterialPage(child: AuthLayout(clientId: _clientId));
+                final qp = state.uri.queryParameters;
+                final fromApp =
+                    (qp['from'] ?? '').trim().toLowerCase() == 'app';
+                final email = qp['email']?.trim();
+                return MaterialPage(
+                  child: AuthLayout(
+                    clientId: _clientId,
+                    fromApp: fromApp,
+                    initialEmail: email,
+                  ),
+                );
               },
             ),
             GoRoute(
@@ -1192,9 +1202,17 @@ class _MyAppState extends State<MyApp> {
                 GoRoute(
                   path: '/login',
                   pageBuilder: (context, state) {
+                    final qp = state.uri.queryParameters;
+                    final fromApp =
+                        (qp['from'] ?? '').trim().toLowerCase() == 'app';
+                    final email = qp['email']?.trim();
                     return MaterialPage(
                       fullscreenDialog: true,
-                      child: AuthLayout(clientId: _clientId),
+                      child: AuthLayout(
+                        clientId: _clientId,
+                        fromApp: fromApp,
+                        initialEmail: email,
+                      ),
                     );
                   },
                 ),
