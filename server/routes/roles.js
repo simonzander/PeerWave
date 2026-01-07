@@ -496,11 +496,47 @@ roleRoutes.delete('/users/:userId', verifyAuthEither, requireAuth, requirePermis
         
         await writeQueue.enqueue(
             async () => {
-                // Remove all user roles
+                // Delete all related records before deleting user
+                const { Client, SignalPreKey, SignalSignedPreKey, SignalSenderKey, 
+                        GroupItem, GroupItemRead, ChannelMembers, Channel, 
+                        ClientSession, Item } = require('../db/model');
+                
+                // 1. Remove user from all channels (as member)
+                await ChannelMembers.destroy({ where: { userId } });
+                
+                // 2. Delete channels owned by user
+                await Channel.destroy({ where: { owner: userId } });
+                
+                // 3. Delete all user roles
                 await UserRole.destroy({ where: { userId } });
                 await UserRoleChannel.destroy({ where: { userId } });
                 
-                // Delete the user
+                // 4. Delete all client devices owned by user
+                const userClients = await Client.findAll({ where: { owner: userId } });
+                const clientIds = userClients.map(c => c.clientid);
+                
+                // 5. Delete all Signal Protocol keys for user's clients
+                if (clientIds.length > 0) {
+                    await SignalPreKey.destroy({ where: { client: clientIds } });
+                    await SignalSignedPreKey.destroy({ where: { client: clientIds } });
+                    await SignalSenderKey.destroy({ where: { client: clientIds } });
+                    await ClientSession.destroy({ where: { client_id: clientIds } });
+                }
+                
+                // 6. Delete user's clients
+                await Client.destroy({ where: { owner: userId } });
+                
+                // 7. Delete items sent or received by user
+                await Item.destroy({ where: { sender: userId } });
+                await Item.destroy({ where: { receiver: userId } });
+                
+                // 8. Delete group items sent by user
+                await GroupItem.destroy({ where: { sender: userId } });
+                
+                // 9. Delete group item read receipts by user
+                await GroupItemRead.destroy({ where: { userId } });
+                
+                // 10. Finally delete the user
                 await user.destroy();
             },
             'deleteUser'

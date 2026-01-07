@@ -1,11 +1,10 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:passkeys/authenticator.dart';
 import 'package:passkeys/types.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:dio/dio.dart';
 import 'api_service.dart';
-import 'clientid_native.dart';
 
 /// Mobile WebAuthn service for iOS and Android
 ///
@@ -144,11 +143,8 @@ class MobileWebAuthnService {
   ///
   /// [serverUrl] - The PeerWave server URL
   /// [email] - User's email address (optional - will fetch from server session if empty)
-  /// Returns map with credentialId and serverResponse on success, null on failure
-  Future<Map<String, dynamic>?> register({
-    required String serverUrl,
-    String? email,
-  }) async {
+  /// Returns credential ID on success, null on failure
+  Future<String?> register({required String serverUrl, String? email}) async {
     try {
       // Fetch email from server session if not provided
       String? userEmail = email;
@@ -196,17 +192,14 @@ class MobileWebAuthnService {
         final authSelection =
             challengeData['authenticatorSelection'] as Map<String, dynamic>;
         // Set defaults for null boolean fields required by passkeys package
-        // IMPORTANT: Don't override residentKey if server already set it!
         authSelection['requireResidentKey'] ??= false;
-        authSelection['residentKey'] ??=
-            'required'; // Changed to 'required' for Google Password Manager
+        authSelection['residentKey'] ??= 'preferred';
         authSelection['userVerification'] ??= 'preferred';
       } else {
-        // No authenticatorSelection provided - use defaults that enable passkey sync
+        // No authenticatorSelection provided - use defaults
         challengeData['authenticatorSelection'] = {
           'requireResidentKey': false,
-          'residentKey':
-              'required', // Changed to 'required' for Google Password Manager
+          'residentKey': 'preferred',
           'userVerification': 'preferred',
         };
       }
@@ -230,34 +223,13 @@ class MobileWebAuthnService {
       debugPrint(
         '[MobileWebAuthn] Passkey created successfully, credential ID: ${registerResponse.id}',
       );
-      debugPrint('[MobileWebAuthn] Credential ID details:');
-      debugPrint('[MobileWebAuthn]   - Length: ${registerResponse.id.length}');
-      debugPrint(
-        '[MobileWebAuthn]   - Contains +: ${registerResponse.id.contains('+')}',
-      );
-      debugPrint(
-        '[MobileWebAuthn]   - Contains /: ${registerResponse.id.contains('/')}',
-      );
-      debugPrint(
-        '[MobileWebAuthn]   - Contains =: ${registerResponse.id.contains('=')}',
-      );
-      debugPrint(
-        '[MobileWebAuthn]   - Contains _: ${registerResponse.id.contains('_')}',
-      );
-      debugPrint(
-        '[MobileWebAuthn]   - Contains -: ${registerResponse.id.contains('-')}',
-      );
 
-      // 5. Send attestation to server with clientId for HMAC session
+      // 5. Send attestation to server
       final registerResponseJson = registerResponse.toJson();
-
-      // Add clientId to request for server to create HMAC session
-      final clientId = await _getClientId();
-
       debugPrint('[MobileWebAuthn] Sending attestation to server');
       final serverResponse = await ApiService.dio.post(
         '$serverUrl/webauthn/register',
-        data: {'attestation': registerResponseJson, 'clientId': clientId},
+        data: {'attestation': registerResponseJson},
       );
 
       if (serverResponse.statusCode != 200) {
@@ -276,13 +248,8 @@ class MobileWebAuthnService {
         credentialId: credentialId,
       );
 
-      debugPrint('[MobileWebAuthn] ✓ Registration successful');
-
-      // Return credential ID and server response for HMAC session handling
-      return {
-        'credentialId': credentialId,
-        'serverResponse': serverResponse.data,
-      };
+      debugPrint('[MobileWebAuthn] Ô£ô Registration successful');
+      return credentialId;
     } on DioException catch (e) {
       debugPrint('[MobileWebAuthn] API error during registration:');
       debugPrint('  Status: ${e.response?.statusCode}');
@@ -327,20 +294,19 @@ class MobileWebAuthnService {
         return null;
       }
 
-      // 2. Skip local credential check - use discoverable authentication
-      // Android Credential Manager will show available passkeys regardless of local metadata
-      debugPrint(
-        '[MobileWebAuthn] Using discoverable authentication (no local credential check)',
-      );
+      // 2. Check if credential exists for this server/email
+      final storedCredential = await _getStoredCredential(serverUrl, userEmail);
+      if (storedCredential == null) {
+        debugPrint(
+          '[MobileWebAuthn] No credential found for $userEmail @ $serverUrl',
+        );
+        return null;
+      }
 
       // 3. Request authentication challenge from server
-      // Send platform parameter so server knows to use empty allowCredentials
       final challengeResponse = await ApiService.dio.post(
-        '$serverUrl/webauthn/authenticate-challenge',
-        data: {
-          'email': userEmail,
-          'platform': 'android', // Explicit platform for server-side detection
-        },
+        '$serverUrl/webauthn/auth-challenge',
+        data: {'email': userEmail},
       );
 
       if (challengeResponse.statusCode != 200) {
@@ -352,101 +318,17 @@ class MobileWebAuthnService {
 
       final challengeData = challengeResponse.data as Map<String, dynamic>;
       debugPrint('[MobileWebAuthn] Received challenge from server');
-      debugPrint('[MobileWebAuthn] Challenge keys: ${challengeData.keys}');
-      debugPrint(
-        '[MobileWebAuthn] allowCredentials: ${challengeData['allowCredentials']}',
-      );
-
-      // Log each credential ID in detail
-      if (challengeData['allowCredentials'] is List) {
-        final credentials = challengeData['allowCredentials'] as List;
-        debugPrint(
-          '[MobileWebAuthn] Server sent ${credentials.length} credential(s):',
-        );
-        for (var i = 0; i < credentials.length; i++) {
-          final cred = credentials[i];
-          debugPrint(
-            '[MobileWebAuthn]   [$i] ID: ${cred['id']}, type: ${cred['type']}, transports: ${cred['transports']}',
-          );
-          // Check if ID is base64url encoded correctly
-          if (cred['id'] is String) {
-            final idString = cred['id'] as String;
-            debugPrint(
-              '[MobileWebAuthn]   [$i] ID length: ${idString.length}, contains +: ${idString.contains('+')}, contains /: ${idString.contains('/')}, contains =: ${idString.contains('=')}',
-            );
-          }
-        }
-      }
-
-      debugPrint('[MobileWebAuthn] extensions: ${challengeData['extensions']}');
-
-      // Fix null values that might cause parsing issues
-      // ALWAYS use empty allowCredentials for discoverable authentication
-      // This forces Android to show ALL registered passkeys for this rpId
-      debugPrint(
-        '[MobileWebAuthn] Forcing empty allowCredentials (discoverable authentication)',
-      );
-      challengeData['allowCredentials'] = [];
-
-      // Ensure extensions is a map (not null)
-      if (challengeData['extensions'] == null) {
-        debugPrint('[MobileWebAuthn] Fixing null extensions');
-        challengeData['extensions'] = {};
-      }
-
-      debugPrint('[MobileWebAuthn] Fixed challenge data: $challengeData');
-
-      // Log RP information for debugging
-      debugPrint('[MobileWebAuthn] RP from server: ${challengeData['rp']}');
-      if (challengeData['rp'] is Map) {
-        final rp = challengeData['rp'] as Map;
-        debugPrint('[MobileWebAuthn]   - RP name: ${rp['name']}');
-        debugPrint('[MobileWebAuthn]   - RP id: ${rp['id']}');
-      }
 
       // 4. Create AuthenticateRequestType from server challenge
-      late final AuthenticateRequestType authRequest;
-      try {
-        authRequest = AuthenticateRequestType.fromJson(challengeData);
-        debugPrint(
-          '[MobileWebAuthn] AuthenticateRequestType created successfully',
-        );
-        debugPrint('[MobileWebAuthn]   - Calling passkeys.authenticate()...');
-        debugPrint(
-          '[MobileWebAuthn]   - This will trigger Android Credential Manager',
-        );
-        debugPrint(
-          '[MobileWebAuthn]   - Expected behavior: Show passkey picker with registered passkeys',
-        );
-      } catch (e, stackTrace) {
-        debugPrint(
-          '[MobileWebAuthn] Error creating AuthenticateRequestType: $e',
-        );
-        debugPrint('[MobileWebAuthn] Stack trace: $stackTrace');
-        rethrow;
-      }
+      final authRequest = AuthenticateRequestType.fromJson(challengeData);
 
       // 5. Use passkeys package to sign challenge (with hardware key)
-      late final AuthenticateResponseType authResponse;
-      try {
-        authResponse = await _passkeysAuth.authenticate(authRequest);
-        debugPrint('[MobileWebAuthn] Challenge signed successfully');
-      } catch (e) {
-        debugPrint('[MobileWebAuthn] Authentication error: $e');
-        rethrow;
-      }
+      final authResponse = await _passkeysAuth.authenticate(authRequest);
 
-      // 6. Send assertion to server with clientId for HMAC session
+      debugPrint('[MobileWebAuthn] Challenge signed successfully');
+
+      // 6. Send assertion to server
       final authResponseJson = authResponse.toJson();
-
-      // Add clientId to request for server to create HMAC session
-      final clientId = await _getClientId();
-      authResponseJson['clientId'] = clientId;
-
-      // Extract credential ID from the response
-      final credentialId = authResponse.id;
-      debugPrint('[MobileWebAuthn] Credential ID used: $credentialId');
-
       final serverResponse = await ApiService.dio.post(
         '$serverUrl/webauthn/authenticate',
         data: authResponseJson,
@@ -460,16 +342,12 @@ class MobileWebAuthnService {
       }
 
       final responseData = serverResponse.data as Map<String, dynamic>;
-      debugPrint('[MobileWebAuthn] ✓ Authentication successful');
+      debugPrint('[MobileWebAuthn] Ô£ô Authentication successful');
 
-      // Store credential metadata for future use (if not already stored)
-      await _storeCredential(
-        serverUrl: serverUrl,
-        email: userEmail,
-        credentialId: credentialId,
-      );
-
-      return {'credentialId': credentialId, 'authData': responseData};
+      return {
+        'credentialId': storedCredential['credentialId'],
+        'authData': responseData,
+      };
     } catch (e) {
       debugPrint('[MobileWebAuthn] Authentication error: $e');
       return null;
@@ -480,11 +358,6 @@ class MobileWebAuthnService {
   Future<bool> hasCredential(String serverUrl, String email) async {
     final credential = await _getStoredCredential(serverUrl, email);
     return credential != null;
-  }
-
-  /// Get client ID (needed for HMAC authentication)
-  Future<String> _getClientId() async {
-    return await ClientIdService.getClientId();
   }
 
   /// Delete stored credential for server/email

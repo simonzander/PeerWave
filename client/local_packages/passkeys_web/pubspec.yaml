@@ -1,0 +1,21 @@
+name: passkeys_web
+description: Fixed web implementation of passkeys that doesn't crash
+version: 2.8.2
+publish_to: none
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+  flutter: '>=3.16.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      web:
+        pluginClass: PasskeysWeb
+        fileName: passkeys_web.dart

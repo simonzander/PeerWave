@@ -7,6 +7,7 @@ import '../services/clientid_native.dart';
 import '../services/device_identity_service.dart';
 import '../services/server_config_native.dart';
 import '../services/session_auth_service.dart';
+import '../services/custom_tab_auth_service.dart';
 
 /// Mobile WebAuthn login screen for iOS/Android
 ///
@@ -167,17 +168,17 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
     });
 
     try {
-      // Skip hasCredential check - let Android Credential Manager show available passkeys
-      // This allows discoverable credentials to work even if local metadata is missing
-      debugPrint('[MobileWebAuthnLogin] Starting authentication for $email');
-
-      // Authenticate with WebAuthn (will show passkey picker if credentials exist)
-      final authResult = await MobileWebAuthnService.instance.authenticate(
-        serverUrl: _serverUrl!,
-        email: email,
+      debugPrint(
+        '[MobileWebAuthnLogin] Starting Chrome Custom Tab authentication',
       );
 
-      if (authResult == null) {
+      // Use Chrome Custom Tab for authentication (bypasses Android Credential Manager limitations)
+      // This allows full WebAuthn spec compliance and cross-RP passkey support
+      final success = await CustomTabAuthService.instance.authenticate(
+        serverUrl: _serverUrl!,
+      );
+
+      if (!success) {
         setState(() {
           _errorMessage = 'Authentication failed. Please try again.';
           _isLoading = false;
@@ -185,41 +186,10 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
         return;
       }
 
-      // Extract server response data
-      final authData = authResult['authData'] as Map<String, dynamic>;
-      final sessionSecret = authData['sessionSecret'] as String?;
-      final userId = authData['userId'] as String?;
-
+      // CustomTabAuthService already handles session setup
       debugPrint(
-        '[MobileWebAuthnLogin] Auth response - has sessionSecret: ${sessionSecret != null}, has userId: ${userId != null}',
+        '[MobileWebAuthnLogin] ✓ Login successful via Chrome Custom Tab',
       );
-
-      // Get client ID and store HMAC session for mobile authentication
-      final clientId = await ClientIdService.getClientId();
-
-      if (sessionSecret != null && sessionSecret.isNotEmpty) {
-        // Store HMAC session for authenticated API requests
-        await SessionAuthService().initializeSession(clientId, sessionSecret);
-        debugPrint(
-          '[MobileWebAuthnLogin] ✓ HMAC session stored for mobile authentication',
-        );
-      } else {
-        debugPrint(
-          '[MobileWebAuthnLogin] ⚠️ No sessionSecret in response - HMAC auth will not work!',
-        );
-      }
-
-      // Set device identity and encryption key
-      DeviceIdentityService.instance.setDeviceIdentity(
-        email,
-        authResult['credentialId'],
-        clientId,
-      );
-
-      // Save server URL (TODO: Add server to ServerConfigService)
-      // await ServerConfigService.addServer(serverUrl);
-
-      debugPrint('[MobileWebAuthnLogin] ✓ Login successful');
       if (mounted) {
         context.go('/app');
       }
