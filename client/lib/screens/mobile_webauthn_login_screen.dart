@@ -256,15 +256,23 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen>
         debugPrint('[MobileWebAuthnLogin] ✓ Server saved after login');
       }
 
-      // CustomTabAuthService already handles session setup
-      debugPrint(
-        '[MobileWebAuthnLogin] ✓ Login successful via Chrome Custom Tab',
-      );
+      // Clear loading state before navigation
       if (mounted) {
         setState(() {
           _isLoading = false;
           _authInProgress = false;
         });
+      }
+
+      // CustomTabAuthService already handles session setup
+      debugPrint(
+        '[MobileWebAuthnLogin] ✓ Login successful via Chrome Custom Tab',
+      );
+
+      // Small delay to ensure setState completes before navigation
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      if (mounted) {
         context.go('/app');
       }
     } catch (e) {

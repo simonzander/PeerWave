@@ -2102,6 +2102,14 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
         
+        // Create or find Signal Client record (required for Signal protocol)
+        const maxDevice = await Client.max('device_id', { where: { owner: user.uuid } });
+        const [client] = await Client.findOrCreate({
+            where: { owner: user.uuid, clientid: clientId },
+            defaults: { owner: user.uuid, clientid: clientId, device_id: maxDevice ? maxDevice + 1 : 1 }
+        });
+        console.log('[TOKEN EXCHANGE] ✓ Client record ensured:', { clientId, deviceId: client.device_id });
+        
         // Generate session secret
         const sessionSecret = crypto.randomBytes(32).toString('hex');
         
