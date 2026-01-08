@@ -2107,7 +2107,7 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
         await writeQueue.enqueue(
             () => Client.upsert({
                 clientId,
-                userId: user.uuid,
+                owner: user.uuid,
                 sessionSecret,
                 lastSeen: new Date()
             })
