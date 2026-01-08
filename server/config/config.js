@@ -36,9 +36,16 @@ function getOrGenerateSecret(envVar, secretName, byteLength = 32) {
         console.log(`  ${secretName}: ${newSecret}`);
         console.log(`  ⚠️  IMPORTANT: Add .secrets to .gitignore and back it up securely!`);
     } catch (err) {
-        console.warn(`⚠️  Could not save .secrets file: ${err.message}`);
-        console.log(`  ${secretName}: ${newSecret}`);
-        console.log(`  ⚠️  Save this secret to your .env file or you'll lose sessions on restart!`);
+        // Docker environments may not have write permissions - this is OK if secret is in .env
+        if (err.code === 'EACCES') {
+            console.warn(`⚠️  Cannot write .secrets file (Docker/permissions): ${secretsPath}`);
+            console.warn(`  ${secretName}: ${newSecret}`);
+            console.warn(`  💡 Add this to your .env file to persist across restarts`);
+        } else {
+            console.error(`⚠️  Could not save .secrets file: ${err.message}`);
+            console.error(`  ${secretName}: ${newSecret}`);
+            console.error(`  ⚠️  Save this secret to your .env file or you'll lose sessions on restart!`);
+        }
     }
     
     return newSecret;

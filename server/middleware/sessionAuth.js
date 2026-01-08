@@ -129,8 +129,8 @@ async function verifySessionAuth(req, res, next) {
 
     // Update last_used timestamp and check for session refresh
     const expiresAt = new Date(session.expires_at);
-    const now = new Date();
-    const daysUntilExpiry = (expiresAt - now) / (24 * 60 * 60 * 1000);
+    const currentTime = new Date();
+    const daysUntilExpiry = (expiresAt - currentTime) / (24 * 60 * 60 * 1000);
     const refreshThreshold = config.session.refreshThresholdDays || 7;
     
     // Auto-refresh session if it expires in less than threshold days
