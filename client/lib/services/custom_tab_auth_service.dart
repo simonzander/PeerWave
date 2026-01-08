@@ -5,6 +5,7 @@ import 'package:app_links/app_links.dart';
 import 'api_service.dart';
 import 'session_auth_service.dart';
 import 'clientid_native.dart';
+import 'device_identity_service.dart';
 
 /// Service for handling authentication via Chrome Custom Tabs
 ///
@@ -180,11 +181,28 @@ class CustomTabAuthService {
         final data = response.data as Map<String, dynamic>;
         final sessionSecret = data['sessionSecret'] as String?;
         final userId = data['userId'] as String?;
+        final email = data['email'] as String?;
+        final credentialId = data['credentialId'] as String?;
 
         if (sessionSecret != null && userId != null) {
           // Store HMAC session for authenticated API requests
           await SessionAuthService().initializeSession(clientId, sessionSecret);
           debugPrint('[CustomTabAuth] ✓ Session established for user $userId');
+
+          // Set device identity if we have all required info
+          if (email != null && credentialId != null) {
+            await DeviceIdentityService.instance.setDeviceIdentity(
+              email,
+              credentialId,
+              clientId,
+            );
+            debugPrint('[CustomTabAuth] ✓ Device identity set for $email');
+          } else {
+            debugPrint(
+              '[CustomTabAuth] ⚠ Missing credentialId, device identity not set',
+            );
+          }
+
           return true;
         }
       }

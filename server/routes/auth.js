@@ -1499,6 +1499,7 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                     const authToken = generateAuthToken({
                         userId: user.uuid,
                         email: email,
+                        credentialId: credential.id, // Include for device identity setup
                         state: state // Include state for additional verification
                     });
                     
@@ -2088,10 +2089,11 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
             return res.status(401).json({ error: 'Invalid or expired token' });
         }
         
-        const { userId, email } = decoded;
+        const { userId, email, credentialId } = decoded;
         console.log('[TOKEN EXCHANGE] ✓ Token verified', { 
             userId: userId ? userId.substring(0, 8) + '...' : 'missing',
-            email: email 
+            email: email,
+            hasCredentialId: !!credentialId
         });
         
         // Get user from database (use uuid, not id)
@@ -2118,7 +2120,8 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
         res.json({
             sessionSecret,
             userId: user.uuid,
-            email: user.email
+            email: user.email,
+            credentialId: credentialId // Include for device identity setup
         });
         
     } catch (error) {
