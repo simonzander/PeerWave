@@ -6,6 +6,7 @@ import 'api_service.dart';
 import 'session_auth_service.dart';
 import 'clientid_native.dart';
 import 'device_identity_service.dart';
+import 'native_crypto_service.dart';
 
 /// Service for handling authentication via Chrome Custom Tabs
 ///
@@ -197,6 +198,16 @@ class CustomTabAuthService {
               clientId,
             );
             debugPrint('[CustomTabAuth] ✓ Device identity set for $email');
+
+            // Derive encryption key from credentialId
+            final deviceId = DeviceIdentityService.instance.deviceId;
+            if (deviceId != null) {
+              await NativeCryptoService.instance.deriveKeyFromCredentialId(
+                deviceId,
+                credentialId,
+              );
+              debugPrint('[CustomTabAuth] ✓ Encryption key derived and stored');
+            }
           } else {
             debugPrint(
               '[CustomTabAuth] ⚠ Missing credentialId, device identity not set',

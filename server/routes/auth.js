@@ -2105,17 +2105,23 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
         // Generate session secret
         const sessionSecret = crypto.randomBytes(32).toString('hex');
         
+        // Calculate expiration (90 days from now)
+        const sessionDays = config.session?.hmacSessionDays || 90;
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + sessionDays);
+        
         // Store session in database
         await writeQueue.enqueue(
             () => ClientSession.upsert({
                 client_id: clientId,
                 user_id: user.uuid,
                 session_secret: sessionSecret,
+                expires_at: expiresAt,
                 last_used: new Date()
             })
         );
         
-        console.log('[TOKEN EXCHANGE] ✓ Session created for user', user.email);
+        console.log('[TOKEN EXCHANGE] ✓ Session created for user', user.email, `(expires in ${sessionDays} days)`);
         
         res.json({
             sessionSecret,

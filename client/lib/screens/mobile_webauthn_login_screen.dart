@@ -261,6 +261,10 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen>
         '[MobileWebAuthnLogin] ✓ Login successful via Chrome Custom Tab',
       );
       if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _authInProgress = false;
+        });
         context.go('/app');
       }
     } catch (e) {
