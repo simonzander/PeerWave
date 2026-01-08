@@ -536,6 +536,7 @@ class _MyAppState extends State<MyApp> {
         builder: (context, state) {
           final extra = state.extra as Map?;
           final email = extra?['email'] as String? ?? '';
+          final serverUrl = extra?['serverUrl'] as String?;
           if (email.isEmpty) {
             return Scaffold(
               body: Center(
@@ -552,7 +553,7 @@ class _MyAppState extends State<MyApp> {
               ),
             );
           }
-          return InvitationEntryPage(email: email);
+          return InvitationEntryPage(email: email, serverUrl: serverUrl);
         },
       ),
       GoRoute(

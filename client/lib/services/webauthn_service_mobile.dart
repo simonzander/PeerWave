@@ -193,13 +193,13 @@ class MobileWebAuthnService {
             challengeData['authenticatorSelection'] as Map<String, dynamic>;
         // Set defaults for null boolean fields required by passkeys package
         authSelection['requireResidentKey'] ??= false;
-        authSelection['residentKey'] ??= 'preferred';
+        authSelection['residentKey'] ??= 'required';
         authSelection['userVerification'] ??= 'preferred';
       } else {
         // No authenticatorSelection provided - use defaults
         challengeData['authenticatorSelection'] = {
           'requireResidentKey': false,
-          'residentKey': 'preferred',
+          'residentKey': 'required',
           'userVerification': 'preferred',
         };
       }

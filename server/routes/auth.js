@@ -993,17 +993,24 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             const clientData = JSON.parse(Buffer.from(attestation.response.clientDataJSON, 'base64').toString('utf8'));
             const actualOrigin = clientData.origin;
             
-            // Chrome Custom Tab and web clients use standard HTTPS origins
+            // Allow web origins and Android APK origins
             const allowedOrigins = [
                 "http://localhost:3000",
                 "http://localhost:55831",
                 `https://${host}`
             ];
             
-            const origin = req.headers.origin || `https://${host}`;
-            
-            if (!allowedOrigins.includes(origin)) {
-                console.warn("Unexpected origin for WebAuthn:", origin);
+            // Determine origin based on client type
+            let origin;
+            if (actualOrigin.startsWith('android:apk-key-hash:')) {
+                // Native Android app - use the APK key hash from clientDataJSON
+                origin = actualOrigin;
+            } else {
+                // Web or Chrome Custom Tab - use standard origin
+                origin = req.headers.origin || `https://${host}`;
+                if (!allowedOrigins.includes(origin)) {
+                    console.warn("Unexpected origin for WebAuthn:", origin);
+                }
             }
 
             // Standard WebAuthn validation for all clients
@@ -1369,17 +1376,24 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
         const clientData = JSON.parse(Buffer.from(assertion.response.clientDataJSON, 'base64').toString('utf8'));
         const actualOrigin = clientData.origin;
         
-        // Chrome Custom Tab and web clients use standard HTTPS origins
+        // Allow web origins and Android APK origins
         const allowedOrigins = [
             "http://localhost:3000",
             "http://localhost:55831",
             `https://${host}`
         ];
         
-        const origin = req.headers.origin || `${protocol}://${host}`;
-        
-        if (!allowedOrigins.includes(origin)) {
-            console.warn("Unexpected origin for WebAuthn:", origin);
+        // Determine origin based on client type
+        let origin;
+        if (actualOrigin.startsWith('android:apk-key-hash:')) {
+            // Native Android app - use the APK key hash from clientDataJSON
+            origin = actualOrigin;
+        } else {
+            // Web or Chrome Custom Tab - use standard origin
+            origin = req.headers.origin || `${protocol}://${host}`;
+            if (!allowedOrigins.includes(origin)) {
+                console.warn("Unexpected origin for WebAuthn:", origin);
+            }
         }
 
         // Standard WebAuthn validation for all clients

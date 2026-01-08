@@ -243,7 +243,10 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
         );
         setState(() => _isLoading = false);
         if (mounted) {
-          context.go('/invitation-entry', extra: email);
+          context.go(
+            '/register/invitation',
+            extra: {'email': email, 'serverUrl': _serverUrl},
+          );
         }
         return;
       }
