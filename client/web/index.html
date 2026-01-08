@@ -157,7 +157,9 @@
                 if (window.onWebAuthnSuccess) {
                     // Parse response to extract authToken
                     const data = await response.json();
+                    console.log('[WEBAUTHN] Response data:', data);
                     const authToken = data.authToken || null;
+                    console.log('[WEBAUTHN] Extracted authToken:', authToken ? 'present' : 'null');
                     window.onWebAuthnSuccess(response.status, authToken);
                 }
                 return;

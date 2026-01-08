@@ -1295,8 +1295,8 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             });
         }
         
-        // Verify CSRF state for Custom Tab requests
-        if (fromCustomTab) {
+        // Verify CSRF state for Custom Tab requests (if state was provided)
+        if (fromCustomTab && state) {
             const sessionState = req.session.customTabState;
             if (!sessionState || sessionState !== state) {
                 console.error('[CUSTOM TAB AUTH] ✗ CSRF validation failed', { 
@@ -1311,6 +1311,8 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             console.log('[CUSTOM TAB AUTH] ✓ CSRF state validated');
             // Clear state after use (one-time use protection)
             delete req.session.customTabState;
+        } else if (fromCustomTab) {
+            console.log('[CUSTOM TAB AUTH] ⚠ No CSRF state provided (skipping validation)');
         }
         
         req.session.email = email;
