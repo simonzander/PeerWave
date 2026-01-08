@@ -154,7 +154,10 @@
 
             if (response.status === 200 || response.status === 202) {
                 if (window.onWebAuthnSuccess) {
-                    window.onWebAuthnSuccess(response.status);
+                    // Parse response to extract authToken
+                    const data = await response.json();
+                    const authToken = data.authToken || null;
+                    window.onWebAuthnSuccess(response.status, authToken);
                 }
                 return;
             }
