@@ -83,6 +83,12 @@ class CustomTabAuthService {
     }
   }
 
+  /// Manually complete authentication with a token (called by router)
+  void completeWithToken(String? token) {
+    debugPrint('[CustomTabAuth] 📥 Manually completing auth with token');
+    _completeAuth(token);
+  }
+
   /// Start passkey authentication in Chrome Custom Tab
   ///
   /// Opens browser with /auth/passkey?from=app and waits for callback
@@ -162,9 +168,11 @@ class CustomTabAuthService {
       // Get client ID for HMAC session
       final clientId = await ClientIdService.getClientId();
 
+      debugPrint('[CustomTabAuth] POST $serverUrl/token/exchange');
+
       // Exchange token for session
       final response = await ApiService.dio.post(
-        '$serverUrl/auth/token/exchange',
+        '$serverUrl/token/exchange',
         data: {'token': token, 'clientId': clientId},
       );
 

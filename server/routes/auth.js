@@ -2094,8 +2094,8 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
             email: email 
         });
         
-        // Get user from database
-        const user = await User.findOne({ where: { id: userId } });
+        // Get user from database (use uuid, not id)
+        const user = await User.findOne({ where: { uuid: userId } });
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
@@ -2107,7 +2107,7 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
         await writeQueue.enqueue(
             () => Client.upsert({
                 clientId,
-                userId: user.id,
+                userId: user.uuid,
                 sessionSecret,
                 lastSeen: new Date()
             })
@@ -2117,7 +2117,7 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
         
         res.json({
             sessionSecret,
-            userId: user.id,
+            userId: user.uuid,
             email: user.email
         });
         

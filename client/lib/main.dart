@@ -106,6 +106,7 @@ import 'screens/server_selection_screen.dart';
 import 'screens/mobile_webauthn_login_screen.dart';
 import 'screens/mobile_backupcode_login_screen.dart';
 import 'screens/mobile_server_selection_screen.dart';
+import 'services/custom_tab_auth_service.dart';
 import 'services/server_config_web.dart'
     if (dart.library.io) 'services/server_config_native.dart';
 import 'services/clientid_native.dart'
@@ -471,64 +472,6 @@ class _MyAppState extends State<MyApp> {
     );
   }
 
-  /// Ensure server is saved and activated after successful authentication
-  Future<void> _ensureServerIsActive() async {
-    try {
-      // Check if we already have an active server
-      final activeServer = ServerConfigService.getActiveServer();
-      if (activeServer != null) {
-        debugPrint(
-          '[CALLBACK] ✓ Active server already set: ${activeServer.serverUrl}',
-        );
-        return;
-      }
-
-      // Check if server was recently added but not activated
-      final allServers = ServerConfigService.getAllServers();
-      if (allServers.isNotEmpty) {
-        // Use the most recently active server
-        final recentServer = allServers.reduce(
-          (a, b) => a.lastActive.isAfter(b.lastActive) ? a : b,
-        );
-        await ServerConfigService.setActiveServer(recentServer.id);
-        debugPrint(
-          '[CALLBACK] ✓ Activated most recent server: ${recentServer.serverUrl}',
-        );
-        return;
-      }
-
-      // Fallback: Try to get server URL from ApiService dio baseUrl
-      final serverUrl = ApiService.dio.options.baseUrl;
-      if (serverUrl.isEmpty) {
-        debugPrint(
-          '[CALLBACK] ⚠️ No server URL configured and no servers saved',
-        );
-        return;
-      }
-
-      // Get session secret for credentials
-      final clientId = await ClientIdService.getClientId();
-      final sessionSecret = await SessionAuthService().getSessionSecret(
-        clientId,
-      );
-
-      if (sessionSecret == null) {
-        debugPrint('[CALLBACK] ⚠️ No session secret found');
-        return;
-      }
-
-      // Add server with HMAC credentials and set as active
-      final serverConfig = await ServerConfigService.addServer(
-        serverUrl: serverUrl,
-        credentials: sessionSecret,
-      );
-
-      debugPrint('[CALLBACK] ✓ Server saved and activated: ${serverConfig.id}');
-    } catch (e) {
-      debugPrint('[CALLBACK] ✗ Error ensuring server is active: $e');
-    }
-  }
-
   GoRouter _createRouter() {
     debugPrint('[MAIN] 🏗️ Creating GoRouter...');
 
@@ -542,49 +485,28 @@ class _MyAppState extends State<MyApp> {
         },
       ),
       // Chrome Custom Tab callback route (handles deep link after auth)
+      // Note: Manually triggers CustomTabAuthService completion since GoRouter
+      // intercepts the deep link before app_links can deliver it to the service.
       GoRoute(
         path: '/callback',
         builder: (context, state) {
-          final success = state.uri.queryParameters['success'] == 'true';
-          debugPrint('[ROUTER] Callback received, success: $success');
+          final token = state.uri.queryParameters['token'];
+          final cancelled = state.uri.queryParameters['cancelled'] == 'true';
 
-          if (success) {
-            // Authentication successful - check session and ensure server is active
-            return FutureBuilder(
-              future: Future.wait([
-                AuthService.checkSession(),
-                _ensureServerIsActive(),
-              ]),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.done) {
-                  debugPrint(
-                    '[ROUTER] Callback: Session checked and server activated, navigating to /app',
-                  );
-                  Future.microtask(() => context.go('/app'));
-                }
-                return const Scaffold(
-                  body: Center(child: CircularProgressIndicator()),
-                );
-              },
-            );
+          debugPrint(
+            '[ROUTER] /callback route - token: ${token != null}, cancelled: $cancelled',
+          );
+
+          // Manually complete the auth flow in CustomTabAuthService
+          if (token != null && token.isNotEmpty) {
+            CustomTabAuthService.instance.completeWithToken(token);
           } else {
-            // Authentication failed or cancelled - back to login with error
-            final errorMsg =
-                'Authentication was cancelled or failed. Please try again.';
-            Future.microtask(() {
-              if (Platform.isAndroid || Platform.isIOS) {
-                context.go(
-                  '/mobile-server-selection',
-                  extra: {'errorMessage': errorMsg},
-                );
-              } else {
-                context.go('/login', extra: {'errorMessage': errorMsg});
-              }
-            });
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
+            CustomTabAuthService.instance.completeWithToken(null);
           }
+
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         },
       ),
       // Mobile WebAuthn login route (Android/iOS only)
