@@ -16,6 +16,60 @@ const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
 const { generateAuthToken, verifyAuthToken, revokeToken, generateState } = require('../utils/jwtHelper');
 
+/**
+ * Shared function to find or create a Client record
+ * Used by both web (/client/addweb) and native (/token/exchange, /webauthn/authenticate)
+ * 
+ * @param {string} clientId - UUID generated client-side
+ * @param {string} userUuid - User's UUID
+ * @param {Object} req - Express request object (for IP, user-agent, etc.)
+ * @returns {Promise<Object>} Client record with device_id and clientid
+ */
+async function findOrCreateClient(clientId, userUuid, req) {
+    const userAgent = req.headers['user-agent'] || '';
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const location = await getLocationFromIp(ip);
+    const locationString = location
+        ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
+        : "Location not found";
+    
+    // Get max device_id for this user and auto-increment
+    const maxDevice = await Client.max('device_id', { where: { owner: userUuid } });
+    
+    // Find existing client or create new one
+    const [client, created] = await Client.findOrCreate({
+        where: { clientid: clientId, owner: userUuid },
+        defaults: {
+            owner: userUuid,
+            clientid: clientId,
+            ip: ip,
+            browser: userAgent,
+            location: locationString,
+            device_id: maxDevice ? maxDevice + 1 : 1
+        }
+    });
+    
+    // Update metadata if client already exists
+    if (!created) {
+        await writeQueue.enqueue(
+            () => Client.update(
+                { ip, browser: userAgent, location: locationString },
+                { where: { clientid: clientId } }
+            ),
+            'updateClientInfo'
+        );
+    }
+    
+    console.log(`[CLIENT] ${created ? 'Created' : 'Found'} client ${sanitizeForLog(clientId)} with device_id=${client.device_id}`);
+    
+    return {
+        client,
+        created,
+        device_id: client.device_id || (client.get ? client.get('device_id') : undefined),
+        clientid: client.clientid || (client.get ? client.get('clientid') : undefined)
+    };
+}
+
 class AppError extends Error {
     constructor(message, code, email = "") {
         super(message);
@@ -1093,11 +1147,9 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             
             if (clientId) {
                 const { sequelize } = require('../db/model');
-                const maxDevice = await Client.max('device_id', { where: { owner: user.uuid } });
-                const [client] = await Client.findOrCreate({
-                    where: { owner: user.uuid, clientid: clientId },
-                    defaults: { owner: user.uuid, clientid: clientId, device_id: maxDevice ? maxDevice + 1 : 1 }
-                });
+                
+                // Use shared function to find or create client
+                const result = await findOrCreateClient(clientId, user.uuid, req);
                 
                 // Generate session secret for native clients (HMAC authentication)
                 sessionSecret = crypto.randomBytes(32).toString('base64url');
@@ -1121,7 +1173,7 @@ authRoutes.post('/webauthn/register', async (req, res) => {
                                     clientId, 
                                     sessionSecret, 
                                     user.uuid,
-                                    client.device_id, 
+                                    result.device_id, 
                                     JSON.stringify({ userAgent, ip: registrationIp, location: locationString }),
                                     sessionDays
                                 ] 
@@ -1436,13 +1488,10 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             let sessionSecret = null;
             
             if (clientId) {
-                const maxDevice = await Client.max('device_id', { where: { owner: user.uuid } });
-                const [client] = await Client.findOrCreate({
-                    where: { owner: user.uuid, clientid: clientId },
-                    defaults: { owner: user.uuid, clientid: clientId, device_id: maxDevice ? maxDevice + 1 : 1 }
-                });
-                req.session.deviceId = client.device_id || (client.get ? client.get('device_id') : undefined);
-                req.session.clientId = client.clientid || (client.get ? client.get('clientid') : undefined);
+                // Use shared function to find or create client
+                const result = await findOrCreateClient(clientId, user.uuid, req);
+                req.session.deviceId = result.device_id;
+                req.session.clientId = result.clientid;
                 
                 // Generate session secret for native clients (HMAC authentication)
                 sessionSecret = crypto.randomBytes(32).toString('base64url');
@@ -1609,49 +1658,24 @@ authRoutes.get("/webauthn/list", async (req, res) => {
 authRoutes.post("/client/addweb", async (req, res) => {
     if(req.session.authenticated && req.session.email && req.session.uuid) {
         try {
-            const { clientId } = req.body
-            const userAgent = req.headers['user-agent'] || '';
-            const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-            const location = await getLocationFromIp(ip);
-            const locationString = location
-                    ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
-                    : "Location not found";
-            const maxDevice = await Client.max('device_id', { where: { owner: req.session.uuid } });
-            const [client, created] = await Client.findOrCreate({
-                where: { clientid: clientId, owner: req.session.uuid },
-                defaults: {
-                    owner: req.session.uuid,
-                    clientid: clientId,
-                    ip: ip,
-                    browser: userAgent,
-                    location: locationString,
-                    device_id: maxDevice ? maxDevice + 1 : 1
-                }
-            });
-            console.log(client, created);
-            // device_id kann je nach Sequelize-Return als getter oder plain property vorliegen
-            req.session.deviceId = client.device_id || (client.get ? client.get('device_id') : undefined);
-            req.session.clientId = client.clientid || (client.get ? client.get('clientid') : undefined);
+            const { clientId } = req.body;
+            
+            // Use shared function to find or create client
+            const result = await findOrCreateClient(clientId, req.session.uuid, req);
+            
+            // Store in session for web clients
+            req.session.deviceId = result.device_id;
+            req.session.clientId = result.clientid;
+            
             req.session.save(err => {
                 if (err) {
                     console.error('Session save error:', err);
                     return res.status(500).json({ status: "error", message: "Session save error" });
                 }
-                if (!created) {
-                    writeQueue.enqueue(
-                        () => Client.update({ ip: ip, browser: userAgent, location: locationString }, { where: { clientid: client.clientid } }),
-                        'updateClientInfo'
-                    )
-                        .then(() => {
-                            res.status(200).json({ status: "ok", message: "Client updated successfully" });
-                        })
-                        .catch(error => {
-                            console.error('Error updating client:', error);
-                            res.status(500).json({ status: "error", message: "Internal server error" });
-                        });
-                } else {
-                    res.status(200).json({ status: "ok", message: "Client added successfully" });
-                }
+                res.status(200).json({ 
+                    status: "ok", 
+                    message: result.created ? "Client added successfully" : "Client updated successfully" 
+                });
             });
 
         } catch (error) {
@@ -2102,13 +2126,13 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
         
-        // Create or find Signal Client record (required for Signal protocol)
-        const maxDevice = await Client.max('device_id', { where: { owner: user.uuid } });
-        const [client] = await Client.findOrCreate({
-            where: { owner: user.uuid, clientid: clientId },
-            defaults: { owner: user.uuid, clientid: clientId, device_id: maxDevice ? maxDevice + 1 : 1 }
+        // Use shared function to find or create Signal Client record (required for Signal protocol)
+        const result = await findOrCreateClient(clientId, user.uuid, req);
+        console.log('[TOKEN EXCHANGE] ✓ Client record ensured:', { 
+            clientId: result.clientid, 
+            deviceId: result.device_id,
+            created: result.created
         });
-        console.log('[TOKEN EXCHANGE] ✓ Client record ensured:', { clientId, deviceId: client.device_id });
         
         // Generate session secret
         const sessionSecret = crypto.randomBytes(32).toString('hex');

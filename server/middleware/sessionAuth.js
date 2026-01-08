@@ -59,11 +59,12 @@ async function verifySessionAuth(req, res, next) {
       { replacements: [nonce] }
     );
 
-    // 3. Get session secret from database
+    // 3. Get session secret and device_id in single query (JOIN optimization)
     const [sessions] = await sequelize.query(
-      `SELECT session_secret, user_id, device_id, expires_at 
-       FROM client_sessions 
-       WHERE client_id = ?`,
+      `SELECT cs.session_secret, cs.user_id, cs.expires_at, c.device_id 
+       FROM client_sessions cs
+       LEFT JOIN Clients c ON c.clientid = cs.client_id AND c.owner = cs.user_id
+       WHERE cs.client_id = ?`,
       { replacements: [clientId] }
     );
 
@@ -76,6 +77,16 @@ async function verifySessionAuth(req, res, next) {
     }
 
     const session = sessions[0];
+    const deviceId = session.device_id || null;
+
+    // Validate device_id exists (required for Signal protocol)
+    if (deviceId === null) {
+      console.error(`[SessionAuth] Client record missing for clientId: ${sanitizeForLog(clientId)}`);
+      return res.status(500).json({ 
+        error: 'client_not_found',
+        message: 'Client device record not found - please re-authenticate' 
+      });
+    }
 
     // Check if session expired
     if (new Date(session.expires_at) < new Date()) {
@@ -155,10 +166,10 @@ async function verifySessionAuth(req, res, next) {
     // Authentication successful - attach to request
     req.clientId = clientId;
     req.userId = session.user_id;
-    req.deviceId = session.device_id;
+    req.deviceId = deviceId;
     req.sessionAuth = true;
 
-    console.log(`[SessionAuth] ✓ Client ${sanitizeForLog(clientId)} authenticated successfully`);
+    console.log(`[SessionAuth] ✓ Client ${sanitizeForLog(clientId)} authenticated successfully (deviceId: ${deviceId || 'none'})`);
     next();
   } catch (err) {
     console.error('[SessionAuth] Verification error:', err);
