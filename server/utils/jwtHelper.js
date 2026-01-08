@@ -1,8 +1,9 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const config = require('../config/config');
 
-// Generate JWT secret if not set (store this in environment variable in production!)
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
+// Use JWT secret from config (auto-generated if not in .env)
+const JWT_SECRET = config.jwt.secret;
 
 // In-memory stores (use Redis in production for distributed systems)
 const usedTokens = new Set();
@@ -51,15 +52,18 @@ setInterval(() => {
  * @returns {string} Signed JWT token
  */
 function generateAuthToken(payload) {
+    const jti = crypto.randomBytes(16).toString('hex');
+    console.log(`[JWT] Generating auth token - User: ${payload.email}, JTI: ${jti}, Expiry: ${config.jwt.expiresIn}`);
+    
     return jwt.sign(
         {
             ...payload,
             type: 'custom_tab_auth',
-            jti: crypto.randomBytes(16).toString('hex'), // Unique token ID
+            jti: jti, // Unique token ID for revocation
         },
         JWT_SECRET,
         {
-            expiresIn: '60s', // 60 seconds
+            expiresIn: config.jwt.expiresIn, // From config (default: 60s)
             algorithm: 'HS256'
         }
     );
@@ -72,9 +76,11 @@ function generateAuthToken(payload) {
  */
 function verifyAuthToken(token) {
     try {
+        console.log('[JWT] Verifying auth token...');
+        
         // Check if token was already used
         if (usedTokens.has(token)) {
-            console.error('[JWT] Token already used (replay attack?)');
+            console.error('[JWT] ✗ Security violation: Token already used (replay attack prevented)');
             return null;
         }
 
@@ -82,31 +88,34 @@ function verifyAuthToken(token) {
         const decoded = jwt.verify(token, JWT_SECRET, {
             algorithms: ['HS256']
         });
+        
+        console.log(`[JWT] ✓ Token signature valid - User: ${decoded.email}, JTI: ${decoded.jti}`);
 
         // Verify token type
         if (decoded.type !== 'custom_tab_auth') {
-            console.error('[JWT] Invalid token type:', decoded.type);
+            console.error(`[JWT] ✗ Invalid token type: ${decoded.type} (expected: custom_tab_auth)`);
             return null;
         }
 
         // Check if token was revoked
         const revokeKey = `${decoded.jti}:${decoded.iat}`;
         if (revokedTokens.has(revokeKey)) {
-            console.error('[JWT] Token was revoked');
+            console.error(`[JWT] ✗ Token was revoked - JTI: ${decoded.jti}`);
             return null;
         }
 
-        // Mark token as used (one-time use)
+        // Mark token as used (one-time use protection)
         usedTokens.add(token);
+        console.log(`[JWT] ✓ Token marked as used - User: ${decoded.email}`);
 
         return decoded;
     } catch (error) {
         if (error.name === 'TokenExpiredError') {
-            console.error('[JWT] Token expired');
+            console.error('[JWT] ✗ Token expired');
         } else if (error.name === 'JsonWebTokenError') {
-            console.error('[JWT] Invalid token signature');
+            console.error('[JWT] ✗ Invalid token signature');
         } else {
-            console.error('[JWT] Token verification error:', error.message);
+            console.error('[JWT] ✗ Token verification error:', error.message);
         }
         return null;
     }

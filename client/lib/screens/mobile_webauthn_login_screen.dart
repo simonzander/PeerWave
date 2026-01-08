@@ -25,7 +25,6 @@ class MobileWebAuthnLoginScreen extends StatefulWidget {
 
 class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
   final _emailController = TextEditingController();
-  final _invitationTokenController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   String? _serverUrl;
@@ -52,7 +51,6 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
   void dispose() {
     // _emailController.removeListener(_onEmailFocusChanged);
     _emailController.dispose();
-    _invitationTokenController.dispose();
     super.dispose();
   }
 
@@ -236,23 +234,29 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
     });
 
     try {
+      debugPrint('[MobileWebAuthnLogin] Checking registration mode...');
+
+      // Check if server requires invitation (match web flow)
+      if (_registrationMode == 'invitation_only') {
+        debugPrint(
+          '[MobileWebAuthnLogin] Invitation required, navigating to invitation page',
+        );
+        setState(() => _isLoading = false);
+        if (mounted) {
+          context.go('/invitation-entry', extra: email);
+        }
+        return;
+      }
+
+      // If open or email_suffix mode, proceed directly to OTP
       debugPrint('[MobileWebAuthnLogin] Calling /register for email: $email');
       debugPrint('[MobileWebAuthnLogin] Server URL: $_serverUrl');
-
-      // Prepare registration data
-      final Map<String, dynamic> registrationData = {'email': email};
-
-      // Add invitation token if provided and in invitation-only mode
-      final invitationToken = _invitationTokenController.text.trim();
-      if (invitationToken.isNotEmpty) {
-        registrationData['invitationToken'] = invitationToken;
-      }
 
       // Call /register endpoint to send OTP email
       final response = await MobileWebAuthnService.instance
           .sendRegistrationRequestWithData(
             serverUrl: _serverUrl!,
-            data: registrationData,
+            data: {'email': email},
           );
 
       debugPrint('[MobileWebAuthnLogin] Register response: $response');
@@ -367,40 +371,10 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
                     ).colorScheme.surfaceContainerHighest,
                   ),
                   keyboardType: TextInputType.emailAddress,
-                  textInputAction: _registrationMode == 'invitation_only'
-                      ? TextInputAction.next
-                      : TextInputAction.done,
+                  textInputAction: TextInputAction.done,
                   validator: _validateEmail,
                   enabled: !_isLoading,
                 ),
-
-                // Invitation token field (only for invitation_only mode)
-                if (_registrationMode == 'invitation_only') ...[
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _invitationTokenController,
-                    decoration: InputDecoration(
-                      labelText: 'Invitation Token',
-                      labelStyle: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      hintText: 'Enter your invitation token',
-                      hintStyle: TextStyle(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurfaceVariant.withOpacity(0.6),
-                      ),
-                      prefixIcon: const Icon(Icons.vpn_key),
-                      border: const OutlineInputBorder(),
-                      filled: true,
-                      fillColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
-                    ),
-                    textInputAction: TextInputAction.done,
-                    enabled: !_isLoading,
-                  ),
-                ],
 
                 const SizedBox(height: 24),
 

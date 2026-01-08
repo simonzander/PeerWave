@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { sequelize } = require('../db/model');
 const { sanitizeForLog } = require('../utils/logSanitizer');
+const config = require('../config/config');
 
 /**
  * HMAC-based session authentication middleware for native clients
@@ -126,11 +127,30 @@ async function verifySessionAuth(req, res, next) {
       });
     }
 
-    // Update last_used timestamp
-    await sequelize.query(
-      'UPDATE client_sessions SET last_used = datetime("now") WHERE client_id = ?',
-      { replacements: [clientId] }
-    );
+    // Update last_used timestamp and check for session refresh
+    const expiresAt = new Date(session.expires_at);
+    const now = new Date();
+    const daysUntilExpiry = (expiresAt - now) / (24 * 60 * 60 * 1000);
+    const refreshThreshold = config.session.refreshThresholdDays || 7;
+    
+    // Auto-refresh session if it expires in less than threshold days
+    if (daysUntilExpiry < refreshThreshold) {
+      const sessionDays = config.session.hmacSessionDays || 90;
+      await sequelize.query(
+        `UPDATE client_sessions 
+         SET last_used = datetime("now"), 
+             expires_at = datetime('now', '+' || ? || ' days')
+         WHERE client_id = ?`,
+        { replacements: [sessionDays, clientId] }
+      );
+      console.log(`[SessionAuth] ✓ Session auto-refreshed for client ${sanitizeForLog(clientId)} (${sessionDays} days)`);
+    } else {
+      // Just update last_used
+      await sequelize.query(
+        'UPDATE client_sessions SET last_used = datetime("now") WHERE client_id = ?',
+        { replacements: [clientId] }
+      );
+    }
 
     // Authentication successful - attach to request
     req.clientId = clientId;

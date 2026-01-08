@@ -145,23 +145,30 @@
                         }
                     } 
                 })
-            }).then(response => {
-                if (response.status === 200 || response.status === 202) {
-                    if (window.onWebAuthnSuccess) {
-                        window.onWebAuthnSuccess(response.status); // or whatever data you want to pass
-                    }
-                    else
-                    {
-                        window.onWebAuthnSuccess(response.status)
-                    }
-
-                }
-                if (response.redirected) {
-                    window.location.href = response.url;
-                }
-            }).catch(error => {
-                console.error('Error during authentication:', error);
             });
+
+            if (response.redirected) {
+                window.location.href = response.url;
+                return;
+            }
+
+            if (response.status === 200 || response.status === 202) {
+                if (window.onWebAuthnSuccess) {
+                    window.onWebAuthnSuccess(response.status);
+                }
+                return;
+            }
+
+            // Surface error details for debugging
+            let bodyText = '';
+            try {
+                bodyText = await response.text();
+            } catch (_) {}
+            console.error('[WEBAUTHN] Authentication failed:', response.status, bodyText);
+            if (window.onWebAuthnAbort) {
+                window.onWebAuthnAbort(`Authentication failed: ${response.status} ${bodyText}`);
+            }
+            throw new Error(`Authentication failed: ${response.status}`);
 
         } catch (error) {
             console.error('WebAuthn authentication failed:', error);

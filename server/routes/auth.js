@@ -928,8 +928,7 @@ authRoutes.post('/webauthn/register-challenge', async (req, res) => {
         `https://${host}`
     ];
     
-    // For Android passkeys, rpId must be the domain without protocol
-    // Android will hash this and compare with authenticator data
+    // rpId must be the domain without protocol for WebAuthn validation
     challenge.rp = {
         name: "PeerWave",
         id: host   // Domain only: "app.peerwave.org" or "localhost"
@@ -994,19 +993,16 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             const clientData = JSON.parse(Buffer.from(attestation.response.clientDataJSON, 'base64').toString('utf8'));
             const actualOrigin = clientData.origin;
             
-            // All clients (web and mobile) use standard WebAuthn validation
+            // Chrome Custom Tab and web clients use standard HTTPS origins
             const allowedOrigins = [
                 "http://localhost:3000",
                 "http://localhost:55831",
                 `https://${host}`
             ];
             
-            // Android passkeys send "android:apk-key-hash:..." origin
-            // This is valid and matches our Digital Asset Links configuration
-            const isAndroidOrigin = actualOrigin && actualOrigin.startsWith('android:apk-key-hash:');
-            const origin = isAndroidOrigin ? actualOrigin : (req.headers.origin || `https://${host}`);
+            const origin = req.headers.origin || `https://${host}`;
             
-            if (!isAndroidOrigin && !allowedOrigins.includes(origin)) {
+            if (!allowedOrigins.includes(origin)) {
                 console.warn("Unexpected origin for WebAuthn:", origin);
             }
 
@@ -1105,26 +1101,28 @@ authRoutes.post('/webauthn/register', async (req, res) => {
                     ? `${registrationLocation.city}, ${registrationLocation.region}, ${registrationLocation.country} (${registrationLocation.org})`
                     : "Location not found";
                 
-                // Store session in database
+                // Store session in database with configurable expiration
                 try {
+                    const sessionDays = config.session.hmacSessionDays || 90;
                     await writeQueue.enqueue(
                         () => sequelize.query(
                             `INSERT OR REPLACE INTO client_sessions 
                              (client_id, session_secret, user_id, device_id, device_info, expires_at, last_used, created_at)
-                             VALUES (?, ?, ?, ?, ?, datetime('now', '+30 days'), datetime('now'), datetime('now'))`,
+                             VALUES (?, ?, ?, ?, ?, datetime('now', '+' || ? || ' days'), datetime('now'), datetime('now'))`,
                             { 
                                 replacements: [
                                     clientId, 
                                     sessionSecret, 
                                     user.uuid,
                                     client.device_id, 
-                                    JSON.stringify({ userAgent, ip: registrationIp, location: locationString })
+                                    JSON.stringify({ userAgent, ip: registrationIp, location: locationString }),
+                                    sessionDays
                                 ] 
                             }
                         ),
                         'createClientSessionOnRegistration'
                     );
-                    console.log(`[WEBAUTHN] HMAC session created for client on registration: ${sanitizeForLog(clientId)}`);
+                    console.log(`[WEBAUTHN] HMAC session created for client on registration (${sessionDays} days): ${sanitizeForLog(clientId)}`);
                 } catch (sessionErr) {
                     console.error('[WEBAUTHN] Error creating HMAC session on registration:', sessionErr);
                 }
@@ -1187,7 +1185,7 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
         
         // IMPORTANT: Do NOT set challenge.rp for authentication (assertionOptions)
         // rp is ONLY for registration (attestationOptions)
-        // Android Credential Manager strictly enforces this WebAuthn spec requirement
+        // WebAuthn spec strictly enforces this requirement
 
         user.credentials = JSON.parse(user.credentials);
 
@@ -1196,32 +1194,21 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
             console.log(`[WEBAUTHN AUTH] Credential ${idx}: id=${cred.id}, transports=${JSON.stringify(cred.transports)}`);
         });
 
-        // Android vs Web: Different allowCredentials handling
-        // - Android: Field must not exist for discoverable passkeys (shows passkey picker)
-        // - Web: Populated allowCredentials preferred (filters to user's passkeys in password manager)
-        const userAgent = req.headers['user-agent'] || '';
-        const isAndroid = userAgent.includes('Android') || req.body.platform === 'android';
-        
-        if (isAndroid) {
-            // Android Credential Manager: Field must NOT EXIST for discoverable credentials
-            // Delete the field entirely (not just set to empty array)
-            delete challenge.allowCredentials;
-            console.log('[WEBAUTHN AUTH] Android detected - removed allowCredentials for discoverable authentication');
-        } else {
-            // Web/Desktop: Include credential IDs so password managers (Bitwarden, 1Password) filter correctly
-            challenge.allowCredentials = user.credentials.map(cred => {
-                const transports = cred.transports || ["internal", "hybrid"];
-                if (!transports.includes("hybrid")) {
-                    transports.push("hybrid");
-                }
-                return {
-                    id: cred.id,
-                    type: "public-key",
-                    transports: transports,
-                };
-            });
-            console.log('[WEBAUTHN AUTH] Web/Desktop detected - including credential IDs for password manager filtering');
-        }
+        // Include credential IDs to help browsers and password managers
+        // filter to the user's passkeys. Chrome Custom Tab and web clients
+        // both benefit from having allowCredentials populated.
+        challenge.allowCredentials = user.credentials.map(cred => {
+            const transports = cred.transports || ["internal", "hybrid"];
+            if (!transports.includes("hybrid")) {
+                transports.push("hybrid");
+            }
+            return {
+                id: cred.id,
+                type: "public-key",
+                transports: transports,
+            };
+        });
+        console.log('[WEBAUTHN AUTH] Including credential IDs for authentication');
         
         // Add user verification preference for flexibility
         challenge.userVerification = "preferred";
@@ -1292,11 +1279,20 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
         const { sequelize } = require('../db/model');
         const { email, assertion, fromCustomTab, state } = req.body;
         
+        // Enhanced logging for Custom Tab auth
+        if (fromCustomTab) {
+            console.log('[CUSTOM TAB AUTH] Authentication request received', {
+                email: sanitizeForLog(email),
+                hasState: !!state,
+                hasSessionState: !!req.session.customTabState
+            });
+        }
+        
         // Verify CSRF state for Custom Tab requests
         if (fromCustomTab) {
             const sessionState = req.session.customTabState;
             if (!sessionState || sessionState !== state) {
-                console.error('[CUSTOM TAB AUTH] CSRF validation failed', { 
+                console.error('[CUSTOM TAB AUTH] ✗ CSRF validation failed', { 
                     hasSessionState: !!sessionState, 
                     stateMatch: sessionState === state 
                 });
@@ -1305,7 +1301,8 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                     message: "CSRF validation failed" 
                 });
             }
-            // Clear state after use
+            console.log('[CUSTOM TAB AUTH] ✓ CSRF state validated');
+            // Clear state after use (one-time use protection)
             delete req.session.customTabState;
         }
         
@@ -1361,24 +1358,27 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
         }
         const challenge = base64UrlDecode(req.session.challenge);
 
-        const host = req.hostname;
+        // Keep RP ID / origin computation consistent with the challenge route.
+        // This is critical behind reverse proxies (Traefik/Nginx/Cloudflare)
+        // where req.hostname may not reflect the public domain.
+        const host = process.env.DOMAIN || req.hostname || req.get('host')?.split(':')[0] || 'localhost';
+        const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+        console.log(`[WEBAUTHN AUTH VERIFY] RP ID: ${host}, Protocol: ${protocol}`);
         
         // Decode clientDataJSON to check the actual origin
         const clientData = JSON.parse(Buffer.from(assertion.response.clientDataJSON, 'base64').toString('utf8'));
         const actualOrigin = clientData.origin;
         
-        // All clients (web and mobile) use standard WebAuthn validation
+        // Chrome Custom Tab and web clients use standard HTTPS origins
         const allowedOrigins = [
             "http://localhost:3000",
             "http://localhost:55831",
             `https://${host}`
         ];
         
-        // Android passkeys send "android:apk-key-hash:..." origin
-        const isAndroidOrigin = actualOrigin && actualOrigin.startsWith('android:apk-key-hash:');
-        const origin = isAndroidOrigin ? actualOrigin : (req.headers.origin || `https://${host}`);
+        const origin = req.headers.origin || `${protocol}://${host}`;
         
-        if (!isAndroidOrigin && !allowedOrigins.includes(origin)) {
+        if (!allowedOrigins.includes(origin)) {
             console.warn("Unexpected origin for WebAuthn:", origin);
         }
 
@@ -1437,26 +1437,28 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                     ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
                     : "Location not found";
                 
-                // Store session in database
+                // Store session in database with configurable expiration
                 try {
+                    const sessionDays = config.session.hmacSessionDays || 90;
                     await writeQueue.enqueue(
                         () => sequelize.query(
                             `INSERT OR REPLACE INTO client_sessions 
                              (client_id, session_secret, user_id, device_id, device_info, expires_at, last_used, created_at)
-                             VALUES (?, ?, ?, ?, ?, datetime('now', '+30 days'), datetime('now'), datetime('now'))`,
+                             VALUES (?, ?, ?, ?, ?, datetime('now', '+' || ? || ' days'), datetime('now'), datetime('now'))`,
                             { 
                                 replacements: [
                                     clientId, 
                                     sessionSecret, 
                                     user.uuid,
                                     client.device_id, 
-                                    JSON.stringify({ userAgent, ip, location: locationString })
+                                    JSON.stringify({ userAgent, ip, location: locationString }),
+                                    sessionDays
                                 ] 
                             }
                         ),
                         'createClientSession'
                     );
-                    console.log(`[WEBAUTHN] HMAC session created for client: ${sanitizeForLog(clientId)}`);
+                    console.log(`[WEBAUTHN] HMAC session created for client (${sessionDays} days): ${sanitizeForLog(clientId)}`);
                 } catch (sessionErr) {
                     console.error('[WEBAUTHN] Error creating HMAC session:', sessionErr);
                     // Continue anyway - web clients don't need HMAC sessions
@@ -1477,6 +1479,7 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                 
                 // Generate secure signed JWT for Custom Tab authentication
                 if (fromCustomTab) {
+                    console.log('[CUSTOM TAB AUTH] Generating JWT token for Custom Tab callback...');
                     const authToken = generateAuthToken({
                         userId: user.uuid,
                         email: email,
@@ -1484,13 +1487,14 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                     });
                     
                     response.authToken = authToken;
-                    console.log('[CUSTOM TAB AUTH] ✓ Generated secure JWT token for user', user.email);
+                    console.log(`[CUSTOM TAB AUTH] ✓ JWT token generated for ${sanitizeForLog(user.email)} (expires: ${config.jwt.expiresIn})`);
                 }
                 // Include session secret for mobile clients
                 else if (sessionSecret) {
                     response.sessionSecret = sessionSecret;
                     response.userId = user.uuid;
                     response.email = email;
+                    console.log(`[WEBAUTHN] ✓ HMAC session credentials included in response for ${sanitizeForLog(email)}`);
                 }
                 
                 if(!user.backupCodes) {
@@ -1505,7 +1509,10 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
         }
     } catch (error) {
         console.error('Error during authentication:', error);
-        res.status(500).json({ status: "error", message: "Internal server error" });
+        res.status(500).json({
+            status: "error",
+            message: error && error.message ? error.message : "Internal server error"
+        });
     }
 });
 
@@ -2131,6 +2138,39 @@ authRoutes.post('/token/revoke', tokenRevocationLimiter, async (req, res) => {
     } catch (error) {
         console.error('[TOKEN REVOKE] Error:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// POST /auth/session/refresh
+// Manually refresh HMAC session (extends expiration)
+// Requires valid HMAC authentication via sessionAuth middleware
+const sessionAuth = require('../middleware/sessionAuth');
+
+authRoutes.post('/session/refresh', sessionAuth, async (req, res) => {
+    try {
+        const { clientId } = req;
+        const sessionDays = config.session.hmacSessionDays || 90;
+        
+        // Extend session expiration
+        await sequelize.query(
+            `UPDATE client_sessions 
+             SET expires_at = datetime('now', '+' || ? || ' days'),
+                 last_used = datetime('now')
+             WHERE client_id = ?`,
+            { replacements: [sessionDays, clientId] }
+        );
+        
+        console.log(`[SESSION REFRESH] ✓ Session manually refreshed for client ${sanitizeForLog(clientId)} (${sessionDays} days)`);
+        
+        res.json({
+            status: 'ok',
+            message: 'Session refreshed successfully',
+            expiresIn: sessionDays + ' days'
+        });
+        
+    } catch (error) {
+        console.error('[SESSION REFRESH] Error:', error);
+        res.status(500).json({ error: 'Failed to refresh session' });
     }
 });
 

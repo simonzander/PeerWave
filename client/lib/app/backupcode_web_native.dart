@@ -1,8 +1,9 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, File, Directory;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
 import '../services/api_service.dart';
 import '../services/server_config_native.dart';
 import '../widgets/registration_progress_bar.dart';
@@ -59,6 +60,50 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
       setState(() {
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _saveBackupCodes(BuildContext context) async {
+    try {
+      final codes = backupCodesController.text;
+      Directory directory;
+
+      if (Platform.isAndroid) {
+        // Android: Save to Downloads folder
+        directory = Directory('/storage/emulated/0/Download');
+        if (!await directory.exists()) {
+          // Fallback to app's external storage
+          directory =
+              await getExternalStorageDirectory() ??
+              await getApplicationDocumentsDirectory();
+        }
+      } else {
+        // iOS: Save to Documents folder (accessible via Files app)
+        directory = await getApplicationDocumentsDirectory();
+      }
+
+      final file = File('${directory.path}/peerwave_backup_codes.txt');
+      await file.writeAsString('PeerWave Backup Codes\n\n$codes');
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Backup codes saved to ${file.path}'),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[BackupCodes] Save error: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
     }
   }
 
@@ -123,23 +168,60 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
                               ),
                               const SizedBox(height: 10),
                               Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceEvenly,
                                 children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.copy),
-                                    onPressed: () {
-                                      Clipboard.setData(
-                                        ClipboardData(
-                                          text: backupCodesController.text,
+                                  // Copy button
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: colorScheme.primary,
+                                        side: BorderSide(
+                                          color: colorScheme.outline,
                                         ),
-                                      );
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Copied to clipboard'),
-                                        ),
-                                      );
-                                    },
+                                      ),
+                                      icon: Icon(
+                                        Icons.copy,
+                                        color: colorScheme.primary,
+                                      ),
+                                      label: const Text('Copy'),
+                                      onPressed: () {
+                                        Clipboard.setData(
+                                          ClipboardData(
+                                            text: backupCodesController.text,
+                                          ),
+                                        );
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: const Text(
+                                              'Backup codes copied to clipboard',
+                                            ),
+                                            backgroundColor:
+                                                colorScheme.primary,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  // Save button
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: colorScheme.primary,
+                                        foregroundColor: colorScheme.onPrimary,
+                                      ),
+                                      icon: Icon(
+                                        Icons.download,
+                                        color: colorScheme.onPrimary,
+                                      ),
+                                      label: const Text('Save'),
+                                      onPressed: () async {
+                                        await _saveBackupCodes(context);
+                                      },
+                                    ),
                                   ),
                                 ],
                               ),

@@ -1,4 +1,48 @@
 const config = {};
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
+// Auto-generate and persist secrets if not in environment
+function getOrGenerateSecret(envVar, secretName, byteLength = 32) {
+    if (process.env[envVar]) {
+        return process.env[envVar];
+    }
+    
+    // Try to load from .secrets file
+    const secretsPath = path.join(__dirname, '..', '.secrets');
+    let secrets = {};
+    
+    if (fs.existsSync(secretsPath)) {
+        try {
+            secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
+            if (secrets[secretName]) {
+                console.log(`✓ Loaded ${secretName} from .secrets file`);
+                return secrets[secretName];
+            }
+        } catch (err) {
+            console.warn(`⚠️  Could not read .secrets file: ${err.message}`);
+        }
+    }
+    
+    // Generate new secret
+    const newSecret = crypto.randomBytes(byteLength).toString('hex');
+    secrets[secretName] = newSecret;
+    
+    // Save to .secrets file
+    try {
+        fs.writeFileSync(secretsPath, JSON.stringify(secrets, null, 2), 'utf8');
+        console.log(`✓ Generated new ${secretName} and saved to .secrets file`);
+        console.log(`  ${secretName}: ${newSecret}`);
+        console.log(`  ⚠️  IMPORTANT: Add .secrets to .gitignore and back it up securely!`);
+    } catch (err) {
+        console.warn(`⚠️  Could not save .secrets file: ${err.message}`);
+        console.log(`  ${secretName}: ${newSecret}`);
+        console.log(`  ⚠️  Save this secret to your .env file or you'll lose sessions on restart!`);
+    }
+    
+    return newSecret;
+}
 
 config.domain = process.env.DOMAIN || 'localhost';
 config.port = process.env.PORT || 3000;
@@ -58,14 +102,35 @@ config.smtp = process.env.EMAIL_HOST ? {
     }
 } : null;
 
+// Session Configuration (Slack/Teams Model - 90 days mobile, 14 days web)
 config.session = {
-    secret: process.env.SESSION_SECRET || 'your-secret-key-CHANGE-IN-PRODUCTION',
+    secret: getOrGenerateSecret('SESSION_SECRET', 'SESSION_SECRET', 32),
     resave: false,
     saveUninitialized: true,
     cookie: { 
-        secure: process.env.NODE_ENV === 'production' && config.https
-    }
+        secure: process.env.NODE_ENV === 'production' && config.https,
+        maxAge: parseInt(process.env.WEB_SESSION_DAYS || '14') * 24 * 60 * 60 * 1000 // 14 days default
+    },
+    // HMAC session expiration for native clients (mobile/desktop)
+    hmacSessionDays: parseInt(process.env.HMAC_SESSION_DAYS || '90'), // 90 days default
+    // Token refresh threshold (refresh if less than X days remaining)
+    refreshThresholdDays: parseInt(process.env.SESSION_REFRESH_DAYS || '7'), // Auto-refresh when < 7 days
+    // Session cleanup interval (hours)
+    cleanupIntervalHours: parseInt(process.env.SESSION_CLEANUP_HOURS || '1') // Cleanup every hour
 };
+
+// JWT Configuration (for Chrome Custom Tab callbacks)
+config.jwt = {
+    secret: getOrGenerateSecret('JWT_SECRET', 'JWT_SECRET', 64),
+    expiresIn: '60s' // 60 seconds for auth callbacks
+};
+
+// Log session configuration on startup
+console.log('🔐 Session Configuration:');
+console.log(`   Web Session: ${Math.floor(config.session.cookie.maxAge / (24 * 60 * 60 * 1000))} days`);
+console.log(`   HMAC Session: ${config.session.hmacSessionDays} days`);
+console.log(`   Auto-refresh threshold: ${config.session.refreshThresholdDays} days`);
+console.log(`   Cleanup interval: ${config.session.cleanupIntervalHours} hour(s)`);
 
 // Admin users: Comma-separated list of email addresses that will receive Administrator role
 // Users with these emails will automatically get admin privileges when verified

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +7,7 @@ import 'package:universal_html/html.dart' as html;
 import '../services/api_service.dart';
 import '../services/auth_service_web.dart'
     if (dart.library.io) '../services/auth_service_native.dart';
+import '../services/custom_tab_auth_service.dart';
 import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
 
@@ -121,30 +123,103 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
       final resp = await ApiService.post('/client/profile/setup', data: data);
 
       if (resp.statusCode == 200 || resp.statusCode == 201) {
-        // Registration complete - log out the user and redirect to login
-        // The user needs to log in properly after registration
+        // Registration complete
 
-        // Clear client-side authentication state
-        AuthService.isLoggedIn = false;
-
-        if (mounted) {
-          // Show success message
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Registration complete! Please log in to continue.',
-              ),
-              duration: Duration(seconds: 3),
-              backgroundColor: Colors.green,
-            ),
+        // Check platform to determine post-registration flow
+        if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+          // Mobile: Open Chrome Custom Tab for authentication
+          debugPrint(
+            '[RegisterProfile] Mobile registration complete, opening Chrome Custom Tab for auth...',
           );
 
-          // Wait a moment for the user to see the message
-          await Future.delayed(const Duration(seconds: 1));
+          if (mounted) {
+            // Show loading message
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'Complete authentication to access your account',
+                ),
+                duration: const Duration(seconds: 2),
+                backgroundColor: Theme.of(context).colorScheme.primary,
+              ),
+            );
+          }
+
+          // Get server URL
+          final apiServer = await loadWebApiServer();
+          String serverUrl = apiServer ?? '';
+          if (!serverUrl.startsWith('http://') &&
+              !serverUrl.startsWith('https://')) {
+            serverUrl = 'https://$serverUrl';
+          }
+
+          // Get email from API service or storage
+          String? userEmail;
+          try {
+            final profileResp = await ApiService.get('/client/profile');
+            if (profileResp.statusCode == 200) {
+              userEmail = profileResp.data['email'];
+            }
+          } catch (e) {
+            debugPrint('[RegisterProfile] Could not get email: $e');
+          }
+
+          // Open Chrome Custom Tab for authentication
+          final success = await CustomTabAuthService.instance.authenticate(
+            serverUrl: serverUrl,
+            email: userEmail,
+            timeout: const Duration(minutes: 3),
+          );
+
           if (!mounted) return;
 
-          // Navigate to login page
-          GoRouter.of(context).go('/login');
+          if (success) {
+            // Authentication successful - navigate to app
+            debugPrint(
+              '[RegisterProfile] ✓ Authentication successful, navigating to /app',
+            );
+            GoRouter.of(context).go('/app');
+          } else {
+            // Authentication failed or cancelled - navigate to mobile login page
+            debugPrint(
+              '[RegisterProfile] ✗ Authentication cancelled/failed, navigating to login page',
+            );
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'Authentication required. Please log in to continue.',
+                ),
+                duration: const Duration(seconds: 3),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+            );
+            await Future.delayed(const Duration(seconds: 1));
+            if (!mounted) return;
+            GoRouter.of(context).go('/mobile-webauthn', extra: serverUrl);
+          }
+        } else {
+          // Web/Desktop: Log out and redirect to login (existing behavior)
+          AuthService.isLoggedIn = false;
+
+          if (mounted) {
+            // Show success message
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Registration complete! Please log in to continue.',
+                ),
+                duration: Duration(seconds: 3),
+                backgroundColor: Colors.green,
+              ),
+            );
+
+            // Wait a moment for the user to see the message
+            await Future.delayed(const Duration(seconds: 1));
+            if (!mounted) return;
+
+            // Navigate to login page
+            GoRouter.of(context).go('/login');
+          }
         }
       } else {
         // Server might return error if atName is taken

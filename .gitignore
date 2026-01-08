@@ -82,6 +82,9 @@ web_modules/
 .env.local
 .env.traefik
 
+# Auto-generated secrets (JWT, session keys)
+.secrets
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
@@ -257,3 +260,4 @@ server/lib/QUICKSTART-VALIDATOR.md
 server/lib/README-VALIDATOR.md
 TODO.md
 BUGS.md
+client/local_packages/passkeys_web/.dart_tool/extension_discovery/vs_code.json

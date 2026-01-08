@@ -4500,14 +4500,17 @@ process.on('SIGINT', async () => {
       
       // Start HMAC session auth cleanup jobs
       const { cleanupNonces, cleanupSessions } = require('./middleware/sessionAuth');
+      const config = require('./config/config');
       
-      // Clean up old nonces every 10 minutes
+      // Clean up old nonces every 10 minutes (fixed - nonces are short-lived)
       setInterval(cleanupNonces, 10 * 60 * 1000);
       console.log('✓ HMAC nonce cleanup job started (every 10 minutes)');
       
-      // Clean up expired sessions every hour
-      setInterval(cleanupSessions, 60 * 60 * 1000);
-      console.log('✓ HMAC session cleanup job started (every hour)');
+      // Clean up expired sessions using configurable interval
+      const cleanupHours = config.session.cleanupIntervalHours || 1;
+      const cleanupMs = cleanupHours * 60 * 60 * 1000;
+      setInterval(cleanupSessions, cleanupMs);
+      console.log(`✓ HMAC session cleanup job started (every ${cleanupHours} hour${cleanupHours > 1 ? 's' : ''})`);
     });
   } catch (error) {
     console.error('❌ Database initialization failed:', error);
