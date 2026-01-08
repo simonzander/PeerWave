@@ -10,7 +10,7 @@ const session = require('express-session');
 const rateLimit = require('express-rate-limit');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const magicLinks = require('../store/magicLinksStore');
-const { User, OTP, Client } = require('../db/model');
+const { User, OTP, Client, ClientSession } = require('../db/model');
 const bcrypt = require("bcrypt");
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
@@ -2105,11 +2105,11 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
         
         // Store session in database
         await writeQueue.enqueue(
-            () => Client.upsert({
-                clientId,
-                owner: user.uuid,
-                sessionSecret,
-                lastSeen: new Date()
+            () => ClientSession.upsert({
+                client_id: clientId,
+                user_id: user.uuid,
+                session_secret: sessionSecret,
+                last_used: new Date()
             })
         );
         
