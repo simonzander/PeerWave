@@ -59,8 +59,8 @@
     }
 
 
-    window.webauthnLogin = async function(serverUrl, email, clientId) {
-        console.log('[WEBAUTHN] webauthnLogin called with:', { serverUrl, email, clientId });
+    window.webauthnLogin = async function(serverUrl, email, clientId, fromCustomTab) {
+        console.log('[WEBAUTHN] webauthnLogin called with:', { serverUrl, email, clientId, fromCustomTab });
         try {
             // Check if WebAuthn is supported by the browser
             if (!window.PublicKeyCredential) {
@@ -133,6 +133,7 @@
                 body: JSON.stringify({
                     email: email,
                     clientId: clientId,
+                    fromCustomTab: fromCustomTab === true,
                     assertion: {
                         id: assertion.id,
                         rawId: base64UrlEncode(assertion.rawId),

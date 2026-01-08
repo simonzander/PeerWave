@@ -23,6 +23,7 @@ external JSPromise webauthnLoginJs(
   String serverUrl,
   String email,
   String clientId,
+  bool fromCustomTab,
 );
 @JS('onWebAuthnSuccess')
 external set _onWebAuthnSuccess(AuthCallback callback);
@@ -442,7 +443,12 @@ class _AuthLayoutState extends State<AuthLayout> {
         '[AUTH] Calling webauthnLoginJs with serverUrl: $serverUrl, email: $email',
       );
       try {
-        await webauthnLoginJs(serverUrl, email, clientId).toDart;
+        await webauthnLoginJs(
+          serverUrl,
+          email,
+          clientId,
+          _isFromMobileApp,
+        ).toDart;
         debugPrint('[AUTH] webauthnLoginJs completed');
       } catch (e) {
         debugPrint('[AUTH] webauthnLoginJs error: $e');
