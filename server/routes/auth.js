@@ -2144,9 +2144,9 @@ authRoutes.post('/token/revoke', tokenRevocationLimiter, async (req, res) => {
 // POST /auth/session/refresh
 // Manually refresh HMAC session (extends expiration)
 // Requires valid HMAC authentication via sessionAuth middleware
-const sessionAuth = require('../middleware/sessionAuth');
+const { verifySessionAuth } = require('../middleware/sessionAuth');
 
-authRoutes.post('/session/refresh', sessionAuth, async (req, res) => {
+authRoutes.post('/session/refresh', verifySessionAuth, async (req, res) => {
     try {
         const { clientId } = req;
         const sessionDays = config.session.hmacSessionDays || 90;
