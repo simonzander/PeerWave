@@ -471,6 +471,64 @@ class _MyAppState extends State<MyApp> {
     );
   }
 
+  /// Ensure server is saved and activated after successful authentication
+  Future<void> _ensureServerIsActive() async {
+    try {
+      // Check if we already have an active server
+      final activeServer = ServerConfigService.getActiveServer();
+      if (activeServer != null) {
+        debugPrint(
+          '[CALLBACK] ✓ Active server already set: ${activeServer.serverUrl}',
+        );
+        return;
+      }
+
+      // Check if server was recently added but not activated
+      final allServers = ServerConfigService.getAllServers();
+      if (allServers.isNotEmpty) {
+        // Use the most recently active server
+        final recentServer = allServers.reduce(
+          (a, b) => a.lastActive.isAfter(b.lastActive) ? a : b,
+        );
+        await ServerConfigService.setActiveServer(recentServer.id);
+        debugPrint(
+          '[CALLBACK] ✓ Activated most recent server: ${recentServer.serverUrl}',
+        );
+        return;
+      }
+
+      // Fallback: Try to get server URL from ApiService dio baseUrl
+      final serverUrl = ApiService.dio.options.baseUrl;
+      if (serverUrl.isEmpty) {
+        debugPrint(
+          '[CALLBACK] ⚠️ No server URL configured and no servers saved',
+        );
+        return;
+      }
+
+      // Get session secret for credentials
+      final clientId = await ClientIdService.getClientId();
+      final sessionSecret = await SessionAuthService().getSessionSecret(
+        clientId,
+      );
+
+      if (sessionSecret == null) {
+        debugPrint('[CALLBACK] ⚠️ No session secret found');
+        return;
+      }
+
+      // Add server with HMAC credentials and set as active
+      final serverConfig = await ServerConfigService.addServer(
+        serverUrl: serverUrl,
+        credentials: sessionSecret,
+      );
+
+      debugPrint('[CALLBACK] ✓ Server saved and activated: ${serverConfig.id}');
+    } catch (e) {
+      debugPrint('[CALLBACK] ✗ Error ensuring server is active: $e');
+    }
+  }
+
   GoRouter _createRouter() {
     debugPrint('[MAIN] 🏗️ Creating GoRouter...');
 
@@ -481,6 +539,52 @@ class _MyAppState extends State<MyApp> {
         path: '/mobile-server-selection',
         pageBuilder: (context, state) {
           return const MaterialPage(child: MobileServerSelectionScreen());
+        },
+      ),
+      // Chrome Custom Tab callback route (handles deep link after auth)
+      GoRoute(
+        path: '/callback',
+        builder: (context, state) {
+          final success = state.uri.queryParameters['success'] == 'true';
+          debugPrint('[ROUTER] Callback received, success: $success');
+
+          if (success) {
+            // Authentication successful - check session and ensure server is active
+            return FutureBuilder(
+              future: Future.wait([
+                AuthService.checkSession(),
+                _ensureServerIsActive(),
+              ]),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.done) {
+                  debugPrint(
+                    '[ROUTER] Callback: Session checked and server activated, navigating to /app',
+                  );
+                  Future.microtask(() => context.go('/app'));
+                }
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              },
+            );
+          } else {
+            // Authentication failed or cancelled - back to login with error
+            final errorMsg =
+                'Authentication was cancelled or failed. Please try again.';
+            Future.microtask(() {
+              if (Platform.isAndroid || Platform.isIOS) {
+                context.go(
+                  '/mobile-server-selection',
+                  extra: {'errorMessage': errorMsg},
+                );
+              } else {
+                context.go('/login', extra: {'errorMessage': errorMsg});
+              }
+            });
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
         },
       ),
       // Mobile WebAuthn login route (Android/iOS only)
@@ -1112,9 +1216,13 @@ class _MyAppState extends State<MyApp> {
             GoRoute(
               path: '/mobile-server-selection',
               pageBuilder: (context, state) {
-                return const MaterialPage(
+                final extra = state.extra as Map<String, dynamic>?;
+                final errorMessage = extra?['errorMessage'] as String?;
+                return MaterialPage(
                   fullscreenDialog: true,
-                  child: MobileServerSelectionScreen(),
+                  child: MobileServerSelectionScreen(
+                    errorMessage: errorMessage,
+                  ),
                 );
               },
             ),
@@ -1563,6 +1671,9 @@ class _MyAppState extends State<MyApp> {
             location != '/server-selection' &&
             location != '/mobile-server-selection' &&
             location != '/mobile-webauthn' &&
+            !location.startsWith(
+              '/callback',
+            ) && // Allow Chrome Custom Tab callback (with query params)
             location != '/otp' && // Allow OTP during registration
             !location.startsWith('/register/')) {
           // Allow registration routes
@@ -1974,6 +2085,7 @@ class _MyAppState extends State<MyApp> {
             location != '/server-selection' &&
             location != '/mobile-server-selection' &&
             location != '/mobile-webauthn' &&
+            location != '/callback' && // Allow Chrome Custom Tab callback
             location != '/register' &&
             location != '/login' &&
             !location.startsWith('/register/') &&

@@ -48,10 +48,10 @@ extension type AbortCallback(JSFunction _) {}
 @JS()
 extension type SignatureCallback(JSFunction _) {}
 
-void setupWebAuthnCallback(void Function(int) callback) {
+void setupWebAuthnCallback(void Function(int, String?) callback) {
   _onWebAuthnSuccess = AuthCallback(
-    (int status) {
-      callback(status);
+    (int status, [String? token]) {
+      callback(status, token);
     }.toJS,
   );
 }
@@ -196,8 +196,8 @@ class _AuthLayoutState extends State<AuthLayout> {
     });
 
     // Setup JS callback for WebAuthn success using dart:js_interop
-    setupWebAuthnCallback((status) async {
-      debugPrint('STATUS: $status');
+    setupWebAuthnCallback((status, token) async {
+      debugPrint('STATUS: $status, has token: ${token != null}');
       if (status == 200) {
         setState(() {
           _loginStatus = 'Login successful! Status: $status';
@@ -235,15 +235,20 @@ class _AuthLayoutState extends State<AuthLayout> {
         // If opened from mobile app, redirect back with deep link
         if (_isFromMobileApp) {
           debugPrint('[AUTH] Login successful, redirecting to mobile app');
-          // Trigger deep link to return to app
+          // Use token from authentication response (server already generated it)
           if (kIsWeb) {
-            try {
-              jsEval(
-                "window.location.href = 'peerwave://auth/callback?success=true';",
+            if (token != null) {
+              debugPrint(
+                '[AUTH] Using token from auth response, redirecting to app',
               );
-            } catch (e) {
-              debugPrint('[AUTH] Failed to trigger deep link: $e');
-              context.go('/app');
+              jsEval(
+                "window.location.href = 'peerwave://auth/callback?token=${Uri.encodeComponent(token)}';",
+              );
+            } else {
+              debugPrint('[AUTH] No token in response, auth failed');
+              jsEval(
+                "window.location.href = 'peerwave://auth/callback?cancelled=true';",
+              );
             }
           }
         } else if (fromParam == 'magic-link') {

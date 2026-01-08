@@ -33,17 +33,10 @@ class CustomTabAuthService {
             uri.path == '/callback') {
           final token = uri.queryParameters['token'];
           final cancelled = uri.queryParameters['cancelled'];
-          final success = uri.queryParameters['success'];
 
           if (cancelled == 'true') {
             debugPrint('[CustomTabAuth] ✗ User cancelled authentication');
             _completeAuth(null);
-          } else if (success == 'true') {
-            debugPrint(
-              '[CustomTabAuth] ✓ Authentication successful (session-based)',
-            );
-            // Return a marker token to indicate success without JWT
-            _completeAuth('SESSION_AUTH_SUCCESS');
           } else if (token != null && token.isNotEmpty) {
             debugPrint('[CustomTabAuth] ✓ Auth token received from callback');
             _completeAuth(token);
@@ -82,6 +75,14 @@ class CustomTabAuthService {
     }
   }
 
+  /// Cancel any in-progress authentication
+  void cancelAuth() {
+    if (_authCompleter != null) {
+      debugPrint('[CustomTabAuth] ⚠️ Cancelling previous auth attempt');
+      _completeAuth(null);
+    }
+  }
+
   /// Start passkey authentication in Chrome Custom Tab
   ///
   /// Opens browser with /auth/passkey?from=app and waits for callback
@@ -91,9 +92,12 @@ class CustomTabAuthService {
     String? email,
     Duration timeout = const Duration(minutes: 2),
   }) async {
+    // Cancel any existing auth attempt before starting a new one
     if (_authCompleter != null) {
-      debugPrint('[CustomTabAuth] ⚠️ Auth already in progress');
-      return null;
+      debugPrint(
+        '[CustomTabAuth] ⚠️ Auth already in progress - cancelling previous attempt',
+      );
+      cancelAuth();
     }
 
     _authCompleter = Completer<String?>();
@@ -204,14 +208,6 @@ class CustomTabAuthService {
     if (token == null) {
       debugPrint('[CustomTabAuth] ✗ No token received');
       return false;
-    }
-
-    // Handle session-based auth (no token exchange needed)
-    if (token == 'SESSION_AUTH_SUCCESS') {
-      debugPrint(
-        '[CustomTabAuth] ✓ Using existing session (no token exchange)',
-      );
-      return true;
     }
 
     return await finishLogin(token: token, serverUrl: serverUrl);

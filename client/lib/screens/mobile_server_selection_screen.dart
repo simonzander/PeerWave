@@ -6,7 +6,9 @@ import '../services/server_config_native.dart';
 ///
 /// Allows user to enter server URL before proceeding to WebAuthn or Magic Key login
 class MobileServerSelectionScreen extends StatefulWidget {
-  const MobileServerSelectionScreen({super.key});
+  final String? errorMessage;
+
+  const MobileServerSelectionScreen({super.key, this.errorMessage});
 
   @override
   State<MobileServerSelectionScreen> createState() =>
@@ -25,6 +27,10 @@ class _MobileServerSelectionScreenState
   void initState() {
     super.initState();
     _loadSavedServer();
+    // Set error message from widget if provided
+    if (widget.errorMessage != null) {
+      _errorMessage = widget.errorMessage;
+    }
   }
 
   @override

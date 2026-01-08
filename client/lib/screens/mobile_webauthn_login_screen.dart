@@ -23,7 +23,8 @@ class MobileWebAuthnLoginScreen extends StatefulWidget {
       _MobileWebAuthnLoginScreenState();
 }
 
-class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
+class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen>
+    with WidgetsBindingObserver {
   final _emailController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
@@ -32,11 +33,13 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
   bool _isBiometricAvailable = false;
   String? _errorMessage;
   String _registrationMode = 'open';
+  bool _authInProgress = false; // Track if Chrome Custom Tab is open
   // bool _hasAttemptedAutoAuth = false; // Removed - auto-auth disabled
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _serverUrl = widget.serverUrl;
     if (_serverUrl == null) {
       _loadSavedServer();
@@ -49,9 +52,40 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // Cancel any in-progress authentication when leaving the screen
+    CustomTabAuthService.instance.cancelAuth();
     // _emailController.removeListener(_onEmailFocusChanged);
     _emailController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    // If app comes back to foreground while auth was in progress,
+    // assume user cancelled the Chrome Custom Tab
+    if (state == AppLifecycleState.resumed && _authInProgress) {
+      debugPrint(
+        '[MobileWebAuthnLogin] App resumed, checking if auth was cancelled',
+      );
+
+      // Give a small delay to see if callback arrives
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (_authInProgress && mounted) {
+          debugPrint(
+            '[MobileWebAuthnLogin] No callback received, cancelling auth',
+          );
+          CustomTabAuthService.instance.cancelAuth();
+          setState(() {
+            _isLoading = false;
+            _authInProgress = false;
+            _errorMessage = 'Authentication cancelled';
+          });
+        }
+      });
+    }
   }
 
   /// Trigger passkey selection when user starts typing email
@@ -152,6 +186,14 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
   /// Handles WebAuthn login with automatic credential discovery
   /// If email is provided, uses it. Otherwise attempts discoverable authentication.
   Future<void> _handleWebAuthnLogin({String? email}) async {
+    // Prevent double-clicks while auth is in progress
+    if (_isLoading) {
+      debugPrint(
+        '[MobileWebAuthnLogin] Auth already in progress, ignoring click',
+      );
+      return;
+    }
+
     if (email == null || email.isEmpty) {
       if (!_formKey.currentState!.validate()) {
         return;
@@ -168,6 +210,7 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
 
     setState(() {
       _isLoading = true;
+      _authInProgress = true; // Track that Chrome Custom Tab is opening
       _errorMessage = null;
     });
 
@@ -176,6 +219,9 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
         '[MobileWebAuthnLogin] Starting Chrome Custom Tab authentication',
       );
 
+      // Set base URL for API service before authentication
+      ApiService.setBaseUrl(_serverUrl!);
+
       // Use Chrome Custom Tab for authentication (bypasses Android Credential Manager limitations)
       // This allows full WebAuthn spec compliance and cross-RP passkey support
       final success = await CustomTabAuthService.instance.authenticate(
@@ -183,12 +229,31 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
         email: email,
       );
 
+      if (!mounted) return;
+
+      // Clear auth in progress flag
+      _authInProgress = false;
+
       if (!success) {
         setState(() {
           _errorMessage = 'Authentication failed. Please try again.';
           _isLoading = false;
         });
         return;
+      }
+
+      // Save server after successful authentication
+      final clientId = await ClientIdService.getClientId();
+      final sessionSecret = await SessionAuthService().getSessionSecret(
+        clientId,
+      );
+
+      if (sessionSecret != null) {
+        await ServerConfigService.addServer(
+          serverUrl: _serverUrl!,
+          credentials: sessionSecret,
+        );
+        debugPrint('[MobileWebAuthnLogin] ✓ Server saved after login');
       }
 
       // CustomTabAuthService already handles session setup
@@ -200,6 +265,8 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
       }
     } catch (e) {
       debugPrint('[MobileWebAuthnLogin] Error: $e');
+      if (!mounted) return;
+      _authInProgress = false; // Clear flag on error
       setState(() {
         _errorMessage = 'Login failed: ${e.toString()}';
         _isLoading = false;
@@ -208,6 +275,14 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen> {
   }
 
   Future<void> _handleWebAuthnRegister() async {
+    // Prevent double-clicks while loading
+    if (_isLoading) {
+      debugPrint(
+        '[MobileWebAuthnLogin] Registration already in progress, ignoring click',
+      );
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) {
       return;
     }

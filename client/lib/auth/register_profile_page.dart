@@ -8,6 +8,8 @@ import '../services/api_service.dart';
 import '../services/auth_service_web.dart'
     if (dart.library.io) '../services/auth_service_native.dart';
 import '../services/custom_tab_auth_service.dart';
+import '../services/server_config_web.dart'
+    if (dart.library.io) '../services/server_config_native.dart';
 import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
 
@@ -146,8 +148,30 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
           }
 
           // Get server URL
-          final apiServer = await loadWebApiServer();
-          String serverUrl = apiServer ?? '';
+          String serverUrl = '';
+          if (kIsWeb) {
+            final apiServer = await loadWebApiServer();
+            serverUrl = apiServer ?? '';
+          } else {
+            // Mobile: Get from active server configuration
+            final activeServer = ServerConfigService.getActiveServer();
+            serverUrl = activeServer?.serverUrl ?? '';
+          }
+
+          if (serverUrl.isEmpty) {
+            debugPrint('[RegisterProfile] ✗ No server URL available');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Server configuration missing'),
+                  backgroundColor: Theme.of(context).colorScheme.error,
+                ),
+              );
+              GoRouter.of(context).go('/mobile-server-selection');
+            }
+            return;
+          }
+
           if (!serverUrl.startsWith('http://') &&
               !serverUrl.startsWith('https://')) {
             serverUrl = 'https://$serverUrl';

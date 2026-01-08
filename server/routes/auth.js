@@ -2059,6 +2059,9 @@ authRoutes.post("/api/invitations/verify", async (req, res) => {
 
 // REMOVED: /auth/passkey endpoint - Using Flutter web login page (/#/login?from=app) instead
 
+// REMOVED: /auth/token/generate endpoint - Token is now generated directly in /webauthn/authenticate
+// when fromCustomTab=true, eliminating the need for a separate API call
+
 // Token Exchange Endpoint
 // POST /auth/token/exchange
 // Exchanges short-lived auth token for session
