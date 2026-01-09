@@ -247,7 +247,7 @@ async function cleanupNonces() {
 async function cleanupSessions() {
   try {
     await sequelize.query(
-      'DELETE FROM client_sessions WHERE expires_at < datetime("now")'
+      'DELETE FROM client_sessions WHERE expires_at IS NOT NULL AND expires_at < datetime("now")'
     );
     console.log(`[SessionAuth] Cleaned up expired sessions`);
   } catch (err) {

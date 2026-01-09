@@ -254,7 +254,7 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   StreamSubscription? _sub;
   String? _magicKey;
   String? _clientId; // Client ID is fetched/created after login
@@ -274,6 +274,10 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _magicKey = widget.initialMagicKey;
+
+    // Register as app lifecycle observer
+    WidgetsBinding.instance.addObserver(this);
+    debugPrint('[LIFECYCLE] App lifecycle observer registered');
 
     // Start server connection monitoring for native platforms
     if (!kIsWeb) {
@@ -310,6 +314,10 @@ class _MyAppState extends State<MyApp> {
   void dispose() {
     _sub?.cancel();
 
+    // Unregister lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
+    debugPrint('[LIFECYCLE] App lifecycle observer removed');
+
     // Stop server connection monitoring
     if (!kIsWeb) {
       ServerConnectionService.instance.stopMonitoring();
@@ -317,6 +325,73 @@ class _MyAppState extends State<MyApp> {
     }
 
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    debugPrint('[LIFECYCLE] App state changed to: $state');
+
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // App came back to foreground - reconnect socket if logged in
+        debugPrint('[LIFECYCLE] App resumed - checking authentication status');
+        if (AuthService.isLoggedIn) {
+          debugPrint(
+            '[LIFECYCLE] User is logged in - attempting socket reconnection',
+          );
+          _reconnectSocket();
+        } else {
+          debugPrint(
+            '[LIFECYCLE] User not logged in - skipping socket reconnect',
+          );
+        }
+        break;
+
+      case AppLifecycleState.paused:
+        // App went to background
+        debugPrint('[LIFECYCLE] App paused - socket will maintain connection');
+        // Note: We don't disconnect on pause to maintain real-time notifications
+        // Socket.IO handles reconnection automatically
+        break;
+
+      case AppLifecycleState.inactive:
+        debugPrint('[LIFECYCLE] App inactive');
+        break;
+
+      case AppLifecycleState.detached:
+        debugPrint('[LIFECYCLE] App detached');
+        break;
+
+      case AppLifecycleState.hidden:
+        debugPrint('[LIFECYCLE] App hidden');
+        break;
+    }
+  }
+
+  Future<void> _reconnectSocket() async {
+    try {
+      final socketService = SocketService();
+
+      // Check if already connected
+      if (socketService.isConnected) {
+        debugPrint('[LIFECYCLE] Socket already connected - no action needed');
+        return;
+      }
+
+      // Add a short delay to allow network to stabilize after app resume
+      // This helps prevent DNS resolution failures on mobile
+      debugPrint('[LIFECYCLE] Waiting for network to stabilize...');
+      await Future.delayed(Duration(milliseconds: 500));
+
+      debugPrint('[LIFECYCLE] Reconnecting socket...');
+      await socketService.connect();
+      debugPrint('[LIFECYCLE] ✅ Socket reconnected successfully');
+    } catch (e) {
+      debugPrint('[LIFECYCLE] ❌ Failed to reconnect socket: $e');
+      // Don't throw - allow app to continue functioning
+      // Socket will retry connection according to its configuration
+    }
   }
 
   @override
@@ -497,15 +572,43 @@ class _MyAppState extends State<MyApp> {
             '[ROUTER] /callback route - token: ${token != null}, cancelled: $cancelled',
           );
 
-          // Manually complete the auth flow in CustomTabAuthService
+          // Complete token exchange and navigate after a delay
           if (token != null && token.isNotEmpty) {
+            // Trigger token exchange
             CustomTabAuthService.instance.completeWithToken(token);
+
+            // Wait for token exchange to complete (usually takes ~500ms)
+            // Then navigate to /app - router will handle Signal setup redirect
+            Future.delayed(const Duration(milliseconds: 1500), () {
+              if (context.mounted) {
+                debugPrint(
+                  '[ROUTER] Token exchange complete, navigating to /app',
+                );
+                context.go('/app');
+              }
+            });
           } else {
+            // Cancelled or no token - go back to login immediately
             CustomTabAuthService.instance.completeWithToken(null);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) {
+                context.go('/mobile-webauthn');
+              }
+            });
           }
 
+          // Show spinner while token exchange happens
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Completing authentication...'),
+                ],
+              ),
+            ),
           );
         },
       ),

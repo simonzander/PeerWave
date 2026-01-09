@@ -1515,7 +1515,7 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                                     clientId, 
                                     sessionSecret, 
                                     user.uuid,
-                                    client.device_id, 
+                                    result.device_id, 
                                     JSON.stringify({ userAgent, ip, location: locationString }),
                                     sessionDays
                                 ] 
