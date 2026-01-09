@@ -6,8 +6,10 @@
 class PasskeysWeb {
   /// Register the web plugin - does nothing to avoid crash
   static void registerWith(dynamic registrar) {
-    // Empty implementation - prevents null reference crash
-    // Web uses custom JavaScript WebAuthn implementation
+    // Explicitly do nothing - no operations on registrar
+    // This prevents any null check errors during plugin registration
+    // Web platform uses custom JavaScript WebAuthn implementation
+    return;
   }
 
   /// Dummy constructor

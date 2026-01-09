@@ -6,6 +6,13 @@ publish_to: none
 environment:
   sdk: ^3.10.0
 
+flutter:
+  plugin:
+    platforms:
+      web:
+        pluginClass: PasskeysWeb
+        fileName: passkeys_web.dart
+
 dependencies:
   flutter:
     sdk: flutter
