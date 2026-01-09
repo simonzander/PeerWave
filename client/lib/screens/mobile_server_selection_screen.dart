@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/server_config_native.dart';
+import '../widgets/app_drawer.dart';
 
 /// Mobile server selection screen - first step for mobile authentication
 ///
@@ -131,7 +132,7 @@ class _MobileServerSelectionScreenState
   }
 
   void _handleUseMagicKey() {
-    // Navigate to magic key login (traditional desktop flow)
+    // Navigate to server selection page (which supports magic key entry)
     context.go('/server-selection');
   }
 
@@ -139,6 +140,15 @@ class _MobileServerSelectionScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
+      appBar: AppBar(
+        title: const Text('Select Server'),
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        elevation: 0,
+      ),
+      drawer: AppDrawer(
+        isAuthenticated: false,
+        currentRoute: GoRouterState.of(context).matchedLocation,
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),

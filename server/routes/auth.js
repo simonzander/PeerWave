@@ -2234,5 +2234,185 @@ authRoutes.post('/session/refresh', verifySessionAuth, async (req, res) => {
     }
 });
 
+/**
+ * GET /auth/sessions/list
+ * Lists all active sessions for the authenticated user
+ * Combines HMAC sessions and WebAuthn credentials
+ */
+authRoutes.get('/sessions/list', async (req, res) => {
+    try {
+        const { userId, clientId } = req.session;
+        
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        
+        // Get HMAC sessions from client_sessions table
+        const hmacSessions = await sequelize.query(
+            `SELECT 
+                cs.client_id AS id,
+                cs.device_info,
+                cs.last_used,
+                cs.expires_at,
+                cs.created_at,
+                c.browser,
+                c.ip,
+                c.location
+            FROM client_sessions cs
+            LEFT JOIN clients c ON cs.client_id = c.clientid
+            WHERE cs.user_id = ? 
+            AND (cs.expires_at IS NULL OR cs.expires_at > datetime('now'))
+            ORDER BY cs.last_used DESC`,
+            {
+                replacements: [userId],
+                type: Sequelize.QueryTypes.SELECT
+            }
+        );
+        
+        // Parse device info and browser user agent
+        const sessions = hmacSessions.map(session => {
+            const deviceInfo = session.device_info ? JSON.parse(session.device_info) : {};
+            const userAgent = session.browser || '';
+            
+            // Parse user agent for browser and OS
+            let browser = null;
+            let os = null;
+            
+            if (userAgent) {
+                // Extract browser
+                if (userAgent.includes('Chrome/') && !userAgent.includes('Edg/')) {
+                    browser = 'Chrome';
+                } else if (userAgent.includes('Edg/')) {
+                    browser = 'Edge';
+                } else if (userAgent.includes('Firefox/')) {
+                    browser = 'Firefox';
+                } else if (userAgent.includes('Safari/') && !userAgent.includes('Chrome/')) {
+                    browser = 'Safari';
+                }
+                
+                // Extract OS
+                if (userAgent.includes('Windows NT')) {
+                    os = 'Windows';
+                } else if (userAgent.includes('Mac OS X')) {
+                    os = 'macOS';
+                } else if (userAgent.includes('Linux')) {
+                    os = 'Linux';
+                } else if (userAgent.includes('Android')) {
+                    os = 'Android';
+                } else if (userAgent.includes('iOS') || userAgent.includes('iPhone') || userAgent.includes('iPad')) {
+                    os = 'iOS';
+                }
+            }
+            
+            // Extract location (city, country)
+            let location = null;
+            if (session.location) {
+                const locationMatch = session.location.match(/^([^,]+),\s*([^,]+),\s*([^(]+)/);
+                if (locationMatch) {
+                    location = `${locationMatch[1]}, ${locationMatch[3].trim()}`;
+                }
+            }
+            
+            return {
+                id: session.id,
+                device_name: deviceInfo.deviceName || browser || 'Unknown Device',
+                browser: browser,
+                os: os,
+                location: location,
+                ip_address: session.ip,
+                last_active: session.last_used,
+                expires_at: session.expires_at,
+                is_current: session.id === clientId
+            };
+        });
+        
+        res.json({ sessions });
+        
+    } catch (error) {
+        console.error('[SESSIONS LIST] Error:', error);
+        res.status(500).json({ error: 'Failed to load sessions' });
+    }
+});
+
+/**
+ * POST /auth/sessions/revoke
+ * Revokes a specific session
+ */
+authRoutes.post('/sessions/revoke', async (req, res) => {
+    try {
+        const { userId, clientId } = req.session;
+        const { sessionId } = req.body;
+        
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        
+        if (!sessionId) {
+            return res.status(400).json({ error: 'Session ID required' });
+        }
+        
+        // Check if revoking current session
+        if (sessionId === clientId) {
+            // Revoke current session - will trigger logout
+            await sequelize.query(
+                `DELETE FROM client_sessions WHERE client_id = ? AND user_id = ?`,
+                { replacements: [sessionId, userId] }
+            );
+            
+            // Clear session
+            req.session.destroy();
+            
+            console.log(`[SESSION REVOKE] Current session revoked for user ${sanitizeForLog(userId)}`);
+            return res.json({ status: 'ok', message: 'Current session revoked' });
+        }
+        
+        // Revoke other session
+        await sequelize.query(
+            `DELETE FROM client_sessions WHERE client_id = ? AND user_id = ?`,
+            { replacements: [sessionId, userId] }
+        );
+        
+        console.log(`[SESSION REVOKE] Session ${sanitizeForLog(sessionId)} revoked for user ${sanitizeForLog(userId)}`);
+        res.json({ status: 'ok', message: 'Session revoked' });
+        
+    } catch (error) {
+        console.error('[SESSION REVOKE] Error:', error);
+        res.status(500).json({ error: 'Failed to revoke session' });
+    }
+});
+
+/**
+ * POST /auth/sessions/revoke-all
+ * Revokes all sessions except the current one
+ */
+authRoutes.post('/sessions/revoke-all', async (req, res) => {
+    try {
+        const { userId, clientId } = req.session;
+        
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        
+        // Delete all sessions except current
+        const result = await sequelize.query(
+            `DELETE FROM client_sessions WHERE user_id = ? AND client_id != ?`,
+            { replacements: [userId, clientId] }
+        );
+        
+        const deletedCount = result[1] || 0;
+        
+        console.log(`[SESSION REVOKE ALL] Revoked ${deletedCount} sessions for user ${sanitizeForLog(userId)}`);
+        res.json({ 
+            status: 'ok', 
+            message: 'All other sessions revoked',
+            revoked_count: deletedCount
+        });
+        
+    } catch (error) {
+        console.error('[SESSION REVOKE ALL] Error:', error);
+        res.status(500).json({ error: 'Failed to revoke sessions' });
+    }
+});
+
 module.exports = authRoutes;
 

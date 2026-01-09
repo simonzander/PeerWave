@@ -181,6 +181,32 @@ class SettingsSidebar extends StatelessWidget {
               ),
               ListTile(
                 leading: Icon(
+                  Icons.devices,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                title: Text(
+                  'Sessions',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                onTap: () => GoRouter.of(context).go('/app/settings/sessions'),
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.devices,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                title: Text(
+                  'Sessions',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                onTap: () => GoRouter.of(context).go('/app/settings/sessions'),
+              ),
+              ListTile(
+                leading: Icon(
                   Icons.security,
                   color: Theme.of(context).colorScheme.onSurface,
                 ),
@@ -358,6 +384,16 @@ class SettingsSidebar extends StatelessWidget {
         route: '/app/settings/profile',
         label: 'Profile',
         icon: Icons.person,
+      ),
+      _SettingsItem(
+        route: '/app/settings/sessions',
+        label: 'Sessions',
+        icon: Icons.devices,
+      ),
+      _SettingsItem(
+        route: '/app/settings/sessions',
+        label: 'Sessions',
+        icon: Icons.devices,
       ),
       _SettingsItem(
         route: '/app/settings/webauthn',

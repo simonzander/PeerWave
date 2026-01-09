@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../services/server_settings_service.dart';
 import '../web_config.dart';
+import '../widgets/app_drawer.dart';
 
 class InvitationEntryPage extends StatefulWidget {
   final String email;
@@ -139,6 +140,16 @@ class _InvitationEntryPageState extends State<InvitationEntryPage> {
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
+      appBar: !kIsWeb
+          ? AppBar(
+              title: const Text('Invitation Required'),
+              backgroundColor: colorScheme.surface,
+              elevation: 0,
+            )
+          : null,
+      drawer: !kIsWeb
+          ? AppDrawer(isAuthenticated: false, currentRoute: '/invitation')
+          : null,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),

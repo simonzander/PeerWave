@@ -12,6 +12,7 @@ import '../services/server_config_web.dart'
     if (dart.library.io) '../services/server_config_native.dart';
 import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
+import '../widgets/app_drawer.dart';
 
 class RegisterProfilePage extends StatefulWidget {
   const RegisterProfilePage({super.key});
@@ -309,6 +310,15 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
       },
       child: Scaffold(
         backgroundColor: colorScheme.surface,
+        appBar: AppBar(
+          title: const Text('Setup Profile'),
+          backgroundColor: colorScheme.surface,
+          elevation: 0,
+        ),
+        drawer: AppDrawer(
+          isAuthenticated: false,
+          currentRoute: '/register/profile',
+        ),
         body: Column(
           children: [
             // Progress Bar

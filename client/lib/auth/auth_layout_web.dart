@@ -415,7 +415,7 @@ class _AuthLayoutState extends State<AuthLayout> {
             (e.response?.data as String).isNotEmpty) {
           errorMsg = e.response?.data;
         }
-      } else if (e.message != null) {
+      } else if (e.message != null && e.message!.isNotEmpty) {
         errorMsg = e.message!;
       }
       setState(() {

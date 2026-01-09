@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../services/api_service.dart';
 import '../services/server_config_native.dart';
 import '../widgets/registration_progress_bar.dart';
+import '../widgets/app_drawer.dart';
 
 /// Native implementation for BackupCodeListPage
 /// Backup codes are available for mobile WebAuthn (iOS/Android)
@@ -113,186 +114,238 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
     final isMobile = Platform.isIOS || Platform.isAndroid;
 
     if (isMobile) {
-      // Mobile: Show backup codes UI
+      // Mobile: Show backup codes UI with exit confirmation
       final colorScheme = Theme.of(context).colorScheme;
 
-      return Scaffold(
-        backgroundColor: colorScheme.surface,
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
-                children: [
-                  const RegistrationProgressBar(currentStep: 2),
-                  Expanded(
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.all(20),
-                        width: 350,
-                        margin: const EdgeInsets.symmetric(horizontal: 20),
-                        decoration: BoxDecoration(
-                          color: colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: SingleChildScrollView(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Backup Codes',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  color: colorScheme.onSurface,
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          // Show dialog to confirm exit
+          showDialog(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: Text(
+                'Leave Registration?',
+                style: TextStyle(color: colorScheme.onSurface),
+              ),
+              content: Text(
+                'Your progress will be lost.',
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: Text(
+                    'Stay',
+                    style: TextStyle(color: colorScheme.primary),
+                  ),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: colorScheme.error,
+                  ),
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                    GoRouter.of(context).go('/login');
+                  },
+                  child: Text(
+                    'Leave Registration',
+                    style: TextStyle(color: colorScheme.onError),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+        child: Scaffold(
+          backgroundColor: colorScheme.surface,
+          appBar: AppBar(
+            title: const Text('Backup Codes'),
+            backgroundColor: colorScheme.surface,
+            elevation: 0,
+          ),
+          drawer: AppDrawer(
+            isAuthenticated: false,
+            currentRoute: '/register/backupcode',
+          ),
+          body: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                  children: [
+                    const RegistrationProgressBar(currentStep: 2),
+                    Expanded(
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.all(20),
+                          width: 350,
+                          margin: const EdgeInsets.symmetric(horizontal: 20),
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: SingleChildScrollView(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Backup Codes',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    color: colorScheme.onSurface,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 20),
-                              Text(
-                                'Save these backup codes in a secure location. Each code can be used once if you lose access to your biometric authentication.',
-                                style: TextStyle(
-                                  color: colorScheme.onSurfaceVariant,
-                                  fontSize: 13,
+                                const SizedBox(height: 20),
+                                Text(
+                                  'Save these backup codes in a secure location. Each code can be used once if you lose access to your biometric authentication.',
+                                  style: TextStyle(
+                                    color: colorScheme.onSurfaceVariant,
+                                    fontSize: 13,
+                                  ),
+                                  textAlign: TextAlign.left,
                                 ),
-                                textAlign: TextAlign.left,
-                              ),
-                              const SizedBox(height: 16),
-                              TextField(
-                                controller: backupCodesController,
-                                maxLines: 4,
-                                readOnly: true,
-                                decoration: InputDecoration(
-                                  hintText: 'your backup codes',
-                                  filled: true,
-                                  fillColor:
-                                      colorScheme.surfaceContainerHighest,
-                                  border: const OutlineInputBorder(),
+                                const SizedBox(height: 16),
+                                TextField(
+                                  controller: backupCodesController,
+                                  maxLines: 4,
+                                  readOnly: true,
+                                  decoration: InputDecoration(
+                                    hintText: 'your backup codes',
+                                    filled: true,
+                                    fillColor:
+                                        colorScheme.surfaceContainerHighest,
+                                    border: const OutlineInputBorder(),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  // Copy button
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: colorScheme.primary,
-                                        side: BorderSide(
-                                          color: colorScheme.outline,
+                                const SizedBox(height: 10),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceEvenly,
+                                  children: [
+                                    // Copy button
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: colorScheme.primary,
+                                          side: BorderSide(
+                                            color: colorScheme.outline,
+                                          ),
+                                        ),
+                                        icon: Icon(
+                                          Icons.copy,
+                                          color: colorScheme.primary,
+                                        ),
+                                        label: const Text('Copy'),
+                                        onPressed: () {
+                                          Clipboard.setData(
+                                            ClipboardData(
+                                              text: backupCodesController.text,
+                                            ),
+                                          );
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: const Text(
+                                                'Backup codes copied to clipboard',
+                                              ),
+                                              backgroundColor:
+                                                  colorScheme.primary,
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    // Save button
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: colorScheme.primary,
+                                          foregroundColor:
+                                              colorScheme.onPrimary,
+                                        ),
+                                        icon: Icon(
+                                          Icons.download,
+                                          color: colorScheme.onPrimary,
+                                        ),
+                                        label: const Text('Save'),
+                                        onPressed: () async {
+                                          await _saveBackupCodes(context);
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Checkbox(
+                                      value: _acknowledged,
+                                      onChanged: (val) {
+                                        setState(() {
+                                          _acknowledged = val ?? false;
+                                        });
+                                      },
+                                    ),
+                                    Expanded(
+                                      child: Text(
+                                        'I have saved my backup codes',
+                                        style: TextStyle(
+                                          color: colorScheme.onSurfaceVariant,
                                         ),
                                       ),
-                                      icon: Icon(
-                                        Icons.copy,
-                                        color: colorScheme.primary,
-                                      ),
-                                      label: const Text('Copy'),
-                                      onPressed: () {
-                                        Clipboard.setData(
-                                          ClipboardData(
-                                            text: backupCodesController.text,
-                                          ),
-                                        );
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: const Text(
-                                              'Backup codes copied to clipboard',
-                                            ),
-                                            backgroundColor:
-                                                colorScheme.primary,
-                                          ),
-                                        );
-                                      },
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  // Save button
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: colorScheme.primary,
-                                        foregroundColor: colorScheme.onPrimary,
-                                      ),
-                                      icon: Icon(
-                                        Icons.download,
-                                        color: colorScheme.onPrimary,
-                                      ),
-                                      label: const Text('Save'),
-                                      onPressed: () async {
-                                        await _saveBackupCodes(context);
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Checkbox(
-                                    value: _acknowledged,
-                                    onChanged: (val) {
-                                      setState(() {
-                                        _acknowledged = val ?? false;
-                                      });
-                                    },
-                                  ),
-                                  Expanded(
-                                    child: Text(
-                                      'I have saved my backup codes',
-                                      style: TextStyle(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 20),
-                              ElevatedButton(
-                                onPressed: _acknowledged
-                                    ? () async {
-                                        // Save server config now that backup codes are acknowledged
-                                        if (widget.serverUrl != null &&
-                                            widget.serverUrl!.isNotEmpty) {
-                                          final serverConfig =
-                                              await ServerConfigService.addServer(
-                                                serverUrl: widget.serverUrl!,
-                                                credentials:
-                                                    '', // WebAuthn uses session cookies
-                                              );
-                                          await ServerConfigService.setActiveServer(
-                                            serverConfig.id,
-                                          );
-                                          debugPrint(
-                                            '[BackupCode] Server saved and activated: ${serverConfig.id}',
-                                          );
-                                        }
-                                        if (mounted) {
-                                          // For mobile, complete WebAuthn registration before going to app
-                                          if (Platform.isAndroid ||
-                                              Platform.isIOS) {
-                                            context.go(
-                                              '/register/webauthn',
-                                              extra: {
-                                                'serverUrl': widget.serverUrl,
-                                                'email': widget.email,
-                                              },
+                                  ],
+                                ),
+                                const SizedBox(height: 20),
+                                ElevatedButton(
+                                  onPressed: _acknowledged
+                                      ? () async {
+                                          // Save server config now that backup codes are acknowledged
+                                          if (widget.serverUrl != null &&
+                                              widget.serverUrl!.isNotEmpty) {
+                                            final serverConfig =
+                                                await ServerConfigService.addServer(
+                                                  serverUrl: widget.serverUrl!,
+                                                  credentials:
+                                                      '', // WebAuthn uses session cookies
+                                                );
+                                            await ServerConfigService.setActiveServer(
+                                              serverConfig.id,
                                             );
-                                          } else {
-                                            context.go('/app');
+                                            debugPrint(
+                                              '[BackupCode] Server saved and activated: ${serverConfig.id}',
+                                            );
+                                          }
+                                          if (mounted) {
+                                            // For mobile, complete WebAuthn registration before going to app
+                                            if (Platform.isAndroid ||
+                                                Platform.isIOS) {
+                                              context.go(
+                                                '/register/webauthn',
+                                                extra: {
+                                                  'serverUrl': widget.serverUrl,
+                                                  'email': widget.email,
+                                                },
+                                              );
+                                            } else {
+                                              context.go('/app');
+                                            }
                                           }
                                         }
-                                      }
-                                    : null,
-                                child: const Text('Continue'),
-                              ),
-                            ],
+                                      : null,
+                                  child: const Text('Continue'),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+        ),
       );
     }
 

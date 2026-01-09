@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:io' show Platform;
 import '../services/auth_service_native.dart';
 import 'package:go_router/go_router.dart';
 
@@ -210,6 +211,9 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+    debugPrint('[MagicLinkWebPage] isMobile: $isMobile');
+
     // ...existing UI code...
     return Scaffold(
       backgroundColor: const Color(0xFF2C2F33),
@@ -222,50 +226,64 @@ class _MagicLinkWebPageState extends State<MagicLinkWebPage> {
         ),
         title: const Text('Magic Key Evaluation'),
       ),
-      body: Center(
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          width: 350,
-          decoration: BoxDecoration(
-            color: const Color(0xFF23272A),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Evaluate Magic Key',
-                style: TextStyle(fontSize: 20, color: Colors.white),
-              ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: magicKeyController,
-                decoration: const InputDecoration(
-                  hintText: 'Magic Key',
-                  filled: true,
-                  fillColor: Color(0xFF40444B),
-                  border: OutlineInputBorder(),
+      body: SingleChildScrollView(
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            width: 350,
+            decoration: BoxDecoration(
+              color: const Color(0xFF23272A),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Evaluate Magic Key',
+                  style: TextStyle(fontSize: 20, color: Colors.white),
                 ),
-                style: const TextStyle(color: Colors.white),
-                minLines: 3,
-                maxLines: 8,
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 45),
-                  backgroundColor: Colors.blueAccent,
-                ),
-                onPressed: _loading ? null : _evaluateMagicKey,
-                child: _loading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('Evaluate Key'),
-              ),
-              if (_status != null) ...[
                 const SizedBox(height: 20),
-                Text(_status!, style: const TextStyle(color: Colors.green)),
+                TextField(
+                  controller: magicKeyController,
+                  decoration: const InputDecoration(
+                    hintText: 'Magic Key',
+                    filled: true,
+                    fillColor: Color(0xFF40444B),
+                    border: OutlineInputBorder(),
+                  ),
+                  style: const TextStyle(color: Colors.white),
+                  minLines: 3,
+                  maxLines: 8,
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 45),
+                    backgroundColor: Colors.blueAccent,
+                  ),
+                  onPressed: _loading ? null : _evaluateMagicKey,
+                  child: _loading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text('Evaluate Key'),
+                ),
+                if (isMobile) ...[
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () {
+                      GoRouter.of(context).go('/mobile-server-selection');
+                    },
+                    child: const Text(
+                      'Back to Server Selection',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                ],
+                if (_status != null) ...[
+                  const SizedBox(height: 20),
+                  Text(_status!, style: const TextStyle(color: Colors.green)),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

@@ -346,20 +346,13 @@ class LogoutService {
         }
       }
 
-      // 8. Navigate to login screen LAST
+      // 8. Navigate to appropriate screen based on platform
       // Use a small delay to ensure the state is fully updated
       await Future.delayed(const Duration(milliseconds: 50));
 
-      // After logout, we need to navigate to login
-      // This is tricky because the context might not have GoRouter available
-      // The strategy is:
-      // 1. Try to use context.go if available
-      // 2. If that fails, just set a flag and let redirect handler catch it on next navigation
-      // 3. The redirect handler will see isLoggedIn = false and redirect to /login
-
       if (validContext != null && validContext.mounted) {
         try {
-          debugPrint('[LOGOUT] Attempting navigation to login screen...');
+          debugPrint('[LOGOUT] Determining navigation target...');
 
           // Try to get GoRouter and navigate
           try {
@@ -369,10 +362,50 @@ class LogoutService {
             router.refresh();
             debugPrint('[LOGOUT] ✓ Router refreshed');
 
-            // Then navigate to login after a brief delay
+            // Determine navigation target based on platform
             await Future.delayed(const Duration(milliseconds: 100));
-            router.go('/login');
-            debugPrint('[LOGOUT] ✓ Navigation to /login triggered');
+
+            if (kIsWeb) {
+              // Web: Standard login page
+              router.go('/login');
+              debugPrint('[LOGOUT] ✓ Web: Navigation to /login triggered');
+            } else if (Platform.isAndroid || Platform.isIOS) {
+              // Mobile: Check for saved servers
+              final servers = await ServerConfigService.getAllServers();
+              if (servers.isEmpty) {
+                // No saved servers → Server selection
+                router.go('/server-selection');
+                debugPrint(
+                  '[LOGOUT] ✓ Mobile: Navigation to /server-selection (no saved servers)',
+                );
+              } else {
+                // Has saved servers → Navigate to /app of first server
+                final firstServer = servers.first;
+                await ServerConfigService.setActiveServer(firstServer.id);
+                router.go('/app');
+                debugPrint(
+                  '[LOGOUT] ✓ Mobile: Navigation to /app (first server: ${firstServer.serverName})',
+                );
+              }
+            } else {
+              // Desktop (Windows, macOS, Linux): Check for saved servers
+              final servers = await ServerConfigService.getAllServers();
+              if (servers.isEmpty) {
+                // No saved servers → Server selection (can enter magic key)
+                router.go('/server-selection');
+                debugPrint(
+                  '[LOGOUT] ✓ Desktop: Navigation to /server-selection (no saved servers)',
+                );
+              } else {
+                // Has saved servers → Navigate to /app of first server
+                final firstServer = servers.first;
+                await ServerConfigService.setActiveServer(firstServer.id);
+                router.go('/app');
+                debugPrint(
+                  '[LOGOUT] ✓ Desktop: Navigation to /app (first server: ${firstServer.serverName})',
+                );
+              }
+            }
           } catch (routerError) {
             // GoRouter not available in this context
             // This happens when logout is called from unauthorized handlers

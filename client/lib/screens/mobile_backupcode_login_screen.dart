@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../widgets/app_drawer.dart';
 import '../services/api_service.dart';
 import '../services/clientid_native.dart';
 import '../services/device_identity_service.dart';
@@ -166,6 +167,10 @@ class _MobileBackupcodeLoginScreenState
         title: const Text('Backup Code Login'),
         backgroundColor: Colors.transparent,
         elevation: 0,
+      ),
+      drawer: AppDrawer(
+        isAuthenticated: false,
+        currentRoute: '/mobile-backupcode',
       ),
       body: SafeArea(
         child: SingleChildScrollView(

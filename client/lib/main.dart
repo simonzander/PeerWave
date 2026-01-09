@@ -28,6 +28,7 @@ import 'app/settings_sidebar.dart';
 import 'app/profile_page.dart';
 import 'app/settings/general_settings_page.dart';
 import 'app/settings/server_settings_page.dart';
+import 'app/settings/sessions_page.dart';
 import 'app/settings/notification_settings_page.dart';
 import 'app/settings/voice_video_settings_page.dart';
 import 'app/settings/system_tray_settings_page.dart';
@@ -1162,6 +1163,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                       builder: (context, state) => const ProfilePage(),
                     ),
                     GoRoute(
+                      path: '/app/settings/sessions',
+                      builder: (context, state) => const SessionsPage(),
+                    ),
+                    GoRoute(
                       path: '/app/settings/notifications',
                       builder: (context, state) =>
                           const NotificationSettingsPage(),
@@ -1262,27 +1267,25 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 );
               },
             ),
+            // Server selection route (outside ShellRoute - no navbar, has own AppBar)
+            GoRoute(
+              path: '/server-selection',
+              pageBuilder: (context, state) {
+                final extra = state.extra as Map<String, dynamic>?;
+                final isAddingServer =
+                    extra?['isAddingServer'] as bool? ?? false;
+                return MaterialPage(
+                  fullscreenDialog: true,
+                  child: ServerSelectionScreen(isAddingServer: isAddingServer),
+                );
+              },
+            ),
             // Add common registration routes for native platforms
             ...commonRoutes,
             ShellRoute(
               builder: (context, state, child) => AppLayout(child: child),
               routes: [
                 GoRoute(path: '/', redirect: (context, state) => '/app'),
-                // Server selection route (inside ShellRoute - shows server navbar)
-                GoRoute(
-                  path: '/server-selection',
-                  pageBuilder: (context, state) {
-                    final extra = state.extra as Map<String, dynamic>?;
-                    final isAddingServer =
-                        extra?['isAddingServer'] as bool? ?? false;
-                    return MaterialPage(
-                      fullscreenDialog: true,
-                      child: ServerSelectionScreen(
-                        isAddingServer: isAddingServer,
-                      ),
-                    );
-                  },
-                ),
                 // Signal setup route (inside ShellRoute for native - shows server navbar)
                 GoRoute(
                   path: '/signal-setup',
@@ -1596,6 +1599,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                     GoRoute(
                       path: '/app/settings/profile',
                       builder: (context, state) => const ProfilePage(),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/sessions',
+                      builder: (context, state) => const SessionsPage(),
                     ),
                     GoRoute(
                       path: '/app/settings/notifications',

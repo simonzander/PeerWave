@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../widgets/app_drawer.dart';
 import '../services/api_service.dart';
 import '../services/webauthn_service_mobile.dart';
 import '../services/clientid_native.dart';
@@ -383,6 +384,15 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
+      appBar: AppBar(
+        title: const Text('Sign In'),
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        elevation: 0,
+      ),
+      drawer: AppDrawer(
+        isAuthenticated: false,
+        currentRoute: '/mobile-webauthn',
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),

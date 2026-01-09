@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
 import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
+import '../widgets/app_drawer.dart';
 import '../extensions/snackbar_extensions.dart';
 import 'dart:async';
 
@@ -166,6 +167,16 @@ class _OtpWebPageState extends State<OtpWebPage> {
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
+      appBar: !kIsWeb
+          ? AppBar(
+              title: const Text('Verify Email'),
+              backgroundColor: colorScheme.surface,
+              elevation: 0,
+            )
+          : null,
+      drawer: !kIsWeb
+          ? AppDrawer(isAuthenticated: false, currentRoute: '/otp')
+          : null,
       body: Column(
         children: [
           // Progress Bar

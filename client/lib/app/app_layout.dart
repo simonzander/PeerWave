@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
-import 'dart:convert' show base64Decode;
 import 'dashboard_page.dart';
 import '../widgets/navigation_sidebar.dart';
 import '../widgets/adaptive/adaptive_scaffold.dart';
@@ -9,15 +8,10 @@ import '../widgets/navigation_badge.dart';
 import '../widgets/sync_progress_banner.dart';
 import '../widgets/server_panel.dart';
 import '../widgets/initialization_overlay.dart';
-import '../services/logout_service.dart';
-import '../services/auth_service_web.dart'
-    if (dart.library.io) '../services/auth_service_native.dart';
-import '../services/server_config_web.dart'
-    if (dart.library.io) '../services/server_config_native.dart';
+import '../widgets/app_drawer.dart';
 import '../services/server_connection_service.dart';
 import '../services/post_login_init_service.dart';
 import '../config/layout_config.dart';
-import '../widgets/license_footer.dart';
 import 'package:go_router/go_router.dart';
 
 class AppLayout extends StatefulWidget {
@@ -325,208 +319,6 @@ class _AppLayoutState extends State<AppLayout> {
     ];
   }
 
-  Widget _buildServerSelector(BuildContext context, ColorScheme colorScheme) {
-    final servers = ServerConfigService.getAllServers();
-    final activeServer = ServerConfigService.getActiveServer();
-
-    // Don't show on web (web doesn't support multi-server)
-    if (kIsWeb) {
-      return const SizedBox.shrink();
-    }
-
-    if (servers.isEmpty) {
-      return ListTile(
-        leading: const Icon(Icons.add_circle_outline),
-        title: const Text('Add Server'),
-        onTap: () {
-          Navigator.pop(context);
-          context.go('/server-selection', extra: {'isAddingServer': true});
-        },
-      );
-    }
-
-    return ExpansionTile(
-      leading: CircleAvatar(
-        radius: 16,
-        backgroundColor: colorScheme.primaryContainer,
-        backgroundImage: activeServer?.serverPicture != null
-            ? MemoryImage(
-                base64Decode(activeServer!.serverPicture!.split(',').last),
-              )
-            : null,
-        child: activeServer?.serverPicture == null
-            ? Text(
-                activeServer?.getDisplayName().substring(0, 1).toUpperCase() ??
-                    'S',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onPrimaryContainer,
-                ),
-              )
-            : null,
-      ),
-      title: Text(
-        activeServer?.getDisplayName() ?? 'Select Server',
-        style: const TextStyle(fontWeight: FontWeight.w500),
-      ),
-      trailing: kIsWeb
-          ? null
-          : IconButton(
-              icon: const Icon(Icons.add_circle_outline),
-              iconSize: 20,
-              tooltip: 'Add Server',
-              onPressed: () {
-                Navigator.pop(context);
-                context.go(
-                  '/server-selection',
-                  extra: {'isAddingServer': true},
-                );
-              },
-            ),
-      children: servers
-          .map(
-            (server) => ListTile(
-              dense: true,
-              leading: CircleAvatar(
-                radius: 14,
-                backgroundColor: colorScheme.surfaceContainerHighest,
-                backgroundImage: server.serverPicture != null
-                    ? MemoryImage(
-                        base64Decode(server.serverPicture!.split(',').last),
-                      )
-                    : null,
-                child: server.serverPicture == null
-                    ? Text(
-                        server.getDisplayName().substring(0, 1).toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colorScheme.onSurface,
-                        ),
-                      )
-                    : null,
-              ),
-              title: Text(
-                server.getDisplayName(),
-                style: TextStyle(
-                  fontWeight: server.id == activeServer?.id
-                      ? FontWeight.bold
-                      : FontWeight.normal,
-                ),
-              ),
-              trailing: server.id == activeServer?.id
-                  ? Icon(
-                      Icons.check_circle,
-                      color: colorScheme.primary,
-                      size: 20,
-                    )
-                  : null,
-              onTap: () async {
-                if (server.id != activeServer?.id) {
-                  await ServerConfigService.setActiveServer(server.id);
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    context.go('/app/activities');
-                  }
-                }
-              },
-            ),
-          )
-          .toList(),
-    );
-  }
-
-  Widget _buildMobileDrawer(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final isLoggedIn = AuthService.isLoggedIn;
-
-    return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          DrawerHeader(
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest,
-            ),
-            child: Row(
-              children: [
-                Image.asset(
-                  'assets/images/peerwave.png',
-                  width: 40,
-                  height: 40,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'PeerWave',
-                  style: TextStyle(
-                    color: colorScheme.onSurface,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Server Selector - Only show when logged in
-          if (isLoggedIn) _buildServerSelector(context, colorScheme),
-          // Only show when logged in
-          if (isLoggedIn) ...[
-            ListTile(
-              leading: Icon(Icons.people_outline, color: colorScheme.onSurface),
-              title: Text(
-                'People',
-                style: TextStyle(color: colorScheme.onSurface),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                context.go('/app/people');
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.today_outlined, color: colorScheme.onSurface),
-              title: Text(
-                'Meetings',
-                style: TextStyle(color: colorScheme.onSurface),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                context.go('/app/meetings');
-              },
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.settings_outlined,
-                color: colorScheme.onSurface,
-              ),
-              title: Text(
-                'Settings',
-                style: TextStyle(color: colorScheme.onSurface),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                context.go('/app/settings');
-              },
-            ),
-            const Divider(),
-            ListTile(
-              leading: Icon(Icons.logout, color: colorScheme.onSurface),
-              title: Text(
-                'Logout',
-                style: TextStyle(color: colorScheme.onSurface),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                LogoutService.instance.logout(context, userInitiated: true);
-              },
-            ),
-          ],
-          // License Footer
-          const LicenseFooter(),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return InitializationOverlay(child: _buildContent(context));
@@ -648,7 +440,10 @@ class _AppLayoutState extends State<AppLayout> {
             tooltip: 'Settings',
           ),
         ],
-        drawer: _buildMobileDrawer(context),
+        drawer: AppDrawer(
+          isAuthenticated: true,
+          currentRoute: GoRouterState.of(context).matchedLocation,
+        ),
         body: Column(
           children: [
             // 🚀 Sync Progress Banner
@@ -707,7 +502,10 @@ class _AppLayoutState extends State<AppLayout> {
             tooltip: 'Settings',
           ),
         ],
-        drawer: _buildMobileDrawer(context),
+        drawer: AppDrawer(
+          isAuthenticated: true,
+          currentRoute: GoRouterState.of(context).matchedLocation,
+        ),
         body: Column(
           children: [
             // 🚀 Sync Progress Banner
