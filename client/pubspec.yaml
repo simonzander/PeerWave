@@ -152,7 +152,3 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
-# Override passkeys_web with fixed local version that doesn't crash
-dependency_overrides:
-  passkeys_web:
-    path: local_packages/passkeys_web
