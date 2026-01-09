@@ -525,63 +525,74 @@ class _AuthLayoutState extends State<AuthLayout> {
                 ),
                 const SizedBox(height: 24),
                 if (_loginStatus != null) ...[
-                  Container(
-                    key: ValueKey(_loginStatus),
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: _loginStatus!.contains('Login successful')
-                          ? colorScheme.primaryContainer
-                          : colorScheme.errorContainer,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _loginStatus!.contains('Login successful')
-                            ? colorScheme.primary
-                            : colorScheme.error,
-                        width: 1,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _loginStatus!,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: _loginStatus!.contains('Login successful')
-                                ? colorScheme.onPrimaryContainer
-                                : colorScheme.onErrorContainer,
+                  Builder(
+                    builder: (context) {
+                      final status = _loginStatus!;
+                      final isSuccess = status.contains('Login successful');
+                      final isError =
+                          status.contains('WebAuthn aborted') ||
+                          status.contains('Login failed');
+
+                      return Container(
+                        key: ValueKey(status),
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: isSuccess
+                              ? colorScheme.primaryContainer
+                              : colorScheme.errorContainer,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSuccess
+                                ? colorScheme.primary
+                                : colorScheme.error,
+                            width: 1,
                           ),
                         ),
-                        if (_loginStatus!.contains('WebAuthn aborted') ||
-                            _loginStatus!.contains('Login failed')) ...[
-                          const SizedBox(height: 8),
-                          Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () {
-                                context.go('/backupcode/recover');
-                              },
-                              borderRadius: BorderRadius.circular(4),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 4,
-                                  horizontal: 0,
-                                ),
-                                child: Text(
-                                  'Start recovery process',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: colorScheme.primary,
-                                    decoration: TextDecoration.underline,
-                                    fontWeight: FontWeight.w500,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              status,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: isSuccess
+                                    ? colorScheme.onPrimaryContainer
+                                    : colorScheme.onErrorContainer,
+                              ),
+                            ),
+                            if (isError) ...[
+                              const SizedBox(height: 8),
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: () {
+                                    context.go('/backupcode/recover');
+                                  },
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 4,
+                                      horizontal: 0,
+                                    ),
+                                    child: Text(
+                                      'Start recovery process',
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color: colorScheme.primary,
+                                            decoration:
+                                                TextDecoration.underline,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+                            ],
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ],
                 if (kIsWeb)
