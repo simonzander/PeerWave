@@ -1,0 +1,18 @@
+name: passkeys_web
+description: Web stub for passkeys package
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.10.0
+
+flutter:
+  plugin:
+    platforms:
+      web:
+        pluginClass: PasskeysWeb
+        fileName: passkeys_web.dart
+
+dependencies:
+  flutter:
+    sdk: flutter

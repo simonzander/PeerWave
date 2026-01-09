@@ -84,6 +84,7 @@ dependencies:
   universal_html: ^2.3.0
   passkeys: ^2.8.2  # Proper WebAuthn/FIDO2 for mobile (Android/iOS)
   # Web uses custom JavaScript implementation (see web/index.html)
+  # Note: passkeys package only used on mobile (conditional imports prevent web usage)
   bitsdojo_window:
     # Desktop-only: Custom window frame
     # Not available on Android/iOS - conditional import with stub fallback
