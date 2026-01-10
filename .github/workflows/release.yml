@@ -250,6 +250,18 @@ jobs:
         working-directory: ./client
         run: flutter build appbundle --release
       
+      - name: Upload AAB to Google Play
+        if: vars.HAS_ANDROID_SIGNING == 'true' && vars.ENABLE_GOOGLE_PLAY_UPLOAD == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT }}
+          packageName: org.peerwave.client
+          releaseFiles: client/build/app/outputs/bundle/release/app-release.aab
+          track: internal
+          status: draft
+          releaseName: v${{ needs.build-web-and-docker.outputs.version }}
+          whatsNewDirectory: client/whatsnew/
+      
       - name: Rename files
         working-directory: ./client/build/app/outputs
         run: |
