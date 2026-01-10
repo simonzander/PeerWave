@@ -180,10 +180,17 @@ class AppDrawer extends StatelessWidget {
                   : null,
               onTap: () async {
                 if (server.id != activeServer?.id) {
+                  // Switch to a different server
                   await ServerConfigService.setActiveServer(server.id);
                   if (context.mounted) {
                     Navigator.pop(context);
-                    context.go('/app');
+                    context.go('/app/activities');
+                  }
+                } else {
+                  // Already active server - just navigate to activities
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    context.go('/app/activities');
                   }
                 }
               },

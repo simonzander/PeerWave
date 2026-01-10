@@ -68,8 +68,17 @@ class _SessionsPageState extends State<SessionsPage> {
     });
 
     try {
-      final response = await ApiService.get('/auth/sessions/list');
+      final response = await ApiService.get('/sessions/list');
       if (response.statusCode == 200 && response.data != null) {
+        // Handle case where response.data might be a String (error) or Map
+        if (response.data is String) {
+          setState(() {
+            _error = response.data as String;
+            _loading = false;
+          });
+          return;
+        }
+
         final data = response.data as Map<String, dynamic>;
         final sessionsJson = data['sessions'] as List<dynamic>;
 
@@ -127,7 +136,7 @@ class _SessionsPageState extends State<SessionsPage> {
 
     try {
       final response = await ApiService.post(
-        '/auth/sessions/revoke',
+        '/sessions/revoke',
         data: {'sessionId': sessionId},
       );
 
@@ -202,10 +211,7 @@ class _SessionsPageState extends State<SessionsPage> {
     if (confirm != true) return;
 
     try {
-      final response = await ApiService.post(
-        '/auth/sessions/revoke-all',
-        data: {},
-      );
+      final response = await ApiService.post('/sessions/revoke-all', data: {});
 
       if (response.statusCode == 200) {
         if (mounted) {

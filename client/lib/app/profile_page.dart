@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../widgets/license_footer.dart';
 import 'package:go_router/go_router.dart';
 import 'package:universal_html/html.dart' as html;
+import 'package:image_picker/image_picker.dart';
 import '../services/api_service.dart';
 import '../services/server_config_web.dart'
     if (dart.library.io) '../services/server_config_native.dart';
@@ -168,38 +169,64 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _pickImage() async {
-    if (!kIsWeb) return;
-
     try {
-      final html.FileUploadInputElement input = html.FileUploadInputElement()
-        ..accept = 'image/*';
+      Uint8List? imageBytes;
+      String? fileName;
 
-      input.click();
+      if (kIsWeb) {
+        // Web implementation
+        final html.FileUploadInputElement input = html.FileUploadInputElement()
+          ..accept = 'image/*';
 
-      await input.onChange.first;
+        input.click();
 
-      if (input.files!.isEmpty) return;
+        await input.onChange.first;
 
-      final file = input.files![0];
-      final reader = html.FileReader();
+        if (input.files!.isEmpty) return;
 
-      reader.readAsArrayBuffer(file);
+        final file = input.files![0];
+        final reader = html.FileReader();
 
-      await reader.onLoad.first;
+        reader.readAsArrayBuffer(file);
 
-      final bytes = reader.result as List<int>;
+        await reader.onLoad.first;
 
-      // Check file size (max 1MB)
-      if (bytes.length > 1 * 1024 * 1024) {
-        setState(() {
-          _error = 'Image is too large. Maximum size is 1MB.';
-        });
-        return;
+        final bytes = reader.result as List<int>;
+
+        // Check file size (max 1MB)
+        if (bytes.length > 1 * 1024 * 1024) {
+          setState(() {
+            _error = 'Image is too large. Maximum size is 1MB.';
+          });
+          return;
+        }
+
+        imageBytes = Uint8List.fromList(bytes);
+        fileName = file.name;
+      } else {
+        // Mobile/Desktop implementation using ImagePicker
+        final picker = ImagePicker();
+        final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+        if (pickedFile == null) return;
+
+        final bytes = await pickedFile.readAsBytes();
+
+        // Check file size (max 1MB)
+        if (bytes.length > 1 * 1024 * 1024) {
+          setState(() {
+            _error = 'Image is too large. Maximum size is 1MB.';
+          });
+          return;
+        }
+
+        imageBytes = bytes;
+        fileName = pickedFile.name;
       }
 
       setState(() {
-        _imageBytes = Uint8List.fromList(bytes);
-        _imageFileName = file.name;
+        _imageBytes = imageBytes;
+        _imageFileName = fileName;
         _error = null;
       });
     } catch (e) {
