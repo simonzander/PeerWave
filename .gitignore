@@ -85,6 +85,12 @@ web_modules/
 # Auto-generated secrets (JWT, session keys)
 .secrets
 
+# Android signing (use GitHub Secrets in CI/CD)
+client/android/key.properties
+client/android/keystore/*.keystore
+client/android/keystore/*.jks
+client/android/app/upload-keystore.jks
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
