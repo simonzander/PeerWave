@@ -178,31 +178,6 @@ jobs:
           cd tools && dart pub get && cd ..
           dart tools/generate_version.dart
       
-      - name: Decode keystore
-        working-directory: ./client/android
-        shell: bash
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_FILE }}
-        run: |
-          set +x  # Disable command echo for security
-          mkdir -p keystore
-          echo "$KEYSTORE_BASE64" | base64 --decode > keystore/peerwave-release.keystore
-          chmod 600 keystore/peerwave-release.keystore
-      
-      - name: Create key.properties
-        working-directory: ./client/android
-        shell: bash
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set +x  # Disable command echo for security
-          printf "storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=%s\n" \
-            "$KEYSTORE_PASSWORD" "$KEY_PASSWORD" "$KEY_ALIAS" "../keystore/peerwave-release.keystore" \
-            > key.properties
-          chmod 600 key.properties
-      
       - name: Build Android APK
         working-directory: ./client
         run: flutter build apk --debug
