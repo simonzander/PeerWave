@@ -10,7 +10,7 @@ const session = require('express-session');
 const rateLimit = require('express-rate-limit');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const magicLinks = require('../store/magicLinksStore');
-const { User, OTP, Client, ClientSession, SignalPreKey, SignalSignedPreKey, SignalSenderKey, Item, GroupItem, sequelize } = require('../db/model');
+const { User, OTP, Client, ClientSession, SignalPreKey, SignalSignedPreKey, SignalSenderKey, Item, GroupItem, GroupItemRead, sequelize } = require('../db/model');
 const bcrypt = require("bcrypt");
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
@@ -49,8 +49,8 @@ async function findOrCreateClient(clientId, userUuid, req) {
         console.warn(`[CLIENT] Ownership conflict for ${sanitizeForLog(clientId)}: Current owner: ${sanitizeForLog(oldOwner)}, New owner: ${sanitizeForLog(userUuid)}`);
         console.warn(`[CLIENT] Deleting all server-side data for device_id=${oldDeviceId} of old owner...`);
         
-        // Delete all messages sent from this device by the old owner
-        const [itemsDeleted, groupItemsDeleted] = await Promise.all([
+        // Delete all messages and read receipts for this device by the old owner
+        const [itemsDeleted, groupItemsDeleted, readReceiptsDeleted] = await Promise.all([
             Item.destroy({ 
                 where: { 
                     [Op.or]: [
@@ -64,10 +64,16 @@ async function findOrCreateClient(clientId, userUuid, req) {
                     sender: oldOwner,
                     senderDevice: oldDeviceId 
                 } 
+            }),
+            GroupItemRead.destroy({
+                where: {
+                    userId: oldOwner,
+                    deviceId: oldDeviceId
+                }
             })
         ]);
         
-        console.warn(`[CLIENT] ✓ Deleted ${itemsDeleted} direct messages and ${groupItemsDeleted} group messages`);
+        console.warn(`[CLIENT] ✓ Deleted ${itemsDeleted} direct messages, ${groupItemsDeleted} group messages, ${readReceiptsDeleted} read receipts`);
         
         // Delete all Signal protocol keys (prevents decryption of old messages)
         const [preKeysDeleted, signedPreKeysDeleted, senderKeysDeleted, sessionsDeleted] = await Promise.all([
