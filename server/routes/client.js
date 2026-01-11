@@ -2758,9 +2758,18 @@ clientRoutes.delete("/client/:clientId", verifyAuthEither, async (req, res) => {
     try {
         const { clientId } = req.params;
         const userUuid = req.userId || req.session.uuid;
+        const currentClientId = req.clientId || req.session.clientId; // HMAC or session
         
         if (!userUuid) {
             return res.status(401).json({ status: "error", message: "Unauthorized" });
+        }
+        
+        // Prevent deletion of current session's client
+        if (clientId === currentClientId) {
+            return res.status(400).json({ 
+                status: "error", 
+                message: "Cannot delete the current session's client. Please logout first or use another device." 
+            });
         }
         
         // Find the client to verify ownership

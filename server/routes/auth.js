@@ -779,12 +779,9 @@ authRoutes.get("/backupcode/list", async(req, res) => {
     }
 });
 
-authRoutes.get("/backupcode/usage", async(req, res) => {
-    if (!req.session.authenticated) {
-        return res.status(401).json({ error: "Unauthorized" });
-    }
+authRoutes.get("/backupcode/usage", verifyAuthEither, async(req, res) => {
     try {
-        const user = await User.findOne({ where: { email: req.session.email } });
+        const user = await User.findOne({ where: { uuid: req.userId } });
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
@@ -995,12 +992,9 @@ authRoutes.post("/backupcode/mobile-verify", async(req, res) => {
     }
 });
 
-authRoutes.post("/backupcode/regenerate", async(req, res) => {
-    if (!req.session.authenticated) {
-        return res.status(401).json({ error: "Unauthorized" });
-    }
+authRoutes.post("/backupcode/regenerate", verifyAuthEither, async(req, res) => {
     try {
-        const user = await User.findOne({ where: { email: req.session.email } });
+        const user = await User.findOne({ where: { uuid: req.userId } });
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
@@ -1094,8 +1088,19 @@ authRoutes.post("/delete-account", (req, res) => {
 
 // Generate registration challenge
 authRoutes.post('/webauthn/register-challenge', async (req, res) => {
-    const email = req.session.email; // Retrieve email from session
-    const user = await User.findOne({ where: { email: email } });
+    // Support both authenticated users adding credentials (req.userId from middleware)
+    // and users in registration flow (req.session.email)
+    let user;
+    if (req.userId) {
+        // HMAC or session authenticated user adding additional credential
+        user = await User.findOne({ where: { uuid: req.userId } });
+    } else if (req.session.email) {
+        // User in registration flow (OTP verified or during WebAuthn registration step)
+        user = await User.findOne({ where: { email: req.session.email } });
+    } else {
+        return res.status(401).json({ error: "User not authenticated" });
+    }
+    
     if (!user || !user.uuid) {
         return res.status(400).json({ error: "User not found or missing UUID for WebAuthn registration." });
     }
@@ -1153,7 +1158,13 @@ authRoutes.post('/webauthn/register', async (req, res) => {
     // Check if this is during registration flow (first credential)
     const isFirstCredential = req.session.registrationStep === 'webauthn';
     console.log('[WEBAUTHN] Registration request - isFirstCredential:', isFirstCredential, 'registrationStep:', req.session.registrationStep, 'authenticated:', req.session.authenticated);
-    if(!req.session.otp && !req.session.authenticated && !req.session.email) {
+    
+    // Support both authenticated users (adding credentials) and users in registration flow
+    const isAuthenticated = req.session.authenticated || req.userId; // req.userId set by verifyAuthEither middleware
+    const hasSessionEmail = req.session.email;
+    const hasOtpVerification = req.session.otp;
+    
+    if(!hasOtpVerification && !isAuthenticated && !hasSessionEmail) {
         return res.status(400).json({ status: "error", message: "User not authenticated." });
     }
     else {
@@ -1214,7 +1225,13 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             };
             const regResult = await fido2.attestationResult(attestation, attestationExpectations);
 
-            const user = await User.findOne({ where: { email: req.session.email } });
+            // Get user from either userId (HMAC auth) or session email (registration flow)
+            let user;
+            if (req.userId) {
+                user = await User.findOne({ where: { uuid: req.userId } });
+            } else {
+                user = await User.findOne({ where: { email: req.session.email } });
+            }
 
             if (typeof user.credentials === 'string') {
                 user.credentials = JSON.parse(user.credentials);
@@ -1724,9 +1741,14 @@ authRoutes.get("/webauthn/check", (req, res) => {
     else res.status(401).json({authenticated: false});
 });
 
-authRoutes.get("/magic/generate", (req, res) => {
-    
-    if (req.session.authenticated && req.session.email && req.session.uuid) {
+authRoutes.get("/magic/generate", verifyAuthEither, async (req, res) => {
+    try {
+        // Get user email for magic link
+        const user = await User.findOne({ where: { uuid: req.userId } });
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+        
         // Generate magic key with new format: {serverUrl}:{randomHash}:{timestamp}:{hmacSignature}
         // Use hostname and explicit port to ensure port is included
         const host = req.get('host') || 'localhost:3000';
@@ -1750,8 +1772,8 @@ authRoutes.get("/magic/generate", (req, res) => {
         
         // Store in temporary store (one-time use)
         magicLinks[randomHash] = { 
-            email: req.session.email, 
-            uuid: req.session.uuid, 
+            email: user.email, 
+            uuid: req.userId, 
             expires: expiresAt,
             used: false  // Flag for one-time use
         };
@@ -1764,14 +1786,15 @@ authRoutes.get("/magic/generate", (req, res) => {
         });
         
         res.json({ magicKey: magicKey, expiresAt: expiresAt });
-    } else {
-        res.status(401).json({authenticated: false});
+    } catch (error) {
+        console.error('Error generating magic key:', error);
+        res.status(500).json({ error: "Internal server error" });
     }
 });
 
-authRoutes.get("/webauthn/list", async (req, res) => {
-    if(req.session.authenticated && req.session.email && req.session.uuid) {
-        const user = await User.findOne({ where: { email: req.session.email } });
+authRoutes.get("/webauthn/list", verifyAuthEither, async (req, res) => {
+    try {
+        const user = await User.findOne({ where: { uuid: req.userId } });
         if (user) {
             // Handle null or empty credentials
             const credentialsData = user.credentials ? JSON.parse(user.credentials) : [];
@@ -1787,8 +1810,9 @@ authRoutes.get("/webauthn/list", async (req, res) => {
         } else {
             res.status(404).json({ status: "failed", message: "User not found" });
         }
-    } else {
-        res.status(401).json({ status: "failed", message: "Unauthorized" });
+    } catch (error) {
+        console.error('Error fetching webauthn credentials:', error);
+        res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -1824,35 +1848,37 @@ authRoutes.post("/client/addweb", async (req, res) => {
     }
 });
 
-authRoutes.get("/client/list", async (req, res) => {
-    if(req.session.authenticated && req.session.email && req.session.uuid) {
-        try {
-            const clients = await Client.findAll({ where: { owner: req.session.uuid }, attributes: { exclude: ['public_key', 'registration_id'] } });
-            res.status(200).json({ status: "ok", clients: clients });
-        } catch (error) {
-            console.error('Error fetching client list:', error);
-            res.status(500).json({ status: "error", message: "Internal server error" });
-        }
-    } else {
-        res.status(401).json({ status: "failed", message: "Unauthorized" });
+authRoutes.get("/client/list", verifyAuthEither, async (req, res) => {
+    try {
+        const clients = await Client.findAll({ where: { owner: req.userId }, attributes: { exclude: ['public_key', 'registration_id'] } });
+        res.status(200).json({ status: "ok", clients: clients });
+    } catch (error) {
+        console.error('Error fetching client list:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
 
-authRoutes.post("/client/delete", async (req, res) => {
-    if(req.session.authenticated && req.session.email && req.session.uuid) {
-        try {
-            const { clientId } = req.body
-            await writeQueue.enqueue(
-                () => Client.destroy({ where: { id: clientId, owner: req.session.uuid } }),
-                'deleteClient'
-            );
-            res.status(200).json({ status: "ok", message: "Client deleted successfully" });
-        } catch (error) {
-            console.error('Error deleting client:', error);
-            res.status(500).json({ status: "error", message: "Internal server error" });
+authRoutes.post("/client/delete", verifyAuthEither, async (req, res) => {
+    try {
+        const { clientId } = req.body;
+        const currentClientId = req.clientId || req.session.clientId; // HMAC or session
+        
+        // Prevent deletion of current session's client
+        if (clientId === currentClientId) {
+            return res.status(400).json({ 
+                status: "error", 
+                message: "Cannot delete the current session's client. Please logout first or use another device." 
+            });
         }
-    } else {
-        res.status(401).json({ status: "failed", message: "Unauthorized" });
+        
+        await writeQueue.enqueue(
+            () => Client.destroy({ where: { id: clientId, owner: req.userId } }),
+            'deleteClient'
+        );
+        res.status(200).json({ status: "ok", message: "Client deleted successfully" });
+    } catch (error) {
+        console.error('Error deleting client:', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
 /*
@@ -2147,30 +2173,37 @@ authRoutes.post("/usersettings", async (req, res) => {
 });*/
 
 // Implement webauthn delete route
-authRoutes.post("/webauthn/delete", (req, res) => {
+authRoutes.post("/webauthn/delete", verifyAuthEither, async (req, res) => {
     // Perform webauthn delete logic
-    if(req.session.authenticated ) {
+    try {
         const { credentialId } = req.body;
-        User.findOne({ where: { email: req.session.email } }).then(async user => {
-            if (user) {
-                user.credentials = JSON.parse(user.credentials);
-                user.credentials = user.credentials.filter(cred => cred.id !== credentialId);
-                user.credentials = JSON.stringify(user.credentials);
-                user.changed('credentials', true);
-                await writeQueue.enqueue(
-                    () => user.save(),
-                    'deleteWebAuthnCredential'
-                );
-                res.status(200).send("WebAuthn credential deleted");
-            } else {
-                res.status(404).send("User not found");
+        const user = await User.findOne({ where: { uuid: req.userId } });
+        
+        if (user) {
+            user.credentials = JSON.parse(user.credentials);
+            
+            // Prevent deletion if only one credential remains
+            if (user.credentials.length <= 1) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Cannot delete the last WebAuthn credential. You must have at least one security key."
+                });
             }
-        }).catch(error => {
-            console.error('Error deleting WebAuthn credential:', error);
-            res.status(500).send("Internal Server Error");
-        });
-    } else {
-        res.status(401).send("Unauthorized");
+            
+            user.credentials = user.credentials.filter(cred => cred.id !== credentialId);
+            user.credentials = JSON.stringify(user.credentials);
+            user.changed('credentials', true);
+            await writeQueue.enqueue(
+                () => user.save(),
+                'deleteWebAuthnCredential'
+            );
+            res.status(200).send("WebAuthn credential deleted");
+        } else {
+            res.status(404).send("User not found");
+        }
+    } catch (error) {
+        console.error('Error deleting WebAuthn credential:', error);
+        res.status(500).send("Internal Server Error");
     }
 });
 
@@ -2341,7 +2374,7 @@ authRoutes.post('/token/revoke', tokenRevocationLimiter, async (req, res) => {
 // POST /auth/session/refresh
 // Manually refresh HMAC session (extends expiration)
 // Requires valid HMAC authentication via sessionAuth middleware
-const { verifySessionAuth } = require('../middleware/sessionAuth');
+const { verifySessionAuth, verifyAuthEither } = require('../middleware/sessionAuth');
 
 authRoutes.post('/session/refresh', verifySessionAuth, async (req, res) => {
     try {
@@ -2376,13 +2409,10 @@ authRoutes.post('/session/refresh', verifySessionAuth, async (req, res) => {
  * Lists all active sessions for the authenticated user
  * Combines HMAC sessions and WebAuthn credentials
  */
-authRoutes.get('/sessions/list', async (req, res) => {
+authRoutes.get('/sessions/list', verifyAuthEither, async (req, res) => {
     try {
-        const { userId, clientId } = req.session;
-        
-        if (!userId) {
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
+        const userId = req.userId; // Set by verifyAuthEither middleware
+        const currentClientId = req.clientId || req.session.clientId; // HMAC or session
         
         // Get HMAC sessions from client_sessions table
         const hmacSessions = await sequelize.query(
@@ -2459,7 +2489,7 @@ authRoutes.get('/sessions/list', async (req, res) => {
                 ip_address: session.ip,
                 last_active: session.last_used,
                 expires_at: session.expires_at,
-                is_current: session.id === clientId
+                is_current: session.id === currentClientId
             };
         });
         
@@ -2475,29 +2505,28 @@ authRoutes.get('/sessions/list', async (req, res) => {
  * POST /auth/sessions/revoke
  * Revokes a specific session
  */
-authRoutes.post('/sessions/revoke', async (req, res) => {
+authRoutes.post('/sessions/revoke', verifyAuthEither, async (req, res) => {
     try {
-        const { userId, clientId } = req.session;
+        const userId = req.userId; // Set by verifyAuthEither middleware
+        const currentClientId = req.clientId || req.session.clientId; // HMAC or session
         const { sessionId } = req.body;
-        
-        if (!userId) {
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
         
         if (!sessionId) {
             return res.status(400).json({ error: 'Session ID required' });
         }
         
         // Check if revoking current session
-        if (sessionId === clientId) {
+        if (sessionId === currentClientId) {
             // Revoke current session - will trigger logout
             await sequelize.query(
                 `DELETE FROM client_sessions WHERE client_id = ? AND user_id = ?`,
                 { replacements: [sessionId, userId] }
             );
             
-            // Clear session
-            req.session.destroy();
+            // Clear session if using cookie auth
+            if (req.session && req.session.destroy) {
+                req.session.destroy();
+            }
             
             console.log(`[SESSION REVOKE] Current session revoked for user ${sanitizeForLog(userId)}`);
             return res.json({ status: 'ok', message: 'Current session revoked' });
@@ -2522,18 +2551,15 @@ authRoutes.post('/sessions/revoke', async (req, res) => {
  * POST /auth/sessions/revoke-all
  * Revokes all sessions except the current one
  */
-authRoutes.post('/sessions/revoke-all', async (req, res) => {
+authRoutes.post('/sessions/revoke-all', verifyAuthEither, async (req, res) => {
     try {
-        const { userId, clientId } = req.session;
-        
-        if (!userId) {
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
+        const userId = req.userId; // Set by verifyAuthEither middleware
+        const currentClientId = req.clientId || req.session.clientId; // HMAC or session
         
         // Delete all sessions except current
         const result = await sequelize.query(
             `DELETE FROM client_sessions WHERE user_id = ? AND client_id != ?`,
-            { replacements: [userId, clientId] }
+            { replacements: [userId, currentClientId] }
         );
         
         const deletedCount = result[1] || 0;

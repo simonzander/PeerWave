@@ -32,7 +32,7 @@ import 'app/settings/sessions_page.dart';
 import 'app/settings/notification_settings_page.dart';
 import 'app/settings/voice_video_settings_page.dart';
 import 'app/settings/system_tray_settings_page.dart';
-import 'app/webauthn_web.dart' if (dart.library.io) 'app/webauthn_stub.dart';
+import 'app/webauthn_page_wrapper.dart';
 // Troubleshoot feature
 import 'features/troubleshoot/pages/troubleshoot_page.dart';
 import 'features/troubleshoot/state/troubleshoot_provider.dart';
@@ -1147,7 +1147,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                     ),
                     GoRoute(
                       path: '/app/settings/webauthn',
-                      builder: (context, state) => const WebauthnPage(),
+                      builder: (context, state) => const WebauthnPageWrapper(),
                     ),
                     GoRoute(
                       path: '/app/settings/backupcode/list',
@@ -1585,7 +1585,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                     ),
                     GoRoute(
                       path: '/app/settings/webauthn',
-                      builder: (context, state) => const WebauthnPage(),
+                      builder: (context, state) => const WebauthnPageWrapper(),
                     ),
                     GoRoute(
                       path: '/app/settings/backupcode/list',

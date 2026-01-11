@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'dart:async';
 import 'dart:js_interop';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -7,6 +9,7 @@ import '../web_config.dart';
 import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
 import '../services/device_identity_service.dart';
+import '../services/webauthn_service_mobile.dart';
 
 @JS('window.localStorage.getItem')
 external JSString? localStorageGetItem(JSString key);
@@ -351,9 +354,44 @@ class _WebauthnPageState extends State<WebauthnPage> {
     if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
       urlString = 'https://$urlString';
     }
-    final email = localStorageGetItem('email'.toJS)?.toDart ?? '';
-    await webauthnRegister(urlString, email);
-    await _loadWebauthnCredentials();
+
+    // Use mobile passkeys on Android/iOS, web WebAuthn on web/desktop
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
+      // Mobile: Use native passkeys
+      try {
+        setState(() {
+          loading = true;
+        });
+
+        final result = await MobileWebAuthnService.instance.register(
+          serverUrl: urlString,
+        );
+
+        if (result != null && mounted) {
+          _showSuccess('Passkey added successfully');
+          await _loadWebauthnCredentials();
+        } else if (mounted) {
+          _showError('Failed to add passkey');
+        }
+      } catch (e) {
+        if (mounted) {
+          _showError('Error adding passkey: $e');
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            loading = false;
+          });
+        }
+      }
+    } else {
+      // Web: Use browser WebAuthn API
+      final email = localStorageGetItem('email'.toJS)?.toDart ?? '';
+      await webauthnRegister(urlString, email);
+      await _loadWebauthnCredentials();
+    }
   }
 
   String _formatTimestamp(String timestamp) {
@@ -653,17 +691,20 @@ class _WebauthnPageState extends State<WebauthnPage> {
                               .toList(),
                   ),
                 ),
-          // Add Credentials Button
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              ElevatedButton.icon(
-                onPressed: _addCredential,
-                icon: const Icon(Icons.add),
-                label: const Text('Add Credentials'),
-              ),
-            ],
-          ),
+          // Add Credentials Button (only show on web and mobile, not desktop native)
+          if (kIsWeb ||
+              defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _addCredential,
+                  icon: const Icon(Icons.add),
+                  label: Text(kIsWeb ? 'Add Credentials' : 'Add Passkey'),
+                ),
+              ],
+            ),
           const SizedBox(height: 32),
 
           // Connected Devices Section (UPDATED)
