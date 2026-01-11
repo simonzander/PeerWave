@@ -111,7 +111,6 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
       // Pass email from registration flow
       debugPrint('[WebAuthnRegister] Starting registration process...');
       final credentialId = await MobileWebAuthnService.instance.register(
-        serverUrl: _serverUrl!,
         email: widget.email, // Use email from registration state
       );
 

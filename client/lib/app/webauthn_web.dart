@@ -3,23 +3,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'dart:async';
-import 'dart:js_interop';
 import 'package:qr_flutter/qr_flutter.dart';
-import '../web_config.dart';
 import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
 import '../services/device_identity_service.dart';
 import '../services/webauthn_service_mobile.dart';
 
-@JS('window.localStorage.getItem')
-external JSString? localStorageGetItem(JSString key);
-@JS('webauthnRegister')
-external JSPromise _webauthnRegister(JSString serverUrl, JSString email);
+// Conditional import for web_config
+import '../web_config_stub.dart' if (dart.library.html) '../web_config.dart';
 
-Future<bool> webauthnRegister(String serverUrl, String email) async {
-  final result = await _webauthnRegister(serverUrl.toJS, email.toJS).toDart;
-  return result.dartify() == true;
-}
+// Conditional import for JS interop (web-only)
+import 'webauthn_js_interop_stub.dart'
+    if (dart.library.html) 'webauthn_js_interop.dart';
 
 class WebauthnPage extends StatefulWidget {
   const WebauthnPage({super.key});
@@ -349,10 +344,25 @@ class _WebauthnPageState extends State<WebauthnPage> {
   }
 
   Future<void> _addCredential() async {
-    final apiServer = await loadWebApiServer();
-    String urlString = apiServer ?? '';
-    if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
-      urlString = 'https://$urlString';
+    // Get server URL - use ApiService on mobile, loadWebApiServer on web
+    String urlString = '';
+
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
+      // Mobile: Get from ApiService which has the proper base URL
+      ApiService.init();
+      urlString = ApiService.dio.options.baseUrl;
+      debugPrint('[WEBAUTHN] Using mobile base URL: $urlString');
+    } else {
+      // Web: Use web config
+      final apiServer = await loadWebApiServer();
+      urlString = apiServer ?? '';
+      if (!urlString.startsWith('http://') &&
+          !urlString.startsWith('https://')) {
+        urlString = 'https://$urlString';
+      }
+      debugPrint('[WEBAUTHN] Using web base URL: $urlString');
     }
 
     // Use mobile passkeys on Android/iOS, web WebAuthn on web/desktop
@@ -365,9 +375,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
           loading = true;
         });
 
-        final result = await MobileWebAuthnService.instance.register(
-          serverUrl: urlString,
-        );
+        final result = await MobileWebAuthnService.instance.register();
 
         if (result != null && mounted) {
           _showSuccess('Passkey added successfully');
@@ -388,7 +396,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
       }
     } else {
       // Web: Use browser WebAuthn API
-      final email = localStorageGetItem('email'.toJS)?.toDart ?? '';
+      final email = getLocalStorageEmail() ?? '';
       await webauthnRegister(urlString, email);
       await _loadWebauthnCredentials();
     }
@@ -623,7 +631,75 @@ class _WebauthnPageState extends State<WebauthnPage> {
           const SizedBox(height: 16),
           loading
               ? const Center(child: CircularProgressIndicator())
-              : SingleChildScrollView(
+              : (defaultTargetPlatform == TargetPlatform.android ||
+                    defaultTargetPlatform == TargetPlatform.iOS)
+              ? // Mobile Layout - ListView
+                webauthnCredentials.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20.0),
+                          child: Text(
+                            'No credentials found',
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: webauthnCredentials.length,
+                        separatorBuilder: (context, index) => const Divider(),
+                        itemBuilder: (context, index) {
+                          final cred = webauthnCredentials[index];
+                          return ListTile(
+                            leading: Icon(
+                              Icons.fingerprint,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            title: Text(
+                              cred['browser']?.toString() ?? 'Unknown Device',
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Location: ${cred['location'] ?? 'Unknown'}',
+                                ),
+                                Text('IP: ${cred['ip'] ?? 'Unknown'}'),
+                                Text(
+                                  'Created: ${cred['created'] ?? 'Unknown'}',
+                                ),
+                                if (cred['lastLogin'] != null &&
+                                    cred['lastLogin'].toString().isNotEmpty)
+                                  Text('Last Login: ${cred['lastLogin']}'),
+                              ],
+                            ),
+                            trailing: webauthnCredentials.length > 1
+                                ? IconButton(
+                                    icon: Icon(
+                                      Icons.delete,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.error,
+                                    ),
+                                    onPressed: () {
+                                      _deleteWebAuthnCredential(
+                                        cred['id']?.toString() ?? '',
+                                      );
+                                    },
+                                    tooltip: 'Remove credential',
+                                  )
+                                : null,
+                          );
+                        },
+                      )
+              : // Desktop Layout - DataTable
+                SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: DataTable(
                     columns: const [

@@ -1,9 +1,7 @@
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
-
-// Conditionally import the full page only on supported platforms
-import 'webauthn_web.dart' if (dart.library.io) 'webauthn_stub.dart';
+import 'webauthn_web.dart';
 
 class WebauthnPageWrapper extends StatelessWidget {
   const WebauthnPageWrapper({super.key});

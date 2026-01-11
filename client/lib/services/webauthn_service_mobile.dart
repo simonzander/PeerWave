@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:passkeys/authenticator.dart';
 import 'package:passkeys/types.dart';
@@ -41,12 +41,11 @@ class MobileWebAuthnService {
 
   /// Fetch current user's email from server session
   ///
-  /// [serverUrl] - The PeerWave server URL
   /// Returns email address from active session, null if not authenticated
-  Future<String?> getCurrentUserEmail(String serverUrl) async {
+  Future<String?> getCurrentUserEmail() async {
     try {
       debugPrint('[MobileWebAuthn] Fetching user email from session');
-      final response = await ApiService.dio.get('$serverUrl/api/user/me');
+      final response = await ApiService.dio.get('/api/user/me');
 
       debugPrint('[MobileWebAuthn] Response status: ${response.statusCode}');
       debugPrint(
@@ -144,12 +143,12 @@ class MobileWebAuthnService {
   /// [serverUrl] - The PeerWave server URL
   /// [email] - User's email address (optional - will fetch from server session if empty)
   /// Returns credential ID on success, null on failure
-  Future<String?> register({required String serverUrl, String? email}) async {
+  Future<String?> register({String? email}) async {
     try {
       // Fetch email from server session if not provided
       String? userEmail = email;
       if (userEmail == null || userEmail.isEmpty) {
-        userEmail = await getCurrentUserEmail(serverUrl);
+        userEmail = await getCurrentUserEmail();
         if (userEmail == null || userEmail.isEmpty) {
           debugPrint('[MobileWebAuthn] Failed to get user email from session');
           return null;
@@ -168,10 +167,10 @@ class MobileWebAuthnService {
 
       // 2. Request registration challenge from server
       debugPrint(
-        '[MobileWebAuthn] Requesting challenge from: $serverUrl/webauthn/register-challenge',
+        '[MobileWebAuthn] Requesting challenge from /webauthn/register-challenge',
       );
       final challengeResponse = await ApiService.dio.post(
-        '$serverUrl/webauthn/register-challenge',
+        '/webauthn/register-challenge',
         data: {}, // Email comes from session
       );
 
@@ -228,7 +227,7 @@ class MobileWebAuthnService {
       final registerResponseJson = registerResponse.toJson();
       debugPrint('[MobileWebAuthn] Sending attestation to server');
       final serverResponse = await ApiService.dio.post(
-        '$serverUrl/webauthn/register',
+        '/webauthn/register',
         data: {'attestation': registerResponseJson},
       );
 
@@ -243,7 +242,7 @@ class MobileWebAuthnService {
       // 6. Store credential metadata
       final credentialId = registerResponse.id;
       await _storeCredential(
-        serverUrl: serverUrl,
+        serverUrl: ApiService.dio.options.baseUrl,
         email: userEmail,
         credentialId: credentialId,
       );
@@ -265,19 +264,17 @@ class MobileWebAuthnService {
 
   /// Authenticate with existing WebAuthn credential using passkey
   ///
-  /// [serverUrl] - The PeerWave server URL
   /// [email] - User's email address (optional - will fetch from stored credentials)
   /// Returns authentication response data on success, null on failure
-  Future<Map<String, dynamic>?> authenticate({
-    required String serverUrl,
-    String? email,
-  }) async {
+  Future<Map<String, dynamic>?> authenticate({String? email}) async {
     try {
+      final serverUrl = ApiService.dio.options.baseUrl;
+
       // If email not provided, try to find stored credential for this server
       String? userEmail = email;
       if (userEmail == null || userEmail.isEmpty) {
         // Try to fetch from server session
-        userEmail = await getCurrentUserEmail(serverUrl);
+        userEmail = await getCurrentUserEmail();
         if (userEmail == null || userEmail.isEmpty) {
           debugPrint(
             '[MobileWebAuthn] No email provided and session not found',
