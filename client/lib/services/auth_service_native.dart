@@ -73,6 +73,7 @@ class AuthService {
     try {
       // For native, check if we have an HMAC session
       final clientId = await ClientIdService.getClientId();
+      debugPrint('[AuthService] Checking session for clientId: $clientId');
       final hasSession = await SessionAuthService().hasSession(clientId);
 
       if (hasSession) {

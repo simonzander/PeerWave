@@ -5,6 +5,8 @@ import '../services/api_service.dart';
 import '../services/clientid_native.dart';
 import '../services/device_identity_service.dart';
 import '../services/server_config_native.dart';
+import '../services/session_auth_service.dart';
+import '../services/native_crypto_service.dart';
 
 /// Mobile backup code login screen for iOS/Android
 ///
@@ -133,6 +135,24 @@ class _MobileBackupcodeLoginScreenState
             clientId,
             serverUrl: _serverUrl,
           );
+
+          // Initialize HMAC session in secure storage (required for authentication)
+          debugPrint(
+            '[MobileBackupcodeLogin] Saving session for clientId: $clientId',
+          );
+          await SessionAuthService().initializeSession(clientId, sessionSecret);
+
+          // Verify session was saved
+          final sessionSaved = await SessionAuthService().hasSession(clientId);
+          debugPrint(
+            '[MobileBackupcodeLogin] Session saved verification: $sessionSaved',
+          );
+
+          // Generate encryption key for native client (required for Signal Protocol)
+          debugPrint('[MobileBackupcodeLogin] Generating encryption key...');
+          final deviceId = DeviceIdentityService.instance.deviceId;
+          await NativeCryptoService.instance.getOrCreateKey(deviceId);
+          debugPrint('[MobileBackupcodeLogin] ✓ Encryption key generated');
 
           // Save server configuration with HMAC credentials
           await ServerConfigService.addServer(
