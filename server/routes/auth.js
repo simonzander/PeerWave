@@ -15,6 +15,7 @@ const bcrypt = require("bcrypt");
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
 const { generateAuthToken, verifyAuthToken, revokeToken, generateState } = require('../utils/jwtHelper');
+const { verifySessionAuth, verifyAuthEither } = require('../middleware/sessionAuth');
 
 /**
  * Shared function to find or create a Client record
@@ -2374,8 +2375,6 @@ authRoutes.post('/token/revoke', tokenRevocationLimiter, async (req, res) => {
 // POST /auth/session/refresh
 // Manually refresh HMAC session (extends expiration)
 // Requires valid HMAC authentication via sessionAuth middleware
-const { verifySessionAuth, verifyAuthEither } = require('../middleware/sessionAuth');
-
 authRoutes.post('/session/refresh', verifySessionAuth, async (req, res) => {
     try {
         const { clientId } = req;
