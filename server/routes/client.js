@@ -724,11 +724,18 @@ clientRoutes.get("/people/list", verifyAuthEither, async (req, res) => {
     try {
         console.log(`[PEOPLE_LIST] Fetching users for sessionUuid: ${sessionUuid}`);
         const users = await User.findAll({
-            attributes: ['uuid', 'displayName', 'email', 'picture'],
+            attributes: ['uuid', 'displayName', 'email', 'picture', 'atName'],
             where: { 
                 uuid: { [Op.ne]: sessionUuid }, // Exclude the current user
                 active: true, // Only show active users
-                verified: true // Only show verified users who completed registration
+                verified: true, // Only show verified users who completed registration
+                displayName: { [Op.ne]: null }, // Only show users with displayName set
+                [Op.and]: [
+                    sequelize.where(
+                        sequelize.fn('LENGTH', sequelize.col('displayName')),
+                        { [Op.gt]: 0 }
+                    )
+                ]
             }
         });
 
@@ -753,7 +760,7 @@ clientRoutes.get("/people/list", verifyAuthEither, async (req, res) => {
             // Fall back to returning users without presence
         }
 
-        console.log(`[PEOPLE_LIST] Found ${usersJson.length} verified users`);
+        console.log(`[PEOPLE_LIST] Found ${usersJson.length} verified users with displayName`);
         res.status(200).json(usersJson);
     } catch (error) {
         console.error('Error fetching users:', error);
