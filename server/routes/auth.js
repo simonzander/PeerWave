@@ -10,7 +10,7 @@ const session = require('express-session');
 const rateLimit = require('express-rate-limit');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const magicLinks = require('../store/magicLinksStore');
-const { User, OTP, Client, ClientSession, sequelize } = require('../db/model');
+const { User, OTP, Client, ClientSession, SignalPreKey, SignalSignedPreKey, SignalSenderKey, Item, GroupItem, sequelize } = require('../db/model');
 const bcrypt = require("bcrypt");
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
@@ -34,12 +34,89 @@ async function findOrCreateClient(clientId, userUuid, req) {
         ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
         : "Location not found";
     
+    // First, check if this clientId exists (regardless of owner)
+    const existingClient = await Client.findOne({ where: { clientid: clientId } });
+    
+    if (existingClient && existingClient.owner !== userUuid) {
+        // SECURITY: Client ID belongs to a different user
+        // This can happen if the client app doesn't regenerate UUID on account switch
+        // We must delete ALL server-side data for this client before transferring ownership
+        // to prevent User Y from accessing User X's encrypted messages/keys
+        
+        const oldOwner = existingClient.owner;
+        const oldDeviceId = existingClient.device_id;
+        
+        console.warn(`[CLIENT] Ownership conflict for ${sanitizeForLog(clientId)}: Current owner: ${sanitizeForLog(oldOwner)}, New owner: ${sanitizeForLog(userUuid)}`);
+        console.warn(`[CLIENT] Deleting all server-side data for device_id=${oldDeviceId} of old owner...`);
+        
+        // Delete all messages sent from this device by the old owner
+        const [itemsDeleted, groupItemsDeleted] = await Promise.all([
+            Item.destroy({ 
+                where: { 
+                    [Op.or]: [
+                        { sender: oldOwner, deviceSender: oldDeviceId },
+                        { receiver: oldOwner, deviceReceiver: oldDeviceId }
+                    ]
+                } 
+            }),
+            GroupItem.destroy({ 
+                where: { 
+                    sender: oldOwner,
+                    senderDevice: oldDeviceId 
+                } 
+            })
+        ]);
+        
+        console.warn(`[CLIENT] ✓ Deleted ${itemsDeleted} direct messages and ${groupItemsDeleted} group messages`);
+        
+        // Delete all Signal protocol keys (prevents decryption of old messages)
+        const [preKeysDeleted, signedPreKeysDeleted, senderKeysDeleted, sessionsDeleted] = await Promise.all([
+            SignalPreKey.destroy({ where: { client: clientId } }),
+            SignalSignedPreKey.destroy({ where: { client: clientId } }),
+            SignalSenderKey.destroy({ where: { client: clientId } }),
+            ClientSession.destroy({ where: { client_id: clientId } })
+        ]);
+        
+        console.warn(`[CLIENT] ✓ Deleted ${preKeysDeleted} prekeys, ${signedPreKeysDeleted} signed prekeys, ${senderKeysDeleted} sender keys, ${sessionsDeleted} sessions`);
+        
+        // Get max device_id for new owner
+        const maxDevice = await Client.max('device_id', { where: { owner: userUuid } });
+        
+        // Transfer ownership with new device_id
+        await writeQueue.enqueue(
+            () => Client.update(
+                { 
+                    owner: userUuid,
+                    device_id: maxDevice ? maxDevice + 1 : 1,
+                    ip: ip,
+                    browser: userAgent,
+                    location: locationString
+                },
+                { where: { clientid: clientId } }
+            ),
+            'transferClientOwnership'
+        );
+        
+        // Reload to get updated values
+        await existingClient.reload();
+        
+        console.log(`[CLIENT] ✓ Ownership transferred to ${sanitizeForLog(userUuid)} with device_id=${existingClient.device_id}`);
+        
+        return {
+            client: existingClient,
+            created: false,
+            ownershipTransferred: true,
+            device_id: existingClient.device_id,
+            clientid: existingClient.clientid
+        };
+    }
+    
     // Get max device_id for this user and auto-increment
     const maxDevice = await Client.max('device_id', { where: { owner: userUuid } });
     
-    // Find existing client or create new one
+    // Find existing client or create new one (scoped to correct owner)
     const [client, created] = await Client.findOrCreate({
-        where: { clientid: clientId, owner: userUuid },
+        where: { clientid: clientId },
         defaults: {
             owner: userUuid,
             clientid: clientId,
@@ -66,6 +143,7 @@ async function findOrCreateClient(clientId, userUuid, req) {
     return {
         client,
         created,
+        ownershipTransferred: false,
         device_id: client.device_id || (client.get ? client.get('device_id') : undefined),
         clientid: client.clientid || (client.get ? client.get('clientid') : undefined)
     };
