@@ -1614,9 +1614,6 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
 
         if (authnResult.audit.complete) {
             // Authentication was successful
-            req.session.authenticated = true;
-            req.session.email = email;
-            req.session.uuid = user.uuid;
             
             // Set user as active on authentication
             await writeQueue.enqueue(
@@ -1631,6 +1628,38 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             if (user.verified && config.admin && config.admin.includes(email)) {
                 await autoAssignRoles(email, user.uuid);
             }
+            
+            // For app-based login (Custom Tab), skip session creation and only return JWT
+            if (fromCustomTab) {
+                console.log('[CUSTOM TAB AUTH] App-based login - skipping session creation');
+                const response = { 
+                    status: "ok", 
+                    message: "Authentication successful"
+                };
+                
+                // Generate secure signed JWT for Custom Tab authentication
+                console.log('[CUSTOM TAB AUTH] Generating JWT token for Custom Tab callback...');
+                const authToken = generateAuthToken({
+                    userId: user.uuid,
+                    email: email,
+                    credentialId: credential.id, // Include for device identity setup
+                    state: state // Include state for additional verification
+                });
+                
+                response.authToken = authToken;
+                console.log(`[CUSTOM TAB AUTH] ✓ JWT token generated for ${sanitizeForLog(user.email)} (expires: ${config.jwt.expiresIn})`);
+                
+                if(!user.backupCodes) {
+                    return res.status(202).json(response);
+                } else {
+                    return res.status(200).json(response);
+                }
+            }
+            
+            // Standard web/mobile login - create session
+            req.session.authenticated = true;
+            req.session.email = email;
+            req.session.uuid = user.uuid;
             
             // Handle client info and create HMAC session for mobile
             const clientId = req.body && req.body.clientId;
@@ -1691,21 +1720,8 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                     message: "Authentication successful"
                 };
                 
-                // Generate secure signed JWT for Custom Tab authentication
-                if (fromCustomTab) {
-                    console.log('[CUSTOM TAB AUTH] Generating JWT token for Custom Tab callback...');
-                    const authToken = generateAuthToken({
-                        userId: user.uuid,
-                        email: email,
-                        credentialId: credential.id, // Include for device identity setup
-                        state: state // Include state for additional verification
-                    });
-                    
-                    response.authToken = authToken;
-                    console.log(`[CUSTOM TAB AUTH] ✓ JWT token generated for ${sanitizeForLog(user.email)} (expires: ${config.jwt.expiresIn})`);
-                }
                 // Include session secret for mobile clients
-                else if (sessionSecret) {
+                if (sessionSecret) {
                     response.sessionSecret = sessionSecret;
                     response.userId = user.uuid;
                     response.email = email;

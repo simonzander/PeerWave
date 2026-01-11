@@ -99,6 +99,8 @@ class _AuthLayoutState extends State<AuthLayout> {
   Map<String, dynamic>? _serverSettings;
   bool _loadingSettings = true;
   bool _isFromMobileApp = false;
+  bool _callbackInProgress = false;
+  String? _callbackToken;
   // String? _mobileAppEmail; // Reserved for future use
 
   @override
@@ -242,9 +244,11 @@ class _AuthLayoutState extends State<AuthLayout> {
               debugPrint(
                 '[AUTH] Using token from auth response, redirecting to app',
               );
-              jsEval(
-                "window.location.href = 'peerwave://auth/callback?token=${Uri.encodeComponent(token)}';",
-              );
+              setState(() {
+                _callbackInProgress = true;
+                _callbackToken = token;
+              });
+              _triggerAppCallback(token);
             } else {
               debugPrint('[AUTH] No token in response, auth failed');
               jsEval(
@@ -295,6 +299,20 @@ class _AuthLayoutState extends State<AuthLayout> {
   void dispose() {
     _sub?.cancel();
     super.dispose();
+  }
+
+  /// Trigger callback to mobile app with token
+  void _triggerAppCallback(String token) {
+    try {
+      jsEval(
+        "window.location.href = 'peerwave://auth/callback?token=${Uri.encodeComponent(token)}';",
+      );
+    } catch (e) {
+      debugPrint('[AUTH] Failed to trigger callback: $e');
+      setState(() {
+        _loginStatus = 'Failed to callback app: $e';
+      });
+    }
   }
 
   /// Check if opened from mobile app via Chrome Custom Tab
@@ -629,152 +647,227 @@ class _AuthLayoutState extends State<AuthLayout> {
                     ),
                   ),
                 const SizedBox(height: 24),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 52),
-                    backgroundColor: colorScheme.primary,
-                    foregroundColor: colorScheme.onPrimary,
-                    shape: RoundedRectangleBorder(
+                // Show callback status if in progress
+                if (_callbackInProgress && _isFromMobileApp) ...[
+                  // Show callback in progress message
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: colorScheme.primary.withOpacity(0.3),
+                      ),
                     ),
-                    elevation: 2,
-                  ),
-                  onPressed: () async {
-                    debugPrint('[AUTH] Login button pressed');
-                    final email = emailController.text.trim();
-                    debugPrint('[AUTH] Email: $email');
-                    _lastEmail = email;
-                    localStorageSetItem('email', email);
-                    if (kIsWeb) {
-                      try {
-                        final apiServer = await loadWebApiServer();
-                        debugPrint('[AUTH] API Server: $apiServer');
-                        String urlString = apiServer ?? '';
-                        if (!urlString.startsWith('http://') &&
-                            !urlString.startsWith('https://')) {
-                          urlString = 'https://$urlString';
-                        }
-
-                        // Fetch/create client ID for this email (locally, no API call)
-                        final clientId =
-                            await ClientIdService.getClientIdForEmail(email);
-                        debugPrint(
-                          '[AUTH] Using client ID: $clientId for email: $email',
-                        );
-
-                        // ClientId is passed directly to WebAuthn JS function (no localStorage needed)
-                        debugPrint('[AUTH] About to call webauthnLogin...');
-                        await webauthnLogin(urlString, email, clientId);
-                        debugPrint('[AUTH] webauthnLogin call completed');
-                      } catch (e) {
-                        debugPrint('WebAuthn JS call failed: $e');
-                        setState(() {
-                          _loginStatus = 'Login error: $e';
-                        });
-                      }
-                    }
-                  },
-                  child: Text(
-                    "Login",
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
+                    child: Column(
+                      children: [
+                        Icon(Icons.sync, size: 48, color: colorScheme.primary),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Trying to callback the app...',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: colorScheme.onPrimaryContainer,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'If the app doesn\'t open automatically, use the retry button below',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onPrimaryContainer.withOpacity(
+                              0.8,
+                            ),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                // Show Register OR Abort button based on context
-                if (_isFromMobileApp)
-                  OutlinedButton(
-                    style: OutlinedButton.styleFrom(
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
                       minimumSize: const Size(double.infinity, 52),
-                      foregroundColor: colorScheme.error,
-                      side: BorderSide(color: colorScheme.outline),
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: colorScheme.onPrimary,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
+                      elevation: 2,
                     ),
                     onPressed: () {
-                      // Redirect back to app with cancellation
+                      if (_callbackToken != null) {
+                        debugPrint('[AUTH] Retry button pressed');
+                        _triggerAppCallback(_callbackToken!);
+                      }
+                    },
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.refresh, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Retry',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (!_callbackInProgress)
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 52),
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: colorScheme.onPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 2,
+                    ),
+                    onPressed: () async {
+                      debugPrint('[AUTH] Login button pressed');
+                      final email = emailController.text.trim();
+                      debugPrint('[AUTH] Email: $email');
+                      _lastEmail = email;
+                      localStorageSetItem('email', email);
                       if (kIsWeb) {
-                        debugPrint('[AUTH] User aborted from mobile');
                         try {
-                          jsEval(
-                            "window.location.href = 'peerwave://auth/callback?cancelled=true';",
+                          final apiServer = await loadWebApiServer();
+                          debugPrint('[AUTH] API Server: $apiServer');
+                          String urlString = apiServer ?? '';
+                          if (!urlString.startsWith('http://') &&
+                              !urlString.startsWith('https://')) {
+                            urlString = 'https://$urlString';
+                          }
+
+                          // Fetch/create client ID for this email (locally, no API call)
+                          final clientId =
+                              await ClientIdService.getClientIdForEmail(email);
+                          debugPrint(
+                            '[AUTH] Using client ID: $clientId for email: $email',
                           );
+
+                          // ClientId is passed directly to WebAuthn JS function (no localStorage needed)
+                          debugPrint('[AUTH] About to call webauthnLogin...');
+                          await webauthnLogin(urlString, email, clientId);
+                          debugPrint('[AUTH] webauthnLogin call completed');
                         } catch (e) {
-                          debugPrint('[AUTH] Failed to trigger deep link: $e');
-                          context.go('/');
+                          debugPrint('WebAuthn JS call failed: $e');
+                          setState(() {
+                            _loginStatus = 'Login error: $e';
+                          });
                         }
                       }
                     },
                     child: Text(
-                      "Abort",
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  )
-                else
-                  OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 52),
-                      foregroundColor: colorScheme.primary,
-                      side: BorderSide(color: colorScheme.outline),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onPressed: _loadingSettings
-                        ? null
-                        : () async {
-                            final email = emailController.text.trim();
-
-                            // Validate email format
-                            if (email.isEmpty || !email.contains('@')) {
-                              setState(
-                                () => _loginStatus = 'Invalid email address',
-                              );
-                              return;
-                            }
-
-                            // Check registration mode
-                            final mode =
-                                _serverSettings?['registrationMode'] ?? 'open';
-
-                            // Handle email_suffix mode
-                            if (mode == 'email_suffix') {
-                              final suffixes =
-                                  _serverSettings?['allowedEmailSuffixes']
-                                      as List? ??
-                                  [];
-                              if (!_validateEmailSuffix(email, suffixes)) {
-                                setState(
-                                  () => _loginStatus =
-                                      'Registration is restricted to specific email domains',
-                                );
-                                return;
-                              }
-                            }
-
-                            // Handle invitation_only mode
-                            if (mode == 'invitation_only') {
-                              context.go(
-                                '/register/invitation',
-                                extra: {'email': email},
-                              );
-                              return;
-                            }
-
-                            // Open mode or email_suffix passed validation
-                            await _proceedWithRegistration(email);
-                          },
-                    child: Text(
-                      'Register',
+                      "Login",
                       style: theme.textTheme.labelLarge?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
+                if (!_callbackInProgress) ...[
+                  const SizedBox(height: 16),
+                  // Show Register OR Abort button based on context
+                  if (_isFromMobileApp)
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 52),
+                        foregroundColor: colorScheme.error,
+                        side: BorderSide(color: colorScheme.outline),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        // Redirect back to app with cancellation
+                        if (kIsWeb) {
+                          debugPrint('[AUTH] User aborted from mobile');
+                          try {
+                            jsEval(
+                              "window.location.href = 'peerwave://auth/callback?cancelled=true';",
+                            );
+                          } catch (e) {
+                            debugPrint(
+                              '[AUTH] Failed to trigger deep link: $e',
+                            );
+                            context.go('/');
+                          }
+                        }
+                      },
+                      child: Text(
+                        "Abort",
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    )
+                  else
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 52),
+                        foregroundColor: colorScheme.primary,
+                        side: BorderSide(color: colorScheme.outline),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: _loadingSettings
+                          ? null
+                          : () async {
+                              final email = emailController.text.trim();
+
+                              // Validate email format
+                              if (email.isEmpty || !email.contains('@')) {
+                                setState(
+                                  () => _loginStatus = 'Invalid email address',
+                                );
+                                return;
+                              }
+
+                              // Check registration mode
+                              final mode =
+                                  _serverSettings?['registrationMode'] ??
+                                  'open';
+
+                              // Handle email_suffix mode
+                              if (mode == 'email_suffix') {
+                                final suffixes =
+                                    _serverSettings?['allowedEmailSuffixes']
+                                        as List? ??
+                                    [];
+                                if (!_validateEmailSuffix(email, suffixes)) {
+                                  setState(
+                                    () => _loginStatus =
+                                        'Registration is restricted to specific email domains',
+                                  );
+                                  return;
+                                }
+                              }
+
+                              // Handle invitation_only mode
+                              if (mode == 'invitation_only') {
+                                context.go(
+                                  '/register/invitation',
+                                  extra: {'email': email},
+                                );
+                                return;
+                              }
+
+                              // Open mode or email_suffix passed validation
+                              await _proceedWithRegistration(email);
+                            },
+                      child: Text(
+                        'Register',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                ],
               ],
             ),
           ),
