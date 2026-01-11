@@ -21,10 +21,7 @@ class WebAuthnProviderMobile implements IWebAuthnProvider {
     try {
       // Call the existing mobile WebAuthn registration
       // Returns just the credential ID as a String
-      final credentialId = await _mobileService.register(
-        serverUrl: serverUrl,
-        email: email,
-      );
+      final credentialId = await _mobileService.register(email: email);
 
       if (credentialId == null) {
         return null;
@@ -51,10 +48,7 @@ class WebAuthnProviderMobile implements IWebAuthnProvider {
   }) async {
     try {
       // Call the existing mobile WebAuthn authentication
-      final authResult = await _mobileService.authenticate(
-        serverUrl: serverUrl,
-        email: email,
-      );
+      final authResult = await _mobileService.authenticate(email: email);
 
       if (authResult == null) {
         return null;
