@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../services/api_service.dart';
 import '../services/server_config_native.dart';
 import '../widgets/registration_progress_bar.dart';
@@ -70,13 +71,52 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
       Directory directory;
 
       if (Platform.isAndroid) {
-        // Android: Save to Downloads folder
-        directory = Directory('/storage/emulated/0/Download');
-        if (!await directory.exists()) {
-          // Fallback to app's external storage
-          directory =
-              await getExternalStorageDirectory() ??
-              await getApplicationDocumentsDirectory();
+        // For Android 13+ (API 33+), try app-specific external storage first (no permission needed)
+        // For older Android, request storage permission
+        final androidInfo = await Permission.storage.status;
+
+        // Try to use external storage (Downloads folder) with permission
+        if (androidInfo.isDenied || androidInfo.isPermanentlyDenied) {
+          final status = await Permission.storage.request();
+
+          if (!status.isGranted) {
+            // Fallback to app-specific storage (no permission needed)
+            directory =
+                await getExternalStorageDirectory() ??
+                await getApplicationDocumentsDirectory();
+
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Storage permission denied. Saving to app folder: ${directory.path}',
+                  ),
+                  backgroundColor: Theme.of(context).colorScheme.secondary,
+                  action: SnackBarAction(
+                    label: 'Settings',
+                    onPressed: () => openAppSettings(),
+                  ),
+                  duration: const Duration(seconds: 5),
+                ),
+              );
+            }
+          } else {
+            // Permission granted - use Downloads folder
+            directory = Directory('/storage/emulated/0/Download');
+            if (!await directory.exists()) {
+              directory =
+                  await getExternalStorageDirectory() ??
+                  await getApplicationDocumentsDirectory();
+            }
+          }
+        } else {
+          // Already granted - use Downloads folder
+          directory = Directory('/storage/emulated/0/Download');
+          if (!await directory.exists()) {
+            directory =
+                await getExternalStorageDirectory() ??
+                await getApplicationDocumentsDirectory();
+          }
         }
       } else {
         // iOS: Save to Documents folder (accessible via Files app)

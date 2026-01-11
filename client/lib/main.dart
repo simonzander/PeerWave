@@ -2117,6 +2117,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             location != '/server-selection' &&
             location != '/mobile-server-selection' &&
             location != '/mobile-webauthn' &&
+            location != '/mobile-backupcode-login' &&
             location != '/callback' && // Allow Chrome Custom Tab callback
             location != '/register' &&
             location != '/login' &&

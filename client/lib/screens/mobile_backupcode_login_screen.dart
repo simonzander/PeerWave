@@ -105,34 +105,54 @@ class _MobileBackupcodeLoginScreenState
     try {
       final email = _emailController.text.trim();
       final backupcode = _backupcodeController.text.trim();
+      final clientId = await ClientIdService.getClientId();
 
       debugPrint('[MobileBackupcodeLogin] Attempting login for: $email');
 
-      // Call backup code login endpoint
+      // Set base URL for API service
+      ApiService.setBaseUrl(_serverUrl!);
+
+      // Call mobile backup code login endpoint (creates HMAC session)
       final response = await ApiService.dio.post(
-        '$_serverUrl/backupcode-login',
-        data: {'email': email, 'backupCode': backupcode},
+        '$_serverUrl/backupcode/mobile-verify',
+        data: {'email': email, 'backupCode': backupcode, 'clientId': clientId},
       );
 
       debugPrint('[MobileBackupcodeLogin] Response: ${response.statusCode}');
 
-      if (response.statusCode == 200) {
-        // Login successful - set device identity
-        final clientId = await ClientIdService.getClientId();
+      if (response.statusCode == 200 && response.data['status'] == 'ok') {
+        // Login successful - extract HMAC session credentials
+        final sessionSecret = response.data['sessionSecret'] as String?;
+        final userId = response.data['userId'] as String?;
 
-        // For backup code login, we don't have a credential ID
-        // Use email as identifier
-        DeviceIdentityService.instance.setDeviceIdentity(
-          email,
-          'backupcode_$email',
-          clientId,
-        );
+        if (sessionSecret != null && userId != null) {
+          // Store HMAC session credentials
+          await DeviceIdentityService.instance.setDeviceIdentity(
+            email,
+            'backupcode_$email', // Placeholder credential ID
+            clientId,
+            serverUrl: _serverUrl,
+          );
 
-        debugPrint('[MobileBackupcodeLogin] ✓ Login successful');
+          // Save server configuration with HMAC credentials
+          await ServerConfigService.addServer(
+            serverUrl: _serverUrl!,
+            credentials: sessionSecret,
+          );
 
-        if (mounted) {
-          // After successful backup code login, user should register WebAuthn
-          context.go('/register/webauthn', extra: {'serverUrl': _serverUrl});
+          debugPrint(
+            '[MobileBackupcodeLogin] ✓ Login successful with HMAC session',
+          );
+
+          if (mounted) {
+            // Navigate to app - user is authenticated
+            context.go('/app');
+          }
+        } else {
+          setState(() {
+            _errorMessage = 'Authentication succeeded but session setup failed';
+            _isLoading = false;
+          });
         }
       } else {
         setState(() {
@@ -146,6 +166,8 @@ class _MobileBackupcodeLoginScreenState
       String errorMsg = 'Login failed';
       if (e.toString().contains('401')) {
         errorMsg = 'Invalid email or backup code';
+      } else if (e.toString().contains('429')) {
+        errorMsg = 'Too many attempts. Please wait and try again.';
       } else if (e.toString().contains('Network')) {
         errorMsg = 'Network error. Please check your connection.';
       } else {

@@ -5,7 +5,6 @@
       "namespace": "android_app",
       "package_name": "org.peerwave.client",
       "sha256_cert_fingerprints": [
-        "32:1E:57:C1:DB:39:56:C6:00:EA:36:FF:A5:A5:C9:72:E9:8E:6C:0B:E6:01:14:6F:A9:42:25:77:5B:20:03:26",
         "84:18:34:54:84:D7:A8:52:1D:3C:2B:CD:0F:F1:5C:82:A0:52:15:C2:5E:28:4A:B5:D0:4C:FF:BA:F6:F3:75:8B",
         "25:7E:7F:1C:86:EA:FB:7C:B5:F1:88:9A:F5:FF:50:75:85:91:16:05:EB:1F:12:F0:33:E4:64:52:70:31:B6:B0"
       ]
@@ -17,9 +16,28 @@
       "namespace": "android_app",
       "package_name": "org.peerwave.client",
       "sha256_cert_fingerprints": [
-        "32:1E:57:C1:DB:39:56:C6:00:EA:36:FF:A5:A5:C9:72:E9:8E:6C:0B:E6:01:14:6F:A9:42:25:77:5B:20:03:26",
         "84:18:34:54:84:D7:A8:52:1D:3C:2B:CD:0F:F1:5C:82:A0:52:15:C2:5E:28:4A:B5:D0:4C:FF:BA:F6:F3:75:8B",
         "25:7E:7F:1C:86:EA:FB:7C:B5:F1:88:9A:F5:FF:50:75:85:91:16:05:EB:1F:12:F0:33:E4:64:52:70:31:B6:B0"
+      ]
+    }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "org.peerwave.client.debug",
+      "sha256_cert_fingerprints": [
+        "32:1E:57:C1:DB:39:56:C6:00:EA:36:FF:A5:A5:C9:72:E9:8E:6C:0B:E6:01:14:6F:A9:42:25:77:5B:20:03:26"
+      ]
+    }
+  },
+  {
+    "relation": ["delegate_permission/common.get_login_creds"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "org.peerwave.client.debug",
+      "sha256_cert_fingerprints": [
+        "32:1E:57:C1:DB:39:56:C6:00:EA:36:FF:A5:A5:C9:72:E9:8E:6C:0B:E6:01:14:6F:A9:42:25:77:5B:20:03:26"
       ]
     }
   }
