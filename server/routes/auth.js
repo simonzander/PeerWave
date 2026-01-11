@@ -858,6 +858,143 @@ authRoutes.post("/backupcode/verify", async(req, res) => {
     }
 });
 
+authRoutes.post("/backupcode/mobile-verify", async(req, res) => {
+    const { email, backupCode, clientId } = req.body;
+    
+    if (!email || !backupCode) {
+        return res.status(400).json({ error: "Email and backup code are required" });
+    }
+    
+    try {
+        console.log(`[BACKUPCODE MOBILE] Login attempt for ${sanitizeForLog(email)}`);
+        
+        // Brute-force protection: Store failed attempts in session
+        if (!req.session.backupCodeBrute) {
+            req.session.backupCodeBrute = { count: 0, waitUntil: 0 };
+        }
+        
+        const now = Date.now();
+        if (req.session.backupCodeBrute.waitUntil && now < req.session.backupCodeBrute.waitUntil) {
+            const waitSeconds = Math.ceil((req.session.backupCodeBrute.waitUntil - now) / 1000);
+            return res.status(429).json({ status: "wait", message: `Too many attempts. Wait ${waitSeconds} seconds.` });
+        }
+        
+        // Verify backup code
+        const valid = await verifyBackupCode(email, backupCode);
+        
+        if (!valid) {
+            // Increase brute-force counter and wait time
+            req.session.backupCodeBrute.count = (req.session.backupCodeBrute.count || 0) + 1;
+            let waitTime = 60 * Math.pow(1.8, req.session.backupCodeBrute.count - 1); // in seconds
+            waitTime = Math.ceil(waitTime);
+            req.session.backupCodeBrute.waitUntil = now + waitTime * 1000;
+            return res.status(401).json({ status: "error", message: "Invalid backup code" });
+        }
+        
+        // Reset brute-force counter on success
+        req.session.backupCodeBrute = { count: 0, waitUntil: 0 };
+        
+        // Find user
+        const user = await User.findOne({ where: { email } });
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+        
+        // Set session as authenticated
+        req.session.authenticated = true;
+        req.session.email = email;
+        req.session.uuid = user.uuid;
+        
+        // Set user as active
+        await writeQueue.enqueue(
+            () => User.update(
+                { active: true },
+                { where: { uuid: user.uuid } }
+            ),
+            'setUserActiveOnBackupCodeAuth'
+        );
+        
+        // Auto-assign admin role if configured
+        if (user.verified && config.admin && config.admin.includes(email)) {
+            await autoAssignRoles(email, user.uuid);
+        }
+        
+        // Create HMAC session for mobile clients (same as WebAuthn)
+        let sessionSecret = null;
+        
+        if (clientId) {
+            const { sequelize } = require('../db/model');
+            
+            // Use shared function to find or create client
+            const result = await findOrCreateClient(clientId, user.uuid, req);
+            req.session.deviceId = result.device_id;
+            req.session.clientId = result.clientid;
+            
+            // Generate session secret for HMAC authentication
+            sessionSecret = crypto.randomBytes(32).toString('base64url');
+            const userAgent = req.headers['user-agent'] || '';
+            const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+            const location = await getLocationFromIp(ip);
+            const locationString = location 
+                ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
+                : "Location not found";
+            
+            // Store session in database with configurable expiration
+            try {
+                const sessionDays = config.session.hmacSessionDays || 90;
+                await writeQueue.enqueue(
+                    () => sequelize.query(
+                        `INSERT OR REPLACE INTO client_sessions 
+                         (client_id, session_secret, user_id, device_id, device_info, expires_at, last_used, created_at)
+                         VALUES (?, ?, ?, ?, ?, datetime('now', '+' || ? || ' days'), datetime('now'), datetime('now'))`,
+                        { 
+                            replacements: [
+                                clientId, 
+                                sessionSecret, 
+                                user.uuid,
+                                result.device_id, 
+                                JSON.stringify({ userAgent, ip, location: locationString }),
+                                sessionDays
+                            ] 
+                        }
+                    ),
+                    'createBackupCodeMobileSession'
+                );
+                console.log(`[BACKUPCODE MOBILE] HMAC session created (${sessionDays} days): ${sanitizeForLog(clientId)}`);
+            } catch (sessionErr) {
+                console.error('[BACKUPCODE MOBILE] Error creating HMAC session:', sessionErr);
+            }
+        }
+        
+        // Save session and return response
+        return req.session.save(err => {
+            if (err) {
+                console.error('[BACKUPCODE MOBILE] Session save error:', err);
+                return res.status(500).json({ status: "error", message: "Session save error" });
+            }
+            
+            const response = {
+                status: "ok",
+                message: "Backup code verified successfully"
+            };
+            
+            // Include HMAC credentials for mobile clients
+            if (sessionSecret) {
+                response.sessionSecret = sessionSecret;
+                response.userId = user.uuid;
+                response.email = email;
+                console.log(`[BACKUPCODE MOBILE] ✓ Login successful for ${sanitizeForLog(email)}`);
+            }
+            
+            res.status(200).json(response);
+        });
+        
+    } catch (error) {
+        console.error('[BACKUPCODE MOBILE] Error:', error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
 authRoutes.post("/backupcode/regenerate", async(req, res) => {
     if (!req.session.authenticated) {
         return res.status(401).json({ error: "Unauthorized" });
