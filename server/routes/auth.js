@@ -10,7 +10,7 @@ const session = require('express-session');
 const rateLimit = require('express-rate-limit');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const magicLinks = require('../store/magicLinksStore');
-const { User, OTP, Client, ClientSession } = require('../db/model');
+const { User, OTP, Client, ClientSession, sequelize } = require('../db/model');
 const bcrypt = require("bcrypt");
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
@@ -921,8 +921,6 @@ authRoutes.post("/backupcode/mobile-verify", async(req, res) => {
         let sessionSecret = null;
         
         if (clientId) {
-            const { sequelize } = require('../db/model');
-            
             // Use shared function to find or create client
             const result = await findOrCreateClient(clientId, user.uuid, req);
             req.session.deviceId = result.device_id;
@@ -1033,7 +1031,6 @@ authRoutes.post("/logout", async (req, res) => {
     // If HMAC auth (native client), delete the HMAC session from database
     if (req.userId && clientId) {
         try {
-            const { sequelize } = require('../db/model');
             await sequelize.query(
                 'DELETE FROM client_sessions WHERE client_id = ?',
                 { replacements: [clientId] }
@@ -1301,8 +1298,6 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             let sessionSecret = null;
             
             if (clientId) {
-                const { sequelize } = require('../db/model');
-                
                 // Use shared function to find or create client
                 const result = await findOrCreateClient(clientId, user.uuid, req);
                 
@@ -1490,7 +1485,6 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
 // Verify authentication response
 authRoutes.post('/webauthn/authenticate', async (req, res) => {
     try {
-        const { sequelize } = require('../db/model');
         const { email, assertion, fromCustomTab, state } = req.body;
         
         // Enhanced logging for Custom Tab auth
