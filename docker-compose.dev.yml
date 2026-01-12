@@ -56,6 +56,7 @@ services:
       - "${PORT:-3000}:${PORT:-3000}"
     volumes:
       - peerwave-data:/usr/src/app/data
+      - peerwave-logs:/usr/src/app/logs
       - ./server/cert:/usr/src/app/cert:ro
     environment:
       - NODE_ENV=${NODE_ENV:-development}
@@ -104,3 +105,5 @@ networks:
 volumes:
   # Data volume for SQLite database (code files stay in image)
   peerwave-data:
+  # Logs volume for application logs
+  peerwave-logs:

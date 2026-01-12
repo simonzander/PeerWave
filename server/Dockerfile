@@ -57,14 +57,15 @@ RUN if [ -f bin/license-validator-linux ]; then \
 # Create directories for persistent data
 # /data - for SQLite database (mounted volume)
 # /cert - for SSL certificates (mounted volume)
+# /logs - for application logs
 # /coturn/data - for TURN server data (legacy, kept for compatibility)
-RUN mkdir -p /usr/src/app/data /usr/src/app/cert /usr/src/app/coturn/data
+RUN mkdir -p /usr/src/app/data /usr/src/app/cert /usr/src/app/logs /usr/src/app/coturn/data
 
 # Create entrypoint script to fix volume permissions
 RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
     echo 'set -e' >> /docker-entrypoint.sh && \
     echo '# Fix ownership of mounted volumes' >> /docker-entrypoint.sh && \
-    echo 'chown -R node:node /usr/src/app/data /usr/src/app/cert /usr/src/app/coturn/data 2>/dev/null || true' >> /docker-entrypoint.sh && \
+    echo 'chown -R node:node /usr/src/app/data /usr/src/app/cert /usr/src/app/logs /usr/src/app/coturn/data 2>/dev/null || true' >> /docker-entrypoint.sh && \
     echo '# Switch to node user and run command' >> /docker-entrypoint.sh && \
     echo 'exec gosu node "$@"' >> /docker-entrypoint.sh && \
     chmod +x /docker-entrypoint.sh

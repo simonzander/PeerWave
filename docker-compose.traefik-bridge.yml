@@ -61,6 +61,7 @@ services:
     
     volumes:
       - peerwave-data:/usr/src/app/data
+      - peerwave-logs:/usr/src/app/logs
       - ./server/cert:/usr/src/app/cert:ro
     
     environment:
@@ -253,3 +254,5 @@ volumes:
   cert-data:
   # Data volume for SQLite database (code files stay in image)
   peerwave-data:
+  # Logs volume for application logs
+  peerwave-logs:
