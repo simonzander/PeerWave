@@ -77,6 +77,8 @@ dependencies:
   audioplayers: ^6.1.0  # For Windows desktop audio playback
   audio_waveforms: ^2.0.1
   fl_chart: ^1.1.1
+  pdf: ^3.10.0  # PDF generation for abuse report downloads
+  printing: ^5.11.0  # PDF saving and sharing
   # Native client dependencies
   qr_flutter: ^4.1.0  # QR code generation for web (magic key display)
   mobile_scanner: ^7.1.4  # QR code scanning for native (optional)

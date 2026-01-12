@@ -130,6 +130,9 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
     });
 
     try {
+      // Initialize ApiService to ensure baseUrl is set correctly
+      await ApiService.init();
+
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
       if (!urlString.startsWith('http://') &&
@@ -342,10 +345,12 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
           backgroundColor: colorScheme.surface,
           elevation: 0,
         ),
-        drawer: AppDrawer(
-          isAuthenticated: false,
-          currentRoute: '/register/profile',
-        ),
+        drawer: kIsWeb
+            ? null
+            : AppDrawer(
+                isAuthenticated: false,
+                currentRoute: '/register/profile',
+              ),
         body: Column(
           children: [
             // Progress Bar

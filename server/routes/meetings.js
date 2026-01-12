@@ -1498,6 +1498,29 @@ router.post('/meetings/:meetingId/participants', verifyAuthEither, async (req, r
       return res.status(400).json({ error: 'user_id is required' });
     }
 
+    // Check if requester has blocked the user or vice versa
+    const { BlockedUser } = require('../db/model');
+    const { Op } = require('sequelize');
+    const blockExists = await BlockedUser.findOne({
+      where: {
+        [Op.or]: [
+          { blocker_uuid: currentUserId, blocked_uuid: user_id },
+          { blocker_uuid: user_id, blocked_uuid: currentUserId }
+        ]
+      }
+    });
+    
+    if (blockExists) {
+      const direction = blockExists.blocker_uuid === currentUserId ? 'you_blocked' : 'they_blocked';
+      return res.status(403).json({ 
+        error: direction === 'you_blocked' 
+          ? 'You have blocked this user. Unblock to add them to meetings.' 
+          : 'This user has blocked you. Cannot add them to meetings.',
+        isBlocked: true,
+        direction
+      });
+    }
+
     const meeting = await meetingService.getMeeting(meetingId);
     if (!meeting) {
       return res.status(404).json({ error: 'Meeting not found' });

@@ -821,6 +821,28 @@ roleRoutes.post('/channels/:channelId/members', verifyAuthEither, requireAuth, a
             return res.status(400).json({ error: 'userId is required' });
         }
         
+        // Check if requester has blocked the user or vice versa
+        const { BlockedUser } = require('../db/model');
+        const blockExists = await BlockedUser.findOne({
+            where: {
+                [Op.or]: [
+                    { blocker_uuid: req.session.uuid, blocked_uuid: userId },
+                    { blocker_uuid: userId, blocked_uuid: req.session.uuid }
+                ]
+            }
+        });
+        
+        if (blockExists) {
+            const direction = blockExists.blocker_uuid === req.session.uuid ? 'you_blocked' : 'they_blocked';
+            return res.status(403).json({ 
+                error: direction === 'you_blocked' 
+                    ? 'You have blocked this user. Unblock to add them to channels.' 
+                    : 'This user has blocked you. Cannot add them to channels.',
+                isBlocked: true,
+                direction
+            });
+        }
+        
         // Check if user has permission to add members
         const canAdd = await hasChannelPermission(req.session.uuid, channelId, 'user.add');
         logger.debug('[ROLES] Add member permission check', sanitizeForLog({ channelId, canAdd }));

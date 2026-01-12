@@ -641,6 +641,30 @@ class _MeetingVideoConferenceViewState
                 throw Exception('Missing user id');
               }
 
+              // Check if user is blocked
+              try {
+                final blockResponse = await ApiService.get(
+                  '/api/check-blocked/$userId',
+                );
+                if (blockResponse.statusCode == 200 &&
+                    blockResponse.data['isBlocked'] == true) {
+                  if (mounted) {
+                    final direction = blockResponse.data['direction'];
+                    // ignore: use_build_context_synchronously
+                    context.showErrorSnackBar(
+                      direction == 'you_blocked'
+                          ? 'You have blocked ${user['displayName']}. Unblock to invite them.'
+                          : '${user['displayName']} has blocked you. Cannot invite.',
+                      duration: const Duration(seconds: 3),
+                    );
+                  }
+                  return;
+                }
+              } catch (e) {
+                debugPrint('[AddParticipants] Error checking block status: $e');
+                // Continue anyway if block check fails
+              }
+
               final isOnline = await MeetingService().addParticipant(
                 widget.meetingId,
                 userId,

@@ -2,7 +2,7 @@ const config = {};
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const logger = require('./utils/logger');
+const logger = require('../utils/logger');
 
 // Auto-generate and persist secrets if not in environment
 function getOrGenerateSecret(envVar, secretName, byteLength = 32) {

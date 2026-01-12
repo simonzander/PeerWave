@@ -59,6 +59,8 @@ import 'providers/navigation_state_provider.dart';
 import 'services/role_api_service.dart';
 import 'screens/admin/role_management_screen.dart';
 import 'screens/admin/user_management_screen.dart';
+import 'screens/settings/blocked_users_page.dart';
+import 'screens/settings/abuse_center_page.dart';
 import 'web_config.dart';
 // Theme imports
 import 'theme/theme_provider.dart';
@@ -1231,6 +1233,24 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                         final roleProvider = context.read<RoleProvider>();
                         // Only allow access if user has user.manage permission
                         if (!roleProvider.hasServerPermission('user.manage')) {
+                          return '/app/settings';
+                        }
+                        return null; // Allow navigation
+                      },
+                    ),
+                    GoRoute(
+                      path: '/app/settings/blocked-users',
+                      builder: (context, state) => const BlockedUsersPage(),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/abuse-center',
+                      builder: (context, state) => const AbuseCenterPage(),
+                      redirect: (context, state) {
+                        final roleProvider = context.read<RoleProvider>();
+                        // Only allow access if user has server.manage permission
+                        if (!roleProvider.hasServerPermission(
+                          'server.manage',
+                        )) {
                           return '/app/settings';
                         }
                         return null; // Allow navigation

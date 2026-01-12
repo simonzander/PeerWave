@@ -732,10 +732,43 @@ clientRoutes.get("/people/list", verifyAuthEither, async (req, res) => {
     }
     try {
         logger.debug('[PEOPLE_LIST] Fetching users', { sessionUuid });
+        
+        // Get blocked user UUIDs (both directions)
+        const blockedUuids = new Set();
+        try {
+            const { BlockedUser } = require('../db/model');
+            const blockedRecords = await BlockedUser.findAll({
+                where: {
+                    [Op.or]: [
+                        { blocker_uuid: sessionUuid },
+                        { blocked_uuid: sessionUuid }
+                    ]
+                },
+                attributes: ['blocker_uuid', 'blocked_uuid']
+            });
+            
+            blockedRecords.forEach(record => {
+                if (record.blocker_uuid === sessionUuid) {
+                    blockedUuids.add(record.blocked_uuid);
+                } else {
+                    blockedUuids.add(record.blocker_uuid);
+                }
+            });
+            
+            if (blockedUuids.size > 0) {
+                logger.debug('[PEOPLE_LIST] Filtering out blocked users', { count: blockedUuids.size });
+            }
+        } catch (e) {
+            logger.warn('[PEOPLE_LIST] Failed to fetch blocked users', { error: e?.message || e });
+        }
+        
         const users = await User.findAll({
             attributes: ['uuid', 'displayName', 'email', 'picture', 'atName'],
             where: { 
-                uuid: { [Op.ne]: sessionUuid }, // Exclude the current user
+                uuid: { 
+                    [Op.ne]: sessionUuid, // Exclude the current user
+                    [Op.notIn]: Array.from(blockedUuids) // Exclude blocked users
+                },
                 active: true, // Only show active users
                 verified: true, // Only show verified users who completed registration
                 displayName: { [Op.ne]: null }, // Only show users with displayName set
@@ -1314,7 +1347,8 @@ clientRoutes.get("/client/channels/:channelUuid/participants", verifyAuthEither,
             try {
                 metadata = participant.metadata ? JSON.parse(participant.metadata) : {};
             } catch (e) {
-                    logger.error('[LIVEKIT] Failed to parse participant metadata', e);
+                logger.error('[LIVEKIT] Failed to parse participant metadata', e);
+            }
             
             const userId = participant.identity;
             

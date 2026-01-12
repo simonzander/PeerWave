@@ -23,6 +23,8 @@ import '../../providers/unread_messages_provider.dart';
 import '../../views/video_conference_prejoin_view.dart';
 import '../../views/video_conference_view.dart';
 import '../../widgets/animated_widgets.dart';
+import '../../services/api_service.dart';
+import '../report_abuse_screen.dart';
 
 /// Whitelist of message types that should be displayed in UI
 const Set<String> displayableMessageTypes = {
@@ -60,10 +62,15 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   final ScrollController _scrollController = ScrollController();
   String? _highlightedMessageId; // For highlighting target message
 
+  // Block status tracking
+  bool _isBlocked = false;
+  String? _blockDirection; // 'you_blocked' or 'they_blocked'
+
   @override
   void initState() {
     super.initState();
     _initialize();
+    _checkBlockStatus();
   }
 
   @override
@@ -155,6 +162,120 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         }
       });
     });
+  }
+
+  /// Check if user is blocked
+  Future<void> _checkBlockStatus() async {
+    try {
+      final response = await ApiService.get(
+        '/api/check-blocked/${widget.recipientUuid}',
+      );
+      if (response.statusCode == 200 && mounted) {
+        setState(() {
+          _isBlocked = response.data['blocked'] ?? false;
+          _blockDirection = response.data['direction'];
+        });
+      }
+    } catch (e) {
+      debugPrint('[DM_SCREEN] Failed to check block status: $e');
+    }
+  }
+
+  /// Block user
+  Future<void> _blockUser() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Block User'),
+        content: Text(
+          'Block ${widget.recipientDisplayName}? You won\'t be able to message each other.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Block'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final response = await ApiService.post(
+        '/api/block',
+        data: {'blockedUuid': widget.recipientUuid},
+      );
+
+      if (response.statusCode == 200) {
+        await _checkBlockStatus();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${widget.recipientDisplayName} has been blocked'),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to block user: $e')));
+      }
+    }
+  }
+
+  /// Unblock user
+  Future<void> _unblockUser() async {
+    try {
+      final response = await ApiService.post(
+        '/api/unblock',
+        data: {'blockedUuid': widget.recipientUuid},
+      );
+
+      if (response.statusCode == 200) {
+        await _checkBlockStatus();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${widget.recipientDisplayName} has been unblocked',
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to unblock user: $e')));
+      }
+    }
+  }
+
+  /// Show report abuse dialog
+  Future<void> _showReportAbuseDialog() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ReportAbuseScreen(
+          reportedUuid: widget.recipientUuid,
+          reportedDisplayName: widget.recipientDisplayName,
+        ),
+      ),
+    );
+
+    // If report was submitted, refresh block status
+    if (result == true) {
+      await _checkBlockStatus();
+    }
   }
 
   /// Mark all notifications for this DM conversation as read
@@ -695,6 +816,19 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   }) async {
     final messageType = type ?? 'message';
 
+    // Check if user is blocked
+    if (_isBlocked) {
+      if (mounted) {
+        context.showErrorSnackBar(
+          _blockDirection == 'you_blocked'
+              ? 'You have blocked this user. Unblock to send messages.'
+              : 'This user has blocked you. You cannot send messages.',
+          duration: const Duration(seconds: 3),
+        );
+      }
+      return;
+    }
+
     if (content.trim().isEmpty) return;
 
     // Validate size for base64 content (image, voice)
@@ -886,6 +1020,19 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             icon: const Icon(Icons.phone),
             tooltip: 'Start Call',
             onPressed: () async {
+              // Check if user is blocked
+              if (_isBlocked) {
+                if (mounted) {
+                  context.showErrorSnackBar(
+                    _blockDirection == 'you_blocked'
+                        ? 'You have blocked this user. Unblock to start a call.'
+                        : 'This user has blocked you. You cannot start a call.',
+                    duration: const Duration(seconds: 3),
+                  );
+                }
+                return;
+              }
+
               // For 1:1 calls, use a placeholder ID - actual call ID created in PreJoin
               // The channelId will be replaced with the real meeting ID after creation
               final placeholderCallId = 'call_pending_${widget.recipientUuid}';
@@ -927,6 +1074,46 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                 );
               }
             },
+          ),
+          // Three-dot menu
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              if (value == 'report') {
+                _showReportAbuseDialog();
+              } else if (value == 'block') {
+                _blockUser();
+              } else if (value == 'unblock') {
+                _unblockUser();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'report',
+                child: Row(
+                  children: [
+                    Icon(Icons.report, color: Colors.red, size: 20),
+                    SizedBox(width: 12),
+                    Text('Report Abuse'),
+                  ],
+                ),
+              ),
+              if (!_isBlocked || _blockDirection == 'you_blocked')
+                PopupMenuItem(
+                  value: _isBlocked ? 'unblock' : 'block',
+                  child: Row(
+                    children: [
+                      Icon(
+                        _isBlocked ? Icons.check_circle : Icons.block,
+                        color: _isBlocked ? Colors.green : Colors.orange,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(_isBlocked ? 'Unblock User' : 'Block User'),
+                    ],
+                  ),
+                ),
+            ],
           ),
         ],
       ),
@@ -982,7 +1169,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                           messages: _messages,
                           onFileDownload: _handleFileDownload,
                           scrollController: _scrollController,
-                          onReactionAdd: _addReaction,
+                          onReactionAdd: _isBlocked ? null : _addReaction,
                           onReactionRemove: _removeReaction,
                           currentUserId:
                               SignalService.instance.currentUserId ?? '',
@@ -992,27 +1179,33 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                     ],
                   ),
           ),
-          EnhancedMessageInput(
-            onSendMessage: (message, {type, metadata}) {
-              _sendMessageEnhanced(message, type: type, metadata: metadata);
-            },
-            onFileShare: (itemId) {
-              // Handle P2P file share completion
-              debugPrint('[DM_SCREEN] File shared: $itemId');
-            },
-            availableUsers: [
-              {
-                'userId': widget.recipientUuid,
-                'displayName': widget.recipientDisplayName,
-                'atName': widget.recipientDisplayName.toLowerCase().replaceAll(
-                  ' ',
-                  '',
+          // Show block warning or message input
+          _isBlocked
+              ? _buildBlockedInputWarning()
+              : EnhancedMessageInput(
+                  onSendMessage: (message, {type, metadata}) {
+                    _sendMessageEnhanced(
+                      message,
+                      type: type,
+                      metadata: metadata,
+                    );
+                  },
+                  onFileShare: (itemId) {
+                    // Handle P2P file share completion
+                    debugPrint('[DM_SCREEN] File shared: $itemId');
+                  },
+                  availableUsers: [
+                    {
+                      'userId': widget.recipientUuid,
+                      'displayName': widget.recipientDisplayName,
+                      'atName': widget.recipientDisplayName
+                          .toLowerCase()
+                          .replaceAll(' ', ''),
+                    },
+                  ],
+                  isGroupChat: false,
+                  recipientUserId: widget.recipientUuid, // For P2P file sharing
                 ),
-              },
-            ],
-            isGroupChat: false,
-            recipientUserId: widget.recipientUuid, // For P2P file sharing
-          ),
         ],
       ),
     );
@@ -1054,12 +1247,57 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     );
   }
 
+  /// Build blocked input warning
+  Widget _buildBlockedInputWarning() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.errorContainer.withOpacity(0.3),
+        border: Border(
+          top: BorderSide(color: colorScheme.error.withOpacity(0.3), width: 1),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.block, color: colorScheme.error),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _blockDirection == 'you_blocked'
+                  ? 'You have blocked this user. Unblock to send messages.'
+                  : 'This user has blocked you. You cannot send messages.',
+              style: TextStyle(color: colorScheme.error),
+            ),
+          ),
+          if (_blockDirection == 'you_blocked')
+            TextButton(onPressed: _unblockUser, child: const Text('Unblock')),
+        ],
+      ),
+    );
+  }
+
   // =========================================================================
   // EMOJI REACTIONS
   // =========================================================================
 
   /// Add emoji reaction to a message
   Future<void> _addReaction(String messageId, String emoji) async {
+    // Check if user is blocked
+    if (_isBlocked) {
+      if (mounted) {
+        context.showErrorSnackBar(
+          _blockDirection == 'you_blocked'
+              ? 'You have blocked this user. Unblock to add reactions.'
+              : 'This user has blocked you. You cannot add reactions.',
+          duration: const Duration(seconds: 3),
+        );
+      }
+      return;
+    }
+
     try {
       final itemId = const Uuid().v4();
       final signalService = SignalService.instance;

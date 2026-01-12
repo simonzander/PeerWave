@@ -9,7 +9,8 @@ const http = require("http");
 const app = express();
 
 // Trust proxy headers (required for rate limiting and IP detection behind Docker/nginx)
-app.set('trust proxy', true);
+// Set to 1 to trust only the first proxy (nginx/traefik)
+app.set('trust proxy', 1);
 
 const sanitizeHtml = require('sanitize-html');
 const cors = require('cors');
@@ -307,6 +308,7 @@ app.use(sessionMiddleware);
 // Must run before verifyAuthEither middleware
 const bodyParser = require('body-parser');
 app.use(bodyParser.json({
+  limit: '50mb', // Increase limit for abuse reports with photos
   verify: (req, res, buf, encoding) => {
     // Store raw body buffer for HMAC signature calculation
     req.rawBody = buf;
@@ -369,6 +371,7 @@ app.use((req, res, next) => {
   const meetingRoutes = require('./routes/meetings');
   const callRoutes = require('./routes/calls');
   const presenceRoutes = require('./routes/presence');
+  const blockReportRoutes = require('./routes/block_report');
   // External routes need io instance for notifications
   const createExternalRoutes = require('./routes/external');
 
@@ -426,6 +429,9 @@ app.use((req, res, next) => {
   // === EXTERNAL GUEST ENDPOINTS (Lenient but monitored) ===
   // External routes don't require auth, but still need rate limiting
   app.use('/api/meetings/external', apiLimiter);
+  
+  // === BLOCK & REPORT ENDPOINTS (Moderate) ===
+  app.use('/api', blockReportRoutes);
   
   app.use(clientRoutes);
   app.use('/api', roleRoutes);

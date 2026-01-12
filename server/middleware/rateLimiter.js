@@ -15,6 +15,7 @@ const apiLimiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
   legacyHeaders: false, // Disable `X-RateLimit-*` headers
+  validate: { trustProxy: false }, // Disable validation since we trust first proxy only
   handler: (req, res) => {
     logger.warn('[RATE_LIMIT] API limit exceeded', { ip: req.ip, path: req.path });
     res.status(429).json({
@@ -31,6 +32,7 @@ const authLimiter = rateLimit({
   max: 5, // Max 5 login attempts per 15 minutes per IP
   skipSuccessfulRequests: true, // Don't count successful logins
   message: 'Too many login attempts, please try again later.',
+  validate: { trustProxy: false },
   handler: (req, res) => {
     logger.warn('[RATE_LIMIT] Auth limit exceeded', { ip: req.ip, path: req.path });
     res.status(429).json({
@@ -46,6 +48,7 @@ const registrationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 3, // Max 3 registration attempts per hour per IP
   message: 'Too many accounts created, please try again later.',
+  validate: { trustProxy: false },
   handler: (req, res) => {
     logger.warn('[RATE_LIMIT] Registration limit exceeded', { ip: req.ip });
     res.status(429).json({
@@ -61,6 +64,7 @@ const fileLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 50, // Max 50 file operations per 15 minutes per IP
   message: 'Too many file operations, please try again later.',
+  validate: { trustProxy: false },
   handler: (req, res) => {
     logger.warn('[RATE_LIMIT] File operation limit exceeded', { ip: req.ip, path: req.path });
     res.status(429).json({
@@ -76,6 +80,7 @@ const queryLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 30, // Max 30 queries per minute per IP
   message: 'Too many database queries, please slow down.',
+  validate: { trustProxy: false },
   handler: (req, res) => {
     logger.warn('[RATE_LIMIT] Query limit exceeded', { ip: req.ip, path: req.path });
     res.status(429).json({
@@ -91,6 +96,7 @@ const passwordResetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 3, // Max 3 password reset attempts per hour per IP
   message: 'Too many password reset attempts.',
+  validate: { trustProxy: false },
   handler: (req, res) => {
     logger.warn('[RATE_LIMIT] Password reset limit exceeded', { ip: req.ip });
     res.status(429).json({

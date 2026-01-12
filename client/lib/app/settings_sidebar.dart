@@ -261,6 +261,20 @@ class SettingsSidebar extends StatelessWidget {
                 onTap: () =>
                     GoRouter.of(context).go('/app/settings/troubleshoot'),
               ),
+              ListTile(
+                leading: Icon(
+                  Icons.block,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                title: Text(
+                  'Blocked Users',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                onTap: () =>
+                    GoRouter.of(context).go('/app/settings/blocked-users'),
+              ),
               // System Tray Settings - Only visible on desktop
               if (!kIsWeb)
                 ListTile(
@@ -281,19 +295,38 @@ class SettingsSidebar extends StatelessWidget {
               Consumer<RoleProvider>(
                 builder: (context, roleProvider, child) {
                   if (roleProvider.hasServerPermission('server.manage')) {
-                    return ListTile(
-                      leading: Icon(
-                        Icons.dns,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                      title: Text(
-                        'Server Settings',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface,
+                    return Column(
+                      children: [
+                        ListTile(
+                          leading: Icon(
+                            Icons.dns,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                          title: Text(
+                            'Server Settings',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                          onTap: () =>
+                              GoRouter.of(context).go('/app/settings/server'),
                         ),
-                      ),
-                      onTap: () =>
-                          GoRouter.of(context).go('/app/settings/server'),
+                        ListTile(
+                          leading: Icon(
+                            Icons.report_problem,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                          title: Text(
+                            'Abuse Center',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                          onTap: () => GoRouter.of(
+                            context,
+                          ).go('/app/settings/abuse-center'),
+                        ),
+                      ],
                     );
                   }
                   return const SizedBox.shrink();
@@ -402,6 +435,11 @@ class SettingsSidebar extends StatelessWidget {
         label: 'Troubleshoot',
         icon: Icons.build_circle,
       ),
+      _SettingsItem(
+        route: '/app/settings/blocked-users',
+        label: 'Blocked Users',
+        icon: Icons.block,
+      ),
     ];
 
     // Add system tray on native
@@ -422,6 +460,13 @@ class SettingsSidebar extends StatelessWidget {
           route: '/app/settings/server',
           label: 'Server Settings',
           icon: Icons.dns,
+        ),
+      );
+      items.add(
+        _SettingsItem(
+          route: '/app/settings/abuse-center',
+          label: 'Abuse Center',
+          icon: Icons.report_problem,
         ),
       );
     }

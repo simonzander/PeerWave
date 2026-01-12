@@ -451,6 +451,15 @@ class ApiService {
     return dio.patch(url, data: data, options: options);
   }
 
+  static Future<Response> put(String url, {dynamic data, Options? options}) {
+    options ??= Options();
+    options = options.copyWith(
+      contentType: 'application/json',
+      extra: {...?options.extra, 'withCredentials': true},
+    );
+    return dio.put(url, data: data, options: options);
+  }
+
   // ========================================================================
   // EVENT BUS INTEGRATION
   // ========================================================================

@@ -92,6 +92,7 @@ router.post('/meetings/external/register', async (req, res) => {
 
     if (deletedCount > 0) {
       logger.debug('[EXTERNAL] Kicked duplicate sessions', sanitizeForLog({ count: deletedCount, token: invitation_token }));
+    }
 
     // Use provided keys or generate temporary ones
     let keys;
