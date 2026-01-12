@@ -38,7 +38,8 @@
     "sanitize-html": "^2.13.0",
     "sequelize": "^6.37.7",
     "socket.io": "^4.6.1",
-    "socket.io-express-session": "^0.1.2"
+    "socket.io-express-session": "^0.1.2",
+    "winston": "^3.19.0"
   },
   "devDependencies": {
     "eslint": "9.9.1"

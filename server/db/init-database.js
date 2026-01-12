@@ -17,6 +17,7 @@
 const path = require('path');
 const fs = require('fs').promises;
 const { Sequelize } = require('sequelize');
+const logger = require('../utils/logger');
 
 // Resolve absolute path to database (same as model.js)
 const dbPath = process.env.DB_PATH || path.join(__dirname, '../data/peerwave.sqlite');
@@ -44,7 +45,7 @@ async function tableExists(tableName) {
     );
     return results.length > 0;
   } catch (error) {
-    console.error(`Error checking if table ${tableName} exists:`, error);
+    logger.error(`Error checking if table ${tableName} exists:`, error);
     return false;
   }
 }
@@ -77,11 +78,11 @@ async function runMigrations() {
       .sort(); // Alphabetical order
 
     if (migrationFiles.length === 0) {
-      console.log('   No migration files found');
+      logger.info('   No migration files found');
       return;
     }
 
-    console.log(`   Found ${migrationFiles.length} migration files`);
+    logger.info(`   Found ${migrationFiles.length} migration files`);
 
     for (const file of migrationFiles) {
       const migrationName = file.replace('.js', '');
@@ -96,20 +97,20 @@ async function runMigrations() {
           await migration.migrate({ sequelize, tableExists, columnExists });
         }
         
-        console.log(`   ✓ ${migrationName}`);
+        logger.info(`   ✓ ${migrationName}`);
       } catch (error) {
         // Log error but continue - migrations might fail if already applied
         if (error.message.includes('already exists') || 
             error.message.includes('duplicate column') ||
             error.message.includes('no such table')) {
-          console.log(`   ⊙ ${migrationName} (already applied or not needed)`);
+          logger.debug(`   ⊚ ${migrationName} (already applied or not needed)`);
         } else {
-          console.warn(`   ⚠ ${migrationName}:`, error.message);
+          logger.warn(`   ⚠ ${migrationName}:`, error.message);
         }
       }
     }
   } catch (error) {
-    console.error('❌ Migration error:', error);
+    logger.error('❌ Migration error:', error);
     throw error;
   }
 }
@@ -119,7 +120,7 @@ async function runMigrations() {
  * This syncs model definitions to database
  */
 async function syncModelTables() {
-  console.log('📊 Syncing model tables...');
+  logger.info('📊 Syncing model tables...');
   
   try {
     // Import model to register all table definitions
@@ -130,9 +131,9 @@ async function syncModelTables() {
     // This is safe because migrations have already run
     await modelSequelize.sync({ alter: true });
     
-    console.log('✓ Model tables synced\n');
+    logger.info('✓ Model tables synced\n');
   } catch (error) {
-    console.error('❌ Model sync error:', error);
+    logger.error('❌ Model sync error:', error);
     throw error;
   }
 }
@@ -141,7 +142,7 @@ async function syncModelTables() {
  * Step 3: Set SQLite optimizations
  */
 async function setSQLiteOptimizations() {
-  console.log('⚙️  Setting SQLite optimizations...');
+  logger.info('⚙️  Setting SQLite optimizations...');
   
   try {
     await sequelize.query("PRAGMA journal_mode=WAL");
@@ -150,9 +151,9 @@ async function setSQLiteOptimizations() {
     await sequelize.query("PRAGMA cache_size=-64000");
     await sequelize.query("PRAGMA temp_store=MEMORY");
     
-    console.log('✓ SQLite optimized\n');
+    logger.info('✓ SQLite optimized\n');
   } catch (error) {
-    console.warn('⚠ Could not set all SQLite optimizations:', error.message);
+    logger.warn('⚠ Could not set all SQLite optimizations:', error.message);
   }
 }
 
@@ -160,15 +161,15 @@ async function setSQLiteOptimizations() {
  * Main initialization function
  */
 async function initializeDatabase() {
-  console.log('═'.repeat(70));
-  console.log('DATABASE INITIALIZATION');
-  console.log('═'.repeat(70));
-  console.log('');
+  logger.info('═'.repeat(70));
+  logger.info('DATABASE INITIALIZATION');
+  logger.info('═'.repeat(70));
+  logger.info('');
 
   try {
     // Connect to database
     await sequelize.authenticate();
-    console.log('✓ Database connection established\n');
+    logger.info('✓ Database connection established\n');
 
     // Step 1: Run migrations first (before models)
     await runMigrations();
@@ -179,18 +180,18 @@ async function initializeDatabase() {
     // Step 3: Apply SQLite optimizations
     await setSQLiteOptimizations();
 
-    console.log('═'.repeat(70));
-    console.log('✅ DATABASE INITIALIZATION COMPLETE');
-    console.log('═'.repeat(70));
-    console.log('');
+    logger.info('═'.repeat(70));
+    logger.info('✅ DATABASE INITIALIZATION COMPLETE');
+    logger.info('═'.repeat(70));
+    logger.info('');
 
     await sequelize.close();
     process.exit(0);
   } catch (error) {
-    console.error('═'.repeat(70));
-    console.error('❌ DATABASE INITIALIZATION FAILED');
-    console.error('═'.repeat(70));
-    console.error(error);
+    logger.error('═'.repeat(70));
+    logger.error('❌ DATABASE INITIALIZATION FAILED');
+    logger.error('═'.repeat(70));
+    logger.error(error);
     await sequelize.close();
     process.exit(1);
   }

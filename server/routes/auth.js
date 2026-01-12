@@ -6,6 +6,7 @@ const bodyParser = require('body-parser'); // Import body-parser
 const nodemailer = require("nodemailer");
 const crypto = require('crypto');
 const { sanitizeForLog } = require('../utils/logSanitizer');
+const logger = require('../utils/logger');
 const session = require('express-session');
 const rateLimit = require('express-rate-limit');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
@@ -46,8 +47,12 @@ async function findOrCreateClient(clientId, userUuid, req) {
         const oldOwner = existingClient.owner;
         const oldDeviceId = existingClient.device_id;
         
-        console.warn(`[CLIENT] Ownership conflict for ${sanitizeForLog(clientId)}: Current owner: ${sanitizeForLog(oldOwner)}, New owner: ${sanitizeForLog(userUuid)}`);
-        console.warn(`[CLIENT] Deleting all server-side data for device_id=${oldDeviceId} of old owner...`);
+        logger.warn('[CLIENT] Ownership conflict', {
+            clientId: sanitizeForLog(clientId),
+            currentOwner: sanitizeForLog(oldOwner),
+            newOwner: sanitizeForLog(userUuid)
+        });
+        logger.warn('[CLIENT] Deleting all server-side data', { deviceId: oldDeviceId, oldOwner: sanitizeForLog(oldOwner) });
         
         // Delete all messages and read receipts for this device by the old owner
         const [itemsDeleted, groupItemsDeleted, readReceiptsDeleted] = await Promise.all([
@@ -73,7 +78,7 @@ async function findOrCreateClient(clientId, userUuid, req) {
             })
         ]);
         
-        console.warn(`[CLIENT] ✓ Deleted ${itemsDeleted} direct messages, ${groupItemsDeleted} group messages, ${readReceiptsDeleted} read receipts`);
+        logger.warn('[CLIENT] Deleted messages', { itemsDeleted, groupItemsDeleted, readReceiptsDeleted });
         
         // Delete all Signal protocol keys (prevents decryption of old messages)
         const [preKeysDeleted, signedPreKeysDeleted, senderKeysDeleted, sessionsDeleted] = await Promise.all([
@@ -83,7 +88,7 @@ async function findOrCreateClient(clientId, userUuid, req) {
             ClientSession.destroy({ where: { client_id: clientId } })
         ]);
         
-        console.warn(`[CLIENT] ✓ Deleted ${preKeysDeleted} prekeys, ${signedPreKeysDeleted} signed prekeys, ${senderKeysDeleted} sender keys, ${sessionsDeleted} sessions`);
+        logger.warn('[CLIENT] Deleted Signal protocol keys', { preKeysDeleted, signedPreKeysDeleted, senderKeysDeleted, sessionsDeleted });
         
         // Get max device_id for new owner
         const maxDevice = await Client.max('device_id', { where: { owner: userUuid } });
@@ -106,7 +111,11 @@ async function findOrCreateClient(clientId, userUuid, req) {
         // Reload to get updated values
         await existingClient.reload();
         
-        console.log(`[CLIENT] ✓ Ownership transferred to ${sanitizeForLog(userUuid)} with device_id=${existingClient.device_id}`);
+        logger.info('[CLIENT] Ownership transferred');
+        logger.debug('[CLIENT] Ownership transferred', {
+            newOwner: sanitizeForLog(userUuid),
+            deviceId: existingClient.device_id
+        });
         
         return {
             client: existingClient,
@@ -144,7 +153,11 @@ async function findOrCreateClient(clientId, userUuid, req) {
         );
     }
     
-    console.log(`[CLIENT] ${created ? 'Created' : 'Found'} client ${sanitizeForLog(clientId)} with device_id=${client.device_id}`);
+    logger.info(`[CLIENT] ${created ? 'Created' : 'Found'} client`);
+    logger.debug(`[CLIENT] ${created ? 'Created' : 'Found'} client`, {
+        clientId: sanitizeForLog(clientId),
+        deviceId: client.device_id
+    });
     
     return {
         client,
@@ -528,64 +541,64 @@ User.hasMany(Client, { foreignKey: 'owner' });
 // Create the User table in the database
 User.sync({ alter: true })
     .then(() => {
-        console.log('User table created successfully.');
+        logger.info('[AUTH] User table synced successfully');
     })
     .catch(error => {
-        console.error('Error creating User table:', error);
+        logger.error('[AUTH] Error syncing User table', error);
     });
 
 // Create the OTP table in the database
 OTP.sync({ alter: true })
     .then(() => {
-        console.log('OTP table created successfully.');
+        logger.info('[AUTH] OTP table synced successfully');
     })
     .catch(error => {
-        console.error('Error creating OTP table:', error);
+        logger.error('[AUTH] Error syncing OTP table', error);
     });
 
 // Create the Channel table in the database
 Channel.sync({ alter: true })
     .then(() => {
-        console.log('Channel table created successfully.');
+        logger.info('[AUTH] Channel table synced successfully');
     })
     .catch(error => {
-        console.error('Error creating Channel table:', error);
+        logger.error('[AUTH] Error syncing Channel table', error);
     });
 
 // Create the Thread table in the database
 Thread.sync({ alter: true })
     .then(() => {
-        console.log('Thread table created successfully.');
+        logger.info('[AUTH] Thread table synced successfully');
     })
     .catch(error => {
-        console.error('Error creating Thread table:', error);
+        logger.error('[AUTH] Error syncing Thread table', error);
     });
 
 // Create the Emote table in the database
 Emote.sync({ alter: true })
     .then(() => {
-        console.log('Emote table created successfully.');
+        logger.info('[AUTH] Emote table synced successfully');
     })
     .catch(error => {
-        console.error('Error creating Emote table:', error);
+        logger.error('[AUTH] Error syncing Emote table', error);
     });
 
 // Create the PublicKey table in the database
 PublicKey.sync({ alter: true })
     .then(() => {
-        console.log('PublicKey table created successfully.');
+        logger.info('[AUTH] PublicKey table synced successfully');
     })
     .catch(error => {
-        console.error('Error creating PublicKey table:', error);
+        logger.error('[AUTH] Error syncing PublicKey table', error);
     });
 
 // Create the Client table in the database
 Client.sync({ alter: true })
     .then(() => {
-        console.log('Client table created successfully.');
+        logger.info('[AUTH] Client table synced successfully');
     })
     .catch(error => {
-        console.error('Error creating Client table:', error);
+        logger.error('[AUTH] Error syncing Client table', error);
     });
 */
 // Add body-parser middleware
@@ -722,12 +735,12 @@ authRoutes.post("/register", async (req, res) => {
                             `,
                             text: `Your OTP is ${otp}. This code expires in ${config.otp.expirationMinutes} minutes.`
                         }).then(info => {
-                            console.log("Message sent: %s", info.messageId);
+                            logger.info('[OTP] Email sent', { messageId: info.messageId });
                         }).catch(error => {
-                            console.error('Error sending OTP email:', error);
+                            logger.error('[OTP] Error sending email', error);
                         });
                     } else {
-                        console.warn('[OTP] SMTP not configured - OTP email not sent');
+                        logger.warn('[OTP] SMTP not configured - email not sent');
                     }
 
 
@@ -738,11 +751,12 @@ authRoutes.post("/register", async (req, res) => {
                         'createOTP'
                     )
                     .then(otp => {
-                        console.log('OTP created successfully:', otp);
+                        logger.info('[OTP] Created successfully');
+                        logger.debug('[OTP] Created', { email: otp.email });
                         req.session.email = otp.email;
                         res.status(200).json({ status: "otp", wait: Math.ceil((otp.expiration - Date.now()) / 1000) });
                     }).catch(error => {
-                        console.error('Error creating OTP:', error);
+                        logger.error('[OTP] Error creating OTP', error);
                     });
 
                     // Store the temporary storage in a database or cache
@@ -755,12 +769,12 @@ authRoutes.post("/register", async (req, res) => {
             
         })
         .catch(error => {
-            console.error('Error creating user:', error);
+            logger.error('[AUTH] Error creating user', error);
             res.status(500).json({ error: "Error on creating user" });
         });
         
     } catch (error) {
-        console.error('Error in registration:', error);
+        logger.error('[AUTH] Error in registration', error);
         res.status(500).json({ error: "Internal server error" });
     }
 
@@ -798,7 +812,8 @@ authRoutes.post("/otp", (req, res) => {
                     'markInvitationUsed'
                 );
                 delete req.session.pendingInvitationId;
-                console.log(`[INVITATION] Marked invitation ${sanitizeForLog(req.session.pendingInvitationId)} as used for ${sanitizeForLog(email)}`);
+                logger.info('[INVITATION] Marked invitation as used');
+                logger.debug('[INVITATION] Invitation used', { email: sanitizeForLog(email) });
             }
             
             req.session.otp = true;
@@ -824,7 +839,7 @@ authRoutes.post("/otp", (req, res) => {
             }
             return req.session.save(err => {
                 if (err) {
-                    console.error('Session save error (/otp):', err);
+                    logger.error('[AUTH] Session save error (/otp)', err);
                     return res.status(500).json({ status: "error", message: "Session save error" });
                 }
                 if(!updatedUser.backupCodes) {
@@ -835,7 +850,7 @@ authRoutes.post("/otp", (req, res) => {
             });
         }
     }).catch(error => {
-        console.error('Error finding OTP:', error);
+        logger.error('[AUTH] Error finding OTP', error);
         res.status(400).json({ error: "Invalid OTP" });
     });
 });
@@ -859,7 +874,7 @@ authRoutes.get("/backupcode/list", async(req, res) => {
         res.status(200).json({ status: "ok", backupCodes: backupCodes });
 
     } catch (error) {
-        console.error('Error fetching backup codes:', error);
+        logger.error('[AUTH] Error fetching backup codes', error);
         res.status(500).json({ error: "Internal server error" });
     }
 });
@@ -879,7 +894,7 @@ authRoutes.get("/backupcode/usage", verifyAuthEither, async(req, res) => {
 
         res.status(200).json({ status: "ok", usedCount, totalCount });
     } catch (error) {
-        console.error('Error fetching backup code usage:', error);
+        logger.error('[AUTH] Error fetching backup code usage', error);
         res.status(500).json({ error: "Internal server error" });
     }
 });
@@ -928,14 +943,14 @@ authRoutes.post("/backupcode/verify", async(req, res) => {
             }
             return req.session.save(err => {
                 if (err) {
-                    console.error('Session save error (/backupcode/verify):', err);
+                    logger.error('[AUTH] Session save error (/backupcode/verify)', err);
                     return res.status(500).json({ status: "error", message: "Session save error" });
                 }
                 res.status(200).json({ status: "ok", message: "Backup code verified successfully" });
             });
         }
     } catch (error) {
-        console.error('Error verifying backup code:', error);
+        logger.error('[AUTH] Error verifying backup code', error);
         res.status(500).json({ error: "Internal server error" });
     }
 });
@@ -948,7 +963,8 @@ authRoutes.post("/backupcode/mobile-verify", async(req, res) => {
     }
     
     try {
-        console.log(`[BACKUPCODE MOBILE] Login attempt for ${sanitizeForLog(email)}`);
+        logger.info('[BACKUPCODE MOBILE] Login attempt');
+        logger.debug('[BACKUPCODE MOBILE] Login attempt', { email: sanitizeForLog(email) });
         
         // Brute-force protection: Store failed attempts in session
         if (!req.session.backupCodeBrute) {
@@ -1040,16 +1056,17 @@ authRoutes.post("/backupcode/mobile-verify", async(req, res) => {
                     ),
                     'createBackupCodeMobileSession'
                 );
-                console.log(`[BACKUPCODE MOBILE] HMAC session created (${sessionDays} days): ${sanitizeForLog(clientId)}`);
+                logger.info('[BACKUPCODE MOBILE] HMAC session created', { sessionDays });
+                logger.debug('[BACKUPCODE MOBILE] HMAC session created', { clientId: sanitizeForLog(clientId), sessionDays });
             } catch (sessionErr) {
-                console.error('[BACKUPCODE MOBILE] Error creating HMAC session:', sessionErr);
+                logger.error('[BACKUPCODE MOBILE] Error creating HMAC session', sessionErr);
             }
         }
         
         // Save session and return response
         return req.session.save(err => {
             if (err) {
-                console.error('[BACKUPCODE MOBILE] Session save error:', err);
+                logger.error('[BACKUPCODE MOBILE] Session save error', err);
                 return res.status(500).json({ status: "error", message: "Session save error" });
             }
             
@@ -1063,14 +1080,15 @@ authRoutes.post("/backupcode/mobile-verify", async(req, res) => {
                 response.sessionSecret = sessionSecret;
                 response.userId = user.uuid;
                 response.email = email;
-                console.log(`[BACKUPCODE MOBILE] ✓ Login successful for ${sanitizeForLog(email)}`);
+                logger.info('[BACKUPCODE MOBILE] Login successful');
+                logger.debug('[BACKUPCODE MOBILE] Login successful', { email: sanitizeForLog(email) });
             }
             
             res.status(200).json(response);
         });
         
     } catch (error) {
-        console.error('[BACKUPCODE MOBILE] Error:', error);
+        logger.error('[BACKUPCODE MOBILE] Error', error);
         res.status(500).json({ error: "Internal server error" });
     }
 });
@@ -1098,7 +1116,7 @@ authRoutes.post("/backupcode/regenerate", verifyAuthEither, async(req, res) => {
             return res.status(400).json({ error: "No backup codes to regenerate. You can generate new backup codes." });
         }        
     } catch (error) {
-        console.error('Error regenerating backup codes:', error);
+        logger.error('[AUTH] Error regenerating backup codes', error);
         res.status(500).json({ error: "Internal server error" });
     }
 });
@@ -1110,7 +1128,8 @@ authRoutes.post("/logout", async (req, res) => {
     const deviceId = req.deviceId || req.session.deviceId;
     const clientId = req.clientId || req.session.clientId;
     
-    console.log(`[AUTH] Logout request from user ${sanitizeForLog(userId)}, device ${sanitizeForLog(deviceId)}`);
+    logger.info('[AUTH] Logout request');
+    logger.debug('[AUTH] Logout request', { userId: sanitizeForLog(userId), deviceId: sanitizeForLog(deviceId) });
     
     // If HMAC auth (native client), delete the HMAC session from database
     if (req.userId && clientId) {
@@ -1119,10 +1138,11 @@ authRoutes.post("/logout", async (req, res) => {
                 'DELETE FROM client_sessions WHERE client_id = ?',
                 { replacements: [clientId] }
             );
-            console.log(`[AUTH] ✓ HMAC session deleted for client ${sanitizeForLog(clientId)}`);
+            logger.info('[AUTH] HMAC session deleted');
+            logger.debug('[AUTH] HMAC session deleted', { clientId: sanitizeForLog(clientId) });
             return res.json({ success: true, message: 'Logged out successfully' });
         } catch (error) {
-            console.error('[AUTH] Error deleting HMAC session:', error);
+            logger.error('[AUTH] Error deleting HMAC session', error);
             return res.status(500).json({ success: false, error: 'Failed to delete session' });
         }
     }
@@ -1130,7 +1150,7 @@ authRoutes.post("/logout", async (req, res) => {
     // If Session auth (web client), destroy the session
     req.session.destroy((err) => {
         if (err) {
-            console.error('[AUTH] Error destroying session:', err);
+            logger.error('[AUTH] Error destroying session', err);
             return res.status(500).json({ success: false, error: 'Failed to destroy session' });
         }
         
@@ -1142,7 +1162,8 @@ authRoutes.post("/logout", async (req, res) => {
             sameSite: 'strict'
         });
         
-        console.log(`[AUTH] ✓ Session destroyed for user ${sanitizeForLog(userId)}, device ${sanitizeForLog(deviceId)}`);
+        logger.info('[AUTH] Session destroyed');
+        logger.debug('[AUTH] Session destroyed', { userId: sanitizeForLog(userId), deviceId: sanitizeForLog(deviceId) });
         res.json({ success: true, message: 'Logged out successfully' });
     });
 });
@@ -1197,7 +1218,7 @@ authRoutes.post('/webauthn/register-challenge', async (req, res) => {
 
     // Use environment variable for production, fallback to req.hostname for local dev
     const host = process.env.DOMAIN || req.hostname || 'localhost';
-    console.log(`[WEBAUTHN REG] RP ID: ${host}`);
+    logger.debug('[WEBAUTHN REG] RP ID', { host });
     
     // Allow ngrok and localhost for WebAuthn
     const allowedOrigins = [
@@ -1239,7 +1260,11 @@ authRoutes.post('/webauthn/register-challenge', async (req, res) => {
 authRoutes.post('/webauthn/register', async (req, res) => {
     // Check if this is during registration flow (first credential)
     const isFirstCredential = req.session.registrationStep === 'webauthn';
-    console.log('[WEBAUTHN] Registration request - isFirstCredential:', isFirstCredential, 'registrationStep:', req.session.registrationStep, 'authenticated:', req.session.authenticated);
+    logger.debug('[WEBAUTHN] Registration request', {
+        isFirstCredential,
+        registrationStep: req.session.registrationStep,
+        authenticated: req.session.authenticated
+    });
     
     // Support both authenticated users (adding credentials) and users in registration flow
     const isAuthenticated = req.session.authenticated || req.userId; // req.userId set by verifyAuthEither middleware
@@ -1253,7 +1278,6 @@ authRoutes.post('/webauthn/register', async (req, res) => {
         try {
             const { attestation } = req.body;
 
-            console.log(attestation);
             //const user = await User.findOne({ where: { email: req.session.email } });
 
             // Convert id and rawId from base64url string to ArrayBuffer
@@ -1293,7 +1317,7 @@ authRoutes.post('/webauthn/register', async (req, res) => {
                 // Web or Chrome Custom Tab - use standard origin
                 origin = req.headers.origin || `https://${host}`;
                 if (!allowedOrigins.includes(origin)) {
-                    console.warn("Unexpected origin for WebAuthn:", origin);
+                    logger.warn('[WEBAUTHN] Unexpected origin', { origin });
                 }
             }
 
@@ -1322,8 +1346,6 @@ authRoutes.post('/webauthn/register', async (req, res) => {
 
                 user.credentials = [];
             }
-
-            console.log("regResult", regResult, regResult.authnrData);
 
             // Add browser info, registration time, and empty lastLogin
             const userAgent = req.headers['user-agent'] || '';
@@ -1367,14 +1389,15 @@ authRoutes.post('/webauthn/register', async (req, res) => {
                 // Mark session as authenticated so profile setup page is accessible
                 req.session.authenticated = true;
                 req.session.uuid = user.uuid;
-                console.log('[WEBAUTHN] First credential registered - session authenticated:', {
+                logger.info('[WEBAUTHN] First credential registered');
+                logger.debug('[WEBAUTHN] First credential registered', {
                     uuid: user.uuid,
                     email: user.email,
                     registrationStep: req.session.registrationStep,
                     authenticated: req.session.authenticated
                 });
             } else {
-                console.log('[WEBAUTHN] Additional credential registered - not first credential');
+                logger.info('[WEBAUTHN] Additional credential registered');
             }
             
             // Handle client info and create HMAC session for mobile (same as authentication)
@@ -1415,9 +1438,10 @@ authRoutes.post('/webauthn/register', async (req, res) => {
                         ),
                         'createClientSessionOnRegistration'
                     );
-                    console.log(`[WEBAUTHN] HMAC session created for client on registration (${sessionDays} days): ${sanitizeForLog(clientId)}`);
+                    logger.info('[WEBAUTHN] HMAC session created on registration', { sessionDays });
+                    logger.debug('[WEBAUTHN] HMAC session created', { clientId: sanitizeForLog(clientId), sessionDays });
                 } catch (sessionErr) {
-                    console.error('[WEBAUTHN] Error creating HMAC session on registration:', sessionErr);
+                    logger.error('[WEBAUTHN] Error creating HMAC session on registration', sessionErr);
                 }
             }
             
@@ -1431,7 +1455,7 @@ authRoutes.post('/webauthn/register', async (req, res) => {
 
             res.json(response);
         } catch (error) {
-            console.error('Error during registration:', error);
+            logger.error('[WEBAUTHN] Error during registration', error);
             res.json({ status: "error" });
         }
     }
@@ -1442,10 +1466,7 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
     try {
         const { email } = req.body;
         req.session.email = email;
-        console.log(req.body);
         const user = await User.findOne({ where: { email: email } });
-
-        console.log(user);
 
         if(!user) {
             throw new AppError("User not found. Please register first.", 404);
@@ -1456,7 +1477,6 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
         if (!user.credentials && user.backupCodes) {
             throw new AppError("No credentials found. Please start recovery process.", 400);
         }
-        console.log(typeof user.credentials, user.credentials, JSON.parse(user.credentials));
 
         const challenge = await fido2.assertionOptions();
 
@@ -1468,11 +1488,15 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
         const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
         const origin = `${protocol}://${host}`;
 
-        console.log(`[WEBAUTHN AUTH] RP ID: ${host}, Origin: ${origin}, Protocol source: ${req.headers['x-forwarded-proto'] ? 'x-forwarded-proto' : 'req.secure'}`);
+        logger.debug('[WEBAUTHN AUTH] RP configuration', {
+            host,
+            origin,
+            protocolSource: req.headers['x-forwarded-proto'] ? 'x-forwarded-proto' : 'req.secure'
+        });
 
         // Validate host is never empty (critical for Google Play Services)
         if (!host || host.trim() === '') {
-            console.error('[WEBAUTHN AUTH] ERROR: Host is empty! Check DOMAIN env variable');
+            logger.error('[WEBAUTHN AUTH] Host is empty - check DOMAIN env variable');
             throw new AppError("Invalid hostname for authentication - server misconfiguration", 500);
         }
         
@@ -1482,10 +1506,7 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
 
         user.credentials = JSON.parse(user.credentials);
 
-        console.log('[WEBAUTHN AUTH] Found credentials for user:', user.credentials.length);
-        user.credentials.forEach((cred, idx) => {
-            console.log(`[WEBAUTHN AUTH] Credential ${idx}: id=${cred.id}, transports=${JSON.stringify(cred.transports)}`);
-        });
+        logger.debug('[WEBAUTHN AUTH] Found credentials', { count: user.credentials.length });
 
         // Include credential IDs to help browsers and password managers
         // filter to the user's passkeys. Chrome Custom Tab and web clients
@@ -1501,7 +1522,7 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
                 transports: transports,
             };
         });
-        console.log('[WEBAUTHN AUTH] Including credential IDs for authentication');
+        logger.debug('[WEBAUTHN AUTH] Including credential IDs for authentication');
         
         // Add user verification preference for flexibility
         challenge.userVerification = "preferred";
@@ -1510,7 +1531,7 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
         req.session.challenge = challenge.challenge;
         res.json(challenge);
     } catch (error) {
-        console.error('Error:', error);
+        logger.error('[WEBAUTHN AUTH] Error generating challenge', error);
         if(error.code === 401 && error.email) {
             const otp = Math.floor(100000 + Math.random() * 900000); // Generate a 6-digit OTP
             const email = error.email; // Get the registered email
@@ -1542,12 +1563,12 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
                     `,
                     text: `Your recovery code is ${otp}. This code expires in ${config.otp.expirationMinutes} minutes.`
                 }).then(info => {
-                    console.log("Recovery email sent: %s", info.messageId);
+                    logger.info('[RECOVERY] Email sent', { messageId: info.messageId });
                 }).catch(error => {
-                    console.error('Error sending recovery email:', error);
+                    logger.error('[RECOVERY] Error sending email', error);
                 });
             } else {
-                console.warn('[RECOVERY] SMTP not configured - recovery email not sent');
+                logger.warn('[RECOVERY] SMTP not configured - email not sent');
             }
 
             const expiration = new Date().getTime() + config.otp.expirationMinutes * 60 * 1000;
@@ -1556,10 +1577,11 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
                 'createOTPForLogin'
             )
             .then(otp => {
-                console.log('OTP created successfully:', otp);
+                logger.info('[OTP] Created successfully for login');
+                logger.debug('[OTP] Created', { email: otp.email });
                 req.session.email = otp.email;
             }).catch(error => {
-                console.error('Error creating OTP:', error);
+                logger.error('[OTP] Error creating OTP for login', error);
             });
         }
         res.status(error.code || 500).json({ error: error.message });
@@ -1573,7 +1595,8 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
         
         // Enhanced logging for Custom Tab auth
         if (fromCustomTab) {
-            console.log('[CUSTOM TAB AUTH] Authentication request received', {
+            logger.info('[CUSTOM TAB AUTH] Authentication request received');
+            logger.debug('[CUSTOM TAB AUTH] Request details', {
                 email: sanitizeForLog(email),
                 hasState: !!state,
                 hasSessionState: !!req.session.customTabState
@@ -1584,7 +1607,7 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
         if (fromCustomTab && state) {
             const sessionState = req.session.customTabState;
             if (!sessionState || sessionState !== state) {
-                console.error('[CUSTOM TAB AUTH] ✗ CSRF validation failed', { 
+                logger.error('[CUSTOM TAB AUTH] CSRF validation failed', { 
                     hasSessionState: !!sessionState, 
                     stateMatch: sessionState === state 
                 });
@@ -1593,11 +1616,11 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                     message: "CSRF validation failed" 
                 });
             }
-            console.log('[CUSTOM TAB AUTH] ✓ CSRF state validated');
+            logger.debug('[CUSTOM TAB AUTH] CSRF state validated');
             // Clear state after use (one-time use protection)
             delete req.session.customTabState;
         } else if (fromCustomTab) {
-            console.log('[CUSTOM TAB AUTH] ⚠ No CSRF state provided (skipping validation)');
+            logger.warn('[CUSTOM TAB AUTH] No CSRF state provided (skipping validation)');
         }
         
         req.session.email = email;
@@ -1607,15 +1630,11 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
         assertion.response.authenticatorData = base64UrlDecode(assertion.response.authenticatorData);
         assertion.response.clientDataJSON = base64UrlDecode(assertion.response.clientDataJSON);
         assertion.response.signature = base64UrlDecode(assertion.response.signature);
-        console.log(assertion);
-        console.log(assertion.response);
-        console.log(assertion.response.userHandle);
         if(typeof assertion.response.userHandle == 'string') {
             assertion.response.userHandle = base64UrlDecode(assertion.response.userHandle);
         }
 
         const user = await User.findOne({ where: { email: email } });
-        console.log(user);
         user.credentials = JSON.parse(user.credentials);
         const credential = user.credentials.find(cred => cred.id === assertion.id);
         
@@ -1657,7 +1676,7 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
         // where req.hostname may not reflect the public domain.
         const host = process.env.DOMAIN || req.hostname || req.get('host')?.split(':')[0] || 'localhost';
         const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
-        console.log(`[WEBAUTHN AUTH VERIFY] RP ID: ${host}, Protocol: ${protocol}`);
+        logger.debug('[WEBAUTHN AUTH VERIFY] RP configuration', { host, protocol });
         
         // Decode clientDataJSON to check the actual origin
         const clientData = JSON.parse(Buffer.from(assertion.response.clientDataJSON, 'base64').toString('utf8'));
@@ -1679,7 +1698,7 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             // Web or Chrome Custom Tab - use standard origin
             origin = req.headers.origin || `${protocol}://${host}`;
             if (!allowedOrigins.includes(origin)) {
-                console.warn("Unexpected origin for WebAuthn:", origin);
+                logger.warn('[WEBAUTHN] Unexpected origin', { origin });
             }
         }
 
@@ -1715,14 +1734,14 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             
             // For app-based login (Custom Tab), skip session creation and only return JWT
             if (fromCustomTab) {
-                console.log('[CUSTOM TAB AUTH] App-based login - skipping session creation');
+                logger.debug('[CUSTOM TAB AUTH] App-based login - skipping session creation');
                 const response = { 
                     status: "ok", 
                     message: "Authentication successful"
                 };
                 
                 // Generate secure signed JWT for Custom Tab authentication
-                console.log('[CUSTOM TAB AUTH] Generating JWT token for Custom Tab callback...');
+                logger.debug('[CUSTOM TAB AUTH] Generating JWT token for Custom Tab callback');
                 const authToken = generateAuthToken({
                     userId: user.uuid,
                     email: email,
@@ -1731,7 +1750,8 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                 });
                 
                 response.authToken = authToken;
-                console.log(`[CUSTOM TAB AUTH] ✓ JWT token generated for ${sanitizeForLog(user.email)} (expires: ${config.jwt.expiresIn})`);
+                logger.info('[CUSTOM TAB AUTH] JWT token generated', { expiresIn: config.jwt.expiresIn });
+                logger.debug('[CUSTOM TAB AUTH] JWT token generated', { email: sanitizeForLog(user.email), expiresIn: config.jwt.expiresIn });
                 
                 if(!user.backupCodes) {
                     return res.status(202).json(response);
@@ -1785,9 +1805,10 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                         ),
                         'createClientSession'
                     );
-                    console.log(`[WEBAUTHN] HMAC session created for client (${sessionDays} days): ${sanitizeForLog(clientId)}`);
+                    logger.info('[WEBAUTHN] HMAC session created', { sessionDays });
+                    logger.debug('[WEBAUTHN] HMAC session created', { clientId: sanitizeForLog(clientId), sessionDays });
                 } catch (sessionErr) {
-                    console.error('[WEBAUTHN] Error creating HMAC session:', sessionErr);
+                    logger.error('[WEBAUTHN] Error creating HMAC session', sessionErr);
                     // Continue anyway - web clients don't need HMAC sessions
                 }
             }
@@ -1795,7 +1816,7 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             // Persist session now
             return req.session.save(err => {
                 if (err) {
-                    console.error('Session save error (/webauthn/authenticate):', err);
+                    logger.error('[WEBAUTHN] Session save error (/webauthn/authenticate)', err);
                     return res.status(500).json({ status: "error", message: "Session save error" });
                 }
                 
@@ -1809,7 +1830,8 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                     response.sessionSecret = sessionSecret;
                     response.userId = user.uuid;
                     response.email = email;
-                    console.log(`[WEBAUTHN] ✓ HMAC session credentials included in response for ${sanitizeForLog(email)}`);
+                    logger.info('[WEBAUTHN] HMAC session credentials included in response');
+                    logger.debug('[WEBAUTHN] HMAC credentials', { email: sanitizeForLog(email) });
                 }
                 
                 if(!user.backupCodes) {
@@ -1823,7 +1845,7 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             res.status(400).json({ status: "failed", message: "Authentication failed" });
         }
     } catch (error) {
-        console.error('Error during authentication:', error);
+        logger.error('[WEBAUTHN] Error during authentication', error);
         res.status(500).json({
             status: "error",
             message: error && error.message ? error.message : "Internal server error"
@@ -1854,7 +1876,7 @@ authRoutes.get("/magic/generate", verifyAuthEither, async (req, res) => {
         const timestamp = Date.now();
         const expiresAt = timestamp + 5 * 60 * 1000; // 5 min expiry
         
-        console.log(`[Magic Key] Generating key with serverUrl: ${serverUrl}`);
+        logger.debug('[Magic Key] Generating key', { serverUrl });
         
         // Create HMAC signature using session secret
         const dataToSign = `${serverUrl}|${randomHash}|${timestamp}`;
@@ -1882,7 +1904,7 @@ authRoutes.get("/magic/generate", verifyAuthEither, async (req, res) => {
         
         res.json({ magicKey: magicKey, expiresAt: expiresAt });
     } catch (error) {
-        console.error('Error generating magic key:', error);
+        logger.error('[Magic Key] Error generating magic key', error);
         res.status(500).json({ error: "Internal server error" });
     }
 });
@@ -1906,7 +1928,7 @@ authRoutes.get("/webauthn/list", verifyAuthEither, async (req, res) => {
             res.status(404).json({ status: "failed", message: "User not found" });
         }
     } catch (error) {
-        console.error('Error fetching webauthn credentials:', error);
+        logger.error('[WEBAUTHN] Error fetching credentials', error);
         res.status(500).json({ error: "Internal server error" });
     }
 });
@@ -1925,7 +1947,7 @@ authRoutes.post("/client/addweb", async (req, res) => {
             
             req.session.save(err => {
                 if (err) {
-                    console.error('Session save error:', err);
+                    logger.error('[CLIENT] Session save error', err);
                     return res.status(500).json({ status: "error", message: "Session save error" });
                 }
                 res.status(200).json({ 
@@ -1935,7 +1957,7 @@ authRoutes.post("/client/addweb", async (req, res) => {
             });
 
         } catch (error) {
-            console.error('Error adding client:', error);
+            logger.error('[CLIENT] Error adding client', error);
             res.status(500).json({ status: "error", message: "Internal server error" });
         }
     } else {
@@ -1948,7 +1970,7 @@ authRoutes.get("/client/list", verifyAuthEither, async (req, res) => {
         const clients = await Client.findAll({ where: { owner: req.userId }, attributes: { exclude: ['public_key', 'registration_id'] } });
         res.status(200).json({ status: "ok", clients: clients });
     } catch (error) {
-        console.error('Error fetching client list:', error);
+        logger.error('[CLIENT] Error fetching client list', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -1972,7 +1994,7 @@ authRoutes.post("/client/delete", verifyAuthEither, async (req, res) => {
         );
         res.status(200).json({ status: "ok", message: "Client deleted successfully" });
     } catch (error) {
-        console.error('Error deleting client:', error);
+        logger.error('[CLIENT] Error deleting client', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -2004,7 +2026,7 @@ authRoutes.post("/client/login", async (req, res) => {
             res.status(401).json({ status: "failed", message: "Invalid client ID or not authorized" });
         }
     } catch (error) {
-        console.error('Error during client login:', error);
+        logger.error('[CLIENT] Error during client login', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -2056,16 +2078,13 @@ authRoutes.get("/channels", async (req, res) => {
                 const bufferData = JSON.parse(user.dataValues.picture);
                 user.dataValues.pictureBase64 = Buffer.from(bufferData.data).toString('base64');
             }
-            console.log('Channels:', channels);
-            console.log(`Threads:`, threads.user);
-            console.log('User Data:', user.dataValues);
             // REMOVED: Pug render (Pug disabled, Flutter web client used)
             res.status(410).json({ error: "Pug routes deprecated - use Flutter web client" });
         } else {
             res.redirect("/login");
         }
     } catch (error) {
-        console.error('Error retrieving channels:', error);
+        logger.error('[CHANNELS] Error retrieving channels', error);
         res.redirect("/error");
     }
 });
@@ -2086,7 +2105,7 @@ authRoutes.post("/channels/create", async (req, res) => {
             res.status(401).json({ message: "Unauthorized" });
         }
     } catch (error) {
-        console.error('Error creating channel:', error);
+        logger.error('[CHANNELS] Error creating channel', error);
         res.status(400).json({ message: "Error creating channel" });
     }
 });
@@ -2126,14 +2145,13 @@ authRoutes.get("/thread/:id", async (req, res) => {
                 }
 
 
-                console.log(`Thread ${thread.id}:`, thread);
                 res.json(thread);
             }
         } else {
             res.redirect("/login");
         }
     } catch (error) {
-        console.error('Error retrieving thread:', error);
+        logger.error('[THREADS] Error retrieving thread', error);
         res.redirect("/error");
     }
 });
@@ -2186,7 +2204,6 @@ authRoutes.get("/channel/:name", async (req, res) => {
                 user.dataValues.pictureBase64 = Buffer.from(bufferData.data).toString('base64');
             }
 
-                console.log(`Threads for channel ${channel.name}:`, threads);
                 // REMOVED: Pug render (Pug disabled, Flutter web client used)
                 res.status(410).json({ error: "Pug routes deprecated - use Flutter web client" });
             }
@@ -2194,7 +2211,7 @@ authRoutes.get("/channel/:name", async (req, res) => {
             res.redirect("/login");
         }
     } catch (error) {
-        console.error('Error retrieving channel:', error);
+        logger.error('[CHANNELS] Error retrieving channel', error);
         res.redirect("/error");
     }
 });
@@ -2214,7 +2231,7 @@ authRoutes.post("/channel/:name/post", async (req, res) => {
             res.status(401).json({ message: "Unauthorized" });
         }
     } catch (error) {
-        console.error('Error creating thread:', error);
+        logger.error('[THREADS] Error creating thread', error);
         res.status(400).json({ message: "Error creating thread" });
     }
 });
@@ -2236,7 +2253,7 @@ authRoutes.post("/usersettings", async (req, res) => {
             res.json({message: "User settings updated"});
         }
     } catch (error) {
-        console.error('Error updating user settings:', error);
+        logger.error('[USER] Error updating user settings', error);
         res.json({ message: "Error updating user settings" });
     }
 });
@@ -2297,7 +2314,7 @@ authRoutes.post("/webauthn/delete", verifyAuthEither, async (req, res) => {
             res.status(404).send("User not found");
         }
     } catch (error) {
-        console.error('Error deleting WebAuthn credential:', error);
+        logger.error('[WEBAUTHN] Error deleting credential', error);
         res.status(500).send("Internal Server Error");
     }
 });
@@ -2341,7 +2358,7 @@ authRoutes.post("/api/invitations/verify", async (req, res) => {
             message: "Invitation is valid" 
         });
     } catch (error) {
-        console.error('Error verifying invitation:', error);
+        logger.error('[INVITATION] Error verifying invitation', error);
         res.status(500).json({ 
             valid: false, 
             message: "Internal server error" 
@@ -2366,7 +2383,8 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
             return res.status(400).json({ error: 'Token and clientId required' });
         }
         
-        console.log('[TOKEN EXCHANGE] Request received', { 
+        logger.info('[TOKEN EXCHANGE] Request received');
+        logger.debug('[TOKEN EXCHANGE] Request', { 
             hasToken: !!token, 
             clientId: clientId ? clientId.substring(0, 8) + '...' : 'missing'
         });
@@ -2379,7 +2397,8 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
         }
         
         const { userId, email, credentialId } = decoded;
-        console.log('[TOKEN EXCHANGE] ✓ Token verified', { 
+        logger.info('[TOKEN EXCHANGE] Token verified');
+        logger.debug('[TOKEN EXCHANGE] Token details', { 
             userId: userId ? userId.substring(0, 8) + '...' : 'missing',
             email: email,
             hasCredentialId: !!credentialId
@@ -2393,7 +2412,8 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
         
         // Use shared function to find or create Signal Client record (required for Signal protocol)
         const result = await findOrCreateClient(clientId, user.uuid, req);
-        console.log('[TOKEN EXCHANGE] ✓ Client record ensured:', { 
+        logger.info('[TOKEN EXCHANGE] Client record ensured');
+        logger.debug('[TOKEN EXCHANGE] Client details', { 
             clientId: result.clientid, 
             deviceId: result.device_id,
             created: result.created
@@ -2418,7 +2438,7 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
             })
         );
         
-        console.log('[TOKEN EXCHANGE] ✓ Session created for user', user.email, `(expires in ${sessionDays} days)`);
+        logger.info('[TOKEN EXCHANGE] Session created', { email: user.email, sessionDays });
         
         res.json({
             sessionSecret,
@@ -2428,7 +2448,7 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
         });
         
     } catch (error) {
-        console.error('[TOKEN EXCHANGE] Error:', error);
+        logger.error('[TOKEN EXCHANGE] Error', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -2445,7 +2465,7 @@ authRoutes.post('/token/revoke', tokenRevocationLimiter, async (req, res) => {
             return res.status(400).json({ error: 'Token required' });
         }
         
-        console.log('[TOKEN REVOKE] Revocation requested');
+        logger.info('[TOKEN REVOKE] Revocation requested');
         
         const success = revokeToken(token);
         
@@ -2461,7 +2481,7 @@ authRoutes.post('/token/revoke', tokenRevocationLimiter, async (req, res) => {
         }
         
     } catch (error) {
-        console.error('[TOKEN REVOKE] Error:', error);
+        logger.error('[TOKEN REVOKE] Error', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -2483,7 +2503,8 @@ authRoutes.post('/session/refresh', verifySessionAuth, async (req, res) => {
             { replacements: [sessionDays, clientId] }
         );
         
-        console.log(`[SESSION REFRESH] ✓ Session manually refreshed for client ${sanitizeForLog(clientId)} (${sessionDays} days)`);
+        logger.info('[SESSION REFRESH] Session manually refreshed', { sessionDays });
+        logger.debug('[SESSION REFRESH] Refreshed for client', { clientId: sanitizeForLog(clientId), sessionDays });
         
         res.json({
             status: 'ok',
@@ -2492,7 +2513,7 @@ authRoutes.post('/session/refresh', verifySessionAuth, async (req, res) => {
         });
         
     } catch (error) {
-        console.error('[SESSION REFRESH] Error:', error);
+        logger.error('[SESSION REFRESH] Error', error);
         res.status(500).json({ error: 'Failed to refresh session' });
     }
 });
@@ -2589,7 +2610,7 @@ authRoutes.get('/sessions/list', verifyAuthEither, async (req, res) => {
         res.json({ sessions });
         
     } catch (error) {
-        console.error('[SESSIONS LIST] Error:', error);
+        logger.error('[SESSIONS LIST] Error', error);
         res.status(500).json({ error: 'Failed to load sessions' });
     }
 });
@@ -2621,7 +2642,8 @@ authRoutes.post('/sessions/revoke', verifyAuthEither, async (req, res) => {
                 req.session.destroy();
             }
             
-            console.log(`[SESSION REVOKE] Current session revoked for user ${sanitizeForLog(userId)}`);
+            logger.info('[SESSION REVOKE] Current session revoked');
+            logger.debug('[SESSION REVOKE] Current session revoked', { userId: sanitizeForLog(userId) });
             return res.json({ status: 'ok', message: 'Current session revoked' });
         }
         
@@ -2631,11 +2653,12 @@ authRoutes.post('/sessions/revoke', verifyAuthEither, async (req, res) => {
             { replacements: [sessionId, userId] }
         );
         
-        console.log(`[SESSION REVOKE] Session ${sanitizeForLog(sessionId)} revoked for user ${sanitizeForLog(userId)}`);
+        logger.info('[SESSION REVOKE] Session revoked');
+        logger.debug('[SESSION REVOKE] Session revoked', { sessionId: sanitizeForLog(sessionId), userId: sanitizeForLog(userId) });
         res.json({ status: 'ok', message: 'Session revoked' });
         
     } catch (error) {
-        console.error('[SESSION REVOKE] Error:', error);
+        logger.error('[SESSION REVOKE] Error', error);
         res.status(500).json({ error: 'Failed to revoke session' });
     }
 });
@@ -2657,7 +2680,7 @@ authRoutes.post('/sessions/revoke-all', verifyAuthEither, async (req, res) => {
         
         const deletedCount = result[1] || 0;
         
-        console.log(`[SESSION REVOKE ALL] Revoked ${deletedCount} sessions for user ${sanitizeForLog(userId)}`);
+        logger.info('[SESSION REVOKE ALL] Sessions revoked', { deletedCount, userId: sanitizeForLog(userId) });
         res.json({ 
             status: 'ok', 
             message: 'All other sessions revoked',
@@ -2665,7 +2688,7 @@ authRoutes.post('/sessions/revoke-all', verifyAuthEither, async (req, res) => {
         });
         
     } catch (error) {
-        console.error('[SESSION REVOKE ALL] Error:', error);
+        logger.error('[SESSION REVOKE ALL] Error', error);
         res.status(500).json({ error: 'Failed to revoke sessions' });
     }
 });

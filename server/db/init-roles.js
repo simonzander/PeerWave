@@ -1,3 +1,5 @@
+const logger = require('../utils/logger');
+
 /**
  * Initialize standard roles for the system
  * Must be called after database sync is complete
@@ -84,7 +86,7 @@ async function initializeStandardRoles(Role) {
             });
         }
     } catch (error) {
-        console.error('Error initializing standard roles:', error);
+        logger.error('Error initializing standard roles:', error);
         throw error;
     }
 }

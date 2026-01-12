@@ -24,6 +24,7 @@ let User, Channel, Thread, Client, SignalSignedPreKey, SignalPreKey, Item, Chann
 const path = require('path');
 const writeQueue = require('./db/writeQueue');
 const { initCleanupJob, runCleanup } = require('./jobs/cleanup');
+const logger = require('./utils/logger');
 
 // ==================== SECURITY: FORMAT STRING SANITIZATION ====================
 // Helper function to safely log user-controlled values
@@ -44,37 +45,37 @@ const licenseValidator = new LicenseValidator();
 
 // Validate support subscription on startup
 (async () => {
-  console.log('\n🔐 Validating PeerWave Support Subscription...');
+  logger.info('\n🔐 Validating PeerWave Support Subscription...');
   const license = await licenseValidator.validate();
   
   if (license.valid) {
-    console.log('✅ Support Subscription Active');
-    console.log(`   Customer: ${license.customer}`);
-    console.log(`   Edition: Supported Edition`);
-    console.log(`   Expires: ${license.expires.toISOString().split('T')[0]} (${license.daysRemaining} days)`);
+    logger.info('✅ Support Subscription Active');
+    logger.info(`   Customer: ${license.customer}`);
+    logger.info(`   Edition: Supported Edition`);
+    logger.info(`   Expires: ${license.expires.toISOString().split('T')[0]} (${license.daysRemaining} days)`);
     
     if (license.gracePeriod) {
-      console.log(`   ⚠️  Grace Period: ${license.daysRemaining} days remaining`);
+      logger.warn(`   ⚠️  Grace Period: ${license.daysRemaining} days remaining`);
     }
     
     if (license.features.maxUsers) {
-      console.log(`   Max Users: ${license.features.maxUsers}`);
+      logger.info(`   Max Users: ${license.features.maxUsers}`);
     }
     
-    console.log(`   Grace Period: ${license.gracePeriodDays} days after expiration`);
+    logger.info(`   Grace Period: ${license.gracePeriodDays} days after expiration`);
   } else if (license.error === 'EXPIRED') {
     // Support subscription expired and grace period is over - STOP SERVER
-    console.error('\n❌ FATAL: Support subscription has expired!');
-    console.error(`   ${license.message}`);
-    console.error(`   Server cannot start with expired subscription.`);
-    console.error(`   Please renew your subscription at https://peerwave.org\n`);
+    logger.error('\n❌ FATAL: Support subscription has expired!');
+    logger.error(`   ${license.message}`);
+    logger.error(`   Server cannot start with expired subscription.`);
+    logger.error(`   Please renew your subscription at https://peerwave.org\n`);
     process.exit(1);
   } else {
-    console.log(`ℹ️  No support subscription found: ${license.message}`);
-    console.log(`   Running Community Edition (AGPL-3.0)`);
-    console.log(`   For professional support, visit: https://peerwave.org`);
+    logger.info(`ℹ️  No support subscription found: ${license.message}`);
+    logger.info(`   Running Community Edition (AGPL-3.0)`);
+    logger.info(`   For professional support, visit: https://peerwave.org`);
   }
-  console.log('');
+  logger.info('');
 })();
 
 // Function to validate UUID
@@ -92,18 +93,21 @@ function safeEmitToDevice(io, userId, deviceId, event, data) {
   const socketId = deviceSockets.get(deviceKey);
   
   if (!socketId) {
-    console.log(`[SAFE_EMIT] Device ${deviceKey} not connected`);
+    logger.warn('[SAFE_EMIT] Device not connected');
+    logger.debug(`[SAFE_EMIT] DeviceKey: ${deviceKey}`);
     return false;
   }
   
   const targetSocket = io.sockets.sockets.get(socketId);
   if (!targetSocket) {
-    console.log(`[SAFE_EMIT] Socket ${socketId} not found`);
+    logger.warn('[SAFE_EMIT] Socket not found');
+    logger.debug(`[SAFE_EMIT] SocketId: ${socketId}`);
     return false;
   }
   
   if (!targetSocket.clientReady) {
-    console.log(`[SAFE_EMIT] ⚠️ Client ${deviceKey} not ready yet, queuing event: ${event}`);
+    logger.warn('[SAFE_EMIT] Client not ready yet, queuing event');
+    logger.debug(`[SAFE_EMIT] DeviceKey: ${deviceKey}, Event: ${event}`);
     
     // Queue the message for delivery when client becomes ready
     if (!pendingMessages.has(deviceKey)) {
@@ -114,13 +118,15 @@ function safeEmitToDevice(io, userId, deviceId, event, data) {
       data,
       timestamp: Date.now()
     });
-    console.log(`[SAFE_EMIT] 📥 Queued event '${event}' for ${deviceKey} (queue size: ${pendingMessages.get(deviceKey).length})`);
+    logger.info(`[SAFE_EMIT] Queued event for device (queue size: ${pendingMessages.get(deviceKey).length})`);
+    logger.debug(`[SAFE_EMIT] Event: '${event}' for ${deviceKey}`);
     return false;
   }
   
   // Client is ready, safe to emit
   targetSocket.emit(event, data);
-  console.log(`[SAFE_EMIT] ✓ Event '${event}' sent to ${deviceKey}`);
+  logger.info('[SAFE_EMIT] Event sent to device');
+  logger.debug(`[SAFE_EMIT] Event: '${event}' to ${deviceKey}`);
   return true;
 }
 
@@ -149,9 +155,11 @@ function emitToUser(io, userId, event, data) {
   });
   
   if (emittedCount === 0) {
-    console.log(`[EMIT_TO_USER] User ${sanitizeForLog(userId)} has no connected devices for event: ${event}`);
+    logger.info('[EMIT_TO_USER] User has no connected devices for event');
+    logger.debug(`[EMIT_TO_USER] User: ${sanitizeForLog(userId)}, Event: ${event}`);
   } else {
-    console.log(`[EMIT_TO_USER] Emitted '${event}' to ${emittedCount} device(s) for user ${sanitizeForLog(userId)}`);
+    logger.info(`[EMIT_TO_USER] Emitted to ${emittedCount} device(s) for user`);
+    logger.debug(`[EMIT_TO_USER] Event: '${event}', User: ${sanitizeForLog(userId)}`);
   }
   
   return emittedCount;
@@ -163,20 +171,24 @@ function flushPendingMessages(io, socket, userId, deviceId) {
   const pending = pendingMessages.get(`${userId}:${deviceId}`);
   
   if (!pending || pending.length === 0) {
-    console.log(`[SAFE_EMIT] No pending messages for ${deviceKey}`);
+    logger.debug('[SAFE_EMIT] No pending messages for device');
+    logger.debug(`[SAFE_EMIT] DeviceKey: ${deviceKey}`);
     return;
   }
   
-  console.log(`[SAFE_EMIT] 🚀 Flushing ${pending.length} pending messages for ${deviceKey}`);
+  logger.info(`[SAFE_EMIT] Flushing ${pending.length} pending messages for device`);
+  logger.debug(`[SAFE_EMIT] DeviceKey: ${deviceKey}`);
   
   for (const msg of pending) {
     const age = Date.now() - msg.timestamp;
-    console.log(`[SAFE_EMIT] Delivering queued event '${msg.event}' (age: ${age}ms)`);
+    logger.info(`[SAFE_EMIT] Delivering queued event (age: ${age}ms)`);
+    logger.debug(`[SAFE_EMIT] Event: '${msg.event}'`);
     socket.emit(msg.event, msg.data);
   }
   
   pendingMessages.delete(`${userId}:${deviceId}`);
-  console.log(`[SAFE_EMIT] ✅ All pending messages delivered to ${deviceKey}`);
+  logger.info('[SAFE_EMIT] All pending messages delivered to device');
+  logger.debug(`[SAFE_EMIT] DeviceKey: ${deviceKey}`);
 }
 
 /**
@@ -185,7 +197,8 @@ function flushPendingMessages(io, socket, userId, deviceId) {
  */
 async function sendSharedWithUpdateSignal(fileId, sharedWith) {
   try {
-    console.log(`[SIGNAL] Sending sharedWith update for ${sanitizeForLog(fileId.substring(0, 8))} to ${sharedWith.length} users`);
+    logger.info(`[SIGNAL] Sending sharedWith update to ${sharedWith.length} users`);
+    logger.debug(`[SIGNAL] FileId: ${sanitizeForLog(fileId.substring(0, 8))}`);
     
     for (const userId of sharedWith) {
       try {
@@ -195,18 +208,21 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
         });
         
         if (clients.length === 0) {
-          console.log(`[SIGNAL] No devices found for user ${sanitizeForLog(userId)}`);
+          logger.debug('[SIGNAL] No devices found for user');
+          logger.debug(`[SIGNAL] User: ${sanitizeForLog(userId)}`);
           continue;
         }
         
-        console.log(`[SIGNAL] Found ${clients.length} devices for user ${sanitizeForLog(userId)}`);
+        logger.info(`[SIGNAL] Found ${clients.length} devices for user`);
+        logger.debug(`[SIGNAL] User: ${sanitizeForLog(userId)}`);
         
         // Send to each device
         for (const client of clients) {
           try {
             // Validate device_id exists
             if (!client.device_id) {
-              console.log(`[SIGNAL] ⚠️ Skipping client with missing device_id for user ${sanitizeForLog(userId)}`);
+              logger.warn('[SIGNAL] Skipping client with missing device_id');
+              logger.debug(`[SIGNAL] User: ${sanitizeForLog(userId)}`);
               continue;
             }
             
@@ -234,7 +250,8 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
               });
             }, `sharedWith-update-${userId}-${recipientDeviceId}-${Date.now()}`);
             
-            console.log(`[SIGNAL] ✓ Message stored for ${sanitizeForLog(userId)}:${sanitizeForLog(recipientDeviceId)}`);
+            logger.info('[SIGNAL] Message stored for user device');
+            logger.debug(`[SIGNAL] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(recipientDeviceId)}`);
             
             // Try to deliver immediately if online
             const targetSocketId = deviceSockets.get(`${userId}:${recipientDeviceId}`);
@@ -248,23 +265,27 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
                 cipherType: 0,
                 itemId: `sharedWith-${fileId}-${Date.now()}`
               });
-              console.log(`[SIGNAL] ✓ Delivered immediately to online device ${sanitizeForLog(userId)}:${sanitizeForLog(recipientDeviceId)}`);
+              logger.info('[SIGNAL] Delivered immediately to online device');
+              logger.debug(`[SIGNAL] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(recipientDeviceId)}`);
             }
             
           } catch (err) {
-            console.error(`[SIGNAL] Failed to send to device ${sanitizeForLog(recipientDeviceId || 'unknown')}:`, err);
+            logger.error('[SIGNAL] Failed to send to device');
+            logger.debug(`[SIGNAL] Device: ${sanitizeForLog(recipientDeviceId || 'unknown')}`, err);
           }
         }
         
       } catch (err) {
-        console.error(`[SIGNAL] Failed to process user ${sanitizeForLog(userId)}:`, err);
+        logger.error('[SIGNAL] Failed to process user');
+        logger.debug(`[SIGNAL] User: ${sanitizeForLog(userId)}`, err);
         // Continue with other users
       }
     }
     
-    console.log(`[SIGNAL] Completed sending sharedWith updates for ${sanitizeForLog(fileId.substring(0, 8))}`);
+    logger.info('[SIGNAL] Completed sending sharedWith updates');
+    logger.debug(`[SIGNAL] FileId: ${sanitizeForLog(fileId.substring(0, 8))}`);
   } catch (error) {
-    console.error('[SIGNAL] Error in sendSharedWithUpdateSignal:', error);
+    logger.error('[SIGNAL] Error in sendSharedWithUpdateSignal', error);
   }
 }
 
@@ -327,7 +348,8 @@ app.use((req, res, next) => {
     
     // If user is on wrong step page, serve correct step
     if (currentPath !== correctPath && currentPath.startsWith('/register/')) {
-      console.log(`[REGISTRATION] Redirecting from ${currentPath} to ${correctPath} (current step: ${step})`);
+      logger.info(`[REGISTRATION] Redirecting to correct step: ${step}`);
+      logger.debug(`[REGISTRATION] From: ${currentPath}, To: ${correctPath}`);
       // Return the correct step page instead
       req.url = correctPath;
       req.originalUrl = correctPath;
@@ -533,16 +555,17 @@ app.use((req, res, next) => {
     
     if (hasSessionHeaders || hasWebSession) {
       // Authenticated user - redirect to meetings overview
-      console.log(`[Guest Join] Authenticated user detected, redirecting to /app/meetings`);
+      logger.info('[Guest Join] Authenticated user detected, redirecting to /app/meetings');
       return res.redirect('/app/meetings');
     }
 
     // Unauthenticated user - serve Flutter web app
-    console.log(`[Guest Join] Guest user detected, serving Flutter web app for token: ${token}`);
+    logger.info('[Guest Join] Guest user detected, serving Flutter web app');
+    logger.debug(`[Guest Join] Token: ${token}`);
     const flutterWebPath = path.join(__dirname, '../client/build/web/index.html');
     res.sendFile(flutterWebPath, (err) => {
       if (err) {
-        console.error('[Guest Join] Failed to serve Flutter web app:', err);
+        logger.error('[Guest Join] Failed to serve Flutter web app', err);
         res.status(500).send(`
           <!DOCTYPE html>
           <html>
@@ -583,7 +606,7 @@ io.use(sharedSession(sessionMiddleware, { autoSave: true }));
 // Initialize external guest namespace for unauthenticated guest connections
 const initializeExternalNamespace = require('./namespaces/external');
 initializeExternalNamespace(io);
-console.log('[SERVER] ✓ External guest namespace initialized');
+logger.info('[SERVER] External guest namespace initialized');
 
 const deviceSockets = new Map(); // Key: userId:deviceId, Value: socket.id
 
@@ -632,7 +655,8 @@ function addVideoParticipant(channelId, userId, socketId) {
         hasE2EEKey: false
     });
     
-    console.log(`[VIDEO PARTICIPANTS] Added ${sanitizeForLog(userId)} to channel ${sanitizeForLog(channelId)} (total: ${participants.size})`);
+    logger.info(`[VIDEO PARTICIPANTS] Added user to channel (total: ${participants.size})`);
+    logger.debug(`[VIDEO PARTICIPANTS] User: ${sanitizeForLog(userId)}, Channel: ${sanitizeForLog(channelId)}`);
 }
 
 /**
@@ -654,9 +678,11 @@ function removeVideoParticipant(channelId, socketId) {
     // Cleanup empty channels
     if (participants.size === 0) {
         activeVideoParticipants.delete(channelId);
-        console.log(`[VIDEO PARTICIPANTS] Channel ${sanitizeForLog(channelId)} empty - removed from tracking`);
+        logger.info('[VIDEO PARTICIPANTS] Channel empty - removed from tracking');
+        logger.debug(`[VIDEO PARTICIPANTS] Channel: ${sanitizeForLog(channelId)}`);
     } else if (removedUserId) {
-        console.log(`[VIDEO PARTICIPANTS] Removed ${sanitizeForLog(removedUserId)} from channel ${sanitizeForLog(channelId)} (remaining: ${participants.size})`);
+        logger.info(`[VIDEO PARTICIPANTS] Removed user from channel (remaining: ${participants.size})`);
+        logger.debug(`[VIDEO PARTICIPANTS] User: ${sanitizeForLog(removedUserId)}, Channel: ${sanitizeForLog(channelId)}`);
     }
 }
 
@@ -680,12 +706,13 @@ function updateParticipantKeyStatus(channelId, socketId, hasKey) {
     participants.forEach(p => {
         if (p.socketId === socketId) {
             p.hasE2EEKey = hasKey;
-            console.log(`[VIDEO PARTICIPANTS] Updated ${sanitizeForLog(p.userId)} key status: ${hasKey}`);
+            logger.info(`[VIDEO PARTICIPANTS] Updated user key status: ${hasKey}`);
+            logger.debug(`[VIDEO PARTICIPANTS] User: ${sanitizeForLog(p.userId)}`);
         }
     });
 }
 
-io.sockets.on("error", e => console.log(e));
+io.sockets.on("error", e => logger.error('[SOCKET.IO] Error', e));
 io.sockets.on("connection", socket => {
 
   // 🔒 Track client ready state (prevents sending events before client is initialized)
@@ -706,11 +733,11 @@ io.sockets.on("connection", socket => {
   socket.on("authenticate", async (authData) => {
     // Support both cookie-based (web) and HMAC-based (native) authentication
     try {
-      console.log("[SIGNAL SERVER] authenticate event received");
+      logger.info('[SIGNAL SERVER] authenticate event received');
       
       // Check if HMAC authentication headers are present (native client)
       if (authData && typeof authData === 'object' && authData['X-Client-ID'] && authData['X-Signature']) {
-        console.log("[SIGNAL SERVER] Native client detected, using HMAC auth");
+        logger.info('[SIGNAL SERVER] Native client detected, using HMAC auth');
         
         const clientId = authData['X-Client-ID'];
         const timestamp = parseInt(authData['X-Timestamp']);
@@ -721,7 +748,7 @@ io.sockets.on("connection", socket => {
         const now = Date.now();
         const maxDiff = 5 * 60 * 1000;
         if (Math.abs(now - timestamp) > maxDiff) {
-          console.log("[SIGNAL SERVER] HMAC auth failed: timestamp expired");
+          logger.warn('[SIGNAL SERVER] HMAC auth failed: timestamp expired');
           return socket.emit("authenticated", { authenticated: false, error: 'timestamp_expired' });
         }
         
@@ -733,7 +760,7 @@ io.sockets.on("connection", socket => {
         );
         
         if (nonceCheck && nonceCheck.length > 0) {
-          console.log("[SIGNAL SERVER] HMAC auth failed: duplicate nonce");
+          logger.warn('[SIGNAL SERVER] HMAC auth failed: duplicate nonce');
           return socket.emit("authenticated", { authenticated: false, error: 'duplicate_nonce' });
         }
         
@@ -749,7 +776,7 @@ io.sockets.on("connection", socket => {
         );
         
         if (!sessions || sessions.length === 0) {
-          console.log("[SIGNAL SERVER] HMAC auth failed: no session");
+          logger.warn('[SIGNAL SERVER] HMAC auth failed: no session');
           return socket.emit("authenticated", { authenticated: false, error: 'no_session' });
         }
         
@@ -764,7 +791,7 @@ io.sockets.on("connection", socket => {
           .digest('hex');
         
         if (signature !== expectedSignature) {
-          console.log("[SIGNAL SERVER] HMAC auth failed: invalid signature");
+          logger.warn('[SIGNAL SERVER] HMAC auth failed: invalid signature');
           return socket.emit("authenticated", { authenticated: false, error: 'invalid_signature' });
         }
         
@@ -773,7 +800,7 @@ io.sockets.on("connection", socket => {
         const client = await Client.findOne({ where: { clientid: clientId } });
         
         if (!client) {
-          console.log("[SIGNAL SERVER] HMAC auth failed: client not found");
+          logger.warn('[SIGNAL SERVER] HMAC auth failed: client not found');
           return socket.emit("authenticated", { authenticated: false, error: 'client_not_found' });
         }
         
@@ -781,7 +808,8 @@ io.sockets.on("connection", socket => {
         const deviceKey = `${session.user_id}:${client.device_id}`;
         const existingSocketId = deviceSockets.get(deviceKey);
         if (existingSocketId && existingSocketId !== socket.id) {
-          console.log(`[SIGNAL SERVER] ⚠️  Replacing existing socket for ${deviceKey} (native)`);
+          logger.warn('[SIGNAL SERVER] Replacing existing socket for device (native)');
+          logger.debug(`[SIGNAL SERVER] DeviceKey: ${deviceKey}`);
         }
         
         deviceSockets.set(deviceKey, socket.id);
@@ -797,20 +825,23 @@ io.sockets.on("connection", socket => {
         socket.handshake.session.clientId = clientId;
         socket.handshake.session.authenticated = true;
         
-        console.log(`[SIGNAL SERVER] ✓ Native client authenticated: ${deviceKey}`);
+        logger.info('[SIGNAL SERVER] Native client authenticated');
+        logger.debug(`[SIGNAL SERVER] DeviceKey: ${deviceKey}`);
         
         // Register user as online in presence service
         presenceService.onSocketConnected(session.user_id, socket.id).then(status => {
-          console.log(`[PRESENCE] User ${session.user_id} connected with status: ${status}`);
+          logger.info(`[PRESENCE] User connected with status: ${status}`);
+          logger.debug(`[PRESENCE] User: ${session.user_id}`);
           // Broadcast online status to other users
           socket.broadcast.emit('presence:update', {
             user_id: session.user_id,
             status: status,
             last_seen: new Date()
           });
-          console.log(`[PRESENCE] Broadcasted presence:update for ${session.user_id}`);
+          logger.info('[PRESENCE] Broadcasted presence:update');
+          logger.debug(`[PRESENCE] User: ${session.user_id}`);
         }).catch(err => {
-          console.error('[PRESENCE] Error registering socket connection:', err);
+          logger.error('[PRESENCE] Error registering socket connection', err);
         });
         
         return socket.emit("authenticated", { 
@@ -822,8 +853,13 @@ io.sockets.on("connection", socket => {
       }
       
       // Fall back to cookie-based authentication (web client)
-      console.log("[SIGNAL SERVER] Web client detected, using cookie auth");
-      console.log("[SIGNAL SERVER] Session:", socket.handshake.session);
+      logger.info('[SIGNAL SERVER] Web client detected, using cookie auth');
+      logger.debug('[SIGNAL SERVER] Session check:', {
+        hasUuid: !!socket.handshake.session?.uuid,
+        hasEmail: !!socket.handshake.session?.email,
+        hasDeviceId: !!socket.handshake.session?.deviceId,
+        authenticated: socket.handshake.session?.authenticated
+      });
       
       if(socket.handshake.session.uuid && socket.handshake.session.email && socket.handshake.session.deviceId && socket.handshake.session.clientId && socket.handshake.session.authenticated === true) {
         const deviceKey = `${socket.handshake.session.uuid}:${socket.handshake.session.deviceId}`;
@@ -831,15 +867,15 @@ io.sockets.on("connection", socket => {
         // Check if this device already has a socket connection (stale or duplicate)
         const existingSocketId = deviceSockets.get(deviceKey);
         if (existingSocketId && existingSocketId !== socket.id) {
-            console.log(`[SIGNAL SERVER] ⚠️  Replacing existing socket for ${deviceKey}`);
-            console.log(`[SIGNAL SERVER]    Old socket: ${existingSocketId}`);
-            console.log(`[SIGNAL SERVER]    New socket: ${socket.id}`);
-            console.log(`[SIGNAL SERVER]    Reason: Browser refresh or network reconnection`);
+            logger.warn('[SIGNAL SERVER] Replacing existing socket for device');
+            logger.debug(`[SIGNAL SERVER] DeviceKey: ${deviceKey}`);
+            logger.debug(`[SIGNAL SERVER] Old socket: ${existingSocketId}, New socket: ${socket.id}`);
+            logger.debug('[SIGNAL SERVER] Reason: Browser refresh or network reconnection');
         }
         
         deviceSockets.set(deviceKey, socket.id);
-        console.log(`[SIGNAL SERVER] Device registered: ${deviceKey} -> ${socket.id}`);
-        console.log(`[SIGNAL SERVER] Total devices online: ${deviceSockets.size}`);
+        logger.info(`[SIGNAL SERVER] Device registered (Total online: ${deviceSockets.size})`);
+        logger.debug(`[SIGNAL SERVER] DeviceKey: ${deviceKey}, Socket: ${socket.id}`);
         
         // Store userId in socket.data for video conferencing
         socket.data.userId = socket.handshake.session.uuid;
@@ -847,16 +883,18 @@ io.sockets.on("connection", socket => {
         
         // Register user as online in presence service
         presenceService.onSocketConnected(socket.handshake.session.uuid, socket.id).then(status => {
-          console.log(`[PRESENCE] User ${socket.handshake.session.uuid} connected with status: ${status}`);
+          logger.info(`[PRESENCE] User connected with status: ${status}`);
+          logger.debug(`[PRESENCE] User: ${socket.handshake.session.uuid}`);
           // Broadcast online status to other users
           socket.broadcast.emit('presence:update', {
             user_id: socket.handshake.session.uuid,
             status: status,
             last_seen: new Date()
           });
-          console.log(`[PRESENCE] Broadcasted presence:update for ${socket.handshake.session.uuid}`);
+          logger.info('[PRESENCE] Broadcasted presence:update');
+          logger.debug(`[PRESENCE] User: ${socket.handshake.session.uuid}`);
         }).catch(err => {
-          console.error('[PRESENCE] Error registering socket connection:', err);
+          logger.error('[PRESENCE] Error registering socket connection', err);
         });
         
         socket.emit("authenticated", { 
@@ -865,11 +903,11 @@ io.sockets.on("connection", socket => {
           deviceId: socket.handshake.session.deviceId
         });
       } else {
-        console.log("[SIGNAL SERVER] Authentication failed - missing session data");
+        logger.warn('[SIGNAL SERVER] Authentication failed - missing session data');
         socket.emit("authenticated", { authenticated: false });
       }
     } catch (error) {
-      console.error('Error during authentication:', error);
+      logger.error('[SIGNAL SERVER] Error during authentication', error);
       socket.emit("authenticated", { authenticated: false });
     }
   });
@@ -877,9 +915,11 @@ io.sockets.on("connection", socket => {
   // 🚀 NEW: Client ready notification
   // Client signals that PreKeys are generated and listeners are registered
   socket.on("clientReady", async (data) => {
-    console.log("[SIGNAL SERVER] Client ready notification received:", data);
+    logger.info('[SIGNAL SERVER] Client ready notification received');
+    logger.debug('[SIGNAL SERVER] Data:', data);
     socket.clientReady = true;
-    console.log(`[SIGNAL SERVER] Socket ${socket.id} marked as ready for events`);
+    logger.info(`[SIGNAL SERVER] Socket marked as ready for events`);
+    logger.debug(`[SIGNAL SERVER] Socket: ${socket.id}`);
     
     // 🚀 Flush any pending messages that were queued while client was initializing
     if (isAuthenticated()) {
@@ -903,17 +943,19 @@ io.sockets.on("connection", socket => {
         });
         
         if (pendingCount > 0) {
-          console.log(`[SIGNAL SERVER] ✉️  ${pendingCount} pending messages for ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)}`);
+          logger.info(`[SIGNAL SERVER] ${pendingCount} pending messages for user`);
+          logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}`);
           socket.emit("pendingMessagesAvailable", {
             count: pendingCount,
             timestamp: new Date().toISOString()
           });
         } else {
-          console.log(`[SIGNAL SERVER] ✓ No pending messages for ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)}`);
+          logger.debug('[SIGNAL SERVER] No pending messages for user');
+          logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}`);
         }
       }
     } catch (error) {
-      console.error('[SIGNAL SERVER] Error checking pending messages:', error);
+      logger.error('[SIGNAL SERVER] Error checking pending messages', error);
     }
   });
 
@@ -921,7 +963,7 @@ io.sockets.on("connection", socket => {
   socket.on("fetchPendingMessages", async (data) => {
     try {
       if (!isAuthenticated()) {
-        console.error('[SIGNAL SERVER] fetchPendingMessages blocked - not authenticated');
+        logger.error('[SIGNAL SERVER] fetchPendingMessages blocked - not authenticated');
         socket.emit("fetchPendingMessagesError", { error: 'Not authenticated' });
         return;
       }
@@ -930,7 +972,8 @@ io.sockets.on("connection", socket => {
       const deviceId = getDeviceId();
       const { limit = 20, offset = 0 } = data;
 
-      console.log(`[SIGNAL SERVER] Fetching pending messages: userId=${sanitizeForLog(userId)}, deviceId=${sanitizeForLog(deviceId)}, limit=${limit}, offset=${offset}`);
+      logger.info(`[SIGNAL SERVER] Fetching pending messages: limit=${limit}, offset=${offset}`);
+      logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}`);
 
       // Fetch messages with pagination
       const items = await Item.findAll({
@@ -945,7 +988,7 @@ io.sockets.on("connection", socket => {
 
       const hasMore = items.length === limit;
 
-      console.log(`[SIGNAL SERVER] ✓ Found ${items.length} pending messages (hasMore: ${hasMore})`);
+      logger.info(`[SIGNAL SERVER] Found ${items.length} pending messages (hasMore: ${hasMore})`);
 
       // Send response
       socket.emit("pendingMessagesResponse", {
@@ -964,7 +1007,7 @@ io.sockets.on("connection", socket => {
       });
 
     } catch (error) {
-      console.error('[SIGNAL SERVER] Error fetching pending messages:', error);
+      logger.error('[SIGNAL SERVER] Error fetching pending messages', error);
       socket.emit("fetchPendingMessagesError", { error: error.message });
     }
   });
@@ -972,8 +1015,11 @@ io.sockets.on("connection", socket => {
   // SIGNAL HANDLE START
 
   socket.on("signalIdentity", async (data) => {
-    console.log("[SIGNAL SERVER] signalIdentity event received");
-    console.log(socket.handshake.session);
+    logger.info('[SIGNAL SERVER] signalIdentity event received');
+    logger.debug('[SIGNAL SERVER] Session check:', {
+      authenticated: isAuthenticated(),
+      hasUuid: !!socket.handshake.session?.uuid
+    });
     try {
       if(isAuthenticated()) {
         const userId = getUserId();
@@ -987,7 +1033,7 @@ io.sockets.on("connection", socket => {
         }, 'signalIdentity');
       }
     } catch (error) {
-      console.error('Error handling signal identity:', error);
+      logger.error('Error handling signal identity:', error);
     }
   });
 
@@ -1004,7 +1050,7 @@ io.sockets.on("connection", socket => {
         socket.emit("getSignedPreKeysResponse", signedPreKeys);
       }
     } catch (error) {
-      console.error('Error fetching signed pre-keys:', error);
+      logger.error('Error fetching signed pre-keys:', error);
       socket.emit("getSignedPreKeysResponse", { error: 'Failed to fetch signed pre-keys' });
     }
   });
@@ -1021,7 +1067,7 @@ io.sockets.on("connection", socket => {
         }, `removePreKey-${data.id}`);
       }
     } catch (error) {
-      console.error('Error removing pre-key:', error);
+      logger.error('Error removing pre-key:', error);
     }
   });
 
@@ -1037,13 +1083,14 @@ io.sockets.on("connection", socket => {
         }, `removeSignedPreKey-${data.id}`);
       }
     } catch (error) {
-      console.error('Error removing signed pre-key:', error);
+      logger.error('Error removing signed pre-key:', error);
     }
   });
 
   // CRITICAL: Delete ALL Signal keys for current device (when IdentityKeyPair is regenerated)
   socket.on("deleteAllSignalKeys", async (data) => {
-    console.log("[SIGNAL SERVER] deleteAllSignalKeys event received", data);
+    logger.info('[SIGNAL SERVER] deleteAllSignalKeys event received');
+    logger.debug('[SIGNAL SERVER] deleteAllSignalKeys data:', { data: sanitizeForLog(data) });
     try {
       if(isAuthenticated()) {
         const uuid = getUserId();
@@ -1051,8 +1098,13 @@ io.sockets.on("connection", socket => {
         const reason = data.reason || 'Unknown';
         const timestamp = data.timestamp || new Date().toISOString();
         
-        console.log(`[SIGNAL SERVER] ⚠️  CRITICAL: Deleting ALL Signal keys for user ${sanitizeForLog(uuid)}, client ${sanitizeForLog(clientId)}`);
-        console.log(`[SIGNAL SERVER] Reason: ${sanitizeForLog(reason)}, Timestamp: ${timestamp}`);
+        logger.warn('[SIGNAL SERVER] CRITICAL: Deleting ALL Signal keys');
+        logger.debug('[SIGNAL SERVER] Key deletion details:', { 
+          userId: sanitizeForLog(uuid), 
+          clientId: sanitizeForLog(clientId),
+          reason: sanitizeForLog(reason), 
+          timestamp 
+        });
         
         let deletedPreKeys = 0;
         let deletedSignedPreKeys = 0;
@@ -1065,9 +1117,9 @@ io.sockets.on("connection", socket => {
               where: { owner: uuid, client: clientId }
             });
           }, `deleteAllPreKeys-${clientId}`);
-          console.log(`[SIGNAL SERVER] ✓ Deleted ${deletedPreKeys} PreKeys`);
+          logger.info(`[SIGNAL SERVER] Deleted ${deletedPreKeys} PreKeys`);
         } catch (error) {
-          console.error(`[SIGNAL SERVER] Error deleting PreKeys: ${error}`);
+          logger.error('[SIGNAL SERVER] Error deleting PreKeys:', error);
         }
         
         // 2. Delete all SignedPreKeys
@@ -1077,9 +1129,9 @@ io.sockets.on("connection", socket => {
               where: { owner: uuid, client: clientId }
             });
           }, `deleteAllSignedPreKeys-${clientId}`);
-          console.log(`[SIGNAL SERVER] ✓ Deleted ${deletedSignedPreKeys} SignedPreKeys`);
+          logger.info(`[SIGNAL SERVER] Deleted ${deletedSignedPreKeys} SignedPreKeys`);
         } catch (error) {
-          console.error(`[SIGNAL SERVER] Error deleting SignedPreKeys: ${error}`);
+          logger.error('[SIGNAL SERVER] Error deleting SignedPreKeys:', error);
         }
         
         // 3. Delete all SenderKeys
@@ -1089,15 +1141,16 @@ io.sockets.on("connection", socket => {
               where: { owner: uuid, client: clientId }
             });
           }, `deleteAllSenderKeys-${clientId}`);
-          console.log(`[SIGNAL SERVER] ✓ Deleted ${deletedSenderKeys} SenderKeys`);
+          logger.info(`[SIGNAL SERVER] Deleted ${deletedSenderKeys} SenderKeys`);
         } catch (error) {
-          console.error(`[SIGNAL SERVER] Error deleting SenderKeys: ${error}`);
+          logger.error('[SIGNAL SERVER] Error deleting SenderKeys:', error);
         }
         
-        console.log(`[SIGNAL SERVER] ✅ Cascade delete completed:`);
-        console.log(`[SIGNAL SERVER]    PreKeys: ${deletedPreKeys}`);
-        console.log(`[SIGNAL SERVER]    SignedPreKeys: ${deletedSignedPreKeys}`);
-        console.log(`[SIGNAL SERVER]    SenderKeys: ${deletedSenderKeys}`);
+        logger.info('[SIGNAL SERVER] Cascade delete completed', {
+          preKeys: deletedPreKeys,
+          signedPreKeys: deletedSignedPreKeys,
+          senderKeys: deletedSenderKeys
+        });
         
         // Send confirmation to client
         socket.emit("deleteAllSignalKeysResponse", {
@@ -1109,14 +1162,14 @@ io.sockets.on("connection", socket => {
           timestamp
         });
       } else {
-        console.error('[SIGNAL SERVER] ERROR: deleteAllSignalKeys blocked - not authenticated');
+        logger.error('[SIGNAL SERVER] ERROR: deleteAllSignalKeys blocked - not authenticated');
         socket.emit("deleteAllSignalKeysResponse", { 
           success: false, 
           error: 'Not authenticated' 
         });
       }
     } catch (error) {
-      console.error('[SIGNAL SERVER] Error in deleteAllSignalKeys:', error);
+      logger.error('[SIGNAL SERVER] Error in deleteAllSignalKeys:', error);
       socket.emit("deleteAllSignalKeysResponse", { 
         success: false, 
         error: error.message 
@@ -1145,7 +1198,7 @@ io.sockets.on("connection", socket => {
         }, `storeSignedPreKey-${data.id}`);
       }
     } catch (error) {
-      console.error('Error storing signed pre-key:', error);
+      logger.error('Error storing signed pre-key:', error);
     }
   });
 
@@ -1159,11 +1212,11 @@ io.sockets.on("connection", socket => {
         try {
           decoded = Buffer.from(data.data, 'base64');
         } catch (e) {
-          console.error('[SIGNAL SERVER] Invalid base64 in prekey_data:', data.data);
+          logger.error('[SIGNAL SERVER] Invalid base64 in prekey_data');
           return;
         }
         if (decoded.length !== 33) {
-          console.error(`[SIGNAL SERVER] Refusing to store pre-key: prekey_data is ${decoded.length} bytes (expected 33). Possible private key leak or wrong format.`);
+          logger.error(`[SIGNAL SERVER] Refusing to store pre-key: prekey_data is ${decoded.length} bytes (expected 33). Possible private key leak or wrong format.`);
           return;
         }
         await writeQueue.enqueue(async () => {
@@ -1180,9 +1233,9 @@ io.sockets.on("connection", socket => {
         }, `storePreKey-${data.id}`);
       }
     } catch (error) {
-      console.error('Error storing pre-key:', error);
-      console.log("[SIGNAL SERVER] storePreKey event received", data);
-      console.log(socket.handshake.session);
+      logger.error('Error storing pre-key:', error);
+      logger.debug('[SIGNAL SERVER] storePreKey event data:', { data: sanitizeForLog(data) });
+      logger.debug('[SIGNAL SERVER] Session:', { session: socket.handshake.session });
     }
   });
 
@@ -1199,7 +1252,7 @@ io.sockets.on("connection", socket => {
         const preKeysArray = Array.isArray(data) ? data : (Array.isArray(data.preKeys) ? data.preKeys : null);
         
         if (preKeysArray) {
-          console.log(`[SIGNAL SERVER] Receiving ${preKeysArray.length} PreKeys for batch storage`);
+          logger.info(`[SIGNAL SERVER] Receiving ${preKeysArray.length} PreKeys for batch storage`);
           
           // Enqueue entire batch as a single operation to maintain atomicity
           await writeQueue.enqueue(async () => {
@@ -1210,11 +1263,11 @@ io.sockets.on("connection", socket => {
                 try {
                   decoded = Buffer.from(preKey.data, 'base64');
                 } catch (e) {
-                  console.error('[SIGNAL SERVER] Invalid base64 in batch prekey_data:', preKey.data);
+                  logger.error('[SIGNAL SERVER] Invalid base64 in batch prekey_data');
                   continue;
                 }
                 if (decoded.length !== 33) {
-                  console.error(`[SIGNAL SERVER] Refusing to store batch pre-key: prekey_data is ${decoded.length} bytes (expected 33). Possible private key leak or wrong format. id=${preKey.id}`);
+                  logger.error(`[SIGNAL SERVER] Refusing to store batch pre-key: prekey_data is ${decoded.length} bytes (expected 33). Possible private key leak or wrong format. id=${preKey.id}`);
                   continue;
                 }
                 const result = await SignalPreKey.findOrCreate({
@@ -1230,7 +1283,7 @@ io.sockets.on("connection", socket => {
                 results.push(result);
               }
             }
-            console.log(`[SIGNAL SERVER] Successfully stored ${results.length} PreKeys`);
+            logger.info(`[SIGNAL SERVER] Successfully stored ${results.length} PreKeys`);
             return results;
           }, `storePreKeys-batch-${preKeysArray.length}`);
           
@@ -1244,7 +1297,7 @@ io.sockets.on("connection", socket => {
           });
           
           const serverPreKeyIds = allServerPreKeys.map(pk => pk.prekey_id);
-          console.log(`[SIGNAL SERVER] Sending sync response with ${serverPreKeyIds.length} PreKey IDs`);
+          logger.info(`[SIGNAL SERVER] Sending sync response with ${serverPreKeyIds.length} PreKey IDs`);
           
           // Send back server's PreKey IDs for client to verify sync
           socket.emit("storePreKeysResponse", {
@@ -1254,7 +1307,7 @@ io.sockets.on("connection", socket => {
           });
           
         } else {
-          console.error('[SIGNAL SERVER] storePreKeys: Invalid data format - expected array or { preKeys: array }');
+          logger.error('[SIGNAL SERVER] storePreKeys: Invalid data format - expected array or { preKeys: array }');
           socket.emit("storePreKeysResponse", {
             success: false,
             error: 'Invalid data format'
@@ -1262,9 +1315,9 @@ io.sockets.on("connection", socket => {
         }
       }
     } catch (error) {
-      console.error('Error storing pre-keys (batch):', error);
-      console.log("[SIGNAL SERVER] storePreKeys event received", data);
-      console.log(socket.handshake.session);
+      logger.error('Error storing pre-keys (batch):', error);
+      logger.debug('[SIGNAL SERVER] storePreKeys event data:', { data: sanitizeForLog(data) });
+      logger.debug('[SIGNAL SERVER] Session:', { session: socket.handshake.session });
       socket.emit("storePreKeysResponse", {
         success: false,
         error: error.message
@@ -1279,7 +1332,8 @@ io.sockets.on("connection", socket => {
         const userId = getUserId();
         const clientId = getClientId();
         
-        console.log(`[SIGNAL SERVER] signalStatus: userId=${sanitizeForLog(userId)}, clientId=${sanitizeForLog(clientId)}`);
+        logger.info('[SIGNAL SERVER] signalStatus request received');
+        logger.debug('[SIGNAL SERVER] signalStatus details:', { userId: sanitizeForLog(userId), clientId: sanitizeForLog(clientId) });
         
         // Identity: check if public_key and registration_id are present
         const client = await Client.findOne({
@@ -1291,7 +1345,8 @@ io.sockets.on("connection", socket => {
         const preKeysCount = await SignalPreKey.count({
           where: { owner: userId, client: clientId }
         });
-        console.log(`[SIGNAL SERVER] signalStatus: User ${sanitizeForLog(userId)}, Client ${sanitizeForLog(clientId)} has ${preKeysCount} PreKeys on server`);
+        logger.info('[SIGNAL SERVER] signalStatus: PreKeys count retrieved');
+        logger.debug('[SIGNAL SERVER] PreKeys details:', { userId: sanitizeForLog(userId), clientId: sanitizeForLog(clientId), count: preKeysCount });
 
         // SignedPreKey: latest
         const signedPreKey = await SignalSignedPreKey.findOne({
@@ -1320,7 +1375,7 @@ io.sockets.on("connection", socket => {
         socket.emit("signalStatusResponse", { error: 'Not authenticated' });
       }
     } catch (error) {
-      console.error('Error in signalStatus:', error);
+      logger.error('Error in signalStatus:', error);
       socket.emit("signalStatusResponse", { error: 'Failed to get signal status' });
     }
   });
@@ -1337,14 +1392,15 @@ io.sockets.on("connection", socket => {
         socket.emit("getPreKeysResponse", preKeys);
       }
     } catch (error) {
-      console.error('Error fetching pre-keys:', error);
+      logger.error('Error fetching pre-keys:', error);
       socket.emit("getPreKeysResponse", { error: 'Failed to fetch pre-keys' });
     }
   });
 
   // 🔄 SESSION RECOVERY: Handle session corruption/missing session notifications
   socket.on("sessionRecoveryNeeded", async (data) => {
-    console.log("[SIGNAL SERVER] 🔄 Session recovery notification received", data);
+    logger.info('[SIGNAL SERVER] Session recovery notification received');
+    logger.debug('[SIGNAL SERVER] Session recovery data:', { data: sanitizeForLog(data) });
     try {
       if(isAuthenticated()) {
         const { senderUserId, senderDeviceId, recipientUserId, recipientDeviceId, reason } = data;
@@ -1353,12 +1409,18 @@ io.sockets.on("connection", socket => {
         const currentUserId = getUserId();
         const currentDeviceId = getDeviceId();
         if (currentUserId !== recipientUserId || currentDeviceId !== recipientDeviceId) {
-          console.error('[SIGNAL SERVER] ❌ Session recovery request from unauthorized device');
+          logger.error('[SIGNAL SERVER] Session recovery request from unauthorized device');
           return;
         }
         
-        console.log(`[SIGNAL SERVER] 📤 Forwarding session recovery request to sender ${sanitizeForLog(senderUserId)}:${sanitizeForLog(senderDeviceId)}`);
-        console.log(`[SIGNAL SERVER] Reason: ${sanitizeForLog(reason)} (recipient: ${sanitizeForLog(recipientUserId)}:${sanitizeForLog(recipientDeviceId)})`);
+        logger.info('[SIGNAL SERVER] Forwarding session recovery request to sender');
+        logger.debug('[SIGNAL SERVER] Session recovery forwarding details:', { 
+          senderUserId: sanitizeForLog(senderUserId), 
+          senderDeviceId: sanitizeForLog(senderDeviceId),
+          reason: sanitizeForLog(reason), 
+          recipientUserId: sanitizeForLog(recipientUserId), 
+          recipientDeviceId: sanitizeForLog(recipientDeviceId) 
+        });
         
         // Forward notification to the sender who needs to resend
         safeEmitToDevice(io, senderUserId, senderDeviceId, "sessionRecoveryRequested", {
@@ -1368,18 +1430,20 @@ io.sockets.on("connection", socket => {
           requestedAt: new Date().toISOString()
         });
         
-        console.log(`[SIGNAL SERVER] ✓ Session recovery notification sent to ${sanitizeForLog(senderUserId)}:${sanitizeForLog(senderDeviceId)}`);
+        logger.info('[SIGNAL SERVER] Session recovery notification sent to sender');
+        logger.debug('[SIGNAL SERVER] Session recovery sent to:', { senderUserId: sanitizeForLog(senderUserId), senderDeviceId: sanitizeForLog(senderDeviceId) });
       } else {
-        console.error('[SIGNAL SERVER] ❌ sessionRecoveryNeeded blocked - not authenticated');
+        logger.error('[SIGNAL SERVER] sessionRecoveryNeeded blocked - not authenticated');
       }
     } catch (error) {
-      console.error('[SIGNAL SERVER] Error handling session recovery:', error);
+      logger.error('[SIGNAL SERVER] Error handling session recovery:', error);
     }
   });
 
   socket.on("sendItem", async (data) => {
-    console.log("[SIGNAL SERVER] sendItem event received", data);
-    console.log(socket.handshake.session);
+    logger.info('[SIGNAL SERVER] sendItem event received');
+    logger.debug('[SIGNAL SERVER] sendItem data:', { data: sanitizeForLog(data) });
+    logger.debug('[SIGNAL SERVER] Session:', { session: socket.handshake.session });
     try {
       if(isAuthenticated()) {
         const recipientUserId = data.recipient;
@@ -1394,7 +1458,8 @@ io.sockets.on("connection", socket => {
         // Store ALL 1:1 messages in the database (including PreKey for offline recipients)
         // NOTE: Item table is for 1:1 messages ONLY (no channel field)
         // Group messages use sendGroupItem event and GroupItem table instead
-        console.log(`[SIGNAL SERVER] Storing 1:1 message in DB: cipherType=${cipherType}, itemId=${sanitizeForLog(itemId)}`);
+        logger.info('[SIGNAL SERVER] Storing 1:1 message in DB');
+        logger.debug('[SIGNAL SERVER] Message details:', { cipherType, itemId: sanitizeForLog(itemId) });
         const storedItem = await writeQueue.enqueue(async () => {
           return await Item.create({
             sender: senderUserId,
@@ -1407,7 +1472,7 @@ io.sockets.on("connection", socket => {
             itemId: itemId
           });
         }, `sendItem-${itemId}`);
-         console.log(`[SIGNAL SERVER] Message stored successfully in DB`);
+         logger.info('[SIGNAL SERVER] Message stored successfully in DB');
 
         // Send delivery receipt to sender IMMEDIATELY after DB storage
         // (regardless of whether recipient is online)
@@ -1419,7 +1484,8 @@ io.sockets.on("connection", socket => {
             recipientDeviceId: recipientDeviceId,
             deliveredAt: new Date().toISOString()
           });
-          console.log(`[SIGNAL SERVER] ✓ Delivery receipt sent to sender ${sanitizeForLog(senderUserId)}:${sanitizeForLog(senderDeviceId)} (message stored in DB)`);
+          logger.info('[SIGNAL SERVER] Delivery receipt sent to sender (message stored in DB)');
+          logger.debug('[SIGNAL SERVER] Receipt sent to:', { senderUserId: sanitizeForLog(senderUserId), senderDeviceId: sanitizeForLog(senderDeviceId) });
         }
 
         // Sende die Nachricht an das spezifische Gerät (recipientDeviceId),
@@ -1427,9 +1493,13 @@ io.sockets.on("connection", socket => {
         const targetSocketId = deviceSockets.get(`${recipientUserId}:${recipientDeviceId}`);
         const isSelfMessage = (recipientUserId === senderUserId && recipientDeviceId === senderDeviceId);
         
-        console.log(`[SIGNAL SERVER] Target device: ${sanitizeForLog(recipientUserId)}:${sanitizeForLog(recipientDeviceId)}, socketId: ${targetSocketId}`);
-        console.log(`[SIGNAL SERVER] Is self-message: ${isSelfMessage}`);
-        console.log(`[SIGNAL SERVER] cipherType`, cipherType);
+        logger.debug('[SIGNAL SERVER] Target device details:', { 
+          recipientUserId: sanitizeForLog(recipientUserId), 
+          recipientDeviceId: sanitizeForLog(recipientDeviceId), 
+          hasSocket: !!targetSocketId,
+          isSelfMessage,
+          cipherType
+        });
         if (targetSocketId) {
           // 🚀 Use safe emit (only if client ready)
           safeEmitToDevice(io, recipientUserId, recipientDeviceId, "receiveItem", {
@@ -1443,7 +1513,8 @@ io.sockets.on("connection", socket => {
             // NOTE: channel is NOT included - receiveItem is for 1:1 messages ONLY
             // Group messages use groupItem event instead
           });
-          console.log(`[SIGNAL SERVER] 1:1 message sent to device ${sanitizeForLog(recipientUserId)}:${sanitizeForLog(recipientDeviceId)}`);
+          logger.info('[SIGNAL SERVER] 1:1 message sent to device');
+          logger.debug('[SIGNAL SERVER] Message sent to:', { recipientUserId: sanitizeForLog(recipientUserId), recipientDeviceId: sanitizeForLog(recipientDeviceId) });
           
           // Update delivery timestamp in database (recipient received the message)
           await writeQueue.enqueue(async () => {
@@ -1453,13 +1524,14 @@ io.sockets.on("connection", socket => {
             );
           }, `deliveryUpdate-${itemId}`);
         } else {
-          console.log(`[SIGNAL SERVER] Target device ${sanitizeForLog(recipientUserId)}:${sanitizeForLog(recipientDeviceId)} is offline, message stored in DB`);
+          logger.info('[SIGNAL SERVER] Target device offline, message stored in DB');
+          logger.debug('[SIGNAL SERVER] Offline device:', { recipientUserId: sanitizeForLog(recipientUserId), recipientDeviceId: sanitizeForLog(recipientDeviceId) });
         }
        } else {
-         console.error('[SIGNAL SERVER] ERROR: sendItem blocked - not authenticated');
+         logger.error('[SIGNAL SERVER] ERROR: sendItem blocked - not authenticated');
       }
     } catch (error) {
-      console.error('Error sending item:', error);
+      logger.error('Error sending item:', error);
     }
   });
 
@@ -1468,12 +1540,12 @@ io.sockets.on("connection", socket => {
   // instead of the new GroupItem table. It should not be used in new code.
   // Use sendGroupItem event instead.
   socket.on("sendGroupMessage", async (data) => {
-    console.log("[SIGNAL SERVER] ⚠ WARNING: sendGroupMessage is deprecated, use sendGroupItem instead");
-    console.log("[SIGNAL SERVER] Received deprecated sendGroupMessage event", data);
+    logger.warn('[SIGNAL SERVER] WARNING: sendGroupMessage is deprecated, use sendGroupItem instead');
+    logger.debug('[SIGNAL SERVER] Received deprecated sendGroupMessage event:', { data: sanitizeForLog(data) });
     
     try {
       if(!isAuthenticated()) {
-        console.error('[SIGNAL SERVER] ERROR: sendGroupMessage blocked - not authenticated');
+        logger.error('[SIGNAL SERVER] ERROR: sendGroupMessage blocked - not authenticated');
         return;
       }
 
@@ -1488,12 +1560,12 @@ io.sockets.on("connection", socket => {
         timestamp: data.timestamp
       };
 
-      console.log('[SIGNAL SERVER] Redirecting to sendGroupItem handler with new format');
+      logger.info('[SIGNAL SERVER] Redirecting to sendGroupItem handler with new format');
       // Trigger the new handler
       socket.emit('_internalSendGroupItem', newData);
       
     } catch (error) {
-      console.error('[SIGNAL SERVER] Error in deprecated sendGroupMessage:', error);
+      logger.error('[SIGNAL SERVER] Error in deprecated sendGroupMessage:', error);
     }
   });
 
@@ -1501,7 +1573,7 @@ io.sockets.on("connection", socket => {
   socket.on("groupMessageRead", async (data) => {
     try {
       if(!isAuthenticated()) {
-        console.error('[SIGNAL SERVER] ERROR: groupMessageRead blocked - not authenticated');
+        logger.error('[SIGNAL SERVER] ERROR: groupMessageRead blocked - not authenticated');
         return;
       }
 
@@ -1526,7 +1598,8 @@ io.sockets.on("connection", socket => {
       }, `groupMessageRead-${itemId}-${readerDeviceId}`);
 
       if (updatedCount[0] > 0) {
-        console.log(`[SIGNAL SERVER] Message ${sanitizeForLog(itemId)} marked as read by ${sanitizeForLog(readerUserId)}:${sanitizeForLog(readerDeviceId)}`);
+        logger.info('[SIGNAL SERVER] Message marked as read');
+        logger.debug('[SIGNAL SERVER] Read by:', { itemId: sanitizeForLog(itemId), readerUserId: sanitizeForLog(readerUserId), readerDeviceId: sanitizeForLog(readerDeviceId) });
 
         // Get all Items for this message to calculate read statistics
         const allItems = await Item.findAll({
@@ -1558,7 +1631,7 @@ io.sockets.on("connection", socket => {
               allRead: allRead,
               readAt: new Date().toISOString()
             });
-            console.log(`[SIGNAL SERVER] Read receipt sent to sender: ${readDevices}/${totalDevices} devices have read`);
+            logger.info(`[SIGNAL SERVER] Read receipt sent to sender: ${readDevices}/${totalDevices} devices have read`);
           }
 
           // If all devices have read the message, delete it from server
@@ -1573,12 +1646,13 @@ io.sockets.on("connection", socket => {
               });
             }, `deleteReadGroupMessage-${itemId}`);
             
-            console.log(`[SIGNAL SERVER] ✓ Group message ${sanitizeForLog(itemId)} read by all ${totalDevices} devices and deleted from server`);
+            logger.info('[SIGNAL SERVER] Group message read by all devices and deleted from server');
+            logger.debug('[SIGNAL SERVER] Deleted message:', { itemId: sanitizeForLog(itemId), totalDevices });
           }
         }
       }
     } catch (error) {
-      console.error('[SIGNAL SERVER] Error in groupMessageRead:', error);
+      logger.error('[SIGNAL SERVER] Error in groupMessageRead:', error);
     }
   });
 
@@ -1586,7 +1660,7 @@ io.sockets.on("connection", socket => {
   socket.on("storeSenderKey", async (data) => {
     try {
       if(!isAuthenticated()) {
-        console.error('[SIGNAL SERVER] ERROR: storeSenderKey blocked - not authenticated');
+        logger.error('[SIGNAL SERVER] ERROR: storeSenderKey blocked - not authenticated');
         return;
       }
 
@@ -1603,7 +1677,7 @@ io.sockets.on("connection", socket => {
       });
 
       if (!client) {
-        console.error('[SIGNAL SERVER] ERROR: Client not found for storeSenderKey');
+        logger.error('[SIGNAL SERVER] ERROR: Client not found for storeSenderKey');
         return;
       }
 
@@ -1626,12 +1700,13 @@ io.sockets.on("connection", socket => {
         await stored.update({ sender_key: senderKey });
       }
 
-      console.log(`[SIGNAL SERVER] Stored sender key for ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} in group ${sanitizeForLog(groupId)}`);
+      logger.info('[SIGNAL SERVER] Stored sender key');
+      logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}, Group: ${sanitizeForLog(groupId)}`);
       
       // Send confirmation
       socket.emit("senderKeyStored", { groupId, success: true });
     } catch (error) {
-      console.error('[SIGNAL SERVER] Error in storeSenderKey:', error);
+      logger.error('[SIGNAL SERVER] Error in storeSenderKey', error);
     }
   });
 
@@ -1639,7 +1714,7 @@ io.sockets.on("connection", socket => {
   socket.on("broadcastSenderKey", async (data) => {
     try {
       if(!isAuthenticated()) {
-        console.error('[SIGNAL SERVER] ERROR: broadcastSenderKey blocked - not authenticated');
+        logger.error('[SIGNAL SERVER] ERROR: broadcastSenderKey blocked - not authenticated');
         return;
       }
 
@@ -1647,7 +1722,8 @@ io.sockets.on("connection", socket => {
       const userId = getUserId();
       const deviceId = getDeviceId();
 
-      console.log(`[SIGNAL SERVER] Broadcasting sender key for ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} to group ${sanitizeForLog(groupId)}`);
+      logger.info('[SIGNAL SERVER] Broadcasting sender key to group');
+      logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}, Group: ${sanitizeForLog(groupId)}`);
 
       // Get all channel members (same approach as sendGroupItem)
       const members = await ChannelMembers.findAll({
@@ -1655,7 +1731,8 @@ io.sockets.on("connection", socket => {
       });
 
       if (!members || members.length === 0) {
-        console.log(`[SIGNAL SERVER] No members found for group ${sanitizeForLog(groupId)}`);
+        logger.info('[SIGNAL SERVER] No members found for group');
+        logger.debug(`[SIGNAL SERVER] Group: ${sanitizeForLog(groupId)}`);
         return;
       }
 
@@ -1689,9 +1766,9 @@ io.sockets.on("connection", socket => {
         }
       }
 
-      console.log(`[SIGNAL SERVER] ✓ Sender key distribution delivered to ${deliveredCount}/${memberClients.length - 1} devices`);
+      logger.info(`[SIGNAL SERVER] Sender key distribution delivered to ${deliveredCount}/${memberClients.length - 1} devices`);
     } catch (error) {
-      console.error('[SIGNAL SERVER] Error in broadcastSenderKey:', error);
+      logger.error('[SIGNAL SERVER] Error in broadcastSenderKey', error);
     }
   });
 
@@ -1699,7 +1776,7 @@ io.sockets.on("connection", socket => {
   socket.on("getSenderKey", async (data) => {
     try {
       if(!isAuthenticated()) {
-        console.error('[SIGNAL SERVER] ERROR: getSenderKey blocked - not authenticated');
+        logger.error('[SIGNAL SERVER] ERROR: getSenderKey blocked - not authenticated');
         return;
       }
 
@@ -1714,7 +1791,8 @@ io.sockets.on("connection", socket => {
       });
 
       if (!client) {
-        console.error(`[SIGNAL SERVER] ERROR: Client not found for getSenderKey: ${sanitizeForLog(requestedUserId)}:${sanitizeForLog(requestedDeviceId)}`);
+        logger.error('[SIGNAL SERVER] ERROR: Client not found for getSenderKey');
+        logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(requestedUserId)}, Device: ${sanitizeForLog(requestedDeviceId)}`);
         socket.emit("senderKeyResponse", { groupId, requestedUserId, requestedDeviceId, senderKey: null });
         return;
       }
@@ -1728,7 +1806,8 @@ io.sockets.on("connection", socket => {
       });
 
       if (senderKeyRecord) {
-        console.log(`[SIGNAL SERVER] Retrieved sender key for ${sanitizeForLog(requestedUserId)}:${sanitizeForLog(requestedDeviceId)} in group ${sanitizeForLog(groupId)}`);
+        logger.info('[SIGNAL SERVER] Retrieved sender key');
+        logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(requestedUserId)}, Device: ${sanitizeForLog(requestedDeviceId)}, Group: ${sanitizeForLog(groupId)}`);
         socket.emit("senderKeyResponse", {
           groupId,
           requestedUserId,
@@ -1737,7 +1816,8 @@ io.sockets.on("connection", socket => {
           success: true
         });
       } else {
-        console.log(`[SIGNAL SERVER] Sender key not found for ${sanitizeForLog(requestedUserId)}:${sanitizeForLog(requestedDeviceId)} in group ${sanitizeForLog(groupId)}`);
+        logger.info('[SIGNAL SERVER] Sender key not found');
+        logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(requestedUserId)}, Device: ${sanitizeForLog(requestedDeviceId)}, Group: ${sanitizeForLog(groupId)}`);
         socket.emit("senderKeyResponse", {
           groupId,
           requestedUserId,
@@ -1747,7 +1827,7 @@ io.sockets.on("connection", socket => {
         });
       }
     } catch (error) {
-      console.error('[SIGNAL SERVER] Error in getSenderKey:', error);
+      logger.error('[SIGNAL SERVER] Error in getSenderKey', error);
     }
   });
 
@@ -1781,7 +1861,7 @@ io.sockets.on("connection", socket => {
       
       callbackHandler(callback, channels);
     } catch (error) {
-      console.error('Error fetching channels:', error);
+      logger.error('Error fetching channels', error);
       callbackHandler(callback, { error: 'Failed to fetch channels' });
     }
   });
@@ -1919,7 +1999,7 @@ io.sockets.on("connection", socket => {
   socket.on("announceFile", async (data, callback) => {
     try {
       if (!isAuthenticated()) {
-        console.error('[P2P FILE] ERROR: Not authenticated');
+        logger.error('[P2P FILE] ERROR: Not authenticated');
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
@@ -1927,9 +2007,10 @@ io.sockets.on("connection", socket => {
       const deviceId = getDeviceId();
       const { fileId, mimeType, fileSize, checksum, chunkCount, availableChunks, sharedWith } = data;
 
-      console.log(`[P2P FILE] Device ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} announcing file: ${sanitizeForLog(fileId.substring(0, 16))}... (${mimeType}, ${fileSize} bytes)`);
+      logger.info(`[P2P FILE] Device announcing file (${mimeType}, ${fileSize} bytes)`);
+      logger.debug(`[P2P FILE] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}, FileId: ${sanitizeForLog(fileId.substring(0, 16))}...`);
       if (sharedWith) {
-        console.log(`[P2P FILE] Shared with: ${sharedWith.join(', ')}`);
+        logger.debug(`[P2P FILE] Shared with: ${sharedWith.join(', ')}`);
       }
 
       // Check if this is a reannouncement
@@ -1939,7 +2020,8 @@ io.sockets.on("connection", socket => {
         // ========================================
         // REANNOUNCEMENT - Use merge logic
         // ========================================
-        console.log(`[P2P FILE] Reannouncing existing file: ${sanitizeForLog(fileId.substring(0, 8))}`);
+        logger.info('[P2P FILE] Reannouncing existing file');
+        logger.debug(`[P2P FILE] FileId: ${sanitizeForLog(fileId.substring(0, 8))}`);
         
         const result = fileRegistry.reannounceFile(fileId, userId, deviceId, {
           availableChunks,
@@ -1947,7 +2029,8 @@ io.sockets.on("connection", socket => {
         });
         
         if (!result) {
-          console.error(`[P2P FILE] ❌ Reannouncement failed for ${sanitizeForLog(fileId.substring(0, 8))}`);
+          logger.error('[P2P FILE] Reannouncement failed');
+          logger.debug(`[P2P FILE] FileId: ${sanitizeForLog(fileId.substring(0, 8))}`);
           return callback?.({ success: false, error: "Reannouncement failed" });
         }
         
@@ -1969,11 +2052,11 @@ io.sockets.on("connection", socket => {
         // Send Signal messages to all holders (async, non-blocking)
         setImmediate(() => {
           sendSharedWithUpdateSignal(fileId, result.sharedWith).catch(err => {
-            console.error('[SIGNAL] Error sending sharedWith update:', err);
+            logger.error('[SIGNAL] Error sending sharedWith update', err);
           });
         });
         
-        console.log(`[P2P FILE] Notifying ${result.sharedWith.length} authorized users about file reannouncement`);
+        logger.info(`[P2P FILE] Notifying ${result.sharedWith.length} authorized users about file reannouncement`);
         
         // Notify authorized users about reannouncement
         result.sharedWith.forEach(targetUserId => {
@@ -2026,7 +2109,8 @@ io.sockets.on("connection", socket => {
         // SECURITY: Check if announce was denied
         // ========================================
         if (!fileInfo) {
-          console.error(`[SECURITY] ❌ Announce REJECTED for user ${sanitizeForLog(userId)} - file ${sanitizeForLog(fileId.substring(0, 16))}`);
+          logger.error('[SECURITY] Announce REJECTED for user');
+          logger.debug(`[SECURITY] User: ${sanitizeForLog(userId)}, FileId: ${sanitizeForLog(fileId.substring(0, 16))}`);
           return callback?.({ 
             success: false, 
             error: "Permission denied: You don't have access to this file" 
@@ -2040,7 +2124,7 @@ io.sockets.on("connection", socket => {
 
         // LÖSUNG 12: Notify only authorized users (no broadcast!)
         const sharedUsers = fileRegistry.getSharedUsers(fileId);
-        console.log(`[P2P FILE] Notifying ${sharedUsers.length} authorized users about file announcement (quality: ${chunkQuality}%)`);
+        logger.info(`[P2P FILE] Notifying ${sharedUsers.length} authorized users about file announcement (quality: ${chunkQuality}%)`);
         
         // Find sockets of authorized users
         const targetSockets = Array.from(io.sockets.sockets.values())
@@ -2070,7 +2154,7 @@ io.sockets.on("connection", socket => {
       }
 
     } catch (error) {
-      console.error('[P2P FILE] Error announcing file:', error);
+      logger.error('[P2P FILE] Error announcing file', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -2101,7 +2185,7 @@ io.sockets.on("connection", socket => {
         callback?.({ success: false, error: 'File not found' });
       }
     } catch (error) {
-      console.error('[SOCKET] Error getting sharedWith:', error);
+      logger.error('[SOCKET] Error getting sharedWith', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -2119,7 +2203,8 @@ io.sockets.on("connection", socket => {
       const deviceId = getDeviceId();
       const { fileId } = data;
 
-      console.log(`[P2P FILE] Device ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} unannouncing file: ${sanitizeForLog(fileId)}`);
+      logger.info('[P2P FILE] Device unannouncing file');
+      logger.debug(`[P2P FILE] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}, FileId: ${sanitizeForLog(fileId)}`);
 
       const success = fileRegistry.unannounceFile(userId, deviceId, fileId);
       callback?.({ success });
@@ -2149,7 +2234,7 @@ io.sockets.on("connection", socket => {
       }
 
     } catch (error) {
-      console.error('[P2P FILE] Error unannouncing file:', error);
+      logger.error('[P2P FILE] Error unannouncing file', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -2167,7 +2252,8 @@ io.sockets.on("connection", socket => {
       const deviceId = getDeviceId();
       const { fileId, availableChunks } = data;
 
-      console.log(`[P2P FILE] Device ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} updating chunks for ${sanitizeForLog(fileId.substring(0, 8))}: ${availableChunks.length} chunks`);
+      logger.info(`[P2P FILE] Device updating chunks: ${availableChunks.length} chunks`);
+      logger.debug(`[P2P FILE] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}, FileId: ${sanitizeForLog(fileId.substring(0, 8))}`);
 
       const success = fileRegistry.updateAvailableChunks(userId, deviceId, fileId, availableChunks);
       
@@ -2202,11 +2288,11 @@ io.sockets.on("connection", socket => {
           }
         });
         
-        console.log(`[P2P FILE] Notified ${targetSockets.length} users about chunk update (quality: ${chunkQuality}%)`);
+        logger.info(`[P2P FILE] Notified ${targetSockets.length} users about chunk update (quality: ${chunkQuality}%)`);
       }
 
     } catch (error) {
-      console.error('[P2P FILE] Error updating chunks:', error);
+      logger.error('[P2P FILE] Error updating chunks', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -2225,7 +2311,8 @@ io.sockets.on("connection", socket => {
       
       // Check permission
       if (!fileRegistry.canAccess(userId, fileId)) {
-        console.log(`[P2P FILE] User ${sanitizeForLog(userId)} denied access to file ${sanitizeForLog(fileId)}`);
+        logger.info('[P2P FILE] User denied access to file');
+        logger.debug(`[P2P FILE] User: ${sanitizeForLog(userId)}, FileId: ${sanitizeForLog(fileId)}`);
         return callback?.({ success: false, error: "Access denied" });
       }
 
@@ -2242,7 +2329,7 @@ io.sockets.on("connection", socket => {
       callback?.({ success: true, fileInfo });
 
     } catch (error) {
-      console.error('[P2P FILE] Error getting file info:', error);
+      logger.error('[P2P FILE] Error getting file info', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -2262,17 +2349,19 @@ io.sockets.on("connection", socket => {
 
       // Check permission
       if (!fileRegistry.canAccess(userId, fileId)) {
-        console.log(`[P2P FILE] User ${sanitizeForLog(userId)} denied download access to file ${sanitizeForLog(fileId)}`);
+        logger.info('[P2P FILE] User denied download access to file');
+        logger.debug(`[P2P FILE] User: ${sanitizeForLog(userId)}, FileId: ${sanitizeForLog(fileId)}`);
         return callback?.({ success: false, error: "Access denied" });
       }
 
-      console.log(`[P2P FILE] Device ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} downloading file: ${sanitizeForLog(fileId)}`);
+      logger.info('[P2P FILE] Device downloading file');
+      logger.debug(`[P2P FILE] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}, FileId: ${sanitizeForLog(fileId)}`);
 
       const success = fileRegistry.registerLeecher(userId, deviceId, fileId);
       callback?.({ success });
 
     } catch (error) {
-      console.error('[P2P FILE] Error registering leecher:', error);
+      logger.error('[P2P FILE] Error registering leecher', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -2294,7 +2383,7 @@ io.sockets.on("connection", socket => {
       callback?.({ success });
 
     } catch (error) {
-      console.error('[P2P FILE] Error unregistering leecher:', error);
+      logger.error('[P2P FILE] Error unregistering leecher', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -2310,7 +2399,7 @@ io.sockets.on("connection", socket => {
       callback?.({ success: true, results });
 
     } catch (error) {
-      console.error('[P2P FILE] Error searching files:', error);
+      logger.error('[P2P FILE] Error searching files', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -2324,7 +2413,7 @@ io.sockets.on("connection", socket => {
       callback?.({ success: true, files });
 
     } catch (error) {
-      console.error('[P2P FILE] Error getting active files:', error);
+      logger.error('[P2P FILE] Error getting active files', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -2343,7 +2432,8 @@ io.sockets.on("connection", socket => {
       
       // Check permission
       if (!fileRegistry.canAccess(userId, fileId)) {
-        console.log(`[P2P FILE] User ${sanitizeForLog(userId)} denied access to chunks for file ${sanitizeForLog(fileId)}`);
+        logger.info('[P2P FILE] User denied access to chunks for file');
+        logger.debug(`[P2P FILE] User: ${sanitizeForLog(userId)}, FileId: ${sanitizeForLog(fileId)}`);
         return callback?.({ success: false, error: "Access denied" });
       }
 
@@ -2352,7 +2442,7 @@ io.sockets.on("connection", socket => {
       callback?.({ success: true, chunks });
 
     } catch (error) {
-      console.error('[P2P FILE] Error getting available chunks:', error);
+      logger.error('[P2P FILE] Error getting available chunks', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -2376,7 +2466,8 @@ io.sockets.on("connection", socket => {
         return callback?.({ success: false, error: "Missing fileId or targetUserId" });
       }
 
-      console.log(`[P2P FILE] User ${sanitizeForLog(userId)} sharing file ${sanitizeForLog(fileId)} with ${sanitizeForLog(targetUserId)}`);
+      logger.info('[P2P FILE] User sharing file with user');
+      logger.debug(`[P2P FILE] Sharer: ${sanitizeForLog(userId)}, Target: ${sanitizeForLog(targetUserId)}, FileId: ${sanitizeForLog(fileId)}`);
 
       const success = fileRegistry.shareFile(fileId, userId, targetUserId);
       fileRegistry.shareFile(fileId, userId, userId); // Ensure sharer retains access
@@ -2407,7 +2498,7 @@ io.sockets.on("connection", socket => {
       }
 
     } catch (error) {
-      console.error('[P2P FILE] Error sharing file:', error);
+      logger.error('[P2P FILE] Error sharing file', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -2452,7 +2543,8 @@ io.sockets.on("connection", socket => {
       }
 
       if (socket._shareRateLimit.count >= 10) {
-        console.log(`[P2P FILE] Rate limit exceeded for user ${sanitizeForLog(userId)}`);
+        logger.warn('[P2P FILE] Rate limit exceeded for user');
+        logger.debug(`[P2P FILE] User: ${sanitizeForLog(userId)}`);
         return callback?.({ success: false, error: "Rate limit: max 10 share operations per minute" });
       }
 
@@ -2470,7 +2562,8 @@ io.sockets.on("connection", socket => {
       const isSeeder = fileInfo.seeders.some(s => s.startsWith(`${userId}:`));
 
       if (!isCreator && !hasAccess && !isSeeder) {
-        console.log(`[P2P FILE] User ${sanitizeForLog(userId)} has no permission to modify shares for ${sanitizeForLog(fileId)}`);
+        logger.warn('[P2P FILE] User has no permission to modify shares');
+        logger.debug(`[P2P FILE] User: ${sanitizeForLog(userId)}, FileId: ${sanitizeForLog(fileId)}`);
         return callback?.({ success: false, error: "Permission denied" });
       }
 
@@ -2482,12 +2575,14 @@ io.sockets.on("connection", socket => {
         }
         // Self-revoke: User can remove themselves
         else if (userIds.length === 1 && userIds[0] === userId) {
-          console.log(`[P2P FILE] ✓ Self-revoke: User ${sanitizeForLog(userId)} removing self from ${sanitizeForLog(fileId.substring(0, 8))}`);
+          logger.info('[P2P FILE] Self-revoke: User removing self from file');
+          logger.debug(`[P2P FILE] User: ${sanitizeForLog(userId)}, FileId: ${sanitizeForLog(fileId.substring(0, 8))}`);
           // OK - Self-revoke allowed
         }
         // Non-creator cannot revoke others
         else {
-          console.log(`[P2P FILE] ❌ User ${sanitizeForLog(userId)} cannot revoke others from ${sanitizeForLog(fileId.substring(0, 8))} (not creator)`);
+          logger.warn('[P2P FILE] User cannot revoke others (not creator)');
+          logger.debug(`[P2P FILE] User: ${sanitizeForLog(userId)}, FileId: ${sanitizeForLog(fileId.substring(0, 8))}`);
           return callback?.({ 
             success: false, 
             error: "Only creator can revoke others. You can only remove yourself." 
@@ -2501,12 +2596,14 @@ io.sockets.on("connection", socket => {
         const newSize = currentSize + userIds.length;
         
         if (newSize > 1000) {
-          console.log(`[P2P FILE] Share limit exceeded for ${sanitizeForLog(fileId)}: ${newSize} > 1000`);
+          logger.warn(`[P2P FILE] Share limit exceeded: ${newSize} > 1000`);
+          logger.debug(`[P2P FILE] FileId: ${sanitizeForLog(fileId)}`);
           return callback?.({ success: false, error: "Maximum 1000 users per file" });
         }
       }
 
-      console.log(`[P2P FILE] User ${sanitizeForLog(userId)} ${action}ing ${userIds.length} users for file ${sanitizeForLog(fileId.substring(0, 8))}`);
+      logger.info(`[P2P FILE] User ${action}ing ${userIds.length} users for file`);
+      logger.debug(`[P2P FILE] User: ${sanitizeForLog(userId)}, FileId: ${sanitizeForLog(fileId.substring(0, 8))}`);
 
       // Execute action
       let successCount = 0;
@@ -2528,7 +2625,7 @@ io.sockets.on("connection", socket => {
         }
       }
 
-      console.log(`[P2P FILE] Share update complete: ${successCount} succeeded, ${failCount} failed`);
+      logger.info(`[P2P FILE] Share update complete: ${successCount} succeeded, ${failCount} failed`);
 
       callback?.({ 
         success: true, 
@@ -2565,7 +2662,7 @@ io.sockets.on("connection", socket => {
       });
 
     } catch (error) {
-      console.error('[P2P FILE] Error updating file share:', error);
+      logger.error('[P2P FILE] Error updating file share', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -2586,7 +2683,8 @@ io.sockets.on("connection", socket => {
         return callback?.({ success: false, error: "Missing fileId or targetUserId" });
       }
 
-      console.log(`[P2P FILE] User ${sanitizeForLog(userId)} unsharing file ${sanitizeForLog(fileId)} from ${sanitizeForLog(targetUserId)}`);
+      logger.info('[P2P FILE] User unsharing file from user');
+      logger.debug(`[P2P FILE] From: ${sanitizeForLog(userId)}, FileId: ${sanitizeForLog(fileId)}, Target: ${sanitizeForLog(targetUserId)}`);
 
       const success = fileRegistry.unshareFile(fileId, userId, targetUserId);
       
@@ -2611,7 +2709,7 @@ io.sockets.on("connection", socket => {
       });
 
     } catch (error) {
-      console.error('[P2P FILE] Error unsharing file:', error);
+      logger.error('[P2P FILE] Error unsharing file', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -2638,7 +2736,7 @@ io.sockets.on("connection", socket => {
       callback?.({ success: true, sharedUsers });
 
     } catch (error) {
-      console.error('[P2P FILE] Error getting shared users:', error);
+      logger.error('[P2P FILE] Error getting shared users', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -2652,7 +2750,8 @@ io.sockets.on("connection", socket => {
     try {
       const { targetUserId, targetDeviceId, fileId, offer } = data;
       
-      console.log(`[P2P WEBRTC] Relaying offer for file ${sanitizeForLog(fileId)} to ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId || 'broadcast')}`);
+      logger.info('[P2P WEBRTC] Relaying offer for file');
+      logger.debug(`[P2P WEBRTC] FileId: ${sanitizeForLog(fileId)}, Target: ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId || 'broadcast')}`);
       
       // Route to specific device if deviceId provided (and not empty string)
       if (targetDeviceId && targetDeviceId !== '') {
@@ -2666,9 +2765,11 @@ io.sockets.on("connection", socket => {
             fileId,
             offer
           });
-          console.log(`[P2P WEBRTC] ✓ Offer relayed to specific device ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
+          logger.info('[P2P WEBRTC] Offer relayed to specific device');
+          logger.debug(`[P2P WEBRTC] Target: ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
         } else {
-          console.warn(`[P2P WEBRTC] ✗ Target device ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)} not found online`);
+          logger.warn('[P2P WEBRTC] Target device not found online');
+          logger.debug(`[P2P WEBRTC] Target: ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
         }
       } else {
         // Broadcast to all devices of the user
@@ -2689,13 +2790,15 @@ io.sockets.on("connection", socket => {
               });
             }
           });
-          console.log(`[P2P WEBRTC] ✓ Offer broadcast to ${targetSockets.length} device(s) of user ${sanitizeForLog(targetUserId)}`);
+          logger.info(`[P2P WEBRTC] Offer broadcast to ${targetSockets.length} device(s)`);
+          logger.debug(`[P2P WEBRTC] User: ${sanitizeForLog(targetUserId)}`);
         } else {
-          console.warn(`[P2P WEBRTC] ✗ Target user ${sanitizeForLog(targetUserId)} has no devices online`);
+          logger.warn('[P2P WEBRTC] Target user has no devices online');
+          logger.debug(`[P2P WEBRTC] User: ${sanitizeForLog(targetUserId)}`);
         }
       }
     } catch (error) {
-      console.error('[P2P WEBRTC] Error relaying offer:', error);
+      logger.error('[P2P WEBRTC] Error relaying offer', error);
     }
   });
 
@@ -2706,7 +2809,8 @@ io.sockets.on("connection", socket => {
     try {
       const { targetUserId, targetDeviceId, fileId, answer } = data;
       
-      console.log(`[P2P WEBRTC] Relaying answer for file ${sanitizeForLog(fileId)} to ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
+      logger.info('[P2P WEBRTC] Relaying answer for file');
+      logger.debug(`[P2P WEBRTC] FileId: ${sanitizeForLog(fileId)}, Target: ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
       
       // Route to specific device if deviceId provided
       if (targetDeviceId) {
@@ -2720,9 +2824,11 @@ io.sockets.on("connection", socket => {
             fileId,
             answer
           });
-          console.log(`[P2P WEBRTC] Answer relayed to ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
+          logger.info('[P2P WEBRTC] Answer relayed to device');
+          logger.debug(`[P2P WEBRTC] Target: ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
         } else {
-          console.warn(`[P2P WEBRTC] Target device ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)} not found online`);
+          logger.warn('[P2P WEBRTC] Target device not found online');
+          logger.debug(`[P2P WEBRTC] Target: ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
         }
       } else {
         // Broadcast to all devices (fallback)
@@ -2743,13 +2849,14 @@ io.sockets.on("connection", socket => {
               });
             }
           });
-          console.log(`[P2P WEBRTC] Answer broadcast to ${targetSockets.length} devices`);
+          logger.info(`[P2P WEBRTC] Answer broadcast to ${targetSockets.length} devices`);
         } else {
-          console.warn(`[P2P WEBRTC] Target user ${sanitizeForLog(targetUserId)} not found online`);
+          logger.warn('[P2P WEBRTC] Target user not found online');
+          logger.debug(`[P2P WEBRTC] User: ${sanitizeForLog(targetUserId)}`);
         }
       }
     } catch (error) {
-      console.error('[P2P WEBRTC] Error relaying answer:', error);
+      logger.error('[P2P WEBRTC] Error relaying answer', error);
     }
   });
 
@@ -2760,7 +2867,8 @@ io.sockets.on("connection", socket => {
     try {
       const { targetUserId, targetDeviceId, fileId, candidate } = data;
       
-      console.log(`[P2P WEBRTC] Relaying ICE candidate for file ${sanitizeForLog(fileId)} to ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
+      logger.debug('[P2P WEBRTC] Relaying ICE candidate for file');
+      logger.debug(`[P2P WEBRTC] FileId: ${sanitizeForLog(fileId)}, Target: ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
       
       // Route to specific device if deviceId provided
       if (targetDeviceId) {
@@ -2775,7 +2883,8 @@ io.sockets.on("connection", socket => {
             candidate
           });
         } else {
-          console.warn(`[P2P WEBRTC] Target device ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)} not found online`);
+          logger.warn('[P2P WEBRTC] Target device not found online');
+          logger.debug(`[P2P WEBRTC] Target: ${sanitizeForLog(targetUserId)}:${sanitizeForLog(targetDeviceId)}`);
         }
       } else {
         // Broadcast to all devices (fallback)
@@ -2797,11 +2906,12 @@ io.sockets.on("connection", socket => {
             }
           });
         } else {
-          console.warn(`[P2P WEBRTC] Target user ${sanitizeForLog(targetUserId)} not found online`);
+          logger.warn('[P2P WEBRTC] Target user not found online');
+          logger.debug(`[P2P WEBRTC] User: ${sanitizeForLog(targetUserId)}`);
         }
       }
     } catch (error) {
-      console.error('[P2P WEBRTC] Error relaying ICE candidate:', error);
+      logger.error('[P2P WEBRTC] Error relaying ICE candidate', error);
     }
   });
 
@@ -2811,14 +2921,15 @@ io.sockets.on("connection", socket => {
   socket.on("file:key-request", (data) => {
     try {
       if (!isAuthenticated()) {
-        console.error('[P2P KEY] Key request blocked - not authenticated');
+        logger.error('[P2P KEY] Key request blocked - not authenticated');
         return;
       }
 
       const { targetUserId, fileId } = data;
       const requesterId = getUserId();
       
-      console.log(`[P2P KEY] User ${sanitizeForLog(requesterId)} requesting key for file ${sanitizeForLog(fileId)} from ${sanitizeForLog(targetUserId)}`);
+      logger.info('[P2P KEY] User requesting key for file');
+      logger.debug(`[P2P KEY] Requester: ${sanitizeForLog(requesterId)}, FileId: ${sanitizeForLog(fileId)}, Target: ${sanitizeForLog(targetUserId)}`);
       
       // Find seeder's socket and relay the key request
       const targetSockets = Array.from(io.sockets.sockets.values())
@@ -2834,9 +2945,11 @@ io.sockets.on("connection", socket => {
             });
           }
         });
-        console.log(`[P2P KEY] Key request relayed to ${sanitizeForLog(targetUserId)}`);
+        logger.info('[P2P KEY] Key request relayed to seeder');
+        logger.debug(`[P2P KEY] Target: ${sanitizeForLog(targetUserId)}`);
       } else {
-        console.warn(`[P2P KEY] Seeder ${sanitizeForLog(targetUserId)} not found online`);
+        logger.warn('[P2P KEY] Seeder not found online');
+        logger.debug(`[P2P KEY] Seeder: ${sanitizeForLog(targetUserId)}`);
         // Send error back to requester
         socket.emit("file:key-response", {
           fromUserId: targetUserId,
@@ -2845,7 +2958,7 @@ io.sockets.on("connection", socket => {
         });
       }
     } catch (error) {
-      console.error('[P2P KEY] Error relaying key request:', error);
+      logger.error('[P2P KEY] Error relaying key request', error);
     }
   });
 
@@ -2855,14 +2968,15 @@ io.sockets.on("connection", socket => {
   socket.on("file:key-response", (data) => {
     try {
       if (!isAuthenticated()) {
-        console.error('[P2P KEY] Key response blocked - not authenticated');
+        logger.error('[P2P KEY] Key response blocked - not authenticated');
         return;
       }
 
       const { targetUserId, fileId, key, error } = data;
       const seederId = getUserId();
       
-      console.log(`[P2P KEY] User ${sanitizeForLog(seederId)} sending key for file ${sanitizeForLog(fileId)} to ${sanitizeForLog(targetUserId)}`);
+      logger.info('[P2P KEY] User sending key for file');
+      logger.debug(`[P2P KEY] Seeder: ${sanitizeForLog(seederId)}, FileId: ${sanitizeForLog(fileId)}, Target: ${sanitizeForLog(targetUserId)}`);
       
       // Find requester's socket and relay the key response
       const targetSockets = Array.from(io.sockets.sockets.values())
@@ -2880,12 +2994,14 @@ io.sockets.on("connection", socket => {
             });
           }
         });
-        console.log(`[P2P KEY] Key response relayed to ${sanitizeForLog(targetUserId)}`);
+        logger.info('[P2P KEY] Key response relayed to requester');
+        logger.debug(`[P2P KEY] Target: ${sanitizeForLog(targetUserId)}`);
       } else {
-        console.warn(`[P2P KEY] Requester ${sanitizeForLog(targetUserId)} not found online`);
+        logger.warn('[P2P KEY] Requester not found online');
+        logger.debug(`[P2P KEY] Requester: ${sanitizeForLog(targetUserId)}`);
       }
     } catch (error) {
-      console.error('[P2P KEY] Error relaying key response:', error);
+      logger.error('[P2P KEY] Error relaying key response', error);
     }
   });
 
@@ -2896,14 +3012,15 @@ io.sockets.on("connection", socket => {
   socket.on("video:key-request", (data) => {
     try {
       if (!isAuthenticated()) {
-        console.error('[VIDEO E2EE] Key request blocked - not authenticated');
+        logger.error('[VIDEO E2EE] Key request blocked - not authenticated');
         return;
       }
 
       const { targetUserId, channelId, signalMessage } = data;
       const requesterId = getUserId();
       
-      console.log(`[VIDEO E2EE] User ${sanitizeForLog(requesterId)} requesting key for channel ${sanitizeForLog(channelId)} from ${sanitizeForLog(targetUserId)}`);
+      logger.info('[VIDEO E2EE] User requesting key for channel');
+      logger.debug(`[VIDEO E2EE] Requester: ${sanitizeForLog(requesterId)}, Channel: ${sanitizeForLog(channelId)}, Target: ${sanitizeForLog(targetUserId)}`);
       
       // Find target participant's socket and relay the key request
       const targetSockets = Array.from(io.sockets.sockets.values())
@@ -2920,9 +3037,11 @@ io.sockets.on("connection", socket => {
             });
           }
         });
-        console.log(`[VIDEO E2EE] Key request relayed to ${sanitizeForLog(targetUserId)}`);
+        logger.info('[VIDEO E2EE] Key request relayed to participant');
+        logger.debug(`[VIDEO E2EE] Target: ${sanitizeForLog(targetUserId)}`);
       } else {
-        console.warn(`[VIDEO E2EE] Participant ${sanitizeForLog(targetUserId)} not found online`);
+        logger.warn('[VIDEO E2EE] Participant not found online');
+        logger.debug(`[VIDEO E2EE] Participant: ${sanitizeForLog(targetUserId)}`);
         // Send error back to requester
         socket.emit("video:key-response", {
           fromUserId: targetUserId,
@@ -2931,7 +3050,7 @@ io.sockets.on("connection", socket => {
         });
       }
     } catch (error) {
-      console.error('[VIDEO E2EE] Error relaying key request:', error);
+      logger.error('[VIDEO E2EE] Error relaying key request', error);
     }
   });
 
@@ -2942,14 +3061,15 @@ io.sockets.on("connection", socket => {
   socket.on("video:key-response", (data) => {
     try {
       if (!socket.handshake.session.uuid) {
-        console.error('[VIDEO E2EE] Key response blocked - not authenticated');
+        logger.error('[VIDEO E2EE] Key response blocked - not authenticated');
         return;
       }
 
       const { targetUserId, channelId, signalMessage, error } = data;
       const senderId = getUserId();
       
-      console.log(`[VIDEO E2EE] User ${sanitizeForLog(senderId)} sending key for channel ${sanitizeForLog(channelId)} to ${sanitizeForLog(targetUserId)}`);
+      logger.info('[VIDEO E2EE] User sending key for channel');
+      logger.debug(`[VIDEO E2EE] Sender: ${sanitizeForLog(senderId)}, Channel: ${sanitizeForLog(channelId)}, Target: ${sanitizeForLog(targetUserId)}`);
       
       // Find requester's socket and relay the key response
       const targetSockets = Array.from(io.sockets.sockets.values())
@@ -2967,12 +3087,14 @@ io.sockets.on("connection", socket => {
             });
           }
         });
-        console.log(`[VIDEO E2EE] Key response relayed to ${sanitizeForLog(targetUserId)}`);
+        logger.info('[VIDEO E2EE] Key response relayed to requester');
+        logger.debug(`[VIDEO E2EE] Target: ${sanitizeForLog(targetUserId)}`);
       } else {
-        console.warn(`[VIDEO E2EE] Requester ${sanitizeForLog(targetUserId)} not found online`);
+        logger.warn('[VIDEO E2EE] Requester not found online');
+        logger.debug(`[VIDEO E2EE] Requester: ${sanitizeForLog(targetUserId)}`);
       }
     } catch (error) {
-      console.error('[VIDEO E2EE] Error relaying key response:', error);
+      logger.error('[VIDEO E2EE] Error relaying key response', error);
     }
   });
 
@@ -2990,7 +3112,7 @@ io.sockets.on("connection", socket => {
       const userId = socket.data.userId || socket.handshake.session.uuid;
       
       if (!userId) {
-        console.error('[VIDEO PARTICIPANTS] Check blocked - not authenticated');
+        logger.error('[VIDEO PARTICIPANTS] Check blocked - not authenticated');
         socket.emit("video:participants-info", { error: "Not authenticated" });
         return;
       }
@@ -2998,7 +3120,7 @@ io.sockets.on("connection", socket => {
       const { channelId } = data;
 
       if (!channelId) {
-        console.error('[VIDEO PARTICIPANTS] Missing channelId');
+        logger.error('[VIDEO PARTICIPANTS] Missing channelId');
         socket.emit("video:participants-info", { error: "Missing channelId" });
         return;
       }
@@ -3011,7 +3133,8 @@ io.sockets.on("connection", socket => {
         const meeting = await meetingService.getMeeting(channelId);
         
         if (!meeting) {
-          console.error('[VIDEO PARTICIPANTS] Meeting not found:', channelId);
+          logger.error('[VIDEO PARTICIPANTS] Meeting not found');
+          logger.debug(`[VIDEO PARTICIPANTS] MeetingId: ${sanitizeForLog(channelId)}`);
           socket.emit("video:participants-info", { error: "Meeting not found" });
           return;
         }
@@ -3023,12 +3146,12 @@ io.sockets.on("connection", socket => {
         const isSourceUser = meeting.source_user_id === userId; // Person being called in 1:1 instant call
         
         if (!isCreator && !isParticipant && !isInvited && !isSourceUser) {
-          console.error('[VIDEO PARTICIPANTS] User not authorized for meeting:', channelId, 'userId:', userId);
-          console.error('[VIDEO PARTICIPANTS] Meeting details:', {
-            created_by: meeting.created_by,
-            source_user_id: meeting.source_user_id,
-            participants: meeting.participants?.map(p => p.uuid),
-            invited: meeting.invited_participants
+          logger.error('[VIDEO PARTICIPANTS] User not authorized for meeting');
+          logger.debug('[VIDEO PARTICIPANTS] Details:', {
+            channelId: sanitizeForLog(channelId),
+            userId: sanitizeForLog(userId),
+            created_by: sanitizeForLog(meeting.created_by),
+            source_user_id: sanitizeForLog(meeting.source_user_id)
           });
           socket.emit("video:participants-info", { error: "Not authorized for this meeting" });
           return;
@@ -3040,7 +3163,8 @@ io.sockets.on("connection", socket => {
         // Filter out requesting user from count (they're not "in" yet)
         const otherParticipants = participants.filter(p => p.userId !== userId);
         
-        console.log(`[VIDEO PARTICIPANTS] Check for meeting ${sanitizeForLog(channelId)}: ${otherParticipants.length} active participants`);
+        logger.info(`[VIDEO PARTICIPANTS] Check for meeting: ${otherParticipants.length} active participants`);
+        logger.debug(`[VIDEO PARTICIPANTS] Meeting: ${sanitizeForLog(channelId)}`);
         
         socket.emit("video:participants-info", {
           channelId: channelId,
@@ -3062,7 +3186,7 @@ io.sockets.on("connection", socket => {
         });
 
         if (!membership) {
-          console.error('[VIDEO PARTICIPANTS] User not member of channel');
+          logger.error('[VIDEO PARTICIPANTS] User not member of channel');
           socket.emit("video:participants-info", { error: "Not a member of this channel" });
           return;
         }
@@ -3073,7 +3197,8 @@ io.sockets.on("connection", socket => {
         // Filter out requesting user from count (they're not "in" yet)
         const otherParticipants = participants.filter(p => p.userId !== userId);
         
-        console.log(`[VIDEO PARTICIPANTS] Check for channel ${sanitizeForLog(channelId)}: ${otherParticipants.length} active participants`);
+        logger.info(`[VIDEO PARTICIPANTS] Check for channel: ${otherParticipants.length} active participants`);
+        logger.debug(`[VIDEO PARTICIPANTS] Channel: ${sanitizeForLog(channelId)}`);
 
         socket.emit("video:participants-info", {
           channelId: channelId,
@@ -3087,7 +3212,7 @@ io.sockets.on("connection", socket => {
         });
       }
     } catch (error) {
-      console.error('[VIDEO PARTICIPANTS] Error checking participants:', error);
+      logger.error('[VIDEO PARTICIPANTS] Error checking participants', error);
       socket.emit("video:participants-info", { error: "Internal server error" });
     }
   });
@@ -3100,7 +3225,7 @@ io.sockets.on("connection", socket => {
   socket.on("video:register-participant", async (data) => {
     try {
       if (!isAuthenticated()) {
-        console.error('[VIDEO PARTICIPANTS] Register blocked - not authenticated');
+        logger.error('[VIDEO PARTICIPANTS] Register blocked - not authenticated');
         return;
       }
 
@@ -3109,7 +3234,7 @@ io.sockets.on("connection", socket => {
       const deviceId = getDeviceId();
 
       if (!channelId) {
-        console.error('[VIDEO PARTICIPANTS] Missing channelId/meetingId');
+        logger.error('[VIDEO PARTICIPANTS] Missing channelId/meetingId');
         return;
       }
 
@@ -3121,7 +3246,8 @@ io.sockets.on("connection", socket => {
         const meeting = await meetingService.getMeeting(channelId);
         
         if (!meeting) {
-          console.error('[VIDEO PARTICIPANTS] Meeting not found:', channelId);
+          logger.error('[VIDEO PARTICIPANTS] Meeting not found');
+          logger.debug(`[VIDEO PARTICIPANTS] MeetingId: ${sanitizeForLog(channelId)}`);
           return;
         }
 
@@ -3131,7 +3257,7 @@ io.sockets.on("connection", socket => {
                              meeting.invited_participants?.includes(userId);
 
         if (!isParticipant) {
-          console.error('[VIDEO PARTICIPANTS] User not participant of meeting');
+          logger.error('[VIDEO PARTICIPANTS] User not participant of meeting');
           return;
         }
 
@@ -3153,10 +3279,14 @@ io.sockets.on("connection", socket => {
             last_seen: new Date()
           });
         }).catch(err => {
-          console.error('[PRESENCE] Error marking user as busy:', err);
+          logger.error('[PRESENCE] Error marking user as busy', err);
         });
 
-        console.log(`[VIDEO PARTICIPANTS] User ${sanitizeForLog(userId)} registered for meeting ${sanitizeForLog(channelId)}`);
+        logger.info('[VIDEO PARTICIPANTS] User registered for meeting');
+        logger.debug('[VIDEO PARTICIPANTS] Registration details:', {
+          userId: sanitizeForLog(userId),
+          meetingId: sanitizeForLog(channelId)
+        });
 
       } else {
         // Channel video call registration
@@ -3168,11 +3298,15 @@ io.sockets.on("connection", socket => {
         });
 
         if (!membership) {
-          console.error('[VIDEO PARTICIPANTS] User not member of channel');
+          logger.error('[VIDEO PARTICIPANTS] User not member of channel');
           return;
         }
 
-        console.log(`[VIDEO PARTICIPANTS] User ${sanitizeForLog(userId)} registered for channel ${sanitizeForLog(channelId)}`);
+        logger.info('[VIDEO PARTICIPANTS] User registered for channel');
+        logger.debug('[VIDEO PARTICIPANTS] Registration details:', {
+          userId: sanitizeForLog(userId),
+          channelId: sanitizeForLog(channelId)
+        });
       }
 
       // Add to Socket.IO room tracking (for both channels and meetings)
@@ -3188,7 +3322,7 @@ io.sockets.on("connection", socket => {
       });
 
     } catch (error) {
-      console.error('[VIDEO PARTICIPANTS] Error registering participant:', error);
+      logger.error('[VIDEO PARTICIPANTS] Error registering participant', error);
     }
   });
 
@@ -3199,7 +3333,7 @@ io.sockets.on("connection", socket => {
   socket.on("video:confirm-e2ee-key", async (data) => {
     try {
       if (!isAuthenticated()) {
-        console.error('[VIDEO PARTICIPANTS] Key confirm blocked - not authenticated');
+        logger.error('[VIDEO PARTICIPANTS] Key confirm blocked - not authenticated');
         return;
       }
 
@@ -3207,7 +3341,7 @@ io.sockets.on("connection", socket => {
       const userId = getUserId();
 
       if (!channelId) {
-        console.error('[VIDEO PARTICIPANTS] Missing channelId');
+        logger.error('[VIDEO PARTICIPANTS] Missing channelId');
         return;
       }
 
@@ -3219,9 +3353,13 @@ io.sockets.on("connection", socket => {
         userId: userId
       });
 
-      console.log(`[VIDEO PARTICIPANTS] User ${sanitizeForLog(userId)} confirmed E2EE key for channel ${sanitizeForLog(channelId)}`);
+      logger.info('[VIDEO PARTICIPANTS] User confirmed E2EE key');
+      logger.debug('[VIDEO PARTICIPANTS] Key confirmation details:', {
+        userId: sanitizeForLog(userId),
+        channelId: sanitizeForLog(channelId)
+      });
     } catch (error) {
-      console.error('[VIDEO PARTICIPANTS] Error confirming key:', error);
+      logger.error('[VIDEO PARTICIPANTS] Error confirming key', error);
     }
   });
 
@@ -3233,7 +3371,7 @@ io.sockets.on("connection", socket => {
   socket.on("video:leave-channel", async (data) => {
     try {
       if (!isAuthenticated()) {
-        console.error('[VIDEO PARTICIPANTS] Leave blocked - not authenticated');
+        logger.error('[VIDEO PARTICIPANTS] Leave blocked - not authenticated');
         return;
       }
 
@@ -3242,7 +3380,7 @@ io.sockets.on("connection", socket => {
       const deviceId = getDeviceId();
 
       if (!channelId) {
-        console.error('[VIDEO PARTICIPANTS] Missing channelId');
+        logger.error('[VIDEO PARTICIPANTS] Missing channelId');
         return;
       }
 
@@ -3256,7 +3394,8 @@ io.sockets.on("connection", socket => {
         if (result.isEmpty) {
           // Last participant left, mark room as inactive
           meetingService.updateLiveKitRoom(channelId, false, []);
-          console.log(`[VIDEO PARTICIPANTS] Meeting ${sanitizeForLog(channelId)} now empty`);
+          logger.info('[VIDEO PARTICIPANTS] Meeting now empty');
+          logger.debug(`[VIDEO PARTICIPANTS] MeetingId: ${sanitizeForLog(channelId)}`);
         }
         
         // Mark user as no longer in room (recalculate presence)
@@ -3267,7 +3406,7 @@ io.sockets.on("connection", socket => {
             last_seen: new Date()
           });
         }).catch(err => {
-          console.error('[PRESENCE] Error updating presence after leaving room:', err);
+          logger.error('[PRESENCE] Error updating presence after leaving room', err);
         });
       }
 
@@ -3282,9 +3421,14 @@ io.sockets.on("connection", socket => {
         userId: userId
       });
 
-      console.log(`[VIDEO PARTICIPANTS] User ${sanitizeForLog(userId)} left ${isMeeting ? 'meeting' : 'channel'} ${sanitizeForLog(channelId)}`);
+      logger.info(`[VIDEO PARTICIPANTS] User left ${isMeeting ? 'meeting' : 'channel'}`);
+      logger.debug('[VIDEO PARTICIPANTS] Leave details:', {
+        userId: sanitizeForLog(userId),
+        channelId: sanitizeForLog(channelId),
+        isMeeting
+      });
     } catch (error) {
-      console.error('[VIDEO PARTICIPANTS] Error leaving channel:', error);
+      logger.error('[VIDEO PARTICIPANTS] Error leaving channel', error);
     }
   });
 
@@ -3319,7 +3463,7 @@ io.sockets.on("connection", socket => {
 
       callback?.({ success: true, deletedCount });
     } catch (error) {
-      console.error('[SIGNAL SERVER] Error deleting item:', error);
+      logger.error('[SIGNAL SERVER] Error deleting item', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -3336,7 +3480,7 @@ io.sockets.on("connection", socket => {
   socket.on("sendGroupItem", async (data) => {
     try {
       if (!isAuthenticated()) {
-        console.error('[GROUP ITEM] ERROR: Not authenticated');
+        logger.error('[GROUP ITEM] Not authenticated');
         socket.emit("groupItemError", { error: "Not authenticated" });
         return;
       }
@@ -3347,7 +3491,7 @@ io.sockets.on("connection", socket => {
 
       // Validate required fields
       if (!channelId || !itemId || !payload) {
-        console.error('[GROUP ITEM] ERROR: Missing required fields');
+        logger.error('[GROUP ITEM] Missing required fields');
         socket.emit("groupItemError", { error: "Missing required fields" });
         return;
       }
@@ -3361,7 +3505,7 @@ io.sockets.on("connection", socket => {
       });
 
       if (!membership) {
-        console.error('[GROUP ITEM] ERROR: User not member of channel');
+        logger.error('[GROUP ITEM] User not member of channel');
         socket.emit("groupItemError", { error: "Not a member of this channel" });
         return;
       }
@@ -3372,7 +3516,8 @@ io.sockets.on("connection", socket => {
       });
 
       if (existing) {
-        console.log(`[GROUP ITEM] Item ${sanitizeForLog(itemId)} already exists, skipping`);
+        logger.info('[GROUP ITEM] Item already exists, skipping');
+        logger.debug(`[GROUP ITEM] ItemId: ${sanitizeForLog(itemId)}`);
         socket.emit("groupItemDelivered", { itemId: itemId, existing: true });
         return;
       }
@@ -3391,7 +3536,11 @@ io.sockets.on("connection", socket => {
         });
       }, `createGroupItem-${itemId}`);
 
-      console.log(`[GROUP ITEM] ✓ Created group item ${sanitizeForLog(itemId)} in channel ${sanitizeForLog(channelId)}`);
+      logger.info('[GROUP ITEM] Created group item');
+      logger.debug('[GROUP ITEM] Create details:', {
+        itemId: sanitizeForLog(itemId),
+        channelId: sanitizeForLog(channelId)
+      });
 
       // Get all channel members
       const members = await ChannelMembers.findAll({
@@ -3435,7 +3584,7 @@ io.sockets.on("connection", socket => {
         }
       }
 
-      console.log(`[GROUP ITEM] ✓ Broadcast to ${deliveredCount} devices`);
+      logger.info(`[GROUP ITEM] Broadcast to ${deliveredCount} devices`);
 
       // Confirm delivery to sender
       socket.emit("groupItemDelivered", {
@@ -3445,7 +3594,7 @@ io.sockets.on("connection", socket => {
       });
 
     } catch (error) {
-      console.error('[GROUP ITEM] Error in sendGroupItem:', error);
+      logger.error('[GROUP ITEM] Error in sendGroupItem', error);
       socket.emit("groupItemError", { error: "Internal server error" });
     }
   });
@@ -3457,7 +3606,7 @@ io.sockets.on("connection", socket => {
   socket.on("deleteGroupItem", async (data, callback) => {
     try {
       if (!isAuthenticated()) {
-        console.error('[GROUP ITEM DELETE] ERROR: Not authenticated');
+        logger.error('[GROUP ITEM DELETE] Not authenticated');
         return callback?.({ success: false, error: "Not authenticated" });
       }
 
@@ -3465,7 +3614,7 @@ io.sockets.on("connection", socket => {
       const { itemId } = data;
 
       if (!itemId) {
-        console.error('[GROUP ITEM DELETE] ERROR: Missing itemId');
+        logger.error('[GROUP ITEM DELETE] Missing itemId');
         return callback?.({ success: false, error: "Missing itemId" });
       }
 
@@ -3475,12 +3624,13 @@ io.sockets.on("connection", socket => {
       });
 
       if (!groupItem) {
-        console.log(`[GROUP ITEM DELETE] Item ${sanitizeForLog(itemId)} not found`);
+        logger.info('[GROUP ITEM DELETE] Item not found');
+        logger.debug(`[GROUP ITEM DELETE] ItemId: ${sanitizeForLog(itemId)}`);
         return callback?.({ success: true, deletedCount: 0 });
       }
 
       if (groupItem.sender !== userId) {
-        console.error('[GROUP ITEM DELETE] ERROR: User is not the sender');
+        logger.error('[GROUP ITEM DELETE] User is not the sender');
         return callback?.({ success: false, error: "Only the sender can delete this item" });
       }
 
@@ -3491,11 +3641,15 @@ io.sockets.on("connection", socket => {
         });
       }, `deleteGroupItem-${itemId}-${userId}`);
 
-      console.log('[GROUP ITEM DELETE] ✓ Deleted group item %s (count: %s)', sanitizeForLog(itemId), deletedCount);
+      logger.info('[GROUP ITEM DELETE] Deleted group item');
+      logger.debug('[GROUP ITEM DELETE] Delete details:', {
+        itemId: sanitizeForLog(itemId),
+        deletedCount
+      });
       callback?.({ success: true, deletedCount });
 
     } catch (error) {
-      console.error('[GROUP ITEM DELETE] Error deleting group item:', error);
+      logger.error('[GROUP ITEM DELETE] Error deleting group item', error);
       callback?.({ success: false, error: error.message });
     }
   });
@@ -3506,7 +3660,7 @@ io.sockets.on("connection", socket => {
   socket.on("markGroupItemRead", async (data) => {
     try {
       if (!isAuthenticated()) {
-        console.error('[GROUP ITEM READ] ERROR: Not authenticated');
+        logger.error('[GROUP ITEM READ] Not authenticated');
         return;
       }
 
@@ -3515,7 +3669,7 @@ io.sockets.on("connection", socket => {
       const deviceId = getDeviceId();
 
       if (!itemId) {
-        console.error('[GROUP ITEM READ] ERROR: Missing itemId');
+        logger.error('[GROUP ITEM READ] Missing itemId');
         return;
       }
 
@@ -3525,7 +3679,7 @@ io.sockets.on("connection", socket => {
       });
 
       if (!groupItem) {
-        console.error('[GROUP ITEM READ] ERROR: Item not found');
+        logger.error('[GROUP ITEM READ] Item not found');
         return;
       }
 
@@ -3538,7 +3692,7 @@ io.sockets.on("connection", socket => {
       });
 
       if (!membership) {
-        console.error('[GROUP ITEM READ] ERROR: User not member of channel');
+        logger.error('[GROUP ITEM READ] User not member of channel');
         return;
       }
 
@@ -3569,7 +3723,8 @@ io.sockets.on("connection", socket => {
 
       const allRead = readCount >= memberCount;
 
-      console.log(`[GROUP ITEM READ] ✓ Item ${sanitizeForLog(itemId)}: ${readCount}/${memberCount} members read`);
+      logger.info(`[GROUP ITEM READ] Item: ${readCount}/${memberCount} members read`);
+      logger.debug(`[GROUP ITEM READ] ItemId: ${sanitizeForLog(itemId)}`);
 
       // Notify the sender about read status
       const senderSocketId = deviceSockets.get(`${groupItem.sender}:${groupItem.senderDevice}`);
@@ -3586,7 +3741,8 @@ io.sockets.on("connection", socket => {
 
       // If all members have read, delete from server (privacy feature)
       if (allRead) {
-        console.log(`[GROUP ITEM READ] ✓ Item ${sanitizeForLog(itemId)} read by all members - deleting from server`);
+        logger.info('[GROUP ITEM READ] Item read by all members - deleting from server');
+        logger.debug(`[GROUP ITEM READ] ItemId: ${sanitizeForLog(itemId)}`);
         
         // Delete all read receipts first
         await writeQueue.enqueue(async () => {
@@ -3600,11 +3756,12 @@ io.sockets.on("connection", socket => {
           await groupItem.destroy();
         }, `deleteGroupItem-${itemId}`);
         
-        console.log(`[GROUP ITEM READ] ✓ Item ${sanitizeForLog(itemId)} and all read receipts deleted`);
+        logger.info('[GROUP ITEM READ] Item and all read receipts deleted');
+        logger.debug(`[GROUP ITEM READ] ItemId: ${sanitizeForLog(itemId)}`);
       }
 
     } catch (error) {
-      console.error('[GROUP ITEM READ] Error in markGroupItemRead:', error);
+      logger.error('[GROUP ITEM READ] Error in markGroupItemRead', error);
     }
   });
 
@@ -3622,29 +3779,33 @@ io.sockets.on("connection", socket => {
    */
   socket.on('meeting:join-room', async (data) => {
     try {
-      console.log('[MEETING:JOIN-ROOM] Event received:', data);
-      console.log('[MEETING:JOIN-ROOM] Socket authenticated:', isAuthenticated());
+      logger.debug('[MEETING:JOIN-ROOM] Event received:', data);
+      logger.debug('[MEETING:JOIN-ROOM] Socket authenticated:', isAuthenticated());
       
       const userId = getUserId();
-      console.log('[MEETING:JOIN-ROOM] User ID:', userId);
+      logger.debug('[MEETING:JOIN-ROOM] User ID:', userId);
       
       if (!userId) {
-        console.error('[MEETING:JOIN-ROOM] ❌ No user ID - authentication failed');
+        logger.error('[MEETING:JOIN-ROOM] No user ID - authentication failed');
         return;
       }
 
       const { meeting_id } = data;
       if (!meeting_id) {
-        console.error('[MEETING:JOIN-ROOM] ❌ No meeting_id in data');
+        logger.error('[MEETING:JOIN-ROOM] No meeting_id in data');
         return;
       }
 
       // Join the meeting socket room
       socket.join(`meeting:${meeting_id}`);
-      console.log(`[MEETING:JOIN-ROOM] ✓ User ${sanitizeForLog(userId)} joined room: meeting:${sanitizeForLog(meeting_id)}`);
+      logger.info('[MEETING:JOIN-ROOM] User joined meeting room');
+      logger.debug('[MEETING:JOIN-ROOM] Details:', {
+        userId: sanitizeForLog(userId),
+        meetingId: sanitizeForLog(meeting_id)
+      });
       
       // List all rooms this socket is in
-      console.log('[MEETING:JOIN-ROOM] Socket rooms:', Array.from(socket.rooms));
+      logger.debug('[MEETING:JOIN-ROOM] Socket rooms:', Array.from(socket.rooms));
 
       // Notify other participants
       socket.to(`meeting:${meeting_id}`).emit('meeting:participant_joined', {
@@ -3652,7 +3813,7 @@ io.sockets.on("connection", socket => {
         user_id: userId
       });
     } catch (error) {
-      console.error('[MEETING:JOIN-ROOM] ❌ Error joining meeting room:', error);
+      logger.error('[MEETING:JOIN-ROOM] Error joining meeting room', error);
     }
   });
 
@@ -3664,19 +3825,23 @@ io.sockets.on("connection", socket => {
     try {
       const userId = getUserId();
       if (!userId) {
-        console.error('[MEETING:LEAVE] ❌ No user ID');
+        logger.error('[MEETING:LEAVE] No user ID');
         return;
       }
 
       const { meeting_id } = data;
       if (!meeting_id) {
-        console.error('[MEETING:LEAVE] ❌ No meeting_id');
+        logger.error('[MEETING:LEAVE] No meeting_id');
         return;
       }
       
       // Leave meeting room
       socket.leave(`meeting:${meeting_id}`);
-      console.log(`[MEETING:LEAVE] ✓ User ${sanitizeForLog(userId)} left room: meeting:${sanitizeForLog(meeting_id)}`);
+      logger.info('[MEETING:LEAVE] User left meeting room');
+      logger.debug('[MEETING:LEAVE] Details:', {
+        userId: sanitizeForLog(userId),
+        meetingId: sanitizeForLog(meeting_id)
+      });
 
       // Notify other participants
       socket.to(`meeting:${meeting_id}`).emit('meeting:participant_left', {
@@ -3684,7 +3849,7 @@ io.sockets.on("connection", socket => {
         user_id: userId
       });
     } catch (error) {
-      console.error('[MEETING:LEAVE] ❌ Error handling participant leave:', error);
+      logger.error('[MEETING:LEAVE] Error handling participant leave', error);
     }
   };
   
@@ -3706,7 +3871,7 @@ io.sockets.on("connection", socket => {
       const userId = getUserId();
       const deviceId = getDeviceId();
       if (!userId || !deviceId) {
-        console.error('[PARTICIPANT] No userId/deviceId for Signal E2EE key response');
+        logger.error('[PARTICIPANT] No userId/deviceId for Signal E2EE key response');
         return;
       }
 
@@ -3718,7 +3883,12 @@ io.sockets.on("connection", socket => {
         request_id 
       } = data;
 
-      console.log(`[PARTICIPANT] ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} sending Signal-encrypted E2EE key to guest ${sanitizeForLog(guest_session_id)}`);
+      logger.info('[PARTICIPANT] Sending Signal-encrypted E2EE key to guest');
+      logger.debug('[PARTICIPANT] E2EE key details:', {
+        userId: sanitizeForLog(userId),
+        deviceId: sanitizeForLog(deviceId),
+        guestSessionId: sanitizeForLog(guest_session_id)
+      });
 
       // Send encrypted response to guest's personal room on /external namespace
       io.of('/external').to(`guest:${guest_session_id}`).emit('participant:meeting_e2ee_key_response', {
@@ -3731,9 +3901,10 @@ io.sockets.on("connection", socket => {
         timestamp: Date.now()
       });
 
-      console.log(`[PARTICIPANT] ✓ Signal-encrypted E2EE key sent to guest:${sanitizeForLog(guest_session_id)}`);
+      logger.info('[PARTICIPANT] Signal-encrypted E2EE key sent to guest');
+      logger.debug(`[PARTICIPANT] Guest session: ${sanitizeForLog(guest_session_id)}`);
     } catch (error) {
-      console.error('[PARTICIPANT] Error sending Signal E2EE key to guest:', error);
+      logger.error('[PARTICIPANT] Error sending Signal E2EE key to guest', error);
     }
   });
 
@@ -3746,13 +3917,19 @@ io.sockets.on("connection", socket => {
       const userId = getUserId();
       const deviceId = getDeviceId();
       if (!userId || !deviceId) {
-        console.error('[PARTICIPANT] No userId/deviceId for Signal message');
+        logger.error('[PARTICIPANT] No userId/deviceId for Signal message');
         return;
       }
 
       const { guest_session_id, encrypted_message, message_type } = data;
 
-      console.log(`[PARTICIPANT] ${sanitizeForLog(userId)}:${sanitizeForLog(deviceId)} sending Signal message (${sanitizeForLog(message_type)}) to guest ${sanitizeForLog(guest_session_id)}`);
+      logger.info('[PARTICIPANT] Sending Signal message to guest');
+      logger.debug('[PARTICIPANT] Signal message details:', {
+        userId: sanitizeForLog(userId),
+        deviceId: sanitizeForLog(deviceId),
+        messageType: sanitizeForLog(message_type),
+        guestSessionId: sanitizeForLog(guest_session_id)
+      });
 
       // Send directly to guest's personal room
       io.of('/external').to(`guest:${guest_session_id}`).emit('participant:signal_message', {
@@ -3763,9 +3940,10 @@ io.sockets.on("connection", socket => {
         timestamp: Date.now()
       });
 
-      console.log(`[PARTICIPANT] ✓ Signal message sent to guest:${sanitizeForLog(guest_session_id)}`);
+      logger.info('[PARTICIPANT] Signal message sent to guest');
+      logger.debug(`[PARTICIPANT] Guest session: ${sanitizeForLog(guest_session_id)}`);
     } catch (error) {
-      console.error('[PARTICIPANT] Error sending Signal message to guest:', error);
+      logger.error('[PARTICIPANT] Error sending Signal message to guest', error);
     }
   });
 
@@ -3784,7 +3962,8 @@ io.sockets.on("connection", socket => {
       // Get meeting details for context
       const meeting = await meetingService.getMeeting(meeting_id);
       if (!meeting) {
-        console.error('[CALL] Meeting not found:', meeting_id);
+        logger.error('[CALL] Meeting not found');
+        logger.debug(`[CALL] MeetingId: ${sanitizeForLog(meeting_id)}`);
         return;
       }
 
@@ -3794,11 +3973,12 @@ io.sockets.on("connection", socket => {
 
       // Send call notification to each recipient
       for (const recipientId of recipient_ids) {
-        console.log('[CALL] Processing notification for recipient: %s', recipientId);
+        logger.info('[CALL] Processing notification for recipient');
+        logger.debug(`[CALL] RecipientId: ${sanitizeForLog(recipientId)}`);
         
         // Check if user is online
         const isOnline = await presenceService.isOnline(recipientId);
-        console.log('[CALL] Recipient %s online status: %s', recipientId, isOnline);
+        logger.debug('[CALL] Recipient online status:', { recipientId: sanitizeForLog(recipientId), isOnline });
         
         if (isOnline) {
           // Update participant status to ringing
@@ -3851,12 +4031,24 @@ io.sockets.on("connection", socket => {
               });
               
               if (success) {
-                console.log('[CALL] ✓ Sent call notification to %s:%s', recipientId, client.device_id);
+                logger.info('[CALL] Sent call notification to device');
+                logger.debug('[CALL] Notification details:', {
+                  recipientId: sanitizeForLog(recipientId),
+                  deviceId: sanitizeForLog(client.device_id)
+                });
               } else {
-                console.log('[CALL] ✗ Failed to send call notification to %s:%s (device not connected)', recipientId, client.device_id);
+                logger.warn('[CALL] Failed to send call notification (device not connected)');
+                logger.debug('[CALL] Device details:', {
+                  recipientId: sanitizeForLog(recipientId),
+                  deviceId: sanitizeForLog(client.device_id)
+                });
               }
             } catch (e) {
-              console.error('[CALL] Error sending notification to %s:%s:', recipientId, client.device_id, e);
+              logger.error('[CALL] Error sending notification to device', e);
+              logger.debug('[CALL] Device details:', {
+                recipientId: sanitizeForLog(recipientId),
+                deviceId: sanitizeForLog(client.device_id)
+              });
             }
           }
 
@@ -3868,7 +4060,7 @@ io.sockets.on("connection", socket => {
         }
       }
     } catch (error) {
-      console.error('[CALL] Error notifying call:', error);
+      logger.error('[CALL] Error notifying call', error);
     }
   });
 
@@ -3892,7 +4084,7 @@ io.sockets.on("connection", socket => {
         });
       }
     } catch (error) {
-      console.error('[CALL] Error accepting call:', error);
+      logger.error('[CALL] Error accepting call', error);
     }
   });
 
@@ -3915,7 +4107,7 @@ io.sockets.on("connection", socket => {
         reason: reason || 'declined' // Forward the decline reason (timeout vs manual)
       });
     } catch (error) {
-      console.error('[CALL] Error declining call:', error);
+      logger.error('[CALL] Error declining call', error);
     }
   });
 
@@ -3925,7 +4117,12 @@ io.sockets.on("connection", socket => {
     const userId = socket.handshake.session?.uuid;
     const deviceId = socket.handshake.session?.deviceId;
     
-    console.log(`[SOCKET] Client disconnected: ${socket.id} (User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)})`);
+    logger.info('[SOCKET] Client disconnected');
+    logger.debug('[SOCKET] Disconnect details:', {
+      socketId: socket.id,
+      userId: sanitizeForLog(userId),
+      deviceId: sanitizeForLog(deviceId)
+    });
     
     // Handle meeting/call participant disconnect
     if (userId) {
@@ -3945,18 +4142,18 @@ io.sockets.on("connection", socket => {
           });
         }
       }).catch(err => {
-        console.error('[PRESENCE] Error unregistering socket:', err);
+        logger.error('[PRESENCE] Error unregistering socket', err);
       });
       
       // Handle instant call cleanup (WebSocket-based)
       meetingCleanupService.handleParticipantDisconnect(userId).catch(err => {
-        console.error('[MEETING CLEANUP] Error handling disconnect:', err);
+        logger.error('[MEETING CLEANUP] Error handling disconnect', err);
       });
       
       // Handle external participant disconnect
       if (socket.data.externalSessionId) {
         externalParticipantService.markLeft(socket.data.externalSessionId).catch(err => {
-          console.error('[EXTERNAL] Error marking session left:', err);
+          logger.error('[EXTERNAL] Error marking session left', err);
         });
       }
     }
@@ -3964,8 +4161,11 @@ io.sockets.on("connection", socket => {
     if(userId && deviceId) {
       const deviceKey = `${userId}:${deviceId}`;
       deviceSockets.delete(deviceKey);
-      console.log(`[SOCKET] ✓ Cleaned up deviceSockets entry: ${deviceKey}`);
-      console.log(`[SOCKET] Remaining devices online: ${deviceSockets.size}`);
+      logger.info('[SOCKET] Cleaned up deviceSockets entry');
+      logger.debug('[SOCKET] Device cleanup:', {
+        deviceKey,
+        remainingDevices: deviceSockets.size
+      });
       
       // Clean up P2P file sharing announcements (with deviceId)
       const fileRegistry = require('./store/fileRegistry');
@@ -3986,7 +4186,11 @@ io.sockets.on("connection", socket => {
         socket.to(channelId).emit("video:participant-left", {
           userId: userId
         });
-        console.log(`[VIDEO PARTICIPANTS] User ${sanitizeForLog(userId)} removed from channel ${sanitizeForLog(channelId)} due to disconnect`);
+        logger.info('[VIDEO PARTICIPANTS] User removed from channel due to disconnect');
+        logger.debug('[VIDEO PARTICIPANTS] Removal details:', {
+          userId: sanitizeForLog(userId),
+          channelId: sanitizeForLog(channelId)
+        });
       }
     });
 
@@ -4258,8 +4462,8 @@ io.sockets.on("connection", socket => {
   const isWildcard = corsOrigin === '*' || corsOrigin === true;
   
   if (isWildcard && config.cors.credentials) {
-    console.error('❌ SECURITY ERROR: CORS origin cannot be "*" or true when credentials are enabled!');
-    console.error('   Please set CORS_ORIGINS environment variable to a comma-separated list of allowed origins.');
+    logger.error('[SECURITY] CORS origin cannot be "*" or true when credentials are enabled!');
+    logger.error('[SECURITY] Please set CORS_ORIGINS environment variable to a comma-separated list of allowed origins');
     process.exit(1);
   }
   
@@ -4326,8 +4530,8 @@ io.sockets.on("connection", socket => {
     res.status(403).send('Origin not allowed by CORS policy');
   });
   
-  console.log('✓ CORS configured with origins:', Array.isArray(corsOrigin) ? corsOrigin.join(', ') : corsOrigin);
-  console.log('✓ CORS allows trusted mobile apps with secret:', mobileAppSecret.substring(0, 10) + '...');
+  logger.info('[CORS] Configured with origins:', Array.isArray(corsOrigin) ? corsOrigin.join(', ') : corsOrigin);
+  logger.info('[CORS] Allows trusted mobile apps with secret:', mobileAppSecret.substring(0, 10) + '...');
 
   // Register and signin webpages
   app.use(authRoutes);
@@ -4403,45 +4607,45 @@ app.get('*', (req, res) => {
 
 // Graceful shutdown handler
 process.on('SIGTERM', async () => {
-  console.log('\n🛑 SIGTERM received, shutting down gracefully...');
+  logger.info('[SHUTDOWN] SIGTERM received, shutting down gracefully');
   
   try {
     process.exit(0);
   } catch (error) {
-    console.error('Error during shutdown:', error);
+    logger.error('[SHUTDOWN] Error during shutdown', error);
     process.exit(1);
   }
 });
 
 process.on('SIGINT', async () => {
-  console.log('\n🛑 SIGINT received, shutting down gracefully...');
+  logger.info('[SHUTDOWN] SIGINT received, shutting down gracefully');
   
   try {
     process.exit(0);
   } catch (error) {
-    console.error('Error during shutdown:', error);
+    logger.error('[SHUTDOWN] Error during shutdown', error);
     process.exit(1);
   }
 });
 
 // Initialize database and start server
 (async () => {
-  console.log('\n═'.repeat(35));
-  console.log('DATABASE INITIALIZATION');
-  console.log('═'.repeat(35));
+  logger.info('═'.repeat(35));
+  logger.info('DATABASE INITIALIZATION');
+  logger.info('═'.repeat(35));
   
   try {
     // Step 1: Run migrations
     const { runMigrations } = require('./db/init-database');
     await runMigrations();
-    console.log('✓ Migrations completed\n');
+    logger.info('[DATABASE] Migrations completed');
     
     // Step 2: Load model (will sync/create tables)
     const models = require('./db/model');
     
     // Step 3: Wait for model to be ready
     await models.dbReady;
-    console.log('✓ Model ready');
+    logger.info('[DATABASE] Model ready');
     
     // Assign models to global variables
     User = models.User;
@@ -4478,12 +4682,12 @@ process.on('SIGINT', async () => {
                 await Role.findOrCreate({ where: { name: roleData.name, scope: roleData.scope }, defaults: roleData });
             }
         } catch (error) {
-            console.error('Error initializing standard roles:', error);
+            logger.error('[ROLES] Error initializing standard roles', error);
             throw error;
         }
     }
     await initializeStandardRoles();
-    console.log('✓ Standard roles initialized\n');
+    logger.info('[DATABASE] Standard roles initialized');
     
     // Step 5: Initialize cleanup and meeting services
     initCleanupJob();
@@ -4492,11 +4696,11 @@ process.on('SIGINT', async () => {
     const presenceService = require('./services/presenceService');
     meetingCleanupService.start();
     presenceService.start();
-    console.log('✓ Meeting and presence services initialized\n');
+    logger.info('[DATABASE] Meeting and presence services initialized');
     
     // Step 6: Start server
     server.listen(port, async () => {
-      console.log(`Server is running on port ${port}`);
+      logger.info(`[SERVER] Running on port ${port}`);
       
       // Start HMAC session auth cleanup jobs
       const { cleanupNonces, cleanupSessions } = require('./middleware/sessionAuth');
@@ -4504,16 +4708,16 @@ process.on('SIGINT', async () => {
       
       // Clean up old nonces every 10 minutes (fixed - nonces are short-lived)
       setInterval(cleanupNonces, 10 * 60 * 1000);
-      console.log('✓ HMAC nonce cleanup job started (every 10 minutes)');
+      logger.info('[SERVER] HMAC nonce cleanup job started (every 10 minutes)');
       
       // Clean up expired sessions using configurable interval
       const cleanupHours = config.session.cleanupIntervalHours || 1;
       const cleanupMs = cleanupHours * 60 * 60 * 1000;
       setInterval(cleanupSessions, cleanupMs);
-      console.log(`✓ HMAC session cleanup job started (every ${cleanupHours} hour${cleanupHours > 1 ? 's' : ''})`);
+      logger.info(`[SERVER] HMAC session cleanup job started (every ${cleanupHours} hour${cleanupHours > 1 ? 's' : ''})`);
     });
   } catch (error) {
-    console.error('❌ Database initialization failed:', error);
+    logger.error('[DATABASE] Initialization failed', error);
     process.exit(1);
   }
 })();

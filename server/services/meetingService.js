@@ -3,6 +3,8 @@ const { v4: uuidv4 } = require('uuid');
 const { Op } = require('sequelize');
 const writeQueue = require('../db/writeQueue');
 const meetingMemoryStore = require('./meetingMemoryStore');
+const logger = require('../utils/logger');
+const { sanitizeForLog } = require('../utils/logSanitizer');
 
 /**
  * MeetingService - Hybrid Storage (Database + Memory)
@@ -85,7 +87,8 @@ class MeetingService {
     try {
       if (is_instant_call) {
         // Instant call: Memory only, no DB write
-        console.log(`[Meeting] Creating instant call ${meeting_id} (memory only)`);
+        logger.info('[MEETING] Creating instant call (memory only)');
+        logger.debug('[MEETING] Meeting ID:', { meetingId: sanitizeForLog(meeting_id) });
         meetingMemoryStore.set(meeting_id, meeting);
         
         // Add creator as participant
@@ -96,7 +99,8 @@ class MeetingService {
 
       } else {
         // Scheduled meeting: Save to DB
-        console.log(`[Meeting] Creating scheduled meeting ${meeting_id} (DB + memory)`);
+        logger.info('[MEETING] Creating scheduled meeting (DB + memory)');
+        logger.debug('[MEETING] Meeting ID:', { meetingId: sanitizeForLog(meeting_id) });
         
         await writeQueue.enqueue(
           () => sequelize.query(`
@@ -128,7 +132,7 @@ class MeetingService {
 
       return this.getMeeting(meeting_id);
     } catch (error) {
-      console.error('Error creating meeting:', error);
+      logger.error('[MEETING] Error creating meeting', error);
       throw error;
     }
   }
@@ -144,7 +148,10 @@ class MeetingService {
       let meeting = meetingMemoryStore.getWithStatus(meeting_id);
       
       if (meeting) {
-        console.log(`[Meeting] ${meeting_id} found in memory (${meeting.is_instant_call ? 'instant' : 'scheduled'})`);
+        logger.debug('[MEETING] Found in memory:', {
+          meetingId: sanitizeForLog(meeting_id),
+          type: meeting.is_instant_call ? 'instant' : 'scheduled'
+        });
         return meeting;
       }
 
@@ -192,12 +199,13 @@ class MeetingService {
 
       meetingMemoryStore.set(meeting_id, meetingWithRuntime);
       
-      console.log(`[Meeting] ${meeting_id} loaded from DB into memory`);
+      logger.info('[MEETING] Loaded from DB into memory');
+      logger.debug('[MEETING] Meeting ID:', { meetingId: sanitizeForLog(meeting_id) });
       
       return meetingMemoryStore.getWithStatus(meeting_id);
 
     } catch (error) {
-      console.error('Error getting meeting:', error);
+      logger.error('[MEETING] Error getting meeting', error);
       throw error;
     }
   }
@@ -266,7 +274,7 @@ class MeetingService {
 
       return await this.getMeeting(meeting_id);
     } catch (error) {
-      console.error('Error updating meeting:', error);
+      logger.error('[MEETING] Error updating meeting', error);
       throw error;
     }
   }
@@ -301,7 +309,7 @@ class MeetingService {
 
       return true;
     } catch (error) {
-      console.error('Error deleting meeting:', error);
+      logger.error('[MEETING] Error deleting meeting', error);
       throw error;
     }
   }
@@ -474,7 +482,7 @@ class MeetingService {
       return filtered;
 
     } catch (error) {
-      console.error('Error listing meetings:', error);
+      logger.error('[MEETING] Error listing meetings', error);
       throw error;
     }
   }
@@ -498,7 +506,7 @@ class MeetingService {
       }
       return meeting;
     } catch (error) {
-      console.error('Error adding participant:', error);
+      logger.error('[MEETING] Error adding participant', error);
       throw error;
     }
   }
@@ -515,19 +523,21 @@ class MeetingService {
       const result = meetingMemoryStore.removeParticipant(meeting_id, user_id, device_id);
       
       if (!result) {
-        console.warn(`[Meeting] removeParticipant: Meeting ${meeting_id} not found`);
+        logger.warn('[MEETING] removeParticipant: Meeting not found');
+        logger.debug('[MEETING] Meeting ID:', { meetingId: sanitizeForLog(meeting_id) });
         return { isEmpty: true };
       }
 
       // If instant call and now empty, delete immediately
       if (result.isEmpty && result.meeting.is_instant_call) {
-        console.log(`[Meeting] Instant call ${meeting_id} empty, deleting from memory`);
+        logger.info('[MEETING] Instant call empty, deleting from memory');
+        logger.debug('[MEETING] Meeting ID:', { meetingId: sanitizeForLog(meeting_id) });
         meetingMemoryStore.delete(meeting_id);
       }
 
       return result;
     } catch (error) {
-      console.error('Error removing participant:', error);
+      logger.error('[MEETING] Error removing participant', error);
       throw error;
     }
   }
@@ -554,7 +564,8 @@ class MeetingService {
     try {
       const meeting = meetingMemoryStore.get(meeting_id);
       if (!meeting) {
-        console.warn(`[Meeting] updateParticipantStatus: Meeting ${meeting_id} not found`);
+        logger.warn('[MEETING] updateParticipantStatus: Meeting not found');
+        logger.debug('[MEETING] Meeting ID:', { meetingId: sanitizeForLog(meeting_id) });
         return false;
       }
 
@@ -574,7 +585,7 @@ class MeetingService {
 
       return false;
     } catch (error) {
-      console.error('Error updating participant status:', error);
+      logger.error('[MEETING] Error updating participant status', error);
       throw error;
     }
   }
@@ -636,10 +647,14 @@ class MeetingService {
         meetingMemoryStore.set(meeting_id, memoryMeeting);
       }
 
-      console.log(`[Meeting] Generated invitation token for ${meeting_id}: ${token.substring(0, 8)}...`);
+      logger.info('[MEETING] Generated invitation token');
+      logger.debug('[MEETING] Invitation details:', {
+        meetingId: sanitizeForLog(meeting_id),
+        tokenPreview: token.substring(0, 8) + '...'
+      });
       return invitation.toJSON();
     } catch (error) {
-      console.error('Error generating invitation link:', error);
+      logger.error('[MEETING] Error generating invitation link', error);
       throw error;
     }
   }
@@ -658,7 +673,7 @@ class MeetingService {
       });
       return invitations.map(i => i.toJSON());
     } catch (error) {
-      console.error('Error getting invitation tokens:', error);
+      logger.error('[MEETING] Error getting invitation tokens', error);
       throw error;
     }
   }
@@ -678,11 +693,12 @@ class MeetingService {
         'revokeInvitationToken'
       );
       if (updated > 0) {
-        console.log(`[Meeting] Revoked invitation token: ${token.substring(0, 8)}...`);
+        logger.info('[MEETING] Revoked invitation token');
+        logger.debug('[MEETING] Token preview:', { token: token.substring(0, 8) + '...' });
       }
       return updated > 0;
     } catch (error) {
-      console.error('Error revoking invitation token:', error);
+      logger.error('[MEETING] Error revoking invitation token', error);
       throw error;
     }
   }
@@ -699,11 +715,12 @@ class MeetingService {
         'deleteInvitationToken'
       );
       if (deleted > 0) {
-        console.log(`[Meeting] Deleted invitation token: ${token.substring(0, 8)}...`);
+        logger.info('[MEETING] Deleted invitation token');
+        logger.debug('[MEETING] Token preview:', { token: token.substring(0, 8) + '...' });
       }
       return deleted > 0;
     } catch (error) {
-      console.error('Error deleting invitation token:', error);
+      logger.error('[MEETING] Error deleting invitation token', error);
       throw error;
     }
   }
@@ -734,7 +751,7 @@ class MeetingService {
 
       return invitation.toJSON();
     } catch (error) {
-      console.error('Error incrementing invitation use count:', error);
+      logger.error('[MEETING] Error incrementing invitation use count', error);
       throw error;
     }
   }

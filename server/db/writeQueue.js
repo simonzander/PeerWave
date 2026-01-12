@@ -1,3 +1,5 @@
+const logger = require('../utils/logger');
+
 /**
  * Centralized write queue for database operations
  * Ensures only one write operation happens at a time to prevent SQLite locks
@@ -28,7 +30,7 @@ class WriteQueue {
         throwOnTimeout: true
       });
       this.isInitialized = true;
-      console.log('[WriteQueue] Initialized with concurrency: 1');
+      logger.info('[WriteQueue] Initialized with concurrency: 1');
       
       // Process any pending operations
       while (this.pendingOperations.length > 0) {
@@ -36,7 +38,7 @@ class WriteQueue {
         this._enqueueOperation(operation, name).then(resolve).catch(reject);
       }
     } catch (error) {
-      console.error('[WriteQueue] Failed to initialize:', error);
+      logger.error('[WriteQueue] Failed to initialize:', error);
       throw error;
     }
   }
@@ -46,22 +48,22 @@ class WriteQueue {
     const queueSize = this.queue.size;
     const pending = this.queue.pending;
     
-    console.log(`[WRITE QUEUE] Enqueuing operation: ${name} (Queue size: ${queueSize}, Pending: ${pending})`);
+    logger.debug(`[WRITE QUEUE] Enqueuing operation: ${name} (Queue size: ${queueSize}, Pending: ${pending})`);
     
     try {
       const result = await this.queue.add(async () => {
-        console.log(`[WRITE QUEUE] Executing: ${name}`);
+        logger.debug(`[WRITE QUEUE] Executing: ${name}`);
         const startTime = Date.now();
         
         try {
           const opResult = await operation();
           const duration = Date.now() - startTime;
-          console.log(`[WRITE QUEUE] ✓ Completed: ${name} (${duration}ms)`);
+          logger.debug(`[WRITE QUEUE] ✓ Completed: ${name} (${duration}ms)`);
           this.stats.totalCompleted++;
           return opResult;
         } catch (error) {
           const duration = Date.now() - startTime;
-          console.error('[WRITE QUEUE] ✗ Failed: %s (%sms)', name, duration, error.message);
+          logger.error('[WRITE QUEUE] ✗ Failed: %s (%sms)', name, duration, error.message);
           this.stats.totalFailed++;
           throw error;
         }
@@ -69,7 +71,7 @@ class WriteQueue {
       
       return result;
     } catch (error) {
-      console.error('[WRITE QUEUE] Error enqueuing operation: %s', name, error.message);
+      logger.error('[WRITE QUEUE] Error enqueuing operation: %s', name, error.message);
       throw error;
     }
   }
@@ -83,7 +85,7 @@ class WriteQueue {
   async enqueue(operation, name = 'unnamed') {
     // If queue is not initialized yet, add to pending operations
     if (!this.isInitialized) {
-      console.log(`[WRITE QUEUE] Queue not ready yet, adding to pending: ${name}`);
+      logger.debug(`[WRITE QUEUE] Queue not ready yet, adding to pending: ${name}`);
       return new Promise((resolve, reject) => {
         this.pendingOperations.push({ operation, name, resolve, reject });
       });
@@ -121,7 +123,7 @@ class WriteQueue {
   pause() {
     if (this.queue) {
       this.queue.pause();
-      console.log('[WRITE QUEUE] Queue paused');
+      logger.debug('[WRITE QUEUE] Queue paused');
     }
   }
 
@@ -131,7 +133,7 @@ class WriteQueue {
   resume() {
     if (this.queue) {
       this.queue.start();
-      console.log('[WRITE QUEUE] Queue resumed');
+      logger.debug('[WRITE QUEUE] Queue resumed');
     }
   }
 
@@ -141,7 +143,7 @@ class WriteQueue {
   async onIdle() {
     if (this.queue) {
       await this.queue.onIdle();
-      console.log('[WRITE QUEUE] Queue is now idle');
+      logger.debug('[WRITE QUEUE] Queue is now idle');
     }
   }
 
@@ -151,7 +153,7 @@ class WriteQueue {
   clear() {
     if (this.queue) {
       this.queue.clear();
-      console.log('[WRITE QUEUE] Queue cleared');
+      logger.debug('[WRITE QUEUE] Queue cleared');
     }
     this.pendingOperations = [];
   }

@@ -6,6 +6,7 @@ const bodyParser = require('body-parser'); // Import body-parser
 const nodemailer = require("nodemailer");
 const crypto = require('crypto');
 const { sanitizeForLog } = require('../utils/logSanitizer');
+const logger = require('../utils/logger');
 const session = require('express-session');
 const fs = require('fs');
 const path = require('path');
@@ -105,7 +106,7 @@ clientRoutes.get("/client/meta", async (req, res) => {
             response.registrationMode = 'open';
         }
     } catch (error) {
-        console.error('[CLIENT META] Failed to load server settings:', error);
+        logger.error('[CLIENT META] Failed to load server settings', error);
         response.serverName = 'PeerWave Server';
         response.serverPicture = null;
         response.registrationMode = 'open';
@@ -146,10 +147,10 @@ clientRoutes.get("/direct/messages/:userId", verifyAuthEither, async (req, res) 
             model: Item,
             mapToModel: true
         });
-        console.log(`[CLIENT.JS] Direct messages (1:1 only) for device ${sanitizeForLog(sessionDeviceId)}:`, result.length);
-        console.log(`[CLIENT.JS] Query params: deviceReceiver=${sanitizeForLog(sessionDeviceId)}, receiver=${sanitizeForLog(sessionUuid)}, sender=${sanitizeForLog(userId)} OR sender=${sanitizeForLog(sessionUuid)}`);
+        logger.debug('[CLIENT.JS] Direct messages (1:1 only)', { deviceId: sanitizeForLog(sessionDeviceId), count: result.length });
+        logger.debug('[CLIENT.JS] Query params', { deviceReceiver: sanitizeForLog(sessionDeviceId), receiver: sanitizeForLog(sessionUuid) });
         if (result.length > 0) {
-            console.log(`[CLIENT.JS] Sample messages:`, result.slice(0, 3).map(r => ({
+            logger.debug('[CLIENT.JS] Sample messages', result.slice(0, 3).map(r => ({
                 sender: r.sender,
                 receiver: r.receiver,
                 deviceSender: r.deviceSender,
@@ -160,7 +161,7 @@ clientRoutes.get("/direct/messages/:userId", verifyAuthEither, async (req, res) 
         }
         res.status(200).json(result);
     } catch (error) {
-        console.error('Error fetching direct messages:', error);
+        logger.error('[CLIENT.JS] Error fetching direct messages', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -215,7 +216,7 @@ clientRoutes.get("/channels/:channelId/member-devices", verifyAuthEither, async 
         
         res.status(200).json(result);
     } catch (error) {
-        console.error('Error fetching channel member devices:', error);
+        logger.error('[CLIENT.JS] Error fetching channel member devices', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -263,10 +264,10 @@ clientRoutes.get("/channels/:channelId/messages", verifyAuthEither, async (req, 
             mapToModel: true
         });
         
-        console.log('[CLIENT.JS] Channel messages for device %s, channel %s:', sessionDeviceId, channelId, result.length);
+        logger.debug('[CLIENT.JS] Channel messages', { deviceId: sessionDeviceId, channelId, count: result.length });
         res.status(200).json(result);
     } catch (error) {
-        console.error('Error fetching channel messages:', error);
+        logger.error('[CLIENT.JS] Error fetching channel messages', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -322,10 +323,10 @@ clientRoutes.get("/channels/messages/all", verifyAuthEither, async (req, res) =>
             mapToModel: true
         });
         
-        console.log(`[CLIENT.JS] All channel messages for device ${sanitizeForLog(sessionDeviceId)} across ${channelIds.length} channels:`, result.length);
+        logger.debug('[CLIENT.JS] All channel messages', { deviceId: sanitizeForLog(sessionDeviceId), channelCount: channelIds.length, messageCount: result.length });
         res.status(200).json(result);
     } catch (error) {
-        console.error('Error fetching all channel messages:', error);
+        logger.error('[CLIENT.JS] Error fetching all channel messages', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -400,7 +401,7 @@ clientRoutes.post("/channels/:channelId/group-messages", verifyAuthEither, async
         // Bulk create all items
         if (items.length > 0) {
             await Item.bulkCreate(items);
-            console.log(`[CLIENT.JS] Created ${items.length} group message items for channel ${sanitizeForLog(channelId)}`);
+            logger.info('[CLIENT.JS] Created group message items', { count: items.length, channelId: sanitizeForLog(channelId) });
         }
         
         // TODO: Emit WebSocket event to online members
@@ -408,7 +409,7 @@ clientRoutes.post("/channels/:channelId/group-messages", verifyAuthEither, async
         
         res.status(200).json({ status: "success", itemsSent: items.length });
     } catch (error) {
-        console.error('Error sending group message:', error);
+        logger.error('[CLIENT.JS] Error sending group message', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -454,7 +455,7 @@ clientRoutes.get("/signal/status/minimal", verifyAuthEither, async (req, res) =>
             preKeyCount: preKeyCount
         });
     } catch (error) {
-        console.error('[SIGNAL] Error fetching minimal status:', error);
+        logger.error('[SIGNAL] Error fetching minimal status', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -540,7 +541,7 @@ clientRoutes.post("/signal/validate-and-sync", verifyAuthEither, async (req, res
         
         res.json(validationResult);
     } catch (error) {
-        console.error('[SIGNAL] Error validating keys:', error);
+        logger.error('[SIGNAL] Error validating keys', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -584,7 +585,7 @@ clientRoutes.post("/signal/prekeys/batch", verifyAuthEither, async (req, res) =>
         const client = await Client.findOne({ where: clientQuery });
         
         if (!client) {
-            console.log(`[SIGNAL PREKEYS BATCH] Client not found with query:`, clientQuery);
+            logger.warn('[SIGNAL PREKEYS BATCH] Client not found', { query: clientQuery });
             return res.status(404).json({ 
                 status: "error", 
                 message: "Client device not found" 
@@ -618,13 +619,13 @@ clientRoutes.post("/signal/prekeys/batch", verifyAuthEither, async (req, res) =>
         
         if (result && result.timeout) {
             // Write is queued but not completed within timeout
-            console.log(`[SIGNAL PREKEYS BATCH] User ${sanitizeForLog(sessionUuid)} device ${sanitizeForLog(sessionDeviceId)} - write queued (${preKeys.length} PreKeys)`);
+            logger.info('[SIGNAL PREKEYS BATCH] Write queued', { userUuid: sanitizeForLog(sessionUuid), deviceId: sanitizeForLog(sessionDeviceId), count: preKeys.length });
             
             // Let the write continue in background (don't await)
             writePromise.then(() => {
-                console.log(`[SIGNAL PREKEYS BATCH] ✓ Background write completed: ${preKeys.length} PreKeys for ${sessionUuid}`);
+                logger.info('[SIGNAL PREKEYS BATCH] Background write completed', { count: preKeys.length, userUuid: sessionUuid });
             }).catch(err => {
-                console.error(`[SIGNAL PREKEYS BATCH] ✗ Background write failed for ${sessionUuid}:`, err);
+                logger.error('[SIGNAL PREKEYS BATCH] Background write failed', { userUuid: sessionUuid, error: err });
             });
             
             res.status(202).json({ 
@@ -634,7 +635,7 @@ clientRoutes.post("/signal/prekeys/batch", verifyAuthEither, async (req, res) =>
             });
         } else {
             // Write completed quickly
-            console.log(`[SIGNAL PREKEYS BATCH] User ${sanitizeForLog(sessionUuid)} device ${sanitizeForLog(sessionDeviceId)} stored ${preKeys.length} PreKeys`);
+            logger.info('[SIGNAL PREKEYS BATCH] PreKeys stored', { userUuid: sanitizeForLog(sessionUuid), deviceId: sanitizeForLog(sessionDeviceId), count: preKeys.length });
             
             res.status(200).json({ 
                 status: "success", 
@@ -643,7 +644,7 @@ clientRoutes.post("/signal/prekeys/batch", verifyAuthEither, async (req, res) =>
             });
         }
     } catch (error) {
-        console.error('[SIGNAL PREKEYS BATCH] Error storing PreKeys:', error);
+        logger.error('[SIGNAL PREKEYS BATCH] Error storing PreKeys', error);
         res.status(500).json({ 
             status: "error", 
             message: "Internal server error" 
@@ -711,7 +712,7 @@ clientRoutes.get("/signal/prekey_bundle/:userId", verifyAuthEither, async (req, 
         }
         res.status(200).json(result);
     } catch (error) {
-        console.error('Error fetching signed pre-key:', error);
+        logger.error('[SIGNAL] Error fetching signed pre-key', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -722,7 +723,7 @@ clientRoutes.get("/people/list", verifyAuthEither, async (req, res) => {
         return res.status(401).json({ status: "error", message: "Unauthorized" });
     }
     try {
-        console.log(`[PEOPLE_LIST] Fetching users for sessionUuid: ${sessionUuid}`);
+        logger.debug('[PEOPLE_LIST] Fetching users', { sessionUuid });
         const users = await User.findAll({
             attributes: ['uuid', 'displayName', 'email', 'picture', 'atName'],
             where: { 
@@ -756,14 +757,14 @@ clientRoutes.get("/people/list", verifyAuthEither, async (req, res) => {
                 };
             });
         } catch (e) {
-            console.warn('[PEOPLE_LIST] Failed to attach presence info:', e?.message || e);
+            logger.warn('[PEOPLE_LIST] Failed to attach presence info', { error: e?.message || e });
             // Fall back to returning users without presence
         }
 
-        console.log(`[PEOPLE_LIST] Found ${usersJson.length} verified users with displayName`);
+        logger.debug('[PEOPLE_LIST] Found verified users', { count: usersJson.length });
         res.status(200).json(usersJson);
     } catch (error) {
-        console.error('Error fetching users:', error);
+        logger.error('[PEOPLE_LIST] Error fetching users', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -814,7 +815,7 @@ clientRoutes.get("/people/profiles", verifyAuthEither, async (req, res) => {
         
         res.status(200).json({ profiles });
     } catch (error) {
-        console.error('Error fetching user profiles:', error);
+        logger.error('[CLIENT.JS] Error fetching user profiles', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -845,7 +846,7 @@ clientRoutes.post("/client/people/info", verifyAuthEither, async (req, res) => {
         
         res.status(200).json(usersData);
     } catch (error) {
-        console.error('Error fetching users:', error);
+        logger.error('[PROFILES] Error fetching users', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -908,7 +909,7 @@ clientRoutes.get("/client/channels/discover", verifyAuthEither, async(req, res) 
             hasMore: offset + discoverChannels.length < totalCount
         });
     } catch (error) {
-        console.error('Error fetching discover channels:', error);
+        logger.error('[CHANNELS] Error fetching discover channels', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -934,7 +935,7 @@ clientRoutes.get("/client/channels/:uuid", verifyAuthEither, async (req, res) =>
 
         res.status(200).json(channel);
     } catch (error) {
-        console.error('Error fetching channel details:', error);
+        logger.error('[CHANNELS] Error fetching channel details', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -973,7 +974,7 @@ clientRoutes.put("/client/channels/:uuid", verifyAuthEither, async (req, res) =>
 
         res.status(200).json({ status: "success", channel });
     } catch (error) {
-        console.error('Error updating channel:', error);
+        logger.error('[CHANNELS] Error updating channel', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -1020,7 +1021,7 @@ clientRoutes.delete("/client/channels/:uuid", verifyAuthEither, async (req, res)
             message: "Channel deleted successfully" 
         });
     } catch (error) {
-        console.error('Error deleting channel:', error);
+        logger.error('[CHANNELS] Error deleting channel', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -1044,7 +1045,7 @@ clientRoutes.post("/client/channels/info", verifyAuthEither, async (req, res) =>
 
         res.status(200).json({ status: "success", channels });
     } catch (error) {
-        console.error('Error fetching channel info:', error);
+        logger.error('[CHANNELS] Error fetching channel info', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -1105,7 +1106,7 @@ clientRoutes.get("/client/channels", verifyAuthEither, async(req, res) => {
         
         res.status(200).json({ status: "success", channels: allChannels });
     } catch (error) {
-        console.error('Error fetching channels:', error);
+        logger.error('[CHANNELS] Error fetching channels', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -1170,7 +1171,7 @@ clientRoutes.post("/client/channels", verifyAuthEither, async(req, res) => {
             res.status(404).json({ status: "error", message: "User not found" });
         }
     } catch (error) {
-        console.error('Error creating channel:', error);
+        logger.error('[CHANNELS] Error creating channel', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -1234,7 +1235,7 @@ clientRoutes.post("/client/channels/:channelId/join", verifyAuthEither, async(re
             channel: channel
         });
     } catch (error) {
-        console.error('Error joining channel:', error);
+        logger.error('[CHANNELS] Error joining channel', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -1291,12 +1292,12 @@ clientRoutes.get("/client/channels/:channelUuid/participants", verifyAuthEither,
                 livekitParticipants = await roomService.listParticipants(roomName);
             } catch (error) {
                 // Room might not exist or have no participants
-                console.log('No active LiveKit room for channel %s:', channelUuid, error.message);
+                logger.debug('[LIVEKIT] No active room', { channelUuid, message: error.message });
             }
         } else if (channel.type === 'signal') {
             // For Signal (text) channels, return channel members instead of LiveKit participants
             // Signal channels don't use LiveKit, so no active room participants
-            console.log('Channel %s is Signal type, skipping LiveKit participant check', channelUuid);
+            logger.debug('[LIVEKIT] Signal type channel, skipping participant check', { channelUuid });
         }
         
         // Enrich participant data with user information from database
@@ -1305,8 +1306,7 @@ clientRoutes.get("/client/channels/:channelUuid/participants", verifyAuthEither,
             try {
                 metadata = participant.metadata ? JSON.parse(participant.metadata) : {};
             } catch (e) {
-                console.error('Failed to parse participant metadata:', e);
-            }
+                    logger.error('[LIVEKIT] Failed to parse participant metadata', e);
             
             const userId = participant.identity;
             
@@ -1346,7 +1346,7 @@ clientRoutes.get("/client/channels/:channelUuid/participants", verifyAuthEither,
             roomName: roomName
         });
     } catch (error) {
-        console.error('Error fetching channel participants:', error);
+        logger.error('[CHANNELS] Error fetching channel participants', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -1363,8 +1363,7 @@ clientRoutes.get("/client/channels/:channelUuid/participants", verifyAuthEither,
 
 clientRoutes.post("/magic/verify", async (req, res) => {
     const { key, clientid } = req.body;
-    console.log("Verifying magic link with key format, client ID:", clientid);
-    console.log("Received key:", key);
+    logger.debug('[MAGIC LINK] Verifying magic link', { clientId: sanitizeForLog(clientid) });
     
     if(!key || !clientid) {
         return res.status(400).json({ status: "failed", message: "Missing key or client ID" });
@@ -1373,8 +1372,6 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     // Parse new magic key format: {serverUrl}|{randomHash}|{timestamp}|{hmacSignature}
     // Using pipe delimiter which is safe for all URL formats (including IPv6)
     const parts = key.split('|');
-    
-    console.log("Key parts:", parts);
     
     if (parts.length !== 4) {
         return res.status(400).json({ status: "failed", message: `Invalid magic key format - expected 4 parts, got ${parts.length}` });
@@ -1386,8 +1383,6 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     const timestamp = parseInt(parts[2]);
     const providedSignature = parts[3];
     
-    console.log("Parsed - serverUrl:", serverUrl, "randomHash:", randomHash, "timestamp:", timestamp);
-    
     // Verify HMAC signature
     const config = require('../config/config');
     const crypto = require('crypto');
@@ -1395,9 +1390,6 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     const hmac = crypto.createHmac('sha256', config.session.secret);
     hmac.update(dataToSign);
     const expectedSignature = hmac.digest('hex');
-    
-    console.log("Expected signature:", expectedSignature);
-    console.log("Provided signature:", providedSignature);
     
     if (providedSignature !== expectedSignature) {
         return res.status(400).json({ status: "failed", message: "Invalid magic key signature" });
@@ -1441,7 +1433,7 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     const existingClient = await Client.findOne({ where: { clientid: clientid } });
     if (existingClient && existingClient.owner !== entry.uuid) {
         // Client is switching accounts - delete old client entry and associated keys
-        console.log(`[MAGIC LINK] Client ${sanitizeForLog(clientid)} switching from user ${sanitizeForLog(existingClient.owner)} to ${sanitizeForLog(entry.uuid)}`);
+        logger.info('[MAGIC LINK] Client switching accounts', { clientId: sanitizeForLog(clientid), from: sanitizeForLog(existingClient.owner), to: sanitizeForLog(entry.uuid) });
         await writeQueue.enqueue(async () => {
             // Delete Signal Protocol keys
             await SignalPreKey.destroy({ where: { client: clientid } });
@@ -1502,16 +1494,16 @@ clientRoutes.post("/magic/verify", async (req, res) => {
             ),
             'createClientSession'
         );
-        console.log(`[MagicKey] Session created for client: ${sanitizeForLog(clientid)}`);
+        logger.info('[MagicKey] Session created', { clientId: sanitizeForLog(clientid) });
     } catch (sessionErr) {
-        console.error('[MagicKey] Error creating session:', sessionErr);
+        logger.error('[MagicKey] Error creating session', sessionErr);
         // Continue anyway - web clients don't need sessions
     }
     
     // Persist session immediately so Socket.IO can read it
     return req.session.save(err => {
         if (err) {
-            console.error('Session save error (magic/verify):', err);
+            logger.error('[MAGIC] Session save error', err);
             return res.status(500).json({ status: "error", message: "Session save error" });
         }
         
@@ -1538,7 +1530,7 @@ clientRoutes.post("/client/login", async (req, res) => {
         const existingClient = await Client.findOne({ where: { clientid: clientid } });
         if (existingClient && existingClient.owner !== owner.uuid) {
             // Client is switching accounts - delete old client entry and associated keys
-            console.log(`[CLIENT LOGIN] Client ${sanitizeForLog(clientid)} switching from user ${sanitizeForLog(existingClient.owner)} to ${sanitizeForLog(owner.uuid)}`);
+            logger.info('[CLIENT LOGIN] Client switching accounts', { clientId: sanitizeForLog(clientid), from: sanitizeForLog(existingClient.owner), to: sanitizeForLog(owner.uuid) });
             await writeQueue.enqueue(async () => {
                 // Delete Signal Protocol keys
                 await SignalPreKey.destroy({ where: { client: clientid } });
@@ -1572,7 +1564,7 @@ clientRoutes.post("/client/login", async (req, res) => {
             
             return req.session.save(err => {
                 if (err) {
-                    console.error('Session save error (client/login):', err);
+                    logger.error('[CLIENT LOGIN] Session save error', err);
                     return res.status(500).json({ status: "error", message: "Session save error" });
                 }
                 res.status(200).json({ status: "ok", message: "Client login successful" });
@@ -1581,7 +1573,7 @@ clientRoutes.post("/client/login", async (req, res) => {
             res.status(401).json({ status: "failed", message: "Invalid client ID or not authorized" });
         }
     } catch (error) {
-        console.error('Error during client login:', error);
+        logger.error('[CLIENT] Error during client login', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -1633,16 +1625,13 @@ clientRoutes.get("/channels", async (req, res) => {
                 const bufferData = JSON.parse(user.dataValues.picture);
                 user.dataValues.pictureBase64 = Buffer.from(bufferData.data).toString('base64');
             }
-            console.log('Channels:', channels);
-            console.log(`Threads:`, threads.user);
-            console.log('User Data:', user.dataValues);
             // REMOVED: Pug render (Pug disabled, Flutter web client used)
             res.status(410).json({ error: "Pug routes deprecated - use Flutter web client" });
         } else {
             //res.redirect("/login");
         }
     } catch (error) {
-        console.error('Error retrieving channels:', error);
+        logger.error('[CHANNELS] Error retrieving channels', error);
         //res.redirect("/error");
     }
 });
@@ -1663,7 +1652,7 @@ clientRoutes.post("/channels/create", async (req, res) => {
             res.status(401).json({ message: "Unauthorized" });
         }
     } catch (error) {
-        console.error('Error creating channel:', error);
+        logger.error('[CHANNELS] Error creating channel (pug route)', error);
         res.status(400).json({ message: "Error creating channel" });
     }
 });
@@ -1703,14 +1692,13 @@ clientRoutes.get("/thread/:id", async (req, res) => {
                 }
 
 
-                console.log(`Thread ${thread.id}:`, thread);
                 res.json(thread);
             }
         } else {
             //res.redirect("/login");
         }
     } catch (error) {
-        console.error('Error retrieving thread:', error);
+        logger.error('[THREAD] Error retrieving thread', error);
         //res.redirect("/error");
     }
 });
@@ -1763,7 +1751,6 @@ clientRoutes.get("/channel/:name", async (req, res) => {
                 user.dataValues.pictureBase64 = Buffer.from(bufferData.data).toString('base64');
             }
 
-                console.log(`Threads for channel ${channel.name}:`, threads);
                 // REMOVED: Pug render (Pug disabled, Flutter web client used)
                 res.status(410).json({ error: "Pug routes deprecated - use Flutter web client" });
             }
@@ -1771,7 +1758,7 @@ clientRoutes.get("/channel/:name", async (req, res) => {
             //res.redirect("/login");
         }
     } catch (error) {
-        console.error('Error retrieving channel:', error);
+        logger.error('[THREAD] Error retrieving channel', error);
         //res.redirect("/error");
     }
 });
@@ -1791,7 +1778,7 @@ clientRoutes.post("/channel/:name/post", async (req, res) => {
             res.status(401).json({ message: "Unauthorized" });
         }
     } catch (error) {
-        console.error('Error creating thread:', error);
+        logger.error('[THREAD] Error creating thread', error);
         res.status(400).json({ message: "Error creating thread" });
     }
 });
@@ -1813,7 +1800,7 @@ clientRoutes.post("/usersettings", async (req, res) => {
             res.json({message: "User settings updated"});
         }
     } catch (error) {
-        console.error('Error updating user settings:', error);
+        logger.error('[USER SETTINGS] Error updating', error);
         res.json({ message: "Error updating user settings" });
     }
 });
@@ -1858,7 +1845,7 @@ clientRoutes.delete("/items/:itemId", verifyAuthEither, async (req, res) => {
                 }),
                 'deleteItemForSpecificDevice'
             );
-            console.log(`[CLEANUP] Item ${sanitizeForLog(itemId)} for user ${sanitizeForLog(receiverUserId)} device ${sanitizeForLog(receiverDeviceId)} deleted by ${sanitizeForLog(req.session.uuid)}`);
+            logger.info('[CLEANUP] Item deleted for specific device', { itemId: sanitizeForLog(itemId), userId: sanitizeForLog(receiverUserId), deviceId: sanitizeForLog(receiverDeviceId), by: sanitizeForLog(req.session.uuid) });
         } else if (receiverDeviceId !== null) {
             // Legacy: only deviceId provided (might delete wrong user's message!)
             await writeQueue.enqueue(
@@ -1870,19 +1857,19 @@ clientRoutes.delete("/items/:itemId", verifyAuthEither, async (req, res) => {
                 }),
                 'deleteItemForDevice'
             );
-            console.log(`[CLEANUP] Item ${sanitizeForLog(itemId)} for device ${sanitizeForLog(receiverDeviceId)} deleted by user ${sanitizeForLog(sessionUuid)}`);
+            logger.info('[CLEANUP] Item deleted for device', { itemId: sanitizeForLog(itemId), deviceId: sanitizeForLog(receiverDeviceId), by: sanitizeForLog(sessionUuid) });
         } else {
             // Delete all items with this itemId (all device versions)
             await writeQueue.enqueue(
                 () => Item.destroy({ where: { itemId: itemId } }),
                 'deleteItemAllDevices'
             );
-            console.log(`[CLEANUP] Item ${sanitizeForLog(itemId)} (all devices) deleted by user ${sanitizeForLog(sessionUuid)}`);
+            logger.info('[CLEANUP] Item deleted for all devices', { itemId: sanitizeForLog(itemId), by: sanitizeForLog(sessionUuid) });
         }
         
         res.status(200).json({ status: "ok", message: "Item deleted successfully" });
     } catch (error) {
-        console.error('Error deleting item:', error);
+        logger.error('[CLEANUP] Error deleting item', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -1968,7 +1955,7 @@ clientRoutes.post("/client/profile/setup",
                 
                 updateData.picture = buffer;
             } catch (error) {
-                console.error('Error processing picture:', error);
+                logger.error('[PROFILE SETUP] Error processing picture', error);
                 return res.status(400).json({ 
                     status: "error", 
                     message: "Invalid picture format" 
@@ -1978,7 +1965,7 @@ clientRoutes.post("/client/profile/setup",
 
         await user.update(updateData);
 
-        console.log(`[PROFILE SETUP] User ${userUuid} completed profile setup with displayName: ${displayName}`);
+        logger.info('[PROFILE SETUP] User completed profile setup', { userUuid, displayName });
 
         // Mark registration as complete (only for session-based auth)
         if (req.session && req.session.registrationStep) {
@@ -1987,9 +1974,9 @@ clientRoutes.post("/client/profile/setup",
             // Clear the registration session - user must log in properly after registration
             req.session.destroy((err) => {
                 if (err) {
-                    console.error('[PROFILE SETUP] Error destroying session:', err);
+                    logger.error('[PROFILE SETUP] Error destroying session', err);
                 } else {
-                    console.log('[PROFILE SETUP] Registration session cleared - user must log in');
+                    logger.info('[PROFILE SETUP] Registration session cleared - user must log in');
                 }
             });
         }
@@ -2004,7 +1991,7 @@ clientRoutes.post("/client/profile/setup",
             }
         });
     } catch (error) {
-        console.error('Error setting up profile:', error);
+        logger.error('[PROFILE SETUP] Error setting up profile', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -2037,7 +2024,7 @@ clientRoutes.get("/client/profile", verifyAuthEither, async (req, res) => {
             picture: pictureBase64
         });
     } catch (error) {
-        console.error('Error getting profile:', error);
+        logger.error('[PROFILE] Error getting profile', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -2126,7 +2113,7 @@ clientRoutes.post("/client/profile/update",
 
                 updateData.picture = buffer;
             } catch (error) {
-                console.error('Error processing picture:', error);
+                logger.error('[PROFILE UPDATE] Error processing picture', error);
                 return res.status(400).json({
                     status: "error",
                     message: "Invalid picture format"
@@ -2137,7 +2124,7 @@ clientRoutes.post("/client/profile/update",
         // Apply updates if any
         if (Object.keys(updateData).length > 0) {
             await user.update(updateData);
-            console.log(`[PROFILE UPDATE] User ${userUuid} updated profile:`, Object.keys(updateData));
+            logger.info('[PROFILE UPDATE] User updated profile', { userUuid, fields: Object.keys(updateData) });
         }
 
         res.status(200).json({
@@ -2145,7 +2132,7 @@ clientRoutes.post("/client/profile/update",
             message: "Profile updated successfully"
         });
     } catch (error) {
-        console.error('Error updating profile:', error);
+        logger.error('[PROFILE UPDATE] Error updating profile', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -2162,7 +2149,7 @@ clientRoutes.get("/client/auth/test", verifyAuthEither, async (req, res) => {
             timestamp: new Date().toISOString()
         });
     } catch (error) {
-        console.error('[AUTH TEST] Error:', error);
+        logger.error('[AUTH TEST] Error', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -2180,7 +2167,7 @@ clientRoutes.get("/client/auth/check", async (req, res) => {
         // Check if HMAC headers are present (native client)
         if (!clientId || !timestamp || !nonce || !signature) {
             // No HMAC headers - not authenticated
-            console.log('[AUTH CHECK] No HMAC headers found - client not authenticated');
+            logger.debug('[AUTH CHECK] No HMAC headers found - client not authenticated');
             return res.status(200).json({
                 authenticated: false,
                 reason: 'no_credentials',
@@ -2192,7 +2179,7 @@ clientRoutes.get("/client/auth/check", async (req, res) => {
         const now = Date.now();
         const maxDiff = 5 * 60 * 1000;
         if (Math.abs(now - timestamp) > maxDiff) {
-            console.log(`[AUTH CHECK] Request expired: timestamp=${timestamp}, now=${now}`);
+            logger.debug('[AUTH CHECK] Request expired', { timestamp, now });
             return res.status(200).json({
                 authenticated: false,
                 reason: 'request_expired',
@@ -2207,7 +2194,7 @@ clientRoutes.get("/client/auth/check", async (req, res) => {
         );
 
         if (nonceCheck && nonceCheck.length > 0) {
-            console.log(`[AUTH CHECK] Duplicate nonce: ${nonce}`);
+            logger.debug('[AUTH CHECK] Duplicate nonce', { nonce: sanitizeForLog(nonce) });
             return res.status(200).json({
                 authenticated: false,
                 reason: 'duplicate_nonce',
@@ -2230,7 +2217,7 @@ clientRoutes.get("/client/auth/check", async (req, res) => {
         );
 
         if (!sessions || sessions.length === 0) {
-            console.log(`[AUTH CHECK] No session found for client: ${sanitizeForLog(clientId)}`);
+            logger.debug('[AUTH CHECK] No session found', { clientId: sanitizeForLog(clientId) });
             return res.status(200).json({
                 authenticated: false,
                 reason: 'no_session',
@@ -2242,7 +2229,7 @@ clientRoutes.get("/client/auth/check", async (req, res) => {
 
         // Check if session expired
         if (new Date(session.expires_at) < new Date()) {
-            console.log(`[AUTH CHECK] Session expired for client: ${sanitizeForLog(clientId)}`);
+            logger.debug('[AUTH CHECK] Session expired', { clientId: sanitizeForLog(clientId) });
             return res.status(200).json({
                 authenticated: false,
                 reason: 'session_expired',
@@ -2263,7 +2250,7 @@ clientRoutes.get("/client/auth/check", async (req, res) => {
 
         if (signatureBuffer.length !== expectedBuffer.length ||
             !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
-            console.log(`[AUTH CHECK] Signature mismatch for client: ${sanitizeForLog(clientId)}`);
+            logger.debug('[AUTH CHECK] Signature mismatch', { clientId: sanitizeForLog(clientId) });
             return res.status(200).json({
                 authenticated: false,
                 reason: 'invalid_signature',
@@ -2280,7 +2267,7 @@ clientRoutes.get("/client/auth/check", async (req, res) => {
         // Check if user still exists and is active
         const user = await User.findOne({ where: { uuid: session.user_id } });
         if (!user) {
-            console.log(`[AUTH CHECK] User not found: ${session.user_id}`);
+            logger.debug('[AUTH CHECK] User not found', { userId: session.user_id });
             return res.status(200).json({
                 authenticated: false,
                 reason: 'user_not_found',
@@ -2289,7 +2276,7 @@ clientRoutes.get("/client/auth/check", async (req, res) => {
         }
 
         if (!user.active) {
-            console.log(`[AUTH CHECK] User inactive: ${session.user_id}`);
+            logger.debug('[AUTH CHECK] User inactive', { userId: session.user_id });
             return res.status(200).json({
                 authenticated: false,
                 reason: 'user_inactive',
@@ -2298,7 +2285,7 @@ clientRoutes.get("/client/auth/check", async (req, res) => {
         }
 
         // All checks passed - session is valid
-        console.log(`[AUTH CHECK] ✓ Client ${sanitizeForLog(clientId)} authenticated successfully`);
+        logger.debug('[AUTH CHECK] Client authenticated successfully', { clientId: sanitizeForLog(clientId) });
         
         // Check user permissions for logout prevention scenarios
         const hasChannelCreatePermission = await hasServerPermission(session.user_id, 'channel.create');
@@ -2315,7 +2302,7 @@ clientRoutes.get("/client/auth/check", async (req, res) => {
             message: 'Session is valid'
         });
     } catch (error) {
-        console.error('[AUTH CHECK] Error:', error);
+        logger.error('[AUTH CHECK] Error', error);
         res.status(500).json({
             authenticated: false,
             reason: 'server_error',
@@ -2353,7 +2340,7 @@ clientRoutes.get("/client/profile/check-atname", async (req, res) => {
             atName: trimmedAtName
         });
     } catch (error) {
-        console.error('Error checking @name availability:', error);
+        logger.error('[ATNAME] Error checking availability', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -2372,7 +2359,7 @@ clientRoutes.delete("/client/profile/delete", async (req, res) => {
             return res.status(404).json({ status: "error", message: "User not found" });
         }
 
-        console.log(`[ACCOUNT DELETE] User ${sanitizeForLog(userUuid)} (${sanitizeForLog(user.email)}) is deleting their account`);
+        logger.info('[ACCOUNT DELETE] User deleting account', { userUuid: sanitizeForLog(userUuid), email: sanitizeForLog(user.email) });
 
         // Delete associated data
         await Client.destroy({ where: { userUuid } });
@@ -2388,14 +2375,14 @@ clientRoutes.delete("/client/profile/delete", async (req, res) => {
         // Destroy session
         req.session.destroy();
 
-        console.log(`[ACCOUNT DELETE] User ${userUuid} account deleted successfully`);
+        logger.info('[ACCOUNT DELETE] Account deleted successfully', { userUuid });
 
         res.status(200).json({
             status: "ok",
             message: "Account deleted successfully"
         });
     } catch (error) {
-        console.error('Error deleting account:', error);
+        logger.error('[ACCOUNT DELETE] Error deleting account', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -2408,13 +2395,13 @@ clientRoutes.get("/admin/cleanup", async (req, res) => {
         
         const { runCleanup } = require('../jobs/cleanup');
         
-        console.log('[ADMIN] Manual cleanup triggered by user:', req.session.uuid || 'unauthenticated');
+        logger.info('[ADMIN] Manual cleanup triggered', { by: req.session.uuid || 'unauthenticated' });
         
         // Run cleanup in background
         runCleanup().then(() => {
-            console.log('[ADMIN] Manual cleanup completed');
+            logger.info('[ADMIN] Manual cleanup completed');
         }).catch(error => {
-            console.error('[ADMIN] Manual cleanup failed:', error);
+            logger.error('[ADMIN] Manual cleanup failed', error);
         });
         
         res.status(200).json({ 
@@ -2426,7 +2413,7 @@ clientRoutes.get("/admin/cleanup", async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error triggering manual cleanup:', error);
+        logger.error('[ADMIN] Error triggering manual cleanup', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -2468,7 +2455,7 @@ clientRoutes.get("/api/server/settings", verifyAuthEither, async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error fetching server settings:', error);
+        logger.error('[SERVER SETTINGS] Error fetching', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -2509,7 +2496,7 @@ clientRoutes.post("/api/server/settings", bodyParser.json({ limit: '5mb' }), ver
         
         await settings.save();
         
-        console.log(`[SERVER SETTINGS] Updated by ${userUuid}`);
+        logger.info('[SERVER SETTINGS] Updated', { by: userUuid });
         
         res.json({
             status: "ok",
@@ -2522,7 +2509,7 @@ clientRoutes.post("/api/server/settings", bodyParser.json({ limit: '5mb' }), ver
             }
         });
     } catch (error) {
-        console.error('Error updating server settings:', error);
+        logger.error('[SERVER SETTINGS] Error updating', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -2535,35 +2522,26 @@ clientRoutes.post("/api/server/invitations/send", verifyAuthEither, async (req, 
         const userUuid = req.userId || req.session.uuid;
         const emailService = require('../services/emailService');
         
-        console.log('[INVITATION] POST received, body:', JSON.stringify(req.body));
-        console.log('[INVITATION] User UUID:', userUuid);
-        
         // Check admin permission
         const isAdmin = await hasServerPermission(userUuid, 'server.manage');
-        console.log('[INVITATION] Is admin:', isAdmin);
         if (!isAdmin) {
             return res.status(403).json({ status: "error", message: "Forbidden: Admin access required" });
         }
         
         const { email } = req.body;
-        console.log('[INVITATION] Email from body:', email);
         
         if (!email || !email.includes('@')) {
-            console.log('[INVITATION] Email validation failed');
             return res.status(400).json({ status: "error", message: "Valid email required" });
         }
-        console.log('[INVITATION] Email validation passed');
         
         // Check if user already exists
         const existingUser = await User.findOne({ where: { email } });
-        console.log('[INVITATION] Existing user check:', existingUser ? 'User exists' : 'No existing user');
         if (existingUser) {
             return res.status(400).json({ status: "error", message: "User with this email already exists" });
         }
         
         // Generate 6-digit token
         const token = Math.floor(100000 + Math.random() * 900000).toString();
-        console.log('[INVITATION] Generated token:', token);
         
         // Calculate expiry using config (default: 48 hours)
         const expiresAt = new Date(Date.now() + config.invitation.expirationHours * 60 * 60 * 1000);
@@ -2571,22 +2549,18 @@ clientRoutes.post("/api/server/invitations/send", verifyAuthEither, async (req, 
         const { Invitation } = require('../db/model');
         
         // Create invitation
-        console.log('[INVITATION] Creating invitation record...');
         const invitation = await Invitation.create({
             email,
             token,
             expires_at: expiresAt,
             invited_by: userUuid
         });
-        console.log('[INVITATION] Invitation created:', invitation.id);
         
         // Send email
-        console.log('[INVITATION] Configuring email transporter...');
         const { ServerSettings } = require('../db/model');
         const settings = await ServerSettings.findOne({ where: { id: 1 } });
         const serverName = settings?.server_name || 'PeerWave Server';
         
-        console.log('[INVITATION] Sending email to:', email);
         await emailService.sendEmail({
             smtpConfig: config.smtp,
             message: {
@@ -2666,7 +2640,7 @@ ${config.app.url}`
             }
         });
         
-        console.log(`[INVITATION] Successfully sent to ${sanitizeForLog(email)} by ${sanitizeForLog(userUuid)}, token: ${sanitizeForLog(token)}`);
+        logger.info('[INVITATION] Successfully sent', { email: sanitizeForLog(email), by: sanitizeForLog(userUuid), token: sanitizeForLog(token) });
         
         res.json({
             status: "ok",
@@ -2679,8 +2653,7 @@ ${config.app.url}`
             }
         });
     } catch (error) {
-        console.error('[INVITATION] Error occurred:', error);
-        console.error('[INVITATION] Error stack:', error.stack);
+        logger.error('[INVITATION] Error occurred', error);
         res.status(500).json({ status: "error", message: "Failed to send invitation: " + error.message });
     }
 });
@@ -2721,7 +2694,7 @@ clientRoutes.get("/api/server/invitations", verifyAuthEither, async (req, res) =
             }))
         });
     } catch (error) {
-        console.error('Error fetching invitations:', error);
+        logger.error('[INVITATION] Error fetching', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -2748,14 +2721,14 @@ clientRoutes.delete("/api/server/invitations/:id", verifyAuthEither, async (req,
             return res.status(404).json({ status: "error", message: "Invitation not found" });
         }
         
-        console.log(`[INVITATION] Deleted invitation ${id} by ${userUuid}`);
+        logger.info('[INVITATION] Deleted', { id, by: userUuid });
         
         res.json({
             status: "ok",
             message: "Invitation deleted successfully"
         });
     } catch (error) {
-        console.error('Error deleting invitation:', error);
+        logger.error('[INVITATION] Error deleting', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
@@ -2794,13 +2767,13 @@ clientRoutes.delete("/client/:clientId", verifyAuthEither, async (req, res) => {
             });
         }
         
-        console.log(`[CLIENT DELETE] User ${sanitizeForLog(userUuid)} deleting client ${sanitizeForLog(clientId)}`);
+        logger.info('[CLIENT DELETE] Deleting client', { userUuid: sanitizeForLog(userUuid), clientId: sanitizeForLog(clientId) });
         
         // Delete associated Signal keys
         await writeQueue.enqueue(async () => {
             await SignalPreKey.destroy({ where: { client: clientId } });
             await SignalSignedPreKey.destroy({ where: { client: clientId } });
-            console.log(`[CLIENT DELETE] Deleted Signal keys for client ${sanitizeForLog(clientId)}`);
+            logger.debug('[CLIENT DELETE] Deleted Signal keys', { clientId: sanitizeForLog(clientId) });
         }, 'deleteClientSignalKeys');
         
         // Delete session from database
@@ -2822,14 +2795,14 @@ clientRoutes.delete("/client/:clientId", verifyAuthEither, async (req, res) => {
             'deleteClient'
         );
         
-        console.log(`[CLIENT DELETE] Successfully deleted client ${sanitizeForLog(clientId)} and all associated data`);
+        logger.info('[CLIENT DELETE] Successfully deleted client and all associated data', { clientId: sanitizeForLog(clientId) });
         
         res.status(200).json({ 
             status: "ok", 
             message: "Client deleted successfully" 
         });
     } catch (error) {
-        console.error('Error deleting client:', error);
+        logger.error('[CLIENT DELETE] Error deleting client', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });

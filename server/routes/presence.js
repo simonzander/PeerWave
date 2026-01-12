@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const presenceService = require('../services/presenceService');
 const { verifySessionAuth, verifyAuthEither } = require('../middleware/sessionAuth');
+const logger = require('../utils/logger');
 
 /**
  * Get presence for specific users (bulk check - GET with query params)
@@ -26,7 +27,7 @@ router.get('/presence/bulk', verifyAuthEither, async (req, res) => {
     
     res.json(presence);
   } catch (error) {
-    console.error('Error getting bulk presence:', error);
+    logger.error('[PRESENCE] Error getting bulk presence', error);
     res.status(500).json({ error: 'Failed to get presence' });
   }
 });
@@ -36,7 +37,7 @@ router.get('/presence/bulk', verifyAuthEither, async (req, res) => {
  * POST /api/presence/heartbeat
  */
 router.post('/presence/heartbeat', verifyAuthEither, async (req, res) => {
-  console.warn('[PRESENCE] /api/presence/heartbeat is deprecated');
+  logger.warn('[PRESENCE] Deprecated endpoint called: /api/presence/heartbeat');
   res.json({ status: 'deprecated', message: 'Heartbeat no longer required' });
 });
 
@@ -56,7 +57,7 @@ router.post('/presence/users', verifyAuthEither, async (req, res) => {
     
     res.json(presence);
   } catch (error) {
-    console.error('Error getting presence:', error);
+    logger.error('[PRESENCE] Error getting presence', error);
     res.status(500).json({ error: 'Failed to get presence' });
   }
 });
@@ -73,7 +74,7 @@ router.get('/presence/channel/:channelId', verifyAuthEither, async (req, res) =>
     
     res.json(presence);
   } catch (error) {
-    console.error('Error getting channel presence:', error);
+    logger.error('[PRESENCE] Error getting channel presence', error);
     res.status(500).json({ error: 'Failed to get channel presence' });
   }
 });
@@ -90,7 +91,7 @@ router.get('/presence/conversation/:userId', verifyAuthEither, async (req, res) 
     
     res.json(presence[0] || { user_id: userId, status: 'offline' });
   } catch (error) {
-    console.error('Error getting conversation presence:', error);
+    logger.error('[PRESENCE] Error getting conversation presence', error);
     res.status(500).json({ error: 'Failed to get presence' });
   }
 });
@@ -105,7 +106,7 @@ router.get('/presence/online', verifyAuthEither, async (req, res) => {
     
     res.json(onlineUsers);
   } catch (error) {
-    console.error('Error getting online users:', error);
+    logger.error('[PRESENCE] Error getting online users', error);
     res.status(500).json({ error: 'Failed to get online users' });
   }
 });

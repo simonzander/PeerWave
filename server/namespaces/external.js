@@ -7,21 +7,23 @@
  */
 
 const externalParticipantService = require('../services/externalParticipantService');
+const logger = require('../utils/logger');
+const { sanitizeForLog } = require('../utils/logSanitizer');
 
 module.exports = function(io) {
   // Create /external namespace for guest connections
   const externalNamespace = io.of('/external');
   
-  console.log('[EXTERNAL WS] External guest namespace initialized on /external');
+  logger.info('[EXTERNAL WS] External guest namespace initialized on /external');
 
   externalNamespace.on('connection', async (socket) => {
-    console.log(`[EXTERNAL WS] Guest connection attempt: ${socket.id}`);
+    logger.debug(`[EXTERNAL WS] Guest connection attempt: ${socket.id}`);
 
     const { session_id, token, meeting_id } = socket.handshake.auth;
 
     // Validate authentication
     if (!session_id || !token || !meeting_id) {
-      console.log('[EXTERNAL WS] ❌ Missing auth params');
+      logger.warn('[EXTERNAL WS] Missing auth params');
       socket.emit('error', { message: 'Missing session_id, token, or meeting_id' });
       socket.disconnect(true);
       return;
@@ -31,7 +33,8 @@ module.exports = function(io) {
       // Validate session exists
       const session = await externalParticipantService.getSession(session_id);
       if (!session) {
-        console.log(`[EXTERNAL WS] ❌ Session ${session_id} not found`);
+        logger.warn('[EXTERNAL WS] Session not found');
+        logger.debug(`[EXTERNAL WS] SessionId: ${sanitizeForLog(session_id)}`);
         socket.emit('error', { message: 'Invalid session' });
         socket.disconnect(true);
         return;
@@ -40,7 +43,8 @@ module.exports = function(io) {
       // Validate token matches meeting
       const validToken = await externalParticipantService.validateTokenForMeeting(token, meeting_id);
       if (!validToken) {
-        console.log(`[EXTERNAL WS] ❌ Invalid token for meeting ${meeting_id}`);
+        logger.warn('[EXTERNAL WS] Invalid token for meeting');
+        logger.debug(`[EXTERNAL WS] MeetingId: ${sanitizeForLog(meeting_id)}`);
         socket.emit('error', { message: 'Invalid or expired token' });
         socket.disconnect(true);
         return;
@@ -48,7 +52,8 @@ module.exports = function(io) {
 
       // Verify session belongs to this meeting
       if (session.meeting_id !== meeting_id) {
-        console.log(`[EXTERNAL WS] ❌ Session ${session_id} does not belong to meeting ${meeting_id}`);
+        logger.warn('[EXTERNAL WS] Session does not belong to meeting');
+        logger.debug(`[EXTERNAL WS] Session: ${sanitizeForLog(session_id)}, Meeting: ${sanitizeForLog(meeting_id)}`);
         socket.emit('error', { message: 'Session mismatch' });
         socket.disconnect(true);
         return;
@@ -57,7 +62,8 @@ module.exports = function(io) {
       // Check if session expired
       const expired = await externalParticipantService.isSessionExpired(session_id);
       if (expired) {
-        console.log(`[EXTERNAL WS] ❌ Session ${session_id} expired`);
+        logger.warn('[EXTERNAL WS] Session expired');
+        logger.debug(`[EXTERNAL WS] SessionId: ${sanitizeForLog(session_id)}`);
         socket.emit('error', { message: 'Session expired' });
         socket.disconnect(true);
         return;
@@ -73,7 +79,8 @@ module.exports = function(io) {
       socket.join(`meeting:${meeting_id}`);  // Broadcast room (all participants + guests)
       socket.join(`guest:${session_id}`);    // Personal room (direct messages)
 
-      console.log(`[EXTERNAL WS] ✓ Guest ${session.display_name} (${session_id}) joined meeting ${meeting_id}`);
+      logger.info('[EXTERNAL WS] Guest joined meeting');
+      logger.debug(`[EXTERNAL WS] Name: ${sanitizeForLog(session.display_name)}, Session: ${sanitizeForLog(session_id)}, Meeting: ${sanitizeForLog(meeting_id)}`);
       
       socket.emit('authenticated', { 
         success: true,
@@ -83,7 +90,8 @@ module.exports = function(io) {
       });
 
       // Log registered event listeners for debugging
-      console.log(`[EXTERNAL WS] Guest ${session_id} authenticated and ready`);
+      logger.info('[EXTERNAL WS] Guest authenticated and ready');
+      logger.debug(`[EXTERNAL WS] SessionId: ${sanitizeForLog(session_id)}`);
 
       // ==================== GUEST EVENT HANDLERS ====================
 
@@ -100,7 +108,8 @@ module.exports = function(io) {
         try {
           const { recipient_user_id, recipient_device_id, encrypted_message, message_type } = data;
 
-          console.log(`[EXTERNAL WS] Guest ${session_id} sending Signal message (${message_type}) to ${recipient_user_id}:${recipient_device_id}`);
+          logger.info(`[EXTERNAL WS] Guest sending Signal message (${message_type})`);
+          logger.debug(`[EXTERNAL WS] From: ${sanitizeForLog(session_id)}, To: ${sanitizeForLog(recipient_user_id)}:${sanitizeForLog(recipient_device_id)}`);
 
           // Find recipient's socket
           const deviceKey = `${recipient_user_id}:${recipient_device_id}`;
@@ -116,15 +125,17 @@ module.exports = function(io) {
                 message_type,
                 timestamp: Date.now()
               });
-              console.log(`[EXTERNAL WS] ✓ Signal message delivered to ${deviceKey}`);
+              logger.info('[EXTERNAL WS] Signal message delivered');
+              logger.debug(`[EXTERNAL WS] To: ${sanitizeForLog(deviceKey)}`);
             } else {
-              console.log(`[EXTERNAL WS] ⚠️ Recipient socket ${recipientSocketId} not found`);
+              logger.warn(`[EXTERNAL WS] Recipient socket not found: ${recipientSocketId}`);
             }
           } else {
-            console.log(`[EXTERNAL WS] ⚠️ Recipient ${deviceKey} not connected`);
+            logger.warn('[EXTERNAL WS] Recipient not connected');
+            logger.debug(`[EXTERNAL WS] DeviceKey: ${sanitizeForLog(deviceKey)}`);
           }
         } catch (error) {
-          console.error('[EXTERNAL WS] Error handling Signal message:', error);
+          logger.error('[EXTERNAL WS] Error handling Signal message:', error);
           socket.emit('error', { message: 'Failed to send Signal message' });
         }
       });
@@ -144,7 +155,8 @@ module.exports = function(io) {
             request_id 
           } = data;
 
-          console.log(`[EXTERNAL WS] Guest ${session_id} requesting E2EE key via Signal from ${participant_user_id}:${participant_device_id}`);
+          logger.info('[EXTERNAL WS] Guest requesting E2EE key via Signal');
+          logger.debug(`[EXTERNAL WS] From: ${sanitizeForLog(session_id)}, Target: ${sanitizeForLog(participant_user_id)}:${sanitizeForLog(participant_device_id)}`);
 
           // Broadcast to meeting participants on MAIN namespace
           // Participants will decrypt and respond with encrypted LiveKit E2EE key
@@ -160,9 +172,10 @@ module.exports = function(io) {
             timestamp: Date.now()
           });
 
-          console.log(`[EXTERNAL WS] ✓ Signal E2EE key request broadcasted to meeting ${meeting_id}`);
+          logger.info('[EXTERNAL WS] Signal E2EE key request broadcasted');
+          logger.debug(`[EXTERNAL WS] Meeting: ${sanitizeForLog(meeting_id)}`);
         } catch (error) {
-          console.error('[EXTERNAL WS] Error handling Signal E2EE key request:', error);
+          logger.error('[EXTERNAL WS] Error handling Signal E2EE key request:', error);
           socket.emit('error', { message: 'Failed to request E2EE key' });
         }
       });
@@ -193,7 +206,8 @@ module.exports = function(io) {
         limit.count++;
 
         if (limit.count > MAX_MESSAGES_PER_WINDOW) {
-          console.log(`[EXTERNAL WS] ⚠️ Rate limit exceeded for guest ${session_id}`);
+          logger.warn('[EXTERNAL WS] Rate limit exceeded for guest');
+          logger.debug(`[EXTERNAL WS] SessionId: ${sanitizeForLog(session_id)}`);
           return next(new Error('Rate limit exceeded'));
         }
 
@@ -204,7 +218,8 @@ module.exports = function(io) {
        * Disconnect handler
        */
       socket.on('disconnect', async (reason) => {
-        console.log(`[EXTERNAL WS] Guest ${session_id} disconnected: ${reason}`);
+        logger.info(`[EXTERNAL WS] Guest disconnected: ${reason}`);
+        logger.debug(`[EXTERNAL WS] SessionId: ${sanitizeForLog(session_id)}`);
         
         try {
           // Mark session as left if they haven't joined yet
@@ -212,7 +227,7 @@ module.exports = function(io) {
             await externalParticipantService.markLeft(session_id);
           }
         } catch (error) {
-          console.error('[EXTERNAL WS] Error marking guest as left:', error);
+          logger.error('[EXTERNAL WS] Error marking guest as left:', error);
         }
 
         // Cleanup rate limiter
@@ -220,7 +235,7 @@ module.exports = function(io) {
       });
 
     } catch (error) {
-      console.error('[EXTERNAL WS] Authentication error:', error);
+      logger.error('[EXTERNAL WS] Authentication error:', error);
       socket.emit('error', { message: 'Authentication failed' });
       socket.disconnect(true);
     }

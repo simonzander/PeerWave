@@ -3,6 +3,7 @@ const router = express.Router();
 const meetingService = require('../services/meetingService');
 const presenceService = require('../services/presenceService');
 const { verifySessionAuth, verifyAuthEither } = require('../middleware/sessionAuth');
+const logger = require('../utils/logger');
 
 /**
  * Create instant call (wrapper around createMeeting)
@@ -40,7 +41,7 @@ router.post('/calls/instant', verifyAuthEither, async (req, res) => {
     // Return full Meeting object
     res.status(201).json(call);
   } catch (error) {
-    console.error('Error creating instant call:', error);
+    logger.error('[CALLS] Error creating instant call', error);
     res.status(500).json({ error: 'Failed to create instant call' });
   }
 });
@@ -64,7 +65,7 @@ router.get('/calls/:callId', verifyAuthEither, async (req, res) => {
 
     res.json(call);
   } catch (error) {
-    console.error('Error getting call:', error);
+    logger.error('[CALLS] Error getting call', error);
     res.status(500).json({ error: 'Failed to get call' });
   }
 });
@@ -95,7 +96,7 @@ router.delete('/calls/:callId', verifyAuthEither, async (req, res) => {
     await meetingService.deleteMeeting(callId);
     res.json({ success: true });
   } catch (error) {
-    console.error('Error ending call:', error);
+    logger.error('[CALLS] Error ending call', error);
     res.status(500).json({ error: 'Failed to end call' });
   }
 });
@@ -115,7 +116,7 @@ router.get('/calls/:callId/participants', verifyAuthEither, async (req, res) => 
 
     res.json(call.participants);
   } catch (error) {
-    console.error('Error getting call participants:', error);
+    logger.error('[CALLS] Error getting call participants', error);
     res.status(500).json({ error: 'Failed to get participants' });
   }
 });
@@ -151,7 +152,7 @@ router.post('/calls/:callId/invite', verifyAuthEither, async (req, res) => {
 
     res.status(201).json(newParticipant);
   } catch (error) {
-    console.error('Error inviting to call:', error);
+    logger.error('[CALLS] Error inviting to call', error);
     res.status(500).json({ error: 'Failed to invite to call' });
   }
 });
@@ -187,7 +188,7 @@ router.post('/calls/:callId/generate-link', verifyAuthEither, async (req, res) =
       invitation_url: `${req.protocol}://${req.get('host')}/#/join/meeting/${invitation.token}`
     });
   } catch (error) {
-    console.error('Error generating call link:', error);
+    logger.error('[CALLS] Error generating call link', error);
     res.status(500).json({ error: 'Failed to generate call link' });
   }
 });
@@ -205,7 +206,7 @@ router.post('/calls/accept', verifyAuthEither, async (req, res) => {
     
     res.json({ success: true });
   } catch (error) {
-    console.error('Error accepting call:', error);
+    logger.error('[CALLS] Error accepting call', error);
     res.status(500).json({ error: 'Failed to accept call' });
   }
 });
@@ -223,7 +224,7 @@ router.post('/calls/decline', verifyAuthEither, async (req, res) => {
     
     res.json({ success: true });
   } catch (error) {
-    console.error('Error declining call:', error);
+    logger.error('[CALLS] Error declining call', error);
     res.status(500).json({ error: 'Failed to decline call' });
   }
 });

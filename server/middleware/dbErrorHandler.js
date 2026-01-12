@@ -3,6 +3,8 @@
  * Catches SQLite BUSY errors and returns HTTP 503 with Retry-After header
  */
 
+const logger = require('../utils/logger');
+
 function dbErrorHandler(err, req, res, next) {
   // Check if error is related to database lock/timeout
   const isDatabaseBusy = 
@@ -13,7 +15,7 @@ function dbErrorHandler(err, req, res, next) {
     err.original?.code === 'SQLITE_BUSY';
 
   if (isDatabaseBusy) {
-    console.warn('[DB ERROR HANDLER] Database busy, returning 503:', err.message);
+    logger.warn('[DB ERROR HANDLER] Database busy, returning 503', { message: err.message });
     
     // Return 503 Service Unavailable with Retry-After header
     return res.status(503)
@@ -28,7 +30,7 @@ function dbErrorHandler(err, req, res, next) {
 
   // Check for other database errors
   if (err.name?.startsWith('Sequelize')) {
-    console.error('[DB ERROR HANDLER] Database error:', err.name, err.message);
+    logger.error('[DB ERROR HANDLER] Database error', { name: err.name, message: err.message });
     
     return res.status(500).json({
       error: 'Database error',

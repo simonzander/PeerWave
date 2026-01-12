@@ -2,6 +2,7 @@ const { sequelize, ExternalSession, MeetingInvitation } = require('../db/model')
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const { sanitizeForLog } = require('../utils/logSanitizer');
+const logger = require('../utils/logger');
 
 /**
  * ExternalParticipantService - Manages external guest sessions for meetings
@@ -71,7 +72,7 @@ class ExternalParticipantService {
 
       return { meeting: meetings[0] };
     } catch (error) {
-      console.error('Error validating invitation token:', error);
+      logger.error('[EXTERNAL] Error validating invitation token', error);
       throw error;
     }
   }
@@ -93,7 +94,7 @@ class ExternalParticipantService {
       
       return result.meeting.meeting_id === meetingId;
     } catch (error) {
-      console.error('Error validating token for meeting:', error);
+      logger.error('[EXTERNAL] Error validating token for meeting', error);
       return false;
     }
   }
@@ -122,7 +123,7 @@ class ExternalParticipantService {
       
       return null; // Cooldown expired
     } catch (error) {
-      console.error('Error checking cooldown:', error);
+      logger.error('[EXTERNAL] Error checking cooldown', error);
       return null;
     }
   }
@@ -173,10 +174,14 @@ class ExternalParticipantService {
         expires_at: expiresAt
       });
 
-      console.log(`[EXTERNAL] Created session ${session_id} for meeting ${meeting_id}`);
+      logger.info('[EXTERNAL] Created session');
+      logger.debug('[EXTERNAL] Session details:', {
+        sessionId: sanitizeForLog(session_id),
+        meetingId: sanitizeForLog(meeting_id)
+      });
       return this._formatSession(session);
     } catch (error) {
-      console.error('Error creating external session:', error);
+      logger.error('[EXTERNAL] Error creating external session', error);
       throw error;
     }
   }
@@ -220,7 +225,7 @@ class ExternalParticipantService {
       const session = await ExternalSession.findByPk(session_id);
       return this._formatSession(session);
     } catch (error) {
-      console.error('Error getting external session:', error);
+      logger.error('[EXTERNAL] Error getting external session', error);
       throw error;
     }
   }
@@ -255,10 +260,14 @@ class ExternalParticipantService {
         where: { session_id }
       });
 
-      console.log(`[EXTERNAL] Updated session ${session_id} admitted=${admitted}`);
+      logger.info('[EXTERNAL] Updated session admission status');
+      logger.debug('[EXTERNAL] Update details:', {
+        sessionId: sanitizeForLog(session_id),
+        admitted
+      });
       return await this.getSession(session_id);
     } catch (error) {
-      console.error('Error updating admission status:', error);
+      logger.error('[EXTERNAL] Error updating admission status', error);
       throw error;
     }
   }
@@ -274,9 +283,10 @@ class ExternalParticipantService {
         { left_at: new Date() },
         { where: { session_id } }
       );
-      console.log(`[EXTERNAL] Marked session ${session_id} as left`);
+      logger.info('[EXTERNAL] Marked session as left');
+      logger.debug('[EXTERNAL] Session ID:', { sessionId: sanitizeForLog(session_id) });
     } catch (error) {
-      console.error('Error marking session as left:', error);
+      logger.error('[EXTERNAL] Error marking session as left', error);
       throw error;
     }
   }
@@ -289,10 +299,11 @@ class ExternalParticipantService {
   async deleteSession(session_id) {
     try {
       await ExternalSession.destroy({ where: { session_id } });
-      console.log(`[EXTERNAL] Deleted session ${session_id}`);
+      logger.info('[EXTERNAL] Deleted session');
+      logger.debug('[EXTERNAL] Session ID:', { sessionId: sanitizeForLog(session_id) });
       return true;
     } catch (error) {
-      console.error('Error deleting external session:', error);
+      logger.error('[EXTERNAL] Error deleting external session', error);
       throw error;
     }
   }
@@ -315,11 +326,15 @@ class ExternalParticipantService {
       });
 
       if (deleted > 0) {
-        console.log(`[EXTERNAL] Deleted ${deleted} duplicate waiting session(s) for meeting ${meeting_id}`);
+        logger.info('[EXTERNAL] Deleted duplicate waiting sessions');
+        logger.debug('[EXTERNAL] Deletion details:', {
+          deletedCount: deleted,
+          meetingId: sanitizeForLog(meeting_id)
+        });
       }
       return deleted;
     } catch (error) {
-      console.error('Error deleting sessions by token:', error);
+      logger.error('[EXTERNAL] Error deleting sessions by token', error);
       return 0; // Don't throw - cleanup shouldn't block registration
     }
   }
@@ -341,7 +356,7 @@ class ExternalParticipantService {
 
       return sessions.map(s => this._formatSession(s));
     } catch (error) {
-      console.error('Error getting meeting external participants:', error);
+      logger.error('[EXTERNAL] Error getting meeting external participants', error);
       throw error;
     }
   }
@@ -365,7 +380,7 @@ class ExternalParticipantService {
 
       return sessions.map(s => s.toJSON());
     } catch (error) {
-      console.error('Error getting waiting participants:', error);
+      logger.error('[EXTERNAL] Error getting waiting participants', error);
       throw error;
     }
   }
@@ -387,7 +402,7 @@ class ExternalParticipantService {
 
       return new Date() > new Date(session.expires_at);
     } catch (error) {
-      console.error('Error checking session expiration:', error);
+      logger.error('[EXTERNAL] Error checking session expiration', error);
       return true;
     }
   }
@@ -445,7 +460,7 @@ class ExternalParticipantService {
         preKeys: filteredKeys
       };
     } catch (error) {
-      console.error('Error consuming pre-key:', error);
+      logger.error('[EXTERNAL] Error consuming pre-key', error);
       throw error;
     }
   }
@@ -479,7 +494,7 @@ class ExternalParticipantService {
         preKeys: allKeys
       };
     } catch (error) {
-      console.error('Error replenishing pre-keys:', error);
+      logger.error('[EXTERNAL] Error replenishing pre-keys', error);
       throw error;
     }
   }
@@ -506,7 +521,7 @@ class ExternalParticipantService {
         preKeys: preKeys
       };
     } catch (error) {
-      console.error('Error getting remaining pre-keys:', error);
+      logger.error('[EXTERNAL] Error getting remaining pre-keys', error);
       throw error;
     }
   }
@@ -538,7 +553,7 @@ class ExternalParticipantService {
         sessionId: session_id
       };
     } catch (error) {
-      console.error('Error getting keys for session:', error);
+      logger.error('[EXTERNAL] Error getting keys for session', error);
       throw error;
     }
   }
@@ -556,10 +571,14 @@ class ExternalParticipantService {
         { where: { session_id } }
       );
       
-      console.log(`[EXTERNAL] Updated display name for session ${session_id} to: ${display_name}`);
+      logger.info('[EXTERNAL] Updated display name for session');
+      logger.debug('[EXTERNAL] Update details:', {
+        sessionId: sanitizeForLog(session_id),
+        displayName: display_name
+      });
       return true;
     } catch (error) {
-      console.error('Error updating session display name:', error);
+      logger.error('[EXTERNAL] Error updating session display name', error);
       throw error;
     }
   }
@@ -580,11 +599,11 @@ class ExternalParticipantService {
       });
 
       if (deleted > 0) {
-        console.log(`[EXTERNAL] Cleaned up ${deleted} expired session(s)`);
+        logger.info('[EXTERNAL] Cleaned up expired sessions:', { deletedCount: deleted });
       }
       return deleted;
     } catch (error) {
-      console.error('Error cleaning up expired sessions:', error);
+      logger.error('[EXTERNAL] Error cleaning up expired sessions', error);
       return 0;
     }
   }
@@ -640,7 +659,11 @@ class ExternalParticipantService {
     try {
       const { Client, SignalSignedPreKey, SignalPreKey } = require('../db/model');
 
-      console.log(`[EXTERNAL] getParticipantKeybundle called: userId=${sanitizeForLog(userId)}, deviceId=${sanitizeForLog(deviceId)} (${typeof deviceId})`);
+      logger.debug('[EXTERNAL] getParticipantKeybundle called:', {
+        userId: sanitizeForLog(userId),
+        deviceId: sanitizeForLog(deviceId),
+        deviceIdType: typeof deviceId
+      });
 
       // Get identity key from Clients table (using device_id INTEGER, not clientid UUID)
       const client = await Client.findOne({
@@ -650,10 +673,18 @@ class ExternalParticipantService {
         }
       });
 
-      console.log(`[EXTERNAL] Client query result:`, client ? `found clientid=${sanitizeForLog(client.clientid)}, has_key=${!!client.public_key}` : 'NOT FOUND');
+      logger.debug('[EXTERNAL] Client query result:', {
+        found: !!client,
+        clientId: client ? sanitizeForLog(client.clientid) : null,
+        hasKey: client ? !!client.public_key : false
+      });
 
       if (!client || !client.public_key) {
-        console.log(`[EXTERNAL] No client found for user ${sanitizeForLog(userId)}, device ${sanitizeForLog(deviceId)}`);
+        logger.warn('[EXTERNAL] No client found for participant keybundle');
+        logger.debug('[EXTERNAL] Missing client details:', {
+          userId: sanitizeForLog(userId),
+          deviceId: sanitizeForLog(deviceId)
+        });
         return null;
       }
 
@@ -667,7 +698,11 @@ class ExternalParticipantService {
       });
 
       if (!signedPreKey) {
-        console.log(`[EXTERNAL] No signed pre-key found for user ${sanitizeForLog(userId)}, device ${sanitizeForLog(deviceId)}`);
+        logger.warn('[EXTERNAL] No signed pre-key found for participant');
+        logger.debug('[EXTERNAL] Missing key details:', {
+          userId: sanitizeForLog(userId),
+          deviceId: sanitizeForLog(deviceId)
+        });
         return null;
       }
 
@@ -699,7 +734,7 @@ class ExternalParticipantService {
         } : null
       };
     } catch (error) {
-      console.error('[EXTERNAL] Error getting participant keybundle:', error);
+      logger.error('[EXTERNAL] Error getting participant keybundle', error);
       throw error;
     }
   }
@@ -722,13 +757,13 @@ class ExternalParticipantService {
         try {
           preKeys = JSON.parse(preKeys);
         } catch (e) {
-          console.error('[EXTERNAL] Failed to parse guest pre_keys:', e);
+          logger.error('[EXTERNAL] Failed to parse guest pre_keys', e);
           return null;
         }
       }
 
       if (!Array.isArray(preKeys) || preKeys.length === 0) {
-        console.warn('[EXTERNAL] Guest has no available pre-keys');
+        logger.warn('[EXTERNAL] Guest has no available pre-keys');
         return null;
       }
 
@@ -742,7 +777,11 @@ class ExternalParticipantService {
         { where: { session_id: sessionId } }
       );
 
-      console.log(`[EXTERNAL] Consumed guest pre-key ${oneTimePreKey.keyId}, ${remainingKeys.length} remaining`);
+      logger.info('[EXTERNAL] Consumed guest pre-key');
+      logger.debug('[EXTERNAL] Pre-key consumption:', {
+        keyId: oneTimePreKey.keyId,
+        remainingCount: remainingKeys.length
+      });
 
       // Parse signed_pre_key if needed
       let signedPreKey = session.signed_pre_key;
@@ -760,7 +799,7 @@ class ExternalParticipantService {
         one_time_pre_key: oneTimePreKey
       };
     } catch (error) {
-      console.error('[EXTERNAL] Error getting guest keybundle:', error);
+      logger.error('[EXTERNAL] Error getting guest keybundle', error);
       throw error;
     }
   }

@@ -1,5 +1,7 @@
 const { sequelize } = require('../db/model');
 const writeQueue = require('../db/writeQueue');
+const logger = require('../utils/logger');
+const { sanitizeForLog } = require('../utils/logSanitizer');
 
 /**
  * PresenceService - Tracks online/busy/offline status based on socket connections
@@ -23,14 +25,14 @@ class PresenceService {
    * Start the presence service (no-op, kept for compatibility)
    */
   start() {
-    console.log('✓ Presence service started (socket-based tracking)');
+    logger.info('[PRESENCE] Service started (socket-based tracking)');
   }
 
   /**
    * Stop the presence service (no-op, kept for compatibility)
    */
   stop() {
-    console.log('✓ Presence service stopped');
+    logger.info('[PRESENCE] Service stopped');
   }
 
   /**
@@ -41,7 +43,10 @@ class PresenceService {
    */
   async onSocketConnected(user_id, socket_id) {
     try {
-      console.log(`[PRESENCE] onSocketConnected called for user ${user_id}, socket ${socket_id}`);
+      logger.debug('[PRESENCE] onSocketConnected called:', {
+        userId: sanitizeForLog(user_id),
+        socketId: socket_id
+      });
       
       // Add to in-memory tracking
       if (!this.userConnections.has(user_id)) {
@@ -51,7 +56,10 @@ class PresenceService {
 
       // Determine status
       const status = this._getUserStatus(user_id);
-      console.log(`[PRESENCE] Calculated status for ${user_id}: ${status}`);
+      logger.debug('[PRESENCE] Calculated status:', {
+        userId: sanitizeForLog(user_id),
+        status
+      });
 
       // Update database using UPSERT (INSERT OR REPLACE)
       // This avoids race conditions when multiple connections register simultaneously
@@ -64,12 +72,20 @@ class PresenceService {
         }),
         'upsertPresenceOnConnect'
       );
-      console.log(`[PRESENCE] Updated record for ${user_id}: status=${status}`);
+      logger.debug('[PRESENCE] Updated record:', {
+        userId: sanitizeForLog(user_id),
+        status
+      });
 
-      console.log(`[PRESENCE] User ${user_id} connected (socket ${socket_id}), status: ${status}`);
+      logger.info('[PRESENCE] User connected');
+      logger.debug('[PRESENCE] Connection details:', {
+        userId: sanitizeForLog(user_id),
+        socketId: socket_id,
+        status
+      });
       return status;
     } catch (error) {
-      console.error('[PRESENCE] Error on socket connected:', error);
+      logger.error('[PRESENCE] Error on socket connected', error);
       throw error;
     }
   }
@@ -102,7 +118,8 @@ class PresenceService {
             'markOfflineOnDisconnect'
           );
 
-          console.log(`[PRESENCE] User ${user_id} disconnected (all sockets closed), status: offline`);
+          logger.info('[PRESENCE] User disconnected (all sockets closed), status: offline');
+          logger.debug('[PRESENCE] Disconnect details:', { userId: sanitizeForLog(user_id) });
           return 'offline';
         } else {
           // Still has other connections, recalculate status
@@ -119,14 +136,19 @@ class PresenceService {
             'updatePresenceOnDisconnect'
           );
 
-          console.log(`[PRESENCE] User ${user_id} disconnected one socket (${connections.size} remaining), status: ${status}`);
+          logger.info('[PRESENCE] User disconnected one socket');
+          logger.debug('[PRESENCE] Disconnect details:', {
+            userId: sanitizeForLog(user_id),
+            remainingSockets: connections.size,
+            status
+          });
           return status;
         }
       }
 
       return 'offline';
     } catch (error) {
-      console.error('[PRESENCE] Error on socket disconnected:', error);
+      logger.error('[PRESENCE] Error on socket disconnected', error);
       throw error;
     }
   }
@@ -156,10 +178,14 @@ class PresenceService {
         'markBusyOnRoomJoin'
       );
 
-      console.log(`[PRESENCE] User ${user_id} joined room ${room_id}, status: busy`);
+      logger.info('[PRESENCE] User joined room, status: busy');
+      logger.debug('[PRESENCE] Room join details:', {
+        userId: sanitizeForLog(user_id),
+        roomId: sanitizeForLog(room_id)
+      });
       return 'busy';
     } catch (error) {
-      console.error('[PRESENCE] Error on user joined room:', error);
+      logger.error('[PRESENCE] Error on user joined room', error);
       throw error;
     }
   }
@@ -195,10 +221,15 @@ class PresenceService {
         'updatePresenceOnRoomLeave'
       );
 
-      console.log(`[PRESENCE] User ${user_id} left room ${room_id}, status: ${status}`);
+      logger.info('[PRESENCE] User left room');
+      logger.debug('[PRESENCE] Room leave details:', {
+        userId: sanitizeForLog(user_id),
+        roomId: sanitizeForLog(room_id),
+        status
+      });
       return status;
     } catch (error) {
-      console.error('[PRESENCE] Error on user left room:', error);
+      logger.error('[PRESENCE] Error on user left room', error);
       throw error;
     }
   }
@@ -228,7 +259,7 @@ class PresenceService {
    * DEPRECATED: Legacy method for backward compatibility
    */
   async markOffline(user_id) {
-    console.warn('[PRESENCE] markOffline() is deprecated, use onSocketDisconnected()');
+    logger.warn('[PRESENCE] markOffline() is deprecated, use onSocketDisconnected()');
     return await writeQueue.enqueue(
       () => sequelize.query(`
         UPDATE user_presence
@@ -252,7 +283,9 @@ class PresenceService {
     }
 
     try {
-      console.log(`[PRESENCE] getPresence called for users: ${user_ids.join(', ')}`);
+      logger.debug('[PRESENCE] getPresence called:', {
+        userCount: user_ids.length
+      });
       const placeholders = user_ids.map(() => '?').join(',');
       const [results] = await sequelize.query(`
         SELECT user_id, status, last_heartbeat, updated_at FROM user_presence 
@@ -261,7 +294,9 @@ class PresenceService {
         replacements: user_ids
       });
 
-      console.log(`[PRESENCE] Database query returned ${results.length} results:`, results);
+      logger.debug('[PRESENCE] Database query returned results:', {
+        resultCount: results.length
+      });
 
       // Return all user_ids, defaulting to offline if not found
       const finalResults = user_ids.map(user_id => {
@@ -272,13 +307,16 @@ class PresenceService {
           last_heartbeat: null,
           updated_at: null
         };
-        console.log(`[PRESENCE] User ${user_id}: ${result.status}`);
+        logger.debug('[PRESENCE] User status:', {
+          userId: sanitizeForLog(user_id),
+          status: result.status
+        });
         return result;
       });
       
       return finalResults;
     } catch (error) {
-      console.error('[PRESENCE] Error getting presence:', error);
+      logger.error('[PRESENCE] Error getting presence', error);
       throw error;
     }
   }
@@ -300,7 +338,7 @@ class PresenceService {
       const userIds = members.map(m => m.user_id);
       return await this.getPresence(userIds);
     } catch (error) {
-      console.error('Error getting channel presence:', error);
+      logger.error('[PRESENCE] Error getting channel presence', error);
       throw error;
     }
   }
@@ -309,7 +347,7 @@ class PresenceService {
    * Cleanup stale connections - DEPRECATED (no longer needed with socket-based tracking)
    */
   async cleanupStaleConnections() {
-    console.warn('[PRESENCE] cleanupStaleConnections() is deprecated');
+    logger.warn('[PRESENCE] cleanupStaleConnections() is deprecated');
     return [];
   }
 
@@ -326,7 +364,7 @@ class PresenceService {
 
       return results.map(r => r.user_id);
     } catch (error) {
-      console.error('Error getting online users:', error);
+      logger.error('[PRESENCE] Error getting online users', error);
       throw error;
     }
   }
@@ -345,15 +383,21 @@ class PresenceService {
       });
 
       if (results.length === 0) {
-        console.log(`[PRESENCE] isOnline check for ${user_id}: NO RECORD (returning false)`);
+        logger.debug('[PRESENCE] isOnline check: NO RECORD (returning false)', {
+          userId: sanitizeForLog(user_id)
+        });
         return false;
       }
 
       const isOnline = results[0].status === 'online' || results[0].status === 'busy';
-      console.log(`[PRESENCE] isOnline check for ${user_id}: status=${results[0].status}, result=${isOnline}`);
+      logger.debug('[PRESENCE] isOnline check:', {
+        userId: sanitizeForLog(user_id),
+        status: results[0].status,
+        result: isOnline
+      });
       return isOnline;
     } catch (error) {
-      console.error('[PRESENCE] Error checking online status:', error);
+      logger.error('[PRESENCE] Error checking online status', error);
       return false;
     }
   }

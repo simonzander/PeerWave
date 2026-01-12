@@ -2,6 +2,7 @@ const config = {};
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const logger = require('./utils/logger');
 
 // Auto-generate and persist secrets if not in environment
 function getOrGenerateSecret(envVar, secretName, byteLength = 32) {
@@ -17,11 +18,11 @@ function getOrGenerateSecret(envVar, secretName, byteLength = 32) {
         try {
             secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
             if (secrets[secretName]) {
-                console.log(`✓ Loaded ${secretName} from .secrets file`);
+                logger.info(`✓ Loaded ${secretName} from .secrets file`);
                 return secrets[secretName];
             }
         } catch (err) {
-            console.warn(`⚠️  Could not read .secrets file: ${err.message}`);
+            logger.warn(`⚠️  Could not read .secrets file: ${err.message}`);
         }
     }
     
@@ -32,19 +33,19 @@ function getOrGenerateSecret(envVar, secretName, byteLength = 32) {
     // Save to .secrets file
     try {
         fs.writeFileSync(secretsPath, JSON.stringify(secrets, null, 2), 'utf8');
-        console.log(`✓ Generated new ${secretName} and saved to .secrets file`);
-        console.log(`  ${secretName}: ${newSecret}`);
-        console.log(`  ⚠️  IMPORTANT: Add .secrets to .gitignore and back it up securely!`);
+        logger.info(`✓ Generated new ${secretName} and saved to .secrets file`);
+        logger.info(`  ${secretName}: ${newSecret}`);
+        logger.info(`  ⚠️  IMPORTANT: Add .secrets to .gitignore and back it up securely!`);
     } catch (err) {
         // Docker environments may not have write permissions - this is OK if secret is in .env
         if (err.code === 'EACCES') {
-            console.warn(`⚠️  Cannot write .secrets file (Docker/permissions): ${secretsPath}`);
-            console.warn(`  ${secretName}: ${newSecret}`);
-            console.warn(`  💡 Add this to your .env file to persist across restarts`);
+            logger.warn(`⚠️  Cannot write .secrets file (Docker/permissions): ${secretsPath}`);
+            logger.warn(`  ${secretName}: ${newSecret}`);
+            logger.warn(`  💡 Add this to your .env file to persist across restarts`);
         } else {
-            console.error(`⚠️  Could not save .secrets file: ${err.message}`);
-            console.error(`  ${secretName}: ${newSecret}`);
-            console.error(`  ⚠️  Save this secret to your .env file or you'll lose sessions on restart!`);
+            logger.error(`⚠️  Could not save .secrets file: ${err.message}`);
+            logger.error(`  ${secretName}: ${newSecret}`);
+            logger.error(`  ⚠️  Save this secret to your .env file or you'll lose sessions on restart!`);
         }
     }
     
@@ -91,9 +92,9 @@ if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
         url.includes('localhost') || url.includes('127.0.0.1')
     );
     if (hasLocalhost) {
-        console.warn('⚠️  WARNING: Production mode detected with localhost CORS origin!');
-        console.warn('   Please set CORS_ORIGINS or APP_URL environment variable for production.');
-        console.warn('   Example: CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com');
+        logger.warn('⚠️  WARNING: Production mode detected with localhost CORS origin!');
+        logger.warn('   Please set CORS_ORIGINS or APP_URL environment variable for production.');
+        logger.warn('   Example: CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com');
     }
 }
 
@@ -133,11 +134,11 @@ config.jwt = {
 };
 
 // Log session configuration on startup
-console.log('🔐 Session Configuration:');
-console.log(`   Web Session: ${Math.floor(config.session.cookie.maxAge / (24 * 60 * 60 * 1000))} days`);
-console.log(`   HMAC Session: ${config.session.hmacSessionDays} days`);
-console.log(`   Auto-refresh threshold: ${config.session.refreshThresholdDays} days`);
-console.log(`   Cleanup interval: ${config.session.cleanupIntervalHours} hour(s)`);
+logger.info('🔐 Session Configuration:');
+logger.info(`   Web Session: ${Math.floor(config.session.cookie.maxAge / (24 * 60 * 60 * 1000))} days`);
+logger.info(`   HMAC Session: ${config.session.hmacSessionDays} days`);
+logger.info(`   Auto-refresh threshold: ${config.session.refreshThresholdDays} days`);
+logger.info(`   Cleanup interval: ${config.session.cleanupIntervalHours} hour(s)`);
 
 // Admin users: Comma-separated list of email addresses that will receive Administrator role
 // Users with these emails will automatically get admin privileges when verified

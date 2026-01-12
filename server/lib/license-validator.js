@@ -21,6 +21,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const logger = require('../utils/logger');
 
 class LicenseValidator {
   constructor(options = {}) {
@@ -87,9 +88,9 @@ class LicenseValidator {
     try {
       // Check if compiled binary exists
       if (!fs.existsSync(this.validatorBinary)) {
-        console.warn(`⚠️  Compiled license validator not found: ${this.validatorBinary}`);
-        console.warn('⚠️  Fallback: Using non-commercial mode');
-        console.warn('⚠️  To build validator: cd server/lib && npm install && npm run build');
+        logger.warn('Compiled license validator not found: ' + this.validatorBinary);
+        logger.warn('Fallback: Using non-commercial mode');
+        logger.info('To build validator: cd server/lib && npm install && npm run build');
         
         return {
           valid: false,
@@ -128,7 +129,7 @@ class LicenseValidator {
       return result;
 
     } catch (error) {
-      console.error('License validation error:', error.message);
+      logger.error('License validation error:', error.message);
       return {
         valid: false,
         error: 'VALIDATION_ERROR',

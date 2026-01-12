@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const { sequelize } = require('../db/model');
 const writeQueue = require('../db/writeQueue');
+const logger = require('../utils/logger');
 
 /**
  * Meeting Cleanup Service
@@ -21,7 +22,7 @@ class MeetingCleanupService {
       await this.runCleanup();
     });
 
-    console.log('✓ Meeting cleanup service started (runs every 5 minutes)');
+    logger.info('[MEETING CLEANUP] Service started (runs every 5 minutes)');
   }
 
   /**
@@ -30,7 +31,7 @@ class MeetingCleanupService {
   stop() {
     if (this.cleanupJob) {
       this.cleanupJob.stop();
-      console.log('✓ Meeting cleanup service stopped');
+      logger.info('[MEETING CLEANUP] Service stopped');
     }
   }
 
@@ -39,15 +40,15 @@ class MeetingCleanupService {
    */
   async runCleanup() {
     try {
-      console.log('[MEETING CLEANUP] Running cleanup...');
+      logger.info('[MEETING CLEANUP] Running cleanup');
 
       await this.cleanupOrphanedInstantCalls();
       await this.cleanupScheduledMeetings();
       await this.cleanupExternalSessions();
 
-      console.log('[MEETING CLEANUP] Cleanup completed');
+      logger.info('[MEETING CLEANUP] Cleanup completed');
     } catch (error) {
-      console.error('[MEETING CLEANUP] Error during cleanup:', error);
+      logger.error('[MEETING CLEANUP] Error during cleanup', error);
     }
   }
 
@@ -80,7 +81,8 @@ class MeetingCleanupService {
 
       if (oldMeetings.length > 0) {
         const oldMeetingIds = oldMeetings.map(m => m.meeting_id);
-        console.log(`[MEETING CLEANUP] Deleting ${oldMeetingIds.length} scheduled meetings past end_time + 8h:`, oldMeetingIds);
+        logger.info(`[MEETING CLEANUP] Deleting ${oldMeetingIds.length} scheduled meetings past end_time + 8h`);
+        logger.debug('[MEETING CLEANUP] Meeting IDs:', { meetingIds: oldMeetingIds });
 
         for (const meetingId of oldMeetingIds) {
           await writeQueue.enqueue(
@@ -93,7 +95,7 @@ class MeetingCleanupService {
       }
 
     } catch (error) {
-      console.error('[MEETING CLEANUP] Error cleaning up scheduled meetings:', error);
+      logger.error('[MEETING CLEANUP] Error cleaning up scheduled meetings', error);
     }
   }
 

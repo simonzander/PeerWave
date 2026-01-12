@@ -2,6 +2,7 @@ const config = require('../config/config');
 const express = require("express");
 const { Sequelize, DataTypes, Op, UUID } = require('sequelize');
 const { DESCRIBE } = require('sequelize/lib/query-types');
+const logger = require('./utils/logger');
 
 const sequelize = new Sequelize({
     dialect: 'sqlite',
@@ -35,11 +36,11 @@ const temporaryStorage = new Sequelize({
 const dbReady = new Promise((resolve, reject) => {
     sequelize.authenticate()
         .then(async () => {
-            console.log('✓ Model connected to database');
+            logger.info('✓ Model connected to database');
             
             // Sync models to database (alter=false since migrations handle schema updates)
             await sequelize.sync({ alter: false });
-            console.log('✓ Database schema synced');
+            logger.info('✓ Database schema synced');
             
             // Apply SQLite optimizations
             try {
@@ -48,27 +49,27 @@ const dbReady = new Promise((resolve, reject) => {
                 await sequelize.query("PRAGMA synchronous=NORMAL");
                 await sequelize.query("PRAGMA cache_size=-64000");
                 await sequelize.query("PRAGMA temp_store=MEMORY");
-                console.log('✓ SQLite optimizations applied');
+                logger.info('✓ SQLite optimizations applied');
             } catch (error) {
-                console.warn('⚠ SQLite optimization warning:', error.message);
+                logger.warn('⚠ SQLite optimization warning:', error.message);
             }
             
             resolve(); // Database is ready
         })
         .catch(error => {
-            console.error('Unable to connect to the database:', error);
+            logger.error('Unable to connect to the database:', error);
             reject(error);
         });
 });
 
     temporaryStorage.authenticate()
     .then(async () => {
-        console.log('✓ Temporary storage (in-memory) initialized');
+        logger.info('✓ Temporary storage (in-memory) initialized');
         // Sync in-memory tables
         await temporaryStorage.sync();
     })
     .catch(error => {
-        console.error('Unable to connect to the temp database:', error);
+        logger.error('Unable to connect to the temp database:', error);
         process.exit(1);
     });
 
@@ -1079,8 +1080,8 @@ Channel.belongsToMany(User, {
 });
 
 temporaryStorage.sync({ alter: false })
-    .then(() => console.log('Temporary tables created successfully.'))
-    .catch(error => console.error('Error creating temporary tables:', error));
+    .then(() => logger.info('Temporary tables created successfully.'))
+    .catch(error => logger.error('Error creating temporary tables:', error));
 
 // ServerSettings model (single row configuration)
 const ServerSettings = sequelize.define('ServerSettings', {

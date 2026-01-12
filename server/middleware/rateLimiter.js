@@ -1,4 +1,5 @@
 const rateLimit = require('express-rate-limit');
+const logger = require('../utils/logger');
 
 /**
  * Centralized Rate Limiting Configuration
@@ -15,7 +16,7 @@ const apiLimiter = rateLimit({
   standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
   legacyHeaders: false, // Disable `X-RateLimit-*` headers
   handler: (req, res) => {
-    console.log(`[RATE_LIMIT] API limit exceeded from ${req.ip} for ${req.path}`);
+    logger.warn('[RATE_LIMIT] API limit exceeded', { ip: req.ip, path: req.path });
     res.status(429).json({
       error: 'Too many requests',
       message: 'Please try again later',
@@ -31,7 +32,7 @@ const authLimiter = rateLimit({
   skipSuccessfulRequests: true, // Don't count successful logins
   message: 'Too many login attempts, please try again later.',
   handler: (req, res) => {
-    console.log(`[RATE_LIMIT] Auth limit exceeded from ${req.ip} for ${req.path}`);
+    logger.warn('[RATE_LIMIT] Auth limit exceeded', { ip: req.ip, path: req.path });
     res.status(429).json({
       error: 'Too many authentication attempts',
       message: 'Please try again in 15 minutes',
@@ -46,7 +47,7 @@ const registrationLimiter = rateLimit({
   max: 3, // Max 3 registration attempts per hour per IP
   message: 'Too many accounts created, please try again later.',
   handler: (req, res) => {
-    console.log(`[RATE_LIMIT] Registration limit exceeded from ${req.ip}`);
+    logger.warn('[RATE_LIMIT] Registration limit exceeded', { ip: req.ip });
     res.status(429).json({
       error: 'Too many registration attempts',
       message: 'Please try again in 1 hour',
@@ -61,7 +62,7 @@ const fileLimiter = rateLimit({
   max: 50, // Max 50 file operations per 15 minutes per IP
   message: 'Too many file operations, please try again later.',
   handler: (req, res) => {
-    console.log(`[RATE_LIMIT] File operation limit exceeded from ${req.ip} for ${req.path}`);
+    logger.warn('[RATE_LIMIT] File operation limit exceeded', { ip: req.ip, path: req.path });
     res.status(429).json({
       error: 'Too many file operations',
       message: 'Please try again later',
@@ -76,7 +77,7 @@ const queryLimiter = rateLimit({
   max: 30, // Max 30 queries per minute per IP
   message: 'Too many database queries, please slow down.',
   handler: (req, res) => {
-    console.log(`[RATE_LIMIT] Query limit exceeded from ${req.ip} for ${req.path}`);
+    logger.warn('[RATE_LIMIT] Query limit exceeded', { ip: req.ip, path: req.path });
     res.status(429).json({
       error: 'Too many requests',
       message: 'Please slow down your request rate',
@@ -91,7 +92,7 @@ const passwordResetLimiter = rateLimit({
   max: 3, // Max 3 password reset attempts per hour per IP
   message: 'Too many password reset attempts.',
   handler: (req, res) => {
-    console.log(`[RATE_LIMIT] Password reset limit exceeded from ${req.ip}`);
+    logger.warn('[RATE_LIMIT] Password reset limit exceeded', { ip: req.ip });
     res.status(429).json({
       error: 'Too many password reset attempts',
       message: 'Please try again in 1 hour',

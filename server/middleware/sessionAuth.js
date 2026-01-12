@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { sequelize } = require('../db/model');
 const { sanitizeForLog } = require('../utils/logSanitizer');
 const config = require('../config/config');
+const logger = require('../utils/logger');
 
 /**
  * HMAC-based session authentication middleware for native clients
@@ -32,7 +33,7 @@ async function verifySessionAuth(req, res, next) {
     const now = Date.now();
     const maxDiff = 5 * 60 * 1000; // 5 minutes in milliseconds
     if (Math.abs(now - timestamp) > maxDiff) {
-      console.log(`[SessionAuth] Request expired: timestamp=${timestamp}, now=${now}, diff=${Math.abs(now - timestamp)}ms`);
+      logger.debug(`[SessionAuth] Request expired: timestamp=${timestamp}, now=${now}, diff=${Math.abs(now - timestamp)}ms`);
       return res.status(401).json({ 
         error: 'request_expired',
         message: 'Request timestamp outside acceptable window' 
@@ -46,7 +47,7 @@ async function verifySessionAuth(req, res, next) {
     );
     
     if (nonceCheck && nonceCheck.length > 0) {
-      console.log(`[SessionAuth] Duplicate nonce detected: ${nonce}`);
+      logger.debug(`[SessionAuth] Duplicate nonce detected: ${nonce}`);
       return res.status(401).json({ 
         error: 'duplicate_request',
         message: 'Nonce already used (replay attack prevented)' 
@@ -69,7 +70,7 @@ async function verifySessionAuth(req, res, next) {
     );
 
     if (!sessions || sessions.length === 0) {
-      console.log(`[SessionAuth] No session found for client: ${sanitizeForLog(clientId)}`);
+      logger.debug(`[SessionAuth] No session found for client: ${sanitizeForLog(clientId)}`);
       return res.status(401).json({ 
         error: 'no_session',
         message: 'No active session for this client' 
@@ -81,7 +82,7 @@ async function verifySessionAuth(req, res, next) {
 
     // Validate device_id exists (required for Signal protocol)
     if (deviceId === null) {
-      console.error(`[SessionAuth] Client record missing for clientId: ${sanitizeForLog(clientId)}`);
+      logger.error(`[SessionAuth] Client record missing for clientId: ${sanitizeForLog(clientId)}`);
       return res.status(500).json({ 
         error: 'client_not_found',
         message: 'Client device record not found - please re-authenticate' 
@@ -90,7 +91,7 @@ async function verifySessionAuth(req, res, next) {
 
     // Check if session expired
     if (new Date(session.expires_at) < new Date()) {
-      console.log(`[SessionAuth] Session expired for client: ${sanitizeForLog(clientId)}`);
+      logger.debug(`[SessionAuth] Session expired for client: ${sanitizeForLog(clientId)}`);
       return res.status(401).json({ 
         error: 'session_expired',
         message: 'Session has expired, please re-authenticate' 
@@ -105,13 +106,13 @@ async function verifySessionAuth(req, res, next) {
     if (req.rawBody && req.rawBody.length > 0) {
       // Use raw body if available (set by body-parser with verify option)
       requestBody = req.rawBody.toString('utf8');
-      console.log(`[SessionAuth] Using raw body (${req.rawBody.length} bytes): ${requestBody.substring(0, 100)}...`);
+      logger.debug(`[SessionAuth] Using raw body (${req.rawBody.length} bytes): ${requestBody.substring(0, 100)}...`);
     } else if (req.body && Object.keys(req.body).length > 0) {
       // Fall back to parsed body if raw not available
       requestBody = JSON.stringify(req.body);
-      console.log(`[SessionAuth] Using parsed body: ${requestBody.substring(0, 100)}...`);
+      logger.debug(`[SessionAuth] Using parsed body: ${requestBody.substring(0, 100)}...`);
     } else {
-      console.log(`[SessionAuth] No body available - req.rawBody: ${req.rawBody ? 'exists but empty' : 'undefined'}, req.body: ${JSON.stringify(req.body)}`);
+      logger.debug(`[SessionAuth] No body available - req.rawBody: ${req.rawBody ? 'exists but empty' : 'undefined'}, req.body: ${JSON.stringify(req.body)}`);
     }
     
     // Use full path (e.g., /api/livekit/token) not relative path (e.g., /token)
@@ -128,10 +129,10 @@ async function verifySessionAuth(req, res, next) {
     
     if (signatureBuffer.length !== expectedBuffer.length || 
         !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
-      console.log(`[SessionAuth] Signature mismatch for client: ${sanitizeForLog(clientId)}`);
-      console.log(`[SessionAuth] Expected: ${expectedSignature}`);
-      console.log(`[SessionAuth] Received: ${signature}`);
-      console.log(`[SessionAuth] Message: ${message}`);
+      logger.debug(`[SessionAuth] Signature mismatch for client: ${sanitizeForLog(clientId)}`);
+      logger.debug(`[SessionAuth] Expected: ${expectedSignature}`);
+      logger.debug(`[SessionAuth] Received: ${signature}`);
+      logger.debug(`[SessionAuth] Message: ${message}`);
       return res.status(401).json({ 
         error: 'invalid_signature',
         message: 'Authentication signature mismatch' 
@@ -154,7 +155,7 @@ async function verifySessionAuth(req, res, next) {
          WHERE client_id = ?`,
         { replacements: [sessionDays, clientId] }
       );
-      console.log(`[SessionAuth] ✓ Session auto-refreshed for client ${sanitizeForLog(clientId)} (${sessionDays} days)`);
+      logger.info(`[SessionAuth] ✓ Session auto-refreshed for client ${sanitizeForLog(clientId)} (${sessionDays} days)`);
     } else {
       // Just update last_used
       await sequelize.query(
@@ -169,10 +170,10 @@ async function verifySessionAuth(req, res, next) {
     req.deviceId = deviceId;
     req.sessionAuth = true;
 
-    console.log(`[SessionAuth] ✓ Client ${sanitizeForLog(clientId)} authenticated successfully (deviceId: ${deviceId || 'none'})`);
+    logger.info(`[SessionAuth] ✓ Client ${sanitizeForLog(clientId)} authenticated successfully (deviceId: ${deviceId || 'none'})`);
     next();
   } catch (err) {
-    console.error('[SessionAuth] Verification error:', err);
+    logger.error('[SessionAuth] Verification error:', err);
     res.status(500).json({ 
       error: 'auth_error',
       message: 'Internal authentication error' 
@@ -193,14 +194,14 @@ async function verifyAuthEither(req, res, next) {
   const hasSessionHeaders = req.headers['x-client-id'] && req.headers['x-signature'];
   
   if (hasSessionHeaders) {
-    console.log(`[AuthEither] Native client detected, using session auth`);
+    logger.debug(`[AuthEither] Native client detected, using session auth`);
     return verifySessionAuth(req, res, next);
   }
   
   // Fall back to cookie/session auth (for web clients)
   // Session is cryptographically signed by Express session middleware
   if (req.session && req.session.uuid) {
-    console.log(`[AuthEither] Web client detected, using cookie auth`);
+    logger.debug(`[AuthEither] Web client detected, using cookie auth`);
     req.userId = req.session.uuid;
     req.sessionAuth = false;
     
@@ -212,7 +213,7 @@ async function verifyAuthEither(req, res, next) {
           { replacements: [req.session.clientId] }
         );
       } catch (err) {
-        console.error('[AuthEither] Failed to update last_used for web client:', err);
+        logger.error('[AuthEither] Failed to update last_used for web client:', err);
         // Don't fail the request if update fails
       }
     }
@@ -220,7 +221,7 @@ async function verifyAuthEither(req, res, next) {
     return next();
   }
   
-  console.log(`[AuthEither] No valid authentication found`);
+  logger.debug(`[AuthEither] No valid authentication found`);
   return res.status(401).json({ 
     error: 'unauthorized',
     message: 'Authentication required' 
@@ -235,9 +236,9 @@ async function cleanupNonces() {
     const result = await sequelize.query(
       'DELETE FROM nonce_cache WHERE created_at < datetime("now", "-10 minutes")'
     );
-    console.log(`[SessionAuth] Cleaned up old nonces`);
+    logger.debug(`[SessionAuth] Cleaned up old nonces`);
   } catch (err) {
-    console.error('[SessionAuth] Error cleaning up nonces:', err);
+    logger.error('[SessionAuth] Error cleaning up nonces:', err);
   }
 }
 
@@ -249,9 +250,9 @@ async function cleanupSessions() {
     await sequelize.query(
       'DELETE FROM client_sessions WHERE expires_at IS NOT NULL AND expires_at < datetime("now")'
     );
-    console.log(`[SessionAuth] Cleaned up expired sessions`);
+    logger.debug(`[SessionAuth] Cleaned up expired sessions`);
   } catch (err) {
-    console.error('[SessionAuth] Error cleaning up sessions:', err);
+    logger.error('[SessionAuth] Error cleaning up sessions:', err);
   }
 }
 

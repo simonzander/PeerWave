@@ -11,6 +11,7 @@ const { MeetingRsvp, User, ServerSettings } = require('../db/model');
 const { sanitizeForLog } = require('../utils/logSanitizer');
 const emailService = require('../services/emailService');
 const { createRsvpToken, verifyRsvpToken } = require('../services/meetingRsvpTokenService');
+const logger = require('../utils/logger');
 
 const RSVP_STATUSES = new Set(['accepted', 'tentative', 'declined']);
 
@@ -659,7 +660,7 @@ async function maybeEmailOrganizerOnRsvp({ meeting, responderLabel, status }) {
       },
     });
   } catch (e) {
-    console.warn('[MEETING_RSVP] Failed to email organizer:', e?.message || e);
+    logger.warn('[MEETINGS] Failed to email organizer about RSVP', { error: e?.message || e });
   }
 }
 
@@ -726,7 +727,7 @@ END:VCALENDAR`.trim();
       },
     });
   } catch (e) {
-    console.warn('[MEETING_RSVP] Failed to send attendee CANCEL email:', e?.message || e);
+    logger.warn('[MEETINGS] Failed to send attendee CANCEL email', { error: e?.message || e });
   }
 }
 
@@ -805,7 +806,7 @@ router.post('/meetings', verifyAuthEither, async (req, res) => {
           serverName,
         });
       } catch (e) {
-        console.warn('[MEETING_CREATE] Failed to send internal invite email:', userId, e?.message || e);
+        logger.warn('[MEETINGS] Failed to send internal invite email', sanitizeForLog({ userId, error: e?.message || e }));
       }
     }
 
@@ -824,14 +825,14 @@ router.post('/meetings', verifyAuthEither, async (req, res) => {
             inviterUsername,
           });
         } catch (e) {
-          console.warn('[MEETING_CREATE] Failed to send external invite email:', email, e?.message || e);
+          logger.warn('[MEETINGS] Failed to send external invite email', sanitizeForLog({ email, error: e?.message || e }));
         }
       }
     }
 
     res.status(201).json(meeting);
   } catch (error) {
-    console.error('Error creating meeting:', error);
+    logger.error('[MEETINGS] Error creating meeting', error);
     res.status(500).json({ error: 'Failed to create meeting' });
   }
 });
@@ -879,7 +880,7 @@ router.get('/meetings', verifyAuthEither, async (req, res) => {
 
     res.json(withSummaries);
   } catch (error) {
-    console.error('Error listing meetings:', error);
+    logger.error('[MEETINGS] Error listing meetings', error);
     res.status(500).json({ error: 'Failed to list meetings' });
   }
 });
@@ -903,7 +904,7 @@ router.get('/meetings/upcoming', verifyAuthEither, async (req, res) => {
 
     res.json(meetings);
   } catch (error) {
-    console.error('Error getting upcoming meetings:', error);
+    logger.error('[MEETINGS] Error getting upcoming meetings', error);
     res.status(500).json({ error: 'Failed to get upcoming meetings' });
   }
 });
@@ -926,7 +927,7 @@ router.get('/meetings/past', verifyAuthEither, async (req, res) => {
 
     res.json(meetings);
   } catch (error) {
-    console.error('Error getting past meetings:', error);
+    logger.error('[MEETINGS] Error getting past meetings', error);
     res.status(500).json({ error: 'Failed to get past meetings' });
   }
 });
@@ -945,7 +946,7 @@ router.get('/meetings/my', verifyAuthEither, async (req, res) => {
 
     res.json(meetings);
   } catch (error) {
-    console.error('Error getting my meetings:', error);
+    logger.error('[MEETINGS] Error getting my meetings', error);
     res.status(500).json({ error: 'Failed to get meetings' });
   }
 });
@@ -975,7 +976,7 @@ router.get('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
       && meeting.invited_participants.includes(userId);
     
     if (!isParticipant && !isSourceUser && !isCreator && !isInvited) {
-      console.log(`[MEETING] User ${sanitizeForLog(userId)} not authorized for meeting ${sanitizeForLog(meetingId)}`);
+      logger.debug('[MEETINGS] User not authorized for meeting', sanitizeForLog({ userId, meetingId }));
       return res.status(403).json({ error: 'Not authorized to access this meeting' });
     }
 
@@ -983,7 +984,7 @@ router.get('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
     const idx = rsvpByMeeting.get(meetingId) || new Map();
     res.json(attachRsvpSummary(meeting, idx));
   } catch (error) {
-    console.error('Error getting meeting:', error);
+    logger.error('[MEETINGS] Error getting meeting', error);
     res.status(500).json({ error: 'Failed to get meeting' });
   }
 });
@@ -1064,7 +1065,7 @@ router.patch('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
             serverName,
           });
         } catch (e) {
-          console.warn('[MEETING_UPDATE] Failed to send internal invite email:', userIdToInvite, e?.message || e);
+          logger.warn('[MEETINGS] Failed to send internal invite email on update', sanitizeForLog({ userId: userIdToInvite, error: e?.message || e }));
         }
       }
 
@@ -1081,7 +1082,7 @@ router.patch('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
               inviterUsername,
             });
           } catch (e) {
-            console.warn('[MEETING_UPDATE] Failed to send external invite email:', email, e?.message || e);
+            logger.warn('[MEETINGS] Failed to send external invite email on update', sanitizeForLog({ email, error: e?.message || e }));
           }
         }
       }
@@ -1104,7 +1105,7 @@ router.patch('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
             serverName,
           });
         } catch (e) {
-          console.warn('[MEETING_UPDATE] Failed to send internal cancel email:', removedUserId, e?.message || e);
+          logger.warn('[MEETINGS] Failed to send internal cancel email on update', sanitizeForLog({ userId: removedUserId, error: e?.message || e }));
         }
       }
 
@@ -1119,7 +1120,7 @@ router.patch('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
             serverName,
           });
         } catch (e) {
-          console.warn('[MEETING_UPDATE] Failed to send external cancel email:', email, e?.message || e);
+          logger.warn('[MEETINGS] Failed to send external cancel email on update', sanitizeForLog({ email, error: e?.message || e }));
         }
       }
     }
@@ -1157,7 +1158,7 @@ router.patch('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
             isInternalUser: true,
           });
         } catch (e) {
-          console.warn('[MEETING_UPDATE] Failed to send internal update email:', recipientId, e?.message || e);
+          logger.warn('[MEETINGS] Failed to send internal update email', sanitizeForLog({ recipientId, error: e?.message || e }));
         }
       }
 
@@ -1177,14 +1178,14 @@ router.patch('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
             isInternalUser: false,
           });
         } catch (e) {
-          console.warn('[MEETING_UPDATE] Failed to send external update email:', email, e?.message || e);
+          logger.warn('[MEETINGS] Failed to send external update email', sanitizeForLog({ email, error: e?.message || e }));
         }
       }
     }
 
     res.json(updated);
   } catch (error) {
-    console.error('Error updating meeting:', error);
+    logger.error('[MEETINGS] Error updating meeting', error);
     res.status(500).json({ error: 'Failed to update meeting' });
   }
 });
@@ -1225,7 +1226,7 @@ router.patch('/meetings/:meetingId/rsvp', verifyAuthEither, async (req, res) => 
 
     res.json({ success: true, meetingId, status });
   } catch (error) {
-    console.error('[MEETING_RSVP] Error (auth):', error);
+    logger.error('[MEETINGS] Error in RSVP (authenticated)', error);
     res.status(500).json({ error: 'Failed to RSVP' });
   }
 });
@@ -1331,7 +1332,7 @@ router.get('/meetings/:meetingId/rsvp/:status', async (req, res) => {
 </body>
 </html>`);
   } catch (error) {
-    console.error('[MEETING_RSVP] Error (unauth):', error);
+    logger.error('[MEETINGS] Error in RSVP (unauthenticated)', error);
     res.status(500).send('Failed to record RSVP');
   }
 });
@@ -1391,13 +1392,13 @@ router.delete('/meetings/:meetingId', verifyAuthEither, async (req, res) => {
         });
       }
     } catch (e) {
-      console.warn('[MEETING_DELETE] Failed to send cancellation emails:', e?.message || e);
+      logger.warn('[MEETINGS] Failed to send cancellation emails on delete', { error: e?.message || e });
     }
 
     await meetingService.deleteMeeting(meetingId);
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting meeting:', error);
+    logger.error('[MEETINGS] Error deleting meeting', error);
     res.status(500).json({ error: 'Failed to delete meeting' });
   }
 });
@@ -1420,7 +1421,7 @@ router.delete('/meetings/bulk', verifyAuthEither, async (req, res) => {
 
     res.json(results);
   } catch (error) {
-    console.error('Error bulk deleting meetings:', error);
+    logger.error('[MEETINGS] Error bulk deleting', error);
     res.status(500).json({ error: 'Failed to bulk delete meetings' });
   }
 });
@@ -1478,7 +1479,7 @@ router.get('/meetings/:meetingId/participants', async (req, res) => {
 
     res.json({ participants });
   } catch (error) {
-    console.error('Error getting meeting participants:', error);
+    logger.error('[MEETINGS] Error getting participants', error);
     res.status(500).json({ error: 'Failed to get participants' });
   }
 });
@@ -1525,7 +1526,7 @@ router.post('/meetings/:meetingId/participants', verifyAuthEither, async (req, r
       isOnline
     });
   } catch (error) {
-    console.error('Error adding participant:', error);
+    logger.error('[MEETINGS] Error adding participant', error);
     res.status(500).json({ error: 'Failed to add participant: ' + error.message });
   }
 });
@@ -1571,7 +1572,7 @@ router.delete('/meetings/:meetingId/participants/:userId', verifyAuthEither, asy
         });
       }
     } catch (e) {
-      console.warn('[MEETING_PARTICIPANT_REMOVE] Failed to send cancel email:', e?.message || e);
+      logger.warn('[MEETINGS] Failed to send cancel email', { error: e?.message || e });
     }
 
     await meetingService.removeParticipant(meetingId, userId);
@@ -1579,7 +1580,7 @@ router.delete('/meetings/:meetingId/participants/:userId', verifyAuthEither, asy
 
     res.json({ status: 'ok', message: 'Participant removed' });
   } catch (error) {
-    console.error('Error removing participant:', error);
+    logger.error('[MEETINGS] Error removing participant', error);
     res.status(500).json({ error: 'Failed to remove participant' });
   }
 });
@@ -1612,7 +1613,7 @@ router.patch('/meetings/:meetingId/participants/:userId', verifyAuthEither, asyn
 
     res.json({ status: 'ok', message: 'Status updated' });
   } catch (error) {
-    console.error('Error updating participant status:', error);
+    logger.error('[MEETINGS] Error updating participant status', error);
     res.status(500).json({ error: 'Failed to update status' });
   }
 });
@@ -1655,7 +1656,7 @@ router.post('/meetings/:meetingId/generate-link', verifyAuthEither, async (req, 
       invitation_url: `${req.protocol}://${req.get('host')}/#/join/meeting/${invitation.token}`
     });
   } catch (error) {
-    console.error('Error generating invitation link:', error);
+    logger.error('[MEETINGS] Error generating invitation link', error);
     res.status(500).json({ error: 'Failed to generate invitation link' });
   }
 });
@@ -1709,7 +1710,7 @@ router.post('/meetings/:meetingId/invite-email', verifyAuthEither, async (req, r
       email: email
     });
   } catch (error) {
-    console.error('[MEETING_INVITE] Error:', error);
+    logger.error('[MEETINGS] Error sending invitation email', error);
     res.status(500).json({ error: 'Failed to send invitation: ' + error.message });
   }
 });
@@ -1746,7 +1747,7 @@ router.get('/meetings/:meetingId/invitations', verifyAuthEither, async (req, res
 
     res.json({ invitations: invitationsWithUrls });
   } catch (error) {
-    console.error('Error getting invitations:', error);
+    logger.error('[MEETINGS] Error getting invitations', error);
     res.status(500).json({ error: 'Failed to get invitations' });
   }
 });
@@ -1780,7 +1781,7 @@ router.post('/meetings/:meetingId/invitations/:token/revoke', verifyAuthEither, 
 
     res.json({ status: 'ok', message: 'Invitation revoked successfully' });
   } catch (error) {
-    console.error('Error revoking invitation:', error);
+    logger.error('[MEETINGS] Error revoking invitation', error);
     res.status(500).json({ error: 'Failed to revoke invitation' });
   }
 });
@@ -1814,7 +1815,7 @@ router.delete('/meetings/:meetingId/invitations/:token', verifyAuthEither, async
 
     res.json({ status: 'ok', message: 'Invitation deleted successfully' });
   } catch (error) {
-    console.error('Error deleting invitation:', error);
+    logger.error('[MEETINGS] Error deleting invitation', error);
     res.status(500).json({ error: 'Failed to delete invitation' });
   }
 });
