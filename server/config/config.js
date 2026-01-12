@@ -177,4 +177,12 @@ config.invitation = {
     expirationHours: parseInt(process.env.INVITATION_EXPIRATION_HOURS || '48'), // How long invitation is valid (default: 48 hours)
 };
 
+// Server Operator Information (displayed on login page)
+config.serverOperator = {
+    owner: process.env.SERVER_OWNER || null,
+    contact: process.env.SERVER_CONTACT || null,
+    location: process.env.SERVER_LOCATION || null,
+    additionalInfo: process.env.SERVER_ADDITIONAL_INFO || null,
+};
+
 module.exports = config;

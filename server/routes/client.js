@@ -112,6 +112,14 @@ clientRoutes.get("/client/meta", async (req, res) => {
         response.registrationMode = 'open';
     }
     
+    // Add server operator information
+    response.serverOperator = {
+        owner: config.serverOperator.owner,
+        contact: config.serverOperator.contact,
+        location: config.serverOperator.location,
+        additionalInfo: config.serverOperator.additionalInfo
+    };
+    
     res.json(response);
 });
 

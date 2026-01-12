@@ -868,11 +868,156 @@ class _AuthLayoutState extends State<AuthLayout> {
                       ),
                     ),
                 ],
+                // About this server link
+                const SizedBox(height: 24),
+                TextButton(
+                  onPressed: () => _showAboutServerDialog(context),
+                  child: Text(
+                    'About this server',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _showAboutServerDialog(BuildContext context) async {
+    try {
+      // Fetch server metadata including operator info
+      final resp = await ApiService.get('/client/meta');
+      if (resp.statusCode == 200) {
+        final data = resp.data;
+        final serverOperator = data['serverOperator'] as Map<String, dynamic>?;
+
+        if (!mounted) return;
+
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            final theme = Theme.of(context);
+            final colorScheme = theme.colorScheme;
+
+            return AlertDialog(
+              title: Text(
+                'About this server',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'This PeerWave instance is hosted by',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (serverOperator?['owner'] != null) ...[
+                      _buildInfoRow(
+                        'Server Owner',
+                        serverOperator!['owner'],
+                        theme,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (serverOperator?['contact'] != null) ...[
+                      _buildInfoRow(
+                        'Contact',
+                        serverOperator!['contact'],
+                        theme,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (serverOperator?['location'] != null) ...[
+                      _buildInfoRow(
+                        'Location',
+                        serverOperator!['location'],
+                        theme,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (serverOperator?['additionalInfo'] != null) ...[
+                      _buildInfoRow(
+                        'Additional Information',
+                        serverOperator!['additionalInfo'],
+                        theme,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (serverOperator?['owner'] == null &&
+                        serverOperator?['contact'] == null &&
+                        serverOperator?['location'] == null) ...[
+                      Text(
+                        'No operator information available',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    InkWell(
+                      onTap: () {
+                        // Open link in new tab (web only)
+                        if (kIsWeb) {
+                          jsEval(
+                            "window.open('https://peerwave.org', '_blank')",
+                          );
+                        }
+                      },
+                      child: Text(
+                        'Find more about PeerWave at peerwave.org',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.primary,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      }
+    } catch (e) {
+      debugPrint('[AUTH] Failed to load server info: $e');
+    }
+  }
+
+  Widget _buildInfoRow(String label, String value, ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.labelSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(value, style: theme.textTheme.bodyMedium),
+      ],
     );
   }
 }
