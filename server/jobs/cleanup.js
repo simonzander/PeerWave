@@ -3,6 +3,7 @@ const { Op } = require('sequelize');
 const config = require('../config/config');
 const { User, Client, Item, GroupItem } = require('../db/model');
 const writeQueue = require('../db/writeQueue');
+const logger = require('../utils/logger');
 
 /**
  * Mark users as inactive if no client has been updated in the last X days
@@ -12,7 +13,7 @@ async function markInactiveUsers() {
         const daysAgo = new Date();
         daysAgo.setDate(daysAgo.getDate() - config.cleanup.inactiveUserDays);
         
-        console.log(`[CLEANUP] Checking for inactive users (no client update since ${daysAgo.toISOString()})...`);
+        logger.info('[CLEANUP] Checking for inactive users', { since: daysAgo.toISOString() });
         
         // Find users where the most recent client update is older than X days
         const inactiveUsers = await User.findAll({
@@ -39,7 +40,7 @@ async function markInactiveUsers() {
             
             if (!hasActiveClient) {
                 // Mark user as inactive
-                console.log(`[CLEANUP] User ${user.uuid} (${user.displayName}) is inactive - no client updates since ${daysAgo.toISOString()}`);
+                logger.info('[CLEANUP] User is inactive', { uuid: user.uuid, displayName: user.displayName, since: daysAgo.toISOString() });
                 
                 // Set active to false
                 await writeQueue.enqueue(
@@ -54,10 +55,10 @@ async function markInactiveUsers() {
             }
         }
         
-        console.log(`[CLEANUP] ✓ Marked ${markedCount} users as inactive`);
+        logger.info('[CLEANUP] Marked users as inactive', { count: markedCount });
         return markedCount;
     } catch (error) {
-        console.error('[CLEANUP] ❌ Error marking inactive users:', error);
+        logger.error('[CLEANUP] Error marking inactive users', error);
         throw error;
     }
 }
@@ -82,7 +83,7 @@ async function deleteOldItems() {
         const systemDaysAgo = new Date(now);
         systemDaysAgo.setDate(systemDaysAgo.getDate() - config.cleanup.deleteSystemMessagesDays);
         
-        console.log(`[CLEANUP] Deleting system messages older than ${systemDaysAgo.toISOString()}...`);
+        logger.info('[CLEANUP] Deleting system messages', { olderThan: systemDaysAgo.toISOString() });
         
         const systemDeleted = await writeQueue.enqueue(
             () => Item.destroy({
@@ -93,14 +94,14 @@ async function deleteOldItems() {
             }),
             'deleteOldSystemMessages'
         );
-        console.log(`[CLEANUP] ✓ Deleted ${systemDeleted} old system messages (>${config.cleanup.deleteSystemMessagesDays} days)`);
+        logger.info('[CLEANUP] Deleted old system messages', { count: systemDeleted, days: config.cleanup.deleteSystemMessagesDays });
         totalDeleted += systemDeleted;
         
         // 2. Delete regular messages (message, file) after 7 days
         const regularDaysAgo = new Date(now);
         regularDaysAgo.setDate(regularDaysAgo.getDate() - config.cleanup.deleteRegularMessagesDays);
         
-        console.log(`[CLEANUP] Deleting regular messages older than ${regularDaysAgo.toISOString()}...`);
+        logger.info('[CLEANUP] Deleting regular messages', { olderThan: regularDaysAgo.toISOString() });
         
         const regularDeleted = await writeQueue.enqueue(
             () => Item.destroy({
@@ -111,14 +112,14 @@ async function deleteOldItems() {
             }),
             'deleteOldRegularMessages'
         );
-        console.log(`[CLEANUP] ✓ Deleted ${regularDeleted} old regular messages (>${config.cleanup.deleteRegularMessagesDays} days)`);
+        logger.info('[CLEANUP] Deleted old regular messages', { count: regularDeleted, days: config.cleanup.deleteRegularMessagesDays });
         totalDeleted += regularDeleted;
         
         // 3. Delete old group messages after 30 days
         const groupDaysAgo = new Date(now);
         groupDaysAgo.setDate(groupDaysAgo.getDate() - config.cleanup.deleteGroupMessagesDays);
         
-        console.log(`[CLEANUP] Deleting group messages older than ${groupDaysAgo.toISOString()}...`);
+        logger.info('[CLEANUP] Deleting group messages', { olderThan: groupDaysAgo.toISOString() });
         
         const groupDeleted = await writeQueue.enqueue(
             () => GroupItem.destroy({
@@ -128,13 +129,13 @@ async function deleteOldItems() {
             }),
             'deleteOldGroupMessages'
         );
-        console.log(`[CLEANUP] ✓ Deleted ${groupDeleted} old group messages (>${config.cleanup.deleteGroupMessagesDays} days)`);
+        logger.info('[CLEANUP] Deleted old group messages', { count: groupDeleted, days: config.cleanup.deleteGroupMessagesDays });
         totalDeleted += groupDeleted;
         
-        console.log(`[CLEANUP] ✓ Total items deleted: ${totalDeleted}`);
+        logger.info('[CLEANUP] Total items deleted', { count: totalDeleted });
         return { systemDeleted, regularDeleted, groupDeleted, totalDeleted };
     } catch (error) {
-        console.error('[CLEANUP] ❌ Error deleting old items:', error);
+        logger.error('[CLEANUP] Error deleting old items', error);
         throw error;
     }
 }
@@ -144,20 +145,16 @@ async function deleteOldItems() {
  */
 async function cleanupFileRegistry() {
     try {
-        console.log('[CLEANUP] Cleaning up file registry...');
+        logger.info('[CLEANUP] Cleaning up file registry');
         
         const fileRegistry = require('../store/fileRegistry');
         const stats = fileRegistry.cleanup();
         
-        console.log(`[CLEANUP] ✓ File registry cleanup complete:`);
-        console.log(`[CLEANUP]   - Files removed: ${stats.filesRemoved}`);
-        console.log(`[CLEANUP]   - Users removed: ${stats.usersRemoved}`);
-        console.log(`[CLEANUP]   - Total files: ${stats.totalFiles}`);
-        console.log(`[CLEANUP]   - Total users: ${stats.totalUsers}`);
+        logger.info('[CLEANUP] File registry cleanup complete', stats);
         
         return stats;
     } catch (error) {
-        console.error('[CLEANUP] ❌ Error cleaning file registry:', error);
+        logger.error('[CLEANUP] Error cleaning file registry', error);
         throw error;
     }
 }
@@ -166,11 +163,10 @@ async function cleanupFileRegistry() {
  * Run all cleanup tasks
  */
 async function runCleanup() {
-    console.log('[CLEANUP] ========================================');
-    console.log('[CLEANUP] Starting cleanup job...');
-    console.log(`[CLEANUP] Config: Inactive users after ${config.cleanup.inactiveUserDays} days`);
-    console.log(`[CLEANUP] Config: Delete items after ${config.cleanup.deleteOldItemsDays} days`);
-    console.log('[CLEANUP] ========================================');
+    logger.info('[CLEANUP] ========================================');
+    logger.info('[CLEANUP] Starting cleanup job');
+    logger.info('[CLEANUP] Config', { inactiveUserDays: config.cleanup.inactiveUserDays, deleteOldItemsDays: config.cleanup.deleteOldItemsDays });
+    logger.info('[CLEANUP] ========================================');
     
     try {
         // Mark inactive users
@@ -182,9 +178,9 @@ async function runCleanup() {
         // Clean up file registry
         await cleanupFileRegistry();
         
-        console.log('[CLEANUP] ✓ Cleanup job completed successfully');
+        logger.info('[CLEANUP] Cleanup job completed successfully');
     } catch (error) {
-        console.error('[CLEANUP] ❌ Cleanup job failed:', error);
+        logger.error('[CLEANUP] Cleanup job failed', error);
     }
 }
 
@@ -192,14 +188,14 @@ async function runCleanup() {
  * Initialize cleanup cronjob
  */
 function initCleanupJob() {
-    console.log(`[CLEANUP] Initializing cleanup cronjob with schedule: ${config.cleanup.cronSchedule}`);
+    logger.info('[CLEANUP] Initializing cleanup cronjob', { schedule: config.cleanup.cronSchedule });
     
     // Schedule cronjob (default: every day at 2:00 AM)
     cron.schedule(config.cleanup.cronSchedule, () => {
         runCleanup();
     });
     
-    console.log('[CLEANUP] ✓ Cleanup cronjob initialized');
+    logger.info('[CLEANUP] Cleanup cronjob initialized');
 }
 
 module.exports = {

@@ -4,6 +4,7 @@ import '../../models/role.dart';
 import '../../models/user_roles.dart';
 import '../../providers/role_provider.dart';
 import '../../services/user_profile_service.dart';
+import '../../services/api_service.dart';
 import 'dart:convert';
 
 class ChannelMembersScreen extends StatefulWidget {
@@ -137,6 +138,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
     if (result == true && selectedRole != null) {
       try {
+        // ignore: use_build_context_synchronously
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         await roleProvider.assignChannelRole(
           userId: member.userId,
@@ -177,6 +179,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
     if (result == true) {
       try {
+        // ignore: use_build_context_synchronously
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         await roleProvider.removeChannelRole(
           userId: member.userId,
@@ -343,13 +346,40 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
                   ? null
                   : () async {
                       try {
+                        final userId = selectedUser!['uuid']!;
+
+                        // Check if user is blocked
+                        try {
+                          final blockResponse = await ApiService.get(
+                            '/api/check-blocked/$userId',
+                          );
+                          if (blockResponse.statusCode == 200 &&
+                              blockResponse.data['isBlocked'] == true) {
+                            if (context.mounted) {
+                              final direction = blockResponse.data['direction'];
+                              Navigator.of(context).pop();
+                              _showError(
+                                direction == 'you_blocked'
+                                    ? 'You have blocked ${selectedUser!['displayName']}. Unblock to add them to channels.'
+                                    : '${selectedUser!['displayName']} has blocked you. Cannot add them to channels.',
+                              );
+                            }
+                            return;
+                          }
+                        } catch (e) {
+                          debugPrint(
+                            '[ADD_USER] Error checking block status: $e',
+                          );
+                          // Continue anyway if block check fails
+                        }
+
                         final roleProvider = Provider.of<RoleProvider>(
                           context,
                           listen: false,
                         );
                         await roleProvider.addUserToChannel(
                           channelId: widget.channelId,
-                          userId: selectedUser!['uuid']!,
+                          userId: userId,
                           roleId: selectedRole?.uuid,
                         );
                         if (context.mounted) {
@@ -397,10 +427,12 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
     if (result == true) {
       try {
+        // ignore: use_build_context_synchronously
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         await roleProvider.leaveChannel(widget.channelId);
         if (mounted) {
           _showSuccess('Left channel successfully');
+          // ignore: use_build_context_synchronously
           Navigator.of(context).pop(); // Go back to previous screen
         }
       } catch (e) {
@@ -438,10 +470,12 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
     if (result == true) {
       try {
+        // ignore: use_build_context_synchronously
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         await roleProvider.deleteChannel(widget.channelId);
         if (mounted) {
           _showSuccess('Channel deleted successfully');
+          // ignore: use_build_context_synchronously
           Navigator.of(context).pop(); // Go back to previous screen
         }
       } catch (e) {
@@ -477,6 +511,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
     if (result == true) {
       try {
+        // ignore: use_build_context_synchronously
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         await roleProvider.kickUserFromChannel(
           channelId: widget.channelId,

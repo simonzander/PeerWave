@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -1258,27 +1260,27 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                 ),
               );
 
+              if (!mounted) return;
+
               // If user completed PreJoin, navigate to actual video conference
               if (result != null &&
                   result is Map &&
                   result['hasE2EEKey'] == true) {
-                if (mounted) {
-                  Navigator.push(
-                    context,
-                    SlidePageRoute(
-                      builder: (context) => VideoConferenceView(
-                        channelId: result['channelId'],
-                        channelName: result['channelName'],
-                        selectedCamera: result['selectedCamera'],
-                        selectedMicrophone: result['selectedMicrophone'],
-                        isInstantCall: result['isInstantCall'] == true,
-                        isInitiator: result['isInitiator'] == true,
-                        sourceChannelId: result['sourceChannelId'] as String?,
-                        sourceUserId: result['sourceUserId'] as String?,
-                      ),
+                Navigator.push(
+                  context,
+                  SlidePageRoute(
+                    builder: (context) => VideoConferenceView(
+                      channelId: result['channelId'],
+                      channelName: result['channelName'],
+                      selectedCamera: result['selectedCamera'],
+                      selectedMicrophone: result['selectedMicrophone'],
+                      isInstantCall: result['isInstantCall'] == true,
+                      isInitiator: result['isInitiator'] == true,
+                      sourceChannelId: result['sourceChannelId'] as String?,
+                      sourceUserId: result['sourceUserId'] as String?,
                     ),
-                  );
-                }
+                  ),
+                );
               }
             },
           ),

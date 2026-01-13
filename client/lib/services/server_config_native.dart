@@ -5,8 +5,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
-import 'clientid_native.dart';
-import 'session_auth_service.dart';
 import 'api_service.dart';
 
 /// Configuration for a single server connection
@@ -137,26 +135,7 @@ class ServerConfigService {
   static Future<void> init() async {
     await _loadServers();
     await _loadActiveServerId();
-    await _cleanupStaleServers(); // Remove servers without valid sessions
     debugPrint('[ServerConfig] Initialized with ${_servers.length} servers');
-  }
-
-  /// Remove servers that don't have valid HMAC sessions
-  static Future<void> _cleanupStaleServers() async {
-    if (_servers.isEmpty) return;
-
-    final clientId = await ClientIdService.getClientId();
-    final hasSession = await SessionAuthService().hasSession(clientId);
-
-    if (!hasSession && _servers.isNotEmpty) {
-      debugPrint(
-        '[ServerConfig] No valid session found - clearing all servers',
-      );
-      _servers.clear();
-      await _saveServers();
-      _activeServerId = null;
-      await _storage.delete(key: _storageKeyActiveServer);
-    }
   }
 
   /// Load servers from secure storage
@@ -487,6 +466,14 @@ class ServerConfigService {
   /// Check if any servers exist
   static bool hasServers() {
     return _servers.isNotEmpty;
+  }
+
+  /// Check if the active server has stored credentials (indicating previous authentication)
+  /// This is a synchronous check - does not validate if the session is still valid
+  static bool activeServerHasCredentials() {
+    final activeServer = getActiveServer();
+    if (activeServer == null) return false;
+    return activeServer.credentials.isNotEmpty;
   }
 
   /// Get last active server (for auto-open on app start)

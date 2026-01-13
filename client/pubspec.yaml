@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.1.0+6
 
 environment:
   sdk: ^3.10.0
@@ -71,15 +71,22 @@ dependencies:
   flutter_image_compress: ^2.3.0
   record: ^6.1.2
   permission_handler: ^12.0.1
+  flutter_local_notifications: ^19.5.0  # Android/iOS native notifications
+  local_auth: ^3.0.0  # Biometric authentication (Face ID, Touch ID, fingerprint)
   just_audio: ^0.10.5
   audioplayers: ^6.1.0  # For Windows desktop audio playback
   audio_waveforms: ^2.0.1
   fl_chart: ^1.1.1
+  pdf: ^3.10.0  # PDF generation for abuse report downloads
+  printing: ^5.11.0  # PDF saving and sharing
   # Native client dependencies
   qr_flutter: ^4.1.0  # QR code generation for web (magic key display)
   mobile_scanner: ^7.1.4  # QR code scanning for native (optional)
   local_notifier: ^0.1.6  # Desktop notifications for native
   universal_html: ^2.3.0
+  passkeys: ^2.8.2  # Proper WebAuthn/FIDO2 for mobile (Android/iOS)
+  # Web uses custom JavaScript implementation (see web/index.html)
+  # Note: passkeys package only used on mobile (conditional imports prevent web usage)
   bitsdojo_window:
     # Desktop-only: Custom window frame
     # Not available on Android/iOS - conditional import with stub fallback
@@ -98,6 +105,11 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
+
+# Override passkeys_web with fixed local version that doesn't crash
+dependency_overrides:
+  passkeys_web:
+    path: local_packages/passkeys_web
 
 # Configuration for flutter_launcher_icons
 flutter_launcher_icons:

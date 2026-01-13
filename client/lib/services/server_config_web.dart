@@ -67,6 +67,7 @@ class ServerConfigService {
   ]) async {}
   static Future<void> resetUnreadCount(String serverId) async {}
   static bool hasServers() => false;
+  static bool activeServerHasCredentials() => false;
   static ServerConfig? getLastActiveServer() => null;
   static Future<void> updateDisplayName(
     String serverId,

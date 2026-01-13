@@ -11,6 +11,7 @@ import '../services/device_identity_service.dart';
 import '../services/native_crypto_service.dart';
 import '../services/auth_service_web.dart'
     if (dart.library.io) '../services/auth_service_native.dart';
+import '../widgets/app_drawer.dart';
 
 /// Server selection screen for native clients
 /// Shown on first launch or when adding a new server
@@ -207,7 +208,19 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
+      backgroundColor: colorScheme.surface,
+      appBar: AppBar(
+        title: const Text('Connect to Server'),
+        backgroundColor: colorScheme.surface,
+        elevation: 0,
+      ),
+      drawer: AppDrawer(
+        isAuthenticated: false,
+        currentRoute: GoRouterState.of(context).matchedLocation,
+      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -219,10 +232,12 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // App Logo/Title
-                  Icon(
-                    Icons.cloud,
-                    size: 80,
-                    color: Theme.of(context).colorScheme.primary,
+                  Image.asset(
+                    Theme.of(context).brightness == Brightness.dark
+                        ? 'assets/images/peerwave.png'
+                        : 'assets/images/peerwave_dark.png',
+                    width: 120,
+                    height: 120,
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -243,7 +258,6 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 48),
-
                   // Instructions Card
                   Card(
                     child: Padding(
@@ -345,6 +359,17 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                     TextButton(
                       onPressed: _isLoading ? null : () => context.pop(),
                       child: const Text('Cancel'),
+                    ),
+                  ],
+
+                  // Back to Mobile Server Selection (only on mobile)
+                  if (_isMobilePlatform && !widget.isAddingServer) ...[
+                    const SizedBox(height: 16),
+                    TextButton(
+                      onPressed: _isLoading
+                          ? null
+                          : () => context.go('/mobile-server-selection'),
+                      child: const Text('Back to Server Selection'),
                     ),
                   ],
                 ],

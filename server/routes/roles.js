@@ -17,6 +17,8 @@ const {
     getRolesByScope
 } = require('../db/roleHelpers');
 const { verifyAuthEither } = require('../middleware/sessionAuth');
+const logger = require('../utils/logger');
+const { sanitizeForLog } = require('../utils/logSanitizer');
 
 const roleRoutes = express.Router();
 
@@ -43,7 +45,7 @@ const requirePermission = (permission) => {
             }
             next();
         } catch (error) {
-            console.error('Permission check error:', error);
+            logger.error('[ROLES] Permission check error', error);
             res.status(500).json({ error: 'Permission check failed' });
         }
     };
@@ -123,7 +125,7 @@ roleRoutes.get('/user/roles', verifyAuthEither, requireAuth, async (req, res) =>
             ownedChannelIds: Array.from(ownedChannelIds) // New field: list of channel IDs user owns
         });
     } catch (error) {
-        console.error('Error fetching user roles:', error);
+        logger.error('[ROLES] Error fetching user roles', error);
         res.status(500).json({ error: 'Failed to fetch user roles' });
     }
 });
@@ -155,7 +157,7 @@ roleRoutes.get('/user/notification-settings', verifyAuthEither, requireAuth, asy
             meetingSelfInviteEmailEnabled: user.meeting_self_invite_email_enabled ?? false
         });
     } catch (error) {
-        console.error('Error getting notification settings:', error);
+        logger.error('[ROLES] Error getting notification settings', error);
         res.status(500).json({ error: 'Failed to get notification settings' });
     }
 });
@@ -231,7 +233,7 @@ roleRoutes.patch('/user/notification-settings', verifyAuthEither, requireAuth, a
             meetingSelfInviteEmailEnabled: user.meeting_self_invite_email_enabled
         });
     } catch (error) {
-        console.error('Error updating notification settings:', error);
+        logger.error('[ROLES] Error updating notification settings', error);
         res.status(500).json({ error: 'Failed to update notification settings' });
     }
 });
@@ -260,7 +262,7 @@ roleRoutes.get('/roles', verifyAuthEither, requireAuth, async (req, res) => {
             }))
         });
     } catch (error) {
-        console.error('Error fetching roles by scope:', error);
+        logger.error('[ROLES] Error fetching roles by scope', error);
         res.status(500).json({ error: 'Failed to fetch roles' });
     }
 });
@@ -303,7 +305,7 @@ roleRoutes.post('/roles', verifyAuthEither, requireAuth, requirePermission('role
             }
         });
     } catch (error) {
-        console.error('Error creating role:', error);
+        logger.error('[ROLES] Error creating role', error);
         res.status(500).json({ error: error.message || 'Failed to create role' });
     }
 });
@@ -339,7 +341,7 @@ roleRoutes.put('/roles/:roleId', verifyAuthEither, requireAuth, requirePermissio
             }
         });
     } catch (error) {
-        console.error('Error updating role:', error);
+        logger.error('[ROLES] Error updating role', error);
         res.status(500).json({ error: error.message || 'Failed to update role' });
     }
 });
@@ -353,7 +355,7 @@ roleRoutes.delete('/roles/:roleId', verifyAuthEither, requireAuth, requirePermis
         
         res.json({ message: 'Role deleted successfully' });
     } catch (error) {
-        console.error('Error deleting role:', error);
+        logger.error('[ROLES] Error deleting role', error);
         res.status(500).json({ error: error.message || 'Failed to delete role' });
     }
 });
@@ -387,7 +389,7 @@ roleRoutes.post('/users/:userId/roles', verifyAuthEither, requireAuth, requirePe
         
         res.json({ message: 'Server role assigned successfully' });
     } catch (error) {
-        console.error('Error assigning server role:', error);
+        logger.error('[ROLES] Error assigning server role', error);
         res.status(500).json({ error: error.message || 'Failed to assign server role' });
     }
 });
@@ -410,7 +412,7 @@ roleRoutes.delete('/users/:userId/roles/:roleId', verifyAuthEither, requireAuth,
         
         res.json({ message: 'Server role removed successfully' });
     } catch (error) {
-        console.error('Error removing server role:', error);
+        logger.error('[ROLES] Error removing server role', error);
         res.status(500).json({ error: error.message || 'Failed to remove server role' });
     }
 });
@@ -425,7 +427,7 @@ roleRoutes.get('/users', verifyAuthEither, requireAuth, requirePermission('user.
         
         res.json({ users });
     } catch (error) {
-        console.error('Error fetching users:', error);
+        logger.error('[ROLES] Error fetching users', error);
         res.status(500).json({ error: 'Failed to fetch users' });
     }
 });
@@ -452,7 +454,7 @@ roleRoutes.patch('/users/:userId/deactivate', verifyAuthEither, requireAuth, req
         
         res.json({ message: 'User deactivated successfully' });
     } catch (error) {
-        console.error('Error deactivating user:', error);
+        logger.error('[ROLES] Error deactivating user', error);
         res.status(500).json({ error: 'Failed to deactivate user' });
     }
 });
@@ -474,7 +476,7 @@ roleRoutes.patch('/users/:userId/activate', verifyAuthEither, requireAuth, requi
         
         res.json({ message: 'User activated successfully' });
     } catch (error) {
-        console.error('Error activating user:', error);
+        logger.error('[ROLES] Error activating user', error);
         res.status(500).json({ error: 'Failed to activate user' });
     }
 });
@@ -496,11 +498,47 @@ roleRoutes.delete('/users/:userId', verifyAuthEither, requireAuth, requirePermis
         
         await writeQueue.enqueue(
             async () => {
-                // Remove all user roles
+                // Delete all related records before deleting user
+                const { Client, SignalPreKey, SignalSignedPreKey, SignalSenderKey, 
+                        GroupItem, GroupItemRead, ChannelMembers, Channel, 
+                        ClientSession, Item } = require('../db/model');
+                
+                // 1. Remove user from all channels (as member)
+                await ChannelMembers.destroy({ where: { userId } });
+                
+                // 2. Delete channels owned by user
+                await Channel.destroy({ where: { owner: userId } });
+                
+                // 3. Delete all user roles
                 await UserRole.destroy({ where: { userId } });
                 await UserRoleChannel.destroy({ where: { userId } });
                 
-                // Delete the user
+                // 4. Delete all client devices owned by user
+                const userClients = await Client.findAll({ where: { owner: userId } });
+                const clientIds = userClients.map(c => c.clientid);
+                
+                // 5. Delete all Signal Protocol keys for user's clients
+                if (clientIds.length > 0) {
+                    await SignalPreKey.destroy({ where: { client: clientIds } });
+                    await SignalSignedPreKey.destroy({ where: { client: clientIds } });
+                    await SignalSenderKey.destroy({ where: { client: clientIds } });
+                    await ClientSession.destroy({ where: { client_id: clientIds } });
+                }
+                
+                // 6. Delete user's clients
+                await Client.destroy({ where: { owner: userId } });
+                
+                // 7. Delete items sent or received by user
+                await Item.destroy({ where: { sender: userId } });
+                await Item.destroy({ where: { receiver: userId } });
+                
+                // 8. Delete group items sent by user
+                await GroupItem.destroy({ where: { sender: userId } });
+                
+                // 9. Delete group item read receipts by user
+                await GroupItemRead.destroy({ where: { userId } });
+                
+                // 10. Finally delete the user
                 await user.destroy();
             },
             'deleteUser'
@@ -508,7 +546,7 @@ roleRoutes.delete('/users/:userId', verifyAuthEither, requireAuth, requirePermis
         
         res.json({ message: 'User deleted successfully' });
     } catch (error) {
-        console.error('Error deleting user:', error);
+        logger.error('[ROLES] Error deleting user', error);
         res.status(500).json({ error: 'Failed to delete user' });
     }
 });
@@ -540,7 +578,7 @@ roleRoutes.get('/users/:userId/roles', verifyAuthEither, requireAuth, requirePer
             }))
         });
     } catch (error) {
-        console.error('Error fetching user roles:', error);
+        logger.error('[ROLES] Error fetching user roles', error);
         res.status(500).json({ error: 'Failed to fetch user roles' });
     }
 });
@@ -565,7 +603,7 @@ roleRoutes.post('/users/:userId/channels/:channelId/roles', verifyAuthEither, re
         
         res.json({ message: 'Role assigned successfully' });
     } catch (error) {
-        console.error('Error assigning channel role:', error);
+        logger.error('[ROLES] Error assigning channel role', error);
         res.status(500).json({ error: error.message || 'Failed to assign role' });
     }
 });
@@ -585,7 +623,7 @@ roleRoutes.delete('/users/:userId/channels/:channelId/roles/:roleId', verifyAuth
         
         res.json({ message: 'Role removed successfully' });
     } catch (error) {
-        console.error('Error removing channel role:', error);
+        logger.error('[ROLES] Error removing channel role', error);
         res.status(500).json({ error: error.message || 'Failed to remove role' });
     }
 });
@@ -708,7 +746,7 @@ roleRoutes.get('/channels/:channelId/members', verifyAuthEither, requireAuth, as
             members: Array.from(usersMap.values())
         });
     } catch (error) {
-        console.error('Error fetching channel members:', error);
+        logger.error('[ROLES] Error fetching channel members', error);
         res.status(500).json({ error: 'Failed to fetch channel members' });
     }
 });
@@ -766,7 +804,7 @@ roleRoutes.get('/channels/:channelId/online-members', verifyAuthEither, requireA
             online_members: onlineMembers
         });
     } catch (error) {
-        console.error('Error fetching online channel members:', error);
+        logger.error('[ROLES] Error fetching online channel members', error);
         res.status(500).json({ error: 'Failed to fetch online members' });
     }
 });
@@ -777,16 +815,37 @@ roleRoutes.post('/channels/:channelId/members', verifyAuthEither, requireAuth, a
         const { channelId } = req.params;
         const { userId, roleId } = req.body;
         
-        console.log('[ADD_MEMBER] Request received - channelId:', channelId, 'userId:', userId, 'roleId:', roleId);
-        console.log('[ADD_MEMBER] req.session.uuid:', req.session.uuid);
+        logger.debug('[ROLES] Add member request', sanitizeForLog({ channelId, userId, roleId, requesterId: req.session.uuid }));
         
         if (!userId) {
             return res.status(400).json({ error: 'userId is required' });
         }
         
+        // Check if requester has blocked the user or vice versa
+        const { BlockedUser } = require('../db/model');
+        const blockExists = await BlockedUser.findOne({
+            where: {
+                [Op.or]: [
+                    { blocker_uuid: req.session.uuid, blocked_uuid: userId },
+                    { blocker_uuid: userId, blocked_uuid: req.session.uuid }
+                ]
+            }
+        });
+        
+        if (blockExists) {
+            const direction = blockExists.blocker_uuid === req.session.uuid ? 'you_blocked' : 'they_blocked';
+            return res.status(403).json({ 
+                error: direction === 'you_blocked' 
+                    ? 'You have blocked this user. Unblock to add them to channels.' 
+                    : 'This user has blocked you. Cannot add them to channels.',
+                isBlocked: true,
+                direction
+            });
+        }
+        
         // Check if user has permission to add members
         const canAdd = await hasChannelPermission(req.session.uuid, channelId, 'user.add');
-        console.log('[ADD_MEMBER] canAdd:', canAdd);
+        logger.debug('[ROLES] Add member permission check', sanitizeForLog({ channelId, canAdd }));
         if (!canAdd) {
             return res.status(403).json({ error: 'Forbidden: Cannot add members to this channel' });
         }
@@ -853,8 +912,7 @@ roleRoutes.post('/channels/:channelId/members', verifyAuthEither, requireAuth, a
             message: 'User added to channel successfully' 
         });
     } catch (error) {
-        console.error('[ADD_MEMBER] Error adding user to channel:', error);
-        console.error('[ADD_MEMBER] Error stack:', error.stack);
+        logger.error('[ROLES] Error adding user to channel', error);
         res.status(500).json({ error: 'Failed to add user to channel: ' + error.message });
     }
 });
@@ -865,12 +923,11 @@ roleRoutes.get('/channels/:channelId/available-users', verifyAuthEither, require
         const { channelId } = req.params;
         const { search } = req.query;
         
-        console.log('[AVAILABLE_USERS] Request - channelId:', channelId, 'search:', search);
-        console.log('[AVAILABLE_USERS] req.session.uuid:', req.session.uuid);
+        logger.debug('[ROLES] Fetch available users request', sanitizeForLog({ channelId, search, requesterId: req.session.uuid }));
         
         // Check if user has permission to add members
         const canAdd = await hasChannelPermission(req.session.uuid, channelId, 'user.add');
-        console.log('[AVAILABLE_USERS] canAdd permission:', canAdd);
+        logger.debug('[ROLES] Available users permission check', sanitizeForLog({ channelId, canAdd }));
         if (!canAdd) {
             return res.status(403).json({ error: 'Forbidden: Cannot add members to this channel' });
         }
@@ -882,7 +939,6 @@ roleRoutes.get('/channels/:channelId/available-users', verifyAuthEither, require
         });
         
         const existingUserIds = existingMembers.map(m => m.userId);
-        console.log('[AVAILABLE_USERS] Existing member IDs:', existingUserIds);
         
         // Build query for available users
         const whereClause = {
@@ -898,17 +954,12 @@ roleRoutes.get('/channels/:channelId/available-users', verifyAuthEither, require
             ];
         }
         
-        console.log('[AVAILABLE_USERS] Where clause:', JSON.stringify(whereClause));
-        
         const availableUsers = await User.findAll({
             where: whereClause,
             attributes: ['uuid', 'displayName', 'email'],
             limit: 50,
             order: [['displayName', 'ASC']]
         });
-        
-        console.log('[AVAILABLE_USERS] Found users:', availableUsers.length);
-        availableUsers.forEach(u => console.log('[AVAILABLE_USERS] -', u.displayName || u.email, '(', u.uuid, ')'));
         
         res.json({
             users: availableUsers.map(u => ({
@@ -918,8 +969,7 @@ roleRoutes.get('/channels/:channelId/available-users', verifyAuthEither, require
             }))
         });
     } catch (error) {
-        console.error('[AVAILABLE_USERS] Error fetching available users:', error);
-        console.error('[AVAILABLE_USERS] Error stack:', error.stack);
+        logger.error('[ROLES] Error fetching available users', error);
         res.status(500).json({ error: 'Failed to fetch available users' });
     }
 });
@@ -963,7 +1013,7 @@ roleRoutes.post('/channels/:channelId/leave', verifyAuthEither, requireAuth, asy
             message: 'Successfully left the channel' 
         });
     } catch (error) {
-        console.error('Error leaving channel:', error);
+        logger.error('[ROLES] Error leaving channel', error);
         res.status(500).json({ error: 'Failed to leave channel' });
     }
 });
@@ -1015,7 +1065,7 @@ roleRoutes.delete('/channels/:channelId/members/:userId', verifyAuthEither, requ
             message: 'User removed from channel successfully' 
         });
     } catch (error) {
-        console.error('Error removing user from channel:', error);
+        logger.error('[ROLES] Error removing user from channel', error);
         res.status(500).json({ error: 'Failed to remove user from channel' });
     }
 });
@@ -1055,7 +1105,7 @@ roleRoutes.delete('/channels/:channelId', verifyAuthEither, requireAuth, async (
             message: 'Channel deleted successfully' 
         });
     } catch (error) {
-        console.error('Error deleting channel:', error);
+        logger.error('[ROLES] Error deleting channel', error);
         res.status(500).json({ error: 'Failed to delete channel' });
     }
 });
@@ -1078,7 +1128,7 @@ roleRoutes.post('/user/check-permission', requireAuth, async (req, res) => {
         
         res.json({ hasPermission });
     } catch (error) {
-        console.error('Error checking permission:', error);
+        logger.error('[ROLES] Error checking permission', error);
         res.status(500).json({ error: 'Failed to check permission' });
     }
 });

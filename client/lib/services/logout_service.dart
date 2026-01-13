@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'dart:io' show Platform;
 import 'package:universal_html/html.dart' as html show window;
 import 'package:go_router/go_router.dart';
 import 'package:dio/dio.dart';
@@ -345,20 +346,13 @@ class LogoutService {
         }
       }
 
-      // 8. Navigate to login screen LAST
+      // 8. Navigate to appropriate screen based on platform
       // Use a small delay to ensure the state is fully updated
       await Future.delayed(const Duration(milliseconds: 50));
 
-      // After logout, we need to navigate to login
-      // This is tricky because the context might not have GoRouter available
-      // The strategy is:
-      // 1. Try to use context.go if available
-      // 2. If that fails, just set a flag and let redirect handler catch it on next navigation
-      // 3. The redirect handler will see isLoggedIn = false and redirect to /login
-
       if (validContext != null && validContext.mounted) {
         try {
-          debugPrint('[LOGOUT] Attempting navigation to login screen...');
+          debugPrint('[LOGOUT] Determining navigation target...');
 
           // Try to get GoRouter and navigate
           try {
@@ -368,10 +362,50 @@ class LogoutService {
             router.refresh();
             debugPrint('[LOGOUT] ✓ Router refreshed');
 
-            // Then navigate to login after a brief delay
+            // Determine navigation target based on platform
             await Future.delayed(const Duration(milliseconds: 100));
-            router.go('/login');
-            debugPrint('[LOGOUT] ✓ Navigation to /login triggered');
+
+            if (kIsWeb) {
+              // Web: Standard login page
+              router.go('/login');
+              debugPrint('[LOGOUT] ✓ Web: Navigation to /login triggered');
+            } else if (Platform.isAndroid || Platform.isIOS) {
+              // Mobile: Check for saved servers
+              final servers = await ServerConfigService.getAllServers();
+              if (servers.isEmpty) {
+                // No saved servers → Server selection
+                router.go('/server-selection');
+                debugPrint(
+                  '[LOGOUT] ✓ Mobile: Navigation to /server-selection (no saved servers)',
+                );
+              } else {
+                // Has saved servers → Navigate to /app of first server
+                final firstServer = servers.first;
+                await ServerConfigService.setActiveServer(firstServer.id);
+                router.go('/app');
+                debugPrint(
+                  '[LOGOUT] ✓ Mobile: Navigation to /app (first server: ${firstServer.serverName})',
+                );
+              }
+            } else {
+              // Desktop (Windows, macOS, Linux): Check for saved servers
+              final servers = await ServerConfigService.getAllServers();
+              if (servers.isEmpty) {
+                // No saved servers → Server selection (can enter magic key)
+                router.go('/server-selection');
+                debugPrint(
+                  '[LOGOUT] ✓ Desktop: Navigation to /server-selection (no saved servers)',
+                );
+              } else {
+                // Has saved servers → Navigate to /app of first server
+                final firstServer = servers.first;
+                await ServerConfigService.setActiveServer(firstServer.id);
+                router.go('/app');
+                debugPrint(
+                  '[LOGOUT] ✓ Desktop: Navigation to /app (first server: ${firstServer.serverName})',
+                );
+              }
+            }
           } catch (routerError) {
             // GoRouter not available in this context
             // This happens when logout is called from unauthorized handlers
@@ -436,18 +470,26 @@ class LogoutService {
             '[LOGOUT] Native: Redirecting to server selection for re-authentication',
           );
 
-          // Navigate to server-selection (works for both re-auth and adding new servers)
-          GoRouter.of(context).go('/server-selection');
+          // Navigate to platform-specific server selection
+          if (Platform.isAndroid || Platform.isIOS) {
+            // Mobile: Redirect to mobile server selection with WebAuthn
+            GoRouter.of(context).go('/mobile-server-selection');
+          } else {
+            // Desktop: Redirect to server selection with magic key
+            GoRouter.of(context).go('/server-selection');
+          }
 
           // Show message after navigation
           Future.delayed(const Duration(milliseconds: 300), () {
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
+                SnackBar(
                   content: Text(
-                    'Session expired. Please scan a new magic key to re-authenticate.',
+                    Platform.isAndroid || Platform.isIOS
+                        ? 'Session expired. Please re-authenticate.'
+                        : 'Session expired. Please scan a new magic key to re-authenticate.',
                   ),
-                  duration: Duration(seconds: 5),
+                  duration: const Duration(seconds: 5),
                   backgroundColor: Colors.orange,
                 ),
               );
@@ -506,17 +548,23 @@ class LogoutService {
             '[LOGOUT] Native: Redirecting to server selection for re-authentication',
           );
           ScaffoldMessenger.of(validContext).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text(
-                'Session expired. Please scan a new magic key to re-authenticate.',
+                Platform.isAndroid || Platform.isIOS
+                    ? 'Session expired. Please re-authenticate.'
+                    : 'Session expired. Please scan a new magic key to re-authentication.',
               ),
-              duration: Duration(seconds: 5),
+              duration: const Duration(seconds: 5),
               backgroundColor: Colors.orange,
             ),
           );
           await Future.delayed(const Duration(milliseconds: 100));
           if (!validContext.mounted) return;
-          GoRouter.of(validContext).go('/server-selection');
+          if (Platform.isAndroid || Platform.isIOS) {
+            GoRouter.of(validContext).go('/mobile-server-selection');
+          } else {
+            GoRouter.of(validContext).go('/server-selection');
+          }
         } else {
           // Web: Show login link
           ScaffoldMessenger.of(validContext).showSnackBar(

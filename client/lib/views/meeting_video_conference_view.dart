@@ -620,12 +620,15 @@ class _MeetingVideoConferenceViewState
                 data: {'email': email},
               );
               if (mounted) {
+                // ignore: use_build_context_synchronously
                 context.showSuccessSnackBar('Invitation sent to $email');
+                // ignore: use_build_context_synchronously
                 Navigator.of(context).pop();
               }
             } catch (e) {
               debugPrint('[AddParticipants] Error sending invitation: $e');
               if (mounted) {
+                // ignore: use_build_context_synchronously
                 context.showErrorSnackBar('Failed to send invitation');
               }
             }
@@ -636,6 +639,30 @@ class _MeetingVideoConferenceViewState
               final userId = (user['uuid'] ?? '').toString();
               if (userId.isEmpty) {
                 throw Exception('Missing user id');
+              }
+
+              // Check if user is blocked
+              try {
+                final blockResponse = await ApiService.get(
+                  '/api/check-blocked/$userId',
+                );
+                if (blockResponse.statusCode == 200 &&
+                    blockResponse.data['isBlocked'] == true) {
+                  if (mounted) {
+                    final direction = blockResponse.data['direction'];
+                    // ignore: use_build_context_synchronously
+                    context.showErrorSnackBar(
+                      direction == 'you_blocked'
+                          ? 'You have blocked ${user['displayName']}. Unblock to invite them.'
+                          : '${user['displayName']} has blocked you. Cannot invite.',
+                      duration: const Duration(seconds: 3),
+                    );
+                  }
+                  return;
+                }
+              } catch (e) {
+                debugPrint('[AddParticipants] Error checking block status: $e');
+                // Continue anyway if block check fails
               }
 
               final isOnline = await MeetingService().addParticipant(
@@ -659,16 +686,19 @@ class _MeetingVideoConferenceViewState
               }
 
               if (mounted) {
+                // ignore: use_build_context_synchronously
                 context.showSuccessSnackBar(
                   isOnline
                       ? 'Calling ${user['displayName']}...'
                       : '${user['displayName']} added to meeting',
                 );
+                // ignore: use_build_context_synchronously
                 Navigator.of(context).pop();
               }
             } catch (e) {
               debugPrint('[AddParticipants] Error adding participant: $e');
               if (mounted) {
+                // ignore: use_build_context_synchronously
                 context.showErrorSnackBar('Failed to add participant');
               }
             }

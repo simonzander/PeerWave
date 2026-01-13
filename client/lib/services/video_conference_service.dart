@@ -1006,7 +1006,7 @@ class VideoConferenceService extends ChangeNotifier {
     // SESSION EXCLUSIVITY: If already in a session, leave it before joining new one
     if (_isConnecting || _isConnected) {
       debugPrint(
-        '[VideoConf] 🔄 Already in a session (${_currentChannelId}), leaving before joining new session ($channelId)',
+        '[VideoConf] 🔄 Already in a session ($_currentChannelId), leaving before joining new session ($channelId)',
       );
       await leaveRoom();
       debugPrint(

@@ -5,6 +5,7 @@ import 'dart:js_interop';
 import '../services/api_service.dart';
 import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
+import '../widgets/app_drawer.dart';
 import '../extensions/snackbar_extensions.dart';
 
 @JS('window.localStorage.getItem')
@@ -26,7 +27,11 @@ Future<bool> webauthnRegister(String serverUrl, String email) async {
 }
 
 class RegisterWebauthnPage extends StatefulWidget {
-  const RegisterWebauthnPage({super.key});
+  final String? serverUrl; // For consistency with native, but not used in web
+  final String?
+  email; // Email from registration flow (not used on web but kept for compatibility)
+
+  const RegisterWebauthnPage({super.key, this.serverUrl, this.email});
 
   @override
   State<RegisterWebauthnPage> createState() => _RegisterWebauthnPageState();
@@ -161,6 +166,19 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
+      appBar: !kIsWeb
+          ? AppBar(
+              title: const Text('Setup Security Key'),
+              backgroundColor: colorScheme.surface,
+              elevation: 0,
+            )
+          : null,
+      drawer: !kIsWeb
+          ? AppDrawer(
+              isAuthenticated: false,
+              currentRoute: '/register/webauthn',
+            )
+          : null,
       body: Column(
         children: [
           // Progress Bar

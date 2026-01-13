@@ -5,11 +5,17 @@ const DEFAULT_TTL_DAYS = 30;
 
 function base64urlEncode(input) {
   const buffer = Buffer.isBuffer(input) ? input : Buffer.from(String(input), 'utf8');
-  return buffer
-    .toString('base64')
+  const base64 = buffer.toString('base64')
     .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
+    .replace(/\//g, '_');
+  
+  // Remove padding - base64 only has 0-2 trailing '=' chars
+  // Using while loop to avoid ReDoS vulnerability with =+$ regex
+  let result = base64;
+  while (result.endsWith('=')) {
+    result = result.slice(0, -1);
+  }
+  return result;
 }
 
 function base64urlDecodeToString(input) {

@@ -259,11 +259,13 @@ class _MeetingDialogState extends State<MeetingDialog> {
   Widget _buildTitleField() {
     return TextFormField(
       controller: _titleController,
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         labelText: 'Meeting Title',
         hintText: 'Enter meeting title',
-        prefixIcon: Icon(Icons.title),
-        border: OutlineInputBorder(),
+        prefixIcon: const Icon(Icons.title),
+        border: const OutlineInputBorder(),
+        filled: true,
+        fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
       ),
       validator: (value) {
         if (value == null || value.trim().isEmpty) {
@@ -278,11 +280,13 @@ class _MeetingDialogState extends State<MeetingDialog> {
   Widget _buildDescriptionField() {
     return TextFormField(
       controller: _descriptionController,
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         labelText: 'Description (Optional)',
         hintText: 'Enter meeting description',
-        prefixIcon: Icon(Icons.description),
-        border: OutlineInputBorder(),
+        prefixIcon: const Icon(Icons.description),
+        border: const OutlineInputBorder(),
+        filled: true,
+        fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
       ),
       maxLines: 3,
     );
@@ -381,6 +385,8 @@ class _MeetingDialogState extends State<MeetingDialog> {
           labelText: label,
           prefixIcon: const Icon(Icons.calendar_today),
           border: const OutlineInputBorder(),
+          filled: true,
+          fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         ),
         child: Text(DateFormat('MMM d, yyyy').format(date)),
       ),
@@ -407,6 +413,8 @@ class _MeetingDialogState extends State<MeetingDialog> {
           labelText: label,
           prefixIcon: const Icon(Icons.access_time),
           border: const OutlineInputBorder(),
+          filled: true,
+          fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         ),
         child: Text(time.format(context)),
       ),
@@ -510,6 +518,8 @@ class _MeetingDialogState extends State<MeetingDialog> {
             hintText: 'Type name or email...',
             prefixIcon: const Icon(Icons.search),
             border: const OutlineInputBorder(),
+            filled: true,
+            fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
             suffixIcon: _isSearching
                 ? const Padding(
                     padding: EdgeInsets.all(12),
@@ -540,11 +550,15 @@ class _MeetingDialogState extends State<MeetingDialog> {
               Expanded(
                 child: TextFormField(
                   controller: _emailController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Invite External by Email',
                     hintText: 'guest@example.com',
-                    prefixIcon: Icon(Icons.email),
-                    border: OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.email),
+                    border: const OutlineInputBorder(),
+                    filled: true,
+                    fillColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                   ),
                   keyboardType: TextInputType.emailAddress,
                   onFieldSubmitted: (value) =>

@@ -615,6 +615,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                                   setState(
                                     () => _meetingInviteEmailEnabled = previous,
                                   );
+                                  if (!mounted) return;
+                                  // ignore: use_build_context_synchronously
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
@@ -655,6 +657,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                                     () => _meetingRsvpEmailToOrganizerEnabled =
                                         previous,
                                   );
+                                  if (!mounted) return;
+                                  // ignore: use_build_context_synchronously
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
@@ -688,6 +692,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                                   setState(
                                     () => _meetingUpdateEmailEnabled = previous,
                                   );
+                                  if (!mounted) return;
+                                  // ignore: use_build_context_synchronously
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
@@ -721,6 +727,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                                   setState(
                                     () => _meetingCancelEmailEnabled = previous,
                                   );
+                                  if (!mounted) return;
+                                  // ignore: use_build_context_synchronously
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
@@ -757,6 +765,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                                     () => _meetingSelfInviteEmailEnabled =
                                         previous,
                                   );
+                                  if (!mounted) return;
+                                  // ignore: use_build_context_synchronously
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(

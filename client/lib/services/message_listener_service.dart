@@ -671,7 +671,6 @@ class MessageListenerService {
       final Map<String, dynamic> updateData = jsonDecode(decryptedPayload);
       final fileId = updateData['fileId'] as String?;
       final sharedWith = (updateData['sharedWith'] as List?)?.cast<String>();
-      final timestamp = updateData['timestamp'] as int?;
 
       if (fileId == null || sharedWith == null) {
         debugPrint('[MESSAGE_LISTENER] Missing fileId or sharedWith in update');

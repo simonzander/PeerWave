@@ -176,10 +176,9 @@ class _IncomingCallNotificationManagerState
 
       // Navigate to meeting prejoin
       if (!mounted) return;
-      if (mounted) {
-        context.go('/meeting/prejoin/$_meetingId');
-        hideNotification();
-      }
+      // ignore: use_build_context_synchronously
+      context.go('/meeting/prejoin/$_meetingId');
+      hideNotification();
     } catch (e) {
       debugPrint('[IncomingCall] Error accepting call: $e');
     }

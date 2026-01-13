@@ -49,8 +49,17 @@ class _VideoParticipantTileState extends State<VideoParticipantTile> {
     }
     // Only rebuild profile widget if profile picture changed
     if (oldWidget.profilePicture != widget.profilePicture) {
+      final oldPreview =
+          oldWidget.profilePicture != null &&
+              oldWidget.profilePicture!.length > 20
+          ? '${oldWidget.profilePicture!.substring(0, 20)}...'
+          : oldWidget.profilePicture ?? 'null';
+      final newPreview =
+          widget.profilePicture != null && widget.profilePicture!.length > 20
+          ? '${widget.profilePicture!.substring(0, 20)}...'
+          : widget.profilePicture ?? 'null';
       debugPrint(
-        '[VideoParticipantTile] Profile picture changed for ${widget.participant?.identity}: old=${oldWidget.profilePicture?.substring(0, 20)}..., new=${widget.profilePicture?.substring(0, 20)}...',
+        '[VideoParticipantTile] Profile picture changed for ${widget.participant?.identity}: old=$oldPreview, new=$newPreview',
       );
       _buildProfileWidget();
     }
@@ -58,8 +67,16 @@ class _VideoParticipantTileState extends State<VideoParticipantTile> {
 
   void _buildProfileWidget() {
     final userId = widget.participant?.identity;
+    final cachedPreview =
+        _cachedProfilePicture != null && _cachedProfilePicture!.length > 20
+        ? '${_cachedProfilePicture!.substring(0, 20)}...'
+        : _cachedProfilePicture ?? 'null';
+    final newPreview =
+        widget.profilePicture != null && widget.profilePicture!.length > 20
+        ? '${widget.profilePicture!.substring(0, 20)}...'
+        : widget.profilePicture ?? 'null';
     debugPrint(
-      '[VideoParticipantTile] Building profile widget for $userId: cached=${_cachedProfilePicture?.substring(0, 20)}..., new=${widget.profilePicture?.substring(0, 20)}...',
+      '[VideoParticipantTile] Building profile widget for $userId: cached=$cachedPreview, new=$newPreview',
     );
 
     if (widget.profilePicture == _cachedProfilePicture &&

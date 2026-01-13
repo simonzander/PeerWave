@@ -1,13 +1,19 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:universal_html/html.dart' as html;
+import 'package:image_picker/image_picker.dart';
 import '../services/api_service.dart';
 import '../services/auth_service_web.dart'
     if (dart.library.io) '../services/auth_service_native.dart';
+import '../services/custom_tab_auth_service.dart';
+import '../services/server_config_web.dart'
+    if (dart.library.io) '../services/server_config_native.dart';
 import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
+import '../widgets/app_drawer.dart';
 
 class RegisterProfilePage extends StatefulWidget {
   const RegisterProfilePage({super.key});
@@ -26,38 +32,64 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
   bool _atNameManuallyEdited = false;
 
   Future<void> _pickImage() async {
-    if (!kIsWeb) return;
-
     try {
-      final html.FileUploadInputElement input = html.FileUploadInputElement()
-        ..accept = 'image/*';
+      Uint8List? imageBytes;
+      String? fileName;
 
-      input.click();
+      if (kIsWeb) {
+        // Web implementation
+        final html.FileUploadInputElement input = html.FileUploadInputElement()
+          ..accept = 'image/*';
 
-      await input.onChange.first;
+        input.click();
 
-      if (input.files!.isEmpty) return;
+        await input.onChange.first;
 
-      final file = input.files![0];
-      final reader = html.FileReader();
+        if (input.files!.isEmpty) return;
 
-      reader.readAsArrayBuffer(file);
+        final file = input.files![0];
+        final reader = html.FileReader();
 
-      await reader.onLoad.first;
+        reader.readAsArrayBuffer(file);
 
-      final bytes = reader.result as List<int>;
+        await reader.onLoad.first;
 
-      // Check file size (max 1MB)
-      if (bytes.length > 1 * 1024 * 1024) {
-        setState(() {
-          _error = 'Image is too large. Maximum size is 1MB.';
-        });
-        return;
+        final bytes = reader.result as List<int>;
+
+        // Check file size (max 1MB)
+        if (bytes.length > 1 * 1024 * 1024) {
+          setState(() {
+            _error = 'Image is too large. Maximum size is 1MB.';
+          });
+          return;
+        }
+
+        imageBytes = Uint8List.fromList(bytes);
+        fileName = file.name;
+      } else {
+        // Mobile/Desktop implementation using ImagePicker
+        final picker = ImagePicker();
+        final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+        if (pickedFile == null) return;
+
+        final bytes = await pickedFile.readAsBytes();
+
+        // Check file size (max 1MB)
+        if (bytes.length > 1 * 1024 * 1024) {
+          setState(() {
+            _error = 'Image is too large. Maximum size is 1MB.';
+          });
+          return;
+        }
+
+        imageBytes = bytes;
+        fileName = pickedFile.name;
       }
 
       setState(() {
-        _imageBytes = Uint8List.fromList(bytes);
-        _imageFileName = file.name;
+        _imageBytes = imageBytes;
+        _imageFileName = fileName;
         _error = null;
       });
     } catch (e) {
@@ -98,6 +130,9 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
     });
 
     try {
+      // Initialize ApiService to ensure baseUrl is set correctly
+      await ApiService.init();
+
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
       if (!urlString.startsWith('http://') &&
@@ -121,30 +156,125 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
       final resp = await ApiService.post('/client/profile/setup', data: data);
 
       if (resp.statusCode == 200 || resp.statusCode == 201) {
-        // Registration complete - log out the user and redirect to login
-        // The user needs to log in properly after registration
+        // Registration complete
 
-        // Clear client-side authentication state
-        AuthService.isLoggedIn = false;
-
-        if (mounted) {
-          // Show success message
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Registration complete! Please log in to continue.',
-              ),
-              duration: Duration(seconds: 3),
-              backgroundColor: Colors.green,
-            ),
+        // Check platform to determine post-registration flow
+        if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+          // Mobile: Open Chrome Custom Tab for authentication
+          debugPrint(
+            '[RegisterProfile] Mobile registration complete, opening Chrome Custom Tab for auth...',
           );
 
-          // Wait a moment for the user to see the message
-          await Future.delayed(const Duration(seconds: 1));
+          if (mounted) {
+            // Show loading message
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'Complete authentication to access your account',
+                ),
+                duration: const Duration(seconds: 2),
+                backgroundColor: Theme.of(context).colorScheme.primary,
+              ),
+            );
+          }
+
+          // Get server URL
+          String serverUrl = '';
+          if (kIsWeb) {
+            final apiServer = await loadWebApiServer();
+            serverUrl = apiServer ?? '';
+          } else {
+            // Mobile: Get from active server configuration
+            final activeServer = ServerConfigService.getActiveServer();
+            serverUrl = activeServer?.serverUrl ?? '';
+          }
+
+          if (serverUrl.isEmpty) {
+            debugPrint('[RegisterProfile] ✗ No server URL available');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Server configuration missing'),
+                  backgroundColor: Theme.of(context).colorScheme.error,
+                ),
+              );
+              GoRouter.of(context).go('/mobile-server-selection');
+            }
+            return;
+          }
+
+          if (!serverUrl.startsWith('http://') &&
+              !serverUrl.startsWith('https://')) {
+            serverUrl = 'https://$serverUrl';
+          }
+
+          // Get email from API service or storage
+          String? userEmail;
+          try {
+            final profileResp = await ApiService.get('/client/profile');
+            if (profileResp.statusCode == 200) {
+              userEmail = profileResp.data['email'];
+            }
+          } catch (e) {
+            debugPrint('[RegisterProfile] Could not get email: $e');
+          }
+
+          // Open Chrome Custom Tab for authentication
+          final success = await CustomTabAuthService.instance.authenticate(
+            serverUrl: serverUrl,
+            email: userEmail,
+            timeout: const Duration(minutes: 3),
+          );
+
           if (!mounted) return;
 
-          // Navigate to login page
-          GoRouter.of(context).go('/login');
+          if (success) {
+            // Authentication successful - navigate to app
+            debugPrint(
+              '[RegisterProfile] ✓ Authentication successful, navigating to /app',
+            );
+            GoRouter.of(context).go('/app');
+          } else {
+            // Authentication failed or cancelled - navigate to mobile login page
+            debugPrint(
+              '[RegisterProfile] ✗ Authentication cancelled/failed, navigating to login page',
+            );
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'Authentication required. Please log in to continue.',
+                ),
+                duration: const Duration(seconds: 3),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+            );
+            await Future.delayed(const Duration(seconds: 1));
+            if (!mounted) return;
+            GoRouter.of(context).go('/mobile-webauthn', extra: serverUrl);
+          }
+        } else {
+          // Web/Desktop: Log out and redirect to login (existing behavior)
+          AuthService.isLoggedIn = false;
+
+          if (mounted) {
+            // Show success message
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Registration complete! Please log in to continue.',
+                ),
+                duration: Duration(seconds: 3),
+                backgroundColor: Colors.green,
+              ),
+            );
+
+            // Wait a moment for the user to see the message
+            await Future.delayed(const Duration(seconds: 1));
+            if (!mounted) return;
+
+            // Navigate to login page
+            GoRouter.of(context).go('/login');
+          }
         }
       } else {
         // Server might return error if atName is taken
@@ -210,6 +340,17 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
       },
       child: Scaffold(
         backgroundColor: colorScheme.surface,
+        appBar: AppBar(
+          title: const Text('Setup Profile'),
+          backgroundColor: colorScheme.surface,
+          elevation: 0,
+        ),
+        drawer: kIsWeb
+            ? null
+            : AppDrawer(
+                isAuthenticated: false,
+                currentRoute: '/register/profile',
+              ),
         body: Column(
           children: [
             // Progress Bar

@@ -3,6 +3,7 @@ const router = express.Router();
 const { GroupItem, GroupItemRead, Channel, ChannelMembers, User, Client } = require('../db/model');
 const { Op } = require('sequelize');
 const { verifyAuthEither } = require('../middleware/sessionAuth');
+const logger = require('../utils/logger');
 
 /**
  * POST /api/group-items
@@ -64,7 +65,7 @@ router.post('/', verifyAuthEither, async (req, res) => {
             item: groupItem
         });
     } catch (error) {
-        console.error('Error creating group item:', error);
+        logger.error('[GROUP ITEMS] Error creating group item', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -121,7 +122,7 @@ router.get('/:channelId', verifyAuthEither, async (req, res) => {
             count: items.length
         });
     } catch (error) {
-        console.error('Error fetching group items:', error);
+        logger.error('[GROUP ITEMS] Error fetching group items', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -205,7 +206,7 @@ router.post('/:itemId/read', verifyAuthEither, async (req, res) => {
             allRead: readCount >= memberCount
         });
     } catch (error) {
-        console.error('Error marking item as read:', error);
+        logger.error('[GROUP ITEMS] Error marking item as read', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -269,7 +270,7 @@ router.get('/:itemId/read-status', verifyAuthEither, async (req, res) => {
             readBy: readReceipts
         });
     } catch (error) {
-        console.error('Error fetching read status:', error);
+        logger.error('[GROUP ITEMS] Error fetching read status', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });

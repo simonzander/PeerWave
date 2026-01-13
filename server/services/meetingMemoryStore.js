@@ -10,6 +10,9 @@
  * - Scheduled meetings: Hybrid (DB persistent + memory runtime)
  */
 
+const { sanitizeForLog } = require('../utils/logSanitizer');
+const logger = require('../utils/logger');
+
 class MeetingMemoryStore {
   constructor() {
     // Map<meeting_id, runtimeState>
@@ -72,7 +75,8 @@ class MeetingMemoryStore {
   addParticipant(meetingId, participant) {
     const meeting = this.get(meetingId);
     if (!meeting) {
-      console.warn(`[Memory] Meeting ${meetingId} not found`);
+      logger.warn('[MEMORY] Meeting not found');
+      logger.debug('[MEMORY] Meeting ID:', { meetingId: sanitizeForLog(meetingId) });
       return null;
     }
 
@@ -95,7 +99,12 @@ class MeetingMemoryStore {
     meeting.participant_count = meeting.participants.length;
     this.set(meetingId, meeting);
 
-    console.log(`[Memory] Added participant ${participant.user_id} to meeting ${meetingId}. Total: ${meeting.participant_count}`);
+    logger.info('[MEMORY] Added participant to meeting');
+    logger.debug('[MEMORY] Participant details:', {
+      userId: sanitizeForLog(participant.user_id),
+      meetingId: sanitizeForLog(meetingId),
+      totalParticipants: meeting.participant_count
+    });
     return meeting;
   }
 
@@ -116,7 +125,13 @@ class MeetingMemoryStore {
     meeting.participant_count = meeting.participants.length;
     this.set(meetingId, meeting);
 
-    console.log(`[Memory] Removed participant ${userId} from meeting ${meetingId}. Count: ${beforeCount} → ${meeting.participant_count}`);
+    logger.info('[MEMORY] Removed participant from meeting');
+    logger.debug('[MEMORY] Participant removal:', {
+      userId: sanitizeForLog(userId),
+      meetingId: sanitizeForLog(meetingId),
+      beforeCount,
+      afterCount: meeting.participant_count
+    });
 
     // Return whether meeting is now empty
     return {
@@ -236,7 +251,8 @@ class MeetingMemoryStore {
       if (meeting.is_instant_call && status === 'ended') {
         this.delete(meetingId);
         cleaned++;
-        console.log(`[Memory Cleanup] Deleted instant call: ${meetingId}`);
+        logger.info('[MEMORY CLEANUP] Deleted instant call');
+        logger.debug('[MEMORY CLEANUP] Meeting ID:', { meetingId: sanitizeForLog(meetingId) });
         continue;
       }
 
@@ -248,13 +264,20 @@ class MeetingMemoryStore {
         if (timeSinceEnd > eightHoursMs && status === 'ended') {
           this.delete(meetingId);
           cleaned++;
-          console.log(`[Memory Cleanup] Deleted scheduled meeting: ${meetingId} (${Math.round(timeSinceEnd / 3600000)}h after end)`);
+          logger.info('[MEMORY CLEANUP] Deleted scheduled meeting');
+          logger.debug('[MEMORY CLEANUP] Meeting details:', {
+            meetingId: sanitizeForLog(meetingId),
+            hoursAfterEnd: Math.round(timeSinceEnd / 3600000)
+          });
         }
       }
     }
 
     if (cleaned > 0) {
-      console.log(`[Memory Cleanup] Cleaned ${cleaned} meeting(s). Remaining: ${this.meetings.size}`);
+      logger.info('[MEMORY CLEANUP] Cleaned meetings:', {
+        cleanedCount: cleaned,
+        remainingCount: this.meetings.size
+      });
     }
 
     return cleaned;

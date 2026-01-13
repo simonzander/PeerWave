@@ -5,12 +5,12 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../services/server_settings_service.dart';
 import '../web_config.dart';
-import '../services/server_config_web.dart'
-    if (dart.library.io) '../services/server_config_native.dart';
+import '../widgets/app_drawer.dart';
 
 class InvitationEntryPage extends StatefulWidget {
   final String email;
-  const InvitationEntryPage({super.key, required this.email});
+  final String? serverUrl;
+  const InvitationEntryPage({super.key, required this.email, this.serverUrl});
 
   @override
   State<InvitationEntryPage> createState() => _InvitationEntryPageState();
@@ -69,8 +69,12 @@ class _InvitationEntryPageState extends State<InvitationEntryPage> {
           urlString = 'https://$urlString';
         }
       } else {
-        final server = ServerConfigService.getActiveServer();
-        urlString = server?.serverUrl ?? '';
+        // Use the serverUrl passed from mobile-webauthn screen
+        urlString = widget.serverUrl ?? '';
+        // Configure ApiService with the server URL for mobile
+        if (urlString.isNotEmpty) {
+          ApiService.setBaseUrl(urlString);
+        }
       }
 
       // Verify invitation token
@@ -136,6 +140,16 @@ class _InvitationEntryPageState extends State<InvitationEntryPage> {
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
+      appBar: !kIsWeb
+          ? AppBar(
+              title: const Text('Invitation Required'),
+              backgroundColor: colorScheme.surface,
+              elevation: 0,
+            )
+          : null,
+      drawer: !kIsWeb
+          ? AppDrawer(isAuthenticated: false, currentRoute: '/invitation')
+          : null,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),

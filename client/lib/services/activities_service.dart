@@ -25,6 +25,14 @@ class ActivitiesService {
         final channelsWithParticipants = <Map<String, dynamic>>[];
 
         for (final channel in channels) {
+          // Skip non-WebRTC channels (safety check, should already be filtered by server)
+          if (channel['type'] != 'webrtc') {
+            debugPrint(
+              '[ACTIVITIES_SERVICE] Skipping non-WebRTC channel ${channel['uuid']}',
+            );
+            continue;
+          }
+
           // Get participants for each channel
           try {
             final participantsResp = await ApiService.get(

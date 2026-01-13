@@ -167,6 +167,15 @@ class SocketService {
       });
       _socket!.on('connect_error', (error) {
         debugPrint('[SOCKET SERVICE] ? Connection error: $error');
+        debugPrint('[SOCKET SERVICE] Error type: ${error.runtimeType}');
+
+        // DNS resolution failures are common on mobile after app resume
+        if (error.toString().contains('Failed host lookup')) {
+          debugPrint(
+            '[SOCKET SERVICE] ⚠️ DNS lookup failed - network may not be ready yet',
+          );
+          debugPrint('[SOCKET SERVICE] Socket.IO will retry automatically');
+        }
       });
       _socket!.on('connect_timeout', (_) {
         debugPrint('[SOCKET SERVICE] ? Connection timeout');

@@ -1,6 +1,8 @@
 const express = require('express');
 const externalParticipantService = require('../services/externalParticipantService');
 const meetingService = require('../services/meetingService');
+const { sanitizeForLog } = require('../utils/logSanitizer');
+const logger = require('../utils/logger');
 
 module.exports = function(io) {
   const router = express.Router();
@@ -12,18 +14,18 @@ module.exports = function(io) {
 router.get('/meetings/external/join/:token', async (req, res) => {
   try {
     const { token } = req.params;
-    console.log('[EXTERNAL] Validating invitation token:', token);
+    logger.debug('[EXTERNAL] Validating invitation token', sanitizeForLog({ token }));
 
     const result = await externalParticipantService.validateInvitationToken(token);
-    console.log('[EXTERNAL] Validation result:', result);
+    logger.debug('[EXTERNAL] Validation result', sanitizeForLog({ valid: result.valid, hasMeeting: !!result.meeting }));
 
     if (!result) {
-      console.log('[EXTERNAL] Invalid token - not found');
+      logger.debug('[EXTERNAL] Invalid token - not found', sanitizeForLog({ token }));
       return res.status(404).json({ error: 'Invalid invitation token' });
     }
 
     if (result.error === 'outside_time_window') {
-      console.log('[EXTERNAL] Token outside time window');
+      logger.debug('[EXTERNAL] Token outside time window', sanitizeForLog({ token }));
       return res.status(403).json({
         error: 'Outside time window',
         message: 'This invitation is only valid 1 hour before and after the meeting start time.',
@@ -34,10 +36,10 @@ router.get('/meetings/external/join/:token', async (req, res) => {
       });
     }
 
-    console.log('[EXTERNAL] Checking active participants for meeting:', result.meeting.meeting_id);
+    logger.debug('[EXTERNAL] Checking active participants', sanitizeForLog({ meetingId: result.meeting.meeting_id }));
     // Check if meeting has any active participants (for conditional access)
     const hasParticipants = await meetingService.hasActiveParticipants(result.meeting.meeting_id);
-    console.log('[EXTERNAL] Has active participants:', hasParticipants);
+    logger.debug('[EXTERNAL] Has active participants', { hasParticipants });
 
     res.json({
       meeting: {
@@ -51,8 +53,7 @@ router.get('/meetings/external/join/:token', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('[EXTERNAL] Error validating invitation token:', error);
-    console.error('[EXTERNAL] Error stack:', error.stack);
+    logger.error('[EXTERNAL] Error validating invitation token', error);
     res.status(500).json({ error: 'Failed to validate invitation', details: error.message });
   }
 });
@@ -90,7 +91,7 @@ router.post('/meetings/external/register', async (req, res) => {
     );
 
     if (deletedCount > 0) {
-      console.log(`Kicked ${deletedCount} duplicate session(s) for token ${invitation_token}`);
+      logger.debug('[EXTERNAL] Kicked duplicate sessions', sanitizeForLog({ count: deletedCount, token: invitation_token }));
     }
 
     // Use provided keys or generate temporary ones
@@ -112,7 +113,7 @@ router.post('/meetings/external/register', async (req, res) => {
     });
 
     // Session created - guest will request admission after key exchange
-    console.log(`[EXTERNAL] Created session ${session.session_id} for meeting ${result.meeting.meeting_id}`);
+    logger.debug('[EXTERNAL] Created session', sanitizeForLog({ sessionId: session.session_id, meetingId: result.meeting.meeting_id }));
 
     res.status(201).json({
       session_id: session.session_id,
@@ -129,7 +130,7 @@ router.post('/meetings/external/register', async (req, res) => {
       pre_keys: session.pre_keys
     });
   } catch (error) {
-    console.error('Error registering external participant:', error);
+    logger.error('[EXTERNAL] Error registering external participant', error);
     res.status(500).json({ error: 'Failed to register external participant' });
   }
 });
@@ -178,7 +179,7 @@ router.get('/meetings/external/keys/:sessionId', async (req, res) => {
       pre_keys: session.pre_keys
     });
   } catch (error) {
-    console.error('Error getting external keys:', error);
+    logger.error('[EXTERNAL] Error getting external keys', error);
     res.status(500).json({ error: 'Failed to get keys' });
   }
 });
@@ -222,7 +223,7 @@ router.get('/meetings/external/:sessionId/participant/:userId/:deviceId/keys', a
 
     res.json(keybundle);
   } catch (error) {
-    console.error('[EXTERNAL] Error getting participant keybundle:', error);
+    logger.error('[EXTERNAL] Error getting participant keybundle', error);
     res.status(500).json({ error: 'Failed to get participant keys' });
   }
 });
@@ -256,7 +257,7 @@ router.get('/meetings/:meetingId/external/:sessionId/keys', async (req, res) => 
 
     res.json(keybundle);
   } catch (error) {
-    console.error('[EXTERNAL] Error getting guest keybundle:', error);
+    logger.error('[EXTERNAL] Error getting guest keybundle', error);
     res.status(500).json({ error: 'Failed to get guest keys' });
   }
 });
@@ -327,7 +328,7 @@ router.get('/meetings/:meetingId/livekit-participants', async (req, res) => {
         // Parse device ID - if missing or invalid, log warning
         const deviceId = parseInt(deviceIdStr);
         if (!deviceIdStr || isNaN(deviceId)) {
-          console.warn(`[EXTERNAL] ⚠️ Invalid LiveKit identity format: "${p.identity}" (expected "userId:deviceId")`);
+          logger.warn('[EXTERNAL] Invalid LiveKit identity format', sanitizeForLog({ identity: p.identity, expected: 'userId:deviceId' }));
           return null; // Skip participants with malformed identities
         }
         
@@ -353,7 +354,7 @@ router.get('/meetings/:meetingId/livekit-participants', async (req, res) => {
       meeting_end_time: meetings[0]?.end_time || null
     });
   } catch (error) {
-    console.error('[EXTERNAL] Error getting LiveKit participants:', error);
+    logger.error('[EXTERNAL] Error getting LiveKit participants', error);
     res.status(500).json({ error: 'Failed to get participants' });
   }
 });
@@ -402,7 +403,7 @@ router.post('/meetings/:meetingId/external/:sessionId/request-admission', async 
         admitted: false,
         created_at: session.createdAt || new Date().toISOString()
       });
-      console.log(`[EXTERNAL] Guest ${sessionId} requested admission to ${meetingId}`);
+      logger.info('[EXTERNAL] Guest requested admission', { sessionId: sanitizeForLog(sessionId), meetingId: sanitizeForLog(meetingId) });
     }
     
     res.json({ 
@@ -411,7 +412,7 @@ router.post('/meetings/:meetingId/external/:sessionId/request-admission', async 
       message: 'Admission request sent'
     });
   } catch (error) {
-    console.error('[EXTERNAL] Error requesting admission:', error);
+    logger.error('[EXTERNAL] Error requesting admission (route 1)', error);
     res.status(500).json({ error: 'Failed to request admission' });
   }
 });
@@ -460,7 +461,7 @@ router.post('/meetings/:meetingId/external/:sessionId/request-admission', async 
         admitted: false,
         created_at: session.createdAt || new Date().toISOString()
       });
-      console.log(`[EXTERNAL] Guest ${sessionId} requested admission to ${meetingId}`);
+      logger.info('[EXTERNAL] Guest requested admission', { sessionId: sanitizeForLog(sessionId), meetingId: sanitizeForLog(meetingId) });
     }
     
     res.json({ 
@@ -469,7 +470,7 @@ router.post('/meetings/:meetingId/external/:sessionId/request-admission', async 
       message: 'Admission request sent'
     });
   } catch (error) {
-    console.error('[EXTERNAL] Error requesting admission:', error);
+    logger.error('[EXTERNAL] Error requesting admission (route 2)', error);
     res.status(500).json({ error: 'Failed to request admission' });
   }
 });
@@ -486,7 +487,7 @@ router.delete('/meetings/external/session/:sessionId', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting external session:', error);
+    logger.error('[EXTERNAL] Error deleting external session', error);
     res.status(500).json({ error: 'Failed to delete session' });
   }
 });
@@ -524,7 +525,7 @@ router.patch('/meetings/external/session/:sessionId', async (req, res) => {
       display_name: display_name.trim()
     });
   } catch (error) {
-    console.error('Error updating external session:', error);
+    logger.error('[EXTERNAL] Error updating external session', error);
     res.status(500).json({ error: 'Failed to update session' });
   }
 });
@@ -542,7 +543,7 @@ router.get('/meetings/:meetingId/external/waiting', async (req, res) => {
 
     res.json({ waiting });
   } catch (error) {
-    console.error('Error getting waiting participants:', error);
+    logger.error('[EXTERNAL] Error getting waiting participants', error);
     res.status(500).json({ error: 'Failed to get waiting participants' });
   }
 });
@@ -600,12 +601,12 @@ router.post('/meetings/:meetingId/external/:sessionId/admit', async (req, res) =
         admitted_by: admitted_by
       });
       
-      console.log(`[EXTERNAL] Guest ${sessionId} ADMITTED to ${meetingId} by ${admitted_by}`);
+      logger.debug('[EXTERNAL] Guest ADMITTED', sanitizeForLog({ sessionId, meetingId, admittedBy: admitted_by }));
     }
 
     res.json(updated);
   } catch (error) {
-    console.error('Error admitting external participant:', error);
+    logger.error('[EXTERNAL] Error admitting external participant', error);
     res.status(500).json({ error: 'Failed to admit participant' });
   }
 });
@@ -664,12 +665,12 @@ router.post('/meetings/:meetingId/external/:sessionId/decline', async (req, res)
         reason: 'Host declined your request'
       });
       
-      console.log(`[EXTERNAL] Guest ${sessionId} DECLINED from ${meetingId} by ${declined_by}`);
+      logger.debug('[EXTERNAL] Guest DECLINED', sanitizeForLog({ sessionId, meetingId, declinedBy: declined_by }));
     }
 
     res.json(updated);
   } catch (error) {
-    console.error('Error declining external participant:', error);
+    logger.error('[EXTERNAL] Error declining external participant', error);
     res.status(500).json({ error: 'Failed to decline participant' });
   }
 });
@@ -691,7 +692,7 @@ router.post('/meetings/external/session/:sessionId/consume-prekey', async (req, 
     const result = await externalParticipantService.consumePreKey(sessionId, pre_key_id);
     res.json(result);
   } catch (error) {
-    console.error('Error consuming pre-key:', error);
+    logger.error('[EXTERNAL] Error consuming pre-key', error);
     res.status(500).json({ error: 'Failed to consume pre-key' });
   }
 });
@@ -713,7 +714,7 @@ router.post('/meetings/external/session/:sessionId/prekeys', async (req, res) =>
     const result = await externalParticipantService.replenishPreKeys(sessionId, pre_keys);
     res.json(result);
   } catch (error) {
-    console.error('Error replenishing pre-keys:', error);
+    logger.error('[EXTERNAL] Error replenishing pre-keys', error);
     res.status(500).json({ error: 'Failed to replenish pre-keys' });
   }
 });
@@ -729,7 +730,7 @@ router.get('/meetings/external/session/:sessionId/prekeys', async (req, res) => 
     const result = await externalParticipantService.getRemainingPreKeys(sessionId);
     res.json(result);
   } catch (error) {
-    console.error('Error getting remaining pre-keys:', error);
+    logger.error('[EXTERNAL] Error getting remaining pre-keys', error);
     res.status(500).json({ error: 'Failed to get pre-key count' });
   }
 });
@@ -746,7 +747,7 @@ router.get('/meetings/external/keys/:sessionId', async (req, res) => {
     const keys = await externalParticipantService.getKeysForSession(sessionId);
     res.json(keys);
   } catch (error) {
-    console.error('Error getting external participant keys:', error);
+    logger.error('[EXTERNAL] Error getting external participant keys', error);
     res.status(500).json({ error: 'Failed to get participant keys' });
   }
 });

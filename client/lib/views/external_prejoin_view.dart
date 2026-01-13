@@ -66,12 +66,12 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
       GlobalKey<VideoPreJoinWidgetState>();
 
   // === Signal Keys ===
-  bool _isGeneratingKeys = true;
   String _keyGenStep = 'Initializing...';
   double _keyGenProgress = 0.0;
   bool _keysReady = false;
 
   // === Session Data ===
+  // ignore: unused_field
   ExternalSession? _session;
   String? _sessionId;
 
@@ -79,7 +79,9 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
   String? _meetingId;
   String? _meetingTitle;
   String? _meetingDescription;
+  // ignore: unused_field
   DateTime? _meetingStartTime;
+  // ignore: unused_field
   DateTime? _meetingEndTime;
 
   // === Participant Discovery ===
@@ -101,6 +103,7 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
 
   // === Admission Request ===
   DateTime? _lastAdmissionRequest;
+  // ignore: unused_field
   bool _isRequestingAdmission = false;
 
   @override
@@ -183,7 +186,6 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
   Future<void> _generateSignalKeys() async {
     try {
       setState(() {
-        _isGeneratingKeys = true;
         _keyGenStep = 'Checking existing keys...';
         _keyGenProgress = 0.1;
       });
@@ -278,13 +280,11 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
       setState(() {
         _keyGenStep = 'Keys ready!';
         _keyGenProgress = 1.0;
-        _isGeneratingKeys = false;
         _keysReady = true;
       });
     } catch (e) {
       debugPrint('[GuestPreJoin] Key generation error: $e');
       setState(() {
-        _isGeneratingKeys = false;
         _keysReady = false;
         _errorMessage = 'Failed to generate encryption keys: $e';
       });

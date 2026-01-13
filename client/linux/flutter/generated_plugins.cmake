@@ -12,6 +12,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   gtk
   livekit_client
   local_notifier
+  printing
   record_linux
   tray_manager
   url_launcher_linux

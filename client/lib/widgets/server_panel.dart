@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -165,46 +166,6 @@ class _ServerPanelState extends State<ServerPanel> {
     );
   }
 
-  void _showEditServerDialog(ServerConfig server) {
-    final controller = TextEditingController(
-      text: server.displayName ?? server.getDisplayName(),
-    );
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Server'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'Display Name',
-            hintText: 'Enter server name',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              await ServerConfigService.updateDisplayName(
-                server.id,
-                controller.text,
-              );
-              _loadServers();
-              if (!mounted) return;
-              if (mounted) {
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _logoutFromServer(ServerConfig server) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -236,7 +197,11 @@ class _ServerPanelState extends State<ServerPanel> {
 
       // If no servers left, go to server selection
       if (_servers.isEmpty && mounted) {
-        context.go('/server-selection');
+        if (Platform.isAndroid || Platform.isIOS) {
+          context.go('/mobile-server-selection');
+        } else {
+          context.go('/server-selection');
+        }
       }
     }
   }
@@ -295,7 +260,11 @@ class _ServerPanelState extends State<ServerPanel> {
 
         // If no servers left, go to server selection
         if (_servers.isEmpty && mounted) {
-          context.go('/server-selection');
+          if (Platform.isAndroid || Platform.isIOS) {
+            context.go('/mobile-server-selection');
+          } else {
+            context.go('/server-selection');
+          }
         }
       } catch (e) {
         if (mounted) {

@@ -59,12 +59,16 @@
     }
 
 
-    window.webauthnLogin = async function(serverUrl, email, clientId) {
+    window.webauthnLogin = async function(serverUrl, email, clientId, fromCustomTab) {
+        console.log('[WEBAUTHN] webauthnLogin called with:', { serverUrl, email, clientId, fromCustomTab });
         try {
             // Check if WebAuthn is supported by the browser
             if (!window.PublicKeyCredential) {
+                console.error('[WEBAUTHN] WebAuthn not supported');
                 throw new Error('WebAuthn is not supported');
             }
+            
+            console.log('[WEBAUTHN] Fetching authentication challenge...');
 
             // Request a new WebAuthn credential from the server
             const credential = await fetch(serverUrl + '/webauthn/authenticate-challenge', {
@@ -75,14 +79,15 @@
                 credentials: 'include',
                 body: JSON.stringify({ email: email })
             }).then(response => {
-                console.log('Response status:', response.status);
+                console.log('[WEBAUTHN] Challenge response status:', response.status);
                 if (response.status !== 200) {
+                    console.warn('[WEBAUTHN] Non-200 status, calling onWebAuthnSuccess');
                     window.onWebAuthnSuccess(response.status)
                 }
                 return response.json();
             });
 
-            console.log("credential:", credential);
+            console.log("[WEBAUTHN] credential:", credential);
 
             // Create a new PublicKeyCredential object
             credential.challenge = base64UrlDecode(credential.challenge);
@@ -128,6 +133,7 @@
                 body: JSON.stringify({
                     email: email,
                     clientId: clientId,
+                    fromCustomTab: fromCustomTab === true,
                     assertion: {
                         id: assertion.id,
                         rawId: base64UrlEncode(assertion.rawId),
@@ -140,23 +146,35 @@
                         }
                     } 
                 })
-            }).then(response => {
-                if (response.status === 200 || response.status === 202) {
-                    if (window.onWebAuthnSuccess) {
-                        window.onWebAuthnSuccess(response.status); // or whatever data you want to pass
-                    }
-                    else
-                    {
-                        window.onWebAuthnSuccess(response.status)
-                    }
-
-                }
-                if (response.redirected) {
-                    window.location.href = response.url;
-                }
-            }).catch(error => {
-                console.error('Error during authentication:', error);
             });
+
+            if (response.redirected) {
+                window.location.href = response.url;
+                return;
+            }
+
+            if (response.status === 200 || response.status === 202) {
+                if (window.onWebAuthnSuccess) {
+                    // Parse response to extract authToken
+                    const data = await response.json();
+                    console.log('[WEBAUTHN] Response data:', data);
+                    const authToken = data.authToken || null;
+                    console.log('[WEBAUTHN] Extracted authToken:', authToken ? 'present' : 'null');
+                    window.onWebAuthnSuccess(response.status, authToken);
+                }
+                return;
+            }
+
+            // Surface error details for debugging
+            let bodyText = '';
+            try {
+                bodyText = await response.text();
+            } catch (_) {}
+            console.error('[WEBAUTHN] Authentication failed:', response.status, bodyText);
+            if (window.onWebAuthnAbort) {
+                window.onWebAuthnAbort(`Authentication failed: ${response.status} ${bodyText}`);
+            }
+            throw new Error(`Authentication failed: ${response.status}`);
 
         } catch (error) {
             console.error('WebAuthn authentication failed:', error);

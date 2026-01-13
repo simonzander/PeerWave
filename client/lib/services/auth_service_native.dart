@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'session_auth_service.dart';
 import 'clientid_native.dart';
+import 'server_config_native.dart';
 // Only for web:
 // ignore: avoid_web_libraries_in_flutter
 
@@ -73,6 +74,7 @@ class AuthService {
     try {
       // For native, check if we have an HMAC session
       final clientId = await ClientIdService.getClientId();
+      debugPrint('[AuthService] Checking session for clientId: $clientId');
       final hasSession = await SessionAuthService().hasSession(clientId);
 
       if (hasSession) {
@@ -80,6 +82,35 @@ class AuthService {
         isLoggedIn = true;
         return true;
       } else {
+        // Session not found in SessionAuthService - check if we can restore from ServerConfig
+        debugPrint(
+          '[AuthService] No session in SecureStorage, checking ServerConfig backup...',
+        );
+
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer != null && activeServer.credentials.isNotEmpty) {
+          // Restore session from ServerConfig credentials
+          debugPrint(
+            '[AuthService] Restoring session from ServerConfig backup',
+          );
+          await SessionAuthService().initializeSession(
+            clientId,
+            activeServer.credentials,
+          );
+
+          // Verify restoration worked
+          final restored = await SessionAuthService().hasSession(clientId);
+          if (restored) {
+            debugPrint(
+              '[AuthService] ✓ Session restored from ServerConfig backup',
+            );
+            isLoggedIn = true;
+            return true;
+          } else {
+            debugPrint('[AuthService] ✗ Failed to restore session from backup');
+          }
+        }
+
         debugPrint('[AuthService] Native client has no HMAC session');
         isLoggedIn = false;
         return false;

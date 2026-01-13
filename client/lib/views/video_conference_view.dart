@@ -4,6 +4,8 @@ import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+// ignore_for_file: use_build_context_synchronously
+
 import 'dart:async';
 import 'dart:convert';
 import '../services/video_conference_service.dart';
@@ -1239,8 +1241,9 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
     // Check if it's a remote participant
     final remoteParticipantsList = room.remoteParticipants.values.toList();
-    if (remoteParticipantsList.isEmpty)
+    if (remoteParticipantsList.isEmpty) {
       return; // No remote participants to show menu for
+    }
 
     final remoteParticipant = remoteParticipantsList.firstWhere(
       (p) => p.identity == participantId,

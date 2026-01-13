@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../theme/app_theme_constants.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/animated_widgets.dart';
 import '../providers/unread_messages_provider.dart';

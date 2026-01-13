@@ -5,13 +5,169 @@ const { Fido2Lib } = require('fido2-lib');
 const bodyParser = require('body-parser'); // Import body-parser
 const nodemailer = require("nodemailer");
 const crypto = require('crypto');
+const { sanitizeForLog } = require('../utils/logSanitizer');
+const logger = require('../utils/logger');
 const session = require('express-session');
+const rateLimit = require('express-rate-limit');
+const { sessionLimiter, authLimiter } = require('../middleware/rateLimiter');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const magicLinks = require('../store/magicLinksStore');
-const { User, OTP, Client } = require('../db/model');
+const { User, OTP, Client, ClientSession, SignalPreKey, SignalSignedPreKey, SignalSenderKey, Item, GroupItem, GroupItemRead, sequelize } = require('../db/model');
 const bcrypt = require("bcrypt");
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
+const { generateAuthToken, verifyAuthToken, revokeToken } = require('../utils/jwtHelper');
+const { verifySessionAuth, verifyAuthEither } = require('../middleware/sessionAuth');
+
+/**
+ * Shared function to find or create a Client record
+ * Used by both web (/client/addweb) and native (/token/exchange, /webauthn/authenticate)
+ * 
+ * @param {string} clientId - UUID generated client-side
+ * @param {string} userUuid - User's UUID
+ * @param {Object} req - Express request object (for IP, user-agent, etc.)
+ * @returns {Promise<Object>} Client record with device_id and clientid
+ */
+async function findOrCreateClient(clientId, userUuid, req) {
+    const userAgent = req.headers['user-agent'] || '';
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const location = await getLocationFromIp(ip);
+    const locationString = location
+        ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
+        : "Location not found";
+    
+    // First, check if this clientId exists (regardless of owner)
+    const existingClient = await Client.findOne({ where: { clientid: clientId } });
+    
+    if (existingClient && existingClient.owner !== userUuid) {
+        // SECURITY: Client ID belongs to a different user
+        // This can happen if the client app doesn't regenerate UUID on account switch
+        // We must delete ALL server-side data for this client before transferring ownership
+        // to prevent User Y from accessing User X's encrypted messages/keys
+        
+        const oldOwner = existingClient.owner;
+        const oldDeviceId = existingClient.device_id;
+        
+        logger.warn('[CLIENT] Ownership conflict', {
+            clientId: sanitizeForLog(clientId),
+            currentOwner: sanitizeForLog(oldOwner),
+            newOwner: sanitizeForLog(userUuid)
+        });
+        logger.warn('[CLIENT] Deleting all server-side data', { deviceId: oldDeviceId, oldOwner: sanitizeForLog(oldOwner) });
+        
+        // Delete all messages and read receipts for this device by the old owner
+        const [itemsDeleted, groupItemsDeleted, readReceiptsDeleted] = await Promise.all([
+            Item.destroy({ 
+                where: { 
+                    [Op.or]: [
+                        { sender: oldOwner, deviceSender: oldDeviceId },
+                        { receiver: oldOwner, deviceReceiver: oldDeviceId }
+                    ]
+                } 
+            }),
+            GroupItem.destroy({ 
+                where: { 
+                    sender: oldOwner,
+                    senderDevice: oldDeviceId 
+                } 
+            }),
+            GroupItemRead.destroy({
+                where: {
+                    userId: oldOwner,
+                    deviceId: oldDeviceId
+                }
+            })
+        ]);
+        
+        logger.warn('[CLIENT] Deleted messages', { itemsDeleted, groupItemsDeleted, readReceiptsDeleted });
+        
+        // Delete all Signal protocol keys (prevents decryption of old messages)
+        const [preKeysDeleted, signedPreKeysDeleted, senderKeysDeleted, sessionsDeleted] = await Promise.all([
+            SignalPreKey.destroy({ where: { client: clientId } }),
+            SignalSignedPreKey.destroy({ where: { client: clientId } }),
+            SignalSenderKey.destroy({ where: { client: clientId } }),
+            ClientSession.destroy({ where: { client_id: clientId } })
+        ]);
+        
+        logger.warn('[CLIENT] Deleted Signal protocol keys', { preKeysDeleted, signedPreKeysDeleted, senderKeysDeleted, sessionsDeleted });
+        
+        // Get max device_id for new owner
+        const maxDevice = await Client.max('device_id', { where: { owner: userUuid } });
+        
+        // Transfer ownership with new device_id
+        await writeQueue.enqueue(
+            () => Client.update(
+                { 
+                    owner: userUuid,
+                    device_id: maxDevice ? maxDevice + 1 : 1,
+                    ip: ip,
+                    browser: userAgent,
+                    location: locationString
+                },
+                { where: { clientid: clientId } }
+            ),
+            'transferClientOwnership'
+        );
+        
+        // Reload to get updated values
+        await existingClient.reload();
+        
+        logger.info('[CLIENT] Ownership transferred');
+        logger.debug('[CLIENT] Ownership transferred', {
+            newOwner: sanitizeForLog(userUuid),
+            deviceId: existingClient.device_id
+        });
+        
+        return {
+            client: existingClient,
+            created: false,
+            ownershipTransferred: true,
+            device_id: existingClient.device_id,
+            clientid: existingClient.clientid
+        };
+    }
+    
+    // Get max device_id for this user and auto-increment
+    const maxDevice = await Client.max('device_id', { where: { owner: userUuid } });
+    
+    // Find existing client or create new one (scoped to correct owner)
+    const [client, created] = await Client.findOrCreate({
+        where: { clientid: clientId },
+        defaults: {
+            owner: userUuid,
+            clientid: clientId,
+            ip: ip,
+            browser: userAgent,
+            location: locationString,
+            device_id: maxDevice ? maxDevice + 1 : 1
+        }
+    });
+    
+    // Update metadata if client already exists
+    if (!created) {
+        await writeQueue.enqueue(
+            () => Client.update(
+                { ip, browser: userAgent, location: locationString },
+                { where: { clientid: clientId } }
+            ),
+            'updateClientInfo'
+        );
+    }
+    
+    logger.info(`[CLIENT] ${created ? 'Created' : 'Found'} client`);
+    logger.debug(`[CLIENT] ${created ? 'Created' : 'Found'} client`, {
+        clientId: sanitizeForLog(clientId),
+        deviceId: client.device_id
+    });
+    
+    return {
+        client,
+        created,
+        ownershipTransferred: false,
+        device_id: client.device_id || (client.get ? client.get('device_id') : undefined),
+        clientid: client.clientid || (client.get ? client.get('clientid') : undefined)
+    };
+}
 
 class AppError extends Error {
     constructor(message, code, email = "") {
@@ -81,6 +237,27 @@ async function verifyBackupCode(email, enteredCode) {
     return false; // Kein Treffer
 }
 
+// Rate limiters for security-sensitive endpoints
+const tokenExchangeLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // 5 requests per IP per window
+    message: { error: 'Too many token exchange attempts, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    // Use clientId as key for better tracking
+    keyGenerator: (req) => {
+        return req.body.clientId || req.ip;
+    }
+});
+
+const tokenRevocationLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // 10 revocations per IP per window
+    message: { error: 'Too many revocation attempts, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 async function getLocationFromIp(ip) {
     const response = await fetch(`https://ipapi.co/${ip}/json/`);
     if (!response.ok) return null;
@@ -96,10 +273,16 @@ async function getLocationFromIp(ip) {
 
 // Helper functions for URL-safe base64 encoding and decoding
 function base64UrlEncode(buffer) {
-    return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+    let result = btoa(String.fromCharCode(...new Uint8Array(buffer)))
         .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
+        .replace(/\//g, '_');
+    
+    // Remove padding - base64 only has 0-2 trailing '=' chars
+    // Using while loop to avoid ReDoS vulnerability
+    while (result.endsWith('=')) {
+        result = result.slice(0, -1);
+    }
+    return result;
 }
 
 function base64UrlDecode(base64) {
@@ -359,69 +542,78 @@ User.hasMany(Client, { foreignKey: 'owner' });
 // Create the User table in the database
 User.sync({ alter: true })
     .then(() => {
-        console.log('User table created successfully.');
+        logger.info('[AUTH] User table synced successfully');
     })
     .catch(error => {
-        console.error('Error creating User table:', error);
+        logger.error('[AUTH] Error syncing User table', error);
     });
 
 // Create the OTP table in the database
 OTP.sync({ alter: true })
     .then(() => {
-        console.log('OTP table created successfully.');
+        logger.info('[AUTH] OTP table synced successfully');
     })
     .catch(error => {
-        console.error('Error creating OTP table:', error);
+        logger.error('[AUTH] Error syncing OTP table', error);
     });
 
 // Create the Channel table in the database
 Channel.sync({ alter: true })
     .then(() => {
-        console.log('Channel table created successfully.');
+        logger.info('[AUTH] Channel table synced successfully');
     })
     .catch(error => {
-        console.error('Error creating Channel table:', error);
+        logger.error('[AUTH] Error syncing Channel table', error);
     });
 
 // Create the Thread table in the database
 Thread.sync({ alter: true })
     .then(() => {
-        console.log('Thread table created successfully.');
+        logger.info('[AUTH] Thread table synced successfully');
     })
     .catch(error => {
-        console.error('Error creating Thread table:', error);
+        logger.error('[AUTH] Error syncing Thread table', error);
     });
 
 // Create the Emote table in the database
 Emote.sync({ alter: true })
     .then(() => {
-        console.log('Emote table created successfully.');
+        logger.info('[AUTH] Emote table synced successfully');
     })
     .catch(error => {
-        console.error('Error creating Emote table:', error);
+        logger.error('[AUTH] Error syncing Emote table', error);
     });
 
 // Create the PublicKey table in the database
 PublicKey.sync({ alter: true })
     .then(() => {
-        console.log('PublicKey table created successfully.');
+        logger.info('[AUTH] PublicKey table synced successfully');
     })
     .catch(error => {
-        console.error('Error creating PublicKey table:', error);
+        logger.error('[AUTH] Error syncing PublicKey table', error);
     });
 
 // Create the Client table in the database
 Client.sync({ alter: true })
     .then(() => {
-        console.log('Client table created successfully.');
+        logger.info('[AUTH] Client table synced successfully');
     })
     .catch(error => {
-        console.error('Error creating Client table:', error);
+        logger.error('[AUTH] Error syncing Client table', error);
     });
 */
 // Add body-parser middleware
-authRoutes.use(bodyParser.urlencoded({ extended: true }));
-authRoutes.use(bodyParser.json());
+authRoutes.use(bodyParser.urlencoded({ 
+    extended: true,
+    verify: (req, res, buf) => {
+        req.rawBody = buf;
+    }
+}));
+authRoutes.use(bodyParser.json({
+    verify: (req, res, buf) => {
+        req.rawBody = buf;
+    }
+}));
 
 // Configure session middleware
 authRoutes.use(session({
@@ -544,12 +736,12 @@ authRoutes.post("/register", async (req, res) => {
                             `,
                             text: `Your OTP is ${otp}. This code expires in ${config.otp.expirationMinutes} minutes.`
                         }).then(info => {
-                            console.log("Message sent: %s", info.messageId);
+                            logger.info('[OTP] Email sent', { messageId: info.messageId });
                         }).catch(error => {
-                            console.error('Error sending OTP email:', error);
+                            logger.error('[OTP] Error sending email', error);
                         });
                     } else {
-                        console.warn('[OTP] SMTP not configured - OTP email not sent');
+                        logger.warn('[OTP] SMTP not configured - email not sent');
                     }
 
 
@@ -560,11 +752,12 @@ authRoutes.post("/register", async (req, res) => {
                         'createOTP'
                     )
                     .then(otp => {
-                        console.log('OTP created successfully:', otp);
+                        logger.info('[OTP] Created successfully');
+                        logger.debug('[OTP] Created', { email: otp.email });
                         req.session.email = otp.email;
                         res.status(200).json({ status: "otp", wait: Math.ceil((otp.expiration - Date.now()) / 1000) });
                     }).catch(error => {
-                        console.error('Error creating OTP:', error);
+                        logger.error('[OTP] Error creating OTP', error);
                     });
 
                     // Store the temporary storage in a database or cache
@@ -577,12 +770,12 @@ authRoutes.post("/register", async (req, res) => {
             
         })
         .catch(error => {
-            console.error('Error creating user:', error);
+            logger.error('[AUTH] Error creating user', error);
             res.status(500).json({ error: "Error on creating user" });
         });
         
     } catch (error) {
-        console.error('Error in registration:', error);
+        logger.error('[AUTH] Error in registration', error);
         res.status(500).json({ error: "Internal server error" });
     }
 
@@ -620,12 +813,14 @@ authRoutes.post("/otp", (req, res) => {
                     'markInvitationUsed'
                 );
                 delete req.session.pendingInvitationId;
-                console.log(`[INVITATION] Marked invitation ${req.session.pendingInvitationId} as used for ${email}`);
+                logger.info('[INVITATION] Marked invitation as used');
+                logger.debug('[INVITATION] Invitation used', { email: sanitizeForLog(email) });
             }
             
             req.session.otp = true;
             req.session.authenticated = true;
             req.session.uuid = updatedUser.uuid; // ensure uuid present
+            req.session.email = updatedUser.email; // Store email for backup codes
             // Update registration step based on user status
             if (!updatedUser.backupCodes) {
                 req.session.registrationStep = 'backup_codes';
@@ -645,7 +840,7 @@ authRoutes.post("/otp", (req, res) => {
             }
             return req.session.save(err => {
                 if (err) {
-                    console.error('Session save error (/otp):', err);
+                    logger.error('[AUTH] Session save error (/otp)', err);
                     return res.status(500).json({ status: "error", message: "Session save error" });
                 }
                 if(!updatedUser.backupCodes) {
@@ -656,7 +851,7 @@ authRoutes.post("/otp", (req, res) => {
             });
         }
     }).catch(error => {
-        console.error('Error finding OTP:', error);
+        logger.error('[AUTH] Error finding OTP', error);
         res.status(400).json({ error: "Invalid OTP" });
     });
 });
@@ -680,17 +875,14 @@ authRoutes.get("/backupcode/list", async(req, res) => {
         res.status(200).json({ status: "ok", backupCodes: backupCodes });
 
     } catch (error) {
-        console.error('Error fetching backup codes:', error);
+        logger.error('[AUTH] Error fetching backup codes', error);
         res.status(500).json({ error: "Internal server error" });
     }
 });
 
-authRoutes.get("/backupcode/usage", async(req, res) => {
-    if (!req.session.authenticated) {
-        return res.status(401).json({ error: "Unauthorized" });
-    }
+authRoutes.get("/backupcode/usage", sessionLimiter, verifyAuthEither, async(req, res) => {
     try {
-        const user = await User.findOne({ where: { email: req.session.email } });
+        const user = await User.findOne({ where: { uuid: req.userId } });
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
@@ -703,7 +895,7 @@ authRoutes.get("/backupcode/usage", async(req, res) => {
 
         res.status(200).json({ status: "ok", usedCount, totalCount });
     } catch (error) {
-        console.error('Error fetching backup code usage:', error);
+        logger.error('[AUTH] Error fetching backup code usage', error);
         res.status(500).json({ error: "Internal server error" });
     }
 });
@@ -752,24 +944,159 @@ authRoutes.post("/backupcode/verify", async(req, res) => {
             }
             return req.session.save(err => {
                 if (err) {
-                    console.error('Session save error (/backupcode/verify):', err);
+                    logger.error('[AUTH] Session save error (/backupcode/verify)', err);
                     return res.status(500).json({ status: "error", message: "Session save error" });
                 }
                 res.status(200).json({ status: "ok", message: "Backup code verified successfully" });
             });
         }
     } catch (error) {
-        console.error('Error verifying backup code:', error);
+        logger.error('[AUTH] Error verifying backup code', error);
         res.status(500).json({ error: "Internal server error" });
     }
 });
 
-authRoutes.post("/backupcode/regenerate", async(req, res) => {
-    if (!req.session.authenticated) {
-        return res.status(401).json({ error: "Unauthorized" });
+authRoutes.post("/backupcode/mobile-verify", sessionLimiter, async(req, res) => {
+    const { email, backupCode, clientId } = req.body;
+    
+    if (!email || !backupCode) {
+        return res.status(400).json({ error: "Email and backup code are required" });
     }
+    
     try {
-        const user = await User.findOne({ where: { email: req.session.email } });
+        logger.info('[BACKUPCODE MOBILE] Login attempt');
+        logger.debug('[BACKUPCODE MOBILE] Login attempt', { email: sanitizeForLog(email) });
+        
+        // Brute-force protection: Store failed attempts in session
+        if (!req.session.backupCodeBrute) {
+            req.session.backupCodeBrute = { count: 0, waitUntil: 0 };
+        }
+        
+        const now = Date.now();
+        if (req.session.backupCodeBrute.waitUntil && now < req.session.backupCodeBrute.waitUntil) {
+            const waitSeconds = Math.ceil((req.session.backupCodeBrute.waitUntil - now) / 1000);
+            return res.status(429).json({ status: "wait", message: `Too many attempts. Wait ${waitSeconds} seconds.` });
+        }
+        
+        // Verify backup code
+        const valid = await verifyBackupCode(email, backupCode);
+        
+        if (!valid) {
+            // Increase brute-force counter and wait time
+            req.session.backupCodeBrute.count = (req.session.backupCodeBrute.count || 0) + 1;
+            let waitTime = 60 * Math.pow(1.8, req.session.backupCodeBrute.count - 1); // in seconds
+            waitTime = Math.ceil(waitTime);
+            req.session.backupCodeBrute.waitUntil = now + waitTime * 1000;
+            return res.status(401).json({ status: "error", message: "Invalid backup code" });
+        }
+        
+        // Reset brute-force counter on success
+        req.session.backupCodeBrute = { count: 0, waitUntil: 0 };
+        
+        // Find user
+        const user = await User.findOne({ where: { email } });
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+        
+        // Set session as authenticated
+        req.session.authenticated = true;
+        req.session.email = email;
+        req.session.uuid = user.uuid;
+        
+        // Set user as active
+        await writeQueue.enqueue(
+            () => User.update(
+                { active: true },
+                { where: { uuid: user.uuid } }
+            ),
+            'setUserActiveOnBackupCodeAuth'
+        );
+        
+        // Auto-assign admin role if configured
+        if (user.verified && config.admin && config.admin.includes(email)) {
+            await autoAssignRoles(email, user.uuid);
+        }
+        
+        // Create HMAC session for mobile clients (same as WebAuthn)
+        let sessionSecret = null;
+        
+        if (clientId) {
+            // Use shared function to find or create client
+            const result = await findOrCreateClient(clientId, user.uuid, req);
+            req.session.deviceId = result.device_id;
+            req.session.clientId = result.clientid;
+            
+            // Generate session secret for HMAC authentication
+            sessionSecret = crypto.randomBytes(32).toString('base64url');
+            const userAgent = req.headers['user-agent'] || '';
+            const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+            const location = await getLocationFromIp(ip);
+            const locationString = location 
+                ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
+                : "Location not found";
+            
+            // Store session in database with configurable expiration
+            try {
+                const sessionDays = config.session.hmacSessionDays || 90;
+                await writeQueue.enqueue(
+                    () => sequelize.query(
+                        `INSERT OR REPLACE INTO client_sessions 
+                         (client_id, session_secret, user_id, device_id, device_info, expires_at, last_used, created_at)
+                         VALUES (?, ?, ?, ?, ?, datetime('now', '+' || ? || ' days'), datetime('now'), datetime('now'))`,
+                        { 
+                            replacements: [
+                                clientId, 
+                                sessionSecret, 
+                                user.uuid,
+                                result.device_id, 
+                                JSON.stringify({ userAgent, ip, location: locationString }),
+                                sessionDays
+                            ] 
+                        }
+                    ),
+                    'createBackupCodeMobileSession'
+                );
+                logger.info('[BACKUPCODE MOBILE] HMAC session created', { sessionDays });
+                logger.debug('[BACKUPCODE MOBILE] HMAC session created', { clientId: sanitizeForLog(clientId), sessionDays });
+            } catch (sessionErr) {
+                logger.error('[BACKUPCODE MOBILE] Error creating HMAC session', sessionErr);
+            }
+        }
+        
+        // Save session and return response
+        return req.session.save(err => {
+            if (err) {
+                logger.error('[BACKUPCODE MOBILE] Session save error', err);
+                return res.status(500).json({ status: "error", message: "Session save error" });
+            }
+            
+            const response = {
+                status: "ok",
+                message: "Backup code verified successfully"
+            };
+            
+            // Include HMAC credentials for mobile clients
+            if (sessionSecret) {
+                response.sessionSecret = sessionSecret;
+                response.userId = user.uuid;
+                response.email = email;
+                logger.info('[BACKUPCODE MOBILE] Login successful');
+                logger.debug('[BACKUPCODE MOBILE] Login successful', { email: sanitizeForLog(email) });
+            }
+            
+            res.status(200).json(response);
+        });
+        
+    } catch (error) {
+        logger.error('[BACKUPCODE MOBILE] Error', error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+authRoutes.post("/backupcode/regenerate", sessionLimiter, verifyAuthEither, async(req, res) => {
+    try {
+        const user = await User.findOne({ where: { uuid: req.userId } });
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
@@ -790,7 +1117,7 @@ authRoutes.post("/backupcode/regenerate", async(req, res) => {
             return res.status(400).json({ error: "No backup codes to regenerate. You can generate new backup codes." });
         }        
     } catch (error) {
-        console.error('Error regenerating backup codes:', error);
+        logger.error('[AUTH] Error regenerating backup codes', error);
         res.status(500).json({ error: "Internal server error" });
     }
 });
@@ -802,20 +1129,21 @@ authRoutes.post("/logout", async (req, res) => {
     const deviceId = req.deviceId || req.session.deviceId;
     const clientId = req.clientId || req.session.clientId;
     
-    console.log(`[AUTH] Logout request from user ${userId}, device ${deviceId}`);
+    logger.info('[AUTH] Logout request');
+    logger.debug('[AUTH] Logout request', { userId: sanitizeForLog(userId), deviceId: sanitizeForLog(deviceId) });
     
     // If HMAC auth (native client), delete the HMAC session from database
     if (req.userId && clientId) {
         try {
-            const { sequelize } = require('../db/model');
             await sequelize.query(
                 'DELETE FROM client_sessions WHERE client_id = ?',
                 { replacements: [clientId] }
             );
-            console.log(`[AUTH] ✓ HMAC session deleted for client ${clientId}`);
+            logger.info('[AUTH] HMAC session deleted');
+            logger.debug('[AUTH] HMAC session deleted', { clientId: sanitizeForLog(clientId) });
             return res.json({ success: true, message: 'Logged out successfully' });
         } catch (error) {
-            console.error('[AUTH] Error deleting HMAC session:', error);
+            logger.error('[AUTH] Error deleting HMAC session', error);
             return res.status(500).json({ success: false, error: 'Failed to delete session' });
         }
     }
@@ -823,7 +1151,7 @@ authRoutes.post("/logout", async (req, res) => {
     // If Session auth (web client), destroy the session
     req.session.destroy((err) => {
         if (err) {
-            console.error('[AUTH] Error destroying session:', err);
+            logger.error('[AUTH] Error destroying session', err);
             return res.status(500).json({ success: false, error: 'Failed to destroy session' });
         }
         
@@ -835,7 +1163,8 @@ authRoutes.post("/logout", async (req, res) => {
             sameSite: 'strict'
         });
         
-        console.log(`[AUTH] ✓ Session destroyed for user ${userId}, device ${deviceId}`);
+        logger.info('[AUTH] Session destroyed');
+        logger.debug('[AUTH] Session destroyed', { userId: sanitizeForLog(userId), deviceId: sanitizeForLog(deviceId) });
         res.json({ success: true, message: 'Logged out successfully' });
     });
 });
@@ -862,9 +1191,20 @@ authRoutes.post("/delete-account", (req, res) => {
 
 
 // Generate registration challenge
-authRoutes.post('/webauthn/register-challenge', async (req, res) => {
-    const email = req.session.email; // Retrieve email from session
-    const user = await User.findOne({ where: { email: email } });
+authRoutes.post('/webauthn/register-challenge', sessionLimiter, async (req, res) => {
+    // Support both authenticated users adding credentials (req.userId from middleware)
+    // and users in registration flow (req.session.email)
+    let user;
+    if (req.userId) {
+        // HMAC or session authenticated user adding additional credential
+        user = await User.findOne({ where: { uuid: req.userId } });
+    } else if (req.session.email && typeof req.session.email === 'string') {
+        // User in registration flow (OTP verified or during WebAuthn registration step)
+        user = await User.findOne({ where: { email: req.session.email } });
+    } else {
+        return res.status(401).json({ error: "User not authenticated" });
+    }
+    
     if (!user || !user.uuid) {
         return res.status(400).json({ error: "User not found or missing UUID for WebAuthn registration." });
     }
@@ -877,16 +1217,21 @@ authRoutes.post('/webauthn/register-challenge', async (req, res) => {
 
     const challenge = await fido2.attestationOptions();
 
-    const host = req.hostname; // "localhost" oder deine ngrok-domain
+    // Use environment variable for production, fallback to req.hostname for local dev
+    const host = process.env.DOMAIN || req.hostname || 'localhost';
+    logger.debug('[WEBAUTHN REG] RP ID', { host });
+    
     // Allow ngrok and localhost for WebAuthn
     const allowedOrigins = [
         "http://localhost:3000",
         "http://localhost:55831",
         `https://${host}`
     ];
+    
+    // rpId must be the domain without protocol for WebAuthn validation
     challenge.rp = {
         name: "PeerWave",
-        id: host   // muss exakt zum Browser-Origin passen!
+        id: host   // Domain only: "app.peerwave.org" or "localhost"
     };
 
     challenge.user = {
@@ -895,11 +1240,12 @@ authRoutes.post('/webauthn/register-challenge', async (req, res) => {
         displayName: user.email,
     };
 
-    // Challenge auf beides vorbereiten
+    // Allow both platform (phone fingerprint) and cross-platform (Google Password Manager, YubiKey)
     challenge.authenticatorSelection = {
-        authenticatorAttachment: "platform",
-        userVerification: "required"  // damit PIN/Windows Hello angezeigt wird
-        // authenticatorAttachment NICHT setzen → erlaubt Plattform + Roaming
+        // authenticatorAttachment: removed to allow all authenticator types
+        userVerification: "preferred",  // Prefer biometric/PIN but allow fallback
+        residentKey: "required",  // Require discoverable credentials for passwordless login
+        requireResidentKey: false  // Deprecated field, keep false for backwards compatibility
     };
 
     // Optional: andere Policies
@@ -913,16 +1259,26 @@ authRoutes.post('/webauthn/register-challenge', async (req, res) => {
 
 // Verify registration response
 authRoutes.post('/webauthn/register', async (req, res) => {
-    // Check if this is the first credential - if so, advance registration step
-    const isFirstCredential = req.session.authenticated && req.session.registrationStep === 'webauthn';
-    if(!req.session.otp && !req.session.authenticated && !req.session.email) {
+    // Check if this is during registration flow (first credential)
+    const isFirstCredential = req.session.registrationStep === 'webauthn';
+    logger.debug('[WEBAUTHN] Registration request', {
+        isFirstCredential,
+        registrationStep: req.session.registrationStep,
+        authenticated: req.session.authenticated
+    });
+    
+    // Support both authenticated users (adding credentials) and users in registration flow
+    const isAuthenticated = req.session.authenticated || req.userId; // req.userId set by verifyAuthEither middleware
+    const hasSessionEmail = req.session.email;
+    const hasOtpVerification = req.session.otp;
+    
+    if(!hasOtpVerification && !isAuthenticated && !hasSessionEmail) {
         return res.status(400).json({ status: "error", message: "User not authenticated." });
     }
     else {
         try {
             const { attestation } = req.body;
 
-            console.log(attestation);
             //const user = await User.findOne({ where: { email: req.session.email } });
 
             // Convert id and rawId from base64url string to ArrayBuffer
@@ -940,27 +1296,50 @@ authRoutes.post('/webauthn/register', async (req, res) => {
 
             const challenge = base64UrlDecode(req.session.challenge);
 
-            const host = req.hostname;
+            // Use DOMAIN from environment (not req.hostname which can be user-controlled)
+            const host = process.env.DOMAIN || req.hostname || 'localhost';
+            
+            // Decode clientDataJSON to check the actual origin
+            const clientData = JSON.parse(Buffer.from(attestation.response.clientDataJSON, 'base64').toString('utf8'));
+            const actualOrigin = clientData.origin;
+            
+            // Allow web origins and Android APK origins
             const allowedOrigins = [
                 "http://localhost:3000",
                 "http://localhost:55831",
                 `https://${host}`
             ];
-            let origin = req.headers.origin || `https://${host}`;
-            if (!allowedOrigins.includes(origin)) {
-                console.warn("Unexpected origin for WebAuthn:", origin);
-                origin = `https://${host}`;
+            
+            // Determine origin based on client type
+            let origin;
+            if (actualOrigin.startsWith('android:apk-key-hash:')) {
+                // Native Android app - use the APK key hash from clientDataJSON
+                origin = actualOrigin;
+            } else {
+                // Web or Chrome Custom Tab - use standard origin
+                origin = req.headers.origin || `https://${host}`;
+                if (!allowedOrigins.includes(origin)) {
+                    logger.warn('[WEBAUTHN] Unexpected origin', { origin });
+                }
             }
 
+            // Standard WebAuthn validation for all clients
+            // rpId is required for validating the RP ID hash in authenticator data
             const attestationExpectations = {
                 challenge: challenge,
                 origin: origin,
                 factor: "either",
+                rpId: host,
             };
-
             const regResult = await fido2.attestationResult(attestation, attestationExpectations);
 
-            const user = await User.findOne({ where: { email: req.session.email } });
+            // Get user from either userId (HMAC auth) or session email (registration flow)
+            let user;
+            if (req.userId) {
+                user = await User.findOne({ where: { uuid: req.userId } });
+            } else {
+                user = await User.findOne({ where: { email: req.session.email } });
+            }
 
             if (typeof user.credentials === 'string') {
                 user.credentials = JSON.parse(user.credentials);
@@ -970,8 +1349,6 @@ authRoutes.post('/webauthn/register', async (req, res) => {
                 user.credentials = [];
             }
 
-            console.log("regResult", regResult, regResult.authnrData);
-
             // Add browser info, registration time, and empty lastLogin
             const userAgent = req.headers['user-agent'] || '';
             const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -979,11 +1356,21 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             const pad = n => n.toString().padStart(2, '0');
             const timestamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
             const location = await getLocationFromIp(ip);
+            // Get transports from attestation, ensuring hybrid is always included for cross-device support
+            const transports = attestation.response.transports || ["internal", "hybrid"];
+            // Ensure hybrid is always present to enable Google Password Manager and other cross-device options
+            if (!transports.includes("hybrid")) {
+                transports.push("hybrid");
+            }
+            
+            // Use the credential ID as sent by the client (already base64url encoded)
+            // This ensures the ID matches what the authenticator expects in allowCredentials
             user.credentials.push({
-                id: base64UrlEncode(regResult.authnrData.get("credId")),
+                id: attestation.id,
                 publicKey: regResult.authnrData.get("credentialPublicKeyPem"),
+                transports: transports,
                 browser: userAgent,
-                created: timestamp,
+                createdAt: timestamp,
                 location: (location ? `${location.city}, ${location.region}, ${location.country} (${location.org})` : "Location not found"),
                 ip: ip,
                 lastLogin: ""
@@ -1001,11 +1388,76 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             // Advance registration step to profile if this is during registration
             if (isFirstCredential) {
                 req.session.registrationStep = 'profile';
+                // Mark session as authenticated so profile setup page is accessible
+                req.session.authenticated = true;
+                req.session.uuid = user.uuid;
+                logger.info('[WEBAUTHN] First credential registered');
+                logger.debug('[WEBAUTHN] First credential registered', {
+                    uuid: user.uuid,
+                    email: user.email,
+                    registrationStep: req.session.registrationStep,
+                    authenticated: req.session.authenticated
+                });
+            } else {
+                logger.info('[WEBAUTHN] Additional credential registered');
+            }
+            
+            // Handle client info and create HMAC session for mobile (same as authentication)
+            const clientId = req.body && req.body.clientId;
+            let sessionSecret = null;
+            
+            if (clientId) {
+                // Use shared function to find or create client
+                const result = await findOrCreateClient(clientId, user.uuid, req);
+                
+                // Generate session secret for native clients (HMAC authentication)
+                sessionSecret = crypto.randomBytes(32).toString('base64url');
+                const userAgent = req.headers['user-agent'] || '';
+                const registrationIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+                const registrationLocation = await getLocationFromIp(registrationIp);
+                const locationString = registrationLocation 
+                    ? `${registrationLocation.city}, ${registrationLocation.region}, ${registrationLocation.country} (${registrationLocation.org})`
+                    : "Location not found";
+                
+                // Store session in database with configurable expiration
+                try {
+                    const sessionDays = config.session.hmacSessionDays || 90;
+                    await writeQueue.enqueue(
+                        () => sequelize.query(
+                            `INSERT OR REPLACE INTO client_sessions 
+                             (client_id, session_secret, user_id, device_id, device_info, expires_at, last_used, created_at)
+                             VALUES (?, ?, ?, ?, ?, datetime('now', '+' || ? || ' days'), datetime('now'), datetime('now'))`,
+                            { 
+                                replacements: [
+                                    clientId, 
+                                    sessionSecret, 
+                                    user.uuid,
+                                    result.device_id, 
+                                    JSON.stringify({ userAgent, ip: registrationIp, location: locationString }),
+                                    sessionDays
+                                ] 
+                            }
+                        ),
+                        'createClientSessionOnRegistration'
+                    );
+                    logger.info('[WEBAUTHN] HMAC session created on registration', { sessionDays });
+                    logger.debug('[WEBAUTHN] HMAC session created', { clientId: sanitizeForLog(clientId), sessionDays });
+                } catch (sessionErr) {
+                    logger.error('[WEBAUTHN] Error creating HMAC session on registration', sessionErr);
+                }
+            }
+            
+            // Return session secret for mobile clients
+            const response = { status: "ok" };
+            if (sessionSecret) {
+                response.sessionSecret = sessionSecret;
+                response.userId = user.uuid;
+                response.email = user.email;
             }
 
-            res.json({ status: "ok" });
+            res.json(response);
         } catch (error) {
-            console.error('Error during registration:', error);
+            logger.error('[WEBAUTHN] Error during registration', error);
             res.json({ status: "error" });
         }
     }
@@ -1016,10 +1468,7 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
     try {
         const { email } = req.body;
         req.session.email = email;
-        console.log(req.body);
         const user = await User.findOne({ where: { email: email } });
-
-        console.log(user);
 
         if(!user) {
             throw new AppError("User not found. Please register first.", 404);
@@ -1030,33 +1479,61 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
         if (!user.credentials && user.backupCodes) {
             throw new AppError("No credentials found. Please start recovery process.", 400);
         }
-        console.log(typeof user.credentials, user.credentials, JSON.parse(user.credentials));
 
         const challenge = await fido2.assertionOptions();
 
-        // Domain/Origin dynamisch bestimmen
-        const host = req.hostname; // z. B. "localhost" oder "abc123.ngrok-free.app"
-        const protocol = req.secure ? "https" : "http";
+        // Use environment variable for production (most reliable)
+        // Fallback to req.hostname for local development
+        const host = process.env.DOMAIN || req.hostname || req.get('host')?.split(':')[0] || 'localhost';
+        // Check X-Forwarded-Proto for reverse proxy (Nginx, Cloudflare, Traefik)
+        // req.secure is often false behind proxies
+        const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
         const origin = `${protocol}://${host}`;
 
-        // RP Infos überschreiben
-        challenge.rp = {
-            name: "PeerWave",
-            id: host,
-        };
+        logger.debug('[WEBAUTHN AUTH] RP configuration', {
+            host,
+            origin,
+            protocolSource: req.headers['x-forwarded-proto'] ? 'x-forwarded-proto' : 'req.secure'
+        });
+
+        // Validate host is never empty (critical for Google Play Services)
+        if (!host || host.trim() === '') {
+            logger.error('[WEBAUTHN AUTH] Host is empty - check DOMAIN env variable');
+            throw new AppError("Invalid hostname for authentication - server misconfiguration", 500);
+        }
+        
+        // IMPORTANT: Do NOT set challenge.rp for authentication (assertionOptions)
+        // rp is ONLY for registration (attestationOptions)
+        // WebAuthn spec strictly enforces this requirement
 
         user.credentials = JSON.parse(user.credentials);
 
-        challenge.allowCredentials = user.credentials.map(cred => ({
-            id: cred.id,
-            type: "public-key",
-        }));
+        logger.debug('[WEBAUTHN AUTH] Found credentials', { count: user.credentials.length });
+
+        // Include credential IDs to help browsers and password managers
+        // filter to the user's passkeys. Chrome Custom Tab and web clients
+        // both benefit from having allowCredentials populated.
+        challenge.allowCredentials = user.credentials.map(cred => {
+            const transports = cred.transports || ["internal", "hybrid"];
+            if (!transports.includes("hybrid")) {
+                transports.push("hybrid");
+            }
+            return {
+                id: cred.id,
+                type: "public-key",
+                transports: transports,
+            };
+        });
+        logger.debug('[WEBAUTHN AUTH] Including credential IDs for authentication');
+        
+        // Add user verification preference for flexibility
+        challenge.userVerification = "preferred";
 
         challenge.challenge = base64UrlEncode(challenge.challenge);
         req.session.challenge = challenge.challenge;
         res.json(challenge);
     } catch (error) {
-        console.error('Error:', error);
+        logger.error('[WEBAUTHN AUTH] Error generating challenge', error);
         if(error.code === 401 && error.email) {
             const otp = Math.floor(100000 + Math.random() * 900000); // Generate a 6-digit OTP
             const email = error.email; // Get the registered email
@@ -1088,12 +1565,12 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
                     `,
                     text: `Your recovery code is ${otp}. This code expires in ${config.otp.expirationMinutes} minutes.`
                 }).then(info => {
-                    console.log("Recovery email sent: %s", info.messageId);
+                    logger.info('[RECOVERY] Email sent', { messageId: info.messageId });
                 }).catch(error => {
-                    console.error('Error sending recovery email:', error);
+                    logger.error('[RECOVERY] Error sending email', error);
                 });
             } else {
-                console.warn('[RECOVERY] SMTP not configured - recovery email not sent');
+                logger.warn('[RECOVERY] SMTP not configured - email not sent');
             }
 
             const expiration = new Date().getTime() + config.otp.expirationMinutes * 60 * 1000;
@@ -1102,10 +1579,11 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
                 'createOTPForLogin'
             )
             .then(otp => {
-                console.log('OTP created successfully:', otp);
+                logger.info('[OTP] Created successfully for login');
+                logger.debug('[OTP] Created', { email: otp.email });
                 req.session.email = otp.email;
             }).catch(error => {
-                console.error('Error creating OTP:', error);
+                logger.error('[OTP] Error creating OTP for login', error);
             });
         }
         res.status(error.code || 500).json({ error: error.message });
@@ -1113,9 +1591,44 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
 });
 
 // Verify authentication response
-authRoutes.post('/webauthn/authenticate', async (req, res) => {
+authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
     try {
-        const { email, assertion } = req.body;
+        const { email, assertion, fromCustomTab, state } = req.body;
+        
+        // Security: Validate fromCustomTab claim - must have valid CSRF state to prove legitimacy
+        // This prevents attackers from bypassing session creation by claiming to be a Custom Tab
+        // Use server-controlled flag to track verified Custom Tab auth (not user input)
+        let isVerifiedCustomTab = false;
+        
+        if (fromCustomTab) {
+            if (!state) {
+                logger.error('[CUSTOM TAB AUTH] Rejected: fromCustomTab claimed but no state provided');
+                return res.status(400).json({ 
+                    status: "error", 
+                    message: "Invalid Custom Tab authentication request - state required" 
+                });
+            }
+            
+            const sessionState = req.session.customTabState;
+            if (!sessionState || sessionState !== state) {
+                logger.error('[CUSTOM TAB AUTH] CSRF validation failed', { 
+                    hasSessionState: !!sessionState, 
+                    stateMatch: sessionState === state 
+                });
+                return res.status(403).json({ 
+                    status: "error", 
+                    message: "CSRF validation failed" 
+                });
+            }
+            
+            // CSRF validation passed - set server-controlled flag
+            isVerifiedCustomTab = true;
+            logger.info('[CUSTOM TAB AUTH] Authentication request received and validated');
+            logger.debug('[CUSTOM TAB AUTH] CSRF state validated');
+            // Clear state after use (one-time use protection)
+            delete req.session.customTabState;
+        }
+        
         req.session.email = email;
         //const user = users[username];
 
@@ -1123,17 +1636,17 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
         assertion.response.authenticatorData = base64UrlDecode(assertion.response.authenticatorData);
         assertion.response.clientDataJSON = base64UrlDecode(assertion.response.clientDataJSON);
         assertion.response.signature = base64UrlDecode(assertion.response.signature);
-        console.log(assertion);
-        console.log(assertion.response);
-        console.log(assertion.response.userHandle);
         if(typeof assertion.response.userHandle == 'string') {
             assertion.response.userHandle = base64UrlDecode(assertion.response.userHandle);
         }
 
         const user = await User.findOne({ where: { email: email } });
-        console.log(user);
         user.credentials = JSON.parse(user.credentials);
         const credential = user.credentials.find(cred => cred.id === assertion.id);
+        
+        if (!credential) {
+            throw new AppError("Credential not found for this user", 404);
+        }
 
         if (credential) {
             // Credential found, proceed with authentication
@@ -1164,18 +1677,39 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
         }
         const challenge = base64UrlDecode(req.session.challenge);
 
-        const host = req.hostname;
+        // Keep RP ID / origin computation consistent with the challenge route.
+        // This is critical behind reverse proxies (Traefik/Nginx/Cloudflare)
+        // where req.hostname may not reflect the public domain.
+        const host = process.env.DOMAIN || req.hostname || req.get('host')?.split(':')[0] || 'localhost';
+        const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+        logger.debug('[WEBAUTHN AUTH VERIFY] RP configuration', { host, protocol });
+        
+        // Decode clientDataJSON to check the actual origin
+        const clientData = JSON.parse(Buffer.from(assertion.response.clientDataJSON, 'base64').toString('utf8'));
+        const actualOrigin = clientData.origin;
+        
+        // Allow web origins and Android APK origins
         const allowedOrigins = [
             "http://localhost:3000",
             "http://localhost:55831",
             `https://${host}`
         ];
-        let origin = req.headers.origin || `https://${host}`;
-        if (!allowedOrigins.includes(origin)) {
-            console.warn("Unexpected origin for WebAuthn:", origin);
-            origin = `https://${host}`;
+        
+        // Determine origin based on client type
+        let origin;
+        if (actualOrigin.startsWith('android:apk-key-hash:')) {
+            // Native Android app - use the APK key hash from clientDataJSON
+            origin = actualOrigin;
+        } else {
+            // Web or Chrome Custom Tab - use standard origin
+            origin = req.headers.origin || `${protocol}://${host}`;
+            if (!allowedOrigins.includes(origin)) {
+                logger.warn('[WEBAUTHN] Unexpected origin', { origin });
+            }
         }
 
+        // Standard WebAuthn validation for all clients
+        // rpId is required for validating the RP ID hash in authenticator data
         const assertionExpectations = {
             challenge: challenge,
             origin: origin,
@@ -1183,15 +1717,12 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             publicKey: credential.publicKey,
             prevCounter: 0,
             userHandle: assertion.response.userHandle,
+            rpId: host,
         };
-
         const authnResult = await fido2.assertionResult(assertion, assertionExpectations);
 
         if (authnResult.audit.complete) {
             // Authentication was successful
-            req.session.authenticated = true;
-            req.session.email = email;
-            req.session.uuid = user.uuid;
             
             // Set user as active on authentication
             await writeQueue.enqueue(
@@ -1207,27 +1738,113 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                 await autoAssignRoles(email, user.uuid);
             }
             
-            // Optional: attach client info immediately if provided
-            const clientId = req.body && req.body.clientId;
-            if (clientId) {
-                const maxDevice = await Client.max('device_id', { where: { owner: user.uuid } });
-                const [client] = await Client.findOrCreate({
-                    where: { owner: user.uuid, clientid: clientId },
-                    defaults: { owner: user.uuid, clientid: clientId, device_id: maxDevice ? maxDevice + 1 : 1 }
+            // For app-based login (Custom Tab), skip session creation and only return JWT
+            // Use server-controlled flag (not user input) to prevent bypass attacks
+            if (isVerifiedCustomTab) {
+                logger.debug('[CUSTOM TAB AUTH] App-based login - skipping session creation');
+                const response = { 
+                    status: "ok", 
+                    message: "Authentication successful"
+                };
+                
+                // Generate secure signed JWT for Custom Tab authentication
+                logger.debug('[CUSTOM TAB AUTH] Generating JWT token for Custom Tab callback');
+                const authToken = generateAuthToken({
+                    userId: user.uuid,
+                    email: email,
+                    credentialId: credential.id, // Include for device identity setup
+                    state: state // Include state for additional verification
                 });
-                req.session.deviceId = client.device_id || (client.get ? client.get('device_id') : undefined);
-                req.session.clientId = client.clientid || (client.get ? client.get('clientid') : undefined);
+                
+                response.authToken = authToken;
+                logger.info('[CUSTOM TAB AUTH] JWT token generated', { expiresIn: config.jwt.expiresIn });
+                logger.debug('[CUSTOM TAB AUTH] JWT token generated', { email: sanitizeForLog(user.email), expiresIn: config.jwt.expiresIn });
+                
+                if(!user.backupCodes) {
+                    return res.status(202).json(response);
+                } else {
+                    return res.status(200).json(response);
+                }
             }
+            
+            // Standard web/mobile login - create session
+            req.session.authenticated = true;
+            req.session.email = email;
+            req.session.uuid = user.uuid;
+            
+            // Handle client info and create HMAC session for mobile
+            const clientId = req.body && req.body.clientId;
+            let sessionSecret = null;
+            
+            if (clientId) {
+                // Use shared function to find or create client
+                const result = await findOrCreateClient(clientId, user.uuid, req);
+                req.session.deviceId = result.device_id;
+                req.session.clientId = result.clientid;
+                
+                // Generate session secret for native clients (HMAC authentication)
+                sessionSecret = crypto.randomBytes(32).toString('base64url');
+                const userAgent = req.headers['user-agent'] || '';
+                const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+                const location = await getLocationFromIp(ip);
+                const locationString = location 
+                    ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
+                    : "Location not found";
+                
+                // Store session in database with configurable expiration
+                try {
+                    const sessionDays = config.session.hmacSessionDays || 90;
+                    await writeQueue.enqueue(
+                        () => sequelize.query(
+                            `INSERT OR REPLACE INTO client_sessions 
+                             (client_id, session_secret, user_id, device_id, device_info, expires_at, last_used, created_at)
+                             VALUES (?, ?, ?, ?, ?, datetime('now', '+' || ? || ' days'), datetime('now'), datetime('now'))`,
+                            { 
+                                replacements: [
+                                    clientId, 
+                                    sessionSecret, 
+                                    user.uuid,
+                                    result.device_id, 
+                                    JSON.stringify({ userAgent, ip, location: locationString }),
+                                    sessionDays
+                                ] 
+                            }
+                        ),
+                        'createClientSession'
+                    );
+                    logger.info('[WEBAUTHN] HMAC session created', { sessionDays });
+                    logger.debug('[WEBAUTHN] HMAC session created', { clientId: sanitizeForLog(clientId), sessionDays });
+                } catch (sessionErr) {
+                    logger.error('[WEBAUTHN] Error creating HMAC session', sessionErr);
+                    // Continue anyway - web clients don't need HMAC sessions
+                }
+            }
+            
             // Persist session now
             return req.session.save(err => {
                 if (err) {
-                    console.error('Session save error (/webauthn/authenticate):', err);
+                    logger.error('[WEBAUTHN] Session save error (/webauthn/authenticate)', err);
                     return res.status(500).json({ status: "error", message: "Session save error" });
                 }
+                
+                const response = { 
+                    status: "ok", 
+                    message: "Authentication successful"
+                };
+                
+                // Include session secret for mobile clients
+                if (sessionSecret) {
+                    response.sessionSecret = sessionSecret;
+                    response.userId = user.uuid;
+                    response.email = email;
+                    logger.info('[WEBAUTHN] HMAC session credentials included in response');
+                    logger.debug('[WEBAUTHN] HMAC credentials', { email: sanitizeForLog(email) });
+                }
+                
                 if(!user.backupCodes) {
-                    res.status(202).json({ status: "ok", message: "Authentication successful" });
+                    res.status(202).json(response);
                 } else {
-                    res.status(200).json({ status: "ok", message: "Authentication successful" });
+                    res.status(200).json(response);
                 }
             });
         } else {
@@ -1235,19 +1852,27 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             res.status(400).json({ status: "failed", message: "Authentication failed" });
         }
     } catch (error) {
-        console.error('Error during authentication:', error);
-        res.status(500).json({ status: "error", message: "Internal server error" });
+        logger.error('[WEBAUTHN] Error during authentication', error);
+        res.status(500).json({
+            status: "error",
+            message: error && error.message ? error.message : "Internal server error"
+        });
     }
 });
 
-authRoutes.get("/webauthn/check", (req, res) => {
+authRoutes.get("/webauthn/check", sessionLimiter, (req, res) => {
     if(req.session.authenticated || req.session.otp) res.status(200).json({authenticated: true});
     else res.status(401).json({authenticated: false});
 });
 
-authRoutes.get("/magic/generate", (req, res) => {
-    
-    if (req.session.authenticated && req.session.email && req.session.uuid) {
+authRoutes.get("/magic/generate", sessionLimiter, verifyAuthEither, async (req, res) => {
+    try {
+        // Get user email for magic link
+        const user = await User.findOne({ where: { uuid: req.userId } });
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+        
         // Generate magic key with new format: {serverUrl}:{randomHash}:{timestamp}:{hmacSignature}
         // Use hostname and explicit port to ensure port is included
         const host = req.get('host') || 'localhost:3000';
@@ -1258,7 +1883,7 @@ authRoutes.get("/magic/generate", (req, res) => {
         const timestamp = Date.now();
         const expiresAt = timestamp + 5 * 60 * 1000; // 5 min expiry
         
-        console.log(`[Magic Key] Generating key with serverUrl: ${serverUrl}`);
+        logger.debug('[Magic Key] Generating key', { serverUrl });
         
         // Create HMAC signature using session secret
         const dataToSign = `${serverUrl}|${randomHash}|${timestamp}`;
@@ -1271,8 +1896,8 @@ authRoutes.get("/magic/generate", (req, res) => {
         
         // Store in temporary store (one-time use)
         magicLinks[randomHash] = { 
-            email: req.session.email, 
-            uuid: req.session.uuid, 
+            email: user.email, 
+            uuid: req.userId, 
             expires: expiresAt,
             used: false  // Flag for one-time use
         };
@@ -1285,14 +1910,15 @@ authRoutes.get("/magic/generate", (req, res) => {
         });
         
         res.json({ magicKey: magicKey, expiresAt: expiresAt });
-    } else {
-        res.status(401).json({authenticated: false});
+    } catch (error) {
+        logger.error('[Magic Key] Error generating magic key', error);
+        res.status(500).json({ error: "Internal server error" });
     }
 });
 
-authRoutes.get("/webauthn/list", async (req, res) => {
-    if(req.session.authenticated && req.session.email && req.session.uuid) {
-        const user = await User.findOne({ where: { email: req.session.email } });
+authRoutes.get("/webauthn/list", sessionLimiter, verifyAuthEither, async (req, res) => {
+    try {
+        const user = await User.findOne({ where: { uuid: req.userId } });
         if (user) {
             // Handle null or empty credentials
             const credentialsData = user.credentials ? JSON.parse(user.credentials) : [];
@@ -1301,68 +1927,44 @@ authRoutes.get("/webauthn/list", async (req, res) => {
                 browser: cred.browser || null,
                 ip: cred.ip || null,
                 location: cred.location || null,
-                created: cred.created || null,
+                createdAt: cred.createdAt || cred.created || null,  // Support both old and new field names
                 lastLogin: cred.lastLogin || null
             }));
             res.status(200).json({ status: "ok", credentials: credentials });
         } else {
             res.status(404).json({ status: "failed", message: "User not found" });
         }
-    } else {
-        res.status(401).json({ status: "failed", message: "Unauthorized" });
+    } catch (error) {
+        logger.error('[WEBAUTHN] Error fetching credentials', error);
+        res.status(500).json({ error: "Internal server error" });
     }
 });
 
 authRoutes.post("/client/addweb", async (req, res) => {
     if(req.session.authenticated && req.session.email && req.session.uuid) {
         try {
-            const { clientId } = req.body
-            const userAgent = req.headers['user-agent'] || '';
-            const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-            const location = await getLocationFromIp(ip);
-            const locationString = location
-                    ? `${location.city}, ${location.region}, ${location.country} (${location.org})`
-                    : "Location not found";
-            const maxDevice = await Client.max('device_id', { where: { owner: req.session.uuid } });
-            const [client, created] = await Client.findOrCreate({
-                where: { clientid: clientId, owner: req.session.uuid },
-                defaults: {
-                    owner: req.session.uuid,
-                    clientid: clientId,
-                    ip: ip,
-                    browser: userAgent,
-                    location: locationString,
-                    device_id: maxDevice ? maxDevice + 1 : 1
-                }
-            });
-            console.log(client, created);
-            // device_id kann je nach Sequelize-Return als getter oder plain property vorliegen
-            req.session.deviceId = client.device_id || (client.get ? client.get('device_id') : undefined);
-            req.session.clientId = client.clientid || (client.get ? client.get('clientid') : undefined);
+            const { clientId } = req.body;
+            
+            // Use shared function to find or create client
+            const result = await findOrCreateClient(clientId, req.session.uuid, req);
+            
+            // Store in session for web clients
+            req.session.deviceId = result.device_id;
+            req.session.clientId = result.clientid;
+            
             req.session.save(err => {
                 if (err) {
-                    console.error('Session save error:', err);
+                    logger.error('[CLIENT] Session save error', err);
                     return res.status(500).json({ status: "error", message: "Session save error" });
                 }
-                if (!created) {
-                    writeQueue.enqueue(
-                        () => Client.update({ ip: ip, browser: userAgent, location: locationString }, { where: { clientid: client.clientid } }),
-                        'updateClientInfo'
-                    )
-                        .then(() => {
-                            res.status(200).json({ status: "ok", message: "Client updated successfully" });
-                        })
-                        .catch(error => {
-                            console.error('Error updating client:', error);
-                            res.status(500).json({ status: "error", message: "Internal server error" });
-                        });
-                } else {
-                    res.status(200).json({ status: "ok", message: "Client added successfully" });
-                }
+                res.status(200).json({ 
+                    status: "ok", 
+                    message: result.created ? "Client added successfully" : "Client updated successfully" 
+                });
             });
 
         } catch (error) {
-            console.error('Error adding client:', error);
+            logger.error('[CLIENT] Error adding client', error);
             res.status(500).json({ status: "error", message: "Internal server error" });
         }
     } else {
@@ -1370,353 +1972,72 @@ authRoutes.post("/client/addweb", async (req, res) => {
     }
 });
 
-authRoutes.get("/client/list", async (req, res) => {
-    if(req.session.authenticated && req.session.email && req.session.uuid) {
-        try {
-            const clients = await Client.findAll({ where: { owner: req.session.uuid }, attributes: { exclude: ['public_key', 'registration_id'] } });
-            res.status(200).json({ status: "ok", clients: clients });
-        } catch (error) {
-            console.error('Error fetching client list:', error);
-            res.status(500).json({ status: "error", message: "Internal server error" });
-        }
-    } else {
-        res.status(401).json({ status: "failed", message: "Unauthorized" });
-    }
-});
-
-authRoutes.post("/client/delete", async (req, res) => {
-    if(req.session.authenticated && req.session.email && req.session.uuid) {
-        try {
-            const { clientId } = req.body
-            await writeQueue.enqueue(
-                () => Client.destroy({ where: { id: clientId, owner: req.session.uuid } }),
-                'deleteClient'
-            );
-            res.status(200).json({ status: "ok", message: "Client deleted successfully" });
-        } catch (error) {
-            console.error('Error deleting client:', error);
-            res.status(500).json({ status: "error", message: "Internal server error" });
-        }
-    } else {
-        res.status(401).json({ status: "failed", message: "Unauthorized" });
-    }
-});
-/*
-authRoutes.post("/client/login", async (req, res) => {
-    const { clientid, email } = req.body;
+authRoutes.get("/client/list", sessionLimiter, verifyAuthEither, async (req, res) => {
     try {
-        const owner = await User.findOne({ where: { email: email } });
-        if (!owner) {
-            return res.status(401).json({ status: "failed", message: "Invalid email" });
-        }
-        const client = await Client.findOne({ where: { clientid: clientid, owner: owner.uuid } });
-        if (client) {
-            req.session.authenticated = true;
-            req.session.email = owner.email;
-            req.session.uuid = client.owner;
-            
-            // Set user as active on login
-            await writeQueue.enqueue(
-                () => User.update(
-                    { active: true },
-                    { where: { uuid: owner.uuid } }
-                ),
-                'setUserActiveOnLogin'
-            );
-            
-            res.status(200).json({ status: "ok", message: "Client login successful" });
-        } else {
-            res.status(401).json({ status: "failed", message: "Invalid client ID or not authorized" });
-        }
+        const clients = await Client.findAll({ where: { owner: req.userId }, attributes: { exclude: ['public_key', 'registration_id'] } });
+        res.status(200).json({ status: "ok", clients: clients });
     } catch (error) {
-        console.error('Error during client login:', error);
+        logger.error('[CLIENT] Error fetching client list', error);
         res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
 
-authRoutes.get("/channels", async (req, res) => {
+authRoutes.post("/client/delete", sessionLimiter, verifyAuthEither, async (req, res) => {
     try {
-        let threads = [];
-        if (req.session.authenticated && req.session.email && req.session.uuid) {
-            const channels = await Channel.findAll({
-                attributes: ['name', 'type'],
-                where: {
-                    [Op.or]: [
-                        { owner: req.session.uuid },
-                        { members: { [Op.like]: `%${req.session.uuid}%` } }
-                    ]
-                }
+        const { clientId } = req.body;
+        const currentClientId = req.clientId || req.session.clientId; // HMAC or session
+        
+        // Prevent deletion of current session's client
+        if (clientId === currentClientId) {
+            return res.status(400).json({ 
+                status: "error", 
+                message: "Cannot delete the current session's client. Please logout first or use another device." 
             });
-
-            for (const channel of channels) {
-                const channelThreads = await Thread.findAll({
-                    attributes: ['id', 'parent', 'message', 'sender', 'channel', 'createdAt'],
-                    where: { channel: channel.name },
-                    order: [['createdAt', 'DESC']],
-                    limit: 5,
-                    include: [
-                        {
-                            model: User,
-                            as: 'user',
-                            attributes: ['uuid', 'displayName', 'picture'],
-                            where: { uuid: Sequelize.col('Thread.sender') }
-                        }
-                    ]
-                });
-
-                channelThreads.sort((a, b) => a.createdAt - b.createdAt);
-
-                threads = threads.concat(channelThreads);
-
-            }
-            for (let thread of threads) {
-                if (thread.dataValues.user.picture) {
-                    const bufferData = JSON.parse(thread.dataValues.user.picture);
-                    thread.dataValues.user.pictureBase64 = Buffer.from(bufferData.data).toString('base64');
-                }
-            }
-
-            const user = await User.findOne({ where: { email: req.session.email } });
-            if (user.dataValues.picture) {
-                const bufferData = JSON.parse(user.dataValues.picture);
-                user.dataValues.pictureBase64 = Buffer.from(bufferData.data).toString('base64');
-            }
-            console.log('Channels:', channels);
-            console.log(`Threads:`, threads.user);
-            console.log('User Data:', user.dataValues);
-            // REMOVED: Pug render (Pug disabled, Flutter web client used)
-            res.status(410).json({ error: "Pug routes deprecated - use Flutter web client" });
-        } else {
-            res.redirect("/login");
         }
+        
+        await writeQueue.enqueue(
+            () => Client.destroy({ where: { id: clientId, owner: req.userId } }),
+            'deleteClient'
+        );
+        res.status(200).json({ status: "ok", message: "Client deleted successfully" });
     } catch (error) {
-        console.error('Error retrieving channels:', error);
-        res.redirect("/error");
+        logger.error('[CLIENT] Error deleting client', error);
+        res.status(500).json({ status: "error", message: "Internal server error" });
     }
 });
-
-authRoutes.post("/channels/create", async (req, res) => {
-    try {
-        if (req.session.authenticated && req.session.email && req.session.uuid) {
-            let booleanIsPrivate = false;
-            const { name, description, isPrivate, type } = req.body;
-            if (isPrivate === "on") booleanIsPrivate = true;
-            const owner = req.session.uuid;
-            const channel = await writeQueue.enqueue(
-                () => Channel.create({ name, description, private: booleanIsPrivate, owner, type }),
-                'createChannel'
-            );
-            res.json(channel);
-        } else {
-            res.status(401).json({ message: "Unauthorized" });
-        }
-    } catch (error) {
-        console.error('Error creating channel:', error);
-        res.status(400).json({ message: "Error creating channel" });
-    }
-});
-
-authRoutes.get("/thread/:id", async (req, res) => {
-    try {
-        if (req.session.authenticated && req.session.email && req.session.uuid) {
-
-
-            const thread = await Thread.findOne({
-                attributes: ['id', 'parent', 'message', 'sender', 'channel', 'createdAt'],
-                where: { id: req.params.id },
-                include: [
-                    {
-                        model: User,
-                        as: 'user',
-                        attributes: ['uuid', 'displayName', 'picture'],
-                        where: { uuid: Sequelize.col('Thread.sender') }
-                    }
-                ]
-            });
-
-            if (!thread) {
-                res.status(404).json({ message: "Thread not found" });
-            } else {
-                const channel = await Channel.findOne({
-                    attributes: ['name', 'type'],
-                    where: { name: thread.channel, [Op.or]: [{ owner: req.session.uuid }, { members: { [Op.like]: `%${req.session.uuid}%` } }] }
-                });
-                if (!channel) {
-                    res.status(401).json({ message: "Unauthorized" });
-                    return;
-                }
-                if (thread.dataValues.user.picture) {
-                    const bufferData = JSON.parse(thread.dataValues.user.picture);
-                    thread.dataValues.user.pictureBase64 = Buffer.from(bufferData.data).toString('base64');
-                }
-
-
-                console.log(`Thread ${thread.id}:`, thread);
-                res.json(thread);
-            }
-        } else {
-            res.redirect("/login");
-        }
-    } catch (error) {
-        console.error('Error retrieving thread:', error);
-        res.redirect("/error");
-    }
-});
-
-authRoutes.get("/channel/:name", async (req, res) => {
-    try {
-        if (req.session.authenticated && req.session.email && req.session.uuid) {
-            const channels = await Channel.findAll({
-                attributes: ['name', 'type'],
-                where: {
-                    [Op.or]: [
-                        { owner: req.session.uuid },
-                        { members: { [Op.like]: `%${req.session.uuid}%` } }
-                    ]
-                }
-            });
-
-            const channel = await Channel.findOne({
-                attributes: ['name', 'description', 'private', 'owner', 'members', 'type'],
-                where: { name: req.params.name }
-            });
-
-            if (!channel) {
-                res.status(404).json({ message: "Channel not found" });
-            } else {
-                const threads = await Thread.findAll({
-                    attributes: ['id', 'parent', 'message', 'sender', 'channel', 'createdAt', [sequelize.literal('(SELECT COUNT(*) FROM Threads AS ChildThreads WHERE ChildThreads.parent = Thread.id)'), 'childCount']],
-                    where: { channel: channel.name },
-                    order: [['createdAt', 'ASC']],
-                    include: [
-                        {
-                            model: User,
-                            as: 'user',
-                            attributes: ['uuid', 'displayName', 'picture'],
-                            where: { uuid: Sequelize.col('Thread.sender') }
-                        }
-                    ]
-                });
-
-                for (let thread of threads) {
-                    if (thread.dataValues.user.picture) {
-                        const bufferData = JSON.parse(thread.dataValues.user.picture);
-                        thread.dataValues.user.pictureBase64 = Buffer.from(bufferData.data).toString('base64');
-                    }
-                }
-
-            const user = await User.findOne({ where: { email: req.session.email } });
-            if (user.dataValues.picture) {
-                const bufferData = JSON.parse(user.dataValues.picture);
-                user.dataValues.pictureBase64 = Buffer.from(bufferData.data).toString('base64');
-            }
-
-                console.log(`Threads for channel ${channel.name}:`, threads);
-                // REMOVED: Pug render (Pug disabled, Flutter web client used)
-                res.status(410).json({ error: "Pug routes deprecated - use Flutter web client" });
-            }
-        } else {
-            res.redirect("/login");
-        }
-    } catch (error) {
-        console.error('Error retrieving channel:', error);
-        res.redirect("/error");
-    }
-});
-
-authRoutes.post("/channel/:name/post", async (req, res) => {
-    try {
-        if (req.session.authenticated && req.session.email && req.session.uuid) {
-            const { message } = req.body;
-            const sender = req.session.uuid;
-            const channel = req.params.name;
-            const thread = await writeQueue.enqueue(
-                () => Thread.create({ message, sender, channel }),
-                'createThread'
-            );
-            res.json(thread);
-        } else {
-            res.status(401).json({ message: "Unauthorized" });
-        }
-    } catch (error) {
-        console.error('Error creating thread:', error);
-        res.status(400).json({ message: "Error creating thread" });
-    }
-});
-
-authRoutes.post("/usersettings", async (req, res) => {
-    try {
-        if (req.session.authenticated && req.session.email && req.session.uuid) {
-            const { displayname, picture } = req.body;
-            const user = await User.findOne({ where: { email: req.session.email } });
-            user.displayName = displayname;
-            if (picture) {
-                const buffer = Buffer.from(picture.split(',')[1], 'base64');
-                user.picture = JSON.stringify({ type: "Buffer", data: Array.from(buffer) });
-            }
-            await writeQueue.enqueue(
-                () => user.save(),
-                'updateUserSettings'
-            );
-            res.json({message: "User settings updated"});
-        }
-    } catch (error) {
-        console.error('Error updating user settings:', error);
-        res.json({ message: "Error updating user settings" });
-    }
-});
-*/
-
-/*authRoutes.post("/webauthn/sign-challenge", (req, res) => {
-    let user = {
-      id: base64url(crypto.randomBytes(16)),
-      name: req.session.email,
-    };
-    console.log(user);
-    store.challenge(req, { user: user }, function(err, challenge) {
-        console.log(challenge);
-      res.json({ user: user, challenge: base64url.encode(challenge) });
-    });
-});*/
-
-
-
-
-// Implement webauthn login route
-/*authRoutes.post("/webauthn/login", passport.authenticate('webauthn', {
-    // Specify the authentication options if needed
-    // For example, you can redirect to a different route on success or failure
-    // See the documentation for more options: http://www.passportjs.org/docs/authenticate/
-}), (req, res) => {
-    // Handle the successful authentication
-    res.send("WebAuthn login successful");
-});*/
 
 // Implement webauthn delete route
-authRoutes.post("/webauthn/delete", (req, res) => {
+authRoutes.post("/webauthn/delete", sessionLimiter, verifyAuthEither, async (req, res) => {
     // Perform webauthn delete logic
-    if(req.session.authenticated ) {
+    try {
         const { credentialId } = req.body;
-        User.findOne({ where: { email: req.session.email } }).then(async user => {
-            if (user) {
-                user.credentials = JSON.parse(user.credentials);
-                user.credentials = user.credentials.filter(cred => cred.id !== credentialId);
-                user.credentials = JSON.stringify(user.credentials);
-                user.changed('credentials', true);
-                await writeQueue.enqueue(
-                    () => user.save(),
-                    'deleteWebAuthnCredential'
-                );
-                res.status(200).send("WebAuthn credential deleted");
-            } else {
-                res.status(404).send("User not found");
+        const user = await User.findOne({ where: { uuid: req.userId } });
+        
+        if (user) {
+            user.credentials = JSON.parse(user.credentials);
+            
+            // Prevent deletion if only one credential remains
+            if (user.credentials.length <= 1) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Cannot delete the last WebAuthn credential. You must have at least one security key."
+                });
             }
-        }).catch(error => {
-            console.error('Error deleting WebAuthn credential:', error);
-            res.status(500).send("Internal Server Error");
-        });
-    } else {
-        res.status(401).send("Unauthorized");
+            
+            user.credentials = user.credentials.filter(cred => cred.id !== credentialId);
+            user.credentials = JSON.stringify(user.credentials);
+            user.changed('credentials', true);
+            await writeQueue.enqueue(
+                () => user.save(),
+                'deleteWebAuthnCredential'
+            );
+            res.status(200).send("WebAuthn credential deleted");
+        } else {
+            res.status(404).send("User not found");
+        }
+    } catch (error) {
+        logger.error('[WEBAUTHN] Error deleting credential', error);
+        res.status(500).send("Internal Server Error");
     }
 });
 
@@ -1759,11 +2080,351 @@ authRoutes.post("/api/invitations/verify", async (req, res) => {
             message: "Invitation is valid" 
         });
     } catch (error) {
-        console.error('Error verifying invitation:', error);
+        logger.error('[INVITATION] Error verifying invitation', error);
         res.status(500).json({ 
             valid: false, 
             message: "Internal server error" 
         });
+    }
+});
+
+// REMOVED: /auth/passkey endpoint - Using Flutter web login page (/#/login?from=app) instead
+
+// REMOVED: /auth/token/generate endpoint - Token is now generated directly in /webauthn/authenticate
+// when fromCustomTab=true, eliminating the need for a separate API call
+
+// Token Exchange Endpoint
+// POST /auth/token/exchange
+// Exchanges short-lived auth token for session
+// Rate limited to prevent brute force attacks
+authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
+    try {
+        const { token: rawToken, clientId: rawClientId } = req.body;
+        
+        // Validate types and normalize - fail fast on invalid types
+        if (typeof rawToken !== 'string' || typeof rawClientId !== 'string') {
+            return res.status(400).json({ error: 'Invalid request parameters' });
+        }
+        
+        // Normalize by trimming whitespace
+        const token = rawToken.trim();
+        const clientId = rawClientId.trim();
+        
+        // Validate clientId format (UUID) - server-side validation rule, not user-controlled
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(clientId)) {
+            logger.warn('[TOKEN EXCHANGE] Invalid clientId format');
+            return res.status(400).json({ error: 'Invalid clientId format' });
+        }
+        
+        logger.info('[TOKEN EXCHANGE] Request received');
+        logger.debug('[TOKEN EXCHANGE] Request', { 
+            hasToken: !!token, 
+            clientId: clientId.substring(0, 8) + '...'
+        });
+        
+        // Verify JWT signature, expiration, and one-time use
+        const decoded = verifyAuthToken(token);
+        
+        if (!decoded) {
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+        
+        const { userId, email, credentialId } = decoded;
+        logger.info('[TOKEN EXCHANGE] Token verified');
+        logger.debug('[TOKEN EXCHANGE] Token details', { 
+            userId: userId.substring(0, 8) + '...',
+            email: email,
+            hasCredentialId: !!credentialId
+        });
+        
+        // Get user from database (use uuid, not id)
+        const user = await User.findOne({ where: { uuid: userId } });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        // Use shared function to find or create Signal Client record (required for Signal protocol)
+        const result = await findOrCreateClient(clientId, user.uuid, req);
+        logger.info('[TOKEN EXCHANGE] Client record ensured');
+        logger.debug('[TOKEN EXCHANGE] Client details', { 
+            clientId: result.clientid, 
+            deviceId: result.device_id,
+            created: result.created
+        });
+        
+        // Generate session secret
+        const sessionSecret = crypto.randomBytes(32).toString('hex');
+        
+        // Calculate expiration (90 days from now)
+        const sessionDays = config.session?.hmacSessionDays || 90;
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + sessionDays);
+        
+        // Store session in database
+        await writeQueue.enqueue(
+            () => ClientSession.upsert({
+                client_id: clientId,
+                user_id: user.uuid,
+                session_secret: sessionSecret,
+                expires_at: expiresAt,
+                last_used: new Date()
+            })
+        );
+        
+        logger.info('[TOKEN EXCHANGE] Session created', { email: user.email, sessionDays });
+        
+        res.json({
+            sessionSecret,
+            userId: user.uuid,
+            email: user.email,
+            credentialId: credentialId // Include for device identity setup
+        });
+        
+    } catch (error) {
+        logger.error('[TOKEN EXCHANGE] Error', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Token Revocation Endpoint
+// POST /auth/token/revoke
+// Revokes a JWT token (invalidates it before expiration)
+// Rate limited to prevent abuse
+authRoutes.post('/token/revoke', tokenRevocationLimiter, async (req, res) => {
+    try {
+        const { token } = req.body;
+        
+        // Validate token with proper type and format checks
+        if (!token || typeof token !== 'string' || token.trim().length === 0) {
+            return res.status(400).json({ error: 'Valid token required' });
+        }
+        
+        logger.info('[TOKEN REVOKE] Revocation requested');
+        
+        const success = revokeToken(token);
+        
+        if (success) {
+            res.json({ 
+                status: 'ok',
+                message: 'Token revoked successfully' 
+            });
+        } else {
+            res.status(400).json({ 
+                error: 'Failed to revoke token - token may be invalid or already expired' 
+            });
+        }
+        
+    } catch (error) {
+        logger.error('[TOKEN REVOKE] Error', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// POST /auth/session/refresh
+// Manually refresh HMAC session (extends expiration)
+// Requires valid HMAC authentication via sessionAuth middleware
+authRoutes.post('/session/refresh', sessionLimiter, verifySessionAuth, async (req, res) => {
+    try {
+        const { clientId } = req;
+        const sessionDays = config.session.hmacSessionDays || 90;
+        
+        // Extend session expiration
+        await sequelize.query(
+            `UPDATE client_sessions 
+             SET expires_at = datetime('now', '+' || ? || ' days'),
+                 last_used = datetime('now')
+             WHERE client_id = ?`,
+            { replacements: [sessionDays, clientId] }
+        );
+        
+        logger.info('[SESSION REFRESH] Session manually refreshed', { sessionDays });
+        logger.debug('[SESSION REFRESH] Refreshed for client', { clientId: sanitizeForLog(clientId), sessionDays });
+        
+        res.json({
+            status: 'ok',
+            message: 'Session refreshed successfully',
+            expiresIn: sessionDays + ' days'
+        });
+        
+    } catch (error) {
+        logger.error('[SESSION REFRESH] Error', error);
+        res.status(500).json({ error: 'Failed to refresh session' });
+    }
+});
+
+/**
+ * GET /auth/sessions/list
+ * Lists all active sessions for the authenticated user
+ * Combines HMAC sessions and WebAuthn credentials
+ */
+authRoutes.get('/sessions/list', sessionLimiter, verifyAuthEither, async (req, res) => {
+    try {
+        const userId = req.userId; // Set by verifyAuthEither middleware
+        const currentClientId = req.clientId || req.session.clientId; // HMAC or session
+        
+        // Get HMAC sessions from client_sessions table
+        const hmacSessions = await sequelize.query(
+            `SELECT 
+                cs.client_id AS id,
+                cs.device_info,
+                cs.last_used,
+                cs.expires_at,
+                cs.created_at,
+                c.browser,
+                c.ip,
+                c.location
+            FROM client_sessions cs
+            LEFT JOIN clients c ON cs.client_id = c.clientid
+            WHERE cs.user_id = ? 
+            AND (cs.expires_at IS NULL OR cs.expires_at > datetime('now'))
+            ORDER BY cs.last_used DESC`,
+            {
+                replacements: [userId],
+                type: Sequelize.QueryTypes.SELECT
+            }
+        );
+        
+        // Parse device info and browser user agent
+        const sessions = hmacSessions.map(session => {
+            const deviceInfo = session.device_info ? JSON.parse(session.device_info) : {};
+            const userAgent = session.browser || '';
+            
+            // Parse user agent for browser and OS
+            let browser = null;
+            let os = null;
+            
+            if (userAgent) {
+                // Extract browser
+                if (userAgent.includes('Chrome/') && !userAgent.includes('Edg/')) {
+                    browser = 'Chrome';
+                } else if (userAgent.includes('Edg/')) {
+                    browser = 'Edge';
+                } else if (userAgent.includes('Firefox/')) {
+                    browser = 'Firefox';
+                } else if (userAgent.includes('Safari/') && !userAgent.includes('Chrome/')) {
+                    browser = 'Safari';
+                }
+                
+                // Extract OS
+                if (userAgent.includes('Windows NT')) {
+                    os = 'Windows';
+                } else if (userAgent.includes('Mac OS X')) {
+                    os = 'macOS';
+                } else if (userAgent.includes('Linux')) {
+                    os = 'Linux';
+                } else if (userAgent.includes('Android')) {
+                    os = 'Android';
+                } else if (userAgent.includes('iOS') || userAgent.includes('iPhone') || userAgent.includes('iPad')) {
+                    os = 'iOS';
+                }
+            }
+            
+            // Extract location (city, country)
+            let location = null;
+            if (session.location) {
+                const locationMatch = session.location.match(/^([^,]+),\s*([^,]+),\s*([^(]+)/);
+                if (locationMatch) {
+                    location = `${locationMatch[1]}, ${locationMatch[3].trim()}`;
+                }
+            }
+            
+            return {
+                id: session.id,
+                device_name: deviceInfo.deviceName || browser || 'Unknown Device',
+                browser: browser,
+                os: os,
+                location: location,
+                ip_address: session.ip,
+                last_active: session.last_used,
+                expires_at: session.expires_at,
+                is_current: session.id === currentClientId
+            };
+        });
+        
+        res.json({ sessions });
+        
+    } catch (error) {
+        logger.error('[SESSIONS LIST] Error', error);
+        res.status(500).json({ error: 'Failed to load sessions' });
+    }
+});
+
+/**
+ * POST /auth/sessions/revoke
+ * Revokes a specific session
+ */
+authRoutes.post('/sessions/revoke', sessionLimiter, verifyAuthEither, async (req, res) => {
+    try {
+        const userId = req.userId; // Set by verifyAuthEither middleware
+        const currentClientId = req.clientId || req.session.clientId; // HMAC or session
+        const { sessionId } = req.body;
+        
+        if (!sessionId) {
+            return res.status(400).json({ error: 'Session ID required' });
+        }
+        
+        // Check if revoking current session
+        if (sessionId === currentClientId) {
+            // Revoke current session - will trigger logout
+            await sequelize.query(
+                `DELETE FROM client_sessions WHERE client_id = ? AND user_id = ?`,
+                { replacements: [sessionId, userId] }
+            );
+            
+            // Clear session if using cookie auth
+            if (req.session && req.session.destroy) {
+                req.session.destroy();
+            }
+            
+            logger.info('[SESSION REVOKE] Current session revoked');
+            logger.debug('[SESSION REVOKE] Current session revoked', { userId: sanitizeForLog(userId) });
+            return res.json({ status: 'ok', message: 'Current session revoked' });
+        }
+        
+        // Revoke other session
+        await sequelize.query(
+            `DELETE FROM client_sessions WHERE client_id = ? AND user_id = ?`,
+            { replacements: [sessionId, userId] }
+        );
+        
+        logger.info('[SESSION REVOKE] Session revoked');
+        logger.debug('[SESSION REVOKE] Session revoked', { sessionId: sanitizeForLog(sessionId), userId: sanitizeForLog(userId) });
+        res.json({ status: 'ok', message: 'Session revoked' });
+        
+    } catch (error) {
+        logger.error('[SESSION REVOKE] Error', error);
+        res.status(500).json({ error: 'Failed to revoke session' });
+    }
+});
+
+/**
+ * POST /auth/sessions/revoke-all
+ * Revokes all sessions except the current one
+ */
+authRoutes.post('/sessions/revoke-all', sessionLimiter, verifyAuthEither, async (req, res) => {
+    try {
+        const userId = req.userId; // Set by verifyAuthEither middleware
+        const currentClientId = req.clientId || req.session.clientId; // HMAC or session
+        
+        // Delete all sessions except current
+        const result = await sequelize.query(
+            `DELETE FROM client_sessions WHERE user_id = ? AND client_id != ?`,
+            { replacements: [userId, currentClientId] }
+        );
+        
+        const deletedCount = result[1] || 0;
+        
+        logger.info('[SESSION REVOKE ALL] Sessions revoked', { deletedCount, userId: sanitizeForLog(userId) });
+        res.json({ 
+            status: 'ok', 
+            message: 'All other sessions revoked',
+            revoked_count: deletedCount
+        });
+        
+    } catch (error) {
+        logger.error('[SESSION REVOKE ALL] Error', error);
+        res.status(500).json({ error: 'Failed to revoke sessions' });
     }
 });
 

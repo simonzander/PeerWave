@@ -869,15 +869,17 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   String _formatFileSize(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024)
+    if (bytes < 1024 * 1024 * 1024) {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
   String _formatTransferRate(double bytesPerSecond) {
     if (bytesPerSecond < 1024) return '${bytesPerSecond.toStringAsFixed(0)} B';
-    if (bytesPerSecond < 1024 * 1024)
+    if (bytesPerSecond < 1024 * 1024) {
       return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB';
+    }
     return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
@@ -1732,6 +1734,7 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
         final channelId = _selectedItem!['id'];
 
         // Get all channel members (excluding self)
+        // ignore: use_build_context_synchronously
         final roleProvider = Provider.of<RoleProvider>(context, listen: false);
         final members = await roleProvider.getChannelMembers(channelId);
         if (!mounted) return;

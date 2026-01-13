@@ -61,6 +61,7 @@ services:
     
     volumes:
       - peerwave-data:/usr/src/app/data
+      - peerwave-logs:/usr/src/app/logs
       - ./server/cert:/usr/src/app/cert:ro
     
     environment:
@@ -101,6 +102,11 @@ services:
       - OTP_WAIT_TIME_MINUTES=${OTP_WAIT_TIME_MINUTES:-1}
       # Invitation Configuration
       - INVITATION_EXPIRATION_HOURS=${INVITATION_EXPIRATION_HOURS:-48}
+      # Server Operator Information
+      - SERVER_OWNER=${SERVER_OWNER}
+      - SERVER_CONTACT=${SERVER_CONTACT}
+      - SERVER_LOCATION=${SERVER_LOCATION}
+      - SERVER_ADDITIONAL_INFO=${SERVER_ADDITIONAL_INFO}
     
     networks:
       - proxy
@@ -253,3 +259,5 @@ volumes:
   cert-data:
   # Data volume for SQLite database (code files stay in image)
   peerwave-data:
+  # Logs volume for application logs
+  peerwave-logs:

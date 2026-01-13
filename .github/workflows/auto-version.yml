@@ -61,12 +61,80 @@ jobs:
           dart run tools/generate_version.dart
           echo "✅ Generated version_info.dart"
       
+      - name: Update pubspec.yaml version
+        run: |
+          NEW_VERSION=$(grep -oP 'version: "\K[^"]+' version_config.yaml | head -1)
+          # Update pubspec.yaml with new version
+          sed -i "s/^version: .*/version: $NEW_VERSION/" client/pubspec.yaml
+          echo "✅ Updated pubspec.yaml to version $NEW_VERSION"
+      
+      - name: Generate release notes from commits
+        run: |
+          mkdir -p client/whatsnew
+          
+          # Get commits since last version tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            COMMITS=$(git log --oneline --no-merges -30)
+          else
+            COMMITS=$(git log ${LAST_TAG}..HEAD --oneline --no-merges)
+          fi
+          
+          # Generate release notes
+          cat > client/whatsnew/en-US.txt << 'EOF'
+          🚀 What's New in PeerWave v${{ steps.bump.outputs.new_version }}
+          
+          EOF
+          
+          # Categorize commits
+          echo "$COMMITS" | grep -i "feat(security):" >> security_commits.txt 2>/dev/null || true
+          echo "$COMMITS" | grep -i "feat(auth):" >> auth_commits.txt 2>/dev/null || true
+          echo "$COMMITS" | grep -i "feat:" >> feature_commits.txt 2>/dev/null || true
+          echo "$COMMITS" | grep -i "fix:" >> fix_commits.txt 2>/dev/null || true
+          echo "$COMMITS" | grep -i "perf:" >> perf_commits.txt 2>/dev/null || true
+          
+          # Add security improvements
+          if [ -s security_commits.txt ] || [ -s auth_commits.txt ]; then
+            echo "🔐 Security & Authentication" >> client/whatsnew/en-US.txt
+            cat security_commits.txt auth_commits.txt 2>/dev/null | sed 's/^[a-f0-9]* /• /' | sed 's/feat(security): //g' | sed 's/feat(auth): //g' >> client/whatsnew/en-US.txt
+            echo "" >> client/whatsnew/en-US.txt
+          fi
+          
+          # Add new features
+          if [ -s feature_commits.txt ]; then
+            echo "✨ New Features" >> client/whatsnew/en-US.txt
+            cat feature_commits.txt | sed 's/^[a-f0-9]* /• /' | sed 's/feat: //g' | sed 's/feat([^)]*): //g' >> client/whatsnew/en-US.txt
+            echo "" >> client/whatsnew/en-US.txt
+          fi
+          
+          # Add bug fixes
+          if [ -s fix_commits.txt ]; then
+            echo "🐛 Bug Fixes" >> client/whatsnew/en-US.txt
+            cat fix_commits.txt | sed 's/^[a-f0-9]* /• /' | sed 's/fix: //g' | sed 's/fix([^)]*): //g' >> client/whatsnew/en-US.txt
+            echo "" >> client/whatsnew/en-US.txt
+          fi
+          
+          # Add performance improvements
+          if [ -s perf_commits.txt ]; then
+            echo "⚡ Performance Improvements" >> client/whatsnew/en-US.txt
+            cat perf_commits.txt | sed 's/^[a-f0-9]* /• /' | sed 's/perf: //g' | sed 's/perf([^)]*): //g' >> client/whatsnew/en-US.txt
+            echo "" >> client/whatsnew/en-US.txt
+          fi
+          
+          # Cleanup
+          rm -f security_commits.txt auth_commits.txt feature_commits.txt fix_commits.txt perf_commits.txt
+          
+          echo "✅ Generated release notes: client/whatsnew/en-US.txt"
+          cat client/whatsnew/en-US.txt
+      
       - name: Commit version bump
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add version_config.yaml
           git add client/lib/core/version/version_info.dart
+          git add client/pubspec.yaml
+          git add client/whatsnew/en-US.txt
           git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }} [skip-version]"
           git tag "v${{ steps.bump.outputs.new_version }}"
           git push origin main

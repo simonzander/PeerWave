@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { SignalSenderKey, ChannelMembers, User, Client } = require('../db/model');
 const { verifyAuthEither } = require('../middleware/sessionAuth');
+const logger = require('../utils/logger');
 
 /**
  * GET /api/sender-keys/:channelId
@@ -55,7 +56,7 @@ router.get('/:channelId', verifyAuthEither, async (req, res) => {
             count: senderKeys.length
         });
     } catch (error) {
-        console.error('Error fetching sender keys:', error);
+        logger.error('[SENDER KEYS] Error fetching sender keys', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -118,7 +119,7 @@ router.get('/:channelId/:userId/:deviceId', verifyAuthEither, async (req, res) =
             updatedAt: senderKey.updatedAt
         });
     } catch (error) {
-        console.error('Error fetching sender key:', error);
+        logger.error('[SENDER KEYS] Error fetching sender key', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -190,7 +191,7 @@ router.post('/:channelId', verifyAuthEither, async (req, res) => {
             message: created ? 'Sender key created' : 'Sender key updated'
         });
     } catch (error) {
-        console.error('Error storing sender key:', error);
+        logger.error('[SENDER KEYS] Error storing sender key', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });

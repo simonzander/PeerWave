@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
 import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
+import '../widgets/app_drawer.dart';
 import '../extensions/snackbar_extensions.dart';
 import 'dart:async';
 
@@ -38,16 +40,20 @@ class _OtpWebPageState extends State<OtpWebPage> {
     });
 
     try {
+      // For web: Load from config. For mobile: Use widget.serverUrl
       final apiServer = await loadWebApiServer();
-      String urlString = apiServer ?? '';
+      String urlString = apiServer ?? widget.serverUrl;
       if (!urlString.startsWith('http://') &&
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      //final dio = ApiService.dio;
+
+      // Use full URL for mobile (no active server yet), relative for web
+      final endpoint = kIsWeb ? '/register' : '$urlString/register';
+      debugPrint('[OTP] Resending to: $endpoint');
 
       final response = await ApiService.post(
-        '/register',
+        endpoint,
         data: {'email': widget.email},
       );
       // Handle response as needed
@@ -77,16 +83,20 @@ class _OtpWebPageState extends State<OtpWebPage> {
     });
 
     try {
+      // For web: Load from config. For mobile: Use widget.serverUrl
       final apiServer = await loadWebApiServer();
-      String urlString = apiServer ?? '';
+      String urlString = apiServer ?? widget.serverUrl;
       if (!urlString.startsWith('http://') &&
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      //final dio = ApiService.dio;
+
+      // Use full URL for mobile (no active server yet), relative for web
+      final endpoint = kIsWeb ? '/otp' : '$urlString/otp';
+      debugPrint('[OTP] Submitting to: $endpoint');
 
       final response = await ApiService.post(
-        '/otp',
+        endpoint,
         data: {
           'email': widget.email,
           'otp': _otpController.text,
@@ -103,7 +113,13 @@ class _OtpWebPageState extends State<OtpWebPage> {
         // New user registration - go to backup codes
         if (!mounted) return;
         context.showSuccessSnackBar('OTP Verified!');
-        GoRouter.of(context).go('/register/backupcode');
+        // Pass serverUrl AND email for mobile to make API calls during registration
+        GoRouter.of(context).go(
+          '/register/backupcode',
+          extra: kIsWeb
+              ? null
+              : {'serverUrl': widget.serverUrl, 'email': widget.email},
+        );
       } else {
         setState(() {
           _error = 'Invalid OTP or server error.';
@@ -151,6 +167,16 @@ class _OtpWebPageState extends State<OtpWebPage> {
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
+      appBar: !kIsWeb
+          ? AppBar(
+              title: const Text('Verify Email'),
+              backgroundColor: colorScheme.surface,
+              elevation: 0,
+            )
+          : null,
+      drawer: !kIsWeb
+          ? AppDrawer(isAuthenticated: false, currentRoute: '/otp')
+          : null,
       body: Column(
         children: [
           // Progress Bar

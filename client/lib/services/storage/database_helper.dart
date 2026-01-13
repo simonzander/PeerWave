@@ -17,6 +17,8 @@ class DatabaseHelper {
   static Database? _database;
   static bool _factoryInitialized = false;
   static bool _initializing = false;
+  static bool _isReady = false;
+  static String? _lastError;
   static const String _databaseBaseName =
       'peerwave'; // Base name without .db extension
   static const int _databaseVersion =
@@ -24,6 +26,15 @@ class DatabaseHelper {
 
   static final DeviceIdentityService _deviceIdentity =
       DeviceIdentityService.instance;
+
+  /// Check if database is ready for use
+  static bool get isReady => _isReady;
+
+  /// Check if database is currently initializing
+  static bool get isInitializing => _initializing;
+
+  /// Get last error if initialization failed
+  static String? get lastError => _lastError;
 
   /// Get device-scoped database name
   static String get _databaseName {
@@ -39,7 +50,7 @@ class DatabaseHelper {
 
   /// Get the singleton database instance
   static Future<Database> get database async {
-    if (_database != null) {
+    if (_database != null && _isReady) {
       debugPrint('[DATABASE] Returning existing database instance');
       return _database!;
     }
@@ -48,26 +59,74 @@ class DatabaseHelper {
     if (_initializing) {
       debugPrint('[DATABASE] Already initializing, waiting...');
       // Wait for initialization to complete
-      while (_database == null && _initializing) {
+      int attempts = 0;
+      while (_database == null && _initializing && attempts < 300) {
         await Future.delayed(Duration(milliseconds: 100));
+        attempts++;
       }
-      if (_database != null) {
+      if (_database != null && _isReady) {
         debugPrint('[DATABASE] Initialization completed by another caller');
         return _database!;
+      }
+      if (attempts >= 300) {
+        throw Exception(
+          '[DATABASE] Timeout waiting for initialization (30 seconds)',
+        );
       }
     }
 
     _initializing = true;
+    _lastError = null;
     try {
       debugPrint('[DATABASE] ========================================');
       debugPrint('[DATABASE] Starting device-scoped database initialization');
       debugPrint('[DATABASE] ========================================');
       _database = await _initDatabase();
+      _isReady = true;
       debugPrint('[DATABASE] ✓ Database initialization successful');
+      debugPrint('[DATABASE] ✓ Database is READY for use');
       return _database!;
+    } catch (e) {
+      _lastError = e.toString();
+      _isReady = false;
+      debugPrint('[DATABASE] ✗ Database initialization FAILED: $e');
+      rethrow;
     } finally {
       _initializing = false;
     }
+  }
+
+  /// Wait until database is ready with retry logic
+  static Future<Database> waitUntilReady({
+    int maxAttempts = 3,
+    Duration retryDelay = const Duration(seconds: 2),
+  }) async {
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        debugPrint(
+          '[DATABASE] Attempt $attempt/$maxAttempts to access database...',
+        );
+        final db = await database;
+        if (_isReady) {
+          debugPrint('[DATABASE] ✓ Database ready on attempt $attempt');
+          return db;
+        }
+      } catch (e) {
+        debugPrint('[DATABASE] ⚠️ Attempt $attempt failed: $e');
+        if (attempt < maxAttempts) {
+          debugPrint(
+            '[DATABASE] Retrying in ${retryDelay.inSeconds} seconds...',
+          );
+          await Future.delayed(retryDelay);
+        } else {
+          debugPrint('[DATABASE] ✗ All $maxAttempts attempts failed');
+          rethrow;
+        }
+      }
+    }
+    throw Exception(
+      '[DATABASE] Failed to initialize database after $maxAttempts attempts',
+    );
   }
 
   /// Initialize the database

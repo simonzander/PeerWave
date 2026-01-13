@@ -80,6 +80,7 @@ class _MentionTextWidgetState extends State<MentionTextWidget> {
     );
 
     if (!mounted) return;
+    // ignore: use_build_context_synchronously
     Overlay.of(context).insert(_profileCardOverlay!);
   }
 

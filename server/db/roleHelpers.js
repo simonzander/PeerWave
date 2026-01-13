@@ -229,6 +229,57 @@ async function getRolesByScope(scope) {
     });
 }
 
+/**
+ * Get all users with a specific server permission
+ * @param {string} permission - Permission name (e.g., 'server.manage')
+ * @returns {Promise<Array>} Array of User objects
+ */
+async function getUsersWithPermission(permission) {
+    const roles = await Role.findAll({
+        where: { 
+            scope: 'server'
+        }
+    });
+    
+    // Filter roles that have the permission
+    const roleIdsWithPermission = roles
+        .filter(role => {
+            try {
+                const permissions = JSON.parse(role.permissions || '[]');
+                return permissions.includes(permission);
+            } catch {
+                return false;
+            }
+        })
+        .map(role => role.uuid);
+    
+    if (roleIdsWithPermission.length === 0) {
+        return [];
+    }
+    
+    // Get all users with these roles
+    const userRoles = await UserRole.findAll({
+        where: {
+            roleId: roleIdsWithPermission
+        },
+        include: [{
+            model: User,
+            as: 'User',
+            attributes: ['uuid', 'email', 'displayName', 'verified']
+        }]
+    });
+    
+    // Extract unique users
+    const uniqueUsers = new Map();
+    userRoles.forEach(ur => {
+        if (ur.User && !uniqueUsers.has(ur.User.uuid)) {
+            uniqueUsers.set(ur.User.uuid, ur.User);
+        }
+    });
+    
+    return Array.from(uniqueUsers.values());
+}
+
 module.exports = {
     assignServerRole,
     removeServerRole,
@@ -241,5 +292,6 @@ module.exports = {
     createRole,
     updateRole,
     deleteRole,
-    getRolesByScope
+    getRolesByScope,
+    getUsersWithPermission
 };

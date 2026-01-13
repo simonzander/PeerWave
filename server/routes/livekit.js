@@ -11,6 +11,8 @@ const express = require('express');
 const router = express.Router();
 const livekitWrapper = require('../lib/livekit-wrapper');
 const { verifyAuthEither } = require('../middleware/sessionAuth');
+const { sanitizeForLog } = require('../utils/logSanitizer');
+const logger = require('../utils/logger');
 
 // Import models from db/model
 const { Channel, ChannelMembers } = require('../db/model');
@@ -37,7 +39,7 @@ router.post('/token', verifyAuthEither, async (req, res) => {
     const username = req.username || req.session?.userinfo?.username || req.session?.email || 'Unknown';
     
     if (!userId) {
-      console.log('[LiveKit] Unauthorized - No user ID found');
+      logger.debug('[LIVEKIT] Channel token: Unauthorized - no user ID');
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
@@ -47,12 +49,12 @@ router.post('/token', verifyAuthEither, async (req, res) => {
       return res.status(400).json({ error: 'channelId required' });
     }
 
-    console.log(`[LiveKit] Token request: userId=${userId}, channelId=${channelId}`);
+    logger.debug('[LIVEKIT] Channel token request', sanitizeForLog({ userId, channelId }));
 
     // Verify user has access to this channel
     const channel = await Channel.findByPk(channelId);
     if (!channel) {
-      console.log('[LiveKit] Channel not found:', channelId);
+      logger.debug('[LIVEKIT] Channel not found', sanitizeForLog({ channelId }));
       return res.status(404).json({ error: 'Channel not found' });
     }
 
@@ -65,18 +67,17 @@ router.post('/token', verifyAuthEither, async (req, res) => {
       return res.status(403).json({ error: 'Not a channel member' });
     }
 
-    console.log(`[LiveKit] Membership found:`, {
+    logger.debug('[LIVEKIT] Membership found', sanitizeForLog({
       userId,
       channelId,
-      permissions: membership.permissions,
       hasPermissions: !!membership.permissions
-    });
+    }));
 
     // Check if user has WebRTC permissions (safely handle missing permissions object)
     const hasWebRtcPermission = membership.permissions?.channelWebRtc ?? true; // Default to true if permissions not set
     
     if (!hasWebRtcPermission) {
-      console.log('[LiveKit] User lacks WebRTC permission');
+      logger.debug('[LIVEKIT] User lacks WebRTC permission', sanitizeForLog({ userId, channelId }));
       return res.status(403).json({ error: 'No WebRTC permission' });
     }
 
@@ -141,7 +142,7 @@ router.post('/token', verifyAuthEither, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('LiveKit token generation error:', error);
+    logger.error('[LIVEKIT] Token generation error', error);
     res.status(500).json({ error: 'Failed to generate token' });
   }
 });
@@ -168,7 +169,7 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
     const username = req.username || req.session?.userinfo?.username || req.session?.email || 'Unknown';
     
     if (!userId) {
-      console.log('[LiveKit Meeting] Unauthorized - No user ID found');
+      logger.debug('[LIVEKIT] Meeting token: Unauthorized - no user ID');
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
@@ -178,13 +179,13 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
       return res.status(400).json({ error: 'meetingId required' });
     }
 
-    console.log(`[LiveKit Meeting] Token request: userId=${userId}, meetingId=${meetingId}`);
+    logger.debug('[LIVEKIT] Meeting token request', sanitizeForLog({ userId, meetingId }));
 
     // Get meeting from hybrid storage (memory + DB)
     const meeting = await meetingService.getMeeting(meetingId);
 
     if (!meeting) {
-      console.log('[LiveKit Meeting] Meeting not found:', meetingId);
+      logger.debug('[LIVEKIT] Meeting not found', sanitizeForLog({ meetingId }));
       return res.status(404).json({ error: 'Meeting not found' });
     }
 
@@ -195,18 +196,18 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
     const isSourceUser = meeting.source_user_id === userId; // For instant calls (recipient)
 
     if (!isOwner && !isParticipant && !isInvited && !isSourceUser) {
-      console.log('[LiveKit Meeting] User not authorized:', userId);
+      logger.debug('[LIVEKIT] User not authorized', { userId });
       return res.status(403).json({ error: 'Not authorized for this meeting' });
     }
 
-    console.log(`[LiveKit Meeting] User authorized:`, {
+    logger.debug('[LIVEKIT] User authorized for meeting', sanitizeForLog({
       userId,
       meetingId,
       isOwner,
       isParticipant,
       isInvited,
       isSourceUser
-    });
+    }));
 
     // Get LiveKit configuration from environment
     const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
@@ -226,13 +227,13 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
       if (client) {
         deviceId = client.device_id;
         req.session.device_id = deviceId; // Cache in session for future requests
-        console.log(`[LiveKit Meeting] Loaded device_id ${deviceId} from database for clientId ${req.session.clientId}`);
+        logger.debug('[LIVEKIT] Loaded device_id from database', sanitizeForLog({ deviceId, clientId: req.session.clientId }));
       }
     }
     
     // Final fallback: if still no device_id, this is an error condition
     if (!deviceId) {
-      console.error(`[LiveKit Meeting] ERROR: No device_id found for user ${userId}. Session deviceId: ${req.session?.device_id}, clientId: ${req.session?.clientId}`);
+      logger.error('[LIVEKIT] No device_id found for user', sanitizeForLog({ userId, sessionDeviceId: req.session?.device_id, clientId: req.session?.clientId }));
       return res.status(400).json({ 
         error: 'Device not registered',
         message: 'Please refresh the page and log in again to register your device.'
@@ -283,9 +284,9 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
     try {
       // Device ID already obtained above for LiveKit identity
       await meetingService.updateParticipantStatus(meetingId, userId, deviceId, 'joined');
-      console.log(`[LiveKit Meeting] Updated participant ${userId}:${deviceId} status to joined`);
+      logger.debug('[LIVEKIT] Updated participant status to joined', sanitizeForLog({ userId, deviceId, meetingId }));
     } catch (statusError) {
-      console.error('[LiveKit Meeting] Failed to update participant status:', statusError);
+      logger.error('[LIVEKIT] Failed to update participant status', statusError);
       // Don't fail the token generation if status update fails
     }
 
@@ -310,7 +311,7 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('LiveKit meeting token generation error:', error);
+    logger.error('[LIVEKIT] Meeting token generation error', error);
     res.status(500).json({ error: 'Failed to generate meeting token' });
   }
 });
@@ -341,7 +342,7 @@ router.post('/guest-token', async (req, res) => {
       return res.status(400).json({ error: 'meetingId and sessionId required' });
     }
 
-    console.log(`[LiveKit Guest] Token request: sessionId=${sessionId}, meetingId=${meetingId}`);
+    logger.debug('[LIVEKIT] Guest token request', sanitizeForLog({ sessionId, meetingId }));
 
     // 1. Validate guest session exists and get participant info
     const guest = await ExternalSession.findOne({
@@ -352,13 +353,13 @@ router.post('/guest-token', async (req, res) => {
     });
 
     if (!guest) {
-      console.log('[LiveKit Guest] Invalid session or meeting');
+      logger.debug('[LIVEKIT] Invalid guest session or meeting', sanitizeForLog({ sessionId, meetingId }));
       return res.status(403).json({ error: 'Invalid guest session' });
     }
 
     // 2. Check if participant is admitted
     if (guest.admitted !== true) {
-      console.log('[LiveKit Guest] Guest not admitted:', guest.admitted);
+      logger.debug('[LIVEKIT] Guest not admitted', sanitizeForLog({ sessionId, admitted: guest.admitted }));
       return res.status(403).json({ error: 'Guest not admitted to meeting' });
     }
 
@@ -366,17 +367,17 @@ router.post('/guest-token', async (req, res) => {
     const meeting = await meetingService.getMeeting(meetingId);
 
     if (!meeting) {
-      console.log('[LiveKit Guest] Meeting not found:', meetingId);
+      logger.debug('[LIVEKIT] Meeting not found for guest', sanitizeForLog({ meetingId }));
       return res.status(404).json({ error: 'Meeting not found' });
     }
 
-    console.log(`[LiveKit Guest] Guest authorized:`, {
+    logger.debug('[LIVEKIT] Guest authorized', sanitizeForLog({
       sessionId,
       displayName: guest.display_name,
       admitted: guest.admitted,
       meetingId,
       meetingTitle: meeting.title
-    });
+    }));
 
     // Get LiveKit configuration from environment
     const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
@@ -413,7 +414,7 @@ router.post('/guest-token', async (req, res) => {
     // Generate JWT
     const jwt = await token.toJwt();
 
-    console.log(`[LiveKit Guest] Token generated for ${guest.display_name} in ${meetingId}`);
+    logger.debug('[LIVEKIT] Guest token generated', sanitizeForLog({ displayName: guest.display_name, meetingId }));
 
     res.json({
       token: jwt,
@@ -429,7 +430,7 @@ router.post('/guest-token', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('[LiveKit Guest] Token generation error:', error);
+    logger.error('[LIVEKIT] Guest token generation error', error);
     res.status(500).json({ error: 'Failed to generate guest token' });
   }
 });
@@ -460,11 +461,11 @@ router.get('/ice-config', verifyAuthEither, async (req, res) => {
     const username = req.username || req.session?.userinfo?.username || req.session?.email || 'Unknown';
     
     if (!userId) {
-      console.log('[LiveKit ICE] Unauthorized - No user ID found');
+      logger.debug('[LIVEKIT ICE] Unauthorized - No user ID found');
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    console.log(`[LiveKit ICE] Config request: userId=${userId}, username=${username}`);
+    logger.debug('[LIVEKIT ICE] Config request', { userId: sanitizeForLog(userId), username: sanitizeForLog(username) });
 
     // Get LiveKit configuration from environment
     const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
@@ -517,11 +518,7 @@ router.get('/ice-config', verifyAuthEither, async (req, res) => {
     const ttl = 3600 * 24;
     const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
 
-    console.log(`[LiveKit ICE] Generated ICE config for user ${userId}:`, {
-      turnDomain,
-      serversCount: iceServers.length,
-      expiresAt
-    });
+    logger.debug('[LIVEKIT ICE] Generated ICE config', { userId: sanitizeForLog(userId), turnDomain, serversCount: iceServers.length, expiresAt });
 
     // Return ICE configuration
     res.json({
@@ -531,7 +528,7 @@ router.get('/ice-config', verifyAuthEither, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('[LiveKit ICE] Error generating config:', error);
+    logger.error('[LIVEKIT ICE] Error generating config', error);
     res.status(500).json({ error: 'Failed to generate ICE config' });
   }
 });
@@ -571,7 +568,7 @@ router.get('/room/:channelId', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('LiveKit room info error:', error);
+    logger.error('[LIVEKIT] Room info error', error);
     res.status(500).json({ error: 'Failed to get room info' });
   }
 });
@@ -589,7 +586,7 @@ router.post('/webhook', async (req, res) => {
   try {
     const event = req.body;
     
-    console.log('LiveKit webhook event:', event.event, event.room?.name);
+    logger.info('[LIVEKIT WEBHOOK] Event received', { event: event.event, room: event.room?.name });
 
     // Handle different event types
     switch (event.event) {
@@ -620,7 +617,7 @@ router.post('/webhook', async (req, res) => {
 
     res.status(200).send('OK');
   } catch (error) {
-    console.error('LiveKit webhook error:', error);
+    logger.error('[LIVEKIT WEBHOOK] Error', error);
     res.status(500).json({ error: 'Webhook processing failed' });
   }
 });

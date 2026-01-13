@@ -2,6 +2,7 @@ const config = require('../config/config');
 const express = require("express");
 const { Sequelize, DataTypes, Op, UUID } = require('sequelize');
 const { DESCRIBE } = require('sequelize/lib/query-types');
+const logger = require('../utils/logger');
 
 const sequelize = new Sequelize({
     dialect: 'sqlite',
@@ -35,11 +36,11 @@ const temporaryStorage = new Sequelize({
 const dbReady = new Promise((resolve, reject) => {
     sequelize.authenticate()
         .then(async () => {
-            console.log('✓ Model connected to database');
+            logger.info('✓ Model connected to database');
             
             // Sync models to database (alter=false since migrations handle schema updates)
             await sequelize.sync({ alter: false });
-            console.log('✓ Database schema synced');
+            logger.info('✓ Database schema synced');
             
             // Apply SQLite optimizations
             try {
@@ -48,27 +49,27 @@ const dbReady = new Promise((resolve, reject) => {
                 await sequelize.query("PRAGMA synchronous=NORMAL");
                 await sequelize.query("PRAGMA cache_size=-64000");
                 await sequelize.query("PRAGMA temp_store=MEMORY");
-                console.log('✓ SQLite optimizations applied');
+                logger.info('✓ SQLite optimizations applied');
             } catch (error) {
-                console.warn('⚠ SQLite optimization warning:', error.message);
+                logger.warn('⚠ SQLite optimization warning:', error.message);
             }
             
             resolve(); // Database is ready
         })
         .catch(error => {
-            console.error('Unable to connect to the database:', error);
+            logger.error('Unable to connect to the database:', error);
             reject(error);
         });
 });
 
     temporaryStorage.authenticate()
     .then(async () => {
-        console.log('✓ Temporary storage (in-memory) initialized');
+        logger.info('✓ Temporary storage (in-memory) initialized');
         // Sync in-memory tables
         await temporaryStorage.sync();
     })
     .catch(error => {
-        console.error('Unable to connect to the temp database:', error);
+        logger.error('Unable to connect to the temp database:', error);
         process.exit(1);
     });
 
@@ -852,6 +853,85 @@ const MeetingRsvp = sequelize.define('MeetingRsvp', {
     ]
 });
 
+// Meetings table - persistent storage for scheduled meetings
+// Note: Instant calls are memory-only, not stored here
+// Runtime state (participants, status, LiveKit rooms) is in MeetingMemoryStore
+const Meeting = sequelize.define('Meeting', {
+    meeting_id: {
+        type: DataTypes.STRING(255),
+        primaryKey: true,
+        allowNull: false
+    },
+    title: {
+        type: DataTypes.STRING(255),
+        allowNull: false
+    },
+    description: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    created_by: {
+        type: DataTypes.STRING(255),
+        allowNull: false
+    },
+    start_time: {
+        type: DataTypes.DATE,
+        allowNull: false
+    },
+    end_time: {
+        type: DataTypes.DATE,
+        allowNull: false
+    },
+    is_instant_call: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
+    allow_external: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
+    invitation_token: {
+        type: DataTypes.STRING(255),
+        allowNull: true
+    },
+    invited_participants: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        get() {
+            const raw = this.getDataValue('invited_participants');
+            return raw ? JSON.parse(raw) : [];
+        },
+        set(value) {
+            this.setDataValue('invited_participants', JSON.stringify(value));
+        }
+    },
+    voice_only: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
+    mute_on_join: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    }
+}, {
+    timestamps: true,
+    underscored: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
+    tableName: 'meetings',
+    indexes: [
+        { fields: ['created_by'] },
+        { fields: ['start_time'] },
+        { fields: ['end_time'] },
+        { fields: ['is_instant_call'] },
+        { fields: ['invitation_token'] }
+    ]
+});
+
 // Client Sessions table for HMAC authentication (native clients)
 const ClientSession = sequelize.define('ClientSession', {
     client_id: {
@@ -985,6 +1065,10 @@ UserRoleChannel.belongsTo(User, { foreignKey: 'userId', as: 'User' });
 UserRoleChannel.belongsTo(Role, { foreignKey: 'roleId', as: 'Role' });
 UserRoleChannel.belongsTo(Channel, { foreignKey: 'channelId', as: 'Channel' });
 
+// Direct associations for UserRole to allow includes
+UserRole.belongsTo(User, { foreignKey: 'userId', as: 'User' });
+UserRole.belongsTo(Role, { foreignKey: 'roleId', as: 'Role' });
+
 // Many-to-Many: User <-> Channel (for channel membership)
 User.belongsToMany(Channel, {
     through: ChannelMembers,
@@ -1000,8 +1084,8 @@ Channel.belongsToMany(User, {
 });
 
 temporaryStorage.sync({ alter: false })
-    .then(() => console.log('Temporary tables created successfully.'))
-    .catch(error => console.error('Error creating temporary tables:', error));
+    .then(() => logger.info('Temporary tables created successfully.'))
+    .catch(error => logger.error('Error creating temporary tables:', error));
 
 // ServerSettings model (single row configuration)
 const ServerSettings = sequelize.define('ServerSettings', {
@@ -1081,13 +1165,157 @@ const Invitation = sequelize.define('Invitation', {
     ]
 });
 
+// Blocked Users Model - tracks user blocking relationships
+const BlockedUser = sequelize.define('BlockedUser', {
+    id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true
+    },
+    blocker_uuid: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    blocked_uuid: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    reason: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    blocked_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.NOW
+    }
+}, {
+    tableName: 'blocked_users',
+    timestamps: false,
+    indexes: [
+        {
+            unique: true,
+            fields: ['blocker_uuid', 'blocked_uuid']
+        },
+        {
+            fields: ['blocker_uuid']
+        },
+        {
+            fields: ['blocked_uuid']
+        }
+    ]
+});
+
+// Abuse Reports Model - stores user-reported abuse incidents
+const AbuseReport = sequelize.define('AbuseReport', {
+    id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true
+    },
+    report_uuid: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        unique: true,
+        defaultValue: Sequelize.UUIDV4
+    },
+    reporter_uuid: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    reported_uuid: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    description: {
+        type: DataTypes.TEXT,
+        allowNull: false
+    },
+    photos: {
+        type: DataTypes.TEXT,
+        allowNull: true  // JSON string array of base64 photos
+    },
+    status: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: 'pending'  // 'pending', 'under_review', 'resolved', 'dismissed'
+    },
+    admin_notes: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    resolved_by: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    resolved_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    created_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.NOW
+    }
+}, {
+    tableName: 'abuse_reports',
+    timestamps: false,
+    indexes: [
+        {
+            fields: ['reporter_uuid']
+        },
+        {
+            fields: ['reported_uuid']
+        },
+        {
+            fields: ['status']
+        },
+        {
+            fields: ['report_uuid'],
+            unique: true
+        }
+    ]
+});
+
+// Define associations for blocked users
+User.hasMany(BlockedUser, { foreignKey: 'blocker_uuid', as: 'blockedByUser' });
+User.hasMany(BlockedUser, { foreignKey: 'blocked_uuid', as: 'blockedUsers' });
+BlockedUser.belongsTo(User, { foreignKey: 'blocker_uuid', as: 'blocker' });
+BlockedUser.belongsTo(User, { foreignKey: 'blocked_uuid', as: 'blockedUser' });
+
+// Define associations for abuse reports
+User.hasMany(AbuseReport, { foreignKey: 'reporter_uuid', as: 'reportsMade' });
+User.hasMany(AbuseReport, { foreignKey: 'reported_uuid', as: 'reportsReceived' });
+User.hasMany(AbuseReport, { foreignKey: 'resolved_by', as: 'reportsResolved' });
+AbuseReport.belongsTo(User, { foreignKey: 'reporter_uuid', as: 'reporter' });
+AbuseReport.belongsTo(User, { foreignKey: 'reported_uuid', as: 'reported' });
+AbuseReport.belongsTo(User, { foreignKey: 'resolved_by', as: 'resolver' });
+
 
 module.exports = {
     User,
     OTP,
     ExternalSession,
-    MeetingInvitation,
-        MeetingRsvp,
     Client,
     Item,
     SignalSignedPreKey,
@@ -1104,6 +1332,11 @@ module.exports = {
     NonceCache,
     ServerSettings,
     Invitation,
+    Meeting,
+    MeetingInvitation,
+    MeetingRsvp,
+    BlockedUser,
+    AbuseReport,
     sequelize,
     temporaryStorage,
     dbReady

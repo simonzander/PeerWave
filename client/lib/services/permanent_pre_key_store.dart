@@ -27,13 +27,11 @@ class PermanentPreKeyStore extends PreKeyStore {
 
     try {
       // Get server URL (platform-specific)
-      String? serverUrl;
       if (kIsWeb) {
-        serverUrl = await loadWebApiServer();
+        await loadWebApiServer();
       } else {
         // Native: Get from ServerConfigService
-        final activeServer = ServerConfigService.getActiveServer();
-        serverUrl = activeServer?.serverUrl;
+        ServerConfigService.getActiveServer();
       }
 
       // Prepare payload

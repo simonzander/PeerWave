@@ -1,6 +1,8 @@
 const config = require('../config/config');
 const { Role, User } = require('./model');
 const { assignServerRole } = require('./roleHelpers');
+const { sanitizeForLog } = require('../utils/logSanitizer');
+const logger = require('../utils/logger');
 
 /**
  * Automatically assign roles to a user based on configuration
@@ -31,12 +33,12 @@ async function autoAssignRoles(userEmail, userId) {
             if (adminRole) {
                 const [userRole, created] = await assignServerRole(userId, adminRole.uuid);
                 if (created) {
-                    console.log(`✓ Administrator role assigned to user: ${userEmail}`);
+                    logger.info(`✓ Administrator role assigned to user: ${sanitizeForLog(userEmail)}`);
                 } else {
-                    console.log(`ℹ Administrator role already assigned to: ${userEmail}`);
+                    logger.debug(`ℹ Administrator role already assigned to: ${sanitizeForLog(userEmail)}`);
                 }
             } else {
-                console.error('Administrator role not found in database');
+                logger.error('Administrator role not found in database');
             }
         } else {
             // Assign default User role
@@ -47,16 +49,16 @@ async function autoAssignRoles(userEmail, userId) {
             if (userRole) {
                 const [role, created] = await assignServerRole(userId, userRole.uuid);
                 if (created) {
-                    console.log(`✓ User role assigned to user: ${userEmail}`);
+                    logger.info(`✓ User role assigned to user: ${sanitizeForLog(userEmail)}`);
                 } else {
-                    console.log(`ℹ User role already assigned to: ${userEmail}`);
+                    logger.debug(`ℹ User role already assigned to: ${sanitizeForLog(userEmail)}`);
                 }
             } else {
-                console.error('User role not found in database');
+                logger.error('User role not found in database');
             }
         }
     } catch (error) {
-        console.error(`Error auto-assigning roles for ${userEmail}:`, error);
+        logger.error('Error auto-assigning roles for %s:', sanitizeForLog(userEmail), error);
         // Don't throw - role assignment failure shouldn't block verification
     }
 }

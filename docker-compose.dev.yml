@@ -56,6 +56,7 @@ services:
       - "${PORT:-3000}:${PORT:-3000}"
     volumes:
       - peerwave-data:/usr/src/app/data
+      - peerwave-logs:/usr/src/app/logs
       - ./server/cert:/usr/src/app/cert:ro
     environment:
       - NODE_ENV=${NODE_ENV:-development}
@@ -83,6 +84,11 @@ services:
       - OTP_WAIT_TIME_MINUTES=${OTP_WAIT_TIME_MINUTES:-1}
       # Invitation Configuration
       - INVITATION_EXPIRATION_HOURS=${INVITATION_EXPIRATION_HOURS:-48}
+      # Server Operator Information
+      - SERVER_OWNER=${SERVER_OWNER}
+      - SERVER_CONTACT=${SERVER_CONTACT}
+      - SERVER_LOCATION=${SERVER_LOCATION}
+      - SERVER_ADDITIONAL_INFO=${SERVER_ADDITIONAL_INFO}
     # Resource Limits für Video Processing
     deploy:
       resources:
@@ -104,3 +110,5 @@ networks:
 volumes:
   # Data volume for SQLite database (code files stay in image)
   peerwave-data:
+  # Logs volume for application logs
+  peerwave-logs:

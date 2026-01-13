@@ -13,7 +13,6 @@ import 'auth/magic_link_web.dart'
     if (dart.library.io) 'auth/magic_link_native.dart';
 import 'auth/otp_web.dart';
 import 'auth/invitation_entry_page.dart';
-import 'theme/semantic_colors.dart';
 import 'auth/register_webauthn_page.dart'
     if (dart.library.io) 'auth/register_webauthn_page_native.dart';
 import 'auth/register_profile_page.dart';
@@ -29,10 +28,11 @@ import 'app/settings_sidebar.dart';
 import 'app/profile_page.dart';
 import 'app/settings/general_settings_page.dart';
 import 'app/settings/server_settings_page.dart';
+import 'app/settings/sessions_page.dart';
 import 'app/settings/notification_settings_page.dart';
 import 'app/settings/voice_video_settings_page.dart';
 import 'app/settings/system_tray_settings_page.dart';
-import 'app/webauthn_web.dart' if (dart.library.io) 'app/webauthn_stub.dart';
+import 'app/webauthn_page_wrapper.dart';
 // Troubleshoot feature
 import 'features/troubleshoot/pages/troubleshoot_page.dart';
 import 'features/troubleshoot/state/troubleshoot_provider.dart';
@@ -59,6 +59,8 @@ import 'providers/navigation_state_provider.dart';
 import 'services/role_api_service.dart';
 import 'screens/admin/role_management_screen.dart';
 import 'screens/admin/user_management_screen.dart';
+import 'screens/settings/blocked_users_page.dart';
+import 'screens/settings/abuse_center_page.dart';
 import 'web_config.dart';
 // Theme imports
 import 'theme/theme_provider.dart';
@@ -104,6 +106,10 @@ import 'services/meeting_authorization_service.dart';
 import 'screens/meeting_rsvp_confirmation_screen.dart';
 // Native server selection
 import 'screens/server_selection_screen.dart';
+import 'screens/mobile_webauthn_login_screen.dart';
+import 'screens/mobile_backupcode_login_screen.dart';
+import 'screens/mobile_server_selection_screen.dart';
+import 'services/custom_tab_auth_service.dart';
 import 'services/server_config_web.dart'
     if (dart.library.io) 'services/server_config_native.dart';
 import 'services/clientid_native.dart'
@@ -121,7 +127,7 @@ import 'services/idb_factory_web.dart'
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  ApiService.init();
+  await ApiService.init();
   String? initialMagicKey;
 
   // NOTE: Client ID generation moved to POST-LOGIN flow
@@ -132,6 +138,16 @@ Future<void> main() async {
   if (!kIsWeb) {
     await AppDirectories.initialize();
     debugPrint('[INIT] ✅ AppDirectories initialized');
+
+    // Detect autostart scenario (presence of session without explicit login action)
+    // This helps identify cases where window appears before initialization completes
+    final bool isAutostart = await _detectAutostart();
+    if (isAutostart) {
+      debugPrint('[INIT] 🚀 AUTOSTART DETECTED - Window opened automatically');
+      debugPrint(
+        '[INIT] ⚠️ Using enhanced initialization checks to prevent premature navigation',
+      );
+    }
   }
 
   // Initialize server config service for native (multi-server support)
@@ -241,7 +257,7 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   StreamSubscription? _sub;
   String? _magicKey;
   String? _clientId; // Client ID is fetched/created after login
@@ -257,10 +273,23 @@ class _MyAppState extends State<MyApp> {
   // Router instance - created once and reused
   GoRouter? _router;
 
+  // Flag to track if initial session check is complete
+  bool _sessionCheckComplete = false;
+
   @override
   void initState() {
     super.initState();
     _magicKey = widget.initialMagicKey;
+
+    // Check session on app startup for native platforms
+    // This ensures AuthService.isLoggedIn is set before router determines initial location
+    if (!kIsWeb) {
+      _checkInitialSession();
+    }
+
+    // Register as app lifecycle observer
+    WidgetsBinding.instance.addObserver(this);
+    debugPrint('[LIFECYCLE] App lifecycle observer registered');
 
     // Start server connection monitoring for native platforms
     if (!kIsWeb) {
@@ -297,6 +326,10 @@ class _MyAppState extends State<MyApp> {
   void dispose() {
     _sub?.cancel();
 
+    // Unregister lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
+    debugPrint('[LIFECYCLE] App lifecycle observer removed');
+
     // Stop server connection monitoring
     if (!kIsWeb) {
       ServerConnectionService.instance.stopMonitoring();
@@ -304,6 +337,73 @@ class _MyAppState extends State<MyApp> {
     }
 
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    debugPrint('[LIFECYCLE] App state changed to: $state');
+
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // App came back to foreground - reconnect socket if logged in
+        debugPrint('[LIFECYCLE] App resumed - checking authentication status');
+        if (AuthService.isLoggedIn) {
+          debugPrint(
+            '[LIFECYCLE] User is logged in - attempting socket reconnection',
+          );
+          _reconnectSocket();
+        } else {
+          debugPrint(
+            '[LIFECYCLE] User not logged in - skipping socket reconnect',
+          );
+        }
+        break;
+
+      case AppLifecycleState.paused:
+        // App went to background
+        debugPrint('[LIFECYCLE] App paused - socket will maintain connection');
+        // Note: We don't disconnect on pause to maintain real-time notifications
+        // Socket.IO handles reconnection automatically
+        break;
+
+      case AppLifecycleState.inactive:
+        debugPrint('[LIFECYCLE] App inactive');
+        break;
+
+      case AppLifecycleState.detached:
+        debugPrint('[LIFECYCLE] App detached');
+        break;
+
+      case AppLifecycleState.hidden:
+        debugPrint('[LIFECYCLE] App hidden');
+        break;
+    }
+  }
+
+  Future<void> _reconnectSocket() async {
+    try {
+      final socketService = SocketService();
+
+      // Check if already connected
+      if (socketService.isConnected) {
+        debugPrint('[LIFECYCLE] Socket already connected - no action needed');
+        return;
+      }
+
+      // Add a short delay to allow network to stabilize after app resume
+      // This helps prevent DNS resolution failures on mobile
+      debugPrint('[LIFECYCLE] Waiting for network to stabilize...');
+      await Future.delayed(Duration(milliseconds: 500));
+
+      debugPrint('[LIFECYCLE] Reconnecting socket...');
+      await socketService.connect();
+      debugPrint('[LIFECYCLE] ✅ Socket reconnected successfully');
+    } catch (e) {
+      debugPrint('[LIFECYCLE] ❌ Failed to reconnect socket: $e');
+      // Don't throw - allow app to continue functioning
+      // Socket will retry connection according to its configuration
+    }
   }
 
   @override
@@ -331,6 +431,24 @@ class _MyAppState extends State<MyApp> {
     );
   }
 
+  /// Check session on app startup to restore authentication state
+  /// This must complete before router determines initial location
+  Future<void> _checkInitialSession() async {
+    try {
+      debugPrint('[INIT] Checking session on app startup...');
+      await AuthService.checkSession();
+      debugPrint('[INIT] ✓ Session check complete: ${AuthService.isLoggedIn}');
+      setState(() {
+        _sessionCheckComplete = true;
+      });
+    } catch (e) {
+      debugPrint('[INIT] ✗ Session check failed: $e');
+      setState(() {
+        _sessionCheckComplete = true;
+      });
+    }
+  }
+
   @override
   @override
   Widget build(BuildContext context) {
@@ -341,6 +459,17 @@ class _MyAppState extends State<MyApp> {
       return MagicLinkWebPageWithServer(
         serverUrl: _magicKey!,
         clientId: _clientId,
+      );
+    }
+
+    // For native: Wait for session check to complete before building router
+    // This ensures AuthService.isLoggedIn is set correctly for initial location
+    if (!kIsWeb && !_sessionCheckComplete) {
+      return MaterialApp(
+        home: Scaffold(
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          body: const Center(child: CircularProgressIndicator()),
+        ),
       );
     }
 
@@ -459,12 +588,206 @@ class _MyAppState extends State<MyApp> {
     );
   }
 
+  /// Determine initial location for native platforms (mobile + desktop)
+  /// Returns the appropriate initial route based on server config and auth status
+  String _getNativeInitialLocation() {
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+
+    // Check if there are any configured servers
+    if (!ServerConfigService.hasServers()) {
+      final route = isMobile ? '/mobile-server-selection' : '/server-selection';
+      debugPrint('[MAIN] No servers configured, starting at $route');
+      return route;
+    }
+
+    // Check if user is logged in AND active server has credentials
+    // This ensures we're checking auth for the specific active server
+    final hasServerCredentials =
+        ServerConfigService.activeServerHasCredentials();
+
+    if (AuthService.isLoggedIn && hasServerCredentials) {
+      debugPrint(
+        '[MAIN] User is logged in for active server, starting at /app/activities',
+      );
+      return '/app/activities';
+    }
+
+    // Has servers but not authenticated for active server
+    // Mobile: Go directly to mobile-webauthn which will load the active server URL
+    // Desktop: Go to server-selection (magic key flow)
+    final route = isMobile ? '/mobile-webauthn' : '/server-selection';
+    debugPrint(
+      '[MAIN] Active server needs authentication (isLoggedIn: ${AuthService.isLoggedIn}, hasCredentials: $hasServerCredentials), going to $route',
+    );
+    return route;
+  }
+
   GoRouter _createRouter() {
     debugPrint('[MAIN] 🏗️ Creating GoRouter...');
+
+    // Common routes shared across all platforms (registration flow, mobile auth)
+    final List<GoRoute> commonRoutes = [
+      // Mobile server selection route (Android/iOS only)
+      GoRoute(
+        path: '/mobile-server-selection',
+        pageBuilder: (context, state) {
+          return const MaterialPage(child: MobileServerSelectionScreen());
+        },
+      ),
+      // Chrome Custom Tab callback route (handles deep link after auth)
+      // Note: Manually triggers CustomTabAuthService completion since GoRouter
+      // intercepts the deep link before app_links can deliver it to the service.
+      GoRoute(
+        path: '/callback',
+        builder: (context, state) {
+          final token = state.uri.queryParameters['token'];
+          final cancelled = state.uri.queryParameters['cancelled'] == 'true';
+
+          debugPrint(
+            '[ROUTER] /callback route - token: ${token != null}, cancelled: $cancelled',
+          );
+
+          // Complete token exchange and navigate after a delay
+          if (token != null && token.isNotEmpty) {
+            // Trigger token exchange
+            CustomTabAuthService.instance.completeWithToken(token);
+
+            // Wait for token exchange to complete (usually takes ~500ms)
+            // Then navigate to /app - router will handle Signal setup redirect
+            Future.delayed(const Duration(milliseconds: 1500), () {
+              if (context.mounted) {
+                debugPrint(
+                  '[ROUTER] Token exchange complete, navigating to /app',
+                );
+                context.go('/app');
+              }
+            });
+          } else {
+            // Cancelled or no token - go back to login immediately
+            CustomTabAuthService.instance.completeWithToken(null);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) {
+                context.go('/mobile-webauthn');
+              }
+            });
+          }
+
+          // Show spinner while token exchange happens
+          return const Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Completing authentication...'),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+      // Mobile WebAuthn login route (Android/iOS only)
+      GoRoute(
+        path: '/mobile-webauthn',
+        pageBuilder: (context, state) {
+          final serverUrl = state.extra as String?;
+          return MaterialPage(
+            child: MobileWebAuthnLoginScreen(serverUrl: serverUrl),
+          );
+        },
+      ),
+      // Mobile Backup Code login route (Android/iOS only)
+      GoRoute(
+        path: '/mobile-backupcode-login',
+        pageBuilder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          final serverUrl = extra?['serverUrl'] as String?;
+          return MaterialPage(
+            child: MobileBackupcodeLoginScreen(serverUrl: serverUrl),
+          );
+        },
+      ),
+      // OTP verification (used by both web and mobile registration)
+      GoRoute(
+        path: '/otp',
+        builder: (context, state) {
+          final extra = state.extra;
+          String email = '';
+          String serverUrl = '';
+          int wait = 0;
+          if (extra is Map<String, dynamic>) {
+            email = extra['email'] ?? '';
+            serverUrl = extra['serverUrl'] ?? '';
+            wait = extra['wait'] ?? 0;
+          }
+          if (email.isEmpty || serverUrl.isEmpty) {
+            return Scaffold(
+              body: Center(child: Text('Missing email or serverUrl')),
+            );
+          }
+          return OtpWebPage(
+            email: email,
+            serverUrl: serverUrl,
+            clientId: _clientId,
+            wait: wait,
+          );
+        },
+      ),
+      // Registration routes (shared by web and mobile)
+      GoRoute(
+        path: '/register/invitation',
+        builder: (context, state) {
+          final extra = state.extra as Map?;
+          final email = extra?['email'] as String? ?? '';
+          final serverUrl = extra?['serverUrl'] as String?;
+          if (email.isEmpty) {
+            return Scaffold(
+              body: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('Email required'),
+                    TextButton(
+                      onPressed: () => context.go('/login'),
+                      child: const Text('Back to Login'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          return InvitationEntryPage(email: email, serverUrl: serverUrl);
+        },
+      ),
+      GoRoute(
+        path: '/register/backupcode',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          final serverUrl = extra?['serverUrl'] as String?;
+          final email = extra?['email'] as String?;
+          return BackupCodeListPage(serverUrl: serverUrl, email: email);
+        },
+      ),
+      GoRoute(
+        path: '/register/webauthn',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          final serverUrl = extra?['serverUrl'] as String?;
+          final email = extra?['email'] as String?;
+          return RegisterWebauthnPage(serverUrl: serverUrl, email: email);
+        },
+      ),
+      GoRoute(
+        path: '/register/profile',
+        builder: (context, state) => const RegisterProfilePage(),
+      ),
+    ];
 
     // Use ShellRoute for native, flat routes for web
     final List<RouteBase> routes = kIsWeb
         ? [
+            ...commonRoutes, // Add common registration & mobile routes
             GoRoute(path: '/', redirect: (context, state) => '/app'),
             GoRoute(
               path: '/magic-link',
@@ -485,7 +808,17 @@ class _MyAppState extends State<MyApp> {
             GoRoute(
               path: '/login',
               pageBuilder: (context, state) {
-                return MaterialPage(child: AuthLayout(clientId: _clientId));
+                final qp = state.uri.queryParameters;
+                final fromApp =
+                    (qp['from'] ?? '').trim().toLowerCase() == 'app';
+                final email = qp['email']?.trim();
+                return MaterialPage(
+                  child: AuthLayout(
+                    clientId: _clientId,
+                    fromApp: fromApp,
+                    initialEmail: email,
+                  ),
+                );
               },
             ),
             GoRoute(
@@ -498,72 +831,6 @@ class _MyAppState extends State<MyApp> {
                   child: ServerSelectionScreen(isAddingServer: isAddingServer),
                 );
               },
-            ),
-            GoRoute(
-              path: '/otp',
-              builder: (context, state) {
-                // Extract email and serverUrl from state.extra
-                final extra = state.extra;
-                String email = '';
-                String serverUrl = '';
-                int wait = 0;
-                if (extra is Map<String, dynamic>) {
-                  email = extra['email'] ?? '';
-                  serverUrl = extra['serverUrl'] ?? '';
-                  wait = extra['wait'] ?? 0;
-                }
-                debugPrint(
-                  'Navigating to OtpWebPage with email: $email, serverUrl: $serverUrl, wait: $wait',
-                );
-                if (email.isEmpty || serverUrl.isEmpty) {
-                  // Optionally show an error page or message
-                  return Scaffold(
-                    body: Center(child: Text('Missing email or serverUrl')),
-                  );
-                }
-                return OtpWebPage(
-                  email: email,
-                  serverUrl: serverUrl,
-                  clientId: _clientId,
-                  wait: wait,
-                );
-              },
-            ),
-            GoRoute(
-              path: '/register/invitation',
-              builder: (context, state) {
-                final extra = state.extra as Map?;
-                final email = extra?['email'] as String? ?? '';
-                if (email.isEmpty) {
-                  return Scaffold(
-                    body: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text('Email required'),
-                          TextButton(
-                            onPressed: () => context.go('/login'),
-                            child: const Text('Back to Login'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-                return InvitationEntryPage(email: email);
-              },
-            ),
-            GoRoute(
-              path: '/register/backupcode',
-              builder: (context, state) => const BackupCodeListPage(),
-            ),
-            GoRoute(
-              path: '/register/webauthn',
-              builder: (context, state) => const RegisterWebauthnPage(),
-            ),
-            GoRoute(
-              path: '/register/profile',
-              builder: (context, state) => const RegisterProfilePage(),
             ),
             GoRoute(
               path: '/signal-setup',
@@ -954,7 +1221,7 @@ class _MyAppState extends State<MyApp> {
                     ),
                     GoRoute(
                       path: '/app/settings/webauthn',
-                      builder: (context, state) => const WebauthnPage(),
+                      builder: (context, state) => const WebauthnPageWrapper(),
                     ),
                     GoRoute(
                       path: '/app/settings/backupcode/list',
@@ -968,6 +1235,10 @@ class _MyAppState extends State<MyApp> {
                     GoRoute(
                       path: '/app/settings/profile',
                       builder: (context, state) => const ProfilePage(),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/sessions',
+                      builder: (context, state) => const SessionsPage(),
                     ),
                     GoRoute(
                       path: '/app/settings/notifications',
@@ -1039,31 +1310,74 @@ class _MyAppState extends State<MyApp> {
                         return null; // Allow navigation
                       },
                     ),
+                    GoRoute(
+                      path: '/app/settings/blocked-users',
+                      builder: (context, state) => const BlockedUsersPage(),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/abuse-center',
+                      builder: (context, state) => const AbuseCenterPage(),
+                      redirect: (context, state) {
+                        final roleProvider = context.read<RoleProvider>();
+                        // Only allow access if user has server.manage permission
+                        if (!roleProvider.hasServerPermission(
+                          'server.manage',
+                        )) {
+                          return '/app/settings';
+                        }
+                        return null; // Allow navigation
+                      },
+                    ),
                   ],
                 ),
               ],
             ),
           ]
         : [
+            // Mobile server selection route (outside ShellRoute - no navbar)
+            GoRoute(
+              path: '/mobile-server-selection',
+              pageBuilder: (context, state) {
+                final extra = state.extra as Map<String, dynamic>?;
+                final errorMessage = extra?['errorMessage'] as String?;
+                return MaterialPage(
+                  fullscreenDialog: true,
+                  child: MobileServerSelectionScreen(
+                    errorMessage: errorMessage,
+                  ),
+                );
+              },
+            ),
+            // Mobile WebAuthn login route (outside ShellRoute - no navbar)
+            GoRoute(
+              path: '/mobile-webauthn',
+              pageBuilder: (context, state) {
+                final serverUrl = state.extra as String?;
+                return MaterialPage(
+                  fullscreenDialog: true,
+                  child: MobileWebAuthnLoginScreen(serverUrl: serverUrl),
+                );
+              },
+            ),
+            // Server selection route (outside ShellRoute - no navbar, has own AppBar)
+            GoRoute(
+              path: '/server-selection',
+              pageBuilder: (context, state) {
+                final extra = state.extra as Map<String, dynamic>?;
+                final isAddingServer =
+                    extra?['isAddingServer'] as bool? ?? false;
+                return MaterialPage(
+                  fullscreenDialog: true,
+                  child: ServerSelectionScreen(isAddingServer: isAddingServer),
+                );
+              },
+            ),
+            // Add common registration routes for native platforms
+            ...commonRoutes,
             ShellRoute(
               builder: (context, state, child) => AppLayout(child: child),
               routes: [
                 GoRoute(path: '/', redirect: (context, state) => '/app'),
-                // Server selection route (inside ShellRoute - shows server navbar)
-                GoRoute(
-                  path: '/server-selection',
-                  pageBuilder: (context, state) {
-                    final extra = state.extra as Map<String, dynamic>?;
-                    final isAddingServer =
-                        extra?['isAddingServer'] as bool? ?? false;
-                    return MaterialPage(
-                      fullscreenDialog: true,
-                      child: ServerSelectionScreen(
-                        isAddingServer: isAddingServer,
-                      ),
-                    );
-                  },
-                ),
                 // Signal setup route (inside ShellRoute for native - shows server navbar)
                 GoRoute(
                   path: '/signal-setup',
@@ -1117,9 +1431,17 @@ class _MyAppState extends State<MyApp> {
                 GoRoute(
                   path: '/login',
                   pageBuilder: (context, state) {
+                    final qp = state.uri.queryParameters;
+                    final fromApp =
+                        (qp['from'] ?? '').trim().toLowerCase() == 'app';
+                    final email = qp['email']?.trim();
                     return MaterialPage(
                       fullscreenDialog: true,
-                      child: AuthLayout(clientId: _clientId),
+                      child: AuthLayout(
+                        clientId: _clientId,
+                        fromApp: fromApp,
+                        initialEmail: email,
+                      ),
                     );
                   },
                 ),
@@ -1355,7 +1677,7 @@ class _MyAppState extends State<MyApp> {
                     ),
                     GoRoute(
                       path: '/app/settings/webauthn',
-                      builder: (context, state) => const WebauthnPage(),
+                      builder: (context, state) => const WebauthnPageWrapper(),
                     ),
                     GoRoute(
                       path: '/app/settings/backupcode/list',
@@ -1369,6 +1691,10 @@ class _MyAppState extends State<MyApp> {
                     GoRoute(
                       path: '/app/settings/profile',
                       builder: (context, state) => const ProfilePage(),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/sessions',
+                      builder: (context, state) => const SessionsPage(),
                     ),
                     GoRoute(
                       path: '/app/settings/notifications',
@@ -1437,6 +1763,23 @@ class _MyAppState extends State<MyApp> {
                         return null;
                       },
                     ),
+                    GoRoute(
+                      path: '/app/settings/blocked-users',
+                      builder: (context, state) => const BlockedUsersPage(),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/abuse-center',
+                      builder: (context, state) => const AbuseCenterPage(),
+                      redirect: (context, state) {
+                        final roleProvider = context.read<RoleProvider>();
+                        if (!roleProvider.hasServerPermission(
+                          'server.manage',
+                        )) {
+                          return '/app/settings';
+                        }
+                        return null;
+                      },
+                    ),
                   ],
                 ),
               ],
@@ -1446,7 +1789,7 @@ class _MyAppState extends State<MyApp> {
     debugPrint('[MAIN] 🏗️ Creating GoRouter...');
     final GoRouter router = GoRouter(
       navigatorKey: _rootNavigatorKey,
-      initialLocation: '/login',
+      initialLocation: !kIsWeb ? _getNativeInitialLocation() : '/login',
       routes: routes,
       redirect: (context, state) async {
         final location = state.matchedLocation;
@@ -1463,13 +1806,34 @@ class _MyAppState extends State<MyApp> {
         }
 
         // Native: Check if server selection is needed (no servers configured)
-        if (!kIsWeb && location != '/server-selection') {
+        if (!kIsWeb &&
+            location != '/server-selection' &&
+            location != '/mobile-server-selection' &&
+            location != '/mobile-webauthn' &&
+            location != '/mobile-backupcode-login' && // Allow backup code login
+            !location.startsWith(
+              '/callback',
+            ) && // Allow Chrome Custom Tab callback (with query params)
+            location != '/otp' && // Allow OTP during registration
+            !location.startsWith('/register/')) {
+          // Allow registration routes
+          debugPrint('[ROUTER] 🔍 Checking servers for location: $location');
           if (!ServerConfigService.hasServers()) {
+            // Mobile: Redirect to mobile server selection screen
+            if (Platform.isAndroid || Platform.isIOS) {
+              debugPrint(
+                '[ROUTER] 📱 Mobile: No servers configured, redirecting to mobile server selection',
+              );
+              return '/mobile-server-selection';
+            }
+            // Desktop: Redirect to server selection
             debugPrint(
-              '[ROUTER] 📱 Native: No servers configured, redirecting to server selection',
+              '[ROUTER] 🖥️ Desktop: No servers configured, redirecting to server selection',
             );
             return '/server-selection';
           }
+        } else if (!kIsWeb) {
+          debugPrint('[ROUTER] ✅ Skipping server check for: $location');
         }
 
         // Only check session on initial load (when going to root or login page)
@@ -1644,9 +2008,12 @@ class _MyAppState extends State<MyApp> {
 
                   try {
                     // Capture providers before any async operations
+                    // ignore: use_build_context_synchronously
                     final unreadProvider = context
                         .read<UnreadMessagesProvider>();
+                    // ignore: use_build_context_synchronously
                     final roleProvider = context.read<RoleProvider>();
+                    // ignore: use_build_context_synchronously
                     final statsProvider = context
                         .read<FileTransferStatsProvider>();
 
@@ -1712,8 +2079,11 @@ class _MyAppState extends State<MyApp> {
 
                 try {
                   // Capture providers before any async operations
+                  // ignore: use_build_context_synchronously
                   final unreadProvider = context.read<UnreadMessagesProvider>();
+                  // ignore: use_build_context_synchronously
                   final roleProvider = context.read<RoleProvider>();
+                  // ignore: use_build_context_synchronously
                   final statsProvider = context
                       .read<FileTransferStatsProvider>();
 
@@ -1773,6 +2143,7 @@ class _MyAppState extends State<MyApp> {
 
           // Clear roles on logout
           try {
+            // ignore: use_build_context_synchronously
             final roleProvider = context.read<RoleProvider>();
             roleProvider.clearRoles();
           } catch (e) {
@@ -1848,10 +2219,28 @@ class _MyAppState extends State<MyApp> {
           return '/login';
         }
 
-        // Native: If not logged in and not on auth flow, redirect to server-selection
-        if (!kIsWeb && !loggedIn && location != '/server-selection') {
+        // Native: If not logged in and not on auth flow, redirect to appropriate screen
+        if (!kIsWeb &&
+            !loggedIn &&
+            location != '/server-selection' &&
+            location != '/mobile-server-selection' &&
+            location != '/mobile-webauthn' &&
+            location != '/mobile-backupcode-login' &&
+            location != '/callback' && // Allow Chrome Custom Tab callback
+            location != '/register' &&
+            location != '/login' &&
+            !location.startsWith('/register/') &&
+            !location.startsWith('/otp')) {
+          // Mobile: Redirect to mobile server selection
+          if (Platform.isAndroid || Platform.isIOS) {
+            debugPrint(
+              '[ROUTER] ⚠️ Mobile: Not logged in, redirecting to mobile server selection',
+            );
+            return '/mobile-server-selection';
+          }
+          // Desktop: Redirect to server selection
           debugPrint(
-            '[ROUTER] ⚠️ Native: Not logged in, redirecting to server-selection for re-authentication',
+            '[ROUTER] ⚠️ Desktop: Not logged in, redirecting to server-selection for re-authentication',
           );
           return '/server-selection';
         }
@@ -1864,5 +2253,32 @@ class _MyAppState extends State<MyApp> {
     debugPrint('[MAIN] ✅ GoRouter created');
 
     return router;
+  }
+}
+
+/// Detects if the app was started via autostart (Windows startup)
+///
+/// Returns true if:
+/// - A valid session exists (user was previously logged in)
+/// - No explicit login action was taken (not launched via magic link or deep link)
+///
+/// This helps identify scenarios where the window appears before
+/// initialization completes, which is common with autostart.
+Future<bool> _detectAutostart() async {
+  try {
+    // Check if a session exists (indicates autostart scenario)
+    final clientId = await ClientIdService.getClientId();
+    final sessionAuth = SessionAuthService();
+    final hasSession = await sessionAuth.hasSession(clientId);
+
+    if (hasSession) {
+      debugPrint('[INIT] Session found - likely autostart scenario');
+      return true;
+    }
+
+    return false;
+  } catch (e) {
+    debugPrint('[INIT] Error detecting autostart: $e');
+    return false; // Assume not autostart on error
   }
 }

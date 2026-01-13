@@ -5,6 +5,8 @@
  * Uses dynamic import() to load the ES module
  */
 
+const logger = require('../utils/logger');
+
 let livekitModule = null;
 let loadPromise = null;
 
@@ -23,12 +25,12 @@ async function loadLiveKit() {
   
   loadPromise = (async () => {
     try {
-      console.log('[LiveKit Wrapper] Loading livekit-server-sdk...');
+      logger.info('[LiveKit Wrapper] Loading livekit-server-sdk...');
       livekitModule = await import('livekit-server-sdk');
-      console.log('[LiveKit Wrapper] ✓ livekit-server-sdk loaded successfully');
+      logger.info('[LiveKit Wrapper] livekit-server-sdk loaded successfully');
       return livekitModule;
     } catch (error) {
-      console.error('[LiveKit Wrapper] ✗ Failed to load livekit-server-sdk:', error);
+      logger.error('[LiveKit Wrapper] Failed to load livekit-server-sdk:', error);
       throw error;
     }
   })();

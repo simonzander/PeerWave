@@ -1,6 +1,6 @@
 {
   "name": "PeerWave",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "WebRTC to stream and share files with peers",
   "main": "server.js",
   "scripts": {
@@ -13,7 +13,7 @@
     "SocketIO"
   ],
   "author": "Simon Zander",
-  "license": "PolyForm Noncommercial License 1.0.0",
+  "license": "AGPL-3.0-only",
   "dependencies": {
     "@sequelize/sqlite3": "^7.0.0-alpha.47",
     "bcrypt": "^6.0.0",
@@ -21,9 +21,11 @@
     "cors": "^2.8.5",
     "emailjs": "^4.0.3",
     "express": "^4.22.1",
+    "express-rate-limit": "^7.5.0",
     "express-session": "^1.18.0",
     "fido2-lib": "^3.5.3",
     "js-yaml": "^4.1.1",
+    "jsonwebtoken": "^9.0.3",
     "livekit-server-sdk": "^2.7.2",
     "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
@@ -36,7 +38,8 @@
     "sanitize-html": "^2.13.0",
     "sequelize": "^6.37.7",
     "socket.io": "^4.6.1",
-    "socket.io-express-session": "^0.1.2"
+    "socket.io-express-session": "^0.1.2",
+    "winston": "^3.19.0"
   },
   "devDependencies": {
     "eslint": "9.9.1"

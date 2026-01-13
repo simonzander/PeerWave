@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'event_bus.dart';
-import 'notification_service.dart';
+import 'notification_service.dart' as desktop;
+import 'notification_service_android.dart';
 import 'user_profile_service.dart';
 
 /// Listens to EventBus events and triggers appropriate notifications
@@ -19,6 +21,20 @@ class NotificationListenerService {
   bool _isInitialized = false;
   StreamSubscription<Map<String, dynamic>>? _newMessageSub;
   StreamSubscription<Map<String, dynamic>>? _newNotificationSub;
+
+  // Deduplication: Track recently shown notifications by itemId
+  // Prevents duplicate notifications when user has multiple devices online
+  final Map<String, DateTime> _recentNotifications = {};
+  static const Duration _deduplicationWindow = Duration(seconds: 5);
+
+  /// Get the platform-specific notification service
+  dynamic get _notificationService {
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      return NotificationServiceAndroid.instance;
+    } else {
+      return desktop.NotificationService.instance;
+    }
+  }
 
   /// Initialize and start listening to EventBus events
   Future<void> initialize() async {
@@ -56,11 +72,35 @@ class NotificationListenerService {
       final message = data['message'] as String?;
       final channel = data['channel'] as String?;
       final isOwnMessage = data['isOwnMessage'] as bool? ?? false;
+      final itemId = data['itemId'] as String?;
 
       // Don't show notifications for own messages
       if (isOwnMessage) {
         debugPrint('[NotificationListener] Skipping own message');
         return;
+      }
+
+      // Deduplication: Skip if we've shown this notification recently
+      // This prevents duplicate notifications when user has multiple devices online
+      if (itemId != null) {
+        final now = DateTime.now();
+        final lastShown = _recentNotifications[itemId];
+
+        // Clean up old entries (older than deduplication window)
+        _recentNotifications.removeWhere(
+          (key, time) => now.difference(time) > _deduplicationWindow,
+        );
+
+        if (lastShown != null &&
+            now.difference(lastShown) < _deduplicationWindow) {
+          debugPrint(
+            '[NotificationListener] ⏭️ Skipping duplicate notification (itemId: $itemId, shown ${now.difference(lastShown).inSeconds}s ago)',
+          );
+          return;
+        }
+
+        // Mark this notification as shown
+        _recentNotifications[itemId] = now;
       }
 
       // Only show notifications for actual content (not system messages)
@@ -127,10 +167,33 @@ class NotificationListenerService {
       final sender = data['sender'] as String?;
       final message = data['message'] as String?;
       final isOwnMessage = data['isOwnMessage'] as bool? ?? false;
+      final itemId = data['itemId'] as String?;
 
       // Don't show notifications for own actions
       if (isOwnMessage) {
         return;
+      }
+
+      // Deduplication: Skip if we've shown this notification recently
+      if (itemId != null) {
+        final now = DateTime.now();
+        final lastShown = _recentNotifications[itemId];
+
+        // Clean up old entries
+        _recentNotifications.removeWhere(
+          (key, time) => now.difference(time) > _deduplicationWindow,
+        );
+
+        if (lastShown != null &&
+            now.difference(lastShown) < _deduplicationWindow) {
+          debugPrint(
+            '[NotificationListener] ⏭️ Skipping duplicate activity notification (itemId: $itemId)',
+          );
+          return;
+        }
+
+        // Mark this notification as shown
+        _recentNotifications[itemId] = now;
       }
 
       // Get sender display name
@@ -164,7 +227,7 @@ class NotificationListenerService {
           title = 'Notification from $senderName';
       }
 
-      NotificationService.instance.notifyGeneral(
+      _notificationService.notifyGeneral(
         title: title,
         message: body,
         identifier: 'notification_${data['itemId']}',
@@ -184,7 +247,7 @@ class NotificationListenerService {
     debugPrint(
       '[NotificationListener] 💬 Showing 1:1 notification (type: $messageType)',
     );
-    NotificationService.instance.notifyNewDirectMessage(
+    _notificationService.notifyNewDirectMessage(
       senderName: senderName,
       messagePreview: message,
       senderId: senderId,
@@ -206,7 +269,7 @@ class NotificationListenerService {
     // TODO: Fetch actual channel name from service
     final channelName = channelId; // Fallback to ID for now
 
-    NotificationService.instance.notifyNewGroupMessage(
+    _notificationService.notifyNewGroupMessage(
       channelName: channelName,
       senderName: senderName,
       messagePreview: message,

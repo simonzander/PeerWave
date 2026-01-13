@@ -23,6 +23,7 @@ external JSPromise webauthnLoginJs(
   String serverUrl,
   String email,
   String clientId,
+  bool fromCustomTab,
 );
 @JS('onWebAuthnSuccess')
 external set _onWebAuthnSuccess(AuthCallback callback);
@@ -34,6 +35,12 @@ external set _onWebAuthnSignature(SignatureCallback callback);
 external void localStorageSetItem(String key, String value);
 @JS('window.localStorage.getItem')
 external String? localStorageGetItem(String key);
+@JS('window.location.hash')
+external String? getWindowLocationHash();
+
+// JS function to change window location (for deep links)
+@JS('eval')
+external void jsEval(String code);
 
 @JS()
 extension type AuthCallback(JSFunction _) {}
@@ -42,10 +49,10 @@ extension type AbortCallback(JSFunction _) {}
 @JS()
 extension type SignatureCallback(JSFunction _) {}
 
-void setupWebAuthnCallback(void Function(int) callback) {
+void setupWebAuthnCallback(void Function(int, String?) callback) {
   _onWebAuthnSuccess = AuthCallback(
-    (int status) {
-      callback(status);
+    (int status, [String? token]) {
+      callback(status, token);
     }.toJS,
   );
 }
@@ -68,7 +75,15 @@ void setupWebAuthnSignatureCallback(void Function(String, String) callback) {
 
 class AuthLayout extends StatefulWidget {
   final String? clientId; // Optional - will be fetched/created after login
-  const AuthLayout({super.key, this.clientId});
+  final bool fromApp;
+  final String? initialEmail;
+
+  const AuthLayout({
+    super.key,
+    this.clientId,
+    this.fromApp = false,
+    this.initialEmail,
+  });
 
   @override
   State<AuthLayout> createState() => _AuthLayoutState();
@@ -83,17 +98,47 @@ class _AuthLayoutState extends State<AuthLayout> {
   String? _lastEmail;
   Map<String, dynamic>? _serverSettings;
   bool _loadingSettings = true;
+  bool _isFromMobileApp = false;
+  bool _callbackInProgress = false;
+  String? _callbackToken;
+  // String? _mobileAppEmail; // Reserved for future use
 
   @override
   void initState() {
     super.initState();
+
+    // Prefer query params provided by GoRouter (works reliably with hash routing).
+    _isFromMobileApp = widget.fromApp;
+    final initialEmailFromRoute = widget.initialEmail?.trim();
+    final hasInitialEmailFromRoute =
+        initialEmailFromRoute != null && initialEmailFromRoute.isNotEmpty;
+
+    debugPrint(
+      '[AUTH] ctor params: fromApp=${widget.fromApp}, initialEmail=$initialEmailFromRoute',
+    );
+
+    if (hasInitialEmailFromRoute) {
+      final email = initialEmailFromRoute;
+      _lastEmail = email;
+      emailController.text = email;
+      localStorageSetItem('email', email);
+    }
+
+    // In web + hash routing, the fragment/query can be finalized slightly after
+    // Flutter initializes. Checking after the first frame avoids missing params.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _checkIfFromMobileApp();
+    });
     // Load server settings
     _loadServerSettings();
     // NOTE: clientId is no longer persisted here - it's managed after login
     // The clientId will be fetched/created after WebAuthn authentication
     // and stored paired with the user's email address
     final storedEmail = localStorageGetItem('email');
-    if (storedEmail != null && storedEmail.isNotEmpty) {
+    if (!hasInitialEmailFromRoute &&
+        storedEmail != null &&
+        storedEmail.isNotEmpty) {
       _lastEmail = storedEmail;
       emailController.text = storedEmail;
     }
@@ -154,8 +199,8 @@ class _AuthLayoutState extends State<AuthLayout> {
     });
 
     // Setup JS callback for WebAuthn success using dart:js_interop
-    setupWebAuthnCallback((status) async {
-      debugPrint('STATUS: $status');
+    setupWebAuthnCallback((status, token) async {
+      debugPrint('STATUS: $status, has token: ${token != null}');
       if (status == 200) {
         setState(() {
           _loginStatus = 'Login successful! Status: $status';
@@ -189,7 +234,29 @@ class _AuthLayoutState extends State<AuthLayout> {
           '[AUTH] ✓ Navigating to /app (initialization will continue there)',
         );
         if (!mounted) return;
-        if (fromParam == 'magic-link') {
+
+        // If opened from mobile app, redirect back with deep link
+        if (_isFromMobileApp) {
+          debugPrint('[AUTH] Login successful, redirecting to mobile app');
+          // Use token from authentication response (server already generated it)
+          if (kIsWeb) {
+            if (token != null) {
+              debugPrint(
+                '[AUTH] Using token from auth response, redirecting to app',
+              );
+              setState(() {
+                _callbackInProgress = true;
+                _callbackToken = token;
+              });
+              _triggerAppCallback(token);
+            } else {
+              debugPrint('[AUTH] No token in response, auth failed');
+              jsEval(
+                "window.location.href = 'peerwave://auth/callback?cancelled=true';",
+              );
+            }
+          }
+        } else if (fromParam == 'magic-link') {
           context.go('/magic-link');
         } else {
           context.go('/app');
@@ -232,6 +299,51 @@ class _AuthLayoutState extends State<AuthLayout> {
   void dispose() {
     _sub?.cancel();
     super.dispose();
+  }
+
+  /// Trigger callback to mobile app with token
+  void _triggerAppCallback(String token) {
+    try {
+      jsEval(
+        "window.location.href = 'peerwave://auth/callback?token=${Uri.encodeComponent(token)}';",
+      );
+    } catch (e) {
+      debugPrint('[AUTH] Failed to trigger callback: $e');
+      setState(() {
+        _loginStatus = 'Failed to callback app: $e';
+      });
+    }
+  }
+
+  /// Check if opened from mobile app via Chrome Custom Tab
+  void _checkIfFromMobileApp() {
+    if (!kIsWeb) return;
+
+    final qp = GoRouterState.of(context).uri.queryParameters;
+    final fromRaw = qp['from'];
+    if (fromRaw == null) {
+      // Don't override constructor-provided value if the router hasn't
+      // provided query params for some reason.
+      return;
+    }
+
+    final fromApp = fromRaw.trim().toLowerCase() == 'app';
+    final emailParam = qp['email']?.trim();
+
+    debugPrint(
+      '[AUTH] GoRouter params: from=${qp['from']}, email=${qp['email']}',
+    );
+    debugPrint('[AUTH] Final result - From app: $fromApp, Email: $emailParam');
+
+    if (!mounted) return;
+    setState(() {
+      _isFromMobileApp = fromApp;
+      if (fromApp && emailParam != null && emailParam.isNotEmpty) {
+        _lastEmail = emailParam;
+        emailController.text = emailParam;
+        localStorageSetItem('email', emailParam);
+      }
+    });
   }
 
   Future<void> _loadServerSettings() async {
@@ -321,7 +433,7 @@ class _AuthLayoutState extends State<AuthLayout> {
             (e.response?.data as String).isNotEmpty) {
           errorMsg = e.response?.data;
         }
-      } else if (e.message != null) {
+      } else if (e.message != null && e.message!.isNotEmpty) {
         errorMsg = e.message!;
       }
       setState(() {
@@ -345,7 +457,23 @@ class _AuthLayoutState extends State<AuthLayout> {
     String clientId,
   ) async {
     if (kIsWeb) {
-      await webauthnLoginJs(serverUrl, email, clientId).toDart;
+      debugPrint(
+        '[AUTH] Calling webauthnLoginJs with serverUrl: $serverUrl, email: $email',
+      );
+      try {
+        await webauthnLoginJs(
+          serverUrl,
+          email,
+          clientId,
+          _isFromMobileApp,
+        ).toDart;
+        debugPrint('[AUTH] webauthnLoginJs completed');
+      } catch (e) {
+        debugPrint('[AUTH] webauthnLoginJs error: $e');
+        setState(() {
+          _loginStatus = 'WebAuthn error: $e';
+        });
+      }
     } else {
       debugPrint('WebAuthn is only available on Flutter web.');
     }
@@ -415,63 +543,74 @@ class _AuthLayoutState extends State<AuthLayout> {
                 ),
                 const SizedBox(height: 24),
                 if (_loginStatus != null) ...[
-                  Container(
-                    key: ValueKey(_loginStatus),
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: _loginStatus!.contains('Login successful')
-                          ? colorScheme.primaryContainer
-                          : colorScheme.errorContainer,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _loginStatus!.contains('Login successful')
-                            ? colorScheme.primary
-                            : colorScheme.error,
-                        width: 1,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _loginStatus!,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: _loginStatus!.contains('Login successful')
-                                ? colorScheme.onPrimaryContainer
-                                : colorScheme.onErrorContainer,
+                  Builder(
+                    builder: (context) {
+                      final status = _loginStatus!;
+                      final isSuccess = status.contains('Login successful');
+                      final isError =
+                          status.contains('WebAuthn aborted') ||
+                          status.contains('Login failed');
+
+                      return Container(
+                        key: ValueKey(status),
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: isSuccess
+                              ? colorScheme.primaryContainer
+                              : colorScheme.errorContainer,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSuccess
+                                ? colorScheme.primary
+                                : colorScheme.error,
+                            width: 1,
                           ),
                         ),
-                        if (_loginStatus!.contains('WebAuthn aborted') ||
-                            _loginStatus!.contains('Login failed')) ...[
-                          const SizedBox(height: 8),
-                          Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () {
-                                context.go('/backupcode/recover');
-                              },
-                              borderRadius: BorderRadius.circular(4),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 4,
-                                  horizontal: 0,
-                                ),
-                                child: Text(
-                                  'Start recovery process',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: colorScheme.primary,
-                                    decoration: TextDecoration.underline,
-                                    fontWeight: FontWeight.w500,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              status,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: isSuccess
+                                    ? colorScheme.onPrimaryContainer
+                                    : colorScheme.onErrorContainer,
+                              ),
+                            ),
+                            if (isError) ...[
+                              const SizedBox(height: 8),
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: () {
+                                    context.go('/backupcode/recover');
+                                  },
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 4,
+                                      horizontal: 0,
+                                    ),
+                                    child: Text(
+                                      'Start recovery process',
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color: colorScheme.primary,
+                                            decoration:
+                                                TextDecoration.underline,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+                            ],
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ],
                 if (kIsWeb)
@@ -508,108 +647,236 @@ class _AuthLayoutState extends State<AuthLayout> {
                     ),
                   ),
                 const SizedBox(height: 24),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 52),
-                    backgroundColor: colorScheme.primary,
-                    foregroundColor: colorScheme.onPrimary,
-                    shape: RoundedRectangleBorder(
+                // Show callback status if in progress
+                if (_callbackInProgress && _isFromMobileApp) ...[
+                  // Show callback in progress message
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: colorScheme.primary.withOpacity(0.3),
+                      ),
                     ),
-                    elevation: 2,
+                    child: Column(
+                      children: [
+                        Icon(Icons.sync, size: 48, color: colorScheme.primary),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Trying to callback the app...',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: colorScheme.onPrimaryContainer,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'If the app doesn\'t open automatically, use the retry button below',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onPrimaryContainer.withOpacity(
+                              0.8,
+                            ),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
                   ),
-                  onPressed: () async {
-                    final email = emailController.text.trim();
-                    _lastEmail = email;
-                    localStorageSetItem('email', email);
-                    if (kIsWeb) {
-                      try {
-                        final apiServer = await loadWebApiServer();
-                        String urlString = apiServer ?? '';
-                        if (!urlString.startsWith('http://') &&
-                            !urlString.startsWith('https://')) {
-                          urlString = 'https://$urlString';
-                        }
-
-                        // Fetch/create client ID for this email (locally, no API call)
-                        final clientId =
-                            await ClientIdService.getClientIdForEmail(email);
-                        debugPrint(
-                          '[AUTH] Using client ID: $clientId for email: $email',
-                        );
-
-                        // ClientId is passed directly to WebAuthn JS function (no localStorage needed)
-                        await webauthnLogin(urlString, email, clientId);
-                      } catch (e) {
-                        debugPrint('WebAuthn JS call failed: $e');
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 52),
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: colorScheme.onPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 2,
+                    ),
+                    onPressed: () {
+                      if (_callbackToken != null) {
+                        debugPrint('[AUTH] Retry button pressed');
+                        _triggerAppCallback(_callbackToken!);
                       }
-                    }
-                  },
-                  child: Text(
-                    "Login",
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
+                    },
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.refresh, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Retry',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 52),
-                    foregroundColor: colorScheme.primary,
-                    side: BorderSide(color: colorScheme.outline),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                ],
+                if (!_callbackInProgress)
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 52),
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: colorScheme.onPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 2,
+                    ),
+                    onPressed: () async {
+                      debugPrint('[AUTH] Login button pressed');
+                      final email = emailController.text.trim();
+                      debugPrint('[AUTH] Email: $email');
+                      _lastEmail = email;
+                      localStorageSetItem('email', email);
+                      if (kIsWeb) {
+                        try {
+                          final apiServer = await loadWebApiServer();
+                          debugPrint('[AUTH] API Server: $apiServer');
+                          String urlString = apiServer ?? '';
+                          if (!urlString.startsWith('http://') &&
+                              !urlString.startsWith('https://')) {
+                            urlString = 'https://$urlString';
+                          }
+
+                          // Fetch/create client ID for this email (locally, no API call)
+                          final clientId =
+                              await ClientIdService.getClientIdForEmail(email);
+                          debugPrint(
+                            '[AUTH] Using client ID: $clientId for email: $email',
+                          );
+
+                          // ClientId is passed directly to WebAuthn JS function (no localStorage needed)
+                          debugPrint('[AUTH] About to call webauthnLogin...');
+                          await webauthnLogin(urlString, email, clientId);
+                          debugPrint('[AUTH] webauthnLogin call completed');
+                        } catch (e) {
+                          debugPrint('WebAuthn JS call failed: $e');
+                          setState(() {
+                            _loginStatus = 'Login error: $e';
+                          });
+                        }
+                      }
+                    },
+                    child: Text(
+                      "Login",
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                  onPressed: _loadingSettings
-                      ? null
-                      : () async {
-                          final email = emailController.text.trim();
-
-                          // Validate email format
-                          if (email.isEmpty || !email.contains('@')) {
-                            setState(
-                              () => _loginStatus = 'Invalid email address',
+                if (!_callbackInProgress) ...[
+                  const SizedBox(height: 16),
+                  // Show Register OR Abort button based on context
+                  if (_isFromMobileApp)
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 52),
+                        foregroundColor: colorScheme.error,
+                        side: BorderSide(color: colorScheme.outline),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        // Redirect back to app with cancellation
+                        if (kIsWeb) {
+                          debugPrint('[AUTH] User aborted from mobile');
+                          try {
+                            jsEval(
+                              "window.location.href = 'peerwave://auth/callback?cancelled=true';",
                             );
-                            return;
-                          }
-
-                          // Check registration mode
-                          final mode =
-                              _serverSettings?['registrationMode'] ?? 'open';
-
-                          // Handle email_suffix mode
-                          if (mode == 'email_suffix') {
-                            final suffixes =
-                                _serverSettings?['allowedEmailSuffixes']
-                                    as List? ??
-                                [];
-                            if (!_validateEmailSuffix(email, suffixes)) {
-                              setState(
-                                () => _loginStatus =
-                                    'Registration is restricted to specific email domains',
-                              );
-                              return;
-                            }
-                          }
-
-                          // Handle invitation_only mode
-                          if (mode == 'invitation_only') {
-                            context.go(
-                              '/register/invitation',
-                              extra: {'email': email},
+                          } catch (e) {
+                            debugPrint(
+                              '[AUTH] Failed to trigger deep link: $e',
                             );
-                            return;
+                            context.go('/');
                           }
+                        }
+                      },
+                      child: Text(
+                        "Abort",
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    )
+                  else
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 52),
+                        foregroundColor: colorScheme.primary,
+                        side: BorderSide(color: colorScheme.outline),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: _loadingSettings
+                          ? null
+                          : () async {
+                              final email = emailController.text.trim();
 
-                          // Open mode or email_suffix passed validation
-                          await _proceedWithRegistration(email);
-                        },
+                              // Validate email format
+                              if (email.isEmpty || !email.contains('@')) {
+                                setState(
+                                  () => _loginStatus = 'Invalid email address',
+                                );
+                                return;
+                              }
+
+                              // Check registration mode
+                              final mode =
+                                  _serverSettings?['registrationMode'] ??
+                                  'open';
+
+                              // Handle email_suffix mode
+                              if (mode == 'email_suffix') {
+                                final suffixes =
+                                    _serverSettings?['allowedEmailSuffixes']
+                                        as List? ??
+                                    [];
+                                if (!_validateEmailSuffix(email, suffixes)) {
+                                  setState(
+                                    () => _loginStatus =
+                                        'Registration is restricted to specific email domains',
+                                  );
+                                  return;
+                                }
+                              }
+
+                              // Handle invitation_only mode
+                              if (mode == 'invitation_only') {
+                                context.go(
+                                  '/register/invitation',
+                                  extra: {'email': email},
+                                );
+                                return;
+                              }
+
+                              // Open mode or email_suffix passed validation
+                              await _proceedWithRegistration(email);
+                            },
+                      child: Text(
+                        'Register',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                ],
+                // About this server link
+                const SizedBox(height: 24),
+                TextButton(
+                  onPressed: () => _showAboutServerDialog(context),
                   child: Text(
-                    'Register',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
+                    'About this server',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      decoration: TextDecoration.underline,
                     ),
                   ),
                 ),
@@ -618,6 +885,139 @@ class _AuthLayoutState extends State<AuthLayout> {
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _showAboutServerDialog(BuildContext context) async {
+    try {
+      // Fetch server metadata including operator info
+      final resp = await ApiService.get('/client/meta');
+      if (resp.statusCode == 200) {
+        final data = resp.data;
+        final serverOperator = data['serverOperator'] as Map<String, dynamic>?;
+
+        if (!mounted) return;
+
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            final theme = Theme.of(context);
+            final colorScheme = theme.colorScheme;
+
+            return AlertDialog(
+              title: Text(
+                'About this server',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'This PeerWave instance is hosted by',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (serverOperator?['owner'] != null) ...[
+                      _buildInfoRow(
+                        'Server Owner',
+                        serverOperator!['owner'],
+                        theme,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (serverOperator?['contact'] != null) ...[
+                      _buildInfoRow(
+                        'Contact',
+                        serverOperator!['contact'],
+                        theme,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (serverOperator?['location'] != null) ...[
+                      _buildInfoRow(
+                        'Location',
+                        serverOperator!['location'],
+                        theme,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (serverOperator?['additionalInfo'] != null) ...[
+                      _buildInfoRow(
+                        'Additional Information',
+                        serverOperator!['additionalInfo'],
+                        theme,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (serverOperator?['owner'] == null &&
+                        serverOperator?['contact'] == null &&
+                        serverOperator?['location'] == null) ...[
+                      Text(
+                        'No operator information available',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    InkWell(
+                      onTap: () {
+                        // Open link in new tab (web only)
+                        if (kIsWeb) {
+                          jsEval(
+                            "window.open('https://peerwave.org', '_blank')",
+                          );
+                        }
+                      },
+                      child: Text(
+                        'Find more about PeerWave at peerwave.org',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.primary,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      }
+    } catch (e) {
+      debugPrint('[AUTH] Failed to load server info: $e');
+    }
+  }
+
+  Widget _buildInfoRow(String label, String value, ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.labelSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(value, style: theme.textTheme.bodyMedium),
+      ],
     );
   }
 }
