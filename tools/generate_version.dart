@@ -41,6 +41,22 @@ void main() {
     
     final now = DateTime.now().toUtc().toIso8601String();
     
+    // Update client/pubspec.yaml with version from config
+    print('📝 Syncing version to pubspec.yaml...');
+    final pubspecFile = File('client/pubspec.yaml');
+    if (pubspecFile.existsSync()) {
+      var pubspecContent = pubspecFile.readAsStringSync();
+      final oldVersion = RegExp(r'version: ([^\n]+)').firstMatch(pubspecContent)?.group(1) ?? 'unknown';
+      pubspecContent = pubspecContent.replaceFirst(
+        RegExp(r'version: [^\n]+'),
+        'version: $clientVersion+$buildNumber',
+      );
+      pubspecFile.writeAsStringSync(pubspecContent);
+      print('   Updated: $oldVersion -> $clientVersion+$buildNumber');
+    } else {
+      print('   ⚠️  Warning: client/pubspec.yaml not found');
+    }
+    
     // Generate Dart code
     final dartCode = '''
 // GENERATED FILE - DO NOT EDIT

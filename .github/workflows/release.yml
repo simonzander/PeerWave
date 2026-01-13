@@ -304,8 +304,10 @@ jobs:
       
       - name: Download all artifacts
         uses: actions/download-artifact@v6
+        continue-on-error: true
         with:
           path: ./artifacts
+          pattern: '*-client'  # Only download actual client artifacts
       
       - name: Create Release
         uses: softprops/action-gh-release@v2

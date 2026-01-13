@@ -132,9 +132,26 @@ void bumpVersion(String type) {
   // Write back
   configFile.writeAsStringSync(newContent);
   
+  // Also update client/pubspec.yaml
+  final pubspecFile = File('client/pubspec.yaml');
+  if (pubspecFile.existsSync()) {
+    var pubspecContent = pubspecFile.readAsStringSync();
+    pubspecContent = pubspecContent.replaceFirst(
+      RegExp(r'version: [^\n]+'),
+      'version: $newVersion+$newBuildNumber',
+    );
+    pubspecFile.writeAsStringSync(pubspecContent);
+    print('✅ Updated client/pubspec.yaml');
+  }
+  
   print('✅ Version bumped: $currentVersion -> $newVersion');
   print('✅ Build number: $currentBuildNumber -> $newBuildNumber');
   print('📝 Tag: v$newVersion');
+  print('📱 Android version code: ${_calculateVersionCode(version, newBuildNumber)}');
+}
+
+int _calculateVersionCode(List<int> version, int buildNumber) {
+  return (version[0] * 10000) + (version[1] * 100) + (version[2] * 10) + buildNumber;
 }
 
 void addChangelog(String version, String changeEntry) {
