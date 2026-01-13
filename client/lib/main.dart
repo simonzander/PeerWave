@@ -273,10 +273,19 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   // Router instance - created once and reused
   GoRouter? _router;
 
+  // Flag to track if initial session check is complete
+  bool _sessionCheckComplete = false;
+
   @override
   void initState() {
     super.initState();
     _magicKey = widget.initialMagicKey;
+
+    // Check session on app startup for native platforms
+    // This ensures AuthService.isLoggedIn is set before router determines initial location
+    if (!kIsWeb) {
+      _checkInitialSession();
+    }
 
     // Register as app lifecycle observer
     WidgetsBinding.instance.addObserver(this);
@@ -422,6 +431,24 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     );
   }
 
+  /// Check session on app startup to restore authentication state
+  /// This must complete before router determines initial location
+  Future<void> _checkInitialSession() async {
+    try {
+      debugPrint('[INIT] Checking session on app startup...');
+      await AuthService.checkSession();
+      debugPrint('[INIT] ✓ Session check complete: ${AuthService.isLoggedIn}');
+      setState(() {
+        _sessionCheckComplete = true;
+      });
+    } catch (e) {
+      debugPrint('[INIT] ✗ Session check failed: $e');
+      setState(() {
+        _sessionCheckComplete = true;
+      });
+    }
+  }
+
   @override
   @override
   Widget build(BuildContext context) {
@@ -432,6 +459,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       return MagicLinkWebPageWithServer(
         serverUrl: _magicKey!,
         clientId: _clientId,
+      );
+    }
+
+    // For native: Wait for session check to complete before building router
+    // This ensures AuthService.isLoggedIn is set correctly for initial location
+    if (!kIsWeb && !_sessionCheckComplete) {
+      return MaterialApp(
+        home: Scaffold(
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          body: const Center(child: CircularProgressIndicator()),
+        ),
       );
     }
 
