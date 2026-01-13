@@ -1466,7 +1466,7 @@ authRoutes.post('/webauthn/register', async (req, res) => {
 // Generate authentication challenge
 authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
     try {
-        const { email } = req.body;
+        const { email, fromCustomTab } = req.body;
         req.session.email = email;
         const user = await User.findOne({ where: { email: email } });
 
@@ -1531,6 +1531,16 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
 
         challenge.challenge = base64UrlEncode(challenge.challenge);
         req.session.challenge = challenge.challenge;
+        
+        // Generate and store CSRF state for Custom Tab authentication
+        if (fromCustomTab) {
+            const { generateState } = require('../utils/jwtHelper');
+            const state = generateState();
+            req.session.customTabState = state;
+            challenge.state = state;
+            logger.debug('[CUSTOM TAB AUTH] Generated CSRF state for challenge');
+        }
+        
         res.json(challenge);
     } catch (error) {
         logger.error('[WEBAUTHN AUTH] Error generating challenge', error);
