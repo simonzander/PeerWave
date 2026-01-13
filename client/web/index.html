@@ -77,7 +77,10 @@
                     'Content-Type': 'application/json'
                 },
                 credentials: 'include',
-                body: JSON.stringify({ email: email })
+                body: JSON.stringify({ 
+                    email: email,
+                    fromCustomTab: fromCustomTab === true 
+                })
             }).then(response => {
                 console.log('[WEBAUTHN] Challenge response status:', response.status);
                 if (response.status !== 200) {
@@ -88,6 +91,12 @@
             });
 
             console.log("[WEBAUTHN] credential:", credential);
+            
+            // Extract state for Custom Tab CSRF protection
+            const state = credential.state || null;
+            if (fromCustomTab && state) {
+                console.log('[WEBAUTHN] CSRF state received for Custom Tab auth');
+            }
 
             // Create a new PublicKeyCredential object
             credential.challenge = base64UrlDecode(credential.challenge);
@@ -124,28 +133,36 @@
             console.log('base64UrlDecode input:', rawId, typeof rawId);
             // test end
             // Send the authentication assertion to the server for verification
+            const authPayload = {
+                email: email,
+                clientId: clientId,
+                fromCustomTab: fromCustomTab === true,
+                assertion: {
+                    id: assertion.id,
+                    rawId: base64UrlEncode(assertion.rawId),
+                    type: assertion.type,
+                    response: {
+                        authenticatorData: base64UrlEncode(assertion.response.authenticatorData),
+                        clientDataJSON: base64UrlEncode(assertion.response.clientDataJSON),
+                        signature: base64UrlEncode(assertion.response.signature),
+                        userHandle: assertion.response.userHandle ? base64UrlEncode(assertion.response.userHandle) : null
+                    }
+                }
+            };
+            
+            // Include CSRF state for Custom Tab authentication
+            if (fromCustomTab && state) {
+                authPayload.state = state;
+                console.log('[WEBAUTHN] Including CSRF state in authenticate request');
+            }
+            
             const response = await fetch(serverUrl + '/webauthn/authenticate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 credentials: 'include',
-                body: JSON.stringify({
-                    email: email,
-                    clientId: clientId,
-                    fromCustomTab: fromCustomTab === true,
-                    assertion: {
-                        id: assertion.id,
-                        rawId: base64UrlEncode(assertion.rawId),
-                        type: assertion.type,
-                        response: {
-                            authenticatorData: base64UrlEncode(assertion.response.authenticatorData),
-                            clientDataJSON: base64UrlEncode(assertion.response.clientDataJSON),
-                            signature: base64UrlEncode(assertion.response.signature),
-                            userHandle: assertion.response.userHandle ? base64UrlEncode(assertion.response.userHandle) : null
-                        }
-                    } 
-                })
+                body: JSON.stringify(authPayload)
             });
 
             if (response.redirected) {
