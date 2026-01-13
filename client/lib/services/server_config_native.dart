@@ -489,6 +489,14 @@ class ServerConfigService {
     return _servers.isNotEmpty;
   }
 
+  /// Check if the active server has stored credentials (indicating previous authentication)
+  /// This is a synchronous check - does not validate if the session is still valid
+  static bool activeServerHasCredentials() {
+    final activeServer = getActiveServer();
+    if (activeServer == null) return false;
+    return activeServer.credentials.isNotEmpty;
+  }
+
   /// Get last active server (for auto-open on app start)
   static ServerConfig? getLastActiveServer() {
     if (_servers.isEmpty) return null;

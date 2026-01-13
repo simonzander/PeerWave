@@ -173,8 +173,13 @@ class AppDrawer extends StatelessWidget {
               ),
               trailing: server.id == activeServer?.id
                   ? Icon(
-                      Icons.check_circle,
-                      color: colorScheme.primary,
+                      // Show alert icon if not authenticated, check icon if authenticated
+                      isAuthenticated
+                          ? Icons.check_circle
+                          : Icons.warning_amber_rounded,
+                      color: isAuthenticated
+                          ? colorScheme.primary
+                          : colorScheme.error,
                       size: 20,
                     )
                   : null,
@@ -187,10 +192,25 @@ class AppDrawer extends StatelessWidget {
                     context.go('/app/activities');
                   }
                 } else {
-                  // Already active server - just navigate to activities
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    context.go('/app/activities');
+                  // Active server clicked
+                  if (!isAuthenticated) {
+                    // Not authenticated - navigate directly to mobile login
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      if (_isMobile) {
+                        // Mobile: Go to WebAuthn login with server URL
+                        context.go('/mobile-webauthn', extra: server.serverUrl);
+                      } else {
+                        // Desktop: Go to server selection (magic key)
+                        context.go('/server-selection');
+                      }
+                    }
+                  } else {
+                    // Already authenticated - just navigate to activities
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      context.go('/app/activities');
+                    }
                   }
                 }
               },

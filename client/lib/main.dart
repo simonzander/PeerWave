@@ -550,6 +550,40 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     );
   }
 
+  /// Determine initial location for native platforms (mobile + desktop)
+  /// Returns the appropriate initial route based on server config and auth status
+  String _getNativeInitialLocation() {
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+
+    // Check if there are any configured servers
+    if (!ServerConfigService.hasServers()) {
+      final route = isMobile ? '/mobile-server-selection' : '/server-selection';
+      debugPrint('[MAIN] No servers configured, starting at $route');
+      return route;
+    }
+
+    // Check if user is logged in AND active server has credentials
+    // This ensures we're checking auth for the specific active server
+    final hasServerCredentials =
+        ServerConfigService.activeServerHasCredentials();
+
+    if (AuthService.isLoggedIn && hasServerCredentials) {
+      debugPrint(
+        '[MAIN] User is logged in for active server, starting at /app/activities',
+      );
+      return '/app/activities';
+    }
+
+    // Has servers but not authenticated for active server
+    // Mobile: Go directly to mobile-webauthn which will load the active server URL
+    // Desktop: Go to server-selection (magic key flow)
+    final route = isMobile ? '/mobile-webauthn' : '/server-selection';
+    debugPrint(
+      '[MAIN] Active server needs authentication (isLoggedIn: ${AuthService.isLoggedIn}, hasCredentials: $hasServerCredentials), going to $route',
+    );
+    return route;
+  }
+
   GoRouter _createRouter() {
     debugPrint('[MAIN] 🏗️ Creating GoRouter...');
 
@@ -1691,6 +1725,23 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                         return null;
                       },
                     ),
+                    GoRoute(
+                      path: '/app/settings/blocked-users',
+                      builder: (context, state) => const BlockedUsersPage(),
+                    ),
+                    GoRoute(
+                      path: '/app/settings/abuse-center',
+                      builder: (context, state) => const AbuseCenterPage(),
+                      redirect: (context, state) {
+                        final roleProvider = context.read<RoleProvider>();
+                        if (!roleProvider.hasServerPermission(
+                          'server.manage',
+                        )) {
+                          return '/app/settings';
+                        }
+                        return null;
+                      },
+                    ),
                   ],
                 ),
               ],
@@ -1700,9 +1751,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     debugPrint('[MAIN] 🏗️ Creating GoRouter...');
     final GoRouter router = GoRouter(
       navigatorKey: _rootNavigatorKey,
-      initialLocation: !kIsWeb && (Platform.isAndroid || Platform.isIOS)
-          ? '/mobile-server-selection'
-          : '/login',
+      initialLocation: !kIsWeb ? _getNativeInitialLocation() : '/login',
       routes: routes,
       redirect: (context, state) async {
         final location = state.matchedLocation;
