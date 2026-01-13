@@ -14,14 +14,16 @@ function getOrGenerateSecret(envVar, secretName, byteLength = 32) {
     const secretsPath = path.join(__dirname, '..', '.secrets');
     let secrets = {};
     
-    if (fs.existsSync(secretsPath)) {
-        try {
-            secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
-            if (secrets[secretName]) {
-                logger.info(`✓ Loaded ${secretName} from .secrets file`);
-                return secrets[secretName];
-            }
-        } catch (err) {
+    // Attempt to read file directly without checking existence first (prevents TOCTOU race condition)
+    try {
+        secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
+        if (secrets[secretName]) {
+            logger.info(`✓ Loaded ${secretName} from .secrets file`);
+            return secrets[secretName];
+        }
+    } catch (err) {
+        // File doesn't exist or can't be read - will generate new secret
+        if (err.code !== 'ENOENT') {
             logger.warn(`⚠️  Could not read .secrets file: ${err.message}`);
         }
     }

@@ -47,7 +47,7 @@ async function verifySessionAuth(req, res, next) {
     );
     
     if (nonceCheck && nonceCheck.length > 0) {
-      logger.debug(`[SessionAuth] Duplicate nonce detected: ${nonce}`);
+      logger.debug(`[SessionAuth] Duplicate nonce detected: ${sanitizeForLog(nonce)}`);
       return res.status(401).json({ 
         error: 'duplicate_request',
         message: 'Nonce already used (replay attack prevented)' 
@@ -130,9 +130,9 @@ async function verifySessionAuth(req, res, next) {
     if (signatureBuffer.length !== expectedBuffer.length || 
         !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
       logger.debug(`[SessionAuth] Signature mismatch for client: ${sanitizeForLog(clientId)}`);
-      logger.debug(`[SessionAuth] Expected: ${expectedSignature}`);
-      logger.debug(`[SessionAuth] Received: ${signature}`);
-      logger.debug(`[SessionAuth] Message: ${message}`);
+      logger.debug(`[SessionAuth] Expected: ${sanitizeForLog(expectedSignature)}`);
+      logger.debug(`[SessionAuth] Received: ${sanitizeForLog(signature)}`);
+      logger.debug(`[SessionAuth] Message: ${sanitizeForLog(message)}`);
       return res.status(401).json({ 
         error: 'invalid_signature',
         message: 'Authentication signature mismatch' 

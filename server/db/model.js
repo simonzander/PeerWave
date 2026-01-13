@@ -1316,8 +1316,6 @@ module.exports = {
     User,
     OTP,
     ExternalSession,
-    MeetingInvitation,
-        MeetingRsvp,
     Client,
     Item,
     SignalSignedPreKey,

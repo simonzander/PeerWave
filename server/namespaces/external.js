@@ -128,7 +128,7 @@ module.exports = function(io) {
               logger.info('[EXTERNAL WS] Signal message delivered');
               logger.debug(`[EXTERNAL WS] To: ${sanitizeForLog(deviceKey)}`);
             } else {
-              logger.warn(`[EXTERNAL WS] Recipient socket not found: ${recipientSocketId}`);
+              logger.warn(`[EXTERNAL WS] Recipient socket not found: ${sanitizeForLog(recipientSocketId)}`);
             }
           } else {
             logger.warn('[EXTERNAL WS] Recipient not connected');
@@ -218,7 +218,7 @@ module.exports = function(io) {
        * Disconnect handler
        */
       socket.on('disconnect', async (reason) => {
-        logger.info(`[EXTERNAL WS] Guest disconnected: ${reason}`);
+        logger.info(`[EXTERNAL WS] Guest disconnected: ${sanitizeForLog(reason)}`);
         logger.debug(`[EXTERNAL WS] SessionId: ${sanitizeForLog(session_id)}`);
         
         try {

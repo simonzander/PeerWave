@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const { sanitizeForLog } = require('../utils/logSanitizer');
 
 /**
  * Centralized write queue for database operations
@@ -48,22 +49,22 @@ class WriteQueue {
     const queueSize = this.queue.size;
     const pending = this.queue.pending;
     
-    logger.debug(`[WRITE QUEUE] Enqueuing operation: ${name} (Queue size: ${queueSize}, Pending: ${pending})`);
+    logger.debug(`[WRITE QUEUE] Enqueuing operation: ${sanitizeForLog(name)} (Queue size: ${queueSize}, Pending: ${pending})`);
     
     try {
       const result = await this.queue.add(async () => {
-        logger.debug(`[WRITE QUEUE] Executing: ${name}`);
+        logger.debug(`[WRITE QUEUE] Executing: ${sanitizeForLog(name)}`);
         const startTime = Date.now();
         
         try {
           const opResult = await operation();
           const duration = Date.now() - startTime;
-          logger.debug(`[WRITE QUEUE] ✓ Completed: ${name} (${duration}ms)`);
+          logger.debug(`[WRITE QUEUE] ✓ Completed: ${sanitizeForLog(name)} (${duration}ms)`);
           this.stats.totalCompleted++;
           return opResult;
         } catch (error) {
           const duration = Date.now() - startTime;
-          logger.error('[WRITE QUEUE] ✗ Failed: %s (%sms)', name, duration, error.message);
+          logger.error('[WRITE QUEUE] ✗ Failed: %s (%sms)', sanitizeForLog(name), duration, error.message);
           this.stats.totalFailed++;
           throw error;
         }
@@ -71,7 +72,7 @@ class WriteQueue {
       
       return result;
     } catch (error) {
-      logger.error('[WRITE QUEUE] Error enqueuing operation: %s', name, error.message);
+      logger.error('[WRITE QUEUE] Error enqueuing operation: %s', sanitizeForLog(name), error.message);
       throw error;
     }
   }
@@ -85,7 +86,7 @@ class WriteQueue {
   async enqueue(operation, name = 'unnamed') {
     // If queue is not initialized yet, add to pending operations
     if (!this.isInitialized) {
-      logger.debug(`[WRITE QUEUE] Queue not ready yet, adding to pending: ${name}`);
+      logger.debug(`[WRITE QUEUE] Queue not ready yet, adding to pending: ${sanitizeForLog(name)}`);
       return new Promise((resolve, reject) => {
         this.pendingOperations.push({ operation, name, resolve, reject });
       });

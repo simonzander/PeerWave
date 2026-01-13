@@ -107,11 +107,28 @@ const passwordResetLimiter = rateLimit({
   }
 });
 
+// Moderate limiter for session management operations
+const sessionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // Max 20 session operations per 15 minutes per IP
+  message: 'Too many session management requests.',
+  validate: { trustProxy: false },
+  handler: (req, res) => {
+    logger.warn('[RATE_LIMIT] Session management limit exceeded', { ip: req.ip, path: req.path });
+    res.status(429).json({
+      error: 'Too many session management requests',
+      message: 'Please try again later',
+      retryAfter: Math.ceil(req.rateLimit.resetTime / 1000)
+    });
+  }
+});
+
 module.exports = {
   apiLimiter,
   authLimiter,
   registrationLimiter,
   fileLimiter,
   queryLimiter,
-  passwordResetLimiter
+  passwordResetLimiter,
+  sessionLimiter
 };

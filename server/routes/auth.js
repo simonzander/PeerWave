@@ -9,13 +9,14 @@ const { sanitizeForLog } = require('../utils/logSanitizer');
 const logger = require('../utils/logger');
 const session = require('express-session');
 const rateLimit = require('express-rate-limit');
+const { sessionLimiter } = require('../middleware/rateLimiter');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const magicLinks = require('../store/magicLinksStore');
 const { User, OTP, Client, ClientSession, SignalPreKey, SignalSignedPreKey, SignalSenderKey, Item, GroupItem, GroupItemRead, sequelize } = require('../db/model');
 const bcrypt = require("bcrypt");
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
-const { generateAuthToken, verifyAuthToken, revokeToken, generateState } = require('../utils/jwtHelper');
+const { generateAuthToken, verifyAuthToken, revokeToken } = require('../utils/jwtHelper');
 const { verifySessionAuth, verifyAuthEither } = require('../middleware/sessionAuth');
 
 /**
@@ -879,7 +880,7 @@ authRoutes.get("/backupcode/list", async(req, res) => {
     }
 });
 
-authRoutes.get("/backupcode/usage", verifyAuthEither, async(req, res) => {
+authRoutes.get("/backupcode/usage", sessionLimiter, verifyAuthEither, async(req, res) => {
     try {
         const user = await User.findOne({ where: { uuid: req.userId } });
         if (!user) {
@@ -1093,7 +1094,7 @@ authRoutes.post("/backupcode/mobile-verify", async(req, res) => {
     }
 });
 
-authRoutes.post("/backupcode/regenerate", verifyAuthEither, async(req, res) => {
+authRoutes.post("/backupcode/regenerate", sessionLimiter, verifyAuthEither, async(req, res) => {
     try {
         const user = await User.findOne({ where: { uuid: req.userId } });
         if (!user) {
@@ -1593,18 +1594,17 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
     try {
         const { email, assertion, fromCustomTab, state } = req.body;
         
-        // Enhanced logging for Custom Tab auth
+        // Security: Validate fromCustomTab claim - must have valid CSRF state to prove legitimacy
+        // This prevents attackers from bypassing session creation by claiming to be a Custom Tab
         if (fromCustomTab) {
-            logger.info('[CUSTOM TAB AUTH] Authentication request received');
-            logger.debug('[CUSTOM TAB AUTH] Request details', {
-                email: sanitizeForLog(email),
-                hasState: !!state,
-                hasSessionState: !!req.session.customTabState
-            });
-        }
-        
-        // Verify CSRF state for Custom Tab requests (if state was provided)
-        if (fromCustomTab && state) {
+            if (!state) {
+                logger.error('[CUSTOM TAB AUTH] Rejected: fromCustomTab claimed but no state provided');
+                return res.status(400).json({ 
+                    status: "error", 
+                    message: "Invalid Custom Tab authentication request - state required" 
+                });
+            }
+            
             const sessionState = req.session.customTabState;
             if (!sessionState || sessionState !== state) {
                 logger.error('[CUSTOM TAB AUTH] CSRF validation failed', { 
@@ -1616,11 +1616,11 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                     message: "CSRF validation failed" 
                 });
             }
+            
+            logger.info('[CUSTOM TAB AUTH] Authentication request received and validated');
             logger.debug('[CUSTOM TAB AUTH] CSRF state validated');
             // Clear state after use (one-time use protection)
             delete req.session.customTabState;
-        } else if (fromCustomTab) {
-            logger.warn('[CUSTOM TAB AUTH] No CSRF state provided (skipping validation)');
         }
         
         req.session.email = email;
@@ -1858,7 +1858,7 @@ authRoutes.get("/webauthn/check", (req, res) => {
     else res.status(401).json({authenticated: false});
 });
 
-authRoutes.get("/magic/generate", verifyAuthEither, async (req, res) => {
+authRoutes.get("/magic/generate", sessionLimiter, verifyAuthEither, async (req, res) => {
     try {
         // Get user email for magic link
         const user = await User.findOne({ where: { uuid: req.userId } });
@@ -1909,7 +1909,7 @@ authRoutes.get("/magic/generate", verifyAuthEither, async (req, res) => {
     }
 });
 
-authRoutes.get("/webauthn/list", verifyAuthEither, async (req, res) => {
+authRoutes.get("/webauthn/list", sessionLimiter, verifyAuthEither, async (req, res) => {
     try {
         const user = await User.findOne({ where: { uuid: req.userId } });
         if (user) {
@@ -1965,7 +1965,7 @@ authRoutes.post("/client/addweb", async (req, res) => {
     }
 });
 
-authRoutes.get("/client/list", verifyAuthEither, async (req, res) => {
+authRoutes.get("/client/list", sessionLimiter, verifyAuthEither, async (req, res) => {
     try {
         const clients = await Client.findAll({ where: { owner: req.userId }, attributes: { exclude: ['public_key', 'registration_id'] } });
         res.status(200).json({ status: "ok", clients: clients });
@@ -1975,7 +1975,7 @@ authRoutes.get("/client/list", verifyAuthEither, async (req, res) => {
     }
 });
 
-authRoutes.post("/client/delete", verifyAuthEither, async (req, res) => {
+authRoutes.post("/client/delete", sessionLimiter, verifyAuthEither, async (req, res) => {
     try {
         const { clientId } = req.body;
         const currentClientId = req.clientId || req.session.clientId; // HMAC or session
@@ -2285,7 +2285,7 @@ authRoutes.post("/usersettings", async (req, res) => {
 });*/
 
 // Implement webauthn delete route
-authRoutes.post("/webauthn/delete", verifyAuthEither, async (req, res) => {
+authRoutes.post("/webauthn/delete", sessionLimiter, verifyAuthEither, async (req, res) => {
     // Perform webauthn delete logic
     try {
         const { credentialId } = req.body;
@@ -2379,14 +2379,26 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
     try {
         const { token, clientId } = req.body;
         
-        if (!token || !clientId) {
-            return res.status(400).json({ error: 'Token and clientId required' });
+        // Validate required parameters with proper type and format checks
+        if (!token || typeof token !== 'string' || token.trim().length === 0) {
+            return res.status(400).json({ error: 'Valid token required' });
+        }
+        
+        if (!clientId || typeof clientId !== 'string' || clientId.trim().length === 0) {
+            return res.status(400).json({ error: 'Valid clientId required' });
+        }
+        
+        // Validate clientId is a proper UUID format
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(clientId)) {
+            logger.warn('[TOKEN EXCHANGE] Invalid clientId format');
+            return res.status(400).json({ error: 'Invalid clientId format' });
         }
         
         logger.info('[TOKEN EXCHANGE] Request received');
         logger.debug('[TOKEN EXCHANGE] Request', { 
             hasToken: !!token, 
-            clientId: clientId ? clientId.substring(0, 8) + '...' : 'missing'
+            clientId: clientId.substring(0, 8) + '...'
         });
         
         // Verify JWT signature, expiration, and one-time use
@@ -2399,7 +2411,7 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
         const { userId, email, credentialId } = decoded;
         logger.info('[TOKEN EXCHANGE] Token verified');
         logger.debug('[TOKEN EXCHANGE] Token details', { 
-            userId: userId ? userId.substring(0, 8) + '...' : 'missing',
+            userId: userId.substring(0, 8) + '...',
             email: email,
             hasCredentialId: !!credentialId
         });
@@ -2461,8 +2473,9 @@ authRoutes.post('/token/revoke', tokenRevocationLimiter, async (req, res) => {
     try {
         const { token } = req.body;
         
-        if (!token) {
-            return res.status(400).json({ error: 'Token required' });
+        // Validate token with proper type and format checks
+        if (!token || typeof token !== 'string' || token.trim().length === 0) {
+            return res.status(400).json({ error: 'Valid token required' });
         }
         
         logger.info('[TOKEN REVOKE] Revocation requested');
@@ -2523,7 +2536,7 @@ authRoutes.post('/session/refresh', verifySessionAuth, async (req, res) => {
  * Lists all active sessions for the authenticated user
  * Combines HMAC sessions and WebAuthn credentials
  */
-authRoutes.get('/sessions/list', verifyAuthEither, async (req, res) => {
+authRoutes.get('/sessions/list', sessionLimiter, verifyAuthEither, async (req, res) => {
     try {
         const userId = req.userId; // Set by verifyAuthEither middleware
         const currentClientId = req.clientId || req.session.clientId; // HMAC or session
@@ -2619,7 +2632,7 @@ authRoutes.get('/sessions/list', verifyAuthEither, async (req, res) => {
  * POST /auth/sessions/revoke
  * Revokes a specific session
  */
-authRoutes.post('/sessions/revoke', verifyAuthEither, async (req, res) => {
+authRoutes.post('/sessions/revoke', sessionLimiter, verifyAuthEither, async (req, res) => {
     try {
         const userId = req.userId; // Set by verifyAuthEither middleware
         const currentClientId = req.clientId || req.session.clientId; // HMAC or session
@@ -2667,7 +2680,7 @@ authRoutes.post('/sessions/revoke', verifyAuthEither, async (req, res) => {
  * POST /auth/sessions/revoke-all
  * Revokes all sessions except the current one
  */
-authRoutes.post('/sessions/revoke-all', verifyAuthEither, async (req, res) => {
+authRoutes.post('/sessions/revoke-all', sessionLimiter, verifyAuthEither, async (req, res) => {
     try {
         const userId = req.userId; // Set by verifyAuthEither middleware
         const currentClientId = req.clientId || req.session.clientId; // HMAC or session

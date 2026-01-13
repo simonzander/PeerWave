@@ -58,7 +58,7 @@ async function autoAssignRoles(userEmail, userId) {
             }
         }
     } catch (error) {
-        logger.error('Error auto-assigning roles for %s:', userEmail, error);
+        logger.error('Error auto-assigning roles for %s:', sanitizeForLog(userEmail), error);
         // Don't throw - role assignment failure shouldn't block verification
     }
 }

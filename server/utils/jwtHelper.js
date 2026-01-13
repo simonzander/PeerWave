@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const config = require('../config/config');
 const logger = require('./logger');
+const { sanitizeForLog } = require('./logSanitizer');
 
 // Use JWT secret from config (auto-generated if not in .env)
 const JWT_SECRET = config.jwt.secret;
@@ -54,7 +55,7 @@ setInterval(() => {
  */
 function generateAuthToken(payload) {
     const jti = crypto.randomBytes(16).toString('hex');
-    logger.debug(`[JWT] Generating auth token - User: ${payload.email}, JTI: ${jti}, Expiry: ${config.jwt.expiresIn}`);
+    logger.debug(`[JWT] Generating auth token - User: ${sanitizeForLog(payload.email)}, JTI: ${jti}, Expiry: ${config.jwt.expiresIn}`);
     
     return jwt.sign(
         {

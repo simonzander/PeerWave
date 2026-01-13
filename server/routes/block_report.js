@@ -10,6 +10,17 @@ const { Op } = require('sequelize');
 const { v4: uuidv4 } = require('uuid');
 const router = express.Router();
 
+// HTML escape function to prevent XSS in emails
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // Middleware to check if user is admin
 async function requireAdmin(req, res, next) {
   const userId = req.userId || req.session.uuid;
@@ -217,10 +228,10 @@ router.post('/report-abuse', verifyAuthEither, async (req, res) => {
             subject: '⚠️ New Abuse Report - PeerWave',
             html: `
               <h2>New Abuse Report Submitted</h2>
-              <p><strong>Reporter:</strong> ${reporter?.displayName || 'Unknown'} (${reporter?.email || 'Unknown'})</p>
-              <p><strong>Reported User:</strong> ${reported?.displayName || 'Unknown'} (${reported?.email || 'Unknown'})</p>
+              <p><strong>Reporter:</strong> ${escapeHtml(reporter?.displayName || 'Unknown')} (${escapeHtml(reporter?.email || 'Unknown')})</p>
+              <p><strong>Reported User:</strong> ${escapeHtml(reported?.displayName || 'Unknown')} (${escapeHtml(reported?.email || 'Unknown')})</p>
               <p><strong>Description:</strong></p>
-              <p>${description}</p>
+              <p>${escapeHtml(description)}</p>
               <p><strong>Report ID:</strong> ${reportUuid}</p>
               <p><a href="${config.serverUrl || 'http://localhost'}/app/settings/abuse-center">View in Abuse Center</a></p>
             `
