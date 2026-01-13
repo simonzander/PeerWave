@@ -9,7 +9,7 @@ const { sanitizeForLog } = require('../utils/logSanitizer');
 const logger = require('../utils/logger');
 const session = require('express-session');
 const rateLimit = require('express-rate-limit');
-const { sessionLimiter } = require('../middleware/rateLimiter');
+const { sessionLimiter, authLimiter } = require('../middleware/rateLimiter');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const magicLinks = require('../store/magicLinksStore');
 const { User, OTP, Client, ClientSession, SignalPreKey, SignalSignedPreKey, SignalSenderKey, Item, GroupItem, GroupItemRead, sequelize } = require('../db/model');
@@ -1591,7 +1591,7 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
 });
 
 // Verify authentication response
-authRoutes.post('/webauthn/authenticate', async (req, res) => {
+authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
     try {
         const { email, assertion, fromCustomTab, state } = req.body;
         
@@ -2099,21 +2099,23 @@ authRoutes.post("/api/invitations/verify", async (req, res) => {
 // Rate limited to prevent brute force attacks
 authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
     try {
-        let { token, clientId } = req.body;
+        const { token: rawToken, clientId: rawClientId } = req.body;
         
         // Validate and normalize required parameters with proper type and format checks
-        if (!token || typeof token !== 'string') {
-            return res.status(400).json({ error: 'Valid token required' });
+        // Fail fast on invalid types (not user-controlled security decision)
+        if (typeof rawToken !== 'string' || typeof rawClientId !== 'string') {
+            return res.status(400).json({ error: 'Invalid request parameters' });
         }
-        token = token.trim();
+        
+        // Normalize by trimming whitespace
+        const token = rawToken.trim();
+        const clientId = rawClientId.trim();
+        
+        // Validate normalized values
         if (token.length === 0) {
             return res.status(400).json({ error: 'Valid token required' });
         }
         
-        if (!clientId || typeof clientId !== 'string') {
-            return res.status(400).json({ error: 'Valid clientId required' });
-        }
-        clientId = clientId.trim();
         if (clientId.length === 0) {
             return res.status(400).json({ error: 'Valid clientId required' });
         }
