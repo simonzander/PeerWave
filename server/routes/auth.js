@@ -956,7 +956,7 @@ authRoutes.post("/backupcode/verify", async(req, res) => {
     }
 });
 
-authRoutes.post("/backupcode/mobile-verify", async(req, res) => {
+authRoutes.post("/backupcode/mobile-verify", sessionLimiter, async(req, res) => {
     const { email, backupCode, clientId } = req.body;
     
     if (!email || !backupCode) {
@@ -1296,7 +1296,8 @@ authRoutes.post('/webauthn/register', async (req, res) => {
 
             const challenge = base64UrlDecode(req.session.challenge);
 
-            const host = req.hostname;
+            // Use DOMAIN from environment (not req.hostname which can be user-controlled)
+            const host = process.env.DOMAIN || req.hostname || 'localhost';
             
             // Decode clientDataJSON to check the actual origin
             const clientData = JSON.parse(Buffer.from(attestation.response.clientDataJSON, 'base64').toString('utf8'));
@@ -2516,7 +2517,7 @@ authRoutes.post('/token/revoke', tokenRevocationLimiter, async (req, res) => {
 // POST /auth/session/refresh
 // Manually refresh HMAC session (extends expiration)
 // Requires valid HMAC authentication via sessionAuth middleware
-authRoutes.post('/session/refresh', verifySessionAuth, async (req, res) => {
+authRoutes.post('/session/refresh', sessionLimiter, verifySessionAuth, async (req, res) => {
     try {
         const { clientId } = req;
         const sessionDays = config.session.hmacSessionDays || 90;
