@@ -108,7 +108,7 @@ module.exports = function(io) {
         try {
           const { recipient_user_id, recipient_device_id, encrypted_message, message_type } = data;
 
-          logger.info(`[EXTERNAL WS] Guest sending Signal message (${message_type})`);
+          logger.info(`[EXTERNAL WS] Guest sending Signal message (${sanitizeForLog(message_type)})`);
           logger.debug(`[EXTERNAL WS] From: ${sanitizeForLog(session_id)}, To: ${sanitizeForLog(recipient_user_id)}:${sanitizeForLog(recipient_device_id)}`);
 
           // Find recipient's socket

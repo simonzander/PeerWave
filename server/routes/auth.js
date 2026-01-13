@@ -1596,6 +1596,9 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
         
         // Security: Validate fromCustomTab claim - must have valid CSRF state to prove legitimacy
         // This prevents attackers from bypassing session creation by claiming to be a Custom Tab
+        // Use server-controlled flag to track verified Custom Tab auth (not user input)
+        let isVerifiedCustomTab = false;
+        
         if (fromCustomTab) {
             if (!state) {
                 logger.error('[CUSTOM TAB AUTH] Rejected: fromCustomTab claimed but no state provided');
@@ -1617,6 +1620,8 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
                 });
             }
             
+            // CSRF validation passed - set server-controlled flag
+            isVerifiedCustomTab = true;
             logger.info('[CUSTOM TAB AUTH] Authentication request received and validated');
             logger.debug('[CUSTOM TAB AUTH] CSRF state validated');
             // Clear state after use (one-time use protection)
@@ -1733,7 +1738,8 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
             }
             
             // For app-based login (Custom Tab), skip session creation and only return JWT
-            if (fromCustomTab) {
+            // Use server-controlled flag (not user input) to prevent bypass attacks
+            if (isVerifiedCustomTab) {
                 logger.debug('[CUSTOM TAB AUTH] App-based login - skipping session creation');
                 const response = { 
                     status: "ok", 
@@ -1853,7 +1859,7 @@ authRoutes.post('/webauthn/authenticate', async (req, res) => {
     }
 });
 
-authRoutes.get("/webauthn/check", (req, res) => {
+authRoutes.get("/webauthn/check", sessionLimiter, (req, res) => {
     if(req.session.authenticated || req.session.otp) res.status(200).json({authenticated: true});
     else res.status(401).json({authenticated: false});
 });
@@ -2377,14 +2383,22 @@ authRoutes.post("/api/invitations/verify", async (req, res) => {
 // Rate limited to prevent brute force attacks
 authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
     try {
-        const { token, clientId } = req.body;
+        let { token, clientId } = req.body;
         
-        // Validate required parameters with proper type and format checks
-        if (!token || typeof token !== 'string' || token.trim().length === 0) {
+        // Validate and normalize required parameters with proper type and format checks
+        if (!token || typeof token !== 'string') {
+            return res.status(400).json({ error: 'Valid token required' });
+        }
+        token = token.trim();
+        if (token.length === 0) {
             return res.status(400).json({ error: 'Valid token required' });
         }
         
-        if (!clientId || typeof clientId !== 'string' || clientId.trim().length === 0) {
+        if (!clientId || typeof clientId !== 'string') {
+            return res.status(400).json({ error: 'Valid clientId required' });
+        }
+        clientId = clientId.trim();
+        if (clientId.length === 0) {
             return res.status(400).json({ error: 'Valid clientId required' });
         }
         
