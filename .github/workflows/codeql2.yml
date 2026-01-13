@@ -12,6 +12,8 @@ jobs:
   analyze:
     name: Analyze Server Code
     runs-on: ubuntu-latest
+    # Skip CodeQL on Dependabot PRs - they're just dependency updates
+    if: github.actor != 'dependabot[bot]'
     permissions:
       actions: read
       contents: read
@@ -24,7 +26,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
