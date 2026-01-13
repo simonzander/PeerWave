@@ -11,26 +11,19 @@ plugins {
 // Calculate version code from semantic version and build number
 // Formula: (major * 10000) + (minor * 100) + (patch * 10) + buildNumber
 // Example: 1.1.1+10 -> (1*10000) + (1*100) + (1*10) + 10 = 10120
-fun calculateVersionCode(versionName: String): Int {
-    val parts = versionName.split("+")
-    if (parts.size != 2) {
-        println("Warning: Invalid version format '$versionName', using version code 1")
-        return 1
-    }
-    
-    val version = parts[0].split(".")
+fun calculateVersionCode(versionName: String, buildNumber: Int): Int {
+    val version = versionName.split(".")
     if (version.size != 3) {
-        println("Warning: Invalid semantic version '$parts[0]', using version code 1")
-        return 1
+        println("Warning: Invalid semantic version '$versionName', using version code $buildNumber")
+        return buildNumber
     }
     
     val major = version[0].toIntOrNull() ?: 0
     val minor = version[1].toIntOrNull() ?: 0
     val patch = version[2].toIntOrNull() ?: 0
-    val buildNumber = parts[1].toIntOrNull() ?: 0
     
     val calculatedCode = (major * 10000) + (minor * 100) + (patch * 10) + buildNumber
-    println("Calculated version code: $calculatedCode from version $versionName")
+    println("Calculated version code: $calculatedCode from version $versionName+$buildNumber")
     return calculatedCode
 }
 
@@ -66,9 +59,10 @@ android {
         
         // Calculate version code from semantic version + build number
         // This ensures unique, incrementing version codes for Google Play
-        val flutterVersionName = flutter.versionName ?: "1.0.0+1"
-        versionCode = calculateVersionCode(flutterVersionName)
-        versionName = flutterVersionName.split("+")[0]  // Display version without build number
+        val flutterVersionName = flutter.versionName ?: "1.0.0"
+        val flutterBuildNumber = flutter.versionCode ?: 1
+        versionCode = calculateVersionCode(flutterVersionName, flutterBuildNumber)
+        versionName = flutterVersionName  // Display version without build number
         
         // Enable multidex for apps with many dependencies
         multiDexEnabled = true
