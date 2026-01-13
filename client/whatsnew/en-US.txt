@@ -1,0 +1,54 @@
+🚀 What's New in PeerWave v1.1.1
+
+🔐 Security & Authentication
+• enhance mobile backup code login with session initialization and encryption key generation
+• refactor session refresh endpoint to use sessionAuth middleware
+• enhance WebAuthn and backup code routes with user authentication improvements
+• add mobile backup code verification endpoint with brute-force protection
+• remove duplicate SHA256 fingerprints and add debug app permissions in assetlinks.json
+• update assetlinks.json to include additional SHA256 fingerprints for URL handling
+• enhance image picking functionality and update keystore handling
+• update passkeys_web plugin to prevent crashes and use local version
+• refactor login status display and remove unused plugin configuration
+• remove unused library imports and debug print in PasskeysWeb stub
+• implement fallback URL handling and enhance passkeys web stub
+• Remove deprecated passkeys_web package and related files
+• Enhance network security configuration and app lifecycle management
+• Optimize client record handling and ensure device_id for Signal protocol
+• Enhance session management by ensuring client record for Signal protocol during token exchange
+• Implement key derivation from credentialId and enhance session expiration handling
+• Enhance device identity management during WebAuthn authentication flow
+• Update token exchange to use ClientSession for session management
+• Implement Custom Tab authentication flow and update user identification to use UUID
+• Add logging for WebAuthn response and enhance CSRF validation for Custom Tab requests
+• Add support for custom tab handling in WebAuthn login
+• Enhance WebAuthn success handling by extracting authToken from response
+• Enhance authentication flow with token handling and server configuration management
+• Enhance mobile authentication flow with server URL support and improve WebAuthn origin handling
+• Implement auto-generated secrets and session management configuration
+• enhance client ownership transfer logic to include deletion of read receipts
+• enhance client ownership transfer logic to ensure secure data deletion and ownership management
+• enhance Custom Tab authentication by generating JWT and skipping session creation
+• Add support for initial email and app source in AuthLayout
+• Implement deep link handling for mobile app authentication
+
+✨ New Features
+• Improve parameter validation in token exchange route for enhanced security
+• Enhance security by adding auth limiter to WebAuthn authentication and improving request parameter validation
+• Enhance security by adding session limiter to WebAuthn registration and delete routes
+• Enhance security by adding session limiter to backup code verification and session refresh routes
+• Enhance security by adding server-controlled flag for Custom Tab authentication and improving input validation
+• Enhance security and logging across various modules, including session management and abuse reporting
+• Add express-rate-limit dependency to enhance rate limiting for requests
+• Implement initial session check on app startup for native platforms and update version to 1.1.0+5
+• Enhance session restoration by checking ServerConfig backup and update version to 1.1.0+4
+• Enhance authentication flow with server credential checks and update pubspec version
+• Remove unused Flutter image to optimize client resources
+• Add server operator information environment variables to Docker configurations
+• Add logging volume to Docker configurations for improved log management
+• Add disk space cleanup step to workflows for improved resource management
+• Implement user blocking and abuse reporting features
+• add sessions management feature with UI and API integration
+• Add support for Digital Asset Links by serving .well-known directory
+• Add email parameter for backup code and WebAuthn registration flows
+
