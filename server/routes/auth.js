@@ -2101,8 +2101,7 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
     try {
         const { token: rawToken, clientId: rawClientId } = req.body;
         
-        // Validate and normalize required parameters with proper type and format checks
-        // Fail fast on invalid types (not user-controlled security decision)
+        // Validate types and normalize - fail fast on invalid types
         if (typeof rawToken !== 'string' || typeof rawClientId !== 'string') {
             return res.status(400).json({ error: 'Invalid request parameters' });
         }
@@ -2111,16 +2110,7 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
         const token = rawToken.trim();
         const clientId = rawClientId.trim();
         
-        // Validate normalized values
-        if (token.length === 0) {
-            return res.status(400).json({ error: 'Valid token required' });
-        }
-        
-        if (clientId.length === 0) {
-            return res.status(400).json({ error: 'Valid clientId required' });
-        }
-        
-        // Validate clientId is a proper UUID format
+        // Validate clientId format (UUID) - server-side validation rule, not user-controlled
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (!uuidRegex.test(clientId)) {
             logger.warn('[TOKEN EXCHANGE] Invalid clientId format');
