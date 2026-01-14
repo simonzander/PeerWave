@@ -124,6 +124,8 @@ import 'services/storage/database_helper.dart';
 import 'services/device_scoped_storage_service.dart';
 import 'services/idb_factory_web.dart'
     if (dart.library.io) 'services/idb_factory_native.dart';
+import 'services/network_checker_service.dart';
+import 'services/filesystem_checker_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -142,11 +144,71 @@ Future<void> main() async {
     // Detect autostart scenario (presence of session without explicit login action)
     // This helps identify cases where window appears before initialization completes
     final bool isAutostart = await _detectAutostart();
-    if (isAutostart) {
-      debugPrint('[INIT] 🚀 AUTOSTART DETECTED - Window opened automatically');
+    final bool isDesktop =
+        !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+
+    if (isAutostart && isDesktop) {
       debugPrint(
-        '[INIT] ⚠️ Using enhanced initialization checks to prevent premature navigation',
+        '[INIT] 🚀 DESKTOP AUTOSTART DETECTED - Using enhanced initialization',
       );
+      debugPrint('[INIT] Platform: ${Platform.operatingSystem}');
+
+      // Phase 1: Wait for network interface (up to 3 minutes)
+      debugPrint('[INIT] Phase 1: Checking network availability...');
+      final networkAvailable = await NetworkCheckerService.waitForNetwork();
+      if (!networkAvailable) {
+        debugPrint('[INIT] ⚠️ Network timeout reached - proceeding anyway');
+      } else {
+        debugPrint('[INIT] ✅ Network available');
+      }
+
+      // Phase 2: Wait for file system access (up to 1 minute)
+      debugPrint('[INIT] Phase 2: Checking file system access...');
+      final appDir = AppDirectories.appDataDirectory.path;
+      final fsAvailable =
+          await FileSystemCheckerService.waitForFileSystemAccess(
+            testPath: appDir,
+            timeout: const Duration(minutes: 1),
+          );
+      if (!fsAvailable) {
+        debugPrint(
+          '[INIT] ⚠️ File system timeout reached - attempting to proceed',
+        );
+      } else {
+        debugPrint('[INIT] ✅ File system accessible');
+      }
+
+      // Phase 3: Enhanced database initialization will use autostart-aware retry logic
+      debugPrint(
+        '[INIT] Phase 3: Initializing database with enhanced retry...',
+      );
+
+      // Phase 4: Proactive session refresh if close to expiry
+      debugPrint('[INIT] Phase 4: Checking session expiry...');
+      try {
+        await SessionAuthService().checkAndRefreshSession();
+        debugPrint('[INIT] ✅ Session check completed');
+      } catch (e) {
+        debugPrint('[INIT] ⚠️ Session refresh check failed: $e');
+      }
+    } else if (isAutostart) {
+      debugPrint(
+        '[INIT] 🚀 AUTOSTART DETECTED (mobile) - Using standard initialization',
+      );
+
+      // Also check session on mobile autostart
+      try {
+        await SessionAuthService().checkAndRefreshSession();
+      } catch (e) {
+        debugPrint('[INIT] ⚠️ Session refresh check failed: $e');
+      }
+    }
+  } else {
+    // Web platform - check session if available
+    try {
+      await SessionAuthService().checkAndRefreshSession();
+    } catch (e) {
+      // Ignore errors on web (may not have sessions)
     }
   }
 

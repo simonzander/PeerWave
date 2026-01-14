@@ -12,12 +12,49 @@ const rateLimit = require('express-rate-limit');
 const { sessionLimiter, authLimiter } = require('../middleware/rateLimiter');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const magicLinks = require('../store/magicLinksStore');
-const { User, OTP, Client, ClientSession, SignalPreKey, SignalSignedPreKey, SignalSenderKey, Item, GroupItem, GroupItemRead, sequelize } = require('../db/model');
+const { User, OTP, Client, ClientSession, RefreshToken, SignalPreKey, SignalSignedPreKey, SignalSenderKey, Item, GroupItem, GroupItemRead, sequelize } = require('../db/model');
 const bcrypt = require("bcrypt");
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
 const { generateAuthToken, verifyAuthToken, revokeToken } = require('../utils/jwtHelper');
 const { verifySessionAuth, verifyAuthEither } = require('../middleware/sessionAuth');
+
+/**
+ * Generate a refresh token for native client session renewal
+ * @param {string} clientId - Client UUID
+ * @param {string} userUuid - User UUID
+ * @returns {Promise<string>} Refresh token
+ */
+async function generateRefreshToken(clientId, userUuid) {
+    try {
+        const token = crypto.randomBytes(64).toString('base64url');
+        const expiresInDays = config.refreshToken?.expiresInDays || 60;
+        const expiresAt = new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000);
+        
+        // Store in database
+        await writeQueue.enqueue(
+            () => RefreshToken.create({
+                token,
+                client_id: clientId,
+                user_id: userUuid,
+                session_id: clientId,
+                expires_at: expiresAt,
+                created_at: new Date(),
+                used_at: null,
+                rotation_count: 0
+            }),
+            'createRefreshToken'
+        );
+        
+        logger.info('[REFRESH TOKEN] Generated refresh token', { expiresInDays });
+        logger.debug('[REFRESH TOKEN] Token created', { clientId: sanitizeForLog(clientId) });
+        
+        return token;
+    } catch (error) {
+        logger.error('[REFRESH TOKEN] Error generating token', error);
+        throw error;
+    }
+}
 
 /**
  * Shared function to find or create a Client record
@@ -1062,6 +1099,16 @@ authRoutes.post("/backupcode/mobile-verify", sessionLimiter, async(req, res) => 
             } catch (sessionErr) {
                 logger.error('[BACKUPCODE MOBILE] Error creating HMAC session', sessionErr);
             }
+            
+            // Generate refresh token for mobile clients
+            try {
+                const refreshToken = await generateRefreshToken(clientId, user.uuid);
+                // Store for response (added below)
+                response.refreshToken = refreshToken;
+            } catch (refreshErr) {
+                logger.error('[BACKUPCODE MOBILE] Error generating refresh token', refreshErr);
+                // Continue anyway - session still works without refresh token
+            }
         }
         
         // Save session and return response
@@ -1081,7 +1128,11 @@ authRoutes.post("/backupcode/mobile-verify", sessionLimiter, async(req, res) => 
                 response.sessionSecret = sessionSecret;
                 response.userId = user.uuid;
                 response.email = email;
-                logger.info('[BACKUPCODE MOBILE] Login successful');
+                if (response.refreshToken) {
+                    logger.info('[BACKUPCODE MOBILE] Login successful with refresh token');
+                } else {
+                    logger.info('[BACKUPCODE MOBILE] Login successful');
+                }
                 logger.debug('[BACKUPCODE MOBILE] Login successful', { email: sanitizeForLog(email) });
             }
             
@@ -1828,6 +1879,18 @@ authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
                     logger.error('[WEBAUTHN] Error creating HMAC session', sessionErr);
                     // Continue anyway - web clients don't need HMAC sessions
                 }
+                
+                // Generate refresh token for native clients
+                if (sessionSecret) {
+                    try {
+                        const refreshToken = await generateRefreshToken(clientId, user.uuid);
+                        // Store for response (added below)
+                        response.refreshToken = refreshToken;
+                    } catch (refreshErr) {
+                        logger.error('[WEBAUTHN] Error generating refresh token', refreshErr);
+                        // Continue anyway - session still works without refresh token
+                    }
+                }
             }
             
             // Persist session now
@@ -1847,7 +1910,11 @@ authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
                     response.sessionSecret = sessionSecret;
                     response.userId = user.uuid;
                     response.email = email;
-                    logger.info('[WEBAUTHN] HMAC session credentials included in response');
+                    if (response.refreshToken) {
+                        logger.info('[WEBAUTHN] HMAC session credentials + refresh token included in response');
+                    } else {
+                        logger.info('[WEBAUTHN] HMAC session credentials included in response');
+                    }
                     logger.debug('[WEBAUTHN] HMAC credentials', { email: sanitizeForLog(email) });
                 }
                 
@@ -2184,12 +2251,28 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
         
         logger.info('[TOKEN EXCHANGE] Session created', { email: user.email, sessionDays });
         
-        res.json({
+        // Generate refresh token
+        let refreshToken;
+        try {
+            refreshToken = await generateRefreshToken(clientId, user.uuid);
+            logger.info('[TOKEN EXCHANGE] Refresh token generated');
+        } catch (refreshErr) {
+            logger.error('[TOKEN EXCHANGE] Error generating refresh token', refreshErr);
+            // Continue anyway - session still works without refresh token
+        }
+        
+        const response = {
             sessionSecret,
             userId: user.uuid,
             email: user.email,
             credentialId: credentialId // Include for device identity setup
-        });
+        };
+        
+        if (refreshToken) {
+            response.refreshToken = refreshToken;
+        }
+        
+        res.json(response);
         
     } catch (error) {
         logger.error('[TOKEN EXCHANGE] Error', error);
@@ -2227,6 +2310,105 @@ authRoutes.post('/token/revoke', tokenRevocationLimiter, async (req, res) => {
         
     } catch (error) {
         logger.error('[TOKEN REVOKE] Error', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Refresh Token Endpoint
+// POST /auth/token/refresh
+// Refreshes expired HMAC session using refresh token
+// Rate limited to 10 requests per hour per client
+const refreshTokenLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 10, // 10 requests per hour
+    message: 'Too many refresh attempts, please try again later',
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+authRoutes.post('/token/refresh', refreshTokenLimiter, async (req, res) => {
+    try {
+        const { clientId, refreshToken } = req.body;
+        
+        // Validate inputs
+        if (!clientId || typeof clientId !== 'string' || !refreshToken || typeof refreshToken !== 'string') {
+            return res.status(400).json({ error: 'clientId and refreshToken are required' });
+        }
+        
+        logger.info('[REFRESH TOKEN] Refresh request received');
+        logger.debug('[REFRESH TOKEN] Request', { clientId: sanitizeForLog(clientId) });
+        
+        // Find the refresh token in database
+        const tokenRecord = await RefreshToken.findOne({ 
+            where: { 
+                token: refreshToken,
+                client_id: clientId
+            } 
+        });
+        
+        if (!tokenRecord) {
+            logger.warn('[REFRESH TOKEN] Token not found');
+            return res.status(401).json({ error: 'Invalid refresh token' });
+        }
+        
+        // Check if token is expired
+        if (new Date() > new Date(tokenRecord.expires_at)) {
+            logger.warn('[REFRESH TOKEN] Token expired');
+            await writeQueue.enqueue(
+                () => RefreshToken.destroy({ where: { token: refreshToken } }),
+                'deleteExpiredRefreshToken'
+            );
+            return res.status(401).json({ error: 'Refresh token expired' });
+        }
+        
+        // Check one-time use
+        if (tokenRecord.used_at !== null) {
+            logger.warn('[REFRESH TOKEN] Token already used');
+            return res.status(401).json({ error: 'Refresh token already used' });
+        }
+        
+        // Mark old token as used
+        await writeQueue.enqueue(
+            () => RefreshToken.update(
+                { used_at: new Date() },
+                { where: { token: refreshToken } }
+            ),
+            'markRefreshTokenUsed'
+        );
+        
+        // Generate new session secret
+        const sessionSecret = crypto.randomBytes(32).toString('base64url');
+        const sessionDays = config.session?.hmacSessionDays || 90;
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + sessionDays);
+        
+        // Update client session
+        await writeQueue.enqueue(
+            () => sequelize.query(
+                `UPDATE client_sessions 
+                 SET session_secret = ?, 
+                     expires_at = ?,
+                     last_used = datetime('now')
+                 WHERE client_id = ?`,
+                { replacements: [sessionSecret, expiresAt.toISOString(), clientId] }
+            ),
+            'updateClientSessionOnRefresh'
+        );
+        
+        // Generate new refresh token (rotation for security)
+        const newRefreshToken = await generateRefreshToken(clientId, tokenRecord.user_id);
+        
+        logger.info('[REFRESH TOKEN] Session refreshed successfully');
+        logger.debug('[REFRESH TOKEN] New tokens generated', { clientId: sanitizeForLog(clientId) });
+        
+        res.json({
+            sessionSecret,
+            refreshToken: newRefreshToken,
+            userId: tokenRecord.user_id
+        });
+        
+    } catch (error) {
+        logger.error('[REFRESH TOKEN] Error', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });

@@ -1297,6 +1297,72 @@ const AbuseReport = sequelize.define('AbuseReport', {
     ]
 });
 
+// RefreshToken - Stores refresh tokens for native client session renewal
+// Supports token rotation for security (one-time use)
+const RefreshToken = sequelize.define('RefreshToken', {
+    token: {
+        type: DataTypes.STRING(255),
+        primaryKey: true,
+        allowNull: false
+    },
+    client_id: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        references: {
+            model: 'ClientSessions',
+            key: 'client_id'
+        }
+    },
+    user_id: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    session_id: {
+        type: DataTypes.STRING,
+        allowNull: true  // Link to client_sessions.client_id
+    },
+    expires_at: {
+        type: DataTypes.DATE,
+        allowNull: false
+    },
+    created_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.NOW
+    },
+    used_at: {
+        type: DataTypes.DATE,
+        allowNull: true  // For one-time use tracking
+    },
+    rotation_count: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0
+    }
+}, {
+    tableName: 'refresh_tokens',
+    timestamps: false,
+    indexes: [
+        {
+            fields: ['client_id']
+        },
+        {
+            fields: ['user_id']
+        },
+        {
+            fields: ['expires_at']
+        },
+        {
+            fields: ['token'],
+            unique: true
+        }
+    ]
+});
+
 // Define associations for blocked users
 User.hasMany(BlockedUser, { foreignKey: 'blocker_uuid', as: 'blockedByUser' });
 User.hasMany(BlockedUser, { foreignKey: 'blocked_uuid', as: 'blockedUsers' });
@@ -1310,6 +1376,12 @@ User.hasMany(AbuseReport, { foreignKey: 'resolved_by', as: 'reportsResolved' });
 AbuseReport.belongsTo(User, { foreignKey: 'reporter_uuid', as: 'reporter' });
 AbuseReport.belongsTo(User, { foreignKey: 'reported_uuid', as: 'reported' });
 AbuseReport.belongsTo(User, { foreignKey: 'resolved_by', as: 'resolver' });
+
+// Define associations for refresh tokens
+User.hasMany(RefreshToken, { foreignKey: 'user_id', as: 'refreshTokens' });
+RefreshToken.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+ClientSession.hasMany(RefreshToken, { foreignKey: 'client_id', as: 'refreshTokens' });
+RefreshToken.belongsTo(ClientSession, { foreignKey: 'client_id', as: 'session' });
 
 
 module.exports = {
@@ -1329,6 +1401,7 @@ module.exports = {
     UserRole,
     UserRoleChannel,
     ClientSession,
+    RefreshToken,
     NonceCache,
     ServerSettings,
     Invitation,

@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const { Op } = require('sequelize');
 const config = require('../config/config');
-const { User, Client, Item, GroupItem } = require('../db/model');
+const { User, Client, Item, GroupItem, RefreshToken } = require('../db/model');
 const writeQueue = require('../db/writeQueue');
 const logger = require('../utils/logger');
 
@@ -141,6 +141,39 @@ async function deleteOldItems() {
 }
 
 /**
+ * Clean up expired and used refresh tokens
+ */
+async function cleanupRefreshTokens() {
+    try {
+        logger.info('[CLEANUP] Cleaning up refresh tokens');
+        
+        const now = new Date();
+        
+        // Delete tokens that are:
+        // 1. Expired
+        // 2. Used (one-time use)
+        const result = await writeQueue.enqueue(
+            () => RefreshToken.destroy({
+                where: {
+                    [Op.or]: [
+                        { expires_at: { [Op.lt]: now } },
+                        { used_at: { [Op.not]: null } }
+                    ]
+                }
+            }),
+            'cleanupRefreshTokens'
+        );
+        
+        logger.info('[CLEANUP] Refresh tokens cleaned up', { deletedCount: result });
+        
+        return result;
+    } catch (error) {
+        logger.error('[CLEANUP] Error cleaning refresh tokens', error);
+        throw error;
+    }
+}
+
+/**
  * Clean up expired P2P files from file registry
  */
 async function cleanupFileRegistry() {
@@ -175,6 +208,9 @@ async function runCleanup() {
         // Delete old items
         await deleteOldItems();
         
+        // Clean up refresh tokens
+        await cleanupRefreshTokens();
+        
         // Clean up file registry
         await cleanupFileRegistry();
         
@@ -203,5 +239,6 @@ module.exports = {
     runCleanup,
     markInactiveUsers,
     deleteOldItems,
+    cleanupRefreshTokens,
     cleanupFileRegistry
 };

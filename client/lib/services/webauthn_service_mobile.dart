@@ -5,6 +5,7 @@ import 'package:passkeys/types.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:dio/dio.dart';
 import 'api_service.dart';
+import 'secure_session_storage.dart';
 
 /// Mobile WebAuthn service for iOS and Android
 ///
@@ -340,7 +341,23 @@ class MobileWebAuthnService {
 
       final responseData = serverResponse.data as Map<String, dynamic>;
       debugPrint('[MobileWebAuthn] Ô£ô Authentication successful');
+      // Store tokens and expiry if provided
+      final refreshToken = responseData['refreshToken'] as String?;
+      final clientId = responseData['clientId'] as String?;
 
+      if (clientId != null) {
+        final storage = SecureSessionStorage();
+        await storage.saveClientId(clientId);
+
+        // Store session expiry (90 days for HMAC session)
+        final sessionExpiryDate = DateTime.now().add(Duration(days: 90));
+        await storage.saveSessionExpiry(sessionExpiryDate.toIso8601String());
+
+        if (refreshToken != null) {
+          await storage.saveRefreshToken(refreshToken);
+          debugPrint('[MobileWebAuthn] ✓ Refresh token stored');
+        }
+      }
       return {
         'credentialId': storedCredential['credentialId'],
         'authData': responseData,
