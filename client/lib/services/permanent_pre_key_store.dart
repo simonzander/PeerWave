@@ -283,20 +283,16 @@ class PermanentPreKeyStore extends PreKeyStore {
       '[PREKEY STORE] Getting all keys from storage (baseName: $_storeName, storeName: $_storeName)',
     );
     final keys = await storage.getAllKeys(_storeName, _storeName);
-    debugPrint(
-      '[PREKEY STORE] Found ${keys.length} total keys in storage: $keys',
-    );
 
     final filtered = keys.where((k) => k.startsWith(_keyPrefix)).toList();
-    debugPrint(
-      '[PREKEY STORE] Filtered to ${filtered.length} keys with prefix "$_keyPrefix": $filtered',
-    );
 
     final ids = filtered
         .map((k) => int.tryParse(k.replaceFirst(_keyPrefix, '')))
         .whereType<int>()
         .toList();
-    debugPrint('[PREKEY STORE] Parsed to ${ids.length} PreKey IDs: $ids');
+
+    // 🔧 REDUCED VERBOSITY: Only log count, not full list (reduces spam with 100+ keys)
+    debugPrint('[PREKEY STORE] Found ${ids.length} PreKey IDs in storage');
 
     return ids;
 

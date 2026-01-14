@@ -257,7 +257,21 @@ Future<void> main() async {
       '[INIT] ✅ Web platform: Using relative paths (resolve to ${Uri.base.origin})',
     );
   } else {
-    serverUrl ??= 'http://localhost:3000'; // Fallback for non-web platforms
+    // Native platforms: Load server URL from ServerConfigService if available
+    if (serverUrl == null || serverUrl.isEmpty) {
+      // ServerConfig is initialized later, so we need to load it early here
+      await ServerConfigService.init();
+      final activeServer = ServerConfigService.getActiveServer();
+      if (activeServer != null) {
+        serverUrl = activeServer.serverUrl;
+        debugPrint('[INIT] ✅ Loaded active server: $serverUrl');
+        ApiService.setBaseUrl(serverUrl);
+      } else {
+        serverUrl =
+            'http://localhost:3000'; // Fallback only if no servers configured
+        debugPrint('[INIT] ⚠️ No active server, using fallback: $serverUrl');
+      }
+    }
     debugPrint('[INIT] ✅ API base URL set to: $serverUrl (non-web platform)');
   }
 

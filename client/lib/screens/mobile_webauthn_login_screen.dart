@@ -243,19 +243,8 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen>
         return;
       }
 
-      // Save server after successful authentication
-      final clientId = await ClientIdService.getClientId();
-      final sessionSecret = await SessionAuthService().getSessionSecret(
-        clientId,
-      );
-
-      if (sessionSecret != null) {
-        await ServerConfigService.addServer(
-          serverUrl: _serverUrl!,
-          credentials: sessionSecret,
-        );
-        debugPrint('[MobileWebAuthnLogin] ✓ Server saved after login');
-      }
+      // Server is now saved in CustomTabAuthService.finishLogin
+      // No need to save again here to avoid duplicates
 
       // Clear loading state before navigation
       if (mounted) {

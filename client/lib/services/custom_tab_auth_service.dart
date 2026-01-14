@@ -8,6 +8,7 @@ import 'clientid_native.dart';
 import 'device_identity_service.dart';
 import 'native_crypto_service.dart';
 import 'secure_session_storage.dart';
+import 'server_config_native.dart';
 
 /// Service for handling authentication via Chrome Custom Tabs
 ///
@@ -211,6 +212,8 @@ class CustomTabAuthService {
               email,
               credentialId,
               clientId,
+              serverUrl:
+                  serverUrl, // Required for multi-server support on native
             );
             debugPrint('[CustomTabAuth] ✓ Device identity set for $email');
 
@@ -228,6 +231,14 @@ class CustomTabAuthService {
               '[CustomTabAuth] ⚠ Missing credentialId, device identity not set',
             );
           }
+
+          // Save server configuration (prevents redirect to server selection)
+          await ServerConfigService.addServer(
+            serverUrl: serverUrl,
+            credentials: sessionSecret,
+            // displayName will be auto-generated from serverUrl if not provided
+          );
+          debugPrint('[CustomTabAuth] ✓ Server configuration saved');
 
           return true;
         }

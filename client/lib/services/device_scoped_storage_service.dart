@@ -295,10 +295,15 @@ class DeviceScopedStorageService {
         },
       );
 
-      debugPrint('[DEVICE_STORAGE] Database opened, checking object stores...');
-      debugPrint(
-        '[DEVICE_STORAGE] Available object stores: ${db.objectStoreNames}',
-      );
+      // 🔧 REDUCED VERBOSITY: Only log when opening new databases, not when reusing
+      if (!db.objectStoreNames.contains(storeName)) {
+        debugPrint(
+          '[DEVICE_STORAGE] Database opened, checking object stores...',
+        );
+        debugPrint(
+          '[DEVICE_STORAGE] Available object stores: ${db.objectStoreNames}',
+        );
+      }
       debugPrint('[DEVICE_STORAGE] Looking for store: $storeName');
 
       if (!db.objectStoreNames.contains(storeName)) {
@@ -312,14 +317,14 @@ class DeviceScopedStorageService {
       final txn = db.transaction(storeName, 'readonly');
       final store = txn.objectStore(storeName);
 
-      debugPrint('[DEVICE_STORAGE] Opening cursor to iterate keys...');
+      // 🔧 REDUCED VERBOSITY: Removed cursor iteration log (called frequently)
       final keys = <String>[];
       final cursor = store.openCursor(autoAdvance: true);
 
-      debugPrint('[DEVICE_STORAGE] Cursor created, iterating...');
       await cursor.forEach((c) {
         final key = c.key.toString();
-        debugPrint('[DEVICE_STORAGE] Found key: $key');
+        // 🔧 REMOVED: Verbose key logging (causes spam with 100+ prekeys)
+        // debugPrint('[DEVICE_STORAGE] Found key: $key');
         keys.add(key);
       });
 
