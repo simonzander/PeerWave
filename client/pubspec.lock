@@ -77,10 +77,10 @@ packages:
     dependency: "direct main"
     description:
       name: audio_waveforms
-      sha256: "71e7567f91e39458e875d3f652f7b706e1f0446adb2ff963fa81768311a68305"
+      sha256: "03b3430ecf430a2e90185518a228c02be3d26653c62dd931e50d671213a6dbc8"
       url: "https://pub.dev"
     source: hosted
-    version: "2.0.1"
+    version: "2.0.2"
   audioplayers:
     dependency: "direct main"
     description:
