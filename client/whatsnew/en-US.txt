@@ -1,5 +1,2 @@
-🚀 What's New in PeerWave v1.1.4
-
-🐛 Bug Fixes
-• update auto-merge script to handle version bumps more robustly
+🚀 What's New in PeerWave v1.1.5
 
