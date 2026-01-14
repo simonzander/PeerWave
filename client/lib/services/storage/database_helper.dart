@@ -4,7 +4,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite/sqflite.dart' as sqflite_mobile;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, File;
 import '../device_identity_service.dart';
 
 /// Central database helper for PeerWave with device-scoped storage
@@ -81,6 +81,7 @@ class DatabaseHelper {
       debugPrint('[DATABASE] ========================================');
       debugPrint('[DATABASE] Starting device-scoped database initialization');
       debugPrint('[DATABASE] ========================================');
+
       _database = await _initDatabase();
       _isReady = true;
       debugPrint('[DATABASE] ✓ Database initialization successful');
@@ -240,6 +241,17 @@ class DatabaseHelper {
           final path = join(directory.path, _databaseName);
 
           debugPrint('[DATABASE] Database path: $path');
+
+          // Ensure parent directory exists and is accessible
+          final file = File(path);
+          final parentDir = file.parent;
+          if (!await parentDir.exists()) {
+            debugPrint(
+              '[DATABASE] Creating parent directory: ${parentDir.path}',
+            );
+            await parentDir.create(recursive: true);
+            debugPrint('[DATABASE] ✓ Parent directory created');
+          }
 
           final db = await openDatabase(
             path,

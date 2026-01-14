@@ -1,11 +1,12 @@
 import 'package:socket_io_client/socket_io_client.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, Directory;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:path/path.dart' as path;
 import 'utils/html_stub.dart' if (dart.library.html) 'dart:html' as html;
 import 'auth/auth_layout_web.dart'
     if (dart.library.io) 'auth/auth_layout_native.dart';
@@ -138,6 +139,22 @@ Future<void> main() async {
 
   // Initialize app directories for native (structured storage)
   if (!kIsWeb) {
+    // CRITICAL: Fix Windows autostart working directory issue
+    // At autostart, cwd is often C:\Windows\System32 (no write permissions)
+    // SQLite creates temp files in cwd → error 14 (SQLITE_CANTOPEN)
+    // Solution: Set cwd to app data directory before any database operations
+    if (Platform.isWindows) {
+      try {
+        final exeDir = path.dirname(Platform.resolvedExecutable);
+        Directory.current = exeDir;
+        debugPrint(
+          '[INIT] ✅ Set working directory to: ${Directory.current.path}',
+        );
+      } catch (e) {
+        debugPrint('[INIT] ⚠️ Could not set working directory: $e');
+      }
+    }
+
     await AppDirectories.initialize();
     debugPrint('[INIT] ✅ AppDirectories initialized');
 

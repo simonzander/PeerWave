@@ -21,7 +21,7 @@ class DeviceScopedStorageService {
   DeviceScopedStorageService._();
 
   final DeviceIdentityService _deviceIdentity = DeviceIdentityService.instance;
-  IdbFactory _idbFactory = _getStaticIdbFactory();
+  IdbFactory? _idbFactory; // Lazy initialization
   final EncryptedStorageWrapper _encryption = EncryptedStorageWrapper();
 
   // Waiting mechanism for device identity initialization
@@ -31,8 +31,17 @@ class DeviceScopedStorageService {
   final Map<String, Database> _databaseCache = {};
   final Map<String, Future<Database>> _pendingOpens = {};
 
+  /// Get or initialize the IdbFactory (lazy initialization)
+  Future<IdbFactory> _getIdbFactory() async {
+    if (_idbFactory != null) {
+      return _idbFactory!;
+    }
+    _idbFactory = await _getStaticIdbFactory();
+    return _idbFactory!;
+  }
+
   /// Get the appropriate IdbFactory for the current platform (static)
-  static IdbFactory _getStaticIdbFactory() {
+  static Future<IdbFactory> _getStaticIdbFactory() async {
     if (kIsWeb) {
       // Web: Use browser implementation
       debugPrint('[DEVICE_STORAGE] Using idbFactoryBrowser for web');
@@ -42,7 +51,7 @@ class DeviceScopedStorageService {
       debugPrint(
         '[DEVICE_STORAGE] Using idbFactorySqflite for native persistence',
       );
-      return native.getIdbFactoryNative();
+      return await native.getIdbFactoryNative();
     }
   }
 
@@ -127,7 +136,8 @@ class DeviceScopedStorageService {
     void Function(VersionChangeEvent) onUpgradeNeeded,
   ) async {
     try {
-      return await _idbFactory.open(
+      final factory = await _getIdbFactory();
+      return await factory.open(
         dbName,
         version: version,
         onUpgradeNeeded: onUpgradeNeeded,
@@ -147,11 +157,11 @@ class DeviceScopedStorageService {
         if (!kIsWeb) {
           native.resetIdbFactoryNative();
           // Recreate the factory and update instance
-          _idbFactory = native.getIdbFactoryNative();
+          _idbFactory = await native.getIdbFactoryNative();
           debugPrint('[DEVICE_STORAGE] ✓ Factory reinitialized');
 
           // Retry with new factory
-          return await _idbFactory.open(
+          return await _idbFactory!.open(
             dbName,
             version: version,
             onUpgradeNeeded: onUpgradeNeeded,
@@ -390,10 +400,11 @@ class DeviceScopedStorageService {
     int deletedCount = 0;
     int errorCount = 0;
 
+    final factory = await _getIdbFactory();
     for (final baseName in baseDatabases) {
       final dbName = await getDeviceDatabaseName(baseName);
       try {
-        await _idbFactory.deleteDatabase(dbName);
+        await factory.deleteDatabase(dbName);
         deletedCount++;
         debugPrint('[DEVICE_STORAGE] ✓ Deleted: $dbName');
       } catch (e) {
