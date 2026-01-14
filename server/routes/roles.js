@@ -1,5 +1,6 @@
 const config = require('../config/config');
 const express = require("express");
+const { Sequelize, Op } = require('sequelize');
 const { Role, User, Channel, UserRole, UserRoleChannel, ChannelMembers, Client, ClientSession, RefreshToken, SignalPreKey, SignalSignedPreKey, SignalSenderKey, Item, GroupItem, GroupItemRead } = require('../db/model');
 const writeQueue = require('../db/writeQueue');
 const {
