@@ -75,7 +75,7 @@ dependencies:
   local_auth: ^3.0.0  # Biometric authentication (Face ID, Touch ID, fingerprint)
   just_audio: ^0.10.5
   audioplayers: ^6.1.0  # For Windows desktop audio playback
-  audio_waveforms: ^2.0.1
+  audio_waveforms: ^2.0.2
   fl_chart: ^1.1.1
   pdf: ^3.10.0  # PDF generation for abuse report downloads
   printing: ^5.11.0  # PDF saving and sharing
