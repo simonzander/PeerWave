@@ -4,7 +4,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite/sqflite.dart' as sqflite_mobile;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, File;
 import '../device_identity_service.dart';
 
 /// Central database helper for PeerWave with device-scoped storage
@@ -81,6 +81,7 @@ class DatabaseHelper {
       debugPrint('[DATABASE] ========================================');
       debugPrint('[DATABASE] Starting device-scoped database initialization');
       debugPrint('[DATABASE] ========================================');
+
       _database = await _initDatabase();
       _isReady = true;
       debugPrint('[DATABASE] ✓ Database initialization successful');
@@ -97,10 +98,19 @@ class DatabaseHelper {
   }
 
   /// Wait until database is ready with retry logic
+  /// For autostart, uses enhanced retry settings (15 attempts with exponential backoff)
   static Future<Database> waitUntilReady({
     int maxAttempts = 3,
     Duration retryDelay = const Duration(seconds: 2),
+    bool isAutostart = false,
   }) async {
+    // Use enhanced settings for autostart scenario
+    if (isAutostart) {
+      maxAttempts = 15;
+      debugPrint(
+        '[DATABASE] 🚀 Autostart mode: Using enhanced retry (15 attempts, exponential backoff)',
+      );
+    }
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         debugPrint(
@@ -114,10 +124,17 @@ class DatabaseHelper {
       } catch (e) {
         debugPrint('[DATABASE] ⚠️ Attempt $attempt failed: $e');
         if (attempt < maxAttempts) {
+          // Calculate delay with exponential backoff for autostart
+          Duration actualDelay = retryDelay;
+          if (isAutostart) {
+            // Exponential backoff: 2s, 4s, 8s, 10s max
+            int delaySeconds = (2 * (1 << (attempt - 1))).clamp(2, 10);
+            actualDelay = Duration(seconds: delaySeconds);
+          }
           debugPrint(
-            '[DATABASE] Retrying in ${retryDelay.inSeconds} seconds...',
+            '[DATABASE] Retrying in ${actualDelay.inSeconds} seconds...',
           );
-          await Future.delayed(retryDelay);
+          await Future.delayed(actualDelay);
         } else {
           debugPrint('[DATABASE] ✗ All $maxAttempts attempts failed');
           rethrow;
@@ -224,6 +241,17 @@ class DatabaseHelper {
           final path = join(directory.path, _databaseName);
 
           debugPrint('[DATABASE] Database path: $path');
+
+          // Ensure parent directory exists and is accessible
+          final file = File(path);
+          final parentDir = file.parent;
+          if (!await parentDir.exists()) {
+            debugPrint(
+              '[DATABASE] Creating parent directory: ${parentDir.path}',
+            );
+            await parentDir.create(recursive: true);
+            debugPrint('[DATABASE] ✓ Parent directory created');
+          }
 
           final db = await openDatabase(
             path,

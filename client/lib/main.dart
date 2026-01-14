@@ -1,11 +1,12 @@
 import 'package:socket_io_client/socket_io_client.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, Directory;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:path/path.dart' as path;
 import 'utils/html_stub.dart' if (dart.library.html) 'dart:html' as html;
 import 'auth/auth_layout_web.dart'
     if (dart.library.io) 'auth/auth_layout_native.dart';
@@ -124,6 +125,8 @@ import 'services/storage/database_helper.dart';
 import 'services/device_scoped_storage_service.dart';
 import 'services/idb_factory_web.dart'
     if (dart.library.io) 'services/idb_factory_native.dart';
+import 'services/network_checker_service.dart';
+import 'services/filesystem_checker_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -136,17 +139,93 @@ Future<void> main() async {
 
   // Initialize app directories for native (structured storage)
   if (!kIsWeb) {
+    // CRITICAL: Fix Windows autostart working directory issue
+    // At autostart, cwd is often C:\Windows\System32 (no write permissions)
+    // SQLite creates temp files in cwd → error 14 (SQLITE_CANTOPEN)
+    // Solution: Set cwd to app data directory before any database operations
+    if (Platform.isWindows) {
+      try {
+        final exeDir = path.dirname(Platform.resolvedExecutable);
+        Directory.current = exeDir;
+        debugPrint(
+          '[INIT] ✅ Set working directory to: ${Directory.current.path}',
+        );
+      } catch (e) {
+        debugPrint('[INIT] ⚠️ Could not set working directory: $e');
+      }
+    }
+
     await AppDirectories.initialize();
     debugPrint('[INIT] ✅ AppDirectories initialized');
 
     // Detect autostart scenario (presence of session without explicit login action)
     // This helps identify cases where window appears before initialization completes
     final bool isAutostart = await _detectAutostart();
-    if (isAutostart) {
-      debugPrint('[INIT] 🚀 AUTOSTART DETECTED - Window opened automatically');
+    final bool isDesktop =
+        !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+
+    if (isAutostart && isDesktop) {
       debugPrint(
-        '[INIT] ⚠️ Using enhanced initialization checks to prevent premature navigation',
+        '[INIT] 🚀 DESKTOP AUTOSTART DETECTED - Using enhanced initialization',
       );
+      debugPrint('[INIT] Platform: ${Platform.operatingSystem}');
+
+      // Phase 1: Wait for network interface (up to 3 minutes)
+      debugPrint('[INIT] Phase 1: Checking network availability...');
+      final networkAvailable = await NetworkCheckerService.waitForNetwork();
+      if (!networkAvailable) {
+        debugPrint('[INIT] ⚠️ Network timeout reached - proceeding anyway');
+      } else {
+        debugPrint('[INIT] ✅ Network available');
+      }
+
+      // Phase 2: Wait for file system access (up to 1 minute)
+      debugPrint('[INIT] Phase 2: Checking file system access...');
+      final appDir = AppDirectories.appDataDirectory.path;
+      final fsAvailable =
+          await FileSystemCheckerService.waitForFileSystemAccess(
+            testPath: appDir,
+            timeout: const Duration(minutes: 1),
+          );
+      if (!fsAvailable) {
+        debugPrint(
+          '[INIT] ⚠️ File system timeout reached - attempting to proceed',
+        );
+      } else {
+        debugPrint('[INIT] ✅ File system accessible');
+      }
+
+      // Phase 3: Enhanced database initialization will use autostart-aware retry logic
+      debugPrint(
+        '[INIT] Phase 3: Initializing database with enhanced retry...',
+      );
+
+      // Phase 4: Proactive session refresh if close to expiry
+      debugPrint('[INIT] Phase 4: Checking session expiry...');
+      try {
+        await SessionAuthService().checkAndRefreshSession();
+        debugPrint('[INIT] ✅ Session check completed');
+      } catch (e) {
+        debugPrint('[INIT] ⚠️ Session refresh check failed: $e');
+      }
+    } else if (isAutostart) {
+      debugPrint(
+        '[INIT] 🚀 AUTOSTART DETECTED (mobile) - Using standard initialization',
+      );
+
+      // Also check session on mobile autostart
+      try {
+        await SessionAuthService().checkAndRefreshSession();
+      } catch (e) {
+        debugPrint('[INIT] ⚠️ Session refresh check failed: $e');
+      }
+    }
+  } else {
+    // Web platform - check session if available
+    try {
+      await SessionAuthService().checkAndRefreshSession();
+    } catch (e) {
+      // Ignore errors on web (may not have sessions)
     }
   }
 
@@ -195,7 +274,21 @@ Future<void> main() async {
       '[INIT] ✅ Web platform: Using relative paths (resolve to ${Uri.base.origin})',
     );
   } else {
-    serverUrl ??= 'http://localhost:3000'; // Fallback for non-web platforms
+    // Native platforms: Load server URL from ServerConfigService if available
+    if (serverUrl == null || serverUrl.isEmpty) {
+      // ServerConfig is initialized later, so we need to load it early here
+      await ServerConfigService.init();
+      final activeServer = ServerConfigService.getActiveServer();
+      if (activeServer != null) {
+        serverUrl = activeServer.serverUrl;
+        debugPrint('[INIT] ✅ Loaded active server: $serverUrl');
+        ApiService.setBaseUrl(serverUrl);
+      } else {
+        serverUrl =
+            'http://localhost:3000'; // Fallback only if no servers configured
+        debugPrint('[INIT] ⚠️ No active server, using fallback: $serverUrl');
+      }
+    }
     debugPrint('[INIT] ✅ API base URL set to: $serverUrl (non-web platform)');
   }
 

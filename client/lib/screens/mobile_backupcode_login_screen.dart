@@ -7,6 +7,7 @@ import '../services/device_identity_service.dart';
 import '../services/server_config_native.dart';
 import '../services/session_auth_service.dart';
 import '../services/native_crypto_service.dart';
+import '../services/secure_session_storage.dart';
 
 /// Mobile backup code login screen for iOS/Android
 ///
@@ -126,6 +127,7 @@ class _MobileBackupcodeLoginScreenState
         // Login successful - extract HMAC session credentials
         final sessionSecret = response.data['sessionSecret'] as String?;
         final userId = response.data['userId'] as String?;
+        final refreshToken = response.data['refreshToken'] as String?;
 
         if (sessionSecret != null && userId != null) {
           // Store HMAC session credentials
@@ -141,6 +143,19 @@ class _MobileBackupcodeLoginScreenState
             '[MobileBackupcodeLogin] Saving session for clientId: $clientId',
           );
           await SessionAuthService().initializeSession(clientId, sessionSecret);
+
+          final storage = SecureSessionStorage();
+          await storage.saveClientId(clientId);
+
+          // Store session expiry (90 days for HMAC session)
+          final sessionExpiryDate = DateTime.now().add(Duration(days: 90));
+          await storage.saveSessionExpiry(sessionExpiryDate.toIso8601String());
+
+          // Store refresh token if available
+          if (refreshToken != null) {
+            await storage.saveRefreshToken(refreshToken);
+            debugPrint('[MobileBackupcodeLogin] ✓ Refresh token stored');
+          }
 
           // Verify session was saved
           final sessionSaved = await SessionAuthService().hasSession(clientId);

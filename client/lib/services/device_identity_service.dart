@@ -129,19 +129,28 @@ class DeviceIdentityService {
       return false;
     } else {
       // Native: multi-server identity
+      debugPrint(
+        '[DEVICE_IDENTITY] 🔍 Attempting to restore native identity...',
+      );
       await _loadIdentities();
 
       if (serverUrl != null) {
         // Load specific server's identity
+        debugPrint('[DEVICE_IDENTITY] Loading identity for server: $serverUrl');
         return await _loadIdentityForServer(serverUrl);
       } else {
         // Load active server's identity
+        debugPrint('[DEVICE_IDENTITY] Loading identity for active server...');
         final activeServer = await _loadActiveServer();
         if (activeServer != null) {
+          debugPrint('[DEVICE_IDENTITY] Active server found: $activeServer');
           return await _loadIdentityForServer(activeServer);
+        } else {
+          debugPrint('[DEVICE_IDENTITY] ⚠️ No active server found');
         }
       }
 
+      debugPrint('[DEVICE_IDENTITY] ❌ Failed to restore identity');
       return false;
     }
   }
@@ -312,6 +321,13 @@ class DeviceIdentityService {
   /// Get current device ID
   String get deviceId {
     if (_deviceId == null) {
+      debugPrint(
+        '[DEVICE_IDENTITY] ❌ deviceId getter called but _deviceId is null!',
+      );
+      debugPrint('[DEVICE_IDENTITY]    _email: $_email');
+      debugPrint('[DEVICE_IDENTITY]    _credentialId: $_credentialId');
+      debugPrint('[DEVICE_IDENTITY]    _clientId: $_clientId');
+      debugPrint('[DEVICE_IDENTITY]    _serverUrl: $_serverUrl');
       throw Exception(
         'Device identity not initialized. Call setDeviceIdentity first.',
       );

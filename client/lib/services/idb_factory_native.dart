@@ -9,6 +9,19 @@ import 'dart:io' show Platform, Directory;
 IdbFactory? _cachedFactory;
 bool _initialized = false;
 bool _pathEnsured = false;
+bool _sqfliteFfiInitialized =
+    false; // Global flag to prevent double initialization
+
+/// Ensure sqflite_ffi is initialized (call only once)
+void _ensureSqfliteFfiInit() {
+  if (_sqfliteFfiInitialized) return;
+
+  debugPrint('[IDB_FACTORY] Initializing sqflite_ffi...');
+  sqfliteFfiInit();
+  databaseFactory = databaseFactoryFfi;
+  _sqfliteFfiInitialized = true;
+  debugPrint('[IDB_FACTORY] ✓ sqflite_ffi initialized');
+}
 
 /// Ensure the database directory exists before initializing
 Future<void> _ensureDatabasePath() async {
@@ -26,8 +39,9 @@ Future<void> _ensureDatabasePath() async {
 
     // Create directory if it doesn't exist
     final dbDir = Directory(defaultDbPath);
-    if (!dbDir.existsSync()) {
-      dbDir.createSync(recursive: true);
+    if (!await dbDir.exists()) {
+      debugPrint('[IDB_FACTORY] Creating database directory...');
+      await dbDir.create(recursive: true);
       debugPrint('[IDB_FACTORY] ✓ Created database directory');
     } else {
       debugPrint('[IDB_FACTORY] ✓ Database directory already exists');
@@ -36,12 +50,12 @@ Future<void> _ensureDatabasePath() async {
     _pathEnsured = true;
   } catch (e) {
     debugPrint('[IDB_FACTORY] ⚠️ Error ensuring database path: $e');
-    // Don't throw - let sqflite try with its default behavior
-    _pathEnsured = true; // Mark as attempted to avoid repeated failures
+    _pathEnsured = true; // Mark as attempted
+    rethrow;
   }
 }
 
-IdbFactory getIdbFactoryNative() {
+Future<IdbFactory> getIdbFactoryNative() async {
   if (_cachedFactory != null) {
     return _cachedFactory!;
   }
@@ -55,14 +69,13 @@ IdbFactory getIdbFactoryNative() {
     if (isDesktop) {
       debugPrint('[IDB_FACTORY] Initializing sqflite FFI for desktop platform');
 
-      // Initialize sqflite FFI
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
+      // CRITICAL: Initialize sqflite FFI only once
+      _ensureSqfliteFfiInit();
 
-      // Ensure database path exists (async, but don't wait)
-      _ensureDatabasePath().catchError((e) {
-        debugPrint('[IDB_FACTORY] Background path setup failed: $e');
-      });
+      // CRITICAL: Wait for database path to be ready (especially important for Windows autostart)
+      debugPrint('[IDB_FACTORY] Ensuring database directory exists...');
+      await _ensureDatabasePath();
+      debugPrint('[IDB_FACTORY] ✓ Database directory ready');
     } else if (isMobile) {
       debugPrint(
         '[IDB_FACTORY] Initializing standard sqflite for mobile platform',

@@ -7,6 +7,8 @@ import 'session_auth_service.dart';
 import 'clientid_native.dart';
 import 'device_identity_service.dart';
 import 'native_crypto_service.dart';
+import 'secure_session_storage.dart';
+import 'server_config_native.dart';
 
 /// Service for handling authentication via Chrome Custom Tabs
 ///
@@ -184,11 +186,25 @@ class CustomTabAuthService {
         final userId = data['userId'] as String?;
         final email = data['email'] as String?;
         final credentialId = data['credentialId'] as String?;
+        final refreshToken = data['refreshToken'] as String?;
 
         if (sessionSecret != null && userId != null) {
           // Store HMAC session for authenticated API requests
           await SessionAuthService().initializeSession(clientId, sessionSecret);
           debugPrint('[CustomTabAuth] ✓ Session established for user $userId');
+
+          final storage = SecureSessionStorage();
+          await storage.saveClientId(clientId);
+
+          // Store session expiry (90 days for HMAC session)
+          final sessionExpiryDate = DateTime.now().add(Duration(days: 90));
+          await storage.saveSessionExpiry(sessionExpiryDate.toIso8601String());
+
+          // Store refresh token if available
+          if (refreshToken != null) {
+            await storage.saveRefreshToken(refreshToken);
+            debugPrint('[CustomTabAuth] ✓ Refresh token stored');
+          }
 
           // Set device identity if we have all required info
           if (email != null && credentialId != null) {
@@ -196,6 +212,8 @@ class CustomTabAuthService {
               email,
               credentialId,
               clientId,
+              serverUrl:
+                  serverUrl, // Required for multi-server support on native
             );
             debugPrint('[CustomTabAuth] ✓ Device identity set for $email');
 
@@ -213,6 +231,14 @@ class CustomTabAuthService {
               '[CustomTabAuth] ⚠ Missing credentialId, device identity not set',
             );
           }
+
+          // Save server configuration (prevents redirect to server selection)
+          await ServerConfigService.addServer(
+            serverUrl: serverUrl,
+            credentials: sessionSecret,
+            // displayName will be auto-generated from serverUrl if not provided
+          );
+          debugPrint('[CustomTabAuth] ✓ Server configuration saved');
 
           return true;
         }

@@ -179,6 +179,13 @@ config.invitation = {
     expirationHours: parseInt(process.env.INVITATION_EXPIRATION_HOURS || '48'), // How long invitation is valid (default: 48 hours)
 };
 
+// Refresh Token Configuration (for native client session renewal)
+config.refreshToken = {
+    expiresInDays: parseInt(process.env.REFRESH_TOKEN_DAYS || '60'),           // 60 days (industry standard)
+    rotationEnabled: process.env.REFRESH_TOKEN_ROTATION !== 'false',           // Always rotate for security
+    cleanupIntervalHours: parseInt(process.env.REFRESH_TOKEN_CLEANUP_HOURS || '24')  // Run cleanup daily
+};
+
 // Server Operator Information (displayed on login page)
 config.serverOperator = {
     owner: process.env.SERVER_OWNER || null,

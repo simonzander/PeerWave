@@ -54,6 +54,7 @@ class PostLoginInitService {
   String? _lastError;
   DateTime? _initStartTime;
   DateTime? _initCompleteTime;
+  bool _wasAutostart = false;
 
   // P2P services (initialized during post-login)
   FileStorageInterface? _fileStorage;
@@ -84,11 +85,13 @@ class PostLoginInitService {
   /// [serverUrl] - API server URL (e.g. http://localhost:3000)
   /// [unreadProvider] - Provider for unread message counts
   /// [roleProvider] - Provider for user roles
+  /// [isAutostart] - Whether this is an autostart scenario (for enhanced retry)
   /// [onProgress] - Callback for progress updates (step, current, total)
   Future<void> initialize({
     required String serverUrl,
     required UnreadMessagesProvider unreadProvider,
     required RoleProvider roleProvider,
+    bool isAutostart = false,
     FileTransferStatsProvider? statsProvider,
     Function(String step, int current, int total)? onProgress,
   }) async {
@@ -103,11 +106,15 @@ class PostLoginInitService {
     }
 
     _isInitializing = true;
+    _wasAutostart = isAutostart;
     _lastError = null;
     _initStartTime = DateTime.now();
     debugPrint('[POST_LOGIN_INIT] ========================================');
     debugPrint('[POST_LOGIN_INIT] Starting post-login initialization...');
     debugPrint('[POST_LOGIN_INIT] Start time: $_initStartTime');
+    if (isAutostart) {
+      debugPrint('[POST_LOGIN_INIT] 🚀 AUTOSTART MODE - Using enhanced retry');
+    }
     debugPrint('[POST_LOGIN_INIT] ========================================');
 
     try {
@@ -156,6 +163,7 @@ class PostLoginInitService {
         await DatabaseHelper.waitUntilReady(
           maxAttempts: 3,
           retryDelay: Duration(seconds: 2),
+          isAutostart: _wasAutostart,
         );
         debugPrint('[POST_LOGIN_INIT] ✓ Database initialized and ready');
       } catch (e) {

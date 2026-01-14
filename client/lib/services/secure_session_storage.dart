@@ -22,6 +22,9 @@ class SecureSessionStorage {
   // Key prefixes for organization
   static const _sessionSecretPrefix = 'session_secret_';
   static const _sessionMetadataPrefix = 'session_metadata_';
+  static const _clientIdKey = 'client_id';
+  static const _refreshTokenKey = 'refresh_token';
+  static const _sessionExpiryKey = 'session_expiry';
 
   /// Save session secret for a client with retry on Windows file lock errors
   Future<void> saveSessionSecret(String clientId, String sessionSecret) async {
@@ -134,5 +137,75 @@ class SecureSessionStorage {
     }
 
     return null;
+  }
+
+  /// Save client ID
+  Future<void> saveClientId(String clientId) async {
+    await _storage.write(key: _clientIdKey, value: clientId);
+  }
+
+  /// Get client ID
+  Future<String?> getClientId() async {
+    return await _storage.read(key: _clientIdKey);
+  }
+
+  /// Delete client ID
+  Future<void> deleteClientId() async {
+    await _storage.delete(key: _clientIdKey);
+  }
+
+  /// Save refresh token with retry on Windows file lock errors
+  Future<void> saveRefreshToken(String refreshToken) async {
+    int retries = 3;
+    while (retries > 0) {
+      try {
+        await _storage.write(key: _refreshTokenKey, value: refreshToken);
+        return; // Success
+      } catch (e) {
+        retries--;
+        if (retries == 0) rethrow;
+        await Future.delayed(Duration(milliseconds: 100));
+      }
+    }
+  }
+
+  /// Get refresh token with retry on Windows file lock errors
+  Future<String?> getRefreshToken() async {
+    int retries = 3;
+    while (retries > 0) {
+      try {
+        return await _storage.read(key: _refreshTokenKey);
+      } catch (e) {
+        retries--;
+        if (retries == 0) {
+          debugPrint(
+            '[SecureSessionStorage] Failed to read refresh token after retries: $e',
+          );
+          return null;
+        }
+        await Future.delayed(Duration(milliseconds: 100));
+      }
+    }
+    return null;
+  }
+
+  /// Delete refresh token
+  Future<void> deleteRefreshToken() async {
+    await _storage.delete(key: _refreshTokenKey);
+  }
+
+  /// Save session expiry date
+  Future<void> saveSessionExpiry(String expiryDate) async {
+    await _storage.write(key: _sessionExpiryKey, value: expiryDate);
+  }
+
+  /// Get session expiry date
+  Future<String?> getSessionExpiry() async {
+    return await _storage.read(key: _sessionExpiryKey);
+  }
+
+  /// Delete session expiry
+  Future<void> deleteSessionExpiry() async {
+    await _storage.delete(key: _sessionExpiryKey);
   }
 }

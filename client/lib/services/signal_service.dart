@@ -1106,28 +1106,43 @@ class SignalService {
 
     final keysValid = await verifyOwnKeysOnServer();
     if (!keysValid) {
-      debugPrint(
-        '[SIGNAL INIT] ⚠️ Self-verification failed - keys may not be uploaded properly',
-      );
-      debugPrint('[SIGNAL INIT] → Attempting to re-upload keys...');
+      // 🔧 FIX: Check if failure is due to socket not being connected yet
+      // If _currentUserId is null, it means socket hasn't authenticated yet
+      // In this case, skip re-upload - verification will retry when socket connects
+      if (_currentUserId == null) {
+        debugPrint(
+          '[SIGNAL INIT] ⚠️ Self-verification skipped - socket not connected yet',
+        );
+        debugPrint(
+          '[SIGNAL INIT] → Verification will retry automatically after socket authentication',
+        );
+      } else {
+        // Socket is connected but verification failed - this is a real problem
+        debugPrint(
+          '[SIGNAL INIT] ⚠️ Self-verification failed - keys may not be uploaded properly',
+        );
+        debugPrint('[SIGNAL INIT] → Attempting to re-upload keys...');
 
-      try {
-        // Re-upload all keys
-        await _uploadKeysOnly();
-        await Future.delayed(Duration(milliseconds: 1000));
+        try {
+          // Re-upload all keys
+          await _uploadKeysOnly();
+          await Future.delayed(Duration(milliseconds: 1000));
 
-        // Verify again
-        final retryValid = await verifyOwnKeysOnServer();
-        if (!retryValid) {
-          debugPrint('[SIGNAL INIT] ❌ Keys still not valid after retry');
-          debugPrint('[SIGNAL INIT] → User may need to logout and login again');
-          // Don't throw - allow app to continue, but user will see errors when sending
-        } else {
-          debugPrint('[SIGNAL INIT] ✅ Keys uploaded and verified on retry');
+          // Verify again
+          final retryValid = await verifyOwnKeysOnServer();
+          if (!retryValid) {
+            debugPrint('[SIGNAL INIT] ❌ Keys still not valid after retry');
+            debugPrint(
+              '[SIGNAL INIT] → User may need to logout and login again',
+            );
+            // Don't throw - allow app to continue, but user will see errors when sending
+          } else {
+            debugPrint('[SIGNAL INIT] ✅ Keys uploaded and verified on retry');
+          }
+        } catch (e) {
+          debugPrint('[SIGNAL INIT] ❌ Key upload retry failed: $e');
+          // Don't rethrow - allow app to continue
         }
-      } catch (e) {
-        debugPrint('[SIGNAL INIT] ❌ Key upload retry failed: $e');
-        // Don't rethrow - allow app to continue
       }
     } else {
       debugPrint(
@@ -2595,7 +2610,13 @@ class SignalService {
       final userId = _currentUserId;
 
       if (userId == null || userId.isEmpty || deviceId.isEmpty) {
-        debugPrint('[SIGNAL_SELF_VERIFY] ❌ No user/device ID available');
+        debugPrint(
+          '[SIGNAL_SELF_VERIFY] ❌ No user/device ID available yet (socket may not be connected)',
+        );
+        debugPrint(
+          '[SIGNAL_SELF_VERIFY]    This is normal during app restart before socket authentication',
+        );
+        debugPrint('[SIGNAL_SELF_VERIFY]    Will retry after socket connects');
         return false;
       }
 

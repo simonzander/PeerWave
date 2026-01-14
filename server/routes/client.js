@@ -1542,6 +1542,39 @@ clientRoutes.post("/magic/verify", async (req, res) => {
         // Continue anyway - web clients don't need sessions
     }
     
+    // Generate refresh token for native clients
+    let refreshToken;
+    try {
+        const crypto = require('crypto');
+        const config = require('../config/config');
+        const { RefreshToken } = require('../db/model');
+        const writeQueue = require('../db/writeQueue');
+        
+        const token = crypto.randomBytes(64).toString('base64url');
+        const expiresInDays = config.refreshToken?.expiresInDays || 60;
+        const expiresAt = new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000);
+        
+        await writeQueue.enqueue(
+            () => RefreshToken.create({
+                token,
+                client_id: clientid,
+                user_id: entry.uuid,
+                session_id: clientid,
+                expires_at: expiresAt,
+                created_at: new Date(),
+                used_at: null,
+                rotation_count: 0
+            }),
+            'createRefreshToken'
+        );
+        
+        refreshToken = token;
+        logger.info('[MagicKey] Refresh token generated');
+    } catch (refreshErr) {
+        logger.error('[MagicKey] Error generating refresh token', refreshErr);
+        // Continue anyway - session still works without refresh token
+    }
+    
     // Persist session immediately so Socket.IO can read it
     return req.session.save(err => {
         if (err) {
@@ -1550,13 +1583,19 @@ clientRoutes.post("/magic/verify", async (req, res) => {
         }
         
         // Return session secret for native clients
-        res.status(200).json({ 
+        const response = { 
             status: "ok", 
             message: "Magic link verified",
             sessionSecret: sessionSecret,  // Native clients will use this for HMAC auth
             userId: entry.uuid,
             email: entry.email  // For device identity initialization
-        });
+        };
+        
+        if (refreshToken) {
+            response.refreshToken = refreshToken;
+        }
+        
+        res.status(200).json(response);
     });
 });
 
