@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const versionConfig = require('../config/version');
 const magicLinks = require('../store/magicLinksStore');
-const { User, Channel, Thread, SignalSignedPreKey, SignalPreKey, Client, Item, Role, ChannelMembers, sequelize } = require('../db/model');
+const { User, Channel, Thread, SignalSignedPreKey, SignalPreKey, Client, Item, Role, ChannelMembers, ClientSession, RefreshToken, sequelize } = require('../db/model');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
@@ -2442,13 +2442,27 @@ clientRoutes.delete("/client/profile/delete", async (req, res) => {
 
         logger.info('[ACCOUNT DELETE] User deleting account', { userUuid: sanitizeForLog(userUuid), email: sanitizeForLog(user.email) });
 
+        // Get all client IDs for this user before deleting
+        const userClients = await Client.findAll({ where: { owner: userUuid } });
+        const clientIds = userClients.map(c => c.clientid);
+        
+        // Delete refresh tokens first (foreign key to client_sessions)
+        if (clientIds.length > 0) {
+            await RefreshToken.destroy({ where: { client_id: clientIds } });
+            await ClientSession.destroy({ where: { client_id: clientIds } });
+        }
+        
         // Delete associated data
-        await Client.destroy({ where: { userUuid } });
-        await SignalPreKey.destroy({ where: { userUuid } });
-        await SignalSignedPreKey.destroy({ where: { userUuid } });
+        await Client.destroy({ where: { owner: userUuid } });
+        await SignalPreKey.destroy({ where: { owner: userUuid } });
+        await SignalSignedPreKey.destroy({ where: { owner: userUuid } });
+        
+        // Delete blocking relationships (both as blocker and blocked)
+        const { BlockedUser } = require('../db/model');
+        await BlockedUser.destroy({ where: { [Op.or]: [{ blocker_uuid: userUuid }, { blocked_uuid: userUuid }] } });
         
         // Remove from channel memberships
-        await ChannelMembers.destroy({ where: { userUuid } });
+        await ChannelMembers.destroy({ where: { userId: userUuid } });
 
         // Hard delete user
         await user.destroy();

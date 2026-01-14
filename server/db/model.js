@@ -1229,19 +1229,13 @@ const AbuseReport = sequelize.define('AbuseReport', {
     },
     reporter_uuid: {
         type: DataTypes.UUID,
-        allowNull: false,
-        references: {
-            model: 'Users',
-            key: 'uuid'
-        }
+        allowNull: false
+        // No foreign key - preserve reports after user deletion
     },
     reported_uuid: {
         type: DataTypes.UUID,
-        allowNull: false,
-        references: {
-            model: 'Users',
-            key: 'uuid'
-        }
+        allowNull: false
+        // No foreign key - preserve reports after user deletion
     },
     description: {
         type: DataTypes.TEXT,
@@ -1262,11 +1256,8 @@ const AbuseReport = sequelize.define('AbuseReport', {
     },
     resolved_by: {
         type: DataTypes.UUID,
-        allowNull: true,
-        references: {
-            model: 'Users',
-            key: 'uuid'
-        }
+        allowNull: true
+        // No foreign key - preserve reports after user deletion
     },
     resolved_at: {
         type: DataTypes.DATE,

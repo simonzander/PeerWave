@@ -118,15 +118,18 @@ async function findOrCreateClient(clientId, userUuid, req) {
         
         logger.warn('[CLIENT] Deleted messages', { itemsDeleted, groupItemsDeleted, readReceiptsDeleted });
         
-        // Delete all Signal protocol keys (prevents decryption of old messages)
-        const [preKeysDeleted, signedPreKeysDeleted, senderKeysDeleted, sessionsDeleted] = await Promise.all([
+        // Delete refresh tokens and Signal keys in parallel (they don't depend on each other)
+        const [refreshTokensDeleted, preKeysDeleted, signedPreKeysDeleted, senderKeysDeleted] = await Promise.all([
+            RefreshToken.destroy({ where: { client_id: clientId } }),
             SignalPreKey.destroy({ where: { client: clientId } }),
             SignalSignedPreKey.destroy({ where: { client: clientId } }),
-            SignalSenderKey.destroy({ where: { client: clientId } }),
-            ClientSession.destroy({ where: { client_id: clientId } })
+            SignalSenderKey.destroy({ where: { client: clientId } })
         ]);
         
-        logger.warn('[CLIENT] Deleted Signal protocol keys', { preKeysDeleted, signedPreKeysDeleted, senderKeysDeleted, sessionsDeleted });
+        // Delete client sessions last (depends on refresh tokens being deleted due to foreign key)
+        const sessionsDeleted = await ClientSession.destroy({ where: { client_id: clientId } });
+        
+        logger.warn('[CLIENT] Deleted Signal protocol keys', { refreshTokensDeleted, preKeysDeleted, signedPreKeysDeleted, senderKeysDeleted, sessionsDeleted });
         
         // Get max device_id for new owner
         const maxDevice = await Client.max('device_id', { where: { owner: userUuid } });
@@ -1879,18 +1882,6 @@ authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
                     logger.error('[WEBAUTHN] Error creating HMAC session', sessionErr);
                     // Continue anyway - web clients don't need HMAC sessions
                 }
-                
-                // Generate refresh token for native clients
-                if (sessionSecret) {
-                    try {
-                        const refreshToken = await generateRefreshToken(clientId, user.uuid);
-                        // Store for response (added below)
-                        response.refreshToken = refreshToken;
-                    } catch (refreshErr) {
-                        logger.error('[WEBAUTHN] Error generating refresh token', refreshErr);
-                        // Continue anyway - session still works without refresh token
-                    }
-                }
             }
             
             // Persist session now
@@ -1898,6 +1889,23 @@ authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
                 if (err) {
                     logger.error('[WEBAUTHN] Session save error (/webauthn/authenticate)', err);
                     return res.status(500).json({ status: "error", message: "Session save error" });
+                }
+                
+                const response = { 
+                    status: "ok", 
+                    message: "Authentication successful"
+                };
+                
+                // Generate refresh token for native clients
+                if (sessionSecret) {
+                    try {
+                        const refreshToken = await generateRefreshToken(clientId, user.uuid);
+                        // Store for response
+                        response.refreshToken = refreshToken;
+                    } catch (refreshErr) {
+                        logger.error('[WEBAUTHN] Error generating refresh token', refreshErr);
+                        // Continue anyway - session still works without refresh token
+                    }
                 }
                 
                 const response = { 

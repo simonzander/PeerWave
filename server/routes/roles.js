@@ -1,6 +1,6 @@
 const config = require('../config/config');
 const express = require("express");
-const { Role, User, Channel, UserRole, UserRoleChannel, ChannelMembers } = require('../db/model');
+const { Role, User, Channel, UserRole, UserRoleChannel, ChannelMembers, Client, ClientSession, RefreshToken, SignalPreKey, SignalSignedPreKey, SignalSenderKey, Item, GroupItem, GroupItemRead } = require('../db/model');
 const writeQueue = require('../db/writeQueue');
 const {
     assignServerRole,
@@ -519,11 +519,17 @@ roleRoutes.delete('/users/:userId', verifyAuthEither, requireAuth, requirePermis
                 
                 // 5. Delete all Signal Protocol keys for user's clients
                 if (clientIds.length > 0) {
+                    // Delete refresh tokens first (they have foreign key to client_sessions)
+                    await RefreshToken.destroy({ where: { client_id: clientIds } });
                     await SignalPreKey.destroy({ where: { client: clientIds } });
                     await SignalSignedPreKey.destroy({ where: { client: clientIds } });
                     await SignalSenderKey.destroy({ where: { client: clientIds } });
                     await ClientSession.destroy({ where: { client_id: clientIds } });
                 }
+                
+                // 5.5. Delete blocking relationships (both as blocker and blocked)
+                const { BlockedUser } = require('../db/model');
+                await BlockedUser.destroy({ where: { [Op.or]: [{ blocker_uuid: userId }, { blocked_uuid: userId }] } });
                 
                 // 6. Delete user's clients
                 await Client.destroy({ where: { owner: userId } });
