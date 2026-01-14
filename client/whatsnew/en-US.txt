@@ -1,2 +1,11 @@
-🚀 What's New in PeerWave v1.1.5
+🚀 What's New in PeerWave v1.1.6
+
+✨ New Features
+• Implement lazy initialization for IdbFactory and enhance database path handling
+• Enhance server configuration handling and reduce debug verbosity across services
+• Implement refresh token mechanism for session management
+
+🐛 Bug Fixes
+• Correct foreign key constraint for refresh_tokens table
+• Correct reference model name for RefreshToken in database schema
 
