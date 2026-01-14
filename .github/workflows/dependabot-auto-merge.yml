@@ -89,7 +89,7 @@ jobs:
             echo "auto_merge=true" >> $GITHUB_OUTPUT
             echo "🔒 Security update - will auto-merge"
           # Check if it's a patch version (safe to auto-merge)
-          elif [[ "$TITLE" =~ "Bump".*"from".*"to" ]]; then
+          elif [[ "$TITLE" =~ [Bb]ump.*from.*to ]]; then
             # Extract version numbers
             if [[ "$TITLE" =~ ([0-9]+)\.([0-9]+)\.([0-9]+).*to.*([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
               OLD_MAJOR="${BASH_REMATCH[1]}"
