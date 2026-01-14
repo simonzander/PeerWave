@@ -1884,6 +1884,17 @@ authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
                 }
             }
             
+            // Generate refresh token for native clients BEFORE saving session
+            let refreshToken = null;
+            if (sessionSecret) {
+                try {
+                    refreshToken = await generateRefreshToken(clientId, user.uuid);
+                } catch (refreshErr) {
+                    logger.error('[WEBAUTHN] Error generating refresh token', refreshErr);
+                    // Continue anyway - session still works without refresh token
+                }
+            }
+            
             // Persist session now
             return req.session.save(err => {
                 if (err) {
@@ -1896,29 +1907,14 @@ authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
                     message: "Authentication successful"
                 };
                 
-                // Generate refresh token for native clients
-                if (sessionSecret) {
-                    try {
-                        const refreshToken = await generateRefreshToken(clientId, user.uuid);
-                        // Store for response
-                        response.refreshToken = refreshToken;
-                    } catch (refreshErr) {
-                        logger.error('[WEBAUTHN] Error generating refresh token', refreshErr);
-                        // Continue anyway - session still works without refresh token
-                    }
-                }
-                
-                const response = { 
-                    status: "ok", 
-                    message: "Authentication successful"
-                };
-                
                 // Include session secret for mobile clients
                 if (sessionSecret) {
                     response.sessionSecret = sessionSecret;
                     response.userId = user.uuid;
                     response.email = email;
-                    if (response.refreshToken) {
+                    
+                    if (refreshToken) {
+                        response.refreshToken = refreshToken;
                         logger.info('[WEBAUTHN] HMAC session credentials + refresh token included in response');
                     } else {
                         logger.info('[WEBAUTHN] HMAC session credentials included in response');
