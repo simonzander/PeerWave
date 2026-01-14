@@ -9,6 +9,7 @@ import 'device_identity_service.dart';
 import 'native_crypto_service.dart';
 import 'secure_session_storage.dart';
 import 'server_config_native.dart';
+import 'auth_service_native.dart';
 
 /// Service for handling authentication via Chrome Custom Tabs
 ///
@@ -24,6 +25,7 @@ class CustomTabAuthService {
   final _appLinks = AppLinks();
   StreamSubscription? _linkSub;
   Completer<String?>? _authCompleter;
+  Completer<bool>? _loginCompleter;
   Timer? _timeoutTimer;
 
   /// Start listening for auth callback deep links
@@ -85,12 +87,25 @@ class CustomTabAuthService {
       debugPrint('[CustomTabAuth] ⚠️ Cancelling previous auth attempt');
       _completeAuth(null);
     }
+    if (_loginCompleter != null && !_loginCompleter!.isCompleted) {
+      _loginCompleter!.complete(false);
+      _loginCompleter = null;
+    }
   }
 
   /// Manually complete authentication with a token (called by router)
   void completeWithToken(String? token) {
     debugPrint('[CustomTabAuth] 📥 Manually completing auth with token');
     _completeAuth(token);
+  }
+
+  /// Wait for login completion (finishLogin to complete)
+  ///
+  /// Returns a Future that completes when finishLogin() succeeds or fails
+  /// Must be called before the token exchange starts
+  Future<bool> waitForLoginComplete() async {
+    _loginCompleter = Completer<bool>();
+    return await _loginCompleter!.future;
   }
 
   /// Start passkey authentication in Chrome Custom Tab
@@ -240,6 +255,16 @@ class CustomTabAuthService {
           );
           debugPrint('[CustomTabAuth] ✓ Server configuration saved');
 
+          // Set login flag to true (required for router redirect logic)
+          AuthService.isLoggedIn = true;
+          debugPrint('[CustomTabAuth] ✓ AuthService.isLoggedIn = true');
+
+          // Complete login completer if waiting
+          if (_loginCompleter != null && !_loginCompleter!.isCompleted) {
+            _loginCompleter!.complete(true);
+            _loginCompleter = null;
+          }
+
           return true;
         }
       }
@@ -247,9 +272,19 @@ class CustomTabAuthService {
       debugPrint(
         '[CustomTabAuth] ✗ Token exchange failed: ${response.statusCode}',
       );
+      // Complete login completer with failure
+      if (_loginCompleter != null && !_loginCompleter!.isCompleted) {
+        _loginCompleter!.complete(false);
+        _loginCompleter = null;
+      }
       return false;
     } catch (e) {
       debugPrint('[CustomTabAuth] Error exchanging token: $e');
+      // Complete login completer with failure
+      if (_loginCompleter != null && !_loginCompleter!.isCompleted) {
+        _loginCompleter!.complete(false);
+        _loginCompleter = null;
+      }
       return false;
     }
   }

@@ -742,19 +742,34 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
           // Complete token exchange and navigate after a delay
           if (token != null && token.isNotEmpty) {
-            // Trigger token exchange
+            // Complete the auth completer (unblocks authenticate() call in background)
             CustomTabAuthService.instance.completeWithToken(token);
 
-            // Wait for token exchange to complete (usually takes ~500ms)
-            // Then navigate to /app - router will handle Signal setup redirect
-            Future.delayed(const Duration(milliseconds: 1500), () {
-              if (context.mounted) {
+            // Wait for token exchange to complete using Completer
+            // The authenticate() method will call finishLogin() which completes the Future
+            () async {
+              debugPrint('[ROUTER] Waiting for token exchange to complete...');
+
+              // Wait for login to complete (no polling, no arbitrary timeout)
+              final success = await CustomTabAuthService.instance
+                  .waitForLoginComplete();
+
+              if (success) {
                 debugPrint(
-                  '[ROUTER] Token exchange complete, navigating to /app',
+                  '[ROUTER] ✓ Token exchange successful, navigating to /app',
                 );
-                context.go('/app');
+                if (context.mounted) {
+                  context.go('/app');
+                }
+              } else {
+                debugPrint(
+                  '[ROUTER] ✗ Token exchange failed, returning to login',
+                );
+                if (context.mounted) {
+                  context.go('/mobile-webauthn');
+                }
               }
-            });
+            }();
           } else {
             // Cancelled or no token - go back to login immediately
             CustomTabAuthService.instance.completeWithToken(null);
