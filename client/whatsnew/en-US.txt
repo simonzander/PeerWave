@@ -1,6 +1,5 @@
-🚀 What's New in PeerWave v1.1.3
+🚀 What's New in PeerWave v1.1.4
 
-✨ New Features
-• enhance WebAuthn authentication to support CSRF protection for Custom Tab
-• enhance version code calculation to include build number
+🐛 Bug Fixes
+• update auto-merge script to handle version bumps more robustly
 
