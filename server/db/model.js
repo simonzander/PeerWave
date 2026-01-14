@@ -1309,7 +1309,7 @@ const RefreshToken = sequelize.define('RefreshToken', {
         type: DataTypes.STRING,
         allowNull: false,
         references: {
-            model: 'ClientSessions',
+            model: 'client_sessions',
             key: 'client_id'
         }
     },
