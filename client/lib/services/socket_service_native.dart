@@ -257,9 +257,18 @@ class SocketService {
         debugPrint(
           '[SOCKET SERVICE] ?? Authentication complete & listeners registered - notifying server',
         );
-        _socket!.emit('clientReady', {
-          'timestamp': DateTime.now().toIso8601String(),
-        });
+        if (_socket?.connected ?? false) {
+          _socket!.emit('clientReady', {
+            'timestamp': DateTime.now().toIso8601String(),
+          });
+          debugPrint(
+            '[SOCKET SERVICE] ✅ clientReady sent immediately after auth',
+          );
+        } else {
+          debugPrint(
+            '[SOCKET SERVICE] ⚠️ Socket not connected, cannot send clientReady yet',
+          );
+        }
       } else {
         debugPrint(
           '[SOCKET SERVICE] Authentication complete but listeners not yet registered - will notify when ready',
@@ -373,7 +382,10 @@ class SocketService {
 
   void notifyClientReady() {
     debugPrint(
-      '[SOCKET SERVICE] notifyClientReady called - socket connected: ${_socket?.connected}, isConnected: $isConnected',
+      '[SOCKET SERVICE] 📞 notifyClientReady called - socket connected: ${_socket?.connected}, isConnected: $isConnected',
+    );
+    debugPrint(
+      '[SOCKET SERVICE]    Current state: _listenersRegistered=$_listenersRegistered',
     );
     if (_socket?.connected ?? false) {
       _listenersRegistered = true;
@@ -381,9 +393,10 @@ class SocketService {
       _socket!.emit('clientReady', {
         'timestamp': DateTime.now().toIso8601String(),
       });
+      debugPrint('[SOCKET SERVICE] ✅ clientReady event emitted successfully');
     } else {
       debugPrint(
-        '[SOCKET SERVICE] ?? Cannot notify ready - socket not connected',
+        '[SOCKET SERVICE] ⚠️ Cannot notify ready - socket not connected',
       );
       debugPrint('[SOCKET SERVICE] Socket object exists: ${_socket != null}');
       if (_socket != null) {
@@ -391,6 +404,12 @@ class SocketService {
           '[SOCKET SERVICE] Socket ID: ${_socket!.id}, Connected: ${_socket!.connected}',
         );
       }
+
+      // Set flag anyway so it will be sent after connection completes
+      _listenersRegistered = true;
+      debugPrint(
+        '[SOCKET SERVICE] ⏳ Marked listeners as registered - will send clientReady after connection',
+      );
     }
   }
 
