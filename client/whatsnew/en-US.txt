@@ -1,8 +1,10 @@
-🚀 What's New in PeerWave v1.1.8
+🚀 What's New in PeerWave v1.1.9
 
 ✨ New Features
-• Change logging level for prekey bundle requests to debug
-• Improve socket client readiness notifications and logging
-• Add logging for prekey bundle requests and responses
-• Enhance socket connection logging and client readiness notifications
+• delete associated refresh tokens before revoking all sessions
+
+🐛 Bug Fixes
+• ensure token completion check occurs before unblocking authentication
+• improve token exchange handling and enhance multi-device sync logic
+• multi-device sync with original recipient tracking and cleanup of refresh tokens
 
