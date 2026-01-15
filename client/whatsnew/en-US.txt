@@ -1,5 +1,8 @@
-🚀 What's New in PeerWave v1.1.7
+🚀 What's New in PeerWave v1.1.8
 
 ✨ New Features
-• Enhance authentication flow with login completion handling
+• Change logging level for prekey bundle requests to debug
+• Improve socket client readiness notifications and logging
+• Add logging for prekey bundle requests and responses
+• Enhance socket connection logging and client readiness notifications
 
