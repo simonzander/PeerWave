@@ -3375,9 +3375,12 @@ class SignalService {
     final originalRecipient =
         data['originalRecipient']; // Original recipient for multi-device sync
 
-    // If this is a multi-device sync message (sender == recipient), use originalRecipient
+    // If this is a multi-device sync message (current user is sender AND recipient), use originalRecipient
+    // This means we're receiving our own message on another device
     final actualRecipient =
-        (data['sender'] == recipient && originalRecipient != null)
+        (sender == _currentUserId &&
+            recipient == _currentUserId &&
+            originalRecipient != null)
         ? originalRecipient
         : recipient;
 

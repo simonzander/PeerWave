@@ -778,31 +778,23 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                   return;
                 }
 
-                // Initialize the login completer before calling finishLogin
-                final loginFuture = CustomTabAuthService.instance
-                    .waitForLoginComplete();
+                try {
+                  // Call finishLogin which will handle the token exchange
+                  // It creates its own completer internally
+                  await CustomTabAuthService.instance.finishLogin(
+                    token: token,
+                    serverUrl: activeServer.serverUrl,
+                  );
 
-                // Call finishLogin to exchange the token for a session
-                // This will complete the loginCompleter created above
-                await CustomTabAuthService.instance.finishLogin(
-                  token: token,
-                  serverUrl: activeServer.serverUrl,
-                );
-
-                // Wait for finishLogin to complete and get result
-                final success = await loginFuture;
-
-                if (success) {
+                  // If we reach here, login was successful
                   debugPrint(
                     '[ROUTER] ✓ Token exchange successful, navigating to /app',
                   );
                   if (context.mounted) {
                     context.go('/app');
                   }
-                } else {
-                  debugPrint(
-                    '[ROUTER] ✗ Token exchange failed, returning to login',
-                  );
+                } catch (e) {
+                  debugPrint('[ROUTER] ✗ Token exchange failed: $e');
                   if (context.mounted) {
                     context.go('/mobile-webauthn');
                   }
