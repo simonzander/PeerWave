@@ -663,6 +663,12 @@ clientRoutes.post("/signal/prekeys/batch", verifyAuthEither, async (req, res) =>
 clientRoutes.get("/signal/prekey_bundle/:userId", verifyAuthEither, async (req, res) => {
     const { userId } = req.params;
     const sessionUuid = req.userId || req.session.uuid;
+    
+    logger.debug('[PREKEY BUNDLE] Request received', {
+        targetUserId: sanitizeForLog(userId),
+        requestingUserId: sanitizeForLog(sessionUuid)
+    });
+    
     try {
         // Helper to get random element
         function getRandom(arr) {
@@ -707,6 +713,16 @@ clientRoutes.get("/signal/prekey_bundle/:userId", verifyAuthEither, async (req, 
                 : null,
             preKey: getRandom(client.SignalPreKeys)
         }));
+
+        logger.debug('[PREKEY BUNDLE] Returning devices', {
+            totalDevices: result.length,
+            devices: result.map(r => ({
+                userId: sanitizeForLog(r.userId),
+                deviceId: r.device_id,
+                hasPreKey: !!r.preKey,
+                hasSignedPreKey: !!r.signedPreKey
+            }))
+        });
 
         // PreKey nach Ausgabe löschen (wie bisher)
         for (const client of clients) {

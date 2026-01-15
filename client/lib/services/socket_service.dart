@@ -141,16 +141,31 @@ class SocketService {
               ? data['deviceId'] as int
               : int.parse(data['deviceId'].toString());
           SignalService.instance.setCurrentUserInfo(data['uuid'], deviceId);
+          debugPrint(
+            '[SOCKET SERVICE] User info set, socket still connected: ${_socket?.connected}',
+          );
 
-          // 🚀 CRITICAL: Only notify server AFTER authentication succeeds
-          // This was previously called too early in initStoresAndListeners()
+          // 🚀 CRITICAL: If listeners are already registered, notify server immediately after auth
           if (_listenersRegistered) {
             debugPrint(
-              '[SOCKET SERVICE] 🚀 Authentication complete - notifying server client is ready',
+              '[SOCKET SERVICE] 🚀 Authentication complete & listeners registered - notifying server',
             );
-            _socket!.emit('clientReady', {
-              'timestamp': DateTime.now().toIso8601String(),
-            });
+            if (_socket?.connected ?? false) {
+              _socket!.emit('clientReady', {
+                'timestamp': DateTime.now().toIso8601String(),
+              });
+              debugPrint(
+                '[SOCKET SERVICE] ✅ clientReady sent immediately after auth',
+              );
+            } else {
+              debugPrint(
+                '[SOCKET SERVICE] ⚠️ Socket not connected, cannot send clientReady yet',
+              );
+            }
+          } else {
+            debugPrint(
+              '[SOCKET SERVICE] Authentication complete but listeners not yet registered - will notify when ready',
+            );
           }
         }
       });
@@ -160,12 +175,20 @@ class SocketService {
         resetReadyState(); // Reset ready state on disconnect
       });
       _socket!.on('reconnect', (_) {
-        debugPrint('[SOCKET SERVICE] Socket reconnected');
-        resetReadyState(); // Reset ready state on reconnect
+        debugPrint('[SOCKET SERVICE] 🔄 Socket reconnected');
         // Re-register all stored listeners
         _reregisterAllListeners();
         // Re-authenticate after reconnection
         _authenticateSocket();
+        // After successful reconnect and auth, notify ready if listeners were registered
+        if (_listenersRegistered) {
+          debugPrint(
+            '[SOCKET SERVICE] 🔄 Reconnected - re-sending clientReady',
+          );
+          _socket!.emit('clientReady', {
+            'timestamp': DateTime.now().toIso8601String(),
+          });
+        }
       });
       _socket!.on('reconnect_attempt', (_) {
         debugPrint('[SOCKET SERVICE] Socket reconnecting...');
@@ -309,20 +332,35 @@ class SocketService {
   /// Notify server that all listeners are registered and client is ready
   /// Call this AFTER all PreKeys are generated and listeners registered
   void notifyClientReady() {
-    _listenersRegistered = true;
-    debugPrint('[SOCKET SERVICE] 🚀 Listeners registered');
+    debugPrint(
+      '[SOCKET SERVICE] 📞 notifyClientReady called - socket connected: ${_socket?.connected}',
+    );
+    debugPrint(
+      '[SOCKET SERVICE]    Current state: _listenersRegistered=$_listenersRegistered',
+    );
 
-    // If already authenticated and connected, notify immediately
     if (_socket?.connected ?? false) {
-      debugPrint(
-        '[SOCKET SERVICE] 🚀 Socket already authenticated - notifying server',
-      );
+      _listenersRegistered = true;
+      debugPrint('[SOCKET SERVICE] 🚀 Client ready - notifying server');
       _socket!.emit('clientReady', {
         'timestamp': DateTime.now().toIso8601String(),
       });
+      debugPrint('[SOCKET SERVICE] ✅ clientReady event emitted successfully');
     } else {
       debugPrint(
-        '[SOCKET SERVICE] ⚠️ Socket not connected yet - will notify after authentication',
+        '[SOCKET SERVICE] ⚠️ Cannot notify ready - socket not connected',
+      );
+      debugPrint('[SOCKET SERVICE] Socket object exists: ${_socket != null}');
+      if (_socket != null) {
+        debugPrint(
+          '[SOCKET SERVICE] Socket ID: ${_socket!.id}, Connected: ${_socket!.connected}',
+        );
+      }
+
+      // Set flag anyway so it will be sent after connection completes
+      _listenersRegistered = true;
+      debugPrint(
+        '[SOCKET SERVICE] ⏳ Marked listeners as registered - will send clientReady after connection',
       );
     }
   }
