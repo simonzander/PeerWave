@@ -664,7 +664,7 @@ clientRoutes.get("/signal/prekey_bundle/:userId", verifyAuthEither, async (req, 
     const { userId } = req.params;
     const sessionUuid = req.userId || req.session.uuid;
     
-    logger.info('[PREKEY BUNDLE] Request received', {
+    logger.debug('[PREKEY BUNDLE] Request received', {
         targetUserId: sanitizeForLog(userId),
         requestingUserId: sanitizeForLog(sessionUuid)
     });
@@ -714,7 +714,7 @@ clientRoutes.get("/signal/prekey_bundle/:userId", verifyAuthEither, async (req, 
             preKey: getRandom(client.SignalPreKeys)
         }));
 
-        logger.info('[PREKEY BUNDLE] Returning devices', {
+        logger.debug('[PREKEY BUNDLE] Returning devices', {
             totalDevices: result.length,
             devices: result.map(r => ({
                 userId: sanitizeForLog(r.userId),
