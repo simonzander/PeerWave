@@ -742,20 +742,18 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
           // Complete token exchange and navigate after a delay
           if (token != null && token.isNotEmpty) {
-            // Complete the auth completer (unblocks authenticate() call in background)
-            // The authenticate() method will handle finishLogin() and navigation
-            CustomTabAuthService.instance.completeWithToken(token);
-
-            // Check if authenticate() is waiting for the token
-            // If yes, it will handle finishLogin() and we just show a loading spinner
-            // If no (direct callback without authenticate()), we handle everything here
+            // Check if authenticate() is waiting for the token BEFORE completing it
+            // This check must happen before completeWithToken() which clears the completer
             final isAuthenticateWaiting =
                 CustomTabAuthService.instance.hasAuthCompleter;
+
+            // Complete the auth completer (unblocks authenticate() call in background)
+            CustomTabAuthService.instance.completeWithToken(token);
 
             if (isAuthenticateWaiting) {
               // authenticate() is waiting - it will call finishLogin() and navigate
               debugPrint(
-                '[ROUTER] ✓ Token sent to authenticate() - waiting for completion',
+                '[ROUTER] ✓ Token sent to authenticate() - it will handle finishLogin',
               );
 
               // Show loading spinner while authenticate() completes
