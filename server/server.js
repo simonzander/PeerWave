@@ -1488,6 +1488,10 @@ io.sockets.on("connection", socket => {
         // Group messages use sendGroupItem event and GroupItem table instead
         logger.info('[SIGNAL SERVER] Storing 1:1 message in DB');
         logger.debug('[SIGNAL SERVER] Message details:', { cipherType, itemId: sanitizeForLog(itemId) });
+        
+        // Determine if this is a multi-device sync message (sender == receiver)
+        const isMultiDeviceSync = (senderUserId === recipientUserId);
+        
         const storedItem = await writeQueue.enqueue(async () => {
           return await Item.create({
             sender: senderUserId,
@@ -1497,10 +1501,16 @@ io.sockets.on("connection", socket => {
             type: type,
             payload: payload,
             cipherType: cipherType,
-            itemId: itemId
+            itemId: itemId,
+            // If multi-device sync, originalRecipient should be extracted from payload metadata
+            // For now, it's null (will be set by client when sending)
+            originalRecipient: data.originalRecipient || null
           });
         }, `sendItem-${itemId}`);
          logger.info('[SIGNAL SERVER] Message stored successfully in DB');
+         if (isMultiDeviceSync && data.originalRecipient) {
+           logger.debug('[SIGNAL SERVER] Multi-device sync message with originalRecipient:', { originalRecipient: sanitizeForLog(data.originalRecipient) });
+         }
 
         // Send delivery receipt to sender IMMEDIATELY after DB storage
         // (regardless of whether recipient is online)
@@ -1546,6 +1556,8 @@ io.sockets.on("connection", socket => {
             payload: payload,
             cipherType: cipherType,
             itemId: itemId,
+            // Include originalRecipient for multi-device sync
+            originalRecipient: data.originalRecipient || null,
             // NOTE: channel is NOT included - receiveItem is for 1:1 messages ONLY
             // Group messages use groupItem event instead
           });
@@ -3595,12 +3607,14 @@ io.sockets.on("connection", socket => {
         }
       });
 
-      // Broadcast to all member devices EXCEPT ALL of the sender's devices
-      // This prevents the sender from receiving their own message on any of their devices
+      // Broadcast to all member devices EXCEPT the specific sending device
+      // The sending device already has the message via local callback
+      // But sender's OTHER devices should receive it (they can decrypt with SenderKey)
       let deliveredCount = 0;
       for (const client of memberClients) {
-        // Skip all sender's devices to prevent duplicate messages
-        if (client.owner === userId) {
+        // Skip ONLY the specific sending device to prevent duplicate
+        // Do NOT skip sender's other devices - they need the message too!
+        if (client.owner === userId && client.device_id === deviceId) {
           continue;
         }
         

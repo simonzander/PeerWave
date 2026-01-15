@@ -3372,15 +3372,30 @@ class SignalService {
     );
 
     final recipient = data['recipient']; // Empfänger-UUID vom Server
+    final originalRecipient =
+        data['originalRecipient']; // Original recipient for multi-device sync
+
+    // If this is a multi-device sync message (sender == recipient), use originalRecipient
+    final actualRecipient =
+        (data['sender'] == recipient && originalRecipient != null)
+        ? originalRecipient
+        : recipient;
 
     final item = {
       'itemId': itemId,
       'sender': sender,
       'senderDeviceId': senderDeviceId,
-      'recipient': recipient,
+      'recipient':
+          actualRecipient, // Use the actual recipient, not the sync recipient
       'type': type,
       'message': message,
     };
+
+    if (originalRecipient != null) {
+      debugPrint(
+        "[SIGNAL SERVICE] Multi-device sync message - original recipient: $originalRecipient",
+      );
+    }
 
     // ✅ PHASE 3: Identify system messages for cleanup
     bool isSystemMessage = false;
@@ -4807,6 +4822,16 @@ class SignalService {
           'cipherType': ciphertextMessage.getType(),
           'itemId': messageItemId,
         };
+
+        // If this is a multi-device sync (sending to own other devices), include originalRecipient
+        final isSenderDevice = (recipientAddress.getName() == _currentUserId);
+        if (isSenderDevice) {
+          data['originalRecipient'] =
+              recipientUserId; // The actual recipient of the message
+          debugPrint(
+            '[SIGNAL SERVICE] Multi-device sync - originalRecipient: $recipientUserId',
+          );
+        }
 
         debugPrint('[SIGNAL SERVICE] Step 10: Sending item: $data');
         SocketService().emit("sendItem", data);

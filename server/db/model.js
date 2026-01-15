@@ -673,6 +673,15 @@ const Item = sequelize.define('Item', {
     deliveredAt: {
         type: DataTypes.DATE,
         allowNull: true
+    },
+    originalRecipient: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        },
+        comment: 'For multi-device sync: when sender device syncs to other sender devices, this preserves the original recipient'
     }
     // NOTE: Item table is ONLY for 1:1 messages (no channel field needed)
     // Group messages use the separate GroupItem table which has a channel field
