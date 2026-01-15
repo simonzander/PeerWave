@@ -721,6 +721,14 @@ function updateParticipantKeyStatus(channelId, socketId, hasKey) {
 io.sockets.on("error", e => logger.error('[SOCKET.IO] Error', e));
 io.sockets.on("connection", socket => {
 
+  logger.info('[SOCKET.IO] New connection attempt', { 
+    socketId: socket.id,
+    hasSession: !!socket.handshake.session,
+    sessionUuid: socket.handshake.session?.uuid,
+    sessionDeviceId: socket.handshake.session?.deviceId,
+    sessionAuth: socket.handshake.session?.authenticated
+  });
+
   // 🔒 Track client ready state (prevents sending events before client is initialized)
   socket.clientReady = false;
 
@@ -737,6 +745,10 @@ io.sockets.on("connection", socket => {
   const meetingCleanupService = require('./services/meetingCleanupService');
 
   socket.on("authenticate", async (authData) => {
+    logger.info('[SOCKET.IO] Authenticate event received', {
+      hasAuthData: !!authData,
+      authDataType: typeof authData
+    });
     // Support both cookie-based (web) and HMAC-based (native) authentication
     try {
       logger.info('[SIGNAL SERVER] authenticate event received');
@@ -833,6 +845,7 @@ io.sockets.on("connection", socket => {
         
         logger.info('[SIGNAL SERVER] Native client authenticated');
         logger.debug(`[SIGNAL SERVER] DeviceKey: ${deviceKey}`);
+        logger.info(`[SIGNAL SERVER] ✅ Socket registered in deviceSockets - deviceKey: ${deviceKey}, socketId: ${socket.id}`);
         
         // Register user as online in presence service
         presenceService.onSocketConnected(session.user_id, socket.id).then(status => {
@@ -882,6 +895,7 @@ io.sockets.on("connection", socket => {
         deviceSockets.set(deviceKey, socket.id);
         logger.info(`[SIGNAL SERVER] Device registered (Total online: ${deviceSockets.size})`);
         logger.debug(`[SIGNAL SERVER] DeviceKey: ${deviceKey}, Socket: ${socket.id}`);
+        logger.info(`[SIGNAL SERVER] ✅ Socket registered in deviceSockets - deviceKey: ${deviceKey}, socketId: ${socket.id}`);
         
         // Store userId in socket.data for video conferencing
         socket.data.userId = socket.handshake.session.uuid;
@@ -921,8 +935,16 @@ io.sockets.on("connection", socket => {
   // 🚀 NEW: Client ready notification
   // Client signals that PreKeys are generated and listeners are registered
   socket.on("clientReady", async (data) => {
+    const userId = getUserId();
+    const deviceId = getDeviceId();
+    const deviceKey = `${userId}:${deviceId}`;
+    const socketInMap = deviceSockets.get(deviceKey);
+    
     logger.info('[SIGNAL SERVER] Client ready notification received');
     logger.debug('[SIGNAL SERVER] Data:', data);
+    logger.info(`[SIGNAL SERVER] 🔍 clientReady check - userId: ${userId}, deviceId: ${deviceId}, deviceKey: ${deviceKey}`);
+    logger.info(`[SIGNAL SERVER] 🔍 Socket in deviceSockets? ${socketInMap === socket.id ? 'YES' : 'NO'} (expected: ${socket.id}, found: ${socketInMap || 'NOT FOUND'})`);
+    
     socket.clientReady = true;
     logger.info(`[SIGNAL SERVER] Socket marked as ready for events`);
     logger.debug(`[SIGNAL SERVER] Socket: ${socket.id}`);
@@ -1498,6 +1520,14 @@ io.sockets.on("connection", socket => {
         // für das sie verschlüsselt wurde
         const targetSocketId = deviceSockets.get(`${recipientUserId}:${recipientDeviceId}`);
         const isSelfMessage = (recipientUserId === senderUserId && recipientDeviceId === senderDeviceId);
+        
+        // DEBUG: Log all connected devices
+        logger.info('[SIGNAL SERVER] 🔍 Current deviceSockets state:', {
+          totalDevices: deviceSockets.size,
+          lookingFor: `${recipientUserId}:${recipientDeviceId}`,
+          found: !!targetSocketId,
+          allDevices: Array.from(deviceSockets.keys())
+        });
         
         logger.debug('[SIGNAL SERVER] Target device details:', { 
           recipientUserId: sanitizeForLog(recipientUserId), 
