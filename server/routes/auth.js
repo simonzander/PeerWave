@@ -2599,7 +2599,13 @@ authRoutes.post('/sessions/revoke-all', sessionLimiter, verifyAuthEither, async 
         const userId = req.userId; // Set by verifyAuthEither middleware
         const currentClientId = req.clientId || req.session.clientId; // HMAC or session
         
-        // Delete all sessions except current
+        // 1. First delete associated refresh tokens to avoid FK constraint violation
+        await sequelize.query(
+            `DELETE FROM refresh_tokens WHERE user_id = ? AND client_id != ?`,
+            { replacements: [userId, currentClientId] }
+        );
+        
+        // 2. Then delete all sessions except current
         const result = await sequelize.query(
             `DELETE FROM client_sessions WHERE user_id = ? AND client_id != ?`,
             { replacements: [userId, currentClientId] }
