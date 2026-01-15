@@ -742,34 +742,63 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
           // Complete token exchange and navigate after a delay
           if (token != null && token.isNotEmpty) {
+            // Check if authenticate() is waiting for the token BEFORE completing it
+            // This check must happen before completeWithToken() which clears the completer
+            final isAuthenticateWaiting =
+                CustomTabAuthService.instance.hasAuthCompleter;
+
             // Complete the auth completer (unblocks authenticate() call in background)
             CustomTabAuthService.instance.completeWithToken(token);
 
-            // Wait for token exchange to complete using Completer
-            // The authenticate() method will call finishLogin() which completes the Future
-            () async {
-              debugPrint('[ROUTER] Waiting for token exchange to complete...');
+            if (isAuthenticateWaiting) {
+              // authenticate() is waiting - it will call finishLogin() and navigate
+              debugPrint(
+                '[ROUTER] ✓ Token sent to authenticate() - it will handle finishLogin',
+              );
 
-              // Wait for login to complete (no polling, no arbitrary timeout)
-              final success = await CustomTabAuthService.instance
-                  .waitForLoginComplete();
+              // Show loading spinner while authenticate() completes
+              // The screen will navigate away once authenticate() finishes
+              // No need to do anything else here
+            } else {
+              // No authenticate() waiting - handle token exchange ourselves
+              debugPrint(
+                '[ROUTER] No authenticate() waiting - handling token exchange',
+              );
 
-              if (success) {
-                debugPrint(
-                  '[ROUTER] ✓ Token exchange successful, navigating to /app',
-                );
-                if (context.mounted) {
-                  context.go('/app');
+              () async {
+                // Get server URL from active server config
+                final activeServer = ServerConfigService.getActiveServer();
+                if (activeServer == null) {
+                  debugPrint('[ROUTER] ✗ No active server configured');
+                  if (context.mounted) {
+                    context.go('/mobile-webauthn');
+                  }
+                  return;
                 }
-              } else {
-                debugPrint(
-                  '[ROUTER] ✗ Token exchange failed, returning to login',
-                );
-                if (context.mounted) {
-                  context.go('/mobile-webauthn');
+
+                try {
+                  // Call finishLogin which will handle the token exchange
+                  // It creates its own completer internally
+                  await CustomTabAuthService.instance.finishLogin(
+                    token: token,
+                    serverUrl: activeServer.serverUrl,
+                  );
+
+                  // If we reach here, login was successful
+                  debugPrint(
+                    '[ROUTER] ✓ Token exchange successful, navigating to /app',
+                  );
+                  if (context.mounted) {
+                    context.go('/app');
+                  }
+                } catch (e) {
+                  debugPrint('[ROUTER] ✗ Token exchange failed: $e');
+                  if (context.mounted) {
+                    context.go('/mobile-webauthn');
+                  }
                 }
-              }
-            }();
+              }();
+            }
           } else {
             // Cancelled or no token - go back to login immediately
             CustomTabAuthService.instance.completeWithToken(null);

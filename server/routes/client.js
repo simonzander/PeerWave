@@ -2873,6 +2873,12 @@ clientRoutes.delete("/client/:clientId", verifyAuthEither, async (req, res) => {
             logger.debug('[CLIENT DELETE] Deleted Signal keys', { clientId: sanitizeForLog(clientId) });
         }, 'deleteClientSignalKeys');
         
+        // Delete refresh tokens for this client
+        await writeQueue.enqueue(async () => {
+            await RefreshToken.destroy({ where: { client_id: clientId } });
+            logger.debug('[CLIENT DELETE] Deleted refresh tokens', { clientId: sanitizeForLog(clientId) });
+        }, 'deleteClientRefreshTokens');
+        
         // Delete session from database
         await sequelize.query(
             'DELETE FROM client_sessions WHERE client_id = ?',

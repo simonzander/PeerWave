@@ -28,6 +28,10 @@ class CustomTabAuthService {
   Completer<bool>? _loginCompleter;
   Timer? _timeoutTimer;
 
+  /// Check if there's an active authenticate() call waiting for a token
+  bool get hasAuthCompleter =>
+      _authCompleter != null && !_authCompleter!.isCompleted;
+
   /// Start listening for auth callback deep links
   void initialize() {
     _linkSub = _appLinks.uriLinkStream.listen(

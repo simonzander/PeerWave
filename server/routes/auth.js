@@ -2072,6 +2072,33 @@ authRoutes.post("/client/delete", sessionLimiter, verifyAuthEither, async (req, 
             });
         }
         
+        // Get the client to find its clientid for cleanup
+        const client = await Client.findOne({ where: { id: clientId, owner: req.userId } });
+        if (!client) {
+            return res.status(404).json({ status: "error", message: "Client not found" });
+        }
+        
+        const clientIdStr = client.clientid;
+        
+        // Delete refresh tokens for this client
+        await writeQueue.enqueue(
+            () => RefreshToken.destroy({ where: { client_id: clientIdStr } }),
+            'deleteClientRefreshTokens'
+        );
+        
+        // Delete session from database
+        await sequelize.query(
+            'DELETE FROM client_sessions WHERE client_id = ?',
+            { replacements: [clientIdStr] }
+        );
+        
+        // Delete associated Signal keys
+        await writeQueue.enqueue(async () => {
+            await SignalPreKey.destroy({ where: { client: clientIdStr } });
+            await SignalSignedPreKey.destroy({ where: { client: clientIdStr } });
+        }, 'deleteClientSignalKeys');
+        
+        // Finally, delete the client
         await writeQueue.enqueue(
             () => Client.destroy({ where: { id: clientId, owner: req.userId } }),
             'deleteClient'
@@ -2599,7 +2626,13 @@ authRoutes.post('/sessions/revoke-all', sessionLimiter, verifyAuthEither, async 
         const userId = req.userId; // Set by verifyAuthEither middleware
         const currentClientId = req.clientId || req.session.clientId; // HMAC or session
         
-        // Delete all sessions except current
+        // 1. First delete associated refresh tokens to avoid FK constraint violation
+        await sequelize.query(
+            `DELETE FROM refresh_tokens WHERE user_id = ? AND client_id != ?`,
+            { replacements: [userId, currentClientId] }
+        );
+        
+        // 2. Then delete all sessions except current
         const result = await sequelize.query(
             `DELETE FROM client_sessions WHERE user_id = ? AND client_id != ?`,
             { replacements: [userId, currentClientId] }
