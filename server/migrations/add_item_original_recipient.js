@@ -11,7 +11,8 @@
  * instead of "Alice -> Bob"
  */
 
-const { sequelize, DataTypes } = require('../db/model');
+const { sequelize } = require('../db/model');
+const { DataTypes } = require('sequelize');
 const logger = require('../utils/logger');
 
 async function up() {

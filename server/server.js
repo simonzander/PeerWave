@@ -1408,6 +1408,136 @@ io.sockets.on("connection", socket => {
     }
   });
 
+  // Troubleshoot: Rotate SignedPreKey (force rotation even if not expired)
+  socket.on("rotateSignedPreKey", async () => {
+    try {
+      if (isAuthenticated()) {
+        const userId = getUserId();
+        const clientId = getClientId();
+
+        logger.info('[SIGNAL SERVER] rotateSignedPreKey request received');
+        logger.debug('[SIGNAL SERVER] Rotation details:', { userId: sanitizeForLog(userId), clientId: sanitizeForLog(clientId) });
+
+        // Delete current SignedPreKey to force client regeneration
+        const deletedCount = await writeQueue.enqueue(async () => {
+          return await SignalSignedPreKey.destroy({
+            where: { owner: userId, client: clientId }
+          });
+        }, `rotateSignedPreKey-${clientId}`);
+
+        logger.info(`[SIGNAL SERVER] Deleted ${deletedCount} SignedPreKey(s), client will regenerate`);
+        socket.emit("rotateSignedPreKeyResponse", { success: true, deletedCount });
+      } else {
+        socket.emit("rotateSignedPreKeyResponse", { error: 'Not authenticated' });
+      }
+    } catch (error) {
+      logger.error('[SIGNAL SERVER] Error rotating SignedPreKey:', error);
+      socket.emit("rotateSignedPreKeyResponse", { error: 'Failed to rotate SignedPreKey' });
+    }
+  });
+
+  // Troubleshoot: Delete and regenerate SignedPreKey
+  socket.on("deleteAndRegenerateSignedPreKey", async () => {
+    try {
+      if (isAuthenticated()) {
+        const userId = getUserId();
+        const clientId = getClientId();
+
+        logger.info('[SIGNAL SERVER] deleteAndRegenerateSignedPreKey request received');
+        logger.debug('[SIGNAL SERVER] Deletion details:', { userId: sanitizeForLog(userId), clientId: sanitizeForLog(clientId) });
+
+        // Delete all SignedPreKeys for this client
+        const deletedCount = await writeQueue.enqueue(async () => {
+          return await SignalSignedPreKey.destroy({
+            where: { owner: userId, client: clientId }
+          });
+        }, `deleteSignedPreKey-${clientId}`);
+
+        logger.info(`[SIGNAL SERVER] Deleted ${deletedCount} SignedPreKey(s)`);
+        socket.emit("deleteAndRegenerateSignedPreKeyResponse", { success: true, deletedCount });
+      } else {
+        socket.emit("deleteAndRegenerateSignedPreKeyResponse", { error: 'Not authenticated' });
+      }
+    } catch (error) {
+      logger.error('[SIGNAL SERVER] Error deleting SignedPreKey:', error);
+      socket.emit("deleteAndRegenerateSignedPreKeyResponse", { error: 'Failed to delete SignedPreKey' });
+    }
+  });
+
+  // Troubleshoot: Delete all PreKeys (forces regeneration)
+  socket.on("deleteAllPreKeys", async () => {
+    try {
+      if (isAuthenticated()) {
+        const userId = getUserId();
+        const clientId = getClientId();
+
+        logger.info('[SIGNAL SERVER] deleteAllPreKeys request received');
+        logger.debug('[SIGNAL SERVER] Deletion details:', { userId: sanitizeForLog(userId), clientId: sanitizeForLog(clientId) });
+
+        // Delete all PreKeys for this client
+        const deletedCount = await writeQueue.enqueue(async () => {
+          return await SignalPreKey.destroy({
+            where: { owner: userId, client: clientId }
+          });
+        }, `deleteAllPreKeys-${clientId}`);
+
+        logger.info(`[SIGNAL SERVER] Deleted ${deletedCount} PreKey(s)`);
+        socket.emit("deleteAllPreKeysResponse", { success: true, deletedCount });
+      } else {
+        socket.emit("deleteAllPreKeysResponse", { error: 'Not authenticated' });
+      }
+    } catch (error) {
+      logger.error('[SIGNAL SERVER] Error deleting PreKeys:', error);
+      socket.emit("deleteAllPreKeysResponse", { error: 'Failed to delete PreKeys' });
+    }
+  });
+
+  // Troubleshoot: Regenerate identity key (requires full re-registration)
+  socket.on("regenerateIdentityKey", async () => {
+    try {
+      if (isAuthenticated()) {
+        const userId = getUserId();
+        const clientId = getClientId();
+
+        logger.warn('[SIGNAL SERVER] CRITICAL: regenerateIdentityKey request received');
+        logger.debug('[SIGNAL SERVER] Regeneration details:', { userId: sanitizeForLog(userId), clientId: sanitizeForLog(clientId) });
+
+        // Delete identity key from client record (forces re-registration)
+        await writeQueue.enqueue(async () => {
+          await Client.update(
+            { public_key: null, registration_id: null },
+            { where: { owner: userId, clientid: clientId } }
+          );
+        }, `regenerateIdentityKey-${clientId}`);
+
+        // Also delete all associated keys (they're signed with old identity)
+        const deletedPreKeys = await writeQueue.enqueue(async () => {
+          return await SignalPreKey.destroy({
+            where: { owner: userId, client: clientId }
+          });
+        }, `deletePreKeysForIdentity-${clientId}`);
+
+        const deletedSignedPreKeys = await writeQueue.enqueue(async () => {
+          return await SignalSignedPreKey.destroy({
+            where: { owner: userId, client: clientId }
+          });
+        }, `deleteSignedPreKeysForIdentity-${clientId}`);
+
+        logger.info(`[SIGNAL SERVER] Identity cleared, deleted ${deletedPreKeys} PreKeys and ${deletedSignedPreKeys} SignedPreKeys`);
+        socket.emit("regenerateIdentityKeyResponse", { 
+          success: true, 
+          deletedPreKeys, 
+          deletedSignedPreKeys 
+        });
+      } else {
+        socket.emit("regenerateIdentityKeyResponse", { error: 'Not authenticated' });
+      }
+    } catch (error) {
+      logger.error('[SIGNAL SERVER] Error regenerating identity key:', error);
+      socket.emit("regenerateIdentityKeyResponse", { error: 'Failed to regenerate identity key' });
+    }
+  });
+
   socket.on("getPreKeys", async () => {
     try {
       if(isAuthenticated()) {
