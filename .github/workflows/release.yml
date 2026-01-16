@@ -309,6 +309,17 @@ jobs:
           path: ./artifacts
           pattern: '*-client'  # Only download actual client artifacts
       
+      - name: Read release notes
+        id: release_notes
+        run: |
+          if [ -f "client/whatsnew/en-US.txt" ]; then
+            echo "RELEASE_NOTES<<EOF" >> $GITHUB_OUTPUT
+            cat client/whatsnew/en-US.txt >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "RELEASE_NOTES=" >> $GITHUB_OUTPUT
+          fi
+      
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -318,6 +329,10 @@ jobs:
           prerelease: false
           generate_release_notes: true
           body: |
+            ## 📋 Release Notes
+            
+            ${{ steps.release_notes.outputs.RELEASE_NOTES }}
+            
             ## 🐳 Docker Images
             
             Pull the Docker image:
