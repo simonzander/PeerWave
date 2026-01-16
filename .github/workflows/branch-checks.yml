@@ -11,9 +11,53 @@ on:
   workflow_dispatch:
 
 jobs:
+  detect:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      client_changed: ${{ steps.detect.outputs.client_changed }}
+      server_changed: ${{ steps.detect.outputs.server_changed }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      
+      - name: Detect changed folders
+        id: detect
+        run: |
+          # Get the list of changed files
+          if [ "${{ github.event_name }}" == "push" ]; then
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+          else
+            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+          fi
+          
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          
+          # Check if client or server folders changed
+          CLIENT_CHANGED="false"
+          SERVER_CHANGED="false"
+          
+          if echo "$CHANGED_FILES" | grep -q "^client/"; then
+            CLIENT_CHANGED="true"
+          fi
+          
+          if echo "$CHANGED_FILES" | grep -q "^server/"; then
+            SERVER_CHANGED="true"
+          fi
+          
+          echo "client_changed=$CLIENT_CHANGED" >> $GITHUB_OUTPUT
+          echo "server_changed=$SERVER_CHANGED" >> $GITHUB_OUTPUT
+          echo "Client changed: $CLIENT_CHANGED"
+          echo "Server changed: $SERVER_CHANGED"
+
   flutter-checks:
     name: Flutter Analysis & Format
     runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.client_changed == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -58,6 +102,7 @@ jobs:
   server-checks:
     name: Server Lint & Test
     runs-on: ubuntu-latest
+    needs: detect
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -101,6 +146,8 @@ jobs:
   build-windows:
     name: Try Build Windows
     runs-on: windows-latest
+    needs: detect
+    if: needs.detect.outputs.client_changed == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -127,6 +174,8 @@ jobs:
   build-macos:
     name: Try Build macOS
     runs-on: macos-latest
+    needs: detect
+    if: needs.detect.outputs.client_changed == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -153,6 +202,8 @@ jobs:
   build-android:
     name: Try Build Android
     runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.client_changed == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -196,6 +247,7 @@ jobs:
   build-docker:
     name: Try Build Docker
     runs-on: ubuntu-latest
+    needs: detect
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -223,29 +275,58 @@ jobs:
   summary:
     name: Checks Summary
     runs-on: ubuntu-latest
-    needs: [flutter-checks, server-checks, build-windows, build-macos, build-android, build-docker]
+    needs: [detect, flutter-checks, server-checks, build-windows, build-macos, build-android, build-docker]
     if: always()
     steps:
       - name: Check results
         run: |
+          CLIENT_CHANGED="${{ needs.detect.outputs.client_changed }}"
+          
           echo "### ✅ Branch Checks Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$CLIENT_CHANGED" == "true" ]; then
+            echo "**All checks ran (client changed)**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Server-only checks ran (client unchanged)**" >> $GITHUB_STEP_SUMMARY
+          fi
+          
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Check | Result |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Flutter Analysis | ${{ needs.flutter-checks.result }} |" >> $GITHUB_STEP_SUMMARY
+          
+          # Always show server checks
           echo "| Server Lint & Test | ${{ needs.server-checks.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Windows Build | ${{ needs.build-windows.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| macOS Build | ${{ needs.build-macos.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Android Build | ${{ needs.build-android.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Docker Build | ${{ needs.build-docker.result }} |" >> $GITHUB_STEP_SUMMARY
           
+          # Show client checks only if client changed
+          if [ "$CLIENT_CHANGED" == "true" ]; then
+            echo "| Flutter Analysis | ${{ needs.flutter-checks.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Windows Build | ${{ needs.build-windows.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| macOS Build | ${{ needs.build-macos.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Android Build | ${{ needs.build-android.result }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
           # Fail if any required check failed
-          if [[ "${{ needs.flutter-checks.result }}" != "success" ]] || \
-             [[ "${{ needs.server-checks.result }}" != "success" ]] || \
-             [[ "${{ needs.build-windows.result }}" != "success" ]] || \
-             [[ "${{ needs.build-macos.result }}" != "success" ]] || \
-             [[ "${{ needs.build-android.result }}" != "success" ]] || \
+          FAILED=false
+          
+          # Always check server and docker
+          if [[ "${{ needs.server-checks.result }}" != "success" ]] || \
              [[ "${{ needs.build-docker.result }}" != "success" ]]; then
+            FAILED=true
+          fi
+          
+          # Check client builds only if client changed
+          if [ "$CLIENT_CHANGED" == "true" ]; then
+            if [[ "${{ needs.flutter-checks.result }}" != "success" ]] || \
+               [[ "${{ needs.build-windows.result }}" != "success" ]] || \
+               [[ "${{ needs.build-macos.result }}" != "success" ]] || \
+               [[ "${{ needs.build-android.result }}" != "success" ]]; then
+              FAILED=true
+            fi
+          fi
+          
+          if [ "$FAILED" == "true" ]; then
             echo "❌ One or more checks failed"
             exit 1
           fi
