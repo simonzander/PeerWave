@@ -786,10 +786,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
                   // If we reach here, login was successful
                   debugPrint(
-                    '[ROUTER] ✓ Token exchange successful, navigating to /app',
+                    '[ROUTER] ✓ Token exchange successful, navigating to /app/activities',
                   );
                   if (context.mounted) {
-                    context.go('/app');
+                    context.go('/app/activities');
                   }
                 } catch (e) {
                   debugPrint('[ROUTER] ✗ Token exchange failed: $e');
@@ -809,18 +809,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             });
           }
 
-          // Show spinner while token exchange happens
-          return const Scaffold(
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Completing authentication...'),
-                ],
-              ),
-            ),
+          // Show spinner with polling and abort button
+          return _AuthCallbackLoadingScreen(
+            hasToken: token != null && token.isNotEmpty,
           );
         },
       ),
@@ -2417,5 +2408,115 @@ Future<bool> _detectAutostart() async {
   } catch (e) {
     debugPrint('[INIT] Error detecting autostart: $e');
     return false; // Assume not autostart on error
+  }
+}
+
+/// Loading screen for auth callback with polling and abort button
+class _AuthCallbackLoadingScreen extends StatefulWidget {
+  final bool hasToken;
+
+  const _AuthCallbackLoadingScreen({required this.hasToken});
+
+  @override
+  State<_AuthCallbackLoadingScreen> createState() =>
+      _AuthCallbackLoadingScreenState();
+}
+
+class _AuthCallbackLoadingScreenState
+    extends State<_AuthCallbackLoadingScreen> {
+  Timer? _pollTimer;
+  int _secondsElapsed = 0;
+  static const _maxWaitSeconds =
+      120; // Match Chrome Custom Tab timeout (2 minutes)
+
+  @override
+  void initState() {
+    super.initState();
+    _startPolling();
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startPolling() {
+    // Poll every 500ms to check if login succeeded
+    _pollTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      _secondsElapsed++;
+
+      // Check if user is now logged in
+      if (AuthService.isLoggedIn && mounted) {
+        debugPrint('[AUTH_CALLBACK] ✓ Login detected via polling');
+        timer.cancel();
+        context.go('/app/activities');
+        return;
+      }
+
+      // Timeout after 2 minutes (matches Chrome Custom Tab timeout)
+      if (_secondsElapsed >= _maxWaitSeconds * 2) {
+        // *2 because we poll twice per second
+        debugPrint(
+          '[AUTH_CALLBACK] ⏱️ Timeout - cancelling auth and returning to login',
+        );
+        timer.cancel();
+        CustomTabAuthService.instance.cancelAuth();
+        if (mounted) {
+          context.go('/mobile-webauthn');
+        }
+      }
+    });
+  }
+
+  void _abort() {
+    debugPrint('[AUTH_CALLBACK] ❌ User aborted authentication');
+    _pollTimer?.cancel();
+    CustomTabAuthService.instance.cancelAuth();
+    context.go('/mobile-webauthn');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 24),
+              Text(
+                'Completing authentication...',
+                style: Theme.of(context).textTheme.titleMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'This should only take a moment',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withOpacity(0.6),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 48),
+              OutlinedButton.icon(
+                onPressed: _abort,
+                icon: const Icon(Icons.close),
+                label: const Text('Cancel'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                  side: BorderSide(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
