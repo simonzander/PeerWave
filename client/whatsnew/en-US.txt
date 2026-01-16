@@ -1,10 +1,6 @@
-🚀 What's New in PeerWave v1.1.9
-
-✨ New Features
-• delete associated refresh tokens before revoking all sessions
+🚀 What's New in PeerWave v1.1.10
 
 🐛 Bug Fixes
-• ensure token completion check occurs before unblocking authentication
-• improve token exchange handling and enhance multi-device sync logic
-• multi-device sync with original recipient tracking and cleanup of refresh tokens
+• reorganize imports in migration for clarity
+• add troubleshooting endpoints for SignedPreKey and identity key management
 
