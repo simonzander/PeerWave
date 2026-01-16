@@ -1,6 +1,8 @@
-🚀 What's New in PeerWave v1.1.10
+🚀 What's New in PeerWave v1.1.11
+
+✨ New Features
+• enhance version bump workflow to detect client and server changes
 
 🐛 Bug Fixes
-• reorganize imports in migration for clarity
-• add troubleshooting endpoints for SignedPreKey and identity key management
+• enhance authentication loading screen with polling and abort functionality
 
