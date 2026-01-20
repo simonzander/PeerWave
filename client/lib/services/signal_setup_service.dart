@@ -193,6 +193,14 @@ class SignalSetupService {
       debugPrint('[SIGNAL SETUP] ✅ Post-login initialization complete');
       debugPrint('[SIGNAL SETUP] ========================================');
 
+      // Clear grace period flag now that initialization is complete
+      if (_setupJustCompleted) {
+        debugPrint(
+          '[SIGNAL SETUP] Clearing grace period - post-login init complete',
+        );
+        _setupJustCompleted = false;
+      }
+
       // Complete the future successfully
       _initializationCompleter!.complete();
     } catch (e, stackTrace) {
@@ -220,10 +228,10 @@ class SignalSetupService {
   /// Returns a map with setup status and missing keys information
   Future<Map<String, dynamic>> checkKeysStatus() async {
     // 🔒 GUARD: If setup just completed, give it a grace period before checking again
-    // This prevents redirect loops when keys are still being written to database
-    if (_setupJustCompleted) {
+    // Grace period lasts until PostLoginInitService completes (prevents redirect loops)
+    if (_setupJustCompleted && !_postLoginInitComplete) {
       debugPrint(
-        '[SIGNAL SETUP] Setup just completed, skipping check (grace period)',
+        '[SIGNAL SETUP] Setup just completed, skipping check (grace period - waiting for post-login init)',
       );
       return {
         'needsSetup': false,
@@ -566,17 +574,18 @@ class SignalSetupService {
 
   /// Mark that signal setup was just completed
   /// This provides a grace period to prevent redirect loops
+  /// Grace period lasts until PostLoginInitService completes
   void markSetupCompleted() {
     debugPrint(
-      '[SIGNAL SETUP] ✅ Marking setup as just completed (grace period active)',
+      '[SIGNAL SETUP] ✅ Marking setup as just completed (grace period active until post-login init)',
     );
     _setupJustCompleted = true;
 
-    // Clear flag after 3 seconds (keys should be written by then)
-    Future.delayed(const Duration(seconds: 3), () {
-      debugPrint('[SIGNAL SETUP] Grace period expired, normal checks resumed');
-      _setupJustCompleted = false;
-    });
+    // Grace period will be cleared when post-login init completes
+    // This is more reliable than a fixed timeout
+    debugPrint(
+      '[SIGNAL SETUP] Grace period will end when PostLoginInitService completes',
+    );
   }
 
   /// Cleanup on logout - reset initialization state
