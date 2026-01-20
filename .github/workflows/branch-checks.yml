@@ -28,10 +28,14 @@ jobs:
         run: |
           # Get the list of changed files
           if [ "${{ github.event_name }}" == "push" ]; then
-            # Handle new branches or null SHA for before
+            # Handle new branches, null SHA, or force pushes
             if [ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]; then
               # For new branches, compare against main/origin default branch
               echo "New branch detected, comparing against origin/main"
+              CHANGED_FILES=$(git diff --name-only origin/main...${{ github.sha }} 2>/dev/null || git show --name-only --pretty=format: ${{ github.sha }})
+            elif ! git cat-file -e ${{ github.event.before }} 2>/dev/null; then
+              # If the before SHA doesn't exist (force push/rebase), compare against origin/main
+              echo "Previous commit not found (force push?), comparing against origin/main"
               CHANGED_FILES=$(git diff --name-only origin/main...${{ github.sha }} 2>/dev/null || git show --name-only --pretty=format: ${{ github.sha }})
             else
               CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
