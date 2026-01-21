@@ -33,7 +33,6 @@
     "nodemailer": "^7.0.12",
     "p-queue": "^9.1.0",
     "passport": "^0.7.0",
-    "passport-fido2-webauthn": "^0.1.0",
     "pug": "^3.0.3",
     "sanitize-html": "^2.13.0",
     "sequelize": "^6.37.7",
