@@ -276,11 +276,9 @@ const tokenExchangeLimiter = rateLimit({
     max: 5, // 5 requests per IP per window
     message: { error: 'Too many token exchange attempts, please try again later' },
     standardHeaders: true,
-    legacyHeaders: false,
-    // Use clientId as key for better tracking
-    keyGenerator: (req) => {
-        return req.body.clientId || req.ip;
-    }
+    legacyHeaders: false
+    // Note: Using default keyGenerator for proper IPv6 handling
+    // clientId tracking moved to application-level logic if needed
 });
 
 const tokenRevocationLimiter = rateLimit({
@@ -2345,10 +2343,10 @@ authRoutes.post('/token/revoke', tokenRevocationLimiter, async (req, res) => {
 // Refresh Token Endpoint
 // POST /auth/token/refresh
 // Refreshes expired HMAC session using refresh token
-// Rate limited to 10 requests per hour per client
+// Rate limited to 15 requests per hour per client
 const refreshTokenLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
-    max: 10, // 10 requests per hour
+    max: 15, // 15 requests per hour
     message: 'Too many refresh attempts, please try again later',
     standardHeaders: true,
     legacyHeaders: false,
