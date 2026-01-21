@@ -4588,6 +4588,11 @@ class SignalService {
       );
     }
 
+    // 🔒 CRITICAL: Capture original recipient BEFORE loop
+    // This is needed for multi-device sync to preserve the actual recipient
+    // When syncing to sender's other devices, recipientUserId gets overwritten in the loop
+    final originalRecipientUserId = recipientUserId;
+
     // Verschlüssele für jedes Gerät separat
     // IMPORTANT: Each device encryption is isolated in try-catch
     // so one device failure doesn't prevent sending to other devices
@@ -4830,9 +4835,9 @@ class SignalService {
         final isSenderDevice = (recipientAddress.getName() == _currentUserId);
         if (isSenderDevice) {
           data['originalRecipient'] =
-              recipientUserId; // The actual recipient of the message
+              originalRecipientUserId; // The actual original recipient of the message
           debugPrint(
-            '[SIGNAL SERVICE] Multi-device sync - originalRecipient: $recipientUserId',
+            '[SIGNAL SERVICE] Multi-device sync - originalRecipient: $originalRecipientUserId',
           );
         }
 
