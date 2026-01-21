@@ -2072,6 +2072,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               debugPrint(
                 '[ROUTER] App route detected - checking keys status...',
               );
+
               try {
                 final status = await SignalSetupService.instance
                     .checkKeysStatus();
