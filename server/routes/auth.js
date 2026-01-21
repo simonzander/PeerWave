@@ -646,13 +646,8 @@ authRoutes.use(bodyParser.json({
     }
 }));
 
-// Configure session middleware
-authRoutes.use(session({
-    secret: config.session.secret, // Replace with a strong secret key
-    resave: config.session.resave,
-    saveUninitialized: config.session.saveUninitialized,
-    cookie: config.cookie // Set to true if using HTTPS
-}));
+// Session middleware is configured globally in server.js
+// No need to configure it again here
 
 // REMOVED: Pug register route (Pug disabled, Flutter web client used)
 authRoutes.post("/register", async (req, res) => {
