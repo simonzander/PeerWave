@@ -63,9 +63,12 @@ async function generateRefreshToken(clientId, userUuid) {
  * @param {string} clientId - UUID generated client-side
  * @param {string} userUuid - User's UUID
  * @param {Object} req - Express request object (for IP, user-agent, etc.)
+ * @param {string} [deviceInfo] - Optional device info string (e.g., "PeerWave Client Windows 11 - DESKTOP-PC")
  * @returns {Promise<Object>} Client record with device_id and clientid
  */
-async function findOrCreateClient(clientId, userUuid, req) {
+async function findOrCreateClient(clientId, userUuid, req, deviceInfo) {
+    // Use provided deviceInfo or fall back to user-agent
+    const browserString = deviceInfo || req.headers['user-agent'] || 'Unknown Device';
     const userAgent = req.headers['user-agent'] || '';
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     const location = await getLocationFromIp(ip);
@@ -138,14 +141,7 @@ async function findOrCreateClient(clientId, userUuid, req) {
                     owner: userUuid,
                     device_id: maxDevice ? maxDevice + 1 : 1,
                     ip: ip,
-                    browser: userAgent,
-                    location: locationString
-                },
-                { where: { clientid: clientId } }
-            ),
-            'transferClientOwnership'
-        );
-        
+                    browser: browserString,
         // Reload to get updated values
         await existingClient.reload();
         
@@ -174,7 +170,7 @@ async function findOrCreateClient(clientId, userUuid, req) {
             owner: userUuid,
             clientid: clientId,
             ip: ip,
-            browser: userAgent,
+            browser: browserString,
             location: locationString,
             device_id: maxDevice ? maxDevice + 1 : 1
         }
@@ -184,7 +180,7 @@ async function findOrCreateClient(clientId, userUuid, req) {
     if (!created) {
         await writeQueue.enqueue(
             () => Client.update(
-                { ip, browser: userAgent, location: locationString },
+                { ip, browser: browserString, location: locationString },
                 { where: { clientid: clientId } }
             ),
             'updateClientInfo'
@@ -1060,7 +1056,8 @@ authRoutes.post("/backupcode/mobile-verify", sessionLimiter, async(req, res) => 
         
         if (clientId) {
             // Use shared function to find or create client
-            const result = await findOrCreateClient(clientId, user.uuid, req);
+            const deviceInfo = req.body && req.body.deviceInfo;
+            const result = await findOrCreateClient(clientId, user.uuid, req, deviceInfo);
             req.session.deviceId = result.device_id;
             req.session.clientId = result.clientid;
             
@@ -1459,7 +1456,8 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             
             if (clientId) {
                 // Use shared function to find or create client
-                const result = await findOrCreateClient(clientId, user.uuid, req);
+                const deviceInfo = req.body && req.body.deviceInfo;
+                const result = await findOrCreateClient(clientId, user.uuid, req, deviceInfo);
                 
                 // Generate session secret for native clients (HMAC authentication)
                 sessionSecret = crypto.randomBytes(32).toString('base64url');
@@ -1839,7 +1837,8 @@ authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
             
             if (clientId) {
                 // Use shared function to find or create client
-                const result = await findOrCreateClient(clientId, user.uuid, req);
+                const deviceInfo = req.body && req.body.deviceInfo;
+                const result = await findOrCreateClient(clientId, user.uuid, req, deviceInfo);
                 req.session.deviceId = result.device_id;
                 req.session.clientId = result.clientid;
                 
@@ -2021,10 +2020,10 @@ authRoutes.get("/webauthn/list", sessionLimiter, verifyAuthEither, async (req, r
 authRoutes.post("/client/addweb", async (req, res) => {
     if(req.session.authenticated && req.session.email && req.session.uuid) {
         try {
-            const { clientId } = req.body;
+            const { clientId, deviceInfo } = req.body;
             
             // Use shared function to find or create client
-            const result = await findOrCreateClient(clientId, req.session.uuid, req);
+            const result = await findOrCreateClient(clientId, req.session.uuid, req, deviceInfo);
             
             // Store in session for web clients
             req.session.deviceId = result.device_id;
@@ -2250,7 +2249,8 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
         }
         
         // Use shared function to find or create Signal Client record (required for Signal protocol)
-        const result = await findOrCreateClient(clientId, user.uuid, req);
+        const deviceInfo = req.body && req.body.deviceInfo;
+        const result = await findOrCreateClient(clientId, user.uuid, req, deviceInfo);
         logger.info('[TOKEN EXCHANGE] Client record ensured');
         logger.debug('[TOKEN EXCHANGE] Client details', { 
             clientId: result.clientid, 

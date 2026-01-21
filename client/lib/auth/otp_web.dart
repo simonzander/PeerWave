@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
+import '../services/device_info_helper.dart';
 import '../web_config.dart';
 import '../widgets/registration_progress_bar.dart';
 import '../widgets/app_drawer.dart';
@@ -95,14 +96,22 @@ class _OtpWebPageState extends State<OtpWebPage> {
       final endpoint = kIsWeb ? '/otp' : '$urlString/otp';
       debugPrint('[OTP] Submitting to: $endpoint');
 
-      final response = await ApiService.post(
-        endpoint,
-        data: {
-          'email': widget.email,
-          'otp': _otpController.text,
-          'clientId': widget.clientId,
-        },
-      );
+      // Get device info for native platforms
+      final deviceInfo = kIsWeb
+          ? null
+          : await DeviceInfoHelper.getDeviceDisplayName();
+
+      final requestData = {
+        'email': widget.email,
+        'otp': _otpController.text,
+        'clientId': widget.clientId,
+      };
+
+      if (deviceInfo != null) {
+        requestData['deviceInfo'] = deviceInfo;
+      }
+
+      final response = await ApiService.post(endpoint, data: requestData);
       // Handle response as needed
       if (response.statusCode == 200) {
         // Success logic here - existing user login

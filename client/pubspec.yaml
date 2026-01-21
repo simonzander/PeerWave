@@ -96,6 +96,7 @@ dependencies:
   launch_at_startup: ^0.5.1  # Autostart functionality for desktop
   js: ^0.7.1  # JavaScript interop (legacy, transitioning to dart:js_interop)
   collection: ^1.18.0  # Collection utilities
+  device_info_plus: ^12.0.0  # Platform-specific device information
 
 dev_dependencies:
   # The "flutter_lints" package below contains a set of recommended lints to
