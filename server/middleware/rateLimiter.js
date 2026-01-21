@@ -29,7 +29,7 @@ const apiLimiter = rateLimit({
 // Strict rate limiter for authentication endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Max 5 login attempts per 15 minutes per IP
+  max: 12, // Max 12 login attempts per 15 minutes per IP
   skipSuccessfulRequests: true, // Don't count successful logins
   message: 'Too many login attempts, please try again later.',
   validate: { trustProxy: false },
@@ -46,7 +46,7 @@ const authLimiter = rateLimit({
 // Stricter limiter for registration/account creation
 const registrationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 3, // Max 3 registration attempts per hour per IP
+  max: 15, // Max 15 registration attempts per hour per IP
   message: 'Too many accounts created, please try again later.',
   validate: { trustProxy: false },
   handler: (req, res) => {
@@ -94,7 +94,7 @@ const queryLimiter = rateLimit({
 // Very strict limiter for password reset
 const passwordResetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 3, // Max 3 password reset attempts per hour per IP
+  max: 8, // Max 8 password reset attempts per hour per IP
   message: 'Too many password reset attempts.',
   validate: { trustProxy: false },
   handler: (req, res) => {
