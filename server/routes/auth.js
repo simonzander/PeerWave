@@ -280,11 +280,9 @@ const tokenExchangeLimiter = rateLimit({
     max: 5, // 5 requests per IP per window
     message: { error: 'Too many token exchange attempts, please try again later' },
     standardHeaders: true,
-    legacyHeaders: false,
-    // Use clientId as key for better tracking
-    keyGenerator: (req) => {
-        return req.body.clientId || req.ip;
-    }
+    legacyHeaders: false
+    // Note: Using default keyGenerator for proper IPv6 handling
+    // clientId tracking moved to application-level logic if needed
 });
 
 const tokenRevocationLimiter = rateLimit({
