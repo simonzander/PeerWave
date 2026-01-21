@@ -1881,11 +1881,11 @@ authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
                 }
                 
                 // Generate refresh token for native clients
+                let refreshToken = null;
                 if (sessionSecret) {
                     try {
-                        const refreshToken = await generateRefreshToken(clientId, user.uuid);
-                        // Store for response (added below)
-                        response.refreshToken = refreshToken;
+                        refreshToken = await generateRefreshToken(clientId, user.uuid);
+                        logger.debug('[WEBAUTHN] Refresh token generated for native client');
                     } catch (refreshErr) {
                         logger.error('[WEBAUTHN] Error generating refresh token', refreshErr);
                         // Continue anyway - session still works without refresh token
@@ -1910,7 +1910,8 @@ authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
                     response.sessionSecret = sessionSecret;
                     response.userId = user.uuid;
                     response.email = email;
-                    if (response.refreshToken) {
+                    if (refreshToken) {
+                        response.refreshToken = refreshToken;
                         logger.info('[WEBAUTHN] HMAC session credentials + refresh token included in response');
                     } else {
                         logger.info('[WEBAUTHN] HMAC session credentials included in response');
