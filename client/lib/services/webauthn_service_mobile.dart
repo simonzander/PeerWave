@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:dio/dio.dart';
 import 'api_service.dart';
 import 'secure_session_storage.dart';
+import 'device_info_helper.dart';
 
 /// Mobile WebAuthn service for iOS and Android
 ///
@@ -224,12 +225,14 @@ class MobileWebAuthnService {
         '[MobileWebAuthn] Passkey created successfully, credential ID: ${registerResponse.id}',
       );
 
-      // 5. Send attestation to server
+      // 5. Send attestation to server with device info
       final registerResponseJson = registerResponse.toJson();
+      final deviceInfo = await DeviceInfoHelper.getDeviceDisplayName();
+      debugPrint('[MobileWebAuthn] Device info: $deviceInfo');
       debugPrint('[MobileWebAuthn] Sending attestation to server');
       final serverResponse = await ApiService.dio.post(
         '/webauthn/register',
-        data: {'attestation': registerResponseJson},
+        data: {'attestation': registerResponseJson, 'deviceInfo': deviceInfo},
       );
 
       if (serverResponse.statusCode != 200) {
@@ -325,11 +328,13 @@ class MobileWebAuthnService {
 
       debugPrint('[MobileWebAuthn] Challenge signed successfully');
 
-      // 6. Send assertion to server
+      // 6. Send assertion to server with device info
       final authResponseJson = authResponse.toJson();
+      final deviceInfo = await DeviceInfoHelper.getDeviceDisplayName();
+      debugPrint('[MobileWebAuthn] Device info: $deviceInfo');
       final serverResponse = await ApiService.dio.post(
         '$serverUrl/webauthn/authenticate',
-        data: authResponseJson,
+        data: {...authResponseJson, 'deviceInfo': deviceInfo},
       );
 
       if (serverResponse.statusCode != 200) {

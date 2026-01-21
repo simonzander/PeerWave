@@ -1420,7 +1420,7 @@ clientRoutes.get("/client/channels/:channelUuid/participants", verifyAuthEither,
 });*/
 
 clientRoutes.post("/magic/verify", async (req, res) => {
-    const { key, clientid } = req.body;
+    const { key, clientid, deviceInfo } = req.body;
     logger.debug('[MAGIC LINK] Verifying magic link', { clientId: sanitizeForLog(clientid) });
     
     if(!key || !clientid) {
@@ -1481,6 +1481,9 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     req.session.authenticated = true;
     req.session.email = entry.email;
     req.session.uuid = entry.uuid;
+    
+    // Use provided deviceInfo or fall back to user-agent
+    const browserString = deviceInfo || req.headers['user-agent'] || 'Unknown Device';
     const userAgent = req.headers['user-agent'] || '';
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     const location = await getLocationFromIp(ip);
@@ -1505,7 +1508,7 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     const [client] = await writeQueue.enqueue(
         () => Client.findOrCreate({
             where: { owner: entry.uuid, clientid: clientid },
-            defaults: { owner: entry.uuid, clientid: clientid, ip: ip, browser: userAgent, location: locationString, device_id: maxDevice ? maxDevice + 1 : 1 }
+            defaults: { owner: entry.uuid, clientid: clientid, ip: ip, browser: browserString, location: locationString, device_id: maxDevice ? maxDevice + 1 : 1 }
         }),
         'clientFindOrCreateMagicLink'
     );

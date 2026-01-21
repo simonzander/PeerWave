@@ -4,6 +4,7 @@ import '../widgets/app_drawer.dart';
 import '../services/api_service.dart';
 import '../services/clientid_native.dart';
 import '../services/device_identity_service.dart';
+import '../services/device_info_helper.dart';
 import '../services/server_config_native.dart';
 import '../services/session_auth_service.dart';
 import '../services/native_crypto_service.dart';
@@ -115,10 +116,19 @@ class _MobileBackupcodeLoginScreenState
       // Set base URL for API service
       ApiService.setBaseUrl(_serverUrl!);
 
+      // Get device info
+      final deviceInfo = await DeviceInfoHelper.getDeviceDisplayName();
+      debugPrint('[MobileBackupcodeLogin] Device info: $deviceInfo');
+
       // Call mobile backup code login endpoint (creates HMAC session)
       final response = await ApiService.dio.post(
         '$_serverUrl/backupcode/mobile-verify',
-        data: {'email': email, 'backupCode': backupcode, 'clientId': clientId},
+        data: {
+          'email': email,
+          'backupCode': backupcode,
+          'clientId': clientId,
+          'deviceInfo': deviceInfo,
+        },
       );
 
       debugPrint('[MobileBackupcodeLogin] Response: ${response.statusCode}');
