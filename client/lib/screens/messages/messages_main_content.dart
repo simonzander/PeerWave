@@ -61,6 +61,14 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
         _loadConversations();
       }
     });
+
+    // Listen for server switches (multi-server support)
+    EventBus.instance.on(AppEvent.serverSwitched).listen((data) {
+      if (!mounted) return;
+
+      debugPrint('[MESSAGES_MAIN] Server switched, reloading conversations');
+      _loadConversations();
+    });
   }
 
   Future<void> _initializeStarredService() async {

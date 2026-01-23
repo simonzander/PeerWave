@@ -14,10 +14,11 @@ import '../device_identity_service.dart';
 /// - Application-layer encryption: Sensitive columns encrypted
 /// - Handles both native (file-based SQLite) and web (IndexedDB-backed SQLite)
 class DatabaseHelper {
-  static Database? _database;
+  static final Map<String, Database> _databases =
+      {}; // Per-deviceId connections
   static bool _factoryInitialized = false;
   static bool _initializing = false;
-  static bool _isReady = false;
+  static final Map<String, bool> _isReady = {}; // Per-deviceId ready state
   static String? _lastError;
   static const String _databaseBaseName =
       'peerwave'; // Base name without .db extension
@@ -28,7 +29,11 @@ class DatabaseHelper {
       DeviceIdentityService.instance;
 
   /// Check if database is ready for use
-  static bool get isReady => _isReady;
+  static bool get isReady {
+    if (!_deviceIdentity.isInitialized) return false;
+    final deviceId = _deviceIdentity.deviceId;
+    return _isReady[deviceId] ?? false;
+  }
 
   /// Check if database is currently initializing
   static bool get isInitializing => _initializing;
@@ -48,11 +53,24 @@ class DatabaseHelper {
     return dbName;
   }
 
+  /// Get current database name (public accessor for debugging)
+  static String getDatabaseName() {
+    return _databaseName;
+  }
+
   /// Get the singleton database instance
   static Future<Database> get database async {
-    if (_database != null && _isReady) {
-      debugPrint('[DATABASE] Returning existing database instance');
-      return _database!;
+    if (!_deviceIdentity.isInitialized) {
+      throw Exception('[DATABASE] Device identity not initialized');
+    }
+
+    final deviceId = _deviceIdentity.deviceId;
+    final dbName = _databaseName;
+
+    // Return existing connection if available and ready
+    if (_databases.containsKey(deviceId) && (_isReady[deviceId] ?? false)) {
+      debugPrint('[DATABASE] Returning existing connection for $deviceId');
+      return _databases[deviceId]!;
     }
 
     // Prevent multiple simultaneous initializations
@@ -60,13 +78,15 @@ class DatabaseHelper {
       debugPrint('[DATABASE] Already initializing, waiting...');
       // Wait for initialization to complete
       int attempts = 0;
-      while (_database == null && _initializing && attempts < 300) {
+      while (!(_isReady[deviceId] ?? false) &&
+          _initializing &&
+          attempts < 300) {
         await Future.delayed(Duration(milliseconds: 100));
         attempts++;
       }
-      if (_database != null && _isReady) {
+      if (_databases.containsKey(deviceId) && (_isReady[deviceId] ?? false)) {
         debugPrint('[DATABASE] Initialization completed by another caller');
-        return _database!;
+        return _databases[deviceId]!;
       }
       if (attempts >= 300) {
         throw Exception(
@@ -79,18 +99,21 @@ class DatabaseHelper {
     _lastError = null;
     try {
       debugPrint('[DATABASE] ========================================');
-      debugPrint('[DATABASE] Starting device-scoped database initialization');
+      debugPrint('[DATABASE] Initializing connection for deviceId: $deviceId');
+      debugPrint('[DATABASE] Database: $_databaseName');
       debugPrint('[DATABASE] ========================================');
 
-      _database = await _initDatabase();
-      _isReady = true;
-      debugPrint('[DATABASE] ✓ Database initialization successful');
-      debugPrint('[DATABASE] ✓ Database is READY for use');
-      return _database!;
+      final db = await _initDatabase();
+      _databases[deviceId] = db;
+      _isReady[deviceId] = true;
+      debugPrint('[DATABASE] ✓ Database connection ready for $deviceId');
+      return db;
     } catch (e) {
       _lastError = e.toString();
-      _isReady = false;
-      debugPrint('[DATABASE] ✗ Database initialization FAILED: $e');
+      _isReady[deviceId] = false;
+      debugPrint(
+        '[DATABASE] ✗ Database initialization FAILED for $deviceId: $e',
+      );
       rethrow;
     } finally {
       _initializing = false;
@@ -117,7 +140,7 @@ class DatabaseHelper {
           '[DATABASE] Attempt $attempt/$maxAttempts to access database...',
         );
         final db = await database;
-        if (_isReady) {
+        if (_isReady[_deviceIdentity.deviceId] ?? false) {
           debugPrint('[DATABASE] ✓ Database ready on attempt $attempt');
           return db;
         }
@@ -540,18 +563,21 @@ class DatabaseHelper {
 
   /// Close the database
   static Future<void> close() async {
-    if (_database != null) {
-      await _database!.close();
-      _database = null;
-      debugPrint('[DATABASE] Database closed');
+    for (final entry in _databases.entries) {
+      await entry.value.close();
+      debugPrint('[DATABASE] Closed connection for ${entry.key}');
     }
+    _databases.clear();
+    _isReady.clear();
+    debugPrint('[DATABASE] All database connections closed');
   }
 
   /// Reset database state (for hot reload)
   /// This prevents "database_closed" errors after hot reload
   static void reset() {
     debugPrint('[DATABASE] Resetting database state for hot reload');
-    _database = null;
+    _databases.clear();
+    _isReady.clear();
     _initializing = false;
     // Don't reset _factoryInitialized - factory init should persist
   }
@@ -653,10 +679,17 @@ class DatabaseHelper {
 
   /// Reset database (delete and recreate)
   static Future<void> resetDatabase() async {
-    debugPrint('[DATABASE] Resetting database...');
+    if (!_deviceIdentity.isInitialized) {
+      throw Exception('[DATABASE] Device identity not initialized');
+    }
+
+    final deviceId = _deviceIdentity.deviceId;
+    debugPrint('[DATABASE] Resetting database for $deviceId...');
     await deleteDatabase();
-    _database = await _initDatabase();
-    debugPrint('[DATABASE] Database reset complete');
+    final db = await _initDatabase();
+    _databases[deviceId] = db;
+    _isReady[deviceId] = true;
+    debugPrint('[DATABASE] Database reset complete for $deviceId');
   }
 
   /// Get database info for debugging

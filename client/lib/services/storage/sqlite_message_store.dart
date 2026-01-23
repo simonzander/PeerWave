@@ -118,6 +118,15 @@ class SqliteMessageStore {
   }) async {
     final db = await DatabaseHelper.database;
 
+    // Log which database we're saving to
+    final dbName = DatabaseHelper.getDatabaseName();
+    debugPrint(
+      '[SQLITE_MESSAGE_STORE] 💾 Storing RECEIVED message to: $dbName',
+    );
+    debugPrint(
+      '[SQLITE_MESSAGE_STORE] 📥 ItemId: $itemId, Sender: $sender, Type: $type',
+    );
+
     // Encrypt the message content
     final encryptedMessage = await _encryption.encryptString(message);
 
@@ -151,6 +160,13 @@ class SqliteMessageStore {
     Map<String, dynamic>? metadata,
   }) async {
     final db = await DatabaseHelper.database;
+
+    // Log which database we're saving to
+    final dbName = DatabaseHelper.getDatabaseName();
+    debugPrint('[SQLITE_MESSAGE_STORE] 💾 Storing SENT message to: $dbName');
+    debugPrint(
+      '[SQLITE_MESSAGE_STORE] 📤 ItemId: $itemId, Recipient: $recipientId, Type: $type',
+    );
 
     // Validate message size (2MB limit)
     final messageBytes = utf8.encode(message).length;

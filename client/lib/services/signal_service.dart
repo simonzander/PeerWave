@@ -3321,10 +3321,16 @@ class SignalService {
   /// (deviceId) verschlüsselt wurden. Die Nachricht wird dann mit dem Session-Schlüssel
   /// dieses Geräts entschlüsselt.
   Future<void> receiveItem(dynamic data) async {
+    // Get current deviceId and database info
+    final currentDeviceId = DeviceIdentityService.instance.deviceId;
+    final dbName = DatabaseHelper.getDatabaseName();
+
     debugPrint(
       "[SIGNAL SERVICE] ===============================================",
     );
     debugPrint("[SIGNAL SERVICE] receiveItem called for this device");
+    debugPrint("[SIGNAL SERVICE] 🔑 Current DeviceId: $currentDeviceId");
+    debugPrint("[SIGNAL SERVICE] 💾 Database: $dbName");
     debugPrint(
       "[SIGNAL SERVICE] ===============================================",
     );
@@ -4454,6 +4460,18 @@ class SignalService {
     bool forcePreKeyMessage =
         false, // Force PreKey message even if session exists (for session recovery)
   }) async {
+    // Get current deviceId and database info
+    final currentDeviceId = DeviceIdentityService.instance.deviceId;
+    final dbName = DatabaseHelper.getDatabaseName();
+
+    debugPrint('[SIGNAL SERVICE] ═══════════════════════════════════════════');
+    debugPrint('[SIGNAL SERVICE] 📤 SENDING MESSAGE');
+    debugPrint('[SIGNAL SERVICE] 🔑 Current DeviceId: $currentDeviceId');
+    debugPrint('[SIGNAL SERVICE] 💾 Database: $dbName');
+    debugPrint('[SIGNAL SERVICE] 👤 Recipient: $recipientUserId');
+    debugPrint('[SIGNAL SERVICE] 📝 Type: $type');
+    debugPrint('[SIGNAL SERVICE] ═══════════════════════════════════════════');
+
     // 🔒 SYNC-LOCK: Wait if identity regeneration is in progress
     await _waitForRegenerationIfNeeded();
 

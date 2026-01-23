@@ -6,8 +6,10 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/server_config_native.dart';
 import '../services/device_identity_service.dart';
+import '../services/user_profile_service.dart';
 import '../providers/unread_messages_provider.dart';
 import '../theme/semantic_colors.dart';
+import '../services/event_bus.dart';
 
 /// Discord-like server panel for native clients
 /// Shows list of connected servers with icons and notification badges
@@ -93,6 +95,9 @@ class _ServerPanelState extends State<ServerPanel> {
       );
     }
 
+    // TODO: Database needs per-server connections, can't close while other servers active
+    // await DatabaseHelper.close();
+
     await ServerConfigService.setActiveServer(serverId);
     await ServerConfigService.resetUnreadCount(serverId);
 
@@ -111,11 +116,33 @@ class _ServerPanelState extends State<ServerPanel> {
       }
     }
 
+    // Clear profile cache to prevent showing profiles from previous server
+    UserProfileService.instance.clearCache();
+    debugPrint('[ServerPanel] ✓ Profile cache cleared for server switch');
+
+    // Reload own profile for the new server
+    try {
+      await UserProfileService.instance.loadOwnProfile();
+      debugPrint('[ServerPanel] ✓ Own profile loaded for new server');
+    } catch (e) {
+      debugPrint('[ServerPanel] ⚠️ Failed to load own profile: $e');
+    }
+
     setState(() {
       _activeServerId = serverId;
     });
 
     widget.onServerSelected?.call(serverId);
+
+    // Emit server switched event for UI components to reload data
+    EventBus.instance.emit(AppEvent.serverSwitched, {'serverId': serverId});
+    debugPrint('[ServerPanel] ✓ Server switched event emitted: $serverId');
+
+    // Reload server list to refresh UI and fix icon display
+    await Future.delayed(
+      Duration(milliseconds: 100),
+    ); // Small delay for state to settle
+    _loadServers();
 
     // Trigger reload of the app
     if (mounted) {

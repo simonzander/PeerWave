@@ -991,9 +991,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               );
 
               try {
-                final statusRaw = await SignalSetupService.instance
+                final status = await SignalSetupService.instance
                     .checkKeysStatus();
-                final status = Map<String, dynamic>.from(statusRaw);
                 final needsSetup = status['needsSetup'] as bool;
                 final missingKeys =
                     (status['missingKeys'] as Map?)?.cast<String, dynamic>() ??
