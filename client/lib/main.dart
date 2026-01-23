@@ -78,13 +78,15 @@ import 'services/filesystem_checker_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await ApiService.init();
   String? initialMagicKey;
 
   // NOTE: Client ID generation moved to POST-LOGIN flow
   // Client ID is now fetched from server after WebAuthn authentication
   // based on the user's email (1:1 mapping email -> clientId)
 
+  // ========================================
+  // PHASE 1: Core Infrastructure Setup
+  // ========================================
   // Initialize app directories for native (structured storage)
   if (!kIsWeb) {
     // CRITICAL: Fix Windows autostart working directory issue
@@ -106,6 +108,30 @@ Future<void> main() async {
     await AppDirectories.initialize();
     debugPrint('[INIT] ✅ AppDirectories initialized');
 
+    // Initialize Database early (ensure connection pool ready)
+    try {
+      debugPrint('[INIT] Initializing database...');
+      await DatabaseHelper.database;
+      debugPrint('[INIT] ✅ Database initialized and ready');
+    } catch (e) {
+      debugPrint('[INIT] ⚠️ Database initialization failed: $e');
+      // Don't block app startup - database will retry on first use
+    }
+
+    // Initialize SecureStorage early (ensure keychain/credential store accessible)
+    try {
+      debugPrint('[INIT] Validating secure storage access...');
+      // Test read to ensure keychain is accessible (may need user unlock on some platforms)
+      await ClientIdService.getClientId();
+      debugPrint('[INIT] ✅ Secure storage accessible');
+    } catch (e) {
+      debugPrint('[INIT] ⚠️ Secure storage access validation failed: $e');
+      // Don't block - will retry on first actual use
+    }
+
+    // ========================================
+    // PHASE 2: Autostart Detection & Enhanced Initialization
+    // ========================================
     // Detect autostart scenario (presence of session without explicit login action)
     // This helps identify cases where window appears before initialization completes
     final bool isAutostart = await _detectAutostart();
@@ -177,6 +203,9 @@ Future<void> main() async {
     }
   }
 
+  // ========================================
+  // PHASE 3: Server Configuration & API Setup
+  // ========================================
   // Initialize server config service for native (multi-server support)
   if (!kIsWeb) {
     await ServerConfigService.init();
@@ -240,9 +269,18 @@ Future<void> main() async {
     debugPrint('[INIT] ✅ API base URL set to: $serverUrl (non-web platform)');
   }
 
+  // ========================================
+  // PHASE 4: Initialize API Service (now that we have server URL)
+  // ========================================
+  await ApiService.init();
+  debugPrint('[INIT] ✅ ApiService initialized');
+
   // NOTE: ICE server configuration is loaded AFTER login (requires authentication)
   // See auth_layout_web.dart -> successful login callback
 
+  // ========================================
+  // PHASE 5: Theme Provider
+  // ========================================
   // Initialize Theme Provider
   debugPrint('[INIT] Initializing Theme Provider...');
   final themeProvider = ThemeProvider();
