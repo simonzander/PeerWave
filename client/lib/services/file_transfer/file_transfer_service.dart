@@ -5,6 +5,9 @@ import 'socket_file_client.dart';
 import 'storage_interface.dart';
 import 'encryption_service.dart';
 import '../signal_service.dart';
+import '../server_config_web.dart'
+    if (dart.library.io) '../server_config_native.dart';
+import '../../web_config.dart';
 
 /// File Transfer Service
 ///
@@ -911,26 +914,88 @@ class FileTransferService {
       // Step 3: Update local metadata
       debugPrint('[FILE TRANSFER] Step 3/4: Updating local metadata...');
 
+      List<String> updatedSharedWith = [];
+
       if (metadata != null) {
         final currentSharedWith =
             (metadata['sharedWith'] as List?)?.cast<String>() ?? [];
-        final updatedSharedWith = {...currentSharedWith, ...userIds}.toList();
+        updatedSharedWith = {...currentSharedWith, ...userIds}.toList();
+
+        // Get current server URL
+        String? currentServer;
+        if (kIsWeb) {
+          currentServer = await loadWebApiServer();
+        } else {
+          currentServer = ServerConfigService.getActiveServer()?.serverUrl;
+        }
+
+        // Build shareInfo map with server details for each user
+        final currentShareInfo =
+            (metadata['shareInfo'] as Map?)?.cast<String, dynamic>() ?? {};
+
+        // Add new users to shareInfo
+        for (final userId in userIds) {
+          if (!currentShareInfo.containsKey(userId)) {
+            // TODO: Get user display name from contacts/profiles
+            // For now, just store userId and server
+            currentShareInfo[userId] = {
+              'server': currentServer ?? 'unknown',
+              'displayName': userId, // Fallback to userId for now
+              'addedAt': DateTime.now().toIso8601String(),
+            };
+          }
+        }
 
         await _storage.updateFileMetadata(fileId, {
           'sharedWith': updatedSharedWith,
+          'shareInfo': currentShareInfo,
+          'status': 'seeding', // Update status to seeding when first shared
         });
       }
 
-      // Step 4: Re-announce file with updated sharedWith list
-      // This ensures server's FileRegistry has the current sharedWith state
-      debugPrint(
-        '[FILE TRANSFER] Step 4/4: Re-announcing file with updated share list...',
-      );
+      // Step 4: Announce file to network with updated sharedWith list
+      // This ensures server's FileRegistry has the file and current sharedWith state
+      debugPrint('[FILE TRANSFER] Step 4/4: Announcing file to network...');
 
       try {
-        if (metadata != null) {
+        if (metadata != null && updatedSharedWith.isNotEmpty) {
           final availableChunks = await _getAvailableChunkIndices(fileId);
-          final updatedSharedWith = {...currentSharedWith, ...userIds}.toList();
+
+          // Filter updatedSharedWith by current server for announcement
+          String? currentServer;
+          if (kIsWeb) {
+            currentServer = await loadWebApiServer();
+          } else {
+            currentServer = ServerConfigService.getActiveServer()?.serverUrl;
+          }
+
+          // Filter shares to only users on this server
+          List<String> filteredSharedWith = updatedSharedWith;
+          if (currentServer != null) {
+            final shareInfo = (metadata['shareInfo'] as Map?)
+                ?.cast<String, dynamic>();
+            if (shareInfo != null) {
+              final normalizedCurrentServer = currentServer
+                  .replaceAll(RegExp(r'^https?://'), '')
+                  .replaceAll(RegExp(r'/$'), '');
+
+              filteredSharedWith = updatedSharedWith.where((userId) {
+                final userInfo = shareInfo[userId] as Map?;
+                final userServer = userInfo?['server'] as String?;
+                if (userServer == null) return true;
+
+                final normalizedUserServer = userServer
+                    .replaceAll(RegExp(r'^https?://'), '')
+                    .replaceAll(RegExp(r'/$'), '');
+
+                return normalizedUserServer == normalizedCurrentServer;
+              }).toList();
+
+              debugPrint(
+                '[FILE TRANSFER] Filtered shares for announcement: ${filteredSharedWith.length}/${updatedSharedWith.length} users on $currentServer',
+              );
+            }
+          }
 
           await _socketFileClient.announceFile(
             fileId: fileId,
@@ -939,11 +1004,12 @@ class FileTransferService {
             checksum: metadata['checksum'] as String,
             chunkCount: metadata['chunkCount'] as int,
             availableChunks: availableChunks,
-            sharedWith: updatedSharedWith, // ← Updated sharedWith list
+            sharedWith:
+                filteredSharedWith, // ← Filtered sharedWith for this server
           );
 
           debugPrint(
-            '[FILE TRANSFER] ✓ File re-announced with ${updatedSharedWith.length} users in sharedWith',
+            '[FILE TRANSFER] ✓ File announced with ${filteredSharedWith.length} users on this server',
           );
         }
       } catch (e) {

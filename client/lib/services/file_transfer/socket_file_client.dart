@@ -1,21 +1,25 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../models/seeder_info.dart';
+import '../socket_service.dart'
+    if (dart.library.io) '../socket_service_native.dart';
 
 /// Socket.IO Client for P2P File Sharing
 ///
 /// Wraps P2P-specific Socket.IO events and provides
 /// a clean interface for file announcements, discovery, and signaling
+///
+/// Uses SocketService() directly to always use the active server connection
 class SocketFileClient {
-  // This should be the existing Socket.IO connection from your app
-  final dynamic socket; // socket_io_client.Socket
-
   // Event listeners
   final Map<String, List<Function>> _eventListeners = {};
 
-  SocketFileClient({required this.socket}) {
+  SocketFileClient() {
     _setupEventListeners();
   }
+
+  /// Get current socket from SocketService (always uses active server)
+  dynamic get _socket => SocketService().socket;
 
   // ============================================
   // FILE ANNOUNCEMENT & DISCOVERY
@@ -29,9 +33,25 @@ class SocketFileClient {
     required String checksum,
     required int chunkCount,
     required List<int> availableChunks,
-    List<String>? sharedWith, // ← NEU: Optional share list
+    List<String>? sharedWith, // ← Optional share list
   }) async {
+    // Check socket connection
+    final socket = _socket;
+    if (socket == null) {
+      final isConnected = SocketService().isConnected;
+      throw Exception(
+        'Socket not connected (isConnected: $isConnected). Please check your internet connection and try again.',
+      );
+    }
+
     final completer = Completer<Map<String, dynamic>>();
+
+    // Add timeout to prevent hanging
+    Timer(const Duration(seconds: 30), () {
+      if (!completer.isCompleted) {
+        completer.completeError('Announce timeout after 30 seconds');
+      }
+    });
 
     socket.emitWithAck(
       'announceFile',
@@ -45,14 +65,16 @@ class SocketFileClient {
         'sharedWith': sharedWith, // ← NEU
       },
       ack: (data) {
-        if (data['success'] == true) {
-          final chunkQuality = data['chunkQuality'] ?? 0;
-          debugPrint(
-            '[FILE CLIENT] ✓ File announced with quality: $chunkQuality%',
-          );
-          completer.complete(data);
-        } else {
-          completer.completeError(data['error'] ?? 'Unknown error');
+        if (!completer.isCompleted) {
+          if (data['success'] == true) {
+            final chunkQuality = data['chunkQuality'] ?? 0;
+            debugPrint(
+              '[FILE CLIENT] ✓ File announced with quality: $chunkQuality%',
+            );
+            completer.complete(data);
+          } else {
+            completer.completeError(data['error'] ?? 'Unknown error');
+          }
         }
       },
     );
@@ -64,7 +86,7 @@ class SocketFileClient {
   Future<bool> unannounceFile(String fileId) async {
     final completer = Completer<bool>();
 
-    socket.emitWithAck(
+    _socket?.emitWithAck(
       'unannounceFile',
       {'fileId': fileId},
       ack: (data) {
@@ -82,7 +104,7 @@ class SocketFileClient {
   ) async {
     final completer = Completer<bool>();
 
-    socket.emitWithAck(
+    _socket?.emitWithAck(
       'updateAvailableChunks',
       {'fileId': fileId, 'availableChunks': availableChunks},
       ack: (data) {
@@ -95,16 +117,28 @@ class SocketFileClient {
 
   /// Get file information and seeders
   Future<Map<String, dynamic>> getFileInfo(String fileId) async {
+    if (_socket == null) {
+      throw Exception('Socket not connected');
+    }
+
     final completer = Completer<Map<String, dynamic>>();
 
-    socket.emitWithAck(
+    Timer(const Duration(seconds: 15), () {
+      if (!completer.isCompleted) {
+        completer.completeError('Get file info timeout after 15 seconds');
+      }
+    });
+
+    _socket?.emitWithAck(
       'getFileInfo',
       {'fileId': fileId},
       ack: (data) {
-        if (data['success'] == true) {
-          completer.complete(data['fileInfo']);
-        } else {
-          completer.completeError(data['error'] ?? 'File not found');
+        if (!completer.isCompleted) {
+          if (data['success'] == true) {
+            completer.complete(data['fileInfo']);
+          } else {
+            completer.completeError(data['error'] ?? 'File not found');
+          }
         }
       },
     );
@@ -116,7 +150,7 @@ class SocketFileClient {
   Future<bool> registerLeecher(String fileId) async {
     final completer = Completer<bool>();
 
-    socket.emitWithAck(
+    _socket?.emitWithAck(
       'registerLeecher',
       {'fileId': fileId},
       ack: (data) {
@@ -131,7 +165,7 @@ class SocketFileClient {
   Future<bool> unregisterLeecher(String fileId) async {
     final completer = Completer<bool>();
 
-    socket.emitWithAck(
+    _socket?.emitWithAck(
       'unregisterLeecher',
       {'fileId': fileId},
       ack: (data) {
@@ -144,17 +178,29 @@ class SocketFileClient {
 
   /// Get current sharedWith list from server (for sync before reannouncement)
   Future<List<String>?> getSharedWith(String fileId) async {
+    if (_socket == null) {
+      return null;
+    }
+
     final completer = Completer<List<String>?>();
 
-    socket.emitWithAck(
+    Timer(const Duration(seconds: 10), () {
+      if (!completer.isCompleted) {
+        completer.complete(null); // Return null on timeout
+      }
+    });
+
+    _socket?.emitWithAck(
       'file:get-sharedWith',
       {'fileId': fileId},
       ack: (data) {
-        if (data['success'] == true && data['sharedWith'] != null) {
-          final sharedWith = (data['sharedWith'] as List).cast<String>();
-          completer.complete(sharedWith);
-        } else {
-          completer.complete(null);
+        if (!completer.isCompleted) {
+          if (data['success'] == true && data['sharedWith'] != null) {
+            final sharedWith = (data['sharedWith'] as List).cast<String>();
+            completer.complete(sharedWith);
+          } else {
+            completer.complete(null);
+          }
         }
       },
     );
@@ -175,28 +221,54 @@ class SocketFileClient {
     required String action, // 'add' | 'revoke'
     required List<String> userIds,
   }) async {
+    // Check socket connection
+    final socketService = SocketService();
+    final socket = socketService.socket;
+    final isConnected = socketService.isConnected;
+
+    debugPrint(
+      '[FILE CLIENT] updateFileShare check: socket=${socket != null}, '
+      'socket.connected=${socket?.connected}, isConnected=$isConnected',
+    );
+
+    if (socket == null) {
+      throw Exception(
+        'Socket not connected (socket=null, isConnected: $isConnected). '
+        'Please check your internet connection and try again.',
+      );
+    }
+
     final completer = Completer<Map<String, dynamic>>();
 
     debugPrint(
       '[FILE CLIENT] Updating file share: $action ${userIds.length} users for $fileId',
     );
 
+    // Add timeout to prevent hanging
+    Timer(const Duration(seconds: 30), () {
+      if (!completer.isCompleted) {
+        completer.completeError('Share update timeout after 30 seconds');
+      }
+    });
+
     socket.emitWithAck(
       'updateFileShare',
       {'fileId': fileId, 'action': action, 'userIds': userIds},
       ack: (data) {
-        if (data['success'] == true) {
-          final successCount = data['successCount'] ?? 0;
-          final failCount = data['failCount'] ?? 0;
-          final totalUsers = data['totalUsers'] ?? 0;
+        if (!completer.isCompleted) {
+          if (data['success'] == true) {
+            final successCount = data['successCount'] ?? 0;
+            final failCount = data['failCount'] ?? 0;
+            final totalUsers = data['totalUsers'] ?? 0;
 
-          debugPrint(
-            '[FILE CLIENT] ✓ Share updated: $successCount succeeded, $failCount failed, total: $totalUsers',
-          );
-          completer.complete(data);
-        } else {
-          debugPrint('[FILE CLIENT] ✗ Share update failed: ${data['error']}');
-          completer.completeError(data['error'] ?? 'Share update failed');
+            debugPrint(
+              '[FILE CLIENT] ✓ Share updated: $successCount succeeded, $failCount failed, total: $totalUsers',
+            );
+            completer.complete(data);
+          } else {
+            debugPrint('[FILE CLIENT] ✗ Share update failed: ${data['error']}');
+            completer.completeError(data['error'] ?? 'Share update failed');
+          }
         }
       },
     );
@@ -208,7 +280,7 @@ class SocketFileClient {
   Future<List<Map<String, dynamic>>> searchFiles(String query) async {
     final completer = Completer<List<Map<String, dynamic>>>();
 
-    socket.emitWithAck(
+    _socket?.emitWithAck(
       'searchFiles',
       {'query': query},
       ack: (data) {
@@ -230,7 +302,7 @@ class SocketFileClient {
   Future<List<Map<String, dynamic>>> getActiveFiles() async {
     final completer = Completer<List<Map<String, dynamic>>>();
 
-    socket.emitWithAck(
+    _socket?.emitWithAck(
       'getActiveFiles',
       null,
       ack: (data) {
@@ -251,39 +323,53 @@ class SocketFileClient {
   /// Get available chunks from seeders
   /// Returns `Map<String, SeederInfo>` where key is deviceKey (userId:deviceId)
   Future<Map<String, SeederInfo>> getAvailableChunks(String fileId) async {
+    if (_socket == null) {
+      throw Exception('Socket not connected');
+    }
+
     final completer = Completer<Map<String, SeederInfo>>();
 
-    socket.emitWithAck(
+    Timer(const Duration(seconds: 15), () {
+      if (!completer.isCompleted) {
+        completer.completeError(
+          'Get available chunks timeout after 15 seconds',
+        );
+      }
+    });
+
+    _socket?.emitWithAck(
       'getAvailableChunks',
       {'fileId': fileId},
       ack: (data) {
-        if (data['success'] == true) {
-          final seeders = <String, SeederInfo>{};
-          final rawChunks = data['chunks'] as Map;
+        if (!completer.isCompleted) {
+          if (data['success'] == true) {
+            final seeders = <String, SeederInfo>{};
+            final rawChunks = data['chunks'] as Map;
 
-          for (final entry in rawChunks.entries) {
-            try {
-              // Parse userId:deviceId from key
-              final deviceKey = entry.key as String;
-              final chunks = List<int>.from(entry.value);
+            for (final entry in rawChunks.entries) {
+              try {
+                // Parse userId:deviceId from key
+                final deviceKey = entry.key as String;
+                final chunks = List<int>.from(entry.value);
 
-              // Create SeederInfo from deviceKey
-              final seederInfo = SeederInfo.fromDeviceKey(deviceKey, chunks);
-              seeders[deviceKey] = seederInfo;
+                // Create SeederInfo from deviceKey
+                final seederInfo = SeederInfo.fromDeviceKey(deviceKey, chunks);
+                seeders[deviceKey] = seederInfo;
 
-              debugPrint(
-                '[SOCKET FILE] Seeder: ${seederInfo.userId}:${seederInfo.deviceId} has ${chunks.length} chunks',
-              );
-            } catch (e) {
-              debugPrint(
-                '[SOCKET FILE] Warning: Failed to parse seeder entry ${entry.key}: $e',
-              );
+                debugPrint(
+                  '[SOCKET FILE] Seeder: ${seederInfo.userId}:${seederInfo.deviceId} has ${chunks.length} chunks',
+                );
+              } catch (e) {
+                debugPrint(
+                  '[SOCKET FILE] Warning: Failed to parse seeder entry ${entry.key}: $e',
+                );
+              }
             }
-          }
 
-          completer.complete(seeders);
-        } else {
-          completer.completeError(data['error'] ?? 'Failed to get chunks');
+            completer.complete(seeders);
+          } else {
+            completer.completeError(data['error'] ?? 'Failed to get chunks');
+          }
         }
       },
     );
@@ -302,7 +388,7 @@ class SocketFileClient {
     required String fileId,
     required Map<String, dynamic> offer,
   }) {
-    socket.emit('file:webrtc-offer', {
+    _socket?.emit('file:webrtc-offer', {
       'targetUserId': targetUserId,
       'targetDeviceId': targetDeviceId,
       'fileId': fileId,
@@ -317,7 +403,7 @@ class SocketFileClient {
     required String fileId,
     required Map<String, dynamic> answer,
   }) {
-    socket.emit('file:webrtc-answer', {
+    _socket?.emit('file:webrtc-answer', {
       'targetUserId': targetUserId,
       'targetDeviceId': targetDeviceId,
       'fileId': fileId,
@@ -332,7 +418,7 @@ class SocketFileClient {
     required String fileId,
     required Map<String, dynamic> candidate,
   }) {
-    socket.emit('file:webrtc-ice', {
+    _socket?.emit('file:webrtc-ice', {
       'targetUserId': targetUserId,
       'targetDeviceId': targetDeviceId,
       'fileId': fileId,
@@ -349,7 +435,7 @@ class SocketFileClient {
     debugPrint(
       '[SOCKET FILE] Sending key request for $fileId to $targetUserId',
     );
-    socket.emit('file:key-request', {
+    _socket?.emit('file:key-request', {
       'targetUserId': targetUserId,
       'fileId': fileId,
     });
@@ -365,7 +451,7 @@ class SocketFileClient {
     debugPrint(
       '[SOCKET FILE] Sending key response for $fileId to $targetUserId',
     );
-    socket.emit('file:key-response', {
+    _socket?.emit('file:key-response', {
       'targetUserId': targetUserId,
       'fileId': fileId,
       'key': key,
@@ -380,7 +466,7 @@ class SocketFileClient {
     required String fileId,
     required int chunkIndex,
   }) {
-    socket.emit('file:chunk-request', {
+    _socket?.emit('file:chunk-request', {
       'targetUserId': targetUserId,
       'targetDeviceId': targetDeviceId,
       'fileId': fileId,
@@ -398,7 +484,7 @@ class SocketFileClient {
     required String iv, // base64
     required String chunkHash,
   }) {
-    socket.emit('file:chunk-response', {
+    _socket?.emit('file:chunk-response', {
       'targetUserId': targetUserId,
       'targetDeviceId': targetDeviceId,
       'fileId': fileId,
@@ -479,7 +565,7 @@ class SocketFileClient {
 
   void _setupEventListeners() {
     // File announcements
-    socket.on('fileAnnounced', (data) {
+    _socket?.on('fileAnnounced', (data) {
       final chunkQuality = data['chunkQuality'] ?? 0;
       debugPrint(
         '[FILE CLIENT] File announced: ${data['fileId']} - Quality: $chunkQuality%',
@@ -487,7 +573,7 @@ class SocketFileClient {
       _notifyListeners('fileAnnounced', data);
     });
 
-    socket.on('fileSeederUpdate', (data) {
+    _socket?.on('fileSeederUpdate', (data) {
       final chunkQuality = data['chunkQuality'] ?? 0;
       debugPrint(
         '[FILE CLIENT] Seeder update: ${data['fileId']} - Quality: $chunkQuality%',
@@ -496,14 +582,14 @@ class SocketFileClient {
     });
 
     // Share notifications
-    socket.on('fileSharedWithYou', (data) {
+    _socket?.on('fileSharedWithYou', (data) {
       debugPrint(
         '[FILE CLIENT] File shared with you: ${data['fileId']} from ${data['fromUserId']}',
       );
       _notifyListeners('fileSharedWithYou', data);
     });
 
-    socket.on('fileAccessRevoked', (data) {
+    _socket?.on('fileAccessRevoked', (data) {
       debugPrint(
         '[FILE CLIENT] File access revoked: ${data['fileId']} by ${data['byUserId']}',
       );
@@ -511,7 +597,7 @@ class SocketFileClient {
     });
 
     // SharedWith updates (democratic P2P)
-    socket.on('file:sharedWith-updated', (data) {
+    _socket?.on('file:sharedWith-updated', (data) {
       debugPrint(
         '[FILE CLIENT] SharedWith updated: ${data['fileId']} - ${data['sharedWith']?.length ?? 0} users',
       );
@@ -519,33 +605,33 @@ class SocketFileClient {
     });
 
     // WebRTC signaling
-    socket.on('file:webrtc-offer', (data) {
+    _socket?.on('file:webrtc-offer', (data) {
       _notifyListeners('file:webrtc-offer', data);
     });
 
-    socket.on('file:webrtc-answer', (data) {
+    _socket?.on('file:webrtc-answer', (data) {
       _notifyListeners('file:webrtc-answer', data);
     });
 
-    socket.on('file:webrtc-ice', (data) {
+    _socket?.on('file:webrtc-ice', (data) {
       _notifyListeners('file:webrtc-ice', data);
     });
 
     // Key exchange
-    socket.on('file:key-request', (data) {
+    _socket?.on('file:key-request', (data) {
       _notifyListeners('file:key-request', data);
     });
 
-    socket.on('file:key-response', (data) {
+    _socket?.on('file:key-response', (data) {
       _notifyListeners('file:key-response', data);
     });
 
     // Chunk transfer
-    socket.on('file:chunk-request', (data) {
+    _socket?.on('file:chunk-request', (data) {
       _notifyListeners('file:chunk-request', data);
     });
 
-    socket.on('file:chunk-response', (data) {
+    _socket?.on('file:chunk-response', (data) {
       _notifyListeners('file:chunk-response', data);
     });
   }

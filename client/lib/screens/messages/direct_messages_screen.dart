@@ -1480,7 +1480,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       if (socketService.socket == null) {
         throw Exception('Socket not connected');
       }
-      final socketClient = SocketFileClient(socket: socketService.socket!);
+      final socketClient = SocketFileClient();
 
       // 1. Fetch file info and seeder chunks from server
       debugPrint('[DIRECT_MSG] Fetching file info and seeders...');

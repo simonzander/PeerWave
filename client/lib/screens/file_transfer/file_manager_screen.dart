@@ -71,7 +71,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
       if (socketService.socket == null) {
         throw Exception('Socket not connected');
       }
-      _socketClient = SocketFileClient(socket: socketService.socket!);
+      _socketClient = SocketFileClient();
     }
     return _socketClient!;
   }
@@ -559,7 +559,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                 // Shared with section
                 if (sharedWith.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  _buildSharedWithSection(sharedWith),
+                  _buildSharedWithSection(sharedWith, file),
                 ],
               ],
             ),
@@ -765,9 +765,15 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     );
   }
 
-  Widget _buildSharedWithSection(List<String> sharedWith) {
+  Widget _buildSharedWithSection(
+    List<String> sharedWith,
+    Map<String, dynamic> file,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
     final userProfileService = UserProfileService.instance;
+
+    // Get shareInfo with server details
+    final shareInfo = (file['shareInfo'] as Map?)?.cast<String, dynamic>();
 
     // Load profiles if not cached
     for (final userId in sharedWith) {
@@ -808,6 +814,19 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
               final displayName = userProfileService.getDisplayName(userId);
               final picture = userProfileService.getPicture(userId);
 
+              // Get server info for this user
+              final userInfo = shareInfo?[userId] as Map?;
+              final server = userInfo?['server'] as String?;
+              String? serverDisplay;
+              if (server != null) {
+                // Extract domain from server URL
+                final serverClean = server
+                    .replaceAll(RegExp(r'^https?://'), '')
+                    .replaceAll(RegExp(r'/$'), '')
+                    .split(':')[0]; // Remove port
+                serverDisplay = serverClean;
+              }
+
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
@@ -836,14 +855,30 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                           : null,
                     ),
                     const SizedBox(width: 6),
-                    // Display name or UUID prefix
-                    Text(
-                      displayName ?? userId.substring(0, 8),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: colorScheme.onPrimaryContainer,
-                      ),
+                    // Display name or UUID prefix with server
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          displayName ?? userId.substring(0, 8),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                        if (serverDisplay != null)
+                          Text(
+                            serverDisplay,
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: colorScheme.onPrimaryContainer.withValues(
+                                alpha: 0.7,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),
@@ -1226,17 +1261,24 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   Future<void> _deleteFile(Map<String, dynamic> file) async {
     try {
       final storage = _getStorage();
-      final client = _getSocketClient();
-
       final fileId = file['fileId'] as String;
       final isSeeder = file['isSeeder'] as bool? ?? false;
 
-      // Unannounce if seeding
+      // Unannounce if seeding (only if socket is connected)
       if (isSeeder) {
-        await client.unannounceFile(fileId);
+        try {
+          final client = _getSocketClient();
+          await client.unannounceFile(fileId);
+          debugPrint('[FILE MANAGER] ✓ File unannounced from network');
+        } catch (e) {
+          debugPrint(
+            '[FILE MANAGER] ⚠️ Could not unannounce file (offline): $e',
+          );
+          // Continue with local deletion even if unannounce fails
+        }
       }
 
-      // Delete from local storage
+      // Delete from local storage (works offline)
       await storage.deleteFile(fileId);
 
       _showSuccess('File deleted successfully');
@@ -1413,7 +1455,7 @@ class _AddFileProgressDialogState extends State<_AddFileProgressDialog> {
       try {
         final socketService = SocketService();
         if (socketService.socket != null) {
-          final client = SocketFileClient(socket: socketService.socket!);
+          final client = SocketFileClient();
 
           // Get all chunk indices
           final allChunks = List<int>.generate(chunks.length, (i) => i);
@@ -1698,7 +1740,7 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
 
       final fileTransferService = FileTransferService(
         storage: storage,
-        socketFileClient: SocketFileClient(socket: socketService.socket!),
+        socketFileClient: SocketFileClient(),
         signalService: signalService,
       );
 

@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:mime/mime.dart';
@@ -6,9 +7,7 @@ import 'package:provider/provider.dart';
 import '../../services/file_transfer/chunking_service.dart';
 import '../../services/file_transfer/encryption_service.dart';
 import '../../services/file_transfer/storage_interface.dart';
-import '../../services/file_transfer/socket_file_client.dart';
 import '../../services/file_transfer/file_transfer_config.dart';
-import '../../services/socket_service.dart';
 import '../../widgets/file_size_error_dialog.dart';
 
 /// File Upload Screen - Upload and announce files to P2P network
@@ -215,13 +214,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
               context,
               listen: false,
             );
-            final socketService = SocketService();
-            _uploadFile(
-              chunkingService,
-              encryptionService,
-              storage,
-              socketService,
-            );
+            _uploadFile(chunkingService, encryptionService, storage);
           },
           icon: const Icon(Icons.cloud_upload),
           label: const Text('Upload & Share'),
@@ -336,24 +329,8 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
     ChunkingService chunkingService,
     EncryptionService encryptionService,
     FileStorageInterface storage,
-    SocketService socketService,
   ) async {
     if (_selectedFile == null || _fileBytes == null) return;
-
-    // Check if socket is connected
-    if (socketService.socket == null || !socketService.isConnected) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Not connected to server. Please try again.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return;
-    }
-
-    final socketClient = SocketFileClient(socket: socketService.socket!);
 
     setState(() {
       _isProcessing = true;
@@ -456,35 +433,29 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
         'fileSize': file.size,
         'checksum': fileChecksum,
         'chunkCount': chunks.length,
-        'status': 'seeding',
+        'status': 'local', // ← Local only, not yet shared
         'isSeeder': true,
         'createdAt': DateTime.now().toIso8601String(),
         'lastActivity': DateTime.now().toIso8601String(),
-        'sharedWith':
-            [], // ← WICHTIG: Leere Liste initial (nur Uploader hat Zugriff)
+        'sharedWith': [], // Empty - file not shared yet
       });
 
       // Step 5: Save encryption key
       await storage.saveFileKey(fileId, fileKey);
       debugPrint('[UPLOAD] Saved file key to storage: ${fileKey.length} bytes');
 
-      // Step 6: Announce to network (fileName is NOT sent for privacy)
-      setState(() => _statusText = 'Announcing to network...');
-      final availableChunks = List.generate(chunks.length, (i) => i);
+      // ========================================
+      // NO ANNOUNCEMENT - File is local only until shared!
+      // ========================================
+      // Announcement happens when user actually shares the file
+      // via addUsersToShare() in file_transfer_service.dart
 
-      await socketClient.announceFile(
-        fileId: fileId,
-        mimeType: mimeType,
-        fileSize: file.size,
-        checksum: fileChecksum,
-        chunkCount: chunks.length,
-        availableChunks: availableChunks,
-        sharedWith:
-            [], // ← WICHTIG: Leere Liste (nur Uploader ist initial Seeder)
+      debugPrint(
+        '[UPLOAD] ✓ File stored locally (not announced - awaiting share action)',
       );
 
       setState(() {
-        _announceComplete = true;
+        _announceComplete = true; // Mark as complete (no network step needed)
         _progress = 1.0;
         _statusText = 'Upload complete!';
       });

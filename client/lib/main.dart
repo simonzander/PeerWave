@@ -527,24 +527,32 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     try {
       final socketService = SocketService();
 
-      // Check if already connected
-      if (socketService.isConnected) {
-        debugPrint('[LIFECYCLE] Socket already connected - no action needed');
-        return;
-      }
+      // With multi-server support, reconnect ALL servers on app resume
+      debugPrint('[LIFECYCLE] Reconnecting all servers...');
 
       // Add a short delay to allow network to stabilize after app resume
       // This helps prevent DNS resolution failures on mobile
-      debugPrint('[LIFECYCLE] Waiting for network to stabilize...');
       await Future.delayed(Duration(milliseconds: 500));
 
-      debugPrint('[LIFECYCLE] Reconnecting socket...');
-      await socketService.connect();
-      debugPrint('[LIFECYCLE] ✅ Socket reconnected successfully');
+      await socketService.connectAllServers();
+
+      // Verify active server is connected
+      final activeSocket = socketService.socket;
+      final isActiveConnected = activeSocket?.connected ?? false;
+
+      if (isActiveConnected) {
+        debugPrint(
+          '[LIFECYCLE] ✅ All servers reconnected, active server connected',
+        );
+      } else {
+        debugPrint(
+          '[LIFECYCLE] ⚠️ Reconnection complete but active server not connected',
+        );
+      }
     } catch (e) {
-      debugPrint('[LIFECYCLE] ❌ Failed to reconnect socket: $e');
+      debugPrint('[LIFECYCLE] ❌ Failed to reconnect servers: $e');
       // Don't throw - allow app to continue functioning
-      // Socket will retry connection according to its configuration
+      // Sockets will retry connection according to their configuration
     }
   }
 
@@ -987,9 +995,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                     .checkKeysStatus();
                 final status = Map<String, dynamic>.from(statusRaw);
                 final needsSetup = status['needsSetup'] as bool;
-                final missingKeys = Map<String, dynamic>.from(
-                  status['missingKeys'] as Map,
-                );
+                final missingKeys =
+                    (status['missingKeys'] as Map?)?.cast<String, dynamic>() ??
+                    <String, dynamic>{};
 
                 debugPrint(
                   '[ROUTER] Keys status: needsSetup=$needsSetup, missingKeys=$missingKeys',

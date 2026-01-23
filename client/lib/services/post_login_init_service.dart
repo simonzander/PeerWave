@@ -448,9 +448,7 @@ class PostLoginInitService {
 
       final socketService = SocketService();
       if (socketService.socket != null && socketService.isConnected) {
-        final socketFileClient = SocketFileClient(
-          socket: socketService.socket!,
-        );
+        final socketFileClient = SocketFileClient();
 
         _p2pCoordinator = P2PCoordinator(
           webrtcService: _webrtcService!,
@@ -479,9 +477,7 @@ class PostLoginInitService {
         try {
           final socketService = SocketService();
           if (socketService.socket != null) {
-            final socketFileClient = SocketFileClient(
-              socket: socketService.socket!,
-            );
+            final socketFileClient = SocketFileClient();
             final reannounceService = FileReannounceService(
               storage: _fileStorage!,
               socketClient: socketFileClient,

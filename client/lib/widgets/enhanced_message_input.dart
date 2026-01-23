@@ -18,8 +18,6 @@ import 'package:path/path.dart' as path;
 import '../services/file_transfer/storage_interface.dart';
 import '../services/file_transfer/file_transfer_service.dart';
 import '../services/file_transfer/socket_file_client.dart';
-import '../services/socket_service.dart'
-    if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/signal_service.dart';
 
 /// Enhanced message input with all features:
@@ -784,11 +782,10 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
       // Upload and announce file using FileTransferService
       try {
         final storage = await _getStorage();
-        final socketService = await _getSocketService();
         final signalService = SignalService.instance;
 
         final fileTransferService = FileTransferService(
-          socketFileClient: SocketFileClient(socket: socketService.socket!),
+          socketFileClient: SocketFileClient(),
           storage: storage,
           signalService: signalService,
         );
@@ -871,14 +868,6 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
   }
 
   /// Get socket service
-  Future<SocketService> _getSocketService() async {
-    final socketService = SocketService();
-    if (socketService.socket == null) {
-      throw Exception('Socket not connected');
-    }
-    return socketService;
-  }
-
   /// Get MIME type from filename
   String _getMimeType(String filename) {
     final ext = filename.split('.').last.toLowerCase();

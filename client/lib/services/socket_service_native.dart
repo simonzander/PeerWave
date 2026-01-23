@@ -43,8 +43,22 @@ class SocketService {
   _socketCallbacks = {};
 
   // Get socket for active server
-  io.Socket? get socket =>
-      _activeServerId != null ? _sockets[_activeServerId] : null;
+  io.Socket? get socket {
+    if (_activeServerId == null) {
+      debugPrint('[SOCKET SERVICE] socket getter: _activeServerId is null');
+      return null;
+    }
+
+    final socket = _sockets[_activeServerId];
+    if (socket == null) {
+      debugPrint(
+        '[SOCKET SERVICE] socket getter: No socket for activeServerId=$_activeServerId '
+        '(available servers: ${_sockets.keys.toList()})',
+      );
+    }
+
+    return socket;
+  }
 
   bool get isReady =>
       _activeServerId != null &&
@@ -52,12 +66,27 @@ class SocketService {
       (_sockets[_activeServerId]?.connected ?? false);
 
   bool get isConnected {
-    if (_activeServerId == null) return false;
+    if (_activeServerId == null) {
+      debugPrint(
+        '[SOCKET SERVICE] isConnected: false (_activeServerId is null)',
+      );
+      return false;
+    }
+
     final socket = _sockets[_activeServerId];
     final socketConnected = socket?.connected ?? false;
     final internalConnected = _serverIsConnected[_activeServerId] ?? false;
 
-    return internalConnected && socketConnected;
+    final result = internalConnected && socketConnected;
+
+    if (!result) {
+      debugPrint(
+        '[SOCKET SERVICE] isConnected: false (serverId: $_activeServerId, '
+        'socketConnected: $socketConnected, internalConnected: $internalConnected)',
+      );
+    }
+
+    return result;
   }
 
   /// Connect to ALL configured servers (for background notifications)
@@ -104,8 +133,46 @@ class SocketService {
     final serverId = server.id;
 
     // Check if already connected
-    if (_sockets[serverId]?.connected ?? false) {
-      debugPrint('[SOCKET SERVICE] Already connected to ${server.serverUrl}');
+    final existingSocket = _sockets[serverId];
+    if (existingSocket?.connected ?? false) {
+      debugPrint(
+        '[SOCKET SERVICE] Already connected to ${server.serverUrl} '
+        '(serverId: $serverId, activeServerId: $_activeServerId)',
+      );
+
+      // Ensure internal state is consistent with actual socket state
+      final currentInternalState = _serverIsConnected[serverId] ?? false;
+      final currentListenersState =
+          _serverListenersRegistered[serverId] ?? false;
+
+      debugPrint(
+        '[SOCKET SERVICE] State check: internalConnected=$currentInternalState, '
+        'listenersRegistered=$currentListenersState',
+      );
+
+      if (!currentInternalState) {
+        debugPrint(
+          '[SOCKET SERVICE] ⚠️ Socket connected but internal state was false, updating...',
+        );
+        _serverIsConnected[serverId] = true;
+
+        // Trigger clientReady if listeners not registered
+        if (!currentListenersState) {
+          debugPrint(
+            '[SOCKET SERVICE] ⚠️ Triggering clientReady for already-connected socket...',
+          );
+          // Set the server as active temporarily to send clientReady
+          final previousActiveServer = _activeServerId;
+          _activeServerId = serverId;
+          notifyClientReady();
+          // Restore previous active server if different
+          if (previousActiveServer != null &&
+              previousActiveServer != serverId) {
+            _activeServerId = previousActiveServer;
+          }
+        }
+      }
+
       return;
     }
 

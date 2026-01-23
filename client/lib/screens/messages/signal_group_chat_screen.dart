@@ -1628,7 +1628,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       if (socketService.socket == null) {
         throw Exception('Socket not connected');
       }
-      final socketClient = SocketFileClient(socket: socketService.socket!);
+      final socketClient = SocketFileClient();
 
       // 1. Fetch file info and seeder chunks from server
       debugPrint('[GROUP_CHAT] Fetching file info and seeders...');
