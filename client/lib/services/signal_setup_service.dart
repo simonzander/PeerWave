@@ -233,7 +233,7 @@ class SignalSetupService {
       debugPrint(
         '[SIGNAL SETUP] Setup just completed, skipping check (grace period - waiting for post-login init)',
       );
-      return {
+      return <String, dynamic>{
         'needsSetup': false,
         'missingKeys': <String, dynamic>{},
         'hasIdentity': true,
@@ -245,7 +245,7 @@ class SignalSetupService {
     }
 
     final missingKeys = <String, dynamic>{};
-    final result = {
+    final result = <String, dynamic>{
       'needsSetup': false,
       'missingKeys': missingKeys,
       'hasIdentity': false,
@@ -281,7 +281,7 @@ class SignalSetupService {
           result['needsSetup'] = true;
           missingKeys['deviceIdentity'] =
               'Device identity not initialized - login required';
-          return result;
+          return Map<String, dynamic>.from(result);
         }
       }
 
@@ -306,7 +306,7 @@ class SignalSetupService {
         result['needsSetup'] = true;
         missingKeys['encryptionKey'] =
             'Encryption key not found - re-authentication required';
-        return result;
+        return Map<String, dynamic>.from(result);
       }
 
       // Check if SignalService is initialized (stores are ready)
@@ -314,7 +314,7 @@ class SignalSetupService {
         debugPrint('[SIGNAL SETUP] SignalService not initialized yet');
         result['needsSetup'] = true;
         missingKeys['signalService'] = 'Signal service not initialized';
-        return result;
+        return Map<String, dynamic>.from(result);
       }
 
       // Track if full reset is needed (single flag approach)
@@ -556,13 +556,13 @@ class SignalSetupService {
         '[SIGNAL SETUP] Status check: needsSetup=${result['needsSetup']}, identity=$hasIdentity, signedPreKey=$hasSignedPreKey, preKeys=$preKeysCount',
       );
 
-      return result;
+      return Map<String, dynamic>.from(result);
     } catch (e) {
       debugPrint('[SIGNAL SETUP] Error checking keys status: $e');
       // If we can't check, assume setup is needed
       result['needsSetup'] = true;
       missingKeys['error'] = 'Unable to check keys: $e';
-      return result;
+      return Map<String, dynamic>.from(result);
     }
   }
 

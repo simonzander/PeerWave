@@ -197,7 +197,8 @@ class PostLoginInitService {
       debugPrint(
         '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Checking Signal keys...',
       );
-      final keysStatus = await SignalSetupService.instance.checkKeysStatus();
+      final keysStatusRaw = await SignalSetupService.instance.checkKeysStatus();
+      final keysStatus = Map<String, dynamic>.from(keysStatusRaw);
       final needsSetup = keysStatus['needsSetup'] as bool;
 
       if (needsSetup) {

@@ -1852,7 +1852,9 @@ class SignalService {
       );
 
       // 🔍 DEEP VALIDATION: Check if server state is internally consistent
-      await _validateServerKeyConsistency(status);
+      await _validateServerKeyConsistency(
+        Map<String, dynamic>.from(status as Map),
+      );
     }
     // 2. PreKeys - Sync check ONLY (no generation - that's done in initWithProgress)
     final int preKeysCount = (status is Map && status['preKeys'] is int)
@@ -1971,7 +1973,7 @@ class SignalService {
       }
     } else {
       // SELF-VALIDATION: Verify our own SignedPreKey on server
-      await _validateOwnKeysOnServer(status);
+      await _validateOwnKeysOnServer(Map<String, dynamic>.from(status as Map));
     }
   }
 

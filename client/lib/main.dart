@@ -134,102 +134,141 @@ Future<void> main() async {
     debugPrint('[INIT] ✅ ServerConfigService initialized');
 
     // ========================================
-    // PHASE 2: Autostart Detection & Enhanced Initialization
+    // PHASE 2: Server Availability Check
     // ========================================
-    // Detect autostart scenario (presence of session without explicit login action)
-    // This helps identify cases where window appears before initialization completes
-    final bool isAutostart = await _detectAutostart();
-    final bool isDesktop =
-        !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+    // Check if servers are configured - if not, skip heavy initialization
+    // User will be routed to server-selection screen
+    final bool hasServers = ServerConfigService.hasServers();
 
-    if (isAutostart && isDesktop) {
+    if (!hasServers) {
       debugPrint(
-        '[INIT] 🚀 DESKTOP AUTOSTART DETECTED - Using enhanced initialization',
+        '[INIT] ⚠️ No servers configured - skipping session checks and autostart logic',
       );
-      debugPrint('[INIT] Platform: ${Platform.operatingSystem}');
+      debugPrint('[INIT] User will be prompted to add a server');
+      // Skip to Phase 3 for minimal setup (deep links, API config, theme)
+    } else {
+      // ========================================
+      // PHASE 2A: Autostart Detection & Enhanced Initialization
+      // ========================================
+      // Detect autostart scenario (presence of session without explicit login action)
+      // This helps identify cases where window appears before initialization completes
+      final bool isAutostart = await _detectAutostart();
+      final bool isDesktop =
+          !kIsWeb &&
+          (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
-      // Phase 1: Wait for network interface (up to 3 minutes)
-      debugPrint('[INIT] Phase 1: Checking network availability...');
-      final networkAvailable = await NetworkCheckerService.waitForNetwork();
-      if (!networkAvailable) {
-        debugPrint('[INIT] ⚠️ Network timeout reached - proceeding anyway');
-      } else {
-        debugPrint('[INIT] ✅ Network available');
-      }
-
-      // Phase 2: Wait for file system access (up to 1 minute)
-      debugPrint('[INIT] Phase 2: Checking file system access...');
-      final appDir = AppDirectories.appDataDirectory.path;
-      final fsAvailable =
-          await FileSystemCheckerService.waitForFileSystemAccess(
-            testPath: appDir,
-            timeout: const Duration(minutes: 1),
-          );
-      if (!fsAvailable) {
+      if (isAutostart && isDesktop) {
         debugPrint(
-          '[INIT] ⚠️ File system timeout reached - attempting to proceed',
+          '[INIT] 🚀 DESKTOP AUTOSTART DETECTED - Using enhanced initialization',
+        );
+        debugPrint('[INIT] Platform: ${Platform.operatingSystem}');
+
+        // Phase 1: Wait for network interface (up to 3 minutes)
+        debugPrint('[INIT] Phase 1: Checking network availability...');
+        final networkAvailable = await NetworkCheckerService.waitForNetwork();
+        if (!networkAvailable) {
+          debugPrint('[INIT] ⚠️ Network timeout reached - proceeding anyway');
+        } else {
+          debugPrint('[INIT] ✅ Network available');
+        }
+
+        // Phase 2: Wait for file system access (up to 1 minute)
+        debugPrint('[INIT] Phase 2: Checking file system access...');
+        final appDir = AppDirectories.appDataDirectory.path;
+        final fsAvailable =
+            await FileSystemCheckerService.waitForFileSystemAccess(
+              testPath: appDir,
+              timeout: const Duration(minutes: 1),
+            );
+        if (!fsAvailable) {
+          debugPrint(
+            '[INIT] ⚠️ File system timeout reached - attempting to proceed',
+          );
+        } else {
+          debugPrint('[INIT] ✅ File system accessible');
+        }
+
+        // Phase 3: Enhanced database initialization will use autostart-aware retry logic
+        debugPrint(
+          '[INIT] Phase 3: Initializing database with enhanced retry...',
+        );
+
+        // Phase 4: Proactive session refresh if close to expiry (for active server)
+        debugPrint('[INIT] Phase 4: Checking session expiry...');
+        try {
+          final activeServer = ServerConfigService.getActiveServer();
+          if (activeServer != null) {
+            final clientId = await ClientIdService.getClientId();
+            await SessionAuthService().checkAndRefreshSession(
+              serverUrl: activeServer.serverUrl,
+              clientId: clientId,
+            );
+            debugPrint(
+              '[INIT] ✅ Session check completed for ${activeServer.serverUrl}',
+            );
+          }
+        } catch (e) {
+          debugPrint('[INIT] ⚠️ Session refresh check failed: $e');
+        }
+      } else if (isAutostart) {
+        debugPrint(
+          '[INIT] 🚀 AUTOSTART DETECTED (mobile) - Using standard initialization',
+        );
+
+        // Also check session on mobile autostart
+        try {
+          final activeServer = ServerConfigService.getActiveServer();
+          if (activeServer != null) {
+            final clientId = await ClientIdService.getClientId();
+            await SessionAuthService().checkAndRefreshSession(
+              serverUrl: activeServer.serverUrl,
+              clientId: clientId,
+            );
+          }
+        } catch (e) {
+          debugPrint('[INIT] ⚠️ Session refresh check failed: $e');
+        }
+      }
+    } // End hasServers check
+  } else {
+    // ========================================
+    // PHASE 2 (Web): Session Check
+    // ========================================
+    // Web platform - check if session exists before attempting refresh
+    // Use hostname as server identifier (e.g., "app.peerwave.com" or "localhost:3000")
+    final serverIdentifier = Uri.base.host.isNotEmpty
+        ? Uri.base.host
+        : 'localhost';
+
+    try {
+      final clientId = await ClientIdService.getClientId();
+      final sessionAuth = SessionAuthService();
+
+      // Check if session exists before attempting refresh
+      final hasSession = await sessionAuth.hasSession(
+        clientId: clientId,
+        serverUrl: serverIdentifier,
+      );
+
+      if (hasSession) {
+        debugPrint(
+          '[INIT] Session found for $serverIdentifier - checking expiry...',
+        );
+        await sessionAuth.checkAndRefreshSession(
+          serverUrl: serverIdentifier,
+          clientId: clientId,
+        );
+        debugPrint(
+          '[INIT] ✅ Web session check completed for $serverIdentifier',
         );
       } else {
-        debugPrint('[INIT] ✅ File system accessible');
+        debugPrint(
+          '[INIT] ℹ️ No session found for $serverIdentifier - skipping refresh',
+        );
       }
-
-      // Phase 3: Enhanced database initialization will use autostart-aware retry logic
-      debugPrint(
-        '[INIT] Phase 3: Initializing database with enhanced retry...',
-      );
-
-      // Phase 4: Proactive session refresh if close to expiry (for active server)
-      debugPrint('[INIT] Phase 4: Checking session expiry...');
-      try {
-        final activeServer = ServerConfigService.getActiveServer();
-        if (activeServer != null) {
-          final clientId = await ClientIdService.getClientId();
-          await SessionAuthService().checkAndRefreshSession(
-            serverUrl: activeServer.serverUrl,
-            clientId: clientId,
-          );
-          debugPrint(
-            '[INIT] ✅ Session check completed for ${activeServer.serverUrl}',
-          );
-        }
-      } catch (e) {
-        debugPrint('[INIT] ⚠️ Session refresh check failed: $e');
-      }
-    } else if (isAutostart) {
-      debugPrint(
-        '[INIT] 🚀 AUTOSTART DETECTED (mobile) - Using standard initialization',
-      );
-
-      // Also check session on mobile autostart
-      try {
-        final activeServer = ServerConfigService.getActiveServer();
-        if (activeServer != null) {
-          final clientId = await ClientIdService.getClientId();
-          await SessionAuthService().checkAndRefreshSession(
-            serverUrl: activeServer.serverUrl,
-            clientId: clientId,
-          );
-        }
-      } catch (e) {
-        debugPrint('[INIT] ⚠️ Session refresh check failed: $e');
-      }
-    }
-  } else {
-    // Web platform - check session if available
-    try {
-      // Use hostname as server identifier for web (e.g., "app.peerwave.com" or "localhost:3000")
-      final serverIdentifier = Uri.base.host.isNotEmpty
-          ? Uri.base.host
-          : 'localhost';
-      final clientId = await ClientIdService.getClientId();
-      await SessionAuthService().checkAndRefreshSession(
-        serverUrl: serverIdentifier,
-        clientId: clientId,
-      );
-      debugPrint('[INIT] ✅ Web session check completed for $serverIdentifier');
     } catch (e) {
-      debugPrint('[INIT] ⚠️ Web session refresh check failed: $e');
-      // Ignore errors on web (may not have sessions)
+      debugPrint('[INIT] ⚠️ Web session check failed: $e');
+      // Ignore errors on web (will prompt for login)
     }
   }
 
@@ -278,20 +317,17 @@ Future<void> main() async {
       '[INIT] ✅ Web platform: Using relative paths (resolve to ${Uri.base.origin})',
     );
   } else {
-    // Native platforms: Load server URL from ServerConfigService if available
-    if (serverUrl == null || serverUrl.isEmpty) {
-      // ServerConfig is initialized later, so we need to load it early here
-      await ServerConfigService.init();
-      final activeServer = ServerConfigService.getActiveServer();
-      if (activeServer != null) {
-        serverUrl = activeServer.serverUrl;
-        debugPrint('[INIT] ✅ Loaded active server: $serverUrl');
-        ApiService.setBaseUrl(serverUrl);
-      } else {
-        serverUrl =
-            'http://localhost:3000'; // Fallback only if no servers configured
-        debugPrint('[INIT] ⚠️ No active server, using fallback: $serverUrl');
-      }
+    // Native platforms: Use already-initialized ServerConfigService
+    // (ServerConfigService.init() was called in Phase 1)
+    final activeServer = ServerConfigService.getActiveServer();
+    if (activeServer != null) {
+      serverUrl = activeServer.serverUrl;
+      debugPrint('[INIT] ✅ Using active server: $serverUrl');
+      ApiService.setBaseUrl(serverUrl);
+    } else {
+      // No servers configured - use fallback (user will be prompted to add server)
+      serverUrl = 'http://localhost:3000';
+      debugPrint('[INIT] ⚠️ No active server, using fallback: $serverUrl');
     }
     debugPrint('[INIT] ✅ API base URL set to: $serverUrl (non-web platform)');
   }
@@ -947,11 +983,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               );
 
               try {
-                final status = await SignalSetupService.instance
+                final statusRaw = await SignalSetupService.instance
                     .checkKeysStatus();
+                final status = Map<String, dynamic>.from(statusRaw);
                 final needsSetup = status['needsSetup'] as bool;
-                final missingKeys =
-                    status['missingKeys'] as Map<String, dynamic>;
+                final missingKeys = Map<String, dynamic>.from(
+                  status['missingKeys'] as Map,
+                );
 
                 debugPrint(
                   '[ROUTER] Keys status: needsSetup=$needsSetup, missingKeys=$missingKeys',
