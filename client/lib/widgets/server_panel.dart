@@ -523,7 +523,7 @@ class _AddServerButton extends StatelessWidget {
         height: 48,
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
             width: 2,

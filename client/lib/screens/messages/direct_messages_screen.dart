@@ -260,6 +260,59 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
   }
 
+  /// Delete conversation
+  Future<void> _deleteConversation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Conversation'),
+        content: Text(
+          'Delete all messages with ${widget.recipientDisplayName}? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final messageStore = await SqliteMessageStore.getInstance();
+      await messageStore.deleteConversation(widget.recipientUuid);
+
+      if (mounted) {
+        // Clear messages from UI
+        setState(() {
+          _messages.clear();
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Conversation with ${widget.recipientDisplayName} has been deleted',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[DM_SCREEN] Failed to delete conversation: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete conversation: $e')),
+        );
+      }
+    }
+  }
+
   /// Show report abuse dialog
   Future<void> _showReportAbuseDialog() async {
     final result = await Navigator.push(
@@ -1120,6 +1173,8 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                 _blockUser();
               } else if (value == 'unblock') {
                 _unblockUser();
+              } else if (value == 'delete') {
+                _deleteConversation();
               }
             },
             itemBuilder: (context) => [
@@ -1148,6 +1203,16 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                     ],
                   ),
                 ),
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_forever, color: Colors.red, size: 20),
+                    SizedBox(width: 12),
+                    Text('Delete Conversation'),
+                  ],
+                ),
+              ),
             ],
           ),
         ],

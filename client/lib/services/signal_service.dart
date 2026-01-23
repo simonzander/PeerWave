@@ -3329,17 +3329,21 @@ class SignalService {
       "[SIGNAL SERVICE] ===============================================",
     );
     debugPrint("[SIGNAL SERVICE] receiveItem: $data");
-    final type = data['type'];
-    final sender = data['sender']; // z.B. Absender-UUID
-    final senderDeviceId = data['senderDeviceId'];
-    final cipherType = data['cipherType'];
-    final itemId = data['itemId'];
+
+    // Cast to Map<String, dynamic> (handles _serverId from native socket service)
+    final dataMap = (data as Map).cast<String, dynamic>();
+
+    final type = dataMap['type'];
+    final sender = dataMap['sender']; // z.B. Absender-UUID
+    final senderDeviceId = dataMap['senderDeviceId'];
+    final cipherType = dataMap['cipherType'];
+    final itemId = dataMap['itemId'];
 
     // Use decryptItemFromData to get caching + IndexedDB storage
     // This ensures real-time messages are also persisted locally
     String message;
     try {
-      message = await decryptItemFromData(data);
+      message = await decryptItemFromData(dataMap);
 
       // ✅ Delete from server AFTER successful decryption
       deleteItemFromServer(itemId);
@@ -3385,9 +3389,9 @@ class SignalService {
       "[SIGNAL SERVICE] Message decrypted successfully: '$message' (cipherType: $cipherType)",
     );
 
-    final recipient = data['recipient']; // Empfänger-UUID vom Server
+    final recipient = dataMap['recipient']; // Empfänger-UUID vom Server
     final originalRecipient =
-        data['originalRecipient']; // Original recipient for multi-device sync
+        dataMap['originalRecipient']; // Original recipient for multi-device sync
 
     // If this is a multi-device sync message (current user is sender AND recipient), use originalRecipient
     // This means we're receiving our own message on another device
@@ -3468,7 +3472,7 @@ class SignalService {
       // System message - will be handled by callbacks
       isSystemMessage = true;
     } else if (type == 'delivery_receipt') {
-      await _handleDeliveryReceipt(data);
+      await _handleDeliveryReceipt(dataMap);
       isSystemMessage = true;
     } else if (type == 'meeting_e2ee_key_request') {
       // Meeting E2EE key request via 1-to-1 Signal message

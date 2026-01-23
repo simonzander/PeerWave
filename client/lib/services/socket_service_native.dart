@@ -452,6 +452,18 @@ class SocketService {
         debugPrint(
           '[SOCKET SERVICE] Registered [$registrationName] for "$event" on server $serverId',
         );
+
+        // Mark this server as having listeners registered
+        if (!(_serverListenersRegistered[serverId] ?? false)) {
+          _serverListenersRegistered[serverId] = true;
+          // Send clientReady for this server
+          socket.emit('clientReady', {
+            'timestamp': DateTime.now().toIso8601String(),
+          });
+          debugPrint(
+            '[SOCKET SERVICE] ✅ clientReady sent to server $serverId after first listener registration',
+          );
+        }
       }
     });
   }

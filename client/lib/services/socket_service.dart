@@ -332,6 +332,17 @@ class SocketService {
           debugPrint(
             '[SOCKET SERVICE] ✅ Registered listener [$registrationName] for $event (socket connected)',
           );
+
+          // If this is the first listener and socket is connected, send clientReady
+          if (!_listenersRegistered) {
+            _listenersRegistered = true;
+            _socket!.emit('clientReady', {
+              'timestamp': DateTime.now().toIso8601String(),
+            });
+            debugPrint(
+              '[SOCKET SERVICE] ✅ clientReady sent after first listener registration',
+            );
+          }
         } else {
           debugPrint(
             '[SOCKET SERVICE] 📝 Registered listener for $event (socket connecting...)',
