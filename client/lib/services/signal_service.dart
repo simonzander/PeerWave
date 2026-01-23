@@ -3212,15 +3212,24 @@ class SignalService {
           // 🔑 MULTI-DEVICE FIX: Check if message is from own user (different device)
           final isOwnMessage = sender == _currentUserId;
           final recipient = data['recipient'] as String?;
+          final originalRecipient = data['originalRecipient'] as String?;
 
           if (isOwnMessage) {
             // Message from own device → Store as SENT message
-            // Use the original recipient (the other user in the conversation)
-            final actualRecipient = recipient ?? sender;
+            // 🔑 CRITICAL: Use originalRecipient if available (multi-device sync case)
+            // When Bob Device 1 sends to Alice, Bob Device 2 receives it with:
+            // - sender=Bob, recipient=Bob, originalRecipient=Alice
+            // We must store it as "Bob → Alice", not "Bob → Bob"
+            final actualRecipient = originalRecipient ?? recipient ?? sender;
 
             debugPrint(
               "[SIGNAL SERVICE] 📤 Storing message from own device (Device $senderDeviceId) as SENT to $actualRecipient",
             );
+            if (originalRecipient != null) {
+              debugPrint(
+                "[SIGNAL SERVICE] 🔄 Multi-device sync: originalRecipient=$originalRecipient used instead of recipient=$recipient",
+              );
+            }
             await messageStore.storeSentMessage(
               itemId: itemId,
               recipientId: actualRecipient,
@@ -3248,8 +3257,10 @@ class SignalService {
           final conversationsStore =
               await SqliteRecentConversationsStore.getInstance();
           // Use the OTHER user's ID (not own ID)
+          // 🔑 CRITICAL: For multi-device sync (isOwnMessage=true), use originalRecipient
+          // This ensures Bob Device 2 creates conversation with Alice, not Bob
           final conversationUserId = isOwnMessage
-              ? (recipient ?? sender)
+              ? (originalRecipient ?? recipient ?? sender)
               : sender;
           await conversationsStore.addOrUpdateConversation(
             userId: conversationUserId,
@@ -3395,6 +3406,8 @@ class SignalService {
           actualRecipient, // Use the actual recipient, not the sync recipient
       'type': type,
       'message': message,
+      // 🔑 CRITICAL: Include originalRecipient for multi-device read receipt routing
+      if (originalRecipient != null) 'originalRecipient': originalRecipient,
     };
 
     if (originalRecipient != null) {
@@ -3539,7 +3552,10 @@ class SignalService {
         // Also emit newConversation if this is the first message from this sender
         // (Views can check their conversation list to determine if it's truly new)
         // Use the OTHER user's ID for conversation (not own ID)
-        final conversationUserId = isOwnMessage ? recipient : sender;
+        // 🔑 CRITICAL: For multi-device sync, use originalRecipient
+        final conversationUserId = isOwnMessage
+            ? (originalRecipient ?? recipient)
+            : sender;
         EventBus.instance.emit(AppEvent.newConversation, {
           'conversationId': conversationUserId,
           'isChannel': false,

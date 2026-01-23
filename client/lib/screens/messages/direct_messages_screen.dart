@@ -507,6 +507,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         'type': item['type'],
         'metadata': item['metadata'],
         'reactions': item['reactions'] ?? '{}', // Include reactions
+        // 🔑 MULTI-DEVICE: Include originalRecipient for proper read receipt routing
+        if (item['originalRecipient'] != null)
+          'originalRecipient': item['originalRecipient'],
       };
 
       // ✅ OPTIMIZED: Schedule setState for next frame to avoid layout conflicts
@@ -523,7 +526,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             final senderDeviceId = item['senderDeviceId'] is int
                 ? item['senderDeviceId'] as int
                 : int.parse(item['senderDeviceId'].toString());
-            _sendReadReceipt(item['itemId'], item['sender'], senderDeviceId);
+            _sendReadReceipt(
+              item['itemId'],
+              item['sender'],
+              senderDeviceId,
+              originalRecipient: item['originalRecipient'],
+            );
           }
 
           // Auto-scroll to new message - wait for multiple frames
@@ -567,8 +575,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   Future<void> _sendReadReceipt(
     String itemId,
     String sender,
-    int senderDeviceId,
-  ) async {
+    int senderDeviceId, {
+    String? originalRecipient, // NEW: For multi-device support
+  }) async {
     try {
       // Check if we already sent a read receipt for this message
       final messageStore = await SqliteMessageStore.getInstance();
@@ -582,9 +591,29 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       }
 
       final myDeviceId = SignalService.instance.currentDeviceId;
+      final myUserId = SignalService.instance.currentUserId;
+
+      // 🔑 MULTI-DEVICE FIX: Determine the correct recipient for the read receipt
+      // If sender == myUserId, this is a multi-device sync message
+      // In that case, send read receipt to originalRecipient (the actual conversation partner)
+      // Otherwise, send to sender (normal received message)
+      String readReceiptRecipient;
+      if (sender == myUserId && originalRecipient != null) {
+        // Multi-device sync: Send read receipt to the original conversation partner
+        readReceiptRecipient = originalRecipient;
+        debugPrint(
+          '[DM_SCREEN] Multi-device message detected: sending read receipt to originalRecipient: $originalRecipient instead of sender: $sender',
+        );
+      } else {
+        // Normal message: Send read receipt to sender
+        readReceiptRecipient = sender;
+        debugPrint(
+          '[DM_SCREEN] Normal message: sending read receipt to sender: $sender',
+        );
+      }
 
       await SignalService.instance.sendItem(
-        recipientUserId: sender,
+        recipientUserId: readReceiptRecipient,
         type: "read_receipt",
         payload: jsonEncode({'itemId': itemId, 'readByDeviceId': myDeviceId}),
       );
@@ -592,7 +621,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       // Mark that we sent the read receipt
       await messageStore.markReadReceiptSent(itemId);
       debugPrint(
-        '[DM_SCREEN] ✓ Read receipt sent and marked for itemId: $itemId',
+        '[DM_SCREEN] ✓ Read receipt sent to $readReceiptRecipient and marked for itemId: $itemId',
       );
 
       // Mark this conversation as read in the unread provider
@@ -650,8 +679,14 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           final deviceId = senderDeviceId is int
               ? senderDeviceId
               : int.parse(senderDeviceId.toString());
+          final originalRecipient = msg['originalRecipient'] as String?;
 
-          await _sendReadReceipt(itemId, sender, deviceId);
+          await _sendReadReceipt(
+            itemId,
+            sender,
+            deviceId,
+            originalRecipient: originalRecipient,
+          );
           sentCount++;
         }
       }
