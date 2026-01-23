@@ -142,6 +142,13 @@ async function findOrCreateClient(clientId, userUuid, req, deviceInfo) {
                     device_id: maxDevice ? maxDevice + 1 : 1,
                     ip: ip,
                     browser: browserString,
+                    location: locationString
+                },
+                { where: { clientid: clientId } }
+            ),
+            'client-update'
+        );
+        
         // Reload to get updated values
         await existingClient.reload();
         
@@ -1827,6 +1834,7 @@ authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
             // Handle client info and create HMAC session for mobile
             const clientId = req.body && req.body.clientId;
             let sessionSecret = null;
+            let refreshToken = null; // Declare at function scope to be accessible in session save callback
             
             if (clientId) {
                 // Use shared function to find or create client
@@ -1873,7 +1881,6 @@ authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
                 }
                 
                 // Generate refresh token for native clients
-                let refreshToken = null;
                 if (sessionSecret) {
                     try {
                         refreshToken = await generateRefreshToken(clientId, user.uuid);

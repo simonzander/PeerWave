@@ -8,17 +8,9 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:path/path.dart' as path;
 import 'utils/html_stub.dart' if (dart.library.html) 'dart:html' as html;
-import 'auth/auth_layout_web.dart'
-    if (dart.library.io) 'auth/auth_layout_native.dart';
-import 'auth/magic_link_web.dart'
-    if (dart.library.io) 'auth/magic_link_native.dart';
-import 'auth/otp_web.dart';
-import 'auth/invitation_entry_page.dart';
-import 'auth/register_webauthn_page.dart'
-    if (dart.library.io) 'auth/register_webauthn_page_native.dart';
-import 'auth/register_profile_page.dart';
 import 'auth/magic_link_native.dart' show MagicLinkWebPageWithServer;
-import 'screens/signal_setup_screen.dart';
+import 'screens/mobile_webauthn_login_screen.dart';
+
 import 'services/signal_setup_service.dart';
 import 'services/device_identity_service.dart';
 import 'services/logout_service.dart';
@@ -39,16 +31,14 @@ import 'features/troubleshoot/pages/troubleshoot_page.dart';
 import 'features/troubleshoot/state/troubleshoot_provider.dart';
 import 'services/troubleshoot/troubleshoot_service.dart';
 import 'services/signal_service.dart';
-import 'app/backupcode_web.dart'
-    if (dart.library.io) 'app/backupcode_web_native.dart';
+
 import 'app/backupcode_settings_page.dart'
     if (dart.library.io) 'app/backupcode_settings_page_native.dart';
 // Use conditional import for 'services/auth_service.dart'
 import 'services/auth_service_web.dart'
     if (dart.library.io) 'services/auth_service_native.dart';
 import 'services/api_service.dart';
-import 'auth/backup_recover_web.dart'
-    if (dart.library.io) 'auth/backup_recover_web_native.dart';
+
 import 'services/socket_service_web_export.dart'
     if (dart.library.io) 'services/socket_service_native_export.dart';
 import 'services/server_connection_service.dart';
@@ -107,10 +97,7 @@ import 'services/meeting_authorization_service.dart';
 import 'screens/meeting_rsvp_confirmation_screen.dart';
 // Native server selection
 import 'screens/server_selection_screen.dart';
-import 'screens/mobile_webauthn_login_screen.dart';
-import 'screens/mobile_backupcode_login_screen.dart';
 import 'screens/mobile_server_selection_screen.dart';
-import 'services/custom_tab_auth_service.dart';
 import 'services/server_config_web.dart'
     if (dart.library.io) 'services/server_config_native.dart';
 import 'services/clientid_native.dart'
@@ -118,6 +105,8 @@ import 'services/clientid_native.dart'
 import 'services/session_auth_service.dart';
 import 'debug_storage.dart';
 import 'utils/window_stub.dart';
+import 'core/routes/web/auth_routes_web.dart'
+    if (dart.library.io) 'core/routes/native/auth_routes_native.dart';
 import 'core/storage/app_directories.dart';
 import 'services/system_tray_service_web.dart'
     if (dart.library.io) 'services/system_tray_service.dart';
@@ -719,251 +708,16 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     debugPrint('[MAIN] 🏗️ Creating GoRouter...');
 
     // Common routes shared across all platforms (registration flow, mobile auth)
-    final List<GoRoute> commonRoutes = [
-      // Mobile server selection route (Android/iOS only)
-      GoRoute(
-        path: '/mobile-server-selection',
-        pageBuilder: (context, state) {
-          return const MaterialPage(child: MobileServerSelectionScreen());
-        },
-      ),
-      // Chrome Custom Tab callback route (handles deep link after auth)
-      // Note: Manually triggers CustomTabAuthService completion since GoRouter
-      // intercepts the deep link before app_links can deliver it to the service.
-      GoRoute(
-        path: '/callback',
-        builder: (context, state) {
-          final token = state.uri.queryParameters['token'];
-          final cancelled = state.uri.queryParameters['cancelled'] == 'true';
-
-          debugPrint(
-            '[ROUTER] /callback route - token: ${token != null}, cancelled: $cancelled',
-          );
-
-          // Complete token exchange and navigate after a delay
-          if (token != null && token.isNotEmpty) {
-            // Check if authenticate() is waiting for the token BEFORE completing it
-            // This check must happen before completeWithToken() which clears the completer
-            final isAuthenticateWaiting =
-                CustomTabAuthService.instance.hasAuthCompleter;
-
-            // Complete the auth completer (unblocks authenticate() call in background)
-            CustomTabAuthService.instance.completeWithToken(token);
-
-            if (isAuthenticateWaiting) {
-              // authenticate() is waiting - it will call finishLogin() and navigate
-              debugPrint(
-                '[ROUTER] ✓ Token sent to authenticate() - it will handle finishLogin',
-              );
-
-              // Show loading spinner while authenticate() completes
-              // The screen will navigate away once authenticate() finishes
-              // No need to do anything else here
-            } else {
-              // No authenticate() waiting - handle token exchange ourselves
-              debugPrint(
-                '[ROUTER] No authenticate() waiting - handling token exchange',
-              );
-
-              () async {
-                // Get server URL from active server config
-                final activeServer = ServerConfigService.getActiveServer();
-                if (activeServer == null) {
-                  debugPrint('[ROUTER] ✗ No active server configured');
-                  if (context.mounted) {
-                    context.go('/mobile-webauthn');
-                  }
-                  return;
-                }
-
-                try {
-                  // Call finishLogin which will handle the token exchange
-                  // It creates its own completer internally
-                  await CustomTabAuthService.instance.finishLogin(
-                    token: token,
-                    serverUrl: activeServer.serverUrl,
-                  );
-
-                  // If we reach here, login was successful
-                  debugPrint(
-                    '[ROUTER] ✓ Token exchange successful, navigating to /app/activities',
-                  );
-                  if (context.mounted) {
-                    context.go('/app/activities');
-                  }
-                } catch (e) {
-                  debugPrint('[ROUTER] ✗ Token exchange failed: $e');
-                  if (context.mounted) {
-                    context.go('/mobile-webauthn');
-                  }
-                }
-              }();
-            }
-          } else {
-            // Cancelled or no token - go back to login immediately
-            CustomTabAuthService.instance.completeWithToken(null);
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) {
-                context.go('/mobile-webauthn');
-              }
-            });
-          }
-
-          // Show spinner with polling and abort button
-          return _AuthCallbackLoadingScreen(
-            hasToken: token != null && token.isNotEmpty,
-          );
-        },
-      ),
-      // Mobile WebAuthn login route (Android/iOS only)
-      GoRoute(
-        path: '/mobile-webauthn',
-        pageBuilder: (context, state) {
-          final serverUrl = state.extra as String?;
-          return MaterialPage(
-            child: MobileWebAuthnLoginScreen(serverUrl: serverUrl),
-          );
-        },
-      ),
-      // Mobile Backup Code login route (Android/iOS only)
-      GoRoute(
-        path: '/mobile-backupcode-login',
-        pageBuilder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>?;
-          final serverUrl = extra?['serverUrl'] as String?;
-          return MaterialPage(
-            child: MobileBackupcodeLoginScreen(serverUrl: serverUrl),
-          );
-        },
-      ),
-      // OTP verification (used by both web and mobile registration)
-      GoRoute(
-        path: '/otp',
-        builder: (context, state) {
-          final extra = state.extra;
-          String email = '';
-          String serverUrl = '';
-          int wait = 0;
-          if (extra is Map<String, dynamic>) {
-            email = extra['email'] ?? '';
-            serverUrl = extra['serverUrl'] ?? '';
-            wait = extra['wait'] ?? 0;
-          }
-          if (email.isEmpty || serverUrl.isEmpty) {
-            return Scaffold(
-              body: Center(child: Text('Missing email or serverUrl')),
-            );
-          }
-          return OtpWebPage(
-            email: email,
-            serverUrl: serverUrl,
-            clientId: _clientId,
-            wait: wait,
-          );
-        },
-      ),
-      // Registration routes (shared by web and mobile)
-      GoRoute(
-        path: '/register/invitation',
-        builder: (context, state) {
-          final extra = state.extra as Map?;
-          final email = extra?['email'] as String? ?? '';
-          final serverUrl = extra?['serverUrl'] as String?;
-          if (email.isEmpty) {
-            return Scaffold(
-              body: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text('Email required'),
-                    TextButton(
-                      onPressed: () => context.go('/login'),
-                      child: const Text('Back to Login'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-          return InvitationEntryPage(email: email, serverUrl: serverUrl);
-        },
-      ),
-      GoRoute(
-        path: '/register/backupcode',
-        builder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>?;
-          final serverUrl = extra?['serverUrl'] as String?;
-          final email = extra?['email'] as String?;
-          return BackupCodeListPage(serverUrl: serverUrl, email: email);
-        },
-      ),
-      GoRoute(
-        path: '/register/webauthn',
-        builder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>?;
-          final serverUrl = extra?['serverUrl'] as String?;
-          final email = extra?['email'] as String?;
-          return RegisterWebauthnPage(serverUrl: serverUrl, email: email);
-        },
-      ),
-      GoRoute(
-        path: '/register/profile',
-        builder: (context, state) => const RegisterProfilePage(),
-      ),
-    ];
+    final List<GoRoute> commonRoutes = getAuthRoutes(clientId: _clientId ?? '');
 
     // Use ShellRoute for native, flat routes for web
     final List<RouteBase> routes = kIsWeb
         ? [
             ...commonRoutes, // Add common registration & mobile routes
+            ...getAuthRoutesWeb(
+              clientId: _clientId ?? '',
+            ), // Add web-specific auth routes
             GoRoute(path: '/', redirect: (context, state) => '/app'),
-            GoRoute(
-              path: '/magic-link',
-              builder: (context, state) {
-                final extra = state.extra;
-                debugPrint(
-                  'Navigated to /magic-link with extra: $extra, kIsWeb: $kIsWeb, clientId: $_clientId, extra is String: ${extra is String}',
-                );
-                return const MagicLinkWebPage();
-              },
-            ),
-            GoRoute(
-              path: '/backupcode/recover',
-              pageBuilder: (context, state) {
-                return MaterialPage(child: const BackupCodeRecoveryPage());
-              },
-            ),
-            GoRoute(
-              path: '/login',
-              pageBuilder: (context, state) {
-                final qp = state.uri.queryParameters;
-                final fromApp =
-                    (qp['from'] ?? '').trim().toLowerCase() == 'app';
-                final email = qp['email']?.trim();
-                return MaterialPage(
-                  child: AuthLayout(
-                    clientId: _clientId,
-                    fromApp: fromApp,
-                    initialEmail: email,
-                  ),
-                );
-              },
-            ),
-            GoRoute(
-              path: '/server-selection',
-              pageBuilder: (context, state) {
-                final extra = state.extra as Map<String, dynamic>?;
-                final isAddingServer =
-                    extra?['isAddingServer'] as bool? ?? false;
-                return MaterialPage(
-                  child: ServerSelectionScreen(isAddingServer: isAddingServer),
-                );
-              },
-            ),
-            GoRoute(
-              path: '/signal-setup',
-              builder: (context, state) => const SignalSetupScreen(),
-            ),
             // ========================================
             // External Participant (Guest) Routes
             // ========================================
@@ -1506,73 +1260,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               builder: (context, state, child) => AppLayout(child: child),
               routes: [
                 GoRoute(path: '/', redirect: (context, state) => '/app'),
-                // Signal setup route (inside ShellRoute for native - shows server navbar)
-                GoRoute(
-                  path: '/signal-setup',
-                  builder: (context, state) => const SignalSetupScreen(),
-                ),
-                GoRoute(
-                  path: '/meeting/rsvp',
-                  builder: (context, state) {
-                    final qp = state.uri.queryParameters;
-                    final meetingId = qp['meetingId'] ?? '';
-                    final status = qp['status'] ?? '';
-                    final email = qp['email'] ?? '';
-                    final token = qp['token'] ?? '';
-
-                    if (meetingId.isEmpty ||
-                        status.isEmpty ||
-                        email.isEmpty ||
-                        token.isEmpty) {
-                      return const Scaffold(
-                        body: Center(child: Text('Missing RSVP parameters')),
-                      );
-                    }
-
-                    return MeetingRsvpConfirmationScreen(
-                      meetingId: meetingId,
-                      status: status,
-                      email: email,
-                      token: token,
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/magic-link',
-                  builder: (context, state) {
-                    final extra = state.extra;
-                    debugPrint(
-                      'Navigated to /magic-link with extra: $extra, kIsWeb: $kIsWeb, clientId: $_clientId, extra is String: ${extra is String}',
-                    );
-                    if (extra is String && extra.isNotEmpty) {
-                      debugPrint(
-                        "Rendering MagicLinkWebPageWithServer, clientId: $_clientId",
-                      );
-                      return MagicLinkWebPageWithServer(
-                        serverUrl: extra,
-                        clientId: _clientId,
-                      );
-                    }
-                    return const MagicLinkWebPage();
-                  },
-                ),
-                GoRoute(
-                  path: '/login',
-                  pageBuilder: (context, state) {
-                    final qp = state.uri.queryParameters;
-                    final fromApp =
-                        (qp['from'] ?? '').trim().toLowerCase() == 'app';
-                    final email = qp['email']?.trim();
-                    return MaterialPage(
-                      fullscreenDialog: true,
-                      child: AuthLayout(
-                        clientId: _clientId,
-                        fromApp: fromApp,
-                        initialEmail: email,
-                      ),
-                    );
-                  },
-                ),
+                // Native-specific auth routes (signal setup, magic link, login)
+                ...getAuthRoutesNative(clientId: _clientId ?? ''),
                 GoRoute(
                   path: '/dashboard',
                   pageBuilder: (context, state) {
@@ -2413,111 +2102,3 @@ Future<bool> _detectAutostart() async {
 }
 
 /// Loading screen for auth callback with polling and abort button
-class _AuthCallbackLoadingScreen extends StatefulWidget {
-  final bool hasToken;
-
-  const _AuthCallbackLoadingScreen({required this.hasToken});
-
-  @override
-  State<_AuthCallbackLoadingScreen> createState() =>
-      _AuthCallbackLoadingScreenState();
-}
-
-class _AuthCallbackLoadingScreenState
-    extends State<_AuthCallbackLoadingScreen> {
-  Timer? _pollTimer;
-  int _secondsElapsed = 0;
-  static const _maxWaitSeconds =
-      120; // Match Chrome Custom Tab timeout (2 minutes)
-
-  @override
-  void initState() {
-    super.initState();
-    _startPolling();
-  }
-
-  @override
-  void dispose() {
-    _pollTimer?.cancel();
-    super.dispose();
-  }
-
-  void _startPolling() {
-    // Poll every 500ms to check if login succeeded
-    _pollTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
-      _secondsElapsed++;
-
-      // Check if user is now logged in
-      if (AuthService.isLoggedIn && mounted) {
-        debugPrint('[AUTH_CALLBACK] ✓ Login detected via polling');
-        timer.cancel();
-        context.go('/app/activities');
-        return;
-      }
-
-      // Timeout after 2 minutes (matches Chrome Custom Tab timeout)
-      if (_secondsElapsed >= _maxWaitSeconds * 2) {
-        // *2 because we poll twice per second
-        debugPrint(
-          '[AUTH_CALLBACK] ⏱️ Timeout - cancelling auth and returning to login',
-        );
-        timer.cancel();
-        CustomTabAuthService.instance.cancelAuth();
-        if (mounted) {
-          context.go('/mobile-webauthn');
-        }
-      }
-    });
-  }
-
-  void _abort() {
-    debugPrint('[AUTH_CALLBACK] ❌ User aborted authentication');
-    _pollTimer?.cancel();
-    CustomTabAuthService.instance.cancelAuth();
-    context.go('/mobile-webauthn');
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 24),
-              Text(
-                'Completing authentication...',
-                style: Theme.of(context).textTheme.titleMedium,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'This should only take a moment',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withOpacity(0.6),
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 48),
-              OutlinedButton.icon(
-                onPressed: _abort,
-                icon: const Icon(Icons.close),
-                label: const Text('Cancel'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Theme.of(context).colorScheme.error,
-                  side: BorderSide(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
