@@ -140,7 +140,12 @@ class SessionAuthInterceptor extends Interceptor {
           // - If true: Use HMAC authentication (works after app restart)
           // - If false: Use session cookies (works within same session, handled by CookieManager)
           // Note: Both WebAuthn and Magic Key logins create HMAC sessions for mobile
-          final hasSession = await SessionAuthService().hasSession(clientId);
+          // For multi-server support, use activeServer URL
+          final serverUrl = activeServer.serverUrl;
+          final hasSession = await SessionAuthService().hasSession(
+            clientId: clientId,
+            serverUrl: serverUrl,
+          );
 
           if (hasSession) {
             // HMAC authentication: Add signature headers for persistent mobile auth
@@ -161,6 +166,7 @@ class SessionAuthInterceptor extends Interceptor {
             final authHeaders = await SessionAuthService().generateAuthHeaders(
               clientId: clientId,
               requestPath: pathOnly,
+              serverUrl: serverUrl,
               requestBody: bodyForSignature,
             );
 

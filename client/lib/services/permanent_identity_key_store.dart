@@ -40,6 +40,25 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
     return null;
   }
 
+  /// Get identity key for a specific server (multi-server support)
+  Future<IdentityKey?> getIdentityForServer(
+    SignalProtocolAddress address,
+    String serverUrl,
+  ) async {
+    final storage = DeviceScopedStorageService.instance;
+    final value = await storage.getDecrypted(
+      _storeName,
+      _storeName,
+      _identityKey(address),
+      serverUrl: serverUrl,
+    );
+
+    if (value != null) {
+      return IdentityKey.fromBytes(base64Decode(value), 0);
+    }
+    return null;
+  }
+
   @override
   Future<IdentityKeyPair> getIdentityKeyPair() async {
     if (identityKeyPair == null) {
@@ -54,6 +73,18 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
       localRegistrationId = int.parse(identityData['registrationId']!);
     }
     return identityKeyPair!;
+  }
+
+  /// Get identity key pair for a specific server (multi-server support)
+  Future<IdentityKeyPair> getIdentityKeyPairForServer(String serverUrl) async {
+    final identityData = await getIdentityKeyPairDataForServer(serverUrl);
+    final publicKeyBytes = base64Decode(identityData['publicKey']!);
+    final publicKey = Curve.decodePoint(publicKeyBytes, 0);
+    final publicIdentityKey = IdentityKey(publicKey);
+    final privateKey = Curve.decodePrivatePoint(
+      base64Decode(identityData['privateKey']!),
+    );
+    return IdentityKeyPair(publicIdentityKey, privateKey);
   }
 
   @override
@@ -111,7 +142,7 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
         registrationId = generated['registrationId'];
 
         // 🔒 Store encrypted identity key pair
-        await storage.putEncrypted(
+        await storage.storeEncrypted(
           'peerwaveSignal',
           'identityKeyPair',
           'identityKeyPair',
@@ -158,6 +189,38 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
       'privateKey': privateKeyBase64,
       'registrationId': registrationId,
     };
+  }
+
+  /// Loads identity key pair data for a specific server (multi-server support)
+  Future<Map<String, String?>> getIdentityKeyPairDataForServer(
+    String serverUrl,
+  ) async {
+    final storage = DeviceScopedStorageService.instance;
+    final encryptedData = await storage.getDecrypted(
+      'peerwaveSignal',
+      'identityKeyPair',
+      'identityKeyPair',
+      serverUrl: serverUrl,
+    );
+
+    if (encryptedData != null && encryptedData is Map) {
+      final publicKeyBase64 = encryptedData['publicKey'] as String?;
+      final privateKeyBase64 = encryptedData['privateKey'] as String?;
+      var regIdObj = encryptedData['registrationId'];
+      final registrationId = regIdObj?.toString();
+
+      if (publicKeyBase64 != null &&
+          privateKeyBase64 != null &&
+          registrationId != null) {
+        return {
+          'publicKey': publicKeyBase64,
+          'privateKey': privateKeyBase64,
+          'registrationId': registrationId,
+        };
+      }
+    }
+
+    throw Exception('No identity key pair found for server: $serverUrl');
   }
 
   Future<Map<String, String>> _generateIdentityKeyPair() async {
@@ -386,7 +449,7 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
 
       // ✅ ONLY encrypted device-scoped storage (Web + Native)
       final storage = DeviceScopedStorageService.instance;
-      await storage.putEncrypted(
+      await storage.storeEncrypted(
         _storeName,
         _storeName,
         _identityKey(address),

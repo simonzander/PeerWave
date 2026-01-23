@@ -160,8 +160,14 @@ class MagicKeyService {
         // If verification successful and server provides session secret, store it
         if (success && data['sessionSecret'] != null) {
           final sessionSecret = data['sessionSecret'] as String;
-          await SessionAuthService().initializeSession(clientId, sessionSecret);
-          debugPrint('[MagicKey] Session secret stored for client: $clientId');
+          await SessionAuthService().initializeSession(
+            clientId,
+            sessionSecret,
+            serverUrl: parsed.serverUrl,
+          );
+          debugPrint(
+            '[MagicKey] Session secret stored for client: $clientId @ ${parsed.serverUrl}',
+          );
         }
 
         return MagicKeyVerificationResponse(

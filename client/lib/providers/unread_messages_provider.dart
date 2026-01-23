@@ -444,7 +444,7 @@ class UnreadMessagesProvider extends ChangeNotifier {
       if (!kIsWeb) return;
 
       final storage = DeviceScopedStorageService.instance;
-      await storage.putEncrypted(_dbName, _storeName, key, value);
+      await storage.storeEncrypted(_dbName, _storeName, key, value);
 
       debugPrint('[UnreadProvider] ✓ Saved to device-scoped storage: $key');
     } catch (e) {

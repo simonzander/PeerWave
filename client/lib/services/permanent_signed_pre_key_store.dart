@@ -107,7 +107,7 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
         var newPreSignedKey = generateSignedPreKey(identityKeyPair, 0);
         await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
       }
-    });
+    }, registrationName: 'SignedPreKeyStore');
     // check if we have any signed prekeys, if not create one
     loadAllStoredSignedPreKeys().then((keys) async {
       if (keys.isEmpty) {
@@ -289,13 +289,13 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
 
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
-    await storage.putEncrypted(
+    await storage.storeEncrypted(
       _storeName,
       _storeName,
       _signedPreKey(signedPreKeyId),
       base64Encode(serialized),
     );
-    await storage.putEncrypted(
+    await storage.storeEncrypted(
       _storeName,
       _storeName,
       _signedPreKeyMeta(signedPreKeyId),

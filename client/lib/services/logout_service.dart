@@ -68,13 +68,26 @@ class LogoutService {
           );
 
           final clientId = await ClientIdService.getClientId();
-          final hasSession = await SessionAuthService().hasSession(clientId);
+
+          // Get active server URL for multi-server support
+          final activeServer = ServerConfigService.getActiveServer();
+          if (activeServer == null) {
+            debugPrint('[LOGOUT] No active server configured');
+            return;
+          }
+          final serverUrl = activeServer.serverUrl;
+
+          final hasSession = await SessionAuthService().hasSession(
+            clientId: clientId,
+            serverUrl: serverUrl,
+          );
 
           if (hasSession) {
             // Generate auth headers
             final authHeaders = await SessionAuthService().generateAuthHeaders(
               clientId: clientId,
               requestPath: '/client/auth/check',
+              serverUrl: serverUrl,
               requestBody: null,
             );
 
@@ -190,8 +203,14 @@ class LogoutService {
         try {
           debugPrint('[LOGOUT] Clearing HMAC session for native client...');
           final clientId = await ClientIdService.getClientId();
-          await SessionAuthService().clearSession(clientId);
-          debugPrint('[LOGOUT] ✓ HMAC session cleared (database preserved)');
+          final activeServer = ServerConfigService.getActiveServer();
+          if (activeServer != null) {
+            await SessionAuthService().clearSession(
+              clientId,
+              serverUrl: activeServer.serverUrl,
+            );
+            debugPrint('[LOGOUT] ✓ HMAC session cleared (database preserved)');
+          }
         } catch (e) {
           debugPrint('[LOGOUT] ⚠ Error clearing HMAC session: $e');
         }

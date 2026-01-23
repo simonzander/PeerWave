@@ -129,6 +129,10 @@ Future<void> main() async {
       // Don't block - will retry on first actual use
     }
 
+    // Initialize server config early (needed for session checks)
+    await ServerConfigService.init();
+    debugPrint('[INIT] ✅ ServerConfigService initialized');
+
     // ========================================
     // PHASE 2: Autostart Detection & Enhanced Initialization
     // ========================================
@@ -174,11 +178,20 @@ Future<void> main() async {
         '[INIT] Phase 3: Initializing database with enhanced retry...',
       );
 
-      // Phase 4: Proactive session refresh if close to expiry
+      // Phase 4: Proactive session refresh if close to expiry (for active server)
       debugPrint('[INIT] Phase 4: Checking session expiry...');
       try {
-        await SessionAuthService().checkAndRefreshSession();
-        debugPrint('[INIT] ✅ Session check completed');
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer != null) {
+          final clientId = await ClientIdService.getClientId();
+          await SessionAuthService().checkAndRefreshSession(
+            serverUrl: activeServer.serverUrl,
+            clientId: clientId,
+          );
+          debugPrint(
+            '[INIT] ✅ Session check completed for ${activeServer.serverUrl}',
+          );
+        }
       } catch (e) {
         debugPrint('[INIT] ⚠️ Session refresh check failed: $e');
       }
@@ -189,7 +202,14 @@ Future<void> main() async {
 
       // Also check session on mobile autostart
       try {
-        await SessionAuthService().checkAndRefreshSession();
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer != null) {
+          final clientId = await ClientIdService.getClientId();
+          await SessionAuthService().checkAndRefreshSession(
+            serverUrl: activeServer.serverUrl,
+            clientId: clientId,
+          );
+        }
       } catch (e) {
         debugPrint('[INIT] ⚠️ Session refresh check failed: $e');
       }
@@ -197,8 +217,18 @@ Future<void> main() async {
   } else {
     // Web platform - check session if available
     try {
-      await SessionAuthService().checkAndRefreshSession();
+      // Use hostname as server identifier for web (e.g., "app.peerwave.com" or "localhost:3000")
+      final serverIdentifier = Uri.base.host.isNotEmpty
+          ? Uri.base.host
+          : 'localhost';
+      final clientId = await ClientIdService.getClientId();
+      await SessionAuthService().checkAndRefreshSession(
+        serverUrl: serverIdentifier,
+        clientId: clientId,
+      );
+      debugPrint('[INIT] ✅ Web session check completed for $serverIdentifier');
     } catch (e) {
+      debugPrint('[INIT] ⚠️ Web session refresh check failed: $e');
       // Ignore errors on web (may not have sessions)
     }
   }
@@ -206,11 +236,8 @@ Future<void> main() async {
   // ========================================
   // PHASE 3: Server Configuration & API Setup
   // ========================================
-  // Initialize server config service for native (multi-server support)
+  // Server configuration for native (multi-server support)
   if (!kIsWeb) {
-    await ServerConfigService.init();
-    debugPrint('[INIT] ✅ ServerConfigService initialized');
-
     // DEBUG: Inspect secure storage contents
     try {
       await DebugStorage.printAllStoredKeys();
@@ -858,7 +885,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             if (!kIsWeb) {
               // Clear HMAC session for native
               final clientId = await ClientIdService.getClientId();
-              await SessionAuthService().clearSession(clientId);
+              final activeServer = ServerConfigService.getActiveServer();
+              if (activeServer != null) {
+                await SessionAuthService().clearSession(
+                  clientId,
+                  serverUrl: activeServer.serverUrl,
+                );
+              }
               AuthService.isLoggedIn = false;
 
               // Redirect to server-selection to re-authenticate
@@ -1235,14 +1268,31 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 /// initialization completes, which is common with autostart.
 Future<bool> _detectAutostart() async {
   try {
-    // Check if a session exists (indicates autostart scenario)
+    // Check if a session exists for the active server (indicates autostart scenario)
     final clientId = await ClientIdService.getClientId();
     final sessionAuth = SessionAuthService();
-    final hasSession = await sessionAuth.hasSession(clientId);
 
-    if (hasSession) {
-      debugPrint('[INIT] Session found - likely autostart scenario');
-      return true;
+    // For native, check active server; for web, use hostname
+    String? serverIdentifier;
+    if (!kIsWeb) {
+      final activeServer = ServerConfigService.getActiveServer();
+      serverIdentifier = activeServer?.serverUrl;
+    } else {
+      serverIdentifier = Uri.base.host.isNotEmpty ? Uri.base.host : 'localhost';
+    }
+
+    if (serverIdentifier != null) {
+      final hasSession = await sessionAuth.hasSession(
+        clientId: clientId,
+        serverUrl: serverIdentifier,
+      );
+
+      if (hasSession) {
+        debugPrint(
+          '[INIT] Session found for $serverIdentifier - likely autostart scenario',
+        );
+        return true;
+      }
     }
 
     return false;

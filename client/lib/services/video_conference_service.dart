@@ -230,7 +230,11 @@ class VideoConferenceService extends ChangeNotifier {
         }
       }
 
-      SocketService().registerListener('video:participants-info', listener);
+      SocketService().registerListener(
+        'video:participants-info',
+        listener,
+        registrationName: 'VideoConferenceService',
+      );
 
       debugPrint(
         '[VideoConf] 📤 Emitting video:check-participants for: $meetingId',
@@ -247,7 +251,10 @@ class VideoConferenceService extends ChangeNotifier {
         },
       );
 
-      SocketService().unregisterListener('video:participants-info', listener);
+      SocketService().unregisterListener(
+        'video:participants-info',
+        registrationName: 'VideoConferenceService',
+      );
 
       return result;
     } catch (e) {

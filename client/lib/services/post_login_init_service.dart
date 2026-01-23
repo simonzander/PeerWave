@@ -140,14 +140,14 @@ class PostLoginInitService {
         );
       }
 
-      // Step 2: Connect to Socket.IO server (CRITICAL)
+      // Step 2: Connect to Socket.IO servers (CRITICAL - connects to ALL configured servers)
       currentStep++;
-      onProgress?.call('Connecting to server...', currentStep, totalSteps);
+      onProgress?.call('Connecting to servers...', currentStep, totalSteps);
       debugPrint(
-        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Connecting to Socket.IO...',
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Connecting to all Socket.IO servers...',
       );
-      await SocketService().connect();
-      debugPrint('[POST_LOGIN_INIT] ✓ Socket.IO connected');
+      await SocketService().connectAllServers();
+      debugPrint('[POST_LOGIN_INIT] ✓ Socket.IO connected to all servers');
 
       // ========================================
       // PHASE 2: Core Services (SEQUENTIAL)

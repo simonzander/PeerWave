@@ -148,7 +148,11 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         }
       }
 
-      SocketService().registerListener('video:participants-info', listener);
+      SocketService().registerListener(
+        'video:participants-info',
+        listener,
+        registrationName: 'MeetingPrejoinView',
+      );
 
       SocketService().emit('video:check-participants', {
         'channelId': _meeting!.meetingId, // Use meeting ID as room identifier
@@ -159,7 +163,10 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         onTimeout: () => {'error': 'Timeout'},
       );
 
-      SocketService().unregisterListener('video:participants-info', listener);
+      SocketService().unregisterListener(
+        'video:participants-info',
+        registrationName: 'MeetingPrejoinView',
+      );
 
       if (result.containsKey('error')) {
         throw Exception(result['error']);

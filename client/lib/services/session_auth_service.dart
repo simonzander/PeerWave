@@ -21,19 +21,38 @@ class SessionAuthService {
   final Map<String, DateTime> _usedNonces = {};
 
   /// Initialize session with secret received from server
-  Future<void> initializeSession(String clientId, String sessionSecret) async {
-    await _secureStorage.saveSessionSecret(clientId, sessionSecret);
-    debugPrint('[SessionAuth] Session initialized for client: $clientId');
+  Future<void> initializeSession(
+    String clientId,
+    String sessionSecret, {
+    required String serverUrl,
+  }) async {
+    await _secureStorage.saveSessionSecret(
+      clientId,
+      sessionSecret,
+      serverUrl: serverUrl,
+    );
+    debugPrint(
+      '[SessionAuth] Session initialized for client: $clientId @ $serverUrl',
+    );
   }
 
-  /// Get session secret for a client
-  Future<String?> getSessionSecret(String clientId) async {
-    return await _secureStorage.getSessionSecret(clientId);
+  /// Get session secret for a client+server
+  Future<String?> getSessionSecret(
+    String clientId, {
+    required String serverUrl,
+  }) async {
+    return await _secureStorage.getSessionSecret(
+      clientId,
+      serverUrl: serverUrl,
+    );
   }
 
-  /// Check if session exists for client
-  Future<bool> hasSession(String clientId) async {
-    final secret = await getSessionSecret(clientId);
+  /// Check if session exists for client+server
+  Future<bool> hasSession({
+    required String clientId,
+    required String serverUrl,
+  }) async {
+    final secret = await getSessionSecret(clientId, serverUrl: serverUrl);
     return secret != null && secret.isNotEmpty;
   }
 
@@ -42,12 +61,18 @@ class SessionAuthService {
   Future<Map<String, String>> generateAuthHeaders({
     required String clientId,
     required String requestPath,
+    required String serverUrl,
     String? requestBody,
   }) async {
-    final sessionSecret = await getSessionSecret(clientId);
+    final sessionSecret = await getSessionSecret(
+      clientId,
+      serverUrl: serverUrl,
+    );
 
     if (sessionSecret == null || sessionSecret.isEmpty) {
-      throw Exception('No session secret found for client: $clientId');
+      throw Exception(
+        'No session secret found for client: $clientId @ $serverUrl',
+      );
     }
 
     final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -116,15 +141,30 @@ class SessionAuthService {
   }
 
   /// Rotate session secret (called periodically or on demand)
-  Future<void> rotateSession(String clientId, String newSessionSecret) async {
-    await _secureStorage.saveSessionSecret(clientId, newSessionSecret);
-    debugPrint('[SessionAuth] Session rotated for client: $clientId');
+  Future<void> rotateSession(
+    String clientId,
+    String newSessionSecret, {
+    required String serverUrl,
+  }) async {
+    await _secureStorage.saveSessionSecret(
+      clientId,
+      newSessionSecret,
+      serverUrl: serverUrl,
+    );
+    debugPrint(
+      '[SessionAuth] Session rotated for client: $clientId @ $serverUrl',
+    );
   }
 
   /// Clear session (logout)
-  Future<void> clearSession(String clientId) async {
-    await _secureStorage.deleteSessionSecret(clientId);
-    debugPrint('[SessionAuth] Session cleared for client: $clientId');
+  Future<void> clearSession(
+    String clientId, {
+    required String serverUrl,
+  }) async {
+    await _secureStorage.deleteSessionSecret(clientId, serverUrl: serverUrl);
+    debugPrint(
+      '[SessionAuth] Session cleared for client: $clientId @ $serverUrl',
+    );
   }
 
   /// Clear all sessions
@@ -152,14 +192,16 @@ class SessionAuthService {
 
   /// Refresh the session using a refresh token
   /// Returns true if successful, false if refresh token is invalid/expired
-  Future<bool> refreshSession() async {
+  Future<bool> refreshSession({required String serverUrl}) async {
     try {
       final storage = SecureSessionStorage();
       final clientId = await storage.getClientId();
-      final refreshToken = await storage.getRefreshToken();
+      final refreshToken = await storage.getRefreshToken(serverUrl: serverUrl);
 
       if (clientId == null || refreshToken == null) {
-        debugPrint('SessionAuthService: Missing clientId or refreshToken');
+        debugPrint(
+          'SessionAuthService: Missing clientId or refreshToken @ $serverUrl',
+        );
         return false;
       }
 
@@ -178,20 +220,32 @@ class SessionAuthService {
 
             if (newSessionSecret == null || newRefreshToken == null) {
               debugPrint(
-                'SessionAuthService: Invalid response from refresh endpoint',
+                'SessionAuthService: Invalid response from refresh endpoint @ $serverUrl',
               );
               return false;
             }
 
             // Store new tokens
-            await storage.saveSessionSecret(clientId, newSessionSecret);
-            await storage.saveRefreshToken(newRefreshToken);
+            await storage.saveSessionSecret(
+              clientId,
+              newSessionSecret,
+              serverUrl: serverUrl,
+            );
+            await storage.saveRefreshToken(
+              newRefreshToken,
+              serverUrl: serverUrl,
+            );
 
             // Calculate and store new expiry (60 days from now)
             final expiryDate = DateTime.now().add(Duration(days: 60));
-            await storage.saveSessionExpiry(expiryDate.toIso8601String());
+            await storage.saveSessionExpiry(
+              expiryDate.toIso8601String(),
+              serverUrl: serverUrl,
+            );
 
-            debugPrint('SessionAuthService: Session refreshed successfully');
+            debugPrint(
+              'SessionAuthService: Session refreshed successfully @ $serverUrl',
+            );
             return true;
           } else if (response.statusCode == 401) {
             // Refresh token is invalid or expired
@@ -240,16 +294,23 @@ class SessionAuthService {
 
   /// Check if session should be refreshed and do it proactively
   /// Called on app startup to refresh sessions that are close to expiring
-  Future<void> checkAndRefreshSession() async {
+  Future<void> checkAndRefreshSession({
+    required String serverUrl,
+    required String clientId,
+  }) async {
     try {
       final storage = SecureSessionStorage();
-      final clientId = await storage.getClientId();
-      final sessionSecret = await storage.getSessionSecret(clientId ?? '');
-      final refreshToken = await storage.getRefreshToken();
-      final sessionExpiry = await storage.getSessionExpiry();
+      final sessionSecret = await storage.getSessionSecret(
+        clientId,
+        serverUrl: serverUrl,
+      );
+      final refreshToken = await storage.getRefreshToken(serverUrl: serverUrl);
+      final sessionExpiry = await storage.getSessionExpiry(
+        serverUrl: serverUrl,
+      );
 
-      if (clientId == null || sessionSecret == null || refreshToken == null) {
-        debugPrint('SessionAuthService: No session to refresh');
+      if (sessionSecret == null || refreshToken == null) {
+        debugPrint('SessionAuthService: No session to refresh @ $serverUrl');
         return;
       }
 
@@ -263,22 +324,28 @@ class SessionAuthService {
       if (expiryDate == null ||
           expiryDate.difference(DateTime.now()).inDays < 7) {
         debugPrint(
-          'SessionAuthService: Session expiring soon, refreshing proactively',
+          'SessionAuthService: Session expiring soon @ $serverUrl, refreshing proactively',
         );
-        final success = await refreshSession();
+        final success = await refreshSession(serverUrl: serverUrl);
 
         if (success) {
-          debugPrint('SessionAuthService: Proactive refresh successful');
+          debugPrint(
+            'SessionAuthService: Proactive refresh successful @ $serverUrl',
+          );
         } else {
-          debugPrint('SessionAuthService: Proactive refresh failed');
+          debugPrint(
+            'SessionAuthService: Proactive refresh failed @ $serverUrl',
+          );
         }
       } else {
         debugPrint(
-          'SessionAuthService: Session still valid for ${expiryDate.difference(DateTime.now()).inDays} days',
+          'SessionAuthService: Session still valid for ${expiryDate.difference(DateTime.now()).inDays} days @ $serverUrl',
         );
       }
     } catch (e) {
-      debugPrint('SessionAuthService: Error checking session expiry: $e');
+      debugPrint(
+        'SessionAuthService: Error checking session expiry @ $serverUrl: $e',
+      );
     }
   }
 }

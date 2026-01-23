@@ -11,6 +11,7 @@ import 'permanent_pre_key_store.dart';
 import 'permanent_signed_pre_key_store.dart';
 import 'permanent_identity_key_store.dart';
 import 'sender_key_store.dart';
+import 'server_scoped_sender_key_store.dart';
 import 'decrypted_group_items_store.dart';
 import 'sent_group_items_store.dart';
 import '../providers/unread_messages_provider.dart';
@@ -1360,12 +1361,12 @@ class SignalService {
           '[SIGNAL SERVICE] Socket reconnected, processing offline queue...',
         );
         _processOfflineQueue();
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("connect");
 
       SocketService().registerListener("receiveItem", (data) {
         receiveItem(data);
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("receiveItem");
 
       SocketService().registerListener("groupMessage", (data) {
@@ -1375,7 +1376,7 @@ class SignalService {
             callback(data);
           }
         }
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("groupMessage");
 
       // NEW: Group Item Socket.IO listener
@@ -1476,7 +1477,7 @@ class SignalService {
             );
           }
         }
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("groupItem");
 
       // NEW: Group Item delivery confirmation
@@ -1486,7 +1487,7 @@ class SignalService {
             callback(data['itemId']);
           }
         }
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("groupItemDelivered");
 
       // NEW: Group Item read update
@@ -1496,29 +1497,29 @@ class SignalService {
             callback(data);
           }
         }
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("groupItemReadUpdate");
 
       SocketService().registerListener("deliveryReceipt", (data) async {
         await _handleDeliveryReceipt(data);
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("deliveryReceipt");
 
       SocketService().registerListener("groupMessageReadReceipt", (data) {
         _handleGroupMessageReadReceipt(data);
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("groupMessageReadReceipt");
 
       // 🚀 NEW: Pending messages notification from server
       SocketService().registerListener("pendingMessagesAvailable", (data) {
         _handlePendingMessagesAvailable(data);
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("pendingMessagesAvailable");
 
       // 🚀 NEW: Pending messages response from server
       SocketService().registerListener("pendingMessagesResponse", (data) {
         _handlePendingMessagesResponse(data);
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("pendingMessagesResponse");
 
       // 🚀 NEW: Pending messages fetch error
@@ -1526,13 +1527,13 @@ class SignalService {
         debugPrint(
           '[SIGNAL SERVICE] ❌ Error fetching pending messages: ${data['error']}',
         );
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("fetchPendingMessagesError");
 
       // 🔄 NEW: Session recovery notification - sender should resend message
       SocketService().registerListener("sessionRecoveryRequested", (data) {
         _handleSessionRecoveryRequested(data);
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("sessionRecoveryRequested");
 
       SocketService().registerListener("signalStatusResponse", (status) async {
@@ -1540,7 +1541,7 @@ class SignalService {
 
         // Check SignedPreKey rotation after status check
         await _checkSignedPreKeyRotation();
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("signalStatusResponse");
 
       // NEW: Receive sender key distribution messages
@@ -1577,13 +1578,13 @@ class SignalService {
             '[SIGNAL_SERVICE] Error processing sender key distribution: $e',
           );
         }
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("receiveSenderKeyDistribution");
 
       // 🔒 SECURITY: Handle PreKey ID sync response
       SocketService().registerListener("myPreKeyIdsResponse", (data) async {
         await _handlePreKeyIdsSyncResponse(data);
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("myPreKeyIdsResponse");
 
       // Setup Event Bus forwarding for user/channel events
@@ -1617,7 +1618,7 @@ class SignalService {
     SocketService().registerListener('user:status', (data) {
       debugPrint('[SIGNAL SERVICE] → EVENT_BUS: userStatusChanged');
       EventBus.instance.emit(AppEvent.userStatusChanged, data);
-    });
+    }, registrationName: 'SignalService');
 
     debugPrint('[SIGNAL SERVICE] ✓ Event Bus forwarding active');
   }
@@ -6005,17 +6006,24 @@ class SignalService {
   }
 
   /// Decrypt group message using sender key
+  /// [serverUrl] - Optional server URL for multi-server support
   Future<String> decryptGroupMessage(
     String groupId,
     String senderId,
     int senderDeviceId,
-    String ciphertextBase64,
-  ) async {
+    String ciphertextBase64, {
+    String? serverUrl,
+  }) async {
     final senderAddress = SignalProtocolAddress(senderId, senderDeviceId);
     final senderKeyName = SenderKeyName(groupId, senderAddress);
 
     try {
-      final groupCipher = GroupCipher(senderKeyStore, senderKeyName);
+      // Use server-scoped store if serverUrl provided
+      final store = serverUrl != null
+          ? ServerScopedSenderKeyStore(senderKeyStore, serverUrl)
+          : senderKeyStore;
+
+      final groupCipher = GroupCipher(store, senderKeyName);
       final ciphertext = base64Decode(ciphertextBase64);
       final plaintext = await groupCipher.decrypt(ciphertext);
 
@@ -6556,12 +6564,14 @@ class SignalService {
   }
 
   /// Decrypt a received group item with automatic sender key reload on error
+  /// [serverUrl] - Optional server URL for multi-server support (extracts from socket event)
   Future<String> decryptGroupItem({
     required String channelId,
     required String senderId,
     required int senderDeviceId,
     required String ciphertext,
     bool retryOnError = true,
+    String? serverUrl,
   }) async {
     try {
       // Try to decrypt
@@ -6570,6 +6580,7 @@ class SignalService {
         senderId,
         senderDeviceId,
         ciphertext,
+        serverUrl: serverUrl,
       );
 
       return decrypted;
@@ -6606,6 +6617,7 @@ class SignalService {
             senderDeviceId: senderDeviceId,
             ciphertext: ciphertext,
             retryOnError: false, // Don't retry again
+            serverUrl: serverUrl,
           );
         }
       }

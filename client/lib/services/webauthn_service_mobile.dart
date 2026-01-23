@@ -345,7 +345,7 @@ class MobileWebAuthnService {
       }
 
       final responseData = serverResponse.data as Map<String, dynamic>;
-      debugPrint('[MobileWebAuthn] Ô£ô Authentication successful');
+      debugPrint('[MobileWebAuthn] ✓ Authentication successful');
       // Store tokens and expiry if provided
       final refreshToken = responseData['refreshToken'] as String?;
       final clientId = responseData['clientId'] as String?;
@@ -354,13 +354,16 @@ class MobileWebAuthnService {
         final storage = SecureSessionStorage();
         await storage.saveClientId(clientId);
 
-        // Store session expiry (90 days for HMAC session)
+        // Store session expiry (90 days for HMAC session) - server-scoped
         final sessionExpiryDate = DateTime.now().add(Duration(days: 90));
-        await storage.saveSessionExpiry(sessionExpiryDate.toIso8601String());
+        await storage.saveSessionExpiry(
+          sessionExpiryDate.toIso8601String(),
+          serverUrl: serverUrl,
+        );
 
         if (refreshToken != null) {
-          await storage.saveRefreshToken(refreshToken);
-          debugPrint('[MobileWebAuthn] ✓ Refresh token stored');
+          await storage.saveRefreshToken(refreshToken, serverUrl: serverUrl);
+          debugPrint('[MobileWebAuthn] ✓ Refresh token stored @ $serverUrl');
         }
       }
       return {

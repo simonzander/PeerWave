@@ -87,20 +87,31 @@ class DeviceScopedStorageService {
 
   /// Get device-specific database name
   /// Waits for device identity to be initialized if needed
-  Future<String> getDeviceDatabaseName(String baseName) async {
+  /// [serverUrl] - Optional server URL for multi-server support
+  Future<String> getDeviceDatabaseName(
+    String baseName, {
+    String? serverUrl,
+  }) async {
     await _waitForDeviceIdentity();
 
-    final deviceId = _deviceIdentity.deviceId;
+    // Get server-specific deviceId if serverUrl provided
+    final deviceId = serverUrl != null
+        ? (_deviceIdentity.getDeviceIdForServer(serverUrl) ??
+              _deviceIdentity.deviceId)
+        : _deviceIdentity.deviceId;
+
     return '${baseName}_$deviceId';
   }
 
   /// Open device-specific database (with caching to prevent premature closes)
+  /// [serverUrl] - Optional server URL for multi-server support
   Future<Database> openDeviceDatabase(
     String baseName, {
     int version = 1,
     required void Function(VersionChangeEvent) onUpgradeNeeded,
+    String? serverUrl,
   }) async {
-    final dbName = await getDeviceDatabaseName(baseName);
+    final dbName = await getDeviceDatabaseName(baseName, serverUrl: serverUrl);
 
     // Check cache first
     if (_databaseCache.containsKey(dbName)) {
@@ -175,18 +186,21 @@ class DeviceScopedStorageService {
   }
 
   /// Store encrypted data in device-specific database
-  Future<void> putEncrypted(
+  /// [serverUrl] - Optional server URL for multi-server support
+  Future<void> storeEncrypted(
     String baseName,
     String storeName,
     String key,
-    dynamic value,
-  ) async {
-    // 1. Encrypt data
+    dynamic value, {
+    String? serverUrl,
+  }) async {
+    // 1. Encrypt the data
     final envelope = await _encryption.encryptForStorage(value);
 
     // 2. Open device-specific database
     final db = await openDeviceDatabase(
       baseName,
+      serverUrl: serverUrl,
       onUpgradeNeeded: (event) {
         final db = event.database;
         if (!db.objectStoreNames.contains(storeName)) {
@@ -206,14 +220,17 @@ class DeviceScopedStorageService {
   }
 
   /// Retrieve and decrypt data from device-specific database
+  /// [serverUrl] - Optional server URL for multi-server support
   Future<dynamic> getDecrypted(
     String baseName,
     String storeName,
-    String key,
-  ) async {
+    String key, {
+    String? serverUrl,
+  }) async {
     // 1. Open device-specific database
     final db = await openDeviceDatabase(
       baseName,
+      serverUrl: serverUrl,
       onUpgradeNeeded: (event) {
         final db = event.database;
         if (!db.objectStoreNames.contains(storeName)) {
@@ -248,11 +265,13 @@ class DeviceScopedStorageService {
   }
 
   /// Delete encrypted data from device-scoped database
+  /// [serverUrl] - Optional server URL for multi-server support
   Future<void> deleteEncrypted(
     String baseName,
     String storeName,
-    dynamic key,
-  ) async {
+    dynamic key, {
+    String? serverUrl,
+  }) async {
     await _waitForDeviceIdentity();
 
     if (key == null) {
@@ -262,7 +281,8 @@ class DeviceScopedStorageService {
 
     try {
       final db = await openDeviceDatabase(
-        baseName, // 🔧 FIX: Pass baseName directly (openDeviceDatabase adds hash)
+        baseName,
+        serverUrl: serverUrl,
         onUpgradeNeeded: (VersionChangeEvent event) {
           final db = event.database;
           if (!db.objectStoreNames.contains(storeName)) {

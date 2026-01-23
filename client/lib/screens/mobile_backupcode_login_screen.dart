@@ -152,23 +152,36 @@ class _MobileBackupcodeLoginScreenState
           debugPrint(
             '[MobileBackupcodeLogin] Saving session for clientId: $clientId',
           );
-          await SessionAuthService().initializeSession(clientId, sessionSecret);
+          await SessionAuthService().initializeSession(
+            clientId,
+            sessionSecret,
+            serverUrl: _serverUrl!,
+          );
 
           final storage = SecureSessionStorage();
           await storage.saveClientId(clientId);
 
           // Store session expiry (90 days for HMAC session)
           final sessionExpiryDate = DateTime.now().add(Duration(days: 90));
-          await storage.saveSessionExpiry(sessionExpiryDate.toIso8601String());
+          await storage.saveSessionExpiry(
+            sessionExpiryDate.toIso8601String(),
+            serverUrl: _serverUrl!,
+          );
 
           // Store refresh token if available
           if (refreshToken != null) {
-            await storage.saveRefreshToken(refreshToken);
+            await storage.saveRefreshToken(
+              refreshToken,
+              serverUrl: _serverUrl!,
+            );
             debugPrint('[MobileBackupcodeLogin] ✓ Refresh token stored');
           }
 
           // Verify session was saved
-          final sessionSaved = await SessionAuthService().hasSession(clientId);
+          final sessionSaved = await SessionAuthService().hasSession(
+            clientId: clientId,
+            serverUrl: _serverUrl!,
+          );
           debugPrint(
             '[MobileBackupcodeLogin] Session saved verification: $sessionSaved',
           );

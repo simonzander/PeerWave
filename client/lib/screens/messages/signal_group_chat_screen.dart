@@ -90,7 +90,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     );
     SocketService().unregisterListener(
       'groupItemDelivered',
-      _handleDeliveryReceipt,
+      registrationName: 'SignalGroupChatScreen',
     );
     super.dispose();
   }
@@ -414,6 +414,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     SocketService().registerListener(
       'groupItemDelivered',
       _handleDeliveryReceipt,
+      registrationName: 'SignalGroupChatScreen',
     );
   }
 

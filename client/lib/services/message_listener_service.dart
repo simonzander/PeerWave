@@ -46,28 +46,43 @@ class MessageListenerService {
     debugPrint('[MESSAGE_LISTENER] Initializing global message listeners...');
 
     // Listen for 1:1 messages
-    SocketService().registerListener('receiveItem', _handleDirectMessage);
+    SocketService().registerListener(
+      'receiveItem',
+      _handleDirectMessage,
+      registrationName: 'MessageListenerService',
+    );
 
     // Listen for group messages
-    SocketService().registerListener('groupItem', _handleGroupMessage);
+    SocketService().registerListener(
+      'groupItem',
+      _handleGroupMessage,
+      registrationName: 'MessageListenerService',
+    );
 
     // Listen for file share updates (P2P)
     SocketService().registerListener(
       'file_share_update',
       _handleFileShareUpdate,
+      registrationName: 'MessageListenerService',
     );
 
     // Listen for delivery receipts
-    SocketService().registerListener('deliveryReceipt', _handleDeliveryReceipt);
+    SocketService().registerListener(
+      'deliveryReceipt',
+      _handleDeliveryReceipt,
+      registrationName: 'MessageListenerService',
+    );
     SocketService().registerListener(
       'groupItemDelivered',
       _handleGroupDeliveryReceipt,
+      registrationName: 'MessageListenerService',
     );
 
     // Listen for read receipts
     SocketService().registerListener(
       'groupItemReadUpdate',
       _handleGroupReadReceipt,
+      registrationName: 'MessageListenerService',
     );
 
     _isInitialized = true;
@@ -78,24 +93,8 @@ class MessageListenerService {
   void dispose() {
     if (!_isInitialized) return;
 
-    SocketService().unregisterListener('receiveItem', _handleDirectMessage);
-    SocketService().unregisterListener('groupItem', _handleGroupMessage);
-    SocketService().unregisterListener(
-      'file_share_update',
-      _handleFileShareUpdate,
-    );
-    SocketService().unregisterListener(
-      'deliveryReceipt',
-      _handleDeliveryReceipt,
-    );
-    SocketService().unregisterListener(
-      'groupItemDelivered',
-      _handleGroupDeliveryReceipt,
-    );
-    SocketService().unregisterListener(
-      'groupItemReadUpdate',
-      _handleGroupReadReceipt,
-    );
+    // Unregister all listeners for MessageListenerService
+    SocketService().unregisterAllForName('MessageListenerService');
 
     _notificationCallbacks.clear();
     _isInitialized = false;
@@ -196,6 +195,15 @@ class MessageListenerService {
       final timestamp = data['timestamp'] as String?;
       final itemType = data['type'] as String? ?? 'message';
 
+      // Extract serverUrl from _serverId (multi-server support)
+      final serverId = data['_serverId'] as String?;
+      String? serverUrl;
+      if (serverId != null) {
+        // serverId format is the server URL (from socket_service_native.dart)
+        serverUrl = serverId;
+        debugPrint('[MESSAGE_LISTENER] Message from server: $serverUrl');
+      }
+
       if (itemId == null ||
           channelId == null ||
           senderId == null ||
@@ -222,6 +230,7 @@ class MessageListenerService {
             senderId: senderId,
             senderDeviceId: senderDeviceId,
             ciphertext: payload,
+            serverUrl: serverUrl,
           );
 
           await signalService.decryptedGroupItemsStore.storeDecryptedGroupItem(
@@ -248,12 +257,13 @@ class MessageListenerService {
       }
 
       try {
-        // Decrypt using auto-reload on error
+        // Decrypt using auto-reload on error (with server context)
         final decrypted = await signalService.decryptGroupItem(
           channelId: channelId,
           senderId: senderId,
           senderDeviceId: senderDeviceId,
           ciphertext: payload,
+          serverUrl: serverUrl,
         );
 
         // ========================================

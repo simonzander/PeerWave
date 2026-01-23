@@ -281,7 +281,11 @@ class _VideoConferencePreJoinViewState
         }
       }
 
-      SocketService().registerListener('video:participants-info', listener);
+      SocketService().registerListener(
+        'video:participants-info',
+        listener,
+        registrationName: 'VideoConferencePrejoinView',
+      );
 
       // Request participant info
       debugPrint('[PreJoin][TEST] 📤 Emitting video:check-participants...');
@@ -298,7 +302,10 @@ class _VideoConferencePreJoinViewState
         },
       );
 
-      SocketService().unregisterListener('video:participants-info', listener);
+      SocketService().unregisterListener(
+        'video:participants-info',
+        registrationName: 'VideoConferencePrejoinView',
+      );
 
       if (result.containsKey('error')) {
         throw Exception(result['error']);

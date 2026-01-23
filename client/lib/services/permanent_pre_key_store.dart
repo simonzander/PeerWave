@@ -400,7 +400,7 @@ class PermanentPreKeyStore extends PreKeyStore {
       
       // Case 4: Server has >= 20 PreKeys → All good
       debugPrint('[PREKEY STORE] ✅ Server has sufficient PreKeys (${data.length})');
-    });
+    }, registrationName: 'PreKeyStore');
     
     // NEW: Listener for PreKey sync response after storePreKeys
     SocketService().registerListener("storePreKeysResponse", (response) async {
@@ -413,7 +413,7 @@ class PermanentPreKeyStore extends PreKeyStore {
       } else {
         debugPrint('[PREKEY STORE] ❌ PreKey upload failed: ${response['error']}');
       }
-    });
+    }, registrationName: 'PreKeyStore');
     
     loadRemotePreKeys();
     */
@@ -570,7 +570,7 @@ class PermanentPreKeyStore extends PreKeyStore {
 
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
-    await storage.putEncrypted(
+    await storage.storeEncrypted(
       _storeName,
       _storeName,
       _preKey(preKeyId),

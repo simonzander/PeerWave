@@ -62,7 +62,7 @@ class SentGroupItemsStore {
     if (kIsWeb) {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
-      await storage.putEncrypted(_storeName, _storeName, key, data);
+      await storage.storeEncrypted(_storeName, _storeName, key, data);
     } else {
       final storage = FlutterSecureStorage();
       await storage.write(key: key, value: data);
@@ -187,7 +187,7 @@ class SentGroupItemsStore {
         try {
           final item = jsonDecode(value);
           item['status'] = status;
-          await storage.putEncrypted(
+          await storage.storeEncrypted(
             _storeName,
             _storeName,
             key,
@@ -233,7 +233,7 @@ class SentGroupItemsStore {
           if (deliveredCount != null) item['deliveredCount'] = deliveredCount;
           if (readCount != null) item['readCount'] = readCount;
           if (totalCount != null) item['totalCount'] = totalCount;
-          await storage.putEncrypted(
+          await storage.storeEncrypted(
             _storeName,
             _storeName,
             key,
