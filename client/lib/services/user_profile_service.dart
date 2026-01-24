@@ -58,7 +58,7 @@ class UserProfileService {
   /// Get the current active server ID
   String? get _currentServerId {
     if (kIsWeb) {
-      return null; // Web doesn't use multi-server yet
+      return 'web'; // Web uses a fixed server ID
     }
     final activeServer = ServerConfigService.getActiveServer();
     return activeServer?.id;
@@ -66,13 +66,13 @@ class UserProfileService {
 
   /// Get or create the profile cache for a server
   Map<String, _CachedProfile> _getServerCache(String? serverId) {
-    if (serverId == null) return {};
+    serverId ??= 'web'; // Fallback for web
     return _cache.putIfAbsent(serverId, () => {});
   }
 
   /// Get or create the loading set for a server
   Set<String> _getLoadingSet(String? serverId) {
-    if (serverId == null) return {};
+    serverId ??= 'web'; // Fallback for web
     return _loadingUuids.putIfAbsent(serverId, () => {});
   }
 
@@ -80,7 +80,7 @@ class UserProfileService {
   Map<String, List<void Function(Map<String, dynamic>?)>> _getPendingCallbacks(
     String? serverId,
   ) {
-    if (serverId == null) return {};
+    serverId ??= 'web'; // Fallback for web
     return _pendingCallbacks.putIfAbsent(serverId, () => {});
   }
 

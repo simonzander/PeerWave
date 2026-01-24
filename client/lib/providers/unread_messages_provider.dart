@@ -32,25 +32,28 @@ class UnreadMessagesProvider extends ChangeNotifier {
 
   /// Get the current active server ID
   String? get _currentServerId {
+    if (kIsWeb) {
+      return 'web'; // Web uses a fixed server ID
+    }
     final activeServer = ServerConfigService.getActiveServer();
     return activeServer?.id;
   }
 
   /// Get or create the channel counts map for a server
   Map<String, int> _getChannelCounts(String? serverId) {
-    if (serverId == null) return {};
+    serverId ??= 'web'; // Fallback for web
     return _channelUnreadCounts.putIfAbsent(serverId, () => {});
   }
 
   /// Get or create the DM counts map for a server
   Map<String, int> _getDirectMessageCounts(String? serverId) {
-    if (serverId == null) return {};
+    serverId ??= 'web'; // Fallback for web
     return _directMessageUnreadCounts.putIfAbsent(serverId, () => {});
   }
 
   /// Get or create the activity notification counts map for a server
   Map<String, int> _getActivityCounts(String? serverId) {
-    if (serverId == null) return {};
+    serverId ??= 'web'; // Fallback for web
     return _activityNotificationCounts.putIfAbsent(serverId, () => {});
   }
 
