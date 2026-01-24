@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:uuid/uuid.dart';
@@ -14,6 +15,8 @@ import '../../services/socket_service_native.dart'
     if (dart.library.html) '../../services/socket_service.dart';
 import '../../services/offline_message_queue.dart';
 import '../../services/storage/sqlite_message_store.dart';
+import '../../services/storage/sqlite_recent_conversations_store.dart';
+import '../../services/starred_conversations_service.dart';
 import '../../services/file_transfer/p2p_coordinator.dart';
 import '../../services/file_transfer/socket_file_client.dart';
 import '../../services/event_bus.dart';
@@ -289,12 +292,22 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       final messageStore = await SqliteMessageStore.getInstance();
       await messageStore.deleteConversation(widget.recipientUuid);
 
-      if (mounted) {
-        // Clear messages from UI
-        setState(() {
-          _messages.clear();
-        });
+      // Delete from recent conversations
+      final conversationsStore =
+          await SqliteRecentConversationsStore.getInstance();
+      await conversationsStore.removeConversation(widget.recipientUuid);
 
+      // Remove from starred if it was starred
+      await StarredConversationsService.instance.unstarConversation(
+        widget.recipientUuid,
+      );
+
+      // Emit event to update UI
+      EventBus.instance.emit(AppEvent.conversationDeleted, <String, dynamic>{
+        'userId': widget.recipientUuid,
+      });
+
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -302,6 +315,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             ),
           ),
         );
+
+        // Navigate to messages list
+        context.go('/app/messages');
       }
     } catch (e) {
       debugPrint('[DM_SCREEN] Failed to delete conversation: $e');

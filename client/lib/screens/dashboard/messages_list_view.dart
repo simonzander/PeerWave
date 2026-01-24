@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../services/api_service.dart';
 import '../../services/storage/sqlite_message_store.dart';
 import '../../services/storage/sqlite_recent_conversations_store.dart';
@@ -368,7 +369,9 @@ class _MessagesListViewState extends State<MessagesListView> {
       await StarredConversationsService.instance.unstarConversation(userId);
 
       // Emit event to update UI
-      EventBus.instance.emit(AppEvent.conversationDeleted, {'userId': userId});
+      EventBus.instance.emit(AppEvent.conversationDeleted, <String, dynamic>{
+        'userId': userId,
+      });
 
       // Reload conversations
       await _loadConversations();
@@ -377,6 +380,9 @@ class _MessagesListViewState extends State<MessagesListView> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Conversation deleted')));
+
+        // Navigate to messages list
+        context.go('/app/messages');
       }
     } catch (e) {
       debugPrint('[MESSAGES_LIST] Error deleting conversation: $e');
