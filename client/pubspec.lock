@@ -727,10 +727,10 @@ packages:
     dependency: "direct main"
     description:
       name: idb_shim
-      sha256: b26b2ad126be411d0072d1dfc4d97ebe02121a863e4eadc635b511b9bc138489
+      sha256: "7dcec5fa6bef3be4666384a28527e1476a84e0e3b72c44d9cfde9d2417bd1769"
       url: "https://pub.dev"
     source: hosted
-    version: "2.7.1+2"
+    version: "2.8.1"
   idb_sqflite:
     dependency: "direct main"
     description:

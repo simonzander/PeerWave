@@ -230,7 +230,11 @@ class VideoConferenceService extends ChangeNotifier {
         }
       }
 
-      SocketService().registerListener('video:participants-info', listener);
+      SocketService().registerListener(
+        'video:participants-info',
+        listener,
+        registrationName: 'VideoConferenceService',
+      );
 
       debugPrint(
         '[VideoConf] 📤 Emitting video:check-participants for: $meetingId',
@@ -247,7 +251,10 @@ class VideoConferenceService extends ChangeNotifier {
         },
       );
 
-      SocketService().unregisterListener('video:participants-info', listener);
+      SocketService().unregisterListener(
+        'video:participants-info',
+        registrationName: 'VideoConferenceService',
+      );
 
       return result;
     } catch (e) {
@@ -1133,17 +1140,20 @@ class VideoConferenceService extends ChangeNotifier {
       if (isExternalGuest && guestSessionId != null) {
         // Guest token endpoint
         tokenEndpoint = '/api/livekit/guest-token';
-        requestData = {'meetingId': channelId, 'sessionId': guestSessionId};
+        requestData = <String, dynamic>{
+          'meetingId': channelId,
+          'sessionId': guestSessionId,
+        };
         debugPrint(
           '[VideoConf] Requesting GUEST token for meeting: $channelId (session: $guestSessionId)',
         );
       } else if (isMeeting) {
         tokenEndpoint = '/api/livekit/meeting-token';
-        requestData = {'meetingId': channelId};
+        requestData = <String, dynamic>{'meetingId': channelId};
         debugPrint('[VideoConf] Requesting token for meeting: $channelId');
       } else {
         tokenEndpoint = '/api/livekit/token';
-        requestData = {'channelId': channelId};
+        requestData = <String, dynamic>{'channelId': channelId};
         debugPrint('[VideoConf] Requesting token for channel: $channelId');
       }
 

@@ -4,6 +4,7 @@ import '../widgets/app_drawer.dart';
 import '../services/api_service.dart';
 import '../services/clientid_native.dart';
 import '../services/device_identity_service.dart';
+import '../services/device_info_helper.dart';
 import '../services/server_config_native.dart';
 import '../services/session_auth_service.dart';
 import '../services/native_crypto_service.dart';
@@ -115,10 +116,19 @@ class _MobileBackupcodeLoginScreenState
       // Set base URL for API service
       ApiService.setBaseUrl(_serverUrl!);
 
+      // Get device info
+      final deviceInfo = await DeviceInfoHelper.getDeviceDisplayName();
+      debugPrint('[MobileBackupcodeLogin] Device info: $deviceInfo');
+
       // Call mobile backup code login endpoint (creates HMAC session)
       final response = await ApiService.dio.post(
         '$_serverUrl/backupcode/mobile-verify',
-        data: {'email': email, 'backupCode': backupcode, 'clientId': clientId},
+        data: {
+          'email': email,
+          'backupCode': backupcode,
+          'clientId': clientId,
+          'deviceInfo': deviceInfo,
+        },
       );
 
       debugPrint('[MobileBackupcodeLogin] Response: ${response.statusCode}');
@@ -142,23 +152,36 @@ class _MobileBackupcodeLoginScreenState
           debugPrint(
             '[MobileBackupcodeLogin] Saving session for clientId: $clientId',
           );
-          await SessionAuthService().initializeSession(clientId, sessionSecret);
+          await SessionAuthService().initializeSession(
+            clientId,
+            sessionSecret,
+            serverUrl: _serverUrl!,
+          );
 
           final storage = SecureSessionStorage();
           await storage.saveClientId(clientId);
 
           // Store session expiry (90 days for HMAC session)
           final sessionExpiryDate = DateTime.now().add(Duration(days: 90));
-          await storage.saveSessionExpiry(sessionExpiryDate.toIso8601String());
+          await storage.saveSessionExpiry(
+            sessionExpiryDate.toIso8601String(),
+            serverUrl: _serverUrl!,
+          );
 
           // Store refresh token if available
           if (refreshToken != null) {
-            await storage.saveRefreshToken(refreshToken);
+            await storage.saveRefreshToken(
+              refreshToken,
+              serverUrl: _serverUrl!,
+            );
             debugPrint('[MobileBackupcodeLogin] ✓ Refresh token stored');
           }
 
           // Verify session was saved
-          final sessionSaved = await SessionAuthService().hasSession(clientId);
+          final sessionSaved = await SessionAuthService().hasSession(
+            clientId: clientId,
+            serverUrl: _serverUrl!,
+          );
           debugPrint(
             '[MobileBackupcodeLogin] Session saved verification: $sessionSaved',
           );

@@ -34,7 +34,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       if (socketService.socket == null) {
         throw Exception('Socket not connected');
       }
-      _socketClient = SocketFileClient(socket: socketService.socket!);
+      _socketClient = SocketFileClient();
     }
     return _socketClient!;
   }

@@ -11,6 +11,7 @@ import 'permanent_pre_key_store.dart';
 import 'permanent_signed_pre_key_store.dart';
 import 'permanent_identity_key_store.dart';
 import 'sender_key_store.dart';
+import 'server_scoped_sender_key_store.dart';
 import 'decrypted_group_items_store.dart';
 import 'sent_group_items_store.dart';
 import '../providers/unread_messages_provider.dart';
@@ -351,7 +352,9 @@ class SignalService {
     bool hasMore = true;
 
     // Emit sync started event
-    EventBus.instance.emit(AppEvent.syncStarted, {'total': totalCount});
+    EventBus.instance.emit(AppEvent.syncStarted, <String, dynamic>{
+      'total': totalCount,
+    });
 
     while (hasMore && synced < totalCount) {
       try {
@@ -437,13 +440,17 @@ class SignalService {
         });
       } else {
         debugPrint('[SIGNAL SERVICE] 🎉 Sync complete!');
-        EventBus.instance.emit(AppEvent.syncComplete, {'processed': processed});
+        EventBus.instance.emit(AppEvent.syncComplete, <String, dynamic>{
+          'processed': processed,
+        });
       }
     } catch (e) {
       debugPrint(
         '[SIGNAL SERVICE] ❌ Error handling pending messages response: $e',
       );
-      EventBus.instance.emit(AppEvent.syncError, {'error': e.toString()});
+      EventBus.instance.emit(AppEvent.syncError, <String, dynamic>{
+        'error': e.toString(),
+      });
     }
   }
 
@@ -1360,12 +1367,12 @@ class SignalService {
           '[SIGNAL SERVICE] Socket reconnected, processing offline queue...',
         );
         _processOfflineQueue();
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("connect");
 
       SocketService().registerListener("receiveItem", (data) {
         receiveItem(data);
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("receiveItem");
 
       SocketService().registerListener("groupMessage", (data) {
@@ -1375,7 +1382,7 @@ class SignalService {
             callback(data);
           }
         }
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("groupMessage");
 
       // NEW: Group Item Socket.IO listener
@@ -1476,7 +1483,7 @@ class SignalService {
             );
           }
         }
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("groupItem");
 
       // NEW: Group Item delivery confirmation
@@ -1486,7 +1493,7 @@ class SignalService {
             callback(data['itemId']);
           }
         }
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("groupItemDelivered");
 
       // NEW: Group Item read update
@@ -1496,29 +1503,29 @@ class SignalService {
             callback(data);
           }
         }
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("groupItemReadUpdate");
 
       SocketService().registerListener("deliveryReceipt", (data) async {
         await _handleDeliveryReceipt(data);
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("deliveryReceipt");
 
       SocketService().registerListener("groupMessageReadReceipt", (data) {
         _handleGroupMessageReadReceipt(data);
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("groupMessageReadReceipt");
 
       // 🚀 NEW: Pending messages notification from server
       SocketService().registerListener("pendingMessagesAvailable", (data) {
         _handlePendingMessagesAvailable(data);
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("pendingMessagesAvailable");
 
       // 🚀 NEW: Pending messages response from server
       SocketService().registerListener("pendingMessagesResponse", (data) {
         _handlePendingMessagesResponse(data);
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("pendingMessagesResponse");
 
       // 🚀 NEW: Pending messages fetch error
@@ -1526,13 +1533,13 @@ class SignalService {
         debugPrint(
           '[SIGNAL SERVICE] ❌ Error fetching pending messages: ${data['error']}',
         );
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("fetchPendingMessagesError");
 
       // 🔄 NEW: Session recovery notification - sender should resend message
       SocketService().registerListener("sessionRecoveryRequested", (data) {
         _handleSessionRecoveryRequested(data);
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("sessionRecoveryRequested");
 
       SocketService().registerListener("signalStatusResponse", (status) async {
@@ -1540,7 +1547,7 @@ class SignalService {
 
         // Check SignedPreKey rotation after status check
         await _checkSignedPreKeyRotation();
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("signalStatusResponse");
 
       // NEW: Receive sender key distribution messages
@@ -1577,13 +1584,13 @@ class SignalService {
             '[SIGNAL_SERVICE] Error processing sender key distribution: $e',
           );
         }
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("receiveSenderKeyDistribution");
 
       // 🔒 SECURITY: Handle PreKey ID sync response
       SocketService().registerListener("myPreKeyIdsResponse", (data) async {
         await _handlePreKeyIdsSyncResponse(data);
-      });
+      }, registrationName: 'SignalService');
       registeredEvents.add("myPreKeyIdsResponse");
 
       // Setup Event Bus forwarding for user/channel events
@@ -1617,7 +1624,7 @@ class SignalService {
     SocketService().registerListener('user:status', (data) {
       debugPrint('[SIGNAL SERVICE] → EVENT_BUS: userStatusChanged');
       EventBus.instance.emit(AppEvent.userStatusChanged, data);
-    });
+    }, registrationName: 'SignalService');
 
     debugPrint('[SIGNAL SERVICE] ✓ Event Bus forwarding active');
   }
@@ -1701,7 +1708,9 @@ class SignalService {
                 },
               )
               .toList();
-          SocketService().emit("storePreKeys", {'preKeys': preKeysPayload});
+          SocketService().emit("storePreKeys", <String, dynamic>{
+            'preKeys': preKeysPayload,
+          });
           debugPrint(
             '[SIGNAL SERVICE][PREKEY_SYNC] ✓ Uploaded ${missingPreKeys.length} missing PreKeys',
           );
@@ -1851,7 +1860,9 @@ class SignalService {
       );
 
       // 🔍 DEEP VALIDATION: Check if server state is internally consistent
-      await _validateServerKeyConsistency(status);
+      await _validateServerKeyConsistency(
+        Map<String, dynamic>.from(status as Map),
+      );
     }
     // 2. PreKeys - Sync check ONLY (no generation - that's done in initWithProgress)
     final int preKeysCount = (status is Map && status['preKeys'] is int)
@@ -1900,7 +1911,9 @@ class SignalService {
               },
             )
             .toList();
-        SocketService().emit("storePreKeys", {'preKeys': preKeysPayload});
+        SocketService().emit("storePreKeys", <String, dynamic>{
+          'preKeys': preKeysPayload,
+        });
       } else if (preKeysCount < localPreKeyIds.length) {
         // 🔒 SECURITY FIX: Server has fewer PreKeys than local
         // This means some PreKeys were consumed while we were offline
@@ -1970,7 +1983,7 @@ class SignalService {
       }
     } else {
       // SELF-VALIDATION: Verify our own SignedPreKey on server
-      await _validateOwnKeysOnServer(status);
+      await _validateOwnKeysOnServer(Map<String, dynamic>.from(status as Map));
     }
   }
 
@@ -2483,7 +2496,9 @@ class SignalService {
           debugPrint(
             '[SIGNAL SERVICE][REINFORCEMENT] Removing old server key: ${key.record.id}',
           );
-          SocketService().emit("removeSignedPreKey", {'id': key.record.id});
+          SocketService().emit("removeSignedPreKey", <String, dynamic>{
+            'id': key.record.id,
+          });
         }
       }
 
@@ -2517,7 +2532,9 @@ class SignalService {
             )
             .toList();
 
-        SocketService().emit("storePreKeys", {'preKeys': preKeysPayload});
+        SocketService().emit("storePreKeys", <String, dynamic>{
+          'preKeys': preKeysPayload,
+        });
       } else {
         debugPrint(
           '[SIGNAL SERVICE][REINFORCEMENT] Found ${localPreKeyIds.length} local PreKey IDs - loading for upload...',
@@ -2542,7 +2559,9 @@ class SignalService {
         debugPrint(
           '[SIGNAL SERVICE][REINFORCEMENT] Uploading ${preKeysPayload.length} PreKeys to server',
         );
-        SocketService().emit("storePreKeys", {'preKeys': preKeysPayload});
+        SocketService().emit("storePreKeys", <String, dynamic>{
+          'preKeys': preKeysPayload,
+        });
       }
 
       debugPrint(
@@ -3209,15 +3228,24 @@ class SignalService {
           // 🔑 MULTI-DEVICE FIX: Check if message is from own user (different device)
           final isOwnMessage = sender == _currentUserId;
           final recipient = data['recipient'] as String?;
+          final originalRecipient = data['originalRecipient'] as String?;
 
           if (isOwnMessage) {
             // Message from own device → Store as SENT message
-            // Use the original recipient (the other user in the conversation)
-            final actualRecipient = recipient ?? sender;
+            // 🔑 CRITICAL: Use originalRecipient if available (multi-device sync case)
+            // When Bob Device 1 sends to Alice, Bob Device 2 receives it with:
+            // - sender=Bob, recipient=Bob, originalRecipient=Alice
+            // We must store it as "Bob → Alice", not "Bob → Bob"
+            final actualRecipient = originalRecipient ?? recipient ?? sender;
 
             debugPrint(
               "[SIGNAL SERVICE] 📤 Storing message from own device (Device $senderDeviceId) as SENT to $actualRecipient",
             );
+            if (originalRecipient != null) {
+              debugPrint(
+                "[SIGNAL SERVICE] 🔄 Multi-device sync: originalRecipient=$originalRecipient used instead of recipient=$recipient",
+              );
+            }
             await messageStore.storeSentMessage(
               itemId: itemId,
               recipientId: actualRecipient,
@@ -3245,8 +3273,10 @@ class SignalService {
           final conversationsStore =
               await SqliteRecentConversationsStore.getInstance();
           // Use the OTHER user's ID (not own ID)
+          // 🔑 CRITICAL: For multi-device sync (isOwnMessage=true), use originalRecipient
+          // This ensures Bob Device 2 creates conversation with Alice, not Bob
           final conversationUserId = isOwnMessage
-              ? (recipient ?? sender)
+              ? (originalRecipient ?? recipient ?? sender)
               : sender;
           await conversationsStore.addOrUpdateConversation(
             userId: conversationUserId,
@@ -3307,25 +3337,35 @@ class SignalService {
   /// (deviceId) verschlüsselt wurden. Die Nachricht wird dann mit dem Session-Schlüssel
   /// dieses Geräts entschlüsselt.
   Future<void> receiveItem(dynamic data) async {
+    // Get current deviceId and database info
+    final currentDeviceId = DeviceIdentityService.instance.deviceId;
+    final dbName = DatabaseHelper.getDatabaseName();
+
     debugPrint(
       "[SIGNAL SERVICE] ===============================================",
     );
     debugPrint("[SIGNAL SERVICE] receiveItem called for this device");
+    debugPrint("[SIGNAL SERVICE] 🔑 Current DeviceId: $currentDeviceId");
+    debugPrint("[SIGNAL SERVICE] 💾 Database: $dbName");
     debugPrint(
       "[SIGNAL SERVICE] ===============================================",
     );
     debugPrint("[SIGNAL SERVICE] receiveItem: $data");
-    final type = data['type'];
-    final sender = data['sender']; // z.B. Absender-UUID
-    final senderDeviceId = data['senderDeviceId'];
-    final cipherType = data['cipherType'];
-    final itemId = data['itemId'];
+
+    // Cast to Map<String, dynamic> (handles _serverId from native socket service)
+    final dataMap = (data as Map).cast<String, dynamic>();
+
+    final type = dataMap['type'];
+    final sender = dataMap['sender']; // z.B. Absender-UUID
+    final senderDeviceId = dataMap['senderDeviceId'];
+    final cipherType = dataMap['cipherType'];
+    final itemId = dataMap['itemId'];
 
     // Use decryptItemFromData to get caching + IndexedDB storage
     // This ensures real-time messages are also persisted locally
     String message;
     try {
-      message = await decryptItemFromData(data);
+      message = await decryptItemFromData(dataMap);
 
       // ✅ Delete from server AFTER successful decryption
       deleteItemFromServer(itemId);
@@ -3371,9 +3411,9 @@ class SignalService {
       "[SIGNAL SERVICE] Message decrypted successfully: '$message' (cipherType: $cipherType)",
     );
 
-    final recipient = data['recipient']; // Empfänger-UUID vom Server
+    final recipient = dataMap['recipient']; // Empfänger-UUID vom Server
     final originalRecipient =
-        data['originalRecipient']; // Original recipient for multi-device sync
+        dataMap['originalRecipient']; // Original recipient for multi-device sync
 
     // If this is a multi-device sync message (current user is sender AND recipient), use originalRecipient
     // This means we're receiving our own message on another device
@@ -3392,6 +3432,8 @@ class SignalService {
           actualRecipient, // Use the actual recipient, not the sync recipient
       'type': type,
       'message': message,
+      // 🔑 CRITICAL: Include originalRecipient for multi-device read receipt routing
+      if (originalRecipient != null) 'originalRecipient': originalRecipient,
     };
 
     if (originalRecipient != null) {
@@ -3452,7 +3494,7 @@ class SignalService {
       // System message - will be handled by callbacks
       isSystemMessage = true;
     } else if (type == 'delivery_receipt') {
-      await _handleDeliveryReceipt(data);
+      await _handleDeliveryReceipt(dataMap);
       isSystemMessage = true;
     } else if (type == 'meeting_e2ee_key_request') {
       // Meeting E2EE key request via 1-to-1 Signal message
@@ -3536,7 +3578,10 @@ class SignalService {
         // Also emit newConversation if this is the first message from this sender
         // (Views can check their conversation list to determine if it's truly new)
         // Use the OTHER user's ID for conversation (not own ID)
-        final conversationUserId = isOwnMessage ? recipient : sender;
+        // 🔑 CRITICAL: For multi-device sync, use originalRecipient
+        final conversationUserId = isOwnMessage
+            ? (originalRecipient ?? recipient)
+            : sender;
         EventBus.instance.emit(AppEvent.newConversation, {
           'conversationId': conversationUserId,
           'isChannel': false,
@@ -3591,7 +3636,7 @@ class SignalService {
 
   void deleteItemFromServer(String itemId) {
     debugPrint("[SIGNAL SERVICE] Deleting item with itemId: $itemId");
-    SocketService().emit("deleteItem", {'itemId': itemId});
+    SocketService().emit("deleteItem", <String, dynamic>{'itemId': itemId});
   }
 
   void deleteItem(String itemId) async {
@@ -3608,7 +3653,9 @@ class SignalService {
 
   void deleteGroupItemFromServer(String itemId) async {
     debugPrint("[SIGNAL SERVICE] Deleting group item with itemId: $itemId");
-    SocketService().emit("deleteGroupItem", {'itemId': itemId});
+    SocketService().emit("deleteGroupItem", <String, dynamic>{
+      'itemId': itemId,
+    });
   }
 
   void deleteGroupItem(String itemId, String channelId) async {
@@ -4431,6 +4478,18 @@ class SignalService {
     bool forcePreKeyMessage =
         false, // Force PreKey message even if session exists (for session recovery)
   }) async {
+    // Get current deviceId and database info
+    final currentDeviceId = DeviceIdentityService.instance.deviceId;
+    final dbName = DatabaseHelper.getDatabaseName();
+
+    debugPrint('[SIGNAL SERVICE] ═══════════════════════════════════════════');
+    debugPrint('[SIGNAL SERVICE] 📤 SENDING MESSAGE');
+    debugPrint('[SIGNAL SERVICE] 🔑 Current DeviceId: $currentDeviceId');
+    debugPrint('[SIGNAL SERVICE] 💾 Database: $dbName');
+    debugPrint('[SIGNAL SERVICE] 👤 Recipient: $recipientUserId');
+    debugPrint('[SIGNAL SERVICE] 📝 Type: $type');
+    debugPrint('[SIGNAL SERVICE] ═══════════════════════════════════════════');
+
     // 🔒 SYNC-LOCK: Wait if identity regeneration is in progress
     await _waitForRegenerationIfNeeded();
 
@@ -4587,6 +4646,11 @@ class SignalService {
         '[SIGNAL SERVICE] Device: userId=${bundle['userId']}, deviceId=${bundle['deviceId']}',
       );
     }
+
+    // 🔒 CRITICAL: Capture original recipient BEFORE loop
+    // This is needed for multi-device sync to preserve the actual recipient
+    // When syncing to sender's other devices, recipientUserId gets overwritten in the loop
+    final originalRecipientUserId = recipientUserId;
 
     // Verschlüssele für jedes Gerät separat
     // IMPORTANT: Each device encryption is isolated in try-catch
@@ -4830,9 +4894,9 @@ class SignalService {
         final isSenderDevice = (recipientAddress.getName() == _currentUserId);
         if (isSenderDevice) {
           data['originalRecipient'] =
-              recipientUserId; // The actual recipient of the message
+              originalRecipientUserId; // The actual original recipient of the message
           debugPrint(
-            '[SIGNAL SERVICE] Multi-device sync - originalRecipient: $recipientUserId',
+            '[SIGNAL SERVICE] Multi-device sync - originalRecipient: $originalRecipientUserId',
           );
         }
 
@@ -6000,17 +6064,24 @@ class SignalService {
   }
 
   /// Decrypt group message using sender key
+  /// [serverUrl] - Optional server URL for multi-server support
   Future<String> decryptGroupMessage(
     String groupId,
     String senderId,
     int senderDeviceId,
-    String ciphertextBase64,
-  ) async {
+    String ciphertextBase64, {
+    String? serverUrl,
+  }) async {
     final senderAddress = SignalProtocolAddress(senderId, senderDeviceId);
     final senderKeyName = SenderKeyName(groupId, senderAddress);
 
     try {
-      final groupCipher = GroupCipher(senderKeyStore, senderKeyName);
+      // Use server-scoped store if serverUrl provided
+      final store = serverUrl != null
+          ? ServerScopedSenderKeyStore(senderKeyStore, serverUrl)
+          : senderKeyStore;
+
+      final groupCipher = GroupCipher(store, senderKeyName);
       final ciphertext = base64Decode(ciphertextBase64);
       final plaintext = await groupCipher.decrypt(ciphertext);
 
@@ -6551,12 +6622,14 @@ class SignalService {
   }
 
   /// Decrypt a received group item with automatic sender key reload on error
+  /// [serverUrl] - Optional server URL for multi-server support (extracts from socket event)
   Future<String> decryptGroupItem({
     required String channelId,
     required String senderId,
     required int senderDeviceId,
     required String ciphertext,
     bool retryOnError = true,
+    String? serverUrl,
   }) async {
     try {
       // Try to decrypt
@@ -6565,6 +6638,7 @@ class SignalService {
         senderId,
         senderDeviceId,
         ciphertext,
+        serverUrl: serverUrl,
       );
 
       return decrypted;
@@ -6601,6 +6675,7 @@ class SignalService {
             senderDeviceId: senderDeviceId,
             ciphertext: ciphertext,
             retryOnError: false, // Don't retry again
+            serverUrl: serverUrl,
           );
         }
       }
@@ -6824,7 +6899,9 @@ class SignalService {
         return;
       }
 
-      SocketService().emit("markGroupItemRead", {'itemId': itemId});
+      SocketService().emit("markGroupItemRead", <String, dynamic>{
+        'itemId': itemId,
+      });
 
       debugPrint('[SIGNAL_SERVICE] Marked group item $itemId as read');
     } catch (e) {

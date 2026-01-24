@@ -341,7 +341,9 @@ class CallService {
 
   /// Accept an incoming call (notifies caller)
   void acceptCall(String meetingId) {
-    _socketService.emit('call:accept', {'meeting_id': meetingId});
+    _socketService.emit('call:accept', <String, dynamic>{
+      'meeting_id': meetingId,
+    });
 
     // Stop ringtone
     _soundService.stopRingtone();

@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'api_service.dart';
+import 'socket_service_native.dart';
 
 /// Configuration for a single server connection
 class ServerConfig {
@@ -408,13 +409,15 @@ class ServerConfigService {
     if (index != -1) {
       _servers[index] = server.copyWith(lastActive: DateTime.now());
 
-      // Re-sort by lastActive
-      _servers.sort((a, b) => b.lastActive.compareTo(a.lastActive));
-
+      // Keep servers in their original order (don't sort by lastActive)
       await _saveServers();
     }
 
     await _saveActiveServerId();
+
+    // Update SocketService active server for proper message routing
+    SocketService().setActiveServer(serverId);
+
     debugPrint('[ServerConfig] Set active server: $serverId');
   }
 

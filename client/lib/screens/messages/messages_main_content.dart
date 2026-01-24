@@ -61,6 +61,14 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
         _loadConversations();
       }
     });
+
+    // Listen for server switches (multi-server support)
+    EventBus.instance.on(AppEvent.serverSwitched).listen((data) {
+      if (!mounted) return;
+
+      debugPrint('[MESSAGES_MAIN] Server switched, reloading conversations');
+      _loadConversations();
+    });
   }
 
   Future<void> _initializeStarredService() async {
@@ -705,7 +713,9 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
       await StarredConversationsService.instance.unstarConversation(userId);
 
       // Emit event to update UI
-      EventBus.instance.emit(AppEvent.conversationDeleted, {'userId': userId});
+      EventBus.instance.emit(AppEvent.conversationDeleted, <String, dynamic>{
+        'userId': userId,
+      });
 
       // Reload conversations
       await _loadConversations();
@@ -714,6 +724,9 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Conversation deleted')));
+
+        // Navigate to messages list
+        context.go('/app/messages');
       }
     } catch (e) {
       debugPrint('[MESSAGES_MAIN] Error deleting conversation: $e');

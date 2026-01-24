@@ -1,10 +1,10 @@
-const { sequelize } = require('../db/model');
-const writeQueue = require('../db/writeQueue');
 const logger = require('../utils/logger');
 const { sanitizeForLog } = require('../utils/logSanitizer');
 
 /**
  * PresenceService - Tracks online/busy/offline status based on socket connections
+ * 
+ * Pure in-memory tracking - no database persistence or heartbeat timers.
  * 
  * Status Logic:
  * - online: At least one socket connection exists for user
@@ -39,7 +39,7 @@ class PresenceService {
    * Register a socket connection for a user
    * @param {string} user_id - User UUID
    * @param {string} socket_id - Socket.IO connection ID
-   * @returns {Promise<void>}
+   * @returns {Promise<string>} User status after connection
    */
   async onSocketConnected(user_id, socket_id) {
     try {
@@ -56,33 +56,15 @@ class PresenceService {
 
       // Determine status
       const status = this._getUserStatus(user_id);
-      logger.debug('[PRESENCE] Calculated status:', {
-        userId: sanitizeForLog(user_id),
-        status
-      });
-
-      // Update database using UPSERT (INSERT OR REPLACE)
-      // This avoids race conditions when multiple connections register simultaneously
-      await writeQueue.enqueue(
-        () => sequelize.query(`
-          INSERT OR REPLACE INTO user_presence (user_id, status, last_heartbeat, updated_at)
-          VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        `, {
-          replacements: [user_id, status]
-        }),
-        'upsertPresenceOnConnect'
-      );
-      logger.debug('[PRESENCE] Updated record:', {
-        userId: sanitizeForLog(user_id),
-        status
-      });
-
+      
       logger.info('[PRESENCE] User connected');
       logger.debug('[PRESENCE] Connection details:', {
         userId: sanitizeForLog(user_id),
         socketId: socket_id,
-        status
+        status,
+        totalConnections: this.userConnections.get(user_id).size
       });
+      
       return status;
     } catch (error) {
       logger.error('[PRESENCE] Error on socket connected', error);
@@ -94,7 +76,7 @@ class PresenceService {
    * Unregister a socket connection for a user
    * @param {string} user_id - User UUID
    * @param {string} socket_id - Socket.IO connection ID
-   * @returns {Promise<void>}
+   * @returns {Promise<string>} User status after disconnection
    */
   async onSocketDisconnected(user_id, socket_id) {
     try {
@@ -103,21 +85,10 @@ class PresenceService {
       if (connections) {
         connections.delete(socket_id);
         
-        // If no more connections, mark offline
+        // If no more connections, remove user entirely
         if (connections.size === 0) {
           this.userConnections.delete(user_id);
           
-          await writeQueue.enqueue(
-            () => sequelize.query(`
-              UPDATE user_presence
-              SET status = 'offline', updated_at = CURRENT_TIMESTAMP
-              WHERE user_id = ?
-            `, {
-              replacements: [user_id]
-            }),
-            'markOfflineOnDisconnect'
-          );
-
           logger.info('[PRESENCE] User disconnected (all sockets closed), status: offline');
           logger.debug('[PRESENCE] Disconnect details:', { userId: sanitizeForLog(user_id) });
           return 'offline';
@@ -125,17 +96,6 @@ class PresenceService {
           // Still has other connections, recalculate status
           const status = this._getUserStatus(user_id);
           
-          await writeQueue.enqueue(
-            () => sequelize.query(`
-              UPDATE user_presence
-              SET status = ?, updated_at = CURRENT_TIMESTAMP
-              WHERE user_id = ?
-            `, {
-              replacements: [status, user_id]
-            }),
-            'updatePresenceOnDisconnect'
-          );
-
           logger.info('[PRESENCE] User disconnected one socket');
           logger.debug('[PRESENCE] Disconnect details:', {
             userId: sanitizeForLog(user_id),
@@ -157,7 +117,7 @@ class PresenceService {
    * Mark user as in a LiveKit room (sets status to 'busy')
    * @param {string} user_id - User UUID
    * @param {string} room_id - LiveKit room ID
-   * @returns {Promise<void>}
+   * @returns {Promise<string>} Status after joining
    */
   async onUserJoinedRoom(user_id, room_id) {
     try {
@@ -166,24 +126,15 @@ class PresenceService {
       }
       this.usersInRooms.get(user_id).add(room_id);
 
-      // Update status to busy
-      await writeQueue.enqueue(
-        () => sequelize.query(`
-          UPDATE user_presence
-          SET status = 'busy', updated_at = CURRENT_TIMESTAMP
-          WHERE user_id = ?
-        `, {
-          replacements: [user_id]
-        }),
-        'markBusyOnRoomJoin'
-      );
-
+      const status = this._getUserStatus(user_id);
+      
       logger.info('[PRESENCE] User joined room, status: busy');
       logger.debug('[PRESENCE] Room join details:', {
         userId: sanitizeForLog(user_id),
-        roomId: sanitizeForLog(room_id)
+        roomId: sanitizeForLog(room_id),
+        status
       });
-      return 'busy';
+      return status;
     } catch (error) {
       logger.error('[PRESENCE] Error on user joined room', error);
       throw error;
@@ -194,7 +145,7 @@ class PresenceService {
    * Mark user as left a LiveKit room (recalculates status)
    * @param {string} user_id - User UUID
    * @param {string} room_id - LiveKit room ID
-   * @returns {Promise<void>}
+   * @returns {Promise<string>} Status after leaving
    */
   async onUserLeftRoom(user_id, room_id) {
     try {
@@ -209,17 +160,6 @@ class PresenceService {
 
       // Recalculate status
       const status = this._getUserStatus(user_id);
-
-      await writeQueue.enqueue(
-        () => sequelize.query(`
-          UPDATE user_presence
-          SET status = ?, updated_at = CURRENT_TIMESTAMP
-          WHERE user_id = ?
-        `, {
-          replacements: [status, user_id]
-        }),
-        'updatePresenceOnRoomLeave'
-      );
 
       logger.info('[PRESENCE] User left room');
       logger.debug('[PRESENCE] Room leave details:', {
@@ -260,22 +200,14 @@ class PresenceService {
    */
   async markOffline(user_id) {
     logger.warn('[PRESENCE] markOffline() is deprecated, use onSocketDisconnected()');
-    return await writeQueue.enqueue(
-      () => sequelize.query(`
-        UPDATE user_presence
-        SET status = 'offline', updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ?
-      `, {
-        replacements: [user_id]
-      }),
-      'markOffline'
-    );
+    // No-op: presence is now in-memory only
+    return 'offline';
   }
 
   /**
-   * Get presence for specific users
+   * Get presence for specific users (from in-memory tracking)
    * @param {string[]} user_ids - Array of user UUIDs
-   * @returns {Promise<Array>} Array of presence objects with {user_id, status, last_heartbeat}
+   * @returns {Promise<Array>} Array of presence objects with {user_id, status}
    */
   async getPresence(user_ids) {
     if (!user_ids || user_ids.length === 0) {
@@ -286,35 +218,21 @@ class PresenceService {
       logger.debug('[PRESENCE] getPresence called:', {
         userCount: user_ids.length
       });
-      const placeholders = user_ids.map(() => '?').join(',');
-      const [results] = await sequelize.query(`
-        SELECT user_id, status, last_heartbeat, updated_at FROM user_presence 
-        WHERE user_id IN (${placeholders})
-      `, {
-        replacements: user_ids
-      });
 
-      logger.debug('[PRESENCE] Database query returned results:', {
-        resultCount: results.length
-      });
-
-      // Return all user_ids, defaulting to offline if not found
-      const finalResults = user_ids.map(user_id => {
-        const found = results.find(r => r.user_id === user_id);
-        const result = found || {
-          user_id,
-          status: 'offline',
-          last_heartbeat: null,
-          updated_at: null
-        };
+      // Return all user_ids with their in-memory status
+      const results = user_ids.map(user_id => {
+        const status = this._getUserStatus(user_id);
         logger.debug('[PRESENCE] User status:', {
           userId: sanitizeForLog(user_id),
-          status: result.status
+          status
         });
-        return result;
+        return {
+          user_id,
+          status
+        };
       });
       
-      return finalResults;
+      return results;
     } catch (error) {
       logger.error('[PRESENCE] Error getting presence', error);
       throw error;
@@ -328,7 +246,8 @@ class PresenceService {
    */
   async getChannelPresence(channel_id) {
     try {
-      // Get all channel members
+      // Need to keep database lookup for channel members, but use in-memory presence
+      const { sequelize } = require('../db/model');
       const [members] = await sequelize.query(`
         SELECT user_id FROM ChannelMembers WHERE channel_id = ?
       `, {
@@ -352,17 +271,19 @@ class PresenceService {
   }
 
   /**
-   * Get all online users (online or busy)
+   * Get all online users (online or busy) from in-memory tracking
    * @returns {Promise<Array>} Array of online user_ids
    */
   async getOnlineUsers() {
     try {
-      const [results] = await sequelize.query(`
-        SELECT user_id FROM user_presence 
-        WHERE status IN ('online', 'busy')
-      `);
-
-      return results.map(r => r.user_id);
+      // Return all users with active connections
+      const onlineUsers = Array.from(this.userConnections.keys());
+      
+      logger.debug('[PRESENCE] Getting online users:', {
+        count: onlineUsers.length
+      });
+      
+      return onlineUsers;
     } catch (error) {
       logger.error('[PRESENCE] Error getting online users', error);
       throw error;
@@ -370,31 +291,21 @@ class PresenceService {
   }
 
   /**
-   * Check if user is online (online or busy)
+   * Check if user is online (online or busy) from in-memory tracking
    * @param {string} user_id - User UUID
    * @returns {Promise<boolean>} True if online or busy
    */
   async isOnline(user_id) {
     try {
-      const [results] = await sequelize.query(`
-        SELECT status FROM user_presence WHERE user_id = ?
-      `, {
-        replacements: [user_id]
-      });
-
-      if (results.length === 0) {
-        logger.debug('[PRESENCE] isOnline check: NO RECORD (returning false)', {
-          userId: sanitizeForLog(user_id)
-        });
-        return false;
-      }
-
-      const isOnline = results[0].status === 'online' || results[0].status === 'busy';
+      const status = this._getUserStatus(user_id);
+      const isOnline = status === 'online' || status === 'busy';
+      
       logger.debug('[PRESENCE] isOnline check:', {
         userId: sanitizeForLog(user_id),
-        status: results[0].status,
+        status,
         result: isOnline
       });
+      
       return isOnline;
     } catch (error) {
       logger.error('[PRESENCE] Error checking online status', error);

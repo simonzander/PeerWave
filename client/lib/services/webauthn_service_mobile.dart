@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:dio/dio.dart';
 import 'api_service.dart';
 import 'secure_session_storage.dart';
+import 'device_info_helper.dart';
 
 /// Mobile WebAuthn service for iOS and Android
 ///
@@ -224,12 +225,14 @@ class MobileWebAuthnService {
         '[MobileWebAuthn] Passkey created successfully, credential ID: ${registerResponse.id}',
       );
 
-      // 5. Send attestation to server
+      // 5. Send attestation to server with device info
       final registerResponseJson = registerResponse.toJson();
+      final deviceInfo = await DeviceInfoHelper.getDeviceDisplayName();
+      debugPrint('[MobileWebAuthn] Device info: $deviceInfo');
       debugPrint('[MobileWebAuthn] Sending attestation to server');
       final serverResponse = await ApiService.dio.post(
         '/webauthn/register',
-        data: {'attestation': registerResponseJson},
+        data: {'attestation': registerResponseJson, 'deviceInfo': deviceInfo},
       );
 
       if (serverResponse.statusCode != 200) {
@@ -325,11 +328,13 @@ class MobileWebAuthnService {
 
       debugPrint('[MobileWebAuthn] Challenge signed successfully');
 
-      // 6. Send assertion to server
+      // 6. Send assertion to server with device info
       final authResponseJson = authResponse.toJson();
+      final deviceInfo = await DeviceInfoHelper.getDeviceDisplayName();
+      debugPrint('[MobileWebAuthn] Device info: $deviceInfo');
       final serverResponse = await ApiService.dio.post(
         '$serverUrl/webauthn/authenticate',
-        data: authResponseJson,
+        data: {...authResponseJson, 'deviceInfo': deviceInfo},
       );
 
       if (serverResponse.statusCode != 200) {
@@ -340,7 +345,7 @@ class MobileWebAuthnService {
       }
 
       final responseData = serverResponse.data as Map<String, dynamic>;
-      debugPrint('[MobileWebAuthn] Ô£ô Authentication successful');
+      debugPrint('[MobileWebAuthn] ✓ Authentication successful');
       // Store tokens and expiry if provided
       final refreshToken = responseData['refreshToken'] as String?;
       final clientId = responseData['clientId'] as String?;
@@ -349,13 +354,16 @@ class MobileWebAuthnService {
         final storage = SecureSessionStorage();
         await storage.saveClientId(clientId);
 
-        // Store session expiry (90 days for HMAC session)
+        // Store session expiry (90 days for HMAC session) - server-scoped
         final sessionExpiryDate = DateTime.now().add(Duration(days: 90));
-        await storage.saveSessionExpiry(sessionExpiryDate.toIso8601String());
+        await storage.saveSessionExpiry(
+          sessionExpiryDate.toIso8601String(),
+          serverUrl: serverUrl,
+        );
 
         if (refreshToken != null) {
-          await storage.saveRefreshToken(refreshToken);
-          debugPrint('[MobileWebAuthn] ✓ Refresh token stored');
+          await storage.saveRefreshToken(refreshToken, serverUrl: serverUrl);
+          debugPrint('[MobileWebAuthn] ✓ Refresh token stored @ $serverUrl');
         }
       }
       return {

@@ -65,6 +65,9 @@ enum AppEvent {
 
   /// An error occurred during pending message sync.
   syncError,
+
+  /// The active server was switched (multi-server support).
+  serverSwitched,
 }
 
 /// Application-wide publish-subscribe event bus for decoupled communication.

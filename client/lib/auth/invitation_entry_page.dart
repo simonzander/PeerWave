@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../services/server_settings_service.dart';
 import '../web_config.dart';
@@ -192,8 +191,7 @@ class _InvitationEntryPageState extends State<InvitationEntryPage> {
                       const SizedBox(height: 16),
                       Text(
                         'Invitation Required',
-                        style: GoogleFonts.nunitoSans(
-                          fontSize: 28,
+                        style: theme.textTheme.headlineMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                           color: colorScheme.onSurface,
                         ),

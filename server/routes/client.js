@@ -1420,7 +1420,7 @@ clientRoutes.get("/client/channels/:channelUuid/participants", verifyAuthEither,
 });*/
 
 clientRoutes.post("/magic/verify", async (req, res) => {
-    const { key, clientid } = req.body;
+    const { key, clientid, deviceInfo } = req.body;
     logger.debug('[MAGIC LINK] Verifying magic link', { clientId: sanitizeForLog(clientid) });
     
     if(!key || !clientid) {
@@ -1455,17 +1455,20 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     
     // Check if key exists and not expired
     // Validate randomHash doesn't access prototype properties
-    if (!randomHash || typeof randomHash !== 'string' || randomHash.includes('__')) {
+    if (!randomHash || typeof randomHash !== 'string' || 
+        randomHash.includes('__') || 
+        randomHash === 'constructor' || 
+        randomHash === 'prototype') {
         return res.status(400).json({ status: "failed", message: "Invalid magic link format" });
     }
-    const entry = magicLinks[randomHash];
-    if (!entry) {
+    const entry = magicLinks.get(randomHash);
+    if (!entry || typeof entry !== 'object') {
         return res.status(400).json({ status: "failed", message: "Invalid or expired magic link" });
     }
     
     // Check expiration
     if (entry.expires < Date.now()) {
-        delete magicLinks[randomHash];
+        magicLinks.delete(randomHash);
         return res.status(400).json({ status: "failed", message: "Magic link has expired" });
     }
     
@@ -1481,6 +1484,9 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     req.session.authenticated = true;
     req.session.email = entry.email;
     req.session.uuid = entry.uuid;
+    
+    // Use provided deviceInfo or fall back to user-agent
+    const browserString = deviceInfo || req.headers['user-agent'] || 'Unknown Device';
     const userAgent = req.headers['user-agent'] || '';
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     const location = await getLocationFromIp(ip);
@@ -1505,7 +1511,7 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     const [client] = await writeQueue.enqueue(
         () => Client.findOrCreate({
             where: { owner: entry.uuid, clientid: clientid },
-            defaults: { owner: entry.uuid, clientid: clientid, ip: ip, browser: userAgent, location: locationString, device_id: maxDevice ? maxDevice + 1 : 1 }
+            defaults: { owner: entry.uuid, clientid: clientid, ip: ip, browser: browserString, location: locationString, device_id: maxDevice ? maxDevice + 1 : 1 }
         }),
         'clientFindOrCreateMagicLink'
     );
@@ -1528,7 +1534,7 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     }
     
     // Delete used magic link (randomHash already validated above)
-    delete magicLinks[randomHash];
+    magicLinks.delete(randomHash);
     
     // Generate session secret for native clients (HMAC authentication)
     const sessionSecret = crypto.randomBytes(32).toString('base64url');

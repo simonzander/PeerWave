@@ -12,6 +12,7 @@ import '../services/native_crypto_service.dart';
 import '../services/auth_service_web.dart'
     if (dart.library.io) '../services/auth_service_native.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/server_panel.dart';
 
 /// Server selection screen for native clients
 /// Shown on first launch or when adding a new server
@@ -209,7 +210,37 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isMobile = Platform.isAndroid || Platform.isIOS;
 
+    // Desktop layout: ServerPanel on left (72px), content on right - matching app_layout.dart
+    if (!isMobile) {
+      return Scaffold(
+        backgroundColor: colorScheme.surface,
+        body: Row(
+          children: [
+            // Server Panel (far left, 72px) - Always visible on native desktop
+            const ServerPanel(),
+
+            // Main content
+            Expanded(
+              child: SafeArea(
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(32.0),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 600),
+                      child: _buildContent(colorScheme),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Mobile layout: AppDrawer in burger menu
     return Scaffold(
       backgroundColor: colorScheme.surface,
       appBar: AppBar(
@@ -227,157 +258,147 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
             padding: const EdgeInsets.all(32.0),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 600),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // App Logo/Title
-                  Image.asset(
-                    Theme.of(context).brightness == Brightness.dark
-                        ? 'assets/images/peerwave.png'
-                        : 'assets/images/peerwave_dark.png',
-                    width: 120,
-                    height: 120,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'PeerWave',
-                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    widget.isAddingServer
-                        ? 'Add New Server'
-                        : 'Connect to Your Server',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 48),
-                  // Instructions Card
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.info_outline,
-                                color: Theme.of(context).colorScheme.primary,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'How to Connect',
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          _buildInstructionStep(
-                            '1',
-                            'Open PeerWave in your web browser',
-                          ),
-                          _buildInstructionStep(
-                            '2',
-                            'Go to Settings → Credentials',
-                          ),
-                          _buildInstructionStep('3', 'Click "Add New Client"'),
-                          _buildInstructionStep(
-                            '4',
-                            'Scan the QR code or copy the magic key',
-                          ),
-                          _buildInstructionStep(
-                            '5',
-                            'Paste it below or scan it with your camera',
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // QR Scanner or Magic Key Input
-                  if (_showQRScanner)
-                    _buildQRScanner()
-                  else
-                    _buildMagicKeyInput(),
-
-                  const SizedBox(height: 16),
-
-                  // Toggle Scanner Button (only on mobile)
-                  if (_isMobilePlatform)
-                    TextButton.icon(
-                      onPressed: _isLoading ? null : _toggleQRScanner,
-                      icon: Icon(
-                        _showQRScanner ? Icons.keyboard : Icons.qr_code_scanner,
-                      ),
-                      label: Text(
-                        _showQRScanner ? 'Enter Key Manually' : 'Scan QR Code',
-                      ),
-                    ),
-
-                  // Error Message
-                  if (_errorMessage != null) ...[
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.errorContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.error_outline,
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _errorMessage!,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-
-                  // Cancel Button (only when adding server)
-                  if (widget.isAddingServer) ...[
-                    const SizedBox(height: 16),
-                    TextButton(
-                      onPressed: _isLoading ? null : () => context.pop(),
-                      child: const Text('Cancel'),
-                    ),
-                  ],
-
-                  // Back to Mobile Server Selection (only on mobile)
-                  if (_isMobilePlatform && !widget.isAddingServer) ...[
-                    const SizedBox(height: 16),
-                    TextButton(
-                      onPressed: _isLoading
-                          ? null
-                          : () => context.go('/mobile-server-selection'),
-                      child: const Text('Back to Server Selection'),
-                    ),
-                  ],
-                ],
-              ),
+              child: _buildContent(colorScheme),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildContent(ColorScheme colorScheme) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // App Logo/Title
+        Image.asset(
+          Theme.of(context).brightness == Brightness.dark
+              ? 'assets/images/peerwave.png'
+              : 'assets/images/peerwave_dark.png',
+          width: 120,
+          height: 120,
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'PeerWave',
+          style: Theme.of(
+            context,
+          ).textTheme.headlineLarge?.copyWith(fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          widget.isAddingServer ? 'Add New Server' : 'Connect to Your Server',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 48),
+        // Instructions Card
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'How to Connect',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _buildInstructionStep('1', 'Open PeerWave in your web browser'),
+                _buildInstructionStep('2', 'Go to Settings → Credentials'),
+                _buildInstructionStep('3', 'Click "Add New Client"'),
+                _buildInstructionStep(
+                  '4',
+                  'Scan the QR code or copy the magic key',
+                ),
+                _buildInstructionStep(
+                  '5',
+                  'Paste it below or scan it with your camera',
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 32),
+
+        // QR Scanner or Magic Key Input
+        if (_showQRScanner) _buildQRScanner() else _buildMagicKeyInput(),
+
+        const SizedBox(height: 16),
+
+        // Toggle Scanner Button (only on mobile)
+        if (_isMobilePlatform)
+          TextButton.icon(
+            onPressed: _isLoading ? null : _toggleQRScanner,
+            icon: Icon(_showQRScanner ? Icons.keyboard : Icons.qr_code_scanner),
+            label: Text(_showQRScanner ? 'Enter Key Manually' : 'Scan QR Code'),
+          ),
+
+        // Error Message
+        if (_errorMessage != null) ...[
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.error_outline,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _errorMessage!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        // Cancel Button (only when adding server)
+        if (widget.isAddingServer) ...[
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed: _isLoading ? null : () => context.pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+
+        // Back to Mobile Server Selection (only on mobile)
+        if (_isMobilePlatform && !widget.isAddingServer) ...[
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed: _isLoading
+                ? null
+                : () => context.go('/mobile-server-selection'),
+            child: const Text('Back to Server Selection'),
+          ),
+        ],
+      ],
     );
   }
 

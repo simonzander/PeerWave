@@ -64,7 +64,7 @@ class DecryptedGroupItemsStore {
     if (kIsWeb) {
       // Use encrypted device-scoped storage
       final storage = DeviceScopedStorageService.instance;
-      await storage.putEncrypted(_storeName, _storeName, key, data);
+      await storage.storeEncrypted(_storeName, _storeName, key, data);
     } else {
       final storage = FlutterSecureStorage();
       await storage.write(key: key, value: data);

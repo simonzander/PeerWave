@@ -1,6 +1,7 @@
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'api_service.dart';
 import 'session_auth_service.dart';
+import 'device_info_helper.dart';
 
 /// Data class for parsed magic key components
 class MagicKeyData {
@@ -136,11 +137,24 @@ class MagicKeyService {
       debugPrint('[MagicKey] Verifying with server: $verifyUrl');
       debugPrint('[MagicKey] Client ID: $clientId');
 
+      // Get device info for native platforms
+      String? deviceInfo;
+      if (!kIsWeb) {
+        deviceInfo = await DeviceInfoHelper.getDeviceDisplayName();
+        debugPrint('[MagicKey] Device info: $deviceInfo');
+      }
+
       // Call verification endpoint
-      final response = await ApiService.post(
-        verifyUrl,
-        data: {'key': magicKey, 'clientid': clientId},
-      );
+      final requestData = <String, dynamic>{
+        'key': magicKey,
+        'clientid': clientId,
+      };
+
+      if (deviceInfo != null) {
+        requestData['deviceInfo'] = deviceInfo;
+      }
+
+      final response = await ApiService.post(verifyUrl, data: requestData);
 
       if (response.statusCode == 200) {
         final data = response.data;
@@ -149,8 +163,14 @@ class MagicKeyService {
         // If verification successful and server provides session secret, store it
         if (success && data['sessionSecret'] != null) {
           final sessionSecret = data['sessionSecret'] as String;
-          await SessionAuthService().initializeSession(clientId, sessionSecret);
-          debugPrint('[MagicKey] Session secret stored for client: $clientId');
+          await SessionAuthService().initializeSession(
+            clientId,
+            sessionSecret,
+            serverUrl: parsed.serverUrl,
+          );
+          debugPrint(
+            '[MagicKey] Session secret stored for client: $clientId @ ${parsed.serverUrl}',
+          );
         }
 
         return MagicKeyVerificationResponse(

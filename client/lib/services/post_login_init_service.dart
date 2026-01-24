@@ -17,6 +17,8 @@ import '../providers/unread_messages_provider.dart';
 import '../providers/role_provider.dart';
 import '../providers/file_transfer_stats_provider.dart';
 import 'storage/database_helper.dart';
+import 'server_config_native.dart'
+    if (dart.library.html) 'server_config_web.dart';
 // Meeting and Call services
 import 'meeting_service.dart';
 import 'call_service.dart';
@@ -140,14 +142,14 @@ class PostLoginInitService {
         );
       }
 
-      // Step 2: Connect to Socket.IO server (CRITICAL)
+      // Step 2: Connect to Socket.IO servers (CRITICAL - connects to ALL configured servers)
       currentStep++;
-      onProgress?.call('Connecting to server...', currentStep, totalSteps);
+      onProgress?.call('Connecting to servers...', currentStep, totalSteps);
       debugPrint(
-        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Connecting to Socket.IO...',
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Connecting to all Socket.IO servers...',
       );
-      await SocketService().connect();
-      debugPrint('[POST_LOGIN_INIT] ✓ Socket.IO connected');
+      await SocketService().connectAllServers();
+      debugPrint('[POST_LOGIN_INIT] ✓ Socket.IO connected to all servers');
 
       // ========================================
       // PHASE 2: Core Services (SEQUENTIAL)
@@ -197,7 +199,8 @@ class PostLoginInitService {
       debugPrint(
         '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Checking Signal keys...',
       );
-      final keysStatus = await SignalSetupService.instance.checkKeysStatus();
+      final keysStatusRaw = await SignalSetupService.instance.checkKeysStatus();
+      final keysStatus = Map<String, dynamic>.from(keysStatusRaw);
       final needsSetup = keysStatus['needsSetup'] as bool;
 
       if (needsSetup) {
@@ -247,8 +250,13 @@ class PostLoginInitService {
         // Unread messages
         Future(() async {
           try {
-            await unreadProvider.loadFromStorage();
-            debugPrint('[POST_LOGIN_INIT]   ✓ Unread messages loaded');
+            final activeServer = ServerConfigService.getActiveServer();
+            if (activeServer != null) {
+              await unreadProvider.loadFromStorage(activeServer.id);
+              debugPrint(
+                '[POST_LOGIN_INIT]   ✓ Unread messages loaded for server ${activeServer.id}',
+              );
+            }
           } catch (e) {
             debugPrint('[POST_LOGIN_INIT]   ⚠️ Unread messages error: $e');
           }
@@ -447,9 +455,7 @@ class PostLoginInitService {
 
       final socketService = SocketService();
       if (socketService.socket != null && socketService.isConnected) {
-        final socketFileClient = SocketFileClient(
-          socket: socketService.socket!,
-        );
+        final socketFileClient = SocketFileClient();
 
         _p2pCoordinator = P2PCoordinator(
           webrtcService: _webrtcService!,
@@ -478,9 +484,7 @@ class PostLoginInitService {
         try {
           final socketService = SocketService();
           if (socketService.socket != null) {
-            final socketFileClient = SocketFileClient(
-              socket: socketService.socket!,
-            );
+            final socketFileClient = SocketFileClient();
             final reannounceService = FileReannounceService(
               storage: _fileStorage!,
               socketClient: socketFileClient,

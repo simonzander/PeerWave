@@ -107,7 +107,7 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
         var newPreSignedKey = generateSignedPreKey(identityKeyPair, 0);
         await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
       }
-    });
+    }, registrationName: 'SignedPreKeyStore');
     // check if we have any signed prekeys, if not create one
     loadAllStoredSignedPreKeys().then((keys) async {
       if (keys.isEmpty) {
@@ -195,7 +195,9 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
         debugPrint(
           '[SIGNED_PREKEY_SETUP] Removing old server key: ${key.record.id}',
         );
-        SocketService().emit("removeSignedPreKey", {'id': key.record.id});
+        SocketService().emit("removeSignedPreKey", <String, dynamic>{
+          'id': key.record.id,
+        });
         serverDeleted++;
       }
 
@@ -279,7 +281,9 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
         debugPrint(
           "[SIGNED_PREKEY] Auto-cleanup: Removing old server key ${key.record.id} (keeping only $signedPreKeyId)",
         );
-        SocketService().emit("removeSignedPreKey", {'id': key.record.id});
+        SocketService().emit("removeSignedPreKey", <String, dynamic>{
+          'id': key.record.id,
+        });
       }
     }
 
@@ -289,13 +293,13 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
 
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
-    await storage.putEncrypted(
+    await storage.storeEncrypted(
       _storeName,
       _storeName,
       _signedPreKey(signedPreKeyId),
       base64Encode(serialized),
     );
-    await storage.putEncrypted(
+    await storage.storeEncrypted(
       _storeName,
       _storeName,
       _signedPreKeyMeta(signedPreKeyId),
@@ -318,7 +322,9 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
   @override
   Future<void> removeSignedPreKey(int signedPreKeyId) async {
     debugPrint("Removing signed pre key: $signedPreKeyId");
-    SocketService().emit("removeSignedPreKey", {'id': signedPreKeyId});
+    SocketService().emit("removeSignedPreKey", <String, dynamic>{
+      'id': signedPreKeyId,
+    });
 
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
@@ -476,7 +482,9 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
         debugPrint(
           '[SIGNED_PREKEY_ROTATION] Removing old server key: ${key.record.id}',
         );
-        SocketService().emit("removeSignedPreKey", {'id': key.record.id});
+        SocketService().emit("removeSignedPreKey", <String, dynamic>{
+          'id': key.record.id,
+        });
         serverDeleted++;
       }
 

@@ -63,9 +63,12 @@ async function generateRefreshToken(clientId, userUuid) {
  * @param {string} clientId - UUID generated client-side
  * @param {string} userUuid - User's UUID
  * @param {Object} req - Express request object (for IP, user-agent, etc.)
+ * @param {string} [deviceInfo] - Optional device info string (e.g., "PeerWave Client Windows 11 - DESKTOP-PC")
  * @returns {Promise<Object>} Client record with device_id and clientid
  */
-async function findOrCreateClient(clientId, userUuid, req) {
+async function findOrCreateClient(clientId, userUuid, req, deviceInfo) {
+    // Use provided deviceInfo or fall back to user-agent
+    const browserString = deviceInfo || req.headers['user-agent'] || 'Unknown Device';
     const userAgent = req.headers['user-agent'] || '';
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     const location = await getLocationFromIp(ip);
@@ -138,12 +141,12 @@ async function findOrCreateClient(clientId, userUuid, req) {
                     owner: userUuid,
                     device_id: maxDevice ? maxDevice + 1 : 1,
                     ip: ip,
-                    browser: userAgent,
+                    browser: browserString,
                     location: locationString
                 },
                 { where: { clientid: clientId } }
             ),
-            'transferClientOwnership'
+            'client-update'
         );
         
         // Reload to get updated values
@@ -174,7 +177,7 @@ async function findOrCreateClient(clientId, userUuid, req) {
             owner: userUuid,
             clientid: clientId,
             ip: ip,
-            browser: userAgent,
+            browser: browserString,
             location: locationString,
             device_id: maxDevice ? maxDevice + 1 : 1
         }
@@ -184,7 +187,7 @@ async function findOrCreateClient(clientId, userUuid, req) {
     if (!created) {
         await writeQueue.enqueue(
             () => Client.update(
-                { ip, browser: userAgent, location: locationString },
+                { ip, browser: browserString, location: locationString },
                 { where: { clientid: clientId } }
             ),
             'updateClientInfo'
@@ -280,11 +283,9 @@ const tokenExchangeLimiter = rateLimit({
     max: 5, // 5 requests per IP per window
     message: { error: 'Too many token exchange attempts, please try again later' },
     standardHeaders: true,
-    legacyHeaders: false,
-    // Use clientId as key for better tracking
-    keyGenerator: (req) => {
-        return req.body.clientId || req.ip;
-    }
+    legacyHeaders: false
+    // Note: Using default keyGenerator for proper IPv6 handling
+    // clientId tracking moved to application-level logic if needed
 });
 
 const tokenRevocationLimiter = rateLimit({
@@ -652,13 +653,8 @@ authRoutes.use(bodyParser.json({
     }
 }));
 
-// Configure session middleware
-authRoutes.use(session({
-    secret: config.session.secret, // Replace with a strong secret key
-    resave: config.session.resave,
-    saveUninitialized: config.session.saveUninitialized,
-    cookie: config.cookie // Set to true if using HTTPS
-}));
+// Session middleware is configured globally in server.js
+// No need to configure it again here
 
 // REMOVED: Pug register route (Pug disabled, Flutter web client used)
 authRoutes.post("/register", async (req, res) => {
@@ -1060,7 +1056,8 @@ authRoutes.post("/backupcode/mobile-verify", sessionLimiter, async(req, res) => 
         
         if (clientId) {
             // Use shared function to find or create client
-            const result = await findOrCreateClient(clientId, user.uuid, req);
+            const deviceInfo = req.body && req.body.deviceInfo;
+            const result = await findOrCreateClient(clientId, user.uuid, req, deviceInfo);
             req.session.deviceId = result.device_id;
             req.session.clientId = result.clientid;
             
@@ -1459,7 +1456,8 @@ authRoutes.post('/webauthn/register', async (req, res) => {
             
             if (clientId) {
                 // Use shared function to find or create client
-                const result = await findOrCreateClient(clientId, user.uuid, req);
+                const deviceInfo = req.body && req.body.deviceInfo;
+                const result = await findOrCreateClient(clientId, user.uuid, req, deviceInfo);
                 
                 // Generate session secret for native clients (HMAC authentication)
                 sessionSecret = crypto.randomBytes(32).toString('base64url');
@@ -1836,10 +1834,12 @@ authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
             // Handle client info and create HMAC session for mobile
             const clientId = req.body && req.body.clientId;
             let sessionSecret = null;
+            let refreshToken = null; // Declare at function scope to be accessible in session save callback
             
             if (clientId) {
                 // Use shared function to find or create client
-                const result = await findOrCreateClient(clientId, user.uuid, req);
+                const deviceInfo = req.body && req.body.deviceInfo;
+                const result = await findOrCreateClient(clientId, user.uuid, req, deviceInfo);
                 req.session.deviceId = result.device_id;
                 req.session.clientId = result.clientid;
                 
@@ -1883,9 +1883,8 @@ authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
                 // Generate refresh token for native clients
                 if (sessionSecret) {
                     try {
-                        const refreshToken = await generateRefreshToken(clientId, user.uuid);
-                        // Store for response (added below)
-                        response.refreshToken = refreshToken;
+                        refreshToken = await generateRefreshToken(clientId, user.uuid);
+                        logger.debug('[WEBAUTHN] Refresh token generated for native client');
                     } catch (refreshErr) {
                         logger.error('[WEBAUTHN] Error generating refresh token', refreshErr);
                         // Continue anyway - session still works without refresh token
@@ -1910,7 +1909,8 @@ authRoutes.post('/webauthn/authenticate', authLimiter, async (req, res) => {
                     response.sessionSecret = sessionSecret;
                     response.userId = user.uuid;
                     response.email = email;
-                    if (response.refreshToken) {
+                    if (refreshToken) {
+                        response.refreshToken = refreshToken;
                         logger.info('[WEBAUTHN] HMAC session credentials + refresh token included in response');
                     } else {
                         logger.info('[WEBAUTHN] HMAC session credentials included in response');
@@ -1972,19 +1972,19 @@ authRoutes.get("/magic/generate", sessionLimiter, verifyAuthEither, async (req, 
         const magicKey = `${serverUrl}|${randomHash}|${timestamp}|${signature}`;
         
         // Store in temporary store (one-time use)
-        magicLinks[randomHash] = { 
+        magicLinks.set(randomHash, { 
             email: user.email, 
             uuid: req.userId, 
             expires: expiresAt,
             used: false  // Flag for one-time use
-        };
+        });
         
         // Cleanup expired keys
-        Object.keys(magicLinks).forEach(key => {
-            if (magicLinks[key].expires < Date.now()) {
-                delete magicLinks[key];
+        for (const [key, value] of magicLinks.entries()) {
+            if (value.expires < Date.now()) {
+                magicLinks.delete(key);
             }
-        });
+        }
         
         res.json({ magicKey: magicKey, expiresAt: expiresAt });
     } catch (error) {
@@ -2020,10 +2020,10 @@ authRoutes.get("/webauthn/list", sessionLimiter, verifyAuthEither, async (req, r
 authRoutes.post("/client/addweb", async (req, res) => {
     if(req.session.authenticated && req.session.email && req.session.uuid) {
         try {
-            const { clientId } = req.body;
+            const { clientId, deviceInfo } = req.body;
             
             // Use shared function to find or create client
-            const result = await findOrCreateClient(clientId, req.session.uuid, req);
+            const result = await findOrCreateClient(clientId, req.session.uuid, req, deviceInfo);
             
             // Store in session for web clients
             req.session.deviceId = result.device_id;
@@ -2249,7 +2249,8 @@ authRoutes.post('/token/exchange', tokenExchangeLimiter, async (req, res) => {
         }
         
         // Use shared function to find or create Signal Client record (required for Signal protocol)
-        const result = await findOrCreateClient(clientId, user.uuid, req);
+        const deviceInfo = req.body && req.body.deviceInfo;
+        const result = await findOrCreateClient(clientId, user.uuid, req, deviceInfo);
         logger.info('[TOKEN EXCHANGE] Client record ensured');
         logger.debug('[TOKEN EXCHANGE] Client details', { 
             clientId: result.clientid, 
@@ -2344,10 +2345,10 @@ authRoutes.post('/token/revoke', tokenRevocationLimiter, async (req, res) => {
 // Refresh Token Endpoint
 // POST /auth/token/refresh
 // Refreshes expired HMAC session using refresh token
-// Rate limited to 10 requests per hour per client
+// Rate limited to 15 requests per hour per client
 const refreshTokenLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
-    max: 10, // 10 requests per hour
+    max: 15, // 15 requests per hour
     message: 'Too many refresh attempts, please try again later',
     standardHeaders: true,
     legacyHeaders: false,

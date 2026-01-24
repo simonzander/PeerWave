@@ -422,7 +422,11 @@ class TroubleshootService {
         }
       }
 
-      socketService.registerListener('pong', pongHandler);
+      socketService.registerListener(
+        'pong',
+        pongHandler,
+        registrationName: 'TroubleshootService',
+      );
 
       // Send ping
       socketService.emit('ping', {
@@ -439,7 +443,10 @@ class TroubleshootService {
       );
 
       // Clean up listener
-      socketService.unregisterListener('pong', pongHandler);
+      socketService.unregisterListener(
+        'pong',
+        registrationName: 'TroubleshootService',
+      );
 
       return result;
     } catch (e) {

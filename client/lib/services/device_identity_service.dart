@@ -335,6 +335,24 @@ class DeviceIdentityService {
     return _deviceId!;
   }
 
+  /// Get device ID for a specific server (multi-server support)
+  /// Returns the deviceId for the specified server if it exists
+  String? getDeviceIdForServer(String serverUrl) {
+    if (kIsWeb) {
+      // Web: single server, return current deviceId
+      return _deviceId;
+    }
+
+    // Native: lookup server-specific identity
+    final identity = _identities[serverUrl];
+    if (identity == null) {
+      debugPrint('[DEVICE_IDENTITY] No identity found for server: $serverUrl');
+      return null;
+    }
+
+    return identity['deviceId'];
+  }
+
   /// Get current email
   String get email {
     if (_email == null) {

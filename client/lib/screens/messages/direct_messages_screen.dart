@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:uuid/uuid.dart';
@@ -14,6 +15,8 @@ import '../../services/socket_service_native.dart'
     if (dart.library.html) '../../services/socket_service.dart';
 import '../../services/offline_message_queue.dart';
 import '../../services/storage/sqlite_message_store.dart';
+import '../../services/storage/sqlite_recent_conversations_store.dart';
+import '../../services/starred_conversations_service.dart';
 import '../../services/file_transfer/p2p_coordinator.dart';
 import '../../services/file_transfer/socket_file_client.dart';
 import '../../services/event_bus.dart';
@@ -256,6 +259,72 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Failed to unblock user: $e')));
+      }
+    }
+  }
+
+  /// Delete conversation
+  Future<void> _deleteConversation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Conversation'),
+        content: Text(
+          'Delete all messages with ${widget.recipientDisplayName}? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final messageStore = await SqliteMessageStore.getInstance();
+      await messageStore.deleteConversation(widget.recipientUuid);
+
+      // Delete from recent conversations
+      final conversationsStore =
+          await SqliteRecentConversationsStore.getInstance();
+      await conversationsStore.removeConversation(widget.recipientUuid);
+
+      // Remove from starred if it was starred
+      await StarredConversationsService.instance.unstarConversation(
+        widget.recipientUuid,
+      );
+
+      // Emit event to update UI
+      EventBus.instance.emit(AppEvent.conversationDeleted, <String, dynamic>{
+        'userId': widget.recipientUuid,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Conversation with ${widget.recipientDisplayName} has been deleted',
+            ),
+          ),
+        );
+
+        // Navigate to messages list
+        context.go('/app/messages');
+      }
+    } catch (e) {
+      debugPrint('[DM_SCREEN] Failed to delete conversation: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete conversation: $e')),
+        );
       }
     }
   }
@@ -507,6 +576,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         'type': item['type'],
         'metadata': item['metadata'],
         'reactions': item['reactions'] ?? '{}', // Include reactions
+        // 🔑 MULTI-DEVICE: Include originalRecipient for proper read receipt routing
+        if (item['originalRecipient'] != null)
+          'originalRecipient': item['originalRecipient'],
       };
 
       // ✅ OPTIMIZED: Schedule setState for next frame to avoid layout conflicts
@@ -523,7 +595,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             final senderDeviceId = item['senderDeviceId'] is int
                 ? item['senderDeviceId'] as int
                 : int.parse(item['senderDeviceId'].toString());
-            _sendReadReceipt(item['itemId'], item['sender'], senderDeviceId);
+            _sendReadReceipt(
+              item['itemId'],
+              item['sender'],
+              senderDeviceId,
+              originalRecipient: item['originalRecipient'],
+            );
           }
 
           // Auto-scroll to new message - wait for multiple frames
@@ -567,8 +644,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   Future<void> _sendReadReceipt(
     String itemId,
     String sender,
-    int senderDeviceId,
-  ) async {
+    int senderDeviceId, {
+    String? originalRecipient, // NEW: For multi-device support
+  }) async {
     try {
       // Check if we already sent a read receipt for this message
       final messageStore = await SqliteMessageStore.getInstance();
@@ -582,9 +660,29 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       }
 
       final myDeviceId = SignalService.instance.currentDeviceId;
+      final myUserId = SignalService.instance.currentUserId;
+
+      // 🔑 MULTI-DEVICE FIX: Determine the correct recipient for the read receipt
+      // If sender == myUserId, this is a multi-device sync message
+      // In that case, send read receipt to originalRecipient (the actual conversation partner)
+      // Otherwise, send to sender (normal received message)
+      String readReceiptRecipient;
+      if (sender == myUserId && originalRecipient != null) {
+        // Multi-device sync: Send read receipt to the original conversation partner
+        readReceiptRecipient = originalRecipient;
+        debugPrint(
+          '[DM_SCREEN] Multi-device message detected: sending read receipt to originalRecipient: $originalRecipient instead of sender: $sender',
+        );
+      } else {
+        // Normal message: Send read receipt to sender
+        readReceiptRecipient = sender;
+        debugPrint(
+          '[DM_SCREEN] Normal message: sending read receipt to sender: $sender',
+        );
+      }
 
       await SignalService.instance.sendItem(
-        recipientUserId: sender,
+        recipientUserId: readReceiptRecipient,
         type: "read_receipt",
         payload: jsonEncode({'itemId': itemId, 'readByDeviceId': myDeviceId}),
       );
@@ -592,7 +690,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       // Mark that we sent the read receipt
       await messageStore.markReadReceiptSent(itemId);
       debugPrint(
-        '[DM_SCREEN] ✓ Read receipt sent and marked for itemId: $itemId',
+        '[DM_SCREEN] ✓ Read receipt sent to $readReceiptRecipient and marked for itemId: $itemId',
       );
 
       // Mark this conversation as read in the unread provider
@@ -650,8 +748,14 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           final deviceId = senderDeviceId is int
               ? senderDeviceId
               : int.parse(senderDeviceId.toString());
+          final originalRecipient = msg['originalRecipient'] as String?;
 
-          await _sendReadReceipt(itemId, sender, deviceId);
+          await _sendReadReceipt(
+            itemId,
+            sender,
+            deviceId,
+            originalRecipient: originalRecipient,
+          );
           sentCount++;
         }
       }
@@ -1085,6 +1189,8 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                 _blockUser();
               } else if (value == 'unblock') {
                 _unblockUser();
+              } else if (value == 'delete') {
+                _deleteConversation();
               }
             },
             itemBuilder: (context) => [
@@ -1113,6 +1219,16 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                     ],
                   ),
                 ),
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_forever, color: Colors.red, size: 20),
+                    SizedBox(width: 12),
+                    Text('Delete Conversation'),
+                  ],
+                ),
+              ),
             ],
           ),
         ],
@@ -1445,7 +1561,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       if (socketService.socket == null) {
         throw Exception('Socket not connected');
       }
-      final socketClient = SocketFileClient(socket: socketService.socket!);
+      final socketClient = SocketFileClient();
 
       // 1. Fetch file info and seeder chunks from server
       debugPrint('[DIRECT_MSG] Fetching file info and seeders...');

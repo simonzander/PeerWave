@@ -17,7 +17,6 @@ import '../../services/signal_service.dart';
 import '../../services/socket_service_native.dart'
     if (dart.library.html) '../../services/socket_service.dart';
 import '../../services/api_service.dart';
-import '../../services/user_profile_service.dart';
 import '../../services/server_config_native.dart'
     if (dart.library.html) '../../services/server_config_web.dart';
 import '../../providers/role_provider.dart';
@@ -71,7 +70,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
       if (socketService.socket == null) {
         throw Exception('Socket not connected');
       }
-      _socketClient = SocketFileClient(socket: socketService.socket!);
+      _socketClient = SocketFileClient();
     }
     return _socketClient!;
   }
@@ -559,7 +558,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                 // Shared with section
                 if (sharedWith.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  _buildSharedWithSection(sharedWith),
+                  _buildSharedWithSection(sharedWith, file),
                 ],
               ],
             ),
@@ -765,16 +764,15 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     );
   }
 
-  Widget _buildSharedWithSection(List<String> sharedWith) {
+  Widget _buildSharedWithSection(
+    List<String> sharedWith,
+    Map<String, dynamic> file,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
-    final userProfileService = UserProfileService.instance;
 
-    // Load profiles if not cached
-    for (final userId in sharedWith) {
-      if (!userProfileService.isProfileCached(userId)) {
-        userProfileService.loadProfiles([userId]);
-      }
-    }
+    // Get shareInfo with locally saved user details (displayName, picture, server)
+    // No need to fetch from UserProfileService since we saved it when sharing
+    final shareInfo = (file['shareInfo'] as Map?)?.cast<String, dynamic>();
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -805,8 +803,20 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
             spacing: 8,
             runSpacing: 8,
             children: sharedWith.take(5).map((userId) {
-              final displayName = userProfileService.getDisplayName(userId);
-              final picture = userProfileService.getPicture(userId);
+              // Get user info from locally saved shareInfo (includes displayName, picture, server)
+              final userInfo = shareInfo?[userId] as Map?;
+              final displayName = userInfo?['displayName'] as String?;
+              final picture = userInfo?['picture'] as String?;
+              final server = userInfo?['server'] as String?;
+              String? serverDisplay;
+              if (server != null) {
+                // Extract domain from server URL
+                final serverClean = server
+                    .replaceAll(RegExp(r'^https?://'), '')
+                    .replaceAll(RegExp(r'/$'), '')
+                    .split(':')[0]; // Remove port
+                serverDisplay = serverClean;
+              }
 
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -836,14 +846,30 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                           : null,
                     ),
                     const SizedBox(width: 6),
-                    // Display name or UUID prefix
-                    Text(
-                      displayName ?? userId.substring(0, 8),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: colorScheme.onPrimaryContainer,
-                      ),
+                    // Display name or UUID prefix with server
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          displayName ?? userId.substring(0, 8),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                        if (serverDisplay != null)
+                          Text(
+                            serverDisplay,
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: colorScheme.onPrimaryContainer.withValues(
+                                alpha: 0.7,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),
@@ -1226,17 +1252,24 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   Future<void> _deleteFile(Map<String, dynamic> file) async {
     try {
       final storage = _getStorage();
-      final client = _getSocketClient();
-
       final fileId = file['fileId'] as String;
       final isSeeder = file['isSeeder'] as bool? ?? false;
 
-      // Unannounce if seeding
+      // Unannounce if seeding (only if socket is connected)
       if (isSeeder) {
-        await client.unannounceFile(fileId);
+        try {
+          final client = _getSocketClient();
+          await client.unannounceFile(fileId);
+          debugPrint('[FILE MANAGER] ✓ File unannounced from network');
+        } catch (e) {
+          debugPrint(
+            '[FILE MANAGER] ⚠️ Could not unannounce file (offline): $e',
+          );
+          // Continue with local deletion even if unannounce fails
+        }
       }
 
-      // Delete from local storage
+      // Delete from local storage (works offline)
       await storage.deleteFile(fileId);
 
       _showSuccess('File deleted successfully');
@@ -1413,7 +1446,7 @@ class _AddFileProgressDialogState extends State<_AddFileProgressDialog> {
       try {
         final socketService = SocketService();
         if (socketService.socket != null) {
-          final client = SocketFileClient(socket: socketService.socket!);
+          final client = SocketFileClient();
 
           // Get all chunk indices
           final allChunks = List<int>.generate(chunks.length, (i) => i);
@@ -1698,7 +1731,7 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
 
       final fileTransferService = FileTransferService(
         storage: storage,
-        socketFileClient: SocketFileClient(socket: socketService.socket!),
+        socketFileClient: SocketFileClient(),
         signalService: signalService,
       );
 

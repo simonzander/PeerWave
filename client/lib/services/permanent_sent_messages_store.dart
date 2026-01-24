@@ -52,7 +52,7 @@ class PermanentSentMessagesStore {
 
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
-    await storage.putEncrypted(_storeName, _storeName, key, data);
+    await storage.storeEncrypted(_storeName, _storeName, key, data);
   }
 
   /// Load all sent messages for a specific recipient
@@ -214,7 +214,7 @@ class PermanentSentMessagesStore {
             msg['status'] = status;
             if (deliveredAt != null) msg['deliveredAt'] = deliveredAt;
             if (readAt != null) msg['readAt'] = readAt;
-            await storage.putEncrypted(
+            await storage.storeEncrypted(
               _storeName,
               _storeName,
               key,

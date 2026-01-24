@@ -34,6 +34,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
   static const int _conversationsPerPage = 20;
   bool _hasMoreConversations = true;
   StreamSubscription? _notificationSubscription;
+  StreamSubscription? _serverSwitchSubscription;
 
   // Cache for user/channel info (store full objects for avatars, @names, etc.)
   final Map<String, Map<String, dynamic>> _userInfo = {};
@@ -56,12 +57,35 @@ class _ActivitiesViewState extends State<ActivitiesView>
           debugPrint('[ACTIVITIES_VIEW] New notification received');
           _loadNotifications();
         });
+
+    // Listen for server switches to reload activities
+    _serverSwitchSubscription = EventBus.instance
+        .on<Map<String, dynamic>>(AppEvent.serverSwitched)
+        .listen((data) {
+          debugPrint(
+            '[ACTIVITIES_VIEW] 🔄 Server switched, reloading activities',
+          );
+          // Clear current data and reload for new server
+          setState(() {
+            _conversations.clear();
+            _webrtcChannels = [];
+            _notifications = [];
+            _conversationsPage = 0;
+            _hasMoreConversations = true;
+            _userInfo.clear();
+            _channelInfo.clear();
+            _loadedProfiles.clear();
+          });
+          _loadActivities();
+          _loadNotifications();
+        });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     _notificationSubscription?.cancel();
+    _serverSwitchSubscription?.cancel();
     super.dispose();
   }
 
@@ -1172,7 +1196,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
 
           context.go(
             '/app/channels/$channelId',
-            extra: {'name': channelName, 'type': channelType},
+            extra: <String, dynamic>{'name': channelName, 'type': channelType},
           );
         } else if (sender != null) {
           final userInfoData = _userInfo[sender];
@@ -1180,7 +1204,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
 
           context.go(
             '/app/messages/$sender',
-            extra: {'displayName': displayName},
+            extra: <String, dynamic>{'displayName': displayName},
           );
         }
         break;
@@ -1196,7 +1220,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
 
           context.go(
             '/app/channels/$channelId',
-            extra: {'name': channelName, 'type': channelType},
+            extra: <String, dynamic>{'name': channelName, 'type': channelType},
           );
         }
         break;

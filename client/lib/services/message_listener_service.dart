@@ -1,9 +1,12 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'signal_service.dart';
 import 'video_conference_service.dart';
 import 'user_profile_service.dart';
+import 'server_config_web.dart'
+    if (dart.library.io) 'server_config_native.dart';
+import '../web_config.dart';
 import 'storage/sqlite_message_store.dart';
 
 /// Global service that listens for all incoming messages (1:1 and group)
@@ -46,28 +49,43 @@ class MessageListenerService {
     debugPrint('[MESSAGE_LISTENER] Initializing global message listeners...');
 
     // Listen for 1:1 messages
-    SocketService().registerListener('receiveItem', _handleDirectMessage);
+    SocketService().registerListener(
+      'receiveItem',
+      _handleDirectMessage,
+      registrationName: 'MessageListenerService',
+    );
 
     // Listen for group messages
-    SocketService().registerListener('groupItem', _handleGroupMessage);
+    SocketService().registerListener(
+      'groupItem',
+      _handleGroupMessage,
+      registrationName: 'MessageListenerService',
+    );
 
     // Listen for file share updates (P2P)
     SocketService().registerListener(
       'file_share_update',
       _handleFileShareUpdate,
+      registrationName: 'MessageListenerService',
     );
 
     // Listen for delivery receipts
-    SocketService().registerListener('deliveryReceipt', _handleDeliveryReceipt);
+    SocketService().registerListener(
+      'deliveryReceipt',
+      _handleDeliveryReceipt,
+      registrationName: 'MessageListenerService',
+    );
     SocketService().registerListener(
       'groupItemDelivered',
       _handleGroupDeliveryReceipt,
+      registrationName: 'MessageListenerService',
     );
 
     // Listen for read receipts
     SocketService().registerListener(
       'groupItemReadUpdate',
       _handleGroupReadReceipt,
+      registrationName: 'MessageListenerService',
     );
 
     _isInitialized = true;
@@ -78,24 +96,8 @@ class MessageListenerService {
   void dispose() {
     if (!_isInitialized) return;
 
-    SocketService().unregisterListener('receiveItem', _handleDirectMessage);
-    SocketService().unregisterListener('groupItem', _handleGroupMessage);
-    SocketService().unregisterListener(
-      'file_share_update',
-      _handleFileShareUpdate,
-    );
-    SocketService().unregisterListener(
-      'deliveryReceipt',
-      _handleDeliveryReceipt,
-    );
-    SocketService().unregisterListener(
-      'groupItemDelivered',
-      _handleGroupDeliveryReceipt,
-    );
-    SocketService().unregisterListener(
-      'groupItemReadUpdate',
-      _handleGroupReadReceipt,
-    );
+    // Unregister all listeners for MessageListenerService
+    SocketService().unregisterAllForName('MessageListenerService');
 
     _notificationCallbacks.clear();
     _isInitialized = false;
@@ -196,6 +198,15 @@ class MessageListenerService {
       final timestamp = data['timestamp'] as String?;
       final itemType = data['type'] as String? ?? 'message';
 
+      // Extract serverUrl from _serverId (multi-server support)
+      final serverId = data['_serverId'] as String?;
+      String? serverUrl;
+      if (serverId != null) {
+        // serverId format is the server URL (from socket_service_native.dart)
+        serverUrl = serverId;
+        debugPrint('[MESSAGE_LISTENER] Message from server: $serverUrl');
+      }
+
       if (itemId == null ||
           channelId == null ||
           senderId == null ||
@@ -222,6 +233,7 @@ class MessageListenerService {
             senderId: senderId,
             senderDeviceId: senderDeviceId,
             ciphertext: payload,
+            serverUrl: serverUrl,
           );
 
           await signalService.decryptedGroupItemsStore.storeDecryptedGroupItem(
@@ -248,12 +260,13 @@ class MessageListenerService {
       }
 
       try {
-        // Decrypt using auto-reload on error
+        // Decrypt using auto-reload on error (with server context)
         final decrypted = await signalService.decryptGroupItem(
           channelId: channelId,
           senderId: senderId,
           senderDeviceId: senderDeviceId,
           ciphertext: payload,
+          serverUrl: serverUrl,
         );
 
         // ========================================
@@ -527,8 +540,50 @@ class MessageListenerService {
               }.toList();
 
               if (mergedSharedWith.length != existingSharedWith.length) {
+                // Get current server URL
+                String? currentServer;
+                if (kIsWeb) {
+                  currentServer = await loadWebApiServer();
+                } else {
+                  currentServer =
+                      ServerConfigService.getActiveServer()?.serverUrl;
+                }
+
+                // Update shareInfo with sender's displayName
+                final currentShareInfo =
+                    (metadata['shareInfo'] as Map?)?.cast<String, dynamic>() ??
+                    {};
+                if (!currentShareInfo.containsKey(senderId)) {
+                  // Ensure sender profile is loaded
+                  if (!UserProfileService.instance.isProfileCached(senderId)) {
+                    try {
+                      await UserProfileService.instance.loadProfile(senderId);
+                    } catch (e) {
+                      debugPrint(
+                        '[FILE SHARE] Warning: Could not load sender profile: $e',
+                      );
+                    }
+                  }
+
+                  // Get displayName from UserProfileService (now loaded)
+                  final displayName =
+                      UserProfileService.instance.getDisplayName(senderId) ??
+                      senderId;
+                  final picture = UserProfileService.instance.getPicture(
+                    senderId,
+                  );
+
+                  currentShareInfo[senderId] = {
+                    'server': currentServer ?? 'unknown',
+                    'displayName': displayName,
+                    'picture': picture,
+                    'addedAt': DateTime.now().toIso8601String(),
+                  };
+                }
+
                 await fileTransferService.updateFileMetadata(fileId, {
                   'sharedWith': mergedSharedWith,
+                  'shareInfo': currentShareInfo,
                   'lastSync': DateTime.now().millisecondsSinceEpoch,
                 });
                 debugPrint(
@@ -548,6 +603,34 @@ class MessageListenerService {
 
               // Get file info from server to have all metadata ready
               try {
+                // Get current server URL
+                String? currentServer;
+                if (kIsWeb) {
+                  currentServer = await loadWebApiServer();
+                } else {
+                  currentServer =
+                      ServerConfigService.getActiveServer()?.serverUrl;
+                }
+
+                // Ensure sender profile is loaded
+                if (!UserProfileService.instance.isProfileCached(senderId)) {
+                  try {
+                    await UserProfileService.instance.loadProfile(senderId);
+                  } catch (e) {
+                    debugPrint(
+                      '[FILE SHARE] Warning: Could not load sender profile: $e',
+                    );
+                  }
+                }
+
+                // Get displayName from UserProfileService (now loaded)
+                final displayName =
+                    UserProfileService.instance.getDisplayName(senderId) ??
+                    senderId;
+                final picture = UserProfileService.instance.getPicture(
+                  senderId,
+                );
+
                 final fileInfo = await socketFileClient.getFileInfo(fileId);
                 await fileTransferService.saveFileMetadata({
                   'fileId': fileId,
@@ -564,6 +647,14 @@ class MessageListenerService {
                   'sharedWith': [
                     senderId,
                   ], // Start with sender only (will merge on announce)
+                  'shareInfo': {
+                    senderId: {
+                      'server': currentServer ?? 'unknown',
+                      'displayName': displayName,
+                      'picture': picture,
+                      'addedAt': DateTime.now().toIso8601String(),
+                    },
+                  },
                   'downloadedChunks': [],
                 });
                 debugPrint(

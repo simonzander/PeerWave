@@ -71,8 +71,8 @@ class PermanentSenderKeyStore extends SenderKeyStore {
       }
 
       // Store encrypted sender key and metadata
-      await storage.putEncrypted(_storeName, _storeName, key, serialized);
-      await storage.putEncrypted(
+      await storage.storeEncrypted(_storeName, _storeName, key, serialized);
+      await storage.storeEncrypted(
         _storeName,
         _storeName,
         metadataKey,
@@ -155,6 +155,27 @@ class PermanentSenderKeyStore extends SenderKeyStore {
       );
       return SenderKeyRecord();
     }
+  }
+
+  /// Load sender key for a specific server (multi-server support)
+  Future<SenderKeyRecord> loadSenderKeyForServer(
+    SenderKeyName senderKeyName,
+    String serverUrl,
+  ) async {
+    final key = _getStorageKey(senderKeyName);
+    final storage = DeviceScopedStorageService.instance;
+    final value = await storage.getDecrypted(
+      _storeName,
+      _storeName,
+      key,
+      serverUrl: serverUrl,
+    );
+
+    if (value != null) {
+      final bytes = base64Decode(value);
+      return SenderKeyRecord.fromSerialized(bytes);
+    }
+    return SenderKeyRecord();
   }
 
   /// Check if sender key exists
@@ -346,7 +367,7 @@ class PermanentSenderKeyStore extends SenderKeyStore {
       if (metadataValue != null) {
         final metadata = jsonDecode(metadataValue);
         metadata['messageCount'] = (metadata['messageCount'] ?? 0) + 1;
-        await storage.putEncrypted(
+        await storage.storeEncrypted(
           _storeName,
           _storeName,
           metadataKey,
@@ -439,7 +460,7 @@ class PermanentSenderKeyStore extends SenderKeyStore {
         final metadata = jsonDecode(metadataValue);
         metadata['lastRotation'] = DateTime.now().toIso8601String();
         metadata['messageCount'] = 0; // Reset counter
-        await storage.putEncrypted(
+        await storage.storeEncrypted(
           _storeName,
           _storeName,
           metadataKey,

@@ -15,6 +15,7 @@ app.set('trust proxy', 1);
 const sanitizeHtml = require('sanitize-html');
 const cors = require('cors');
 const session = require('express-session');
+const SequelizeStore = require('connect-session-sequelize')(session.Store);
 const sharedSession = require('socket.io-express-session');
 
 // Database initialization - MUST happen before loading model
@@ -290,14 +291,25 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
   }
 }
 
-// Configure session middleware
+// Configure session middleware with Sequelize store
+// This prevents the MemoryStore warning in production
+const sessionStore = new SequelizeStore({
+    db: require('./db/model').sequelize,
+    tableName: 'sessions',
+    checkExpirationInterval: 15 * 60 * 1000, // Clean up expired sessions every 15 minutes
+    expiration: 24 * 60 * 60 * 1000 // Session expires after 24 hours
+});
 
 const sessionMiddleware = session({
     secret: config.session.secret, // Replace with a strong secret key
+    store: sessionStore,
     resave: config.session.resave,
     saveUninitialized: config.session.saveUninitialized,
     cookie: config.cookie // Set to true if using HTTPS
 });
+
+// Create the sessions table if it doesn't exist
+sessionStore.sync();
 
 // Use session middleware in Express
 app.use(sessionMiddleware);

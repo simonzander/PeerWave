@@ -6,6 +6,7 @@ import '../../services/user_profile_service.dart';
 import '../../services/recent_conversations_service.dart';
 import '../../services/storage/sqlite_message_store.dart';
 import '../../widgets/user_avatar.dart';
+import '../../services/event_bus.dart';
 
 /// Modern People Screen with Grid Layout
 ///
@@ -51,6 +52,17 @@ class _PeopleScreenState extends State<PeopleScreen> {
     super.initState();
     _loadInitialData();
     _searchController.addListener(_onSearchChanged);
+    _setupEventListeners();
+  }
+
+  void _setupEventListeners() {
+    // Listen for server switches (multi-server support)
+    EventBus.instance.on(AppEvent.serverSwitched).listen((data) {
+      if (!mounted) return;
+
+      debugPrint('[PEOPLE_SCREEN] Server switched, reloading data');
+      _loadInitialData();
+    });
   }
 
   @override

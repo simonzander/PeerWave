@@ -75,10 +75,23 @@ class AuthService {
       // For native, check if we have an HMAC session
       final clientId = await ClientIdService.getClientId();
       debugPrint('[AuthService] Checking session for clientId: $clientId');
-      final hasSession = await SessionAuthService().hasSession(clientId);
+
+      // Get active server URL for multi-server support
+      final activeServer = ServerConfigService.getActiveServer();
+      if (activeServer == null) {
+        debugPrint('[AuthService] No active server configured');
+        isLoggedIn = false;
+        return false;
+      }
+
+      final serverUrl = activeServer.serverUrl;
+      final hasSession = await SessionAuthService().hasSession(
+        clientId: clientId,
+        serverUrl: serverUrl,
+      );
 
       if (hasSession) {
-        debugPrint('[AuthService] Native client has HMAC session');
+        debugPrint('[AuthService] Native client has HMAC session @ $serverUrl');
         isLoggedIn = true;
         return true;
       } else {
@@ -87,8 +100,7 @@ class AuthService {
           '[AuthService] No session in SecureStorage, checking ServerConfig backup...',
         );
 
-        final activeServer = ServerConfigService.getActiveServer();
-        if (activeServer != null && activeServer.credentials.isNotEmpty) {
+        if (activeServer.credentials.isNotEmpty) {
           // Restore session from ServerConfig credentials
           debugPrint(
             '[AuthService] Restoring session from ServerConfig backup',
@@ -96,13 +108,17 @@ class AuthService {
           await SessionAuthService().initializeSession(
             clientId,
             activeServer.credentials,
+            serverUrl: serverUrl,
           );
 
           // Verify restoration worked
-          final restored = await SessionAuthService().hasSession(clientId);
+          final restored = await SessionAuthService().hasSession(
+            clientId: clientId,
+            serverUrl: serverUrl,
+          );
           if (restored) {
             debugPrint(
-              '[AuthService] ✓ Session restored from ServerConfig backup',
+              '[AuthService] ✓ Session restored from ServerConfig backup @ $serverUrl',
             );
             isLoggedIn = true;
             return true;
@@ -111,7 +127,9 @@ class AuthService {
           }
         }
 
-        debugPrint('[AuthService] Native client has no HMAC session');
+        debugPrint(
+          '[AuthService] Native client has no HMAC session @ $serverUrl',
+        );
         isLoggedIn = false;
         return false;
       }

@@ -322,7 +322,7 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen>
         if (mounted) {
           context.go(
             '/register/invitation',
-            extra: {'email': email, 'serverUrl': _serverUrl},
+            extra: <String, dynamic>{'email': email, 'serverUrl': _serverUrl},
           );
         }
         return;
@@ -348,7 +348,11 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen>
 
         context.go(
           '/otp',
-          extra: {'email': email, 'serverUrl': _serverUrl!, 'wait': wait},
+          extra: <String, dynamic>{
+            'email': email,
+            'serverUrl': _serverUrl!,
+            'wait': wait,
+          },
         );
       }
     } catch (e) {
@@ -612,7 +616,7 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen>
                     onPressed: () {
                       context.go(
                         '/mobile-backupcode-login',
-                        extra: {'serverUrl': _serverUrl},
+                        extra: <String, dynamic>{'serverUrl': _serverUrl},
                       );
                     },
                     icon: const Icon(Icons.vpn_key),

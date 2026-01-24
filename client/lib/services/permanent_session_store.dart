@@ -137,7 +137,7 @@ class PermanentSessionStore extends SessionStore {
     final sessionKey = _sessionKey(address);
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
-    await storage.putEncrypted(
+    await storage.storeEncrypted(
       _storeName,
       _storeName,
       sessionKey,

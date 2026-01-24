@@ -4,6 +4,8 @@ import 'services/device_identity_service.dart';
 import 'services/session_auth_service.dart';
 import 'services/native_crypto_service.dart';
 import 'services/clientid_native.dart';
+import 'services/server_config_web.dart'
+    if (dart.library.io) 'services/server_config_native.dart';
 
 /// Debug utility to inspect secure storage contents
 class DebugStorage {
@@ -63,13 +65,27 @@ class DebugStorage {
       // Session Auth
       try {
         final clientId = await ClientIdService.getClientId();
-        final hasSession = await SessionAuthService().hasSession(clientId);
-        debugPrint(
-          '${hasSession ? '✅' : '❌'} HMAC Session exists: $hasSession',
-        );
-        if (hasSession) {
-          final secret = await SessionAuthService().getSessionSecret(clientId);
-          debugPrint('   Session secret length: ${secret?.length ?? 0} chars');
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer != null) {
+          final serverUrl = activeServer.serverUrl;
+          final hasSession = await SessionAuthService().hasSession(
+            clientId: clientId,
+            serverUrl: serverUrl,
+          );
+          debugPrint(
+            '${hasSession ? '✅' : '❌'} HMAC Session exists: $hasSession @ $serverUrl',
+          );
+          if (hasSession) {
+            final secret = await SessionAuthService().getSessionSecret(
+              clientId,
+              serverUrl: serverUrl,
+            );
+            debugPrint(
+              '   Session secret length: ${secret?.length ?? 0} chars',
+            );
+          }
+        } else {
+          debugPrint('❌ No active server configured');
         }
       } catch (e) {
         debugPrint('❌ Session Auth error: $e');

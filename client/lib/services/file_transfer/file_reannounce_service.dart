@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'storage_interface.dart';
 import 'socket_file_client.dart';
+import '../server_config_web.dart'
+    if (dart.library.io) '../server_config_native.dart';
+import '../../web_config.dart';
 
 /// Service for re-announcing files after login
 ///
@@ -71,9 +74,34 @@ class FileReannounceService {
 
       for (final fileMetadata in allFiles) {
         try {
+          final fileId = fileMetadata['fileId'] as String;
+          final fileName = fileMetadata['fileName'] as String?;
+          final status = fileMetadata['status'] as String? ?? '';
+
+          // ========================================
+          // SKIP LOCAL-ONLY FILES
+          // ========================================
+          // Only re-announce files that have been shared with others
+          // Files with status 'local' are not yet shared
+          if (status == 'local') {
+            debugPrint(
+              '[REANNOUNCE] Skipping $fileName ($fileId): Local only (not shared)',
+            );
+            continue;
+          }
+
+          // Check if file has been shared with anyone
+          final sharedWith =
+              (fileMetadata['sharedWith'] as List?)?.cast<String>() ?? [];
+          if (sharedWith.isEmpty) {
+            debugPrint(
+              '[REANNOUNCE] Skipping $fileName ($fileId): Not shared with anyone',
+            );
+            continue;
+          }
+
           // Re-announce all files where we have chunks (seeder, partial, or downloading)
           final isSeeder = fileMetadata['isSeeder'] as bool? ?? false;
-          final status = fileMetadata['status'] as String? ?? '';
 
           // Include partial downloads and active downloads as seeders
           final canSeed =
@@ -90,12 +118,10 @@ class FileReannounceService {
             continue;
           }
 
-          final fileId = fileMetadata['fileId'] as String;
-          final fileName = fileMetadata['fileName'] as String?;
           final chunkCount = fileMetadata['chunkCount'] as int? ?? 0;
 
           debugPrint(
-            '[REANNOUNCE] Re-announcing file: $fileName ($fileId) - status: $status',
+            '[REANNOUNCE] Re-announcing file: $fileName ($fileId) - status: $status, shared with ${sharedWith.length} users',
           );
 
           // Get available chunks
@@ -155,7 +181,67 @@ class FileReannounceService {
                 ?.cast<String>();
           }
 
-          // STEP 2: Announce to network with merged sharedWith
+          // STEP 1.5: Filter shares by current server
+          // Get current server URL
+          String? currentServer;
+          if (kIsWeb) {
+            currentServer = await loadWebApiServer();
+          } else {
+            currentServer = ServerConfigService.getActiveServer()?.serverUrl;
+          }
+          if (currentServer != null) {
+            // Normalize server URL (remove protocol, trailing slash)
+            currentServer = currentServer
+                .replaceAll(RegExp(r'^https?://'), '')
+                .replaceAll(RegExp(r'/$'), '');
+          }
+
+          // Filter shares: only announce users on this server
+          List<String>? filteredSharedWith;
+          if (mergedSharedWith != null && currentServer != null) {
+            // Get share info from metadata (with server details)
+            final shareInfo = (fileMetadata['shareInfo'] as Map?)
+                ?.cast<String, dynamic>();
+
+            if (shareInfo != null) {
+              // Filter to only users on current server
+              filteredSharedWith = mergedSharedWith.where((userId) {
+                final userInfo = shareInfo[userId] as Map?;
+                final userServer = userInfo?['server'] as String?;
+
+                // Include if: no server info (assume same) OR matches current server
+                if (userServer == null) return true;
+
+                // Normalize user's server for comparison
+                final normalizedUserServer = userServer
+                    .replaceAll(RegExp(r'^https?://'), '')
+                    .replaceAll(RegExp(r'/$'), '');
+
+                final matches = normalizedUserServer == currentServer;
+                if (!matches) {
+                  debugPrint(
+                    '[REANNOUNCE] Filtering out $userId (on $userServer, current: $currentServer)',
+                  );
+                }
+                return matches;
+              }).toList();
+
+              debugPrint(
+                '[REANNOUNCE] Filtered shares: ${filteredSharedWith.length}/${mergedSharedWith.length} users on $currentServer',
+              );
+            } else {
+              // No server info, announce all (backwards compatibility)
+              filteredSharedWith = mergedSharedWith;
+              debugPrint(
+                '[REANNOUNCE] No server info in metadata, announcing all ${mergedSharedWith.length} shares',
+              );
+            }
+          } else {
+            // No filtering possible
+            filteredSharedWith = mergedSharedWith;
+          }
+
+          // STEP 2: Announce to network with filtered sharedWith (only users on this server)
           final result = await socketClient.announceFile(
             fileId: fileId,
             mimeType:
@@ -165,7 +251,7 @@ class FileReannounceService {
             checksum: fileMetadata['checksum'] as String? ?? '',
             chunkCount: fileMetadata['chunkCount'] as int? ?? 0,
             availableChunks: availableChunks,
-            sharedWith: mergedSharedWith,
+            sharedWith: filteredSharedWith,
           );
 
           // STEP 3: Update local storage with server's final merged list

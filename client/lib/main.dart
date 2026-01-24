@@ -7,48 +7,18 @@ import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:path/path.dart' as path;
-import 'utils/html_stub.dart' if (dart.library.html) 'dart:html' as html;
-import 'auth/auth_layout_web.dart'
-    if (dart.library.io) 'auth/auth_layout_native.dart';
-import 'auth/magic_link_web.dart'
-    if (dart.library.io) 'auth/magic_link_native.dart';
-import 'auth/otp_web.dart';
-import 'auth/invitation_entry_page.dart';
-import 'auth/register_webauthn_page.dart'
-    if (dart.library.io) 'auth/register_webauthn_page_native.dart';
-import 'auth/register_profile_page.dart';
 import 'auth/magic_link_native.dart' show MagicLinkWebPageWithServer;
-import 'screens/signal_setup_screen.dart';
+
 import 'services/signal_setup_service.dart';
 import 'services/device_identity_service.dart';
 import 'services/logout_service.dart';
 import 'services/preferences_service.dart';
 import 'app/app_layout.dart';
-import 'app/dashboard_page.dart';
-import 'app/settings_sidebar.dart';
-import 'app/profile_page.dart';
-import 'app/settings/general_settings_page.dart';
-import 'app/settings/server_settings_page.dart';
-import 'app/settings/sessions_page.dart';
-import 'app/settings/notification_settings_page.dart';
-import 'app/settings/voice_video_settings_page.dart';
-import 'app/settings/system_tray_settings_page.dart';
-import 'app/webauthn_page_wrapper.dart';
-// Troubleshoot feature
-import 'features/troubleshoot/pages/troubleshoot_page.dart';
-import 'features/troubleshoot/state/troubleshoot_provider.dart';
-import 'services/troubleshoot/troubleshoot_service.dart';
-import 'services/signal_service.dart';
-import 'app/backupcode_web.dart'
-    if (dart.library.io) 'app/backupcode_web_native.dart';
-import 'app/backupcode_settings_page.dart'
-    if (dart.library.io) 'app/backupcode_settings_page_native.dart';
 // Use conditional import for 'services/auth_service.dart'
 import 'services/auth_service_web.dart'
     if (dart.library.io) 'services/auth_service_native.dart';
 import 'services/api_service.dart';
-import 'auth/backup_recover_web.dart'
-    if (dart.library.io) 'auth/backup_recover_web_native.dart';
+
 import 'services/socket_service_web_export.dart'
     if (dart.library.io) 'services/socket_service_native_export.dart';
 import 'services/server_connection_service.dart';
@@ -58,10 +28,6 @@ import 'providers/role_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/navigation_state_provider.dart';
 import 'services/role_api_service.dart';
-import 'screens/admin/role_management_screen.dart';
-import 'screens/admin/user_management_screen.dart';
-import 'screens/settings/blocked_users_page.dart';
-import 'screens/settings/abuse_center_page.dart';
 import 'web_config.dart';
 // Theme imports
 import 'theme/theme_provider.dart';
@@ -82,35 +48,9 @@ import 'widgets/call_top_bar.dart';
 import 'widgets/call_overlay.dart';
 import 'widgets/incoming_call_listener.dart';
 import 'widgets/custom_window_title_bar.dart';
-import 'screens/file_transfer/file_upload_screen.dart';
-import 'screens/file_transfer/file_manager_screen.dart';
-import 'screens/file_transfer/file_browser_screen.dart';
-import 'screens/file_transfer/downloads_screen.dart';
-import 'screens/file_transfer/file_transfer_hub.dart';
-import 'widgets/socket_aware_widget.dart';
 // Post-login service orchestration
 import 'services/post_login_init_service.dart';
-// View Pages (Dashboard Refactoring)
-import 'app/views/activities_view_page.dart';
-import 'app/views/messages_view_page.dart';
-import 'app/views/channels_view_page.dart';
-import 'app/views/people_view_page.dart';
-import 'app/views/files_view_page.dart';
-// Meetings and Calls
-import 'screens/meetings_screen.dart';
-import 'views/external_prejoin_view.dart';
-// external_key_setup_view removed - unified into external_prejoin_view
-import 'views/meeting_prejoin_view.dart';
-import 'views/meeting_video_conference_view.dart';
-import 'views/guest_meeting_video_view.dart';
-import 'services/meeting_authorization_service.dart';
-import 'screens/meeting_rsvp_confirmation_screen.dart';
 // Native server selection
-import 'screens/server_selection_screen.dart';
-import 'screens/mobile_webauthn_login_screen.dart';
-import 'screens/mobile_backupcode_login_screen.dart';
-import 'screens/mobile_server_selection_screen.dart';
-import 'services/custom_tab_auth_service.dart';
 import 'services/server_config_web.dart'
     if (dart.library.io) 'services/server_config_native.dart';
 import 'services/clientid_native.dart'
@@ -118,6 +58,14 @@ import 'services/clientid_native.dart'
 import 'services/session_auth_service.dart';
 import 'debug_storage.dart';
 import 'utils/window_stub.dart';
+import 'core/routes/web/auth_routes_web.dart'
+    if (dart.library.io) 'core/routes/native/auth_routes_native.dart';
+import 'core/routes/settings_routes.dart';
+import 'core/routes/file_routes.dart';
+import 'core/routes/meeting_routes.dart';
+import 'core/routes/app_routes.dart';
+import 'core/routes/native/server_config_routes.dart'
+    if (dart.library.js) 'core/routes/web/server_config_routes_stub.dart';
 import 'core/storage/app_directories.dart';
 import 'services/system_tray_service_web.dart'
     if (dart.library.io) 'services/system_tray_service.dart';
@@ -130,13 +78,15 @@ import 'services/filesystem_checker_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await ApiService.init();
   String? initialMagicKey;
 
   // NOTE: Client ID generation moved to POST-LOGIN flow
   // Client ID is now fetched from server after WebAuthn authentication
   // based on the user's email (1:1 mapping email -> clientId)
 
+  // ========================================
+  // PHASE 1: Core Infrastructure Setup
+  // ========================================
   // Initialize app directories for native (structured storage)
   if (!kIsWeb) {
     // CRITICAL: Fix Windows autostart working directory issue
@@ -158,82 +108,175 @@ Future<void> main() async {
     await AppDirectories.initialize();
     debugPrint('[INIT] ✅ AppDirectories initialized');
 
-    // Detect autostart scenario (presence of session without explicit login action)
-    // This helps identify cases where window appears before initialization completes
-    final bool isAutostart = await _detectAutostart();
-    final bool isDesktop =
-        !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
-
-    if (isAutostart && isDesktop) {
-      debugPrint(
-        '[INIT] 🚀 DESKTOP AUTOSTART DETECTED - Using enhanced initialization',
-      );
-      debugPrint('[INIT] Platform: ${Platform.operatingSystem}');
-
-      // Phase 1: Wait for network interface (up to 3 minutes)
-      debugPrint('[INIT] Phase 1: Checking network availability...');
-      final networkAvailable = await NetworkCheckerService.waitForNetwork();
-      if (!networkAvailable) {
-        debugPrint('[INIT] ⚠️ Network timeout reached - proceeding anyway');
-      } else {
-        debugPrint('[INIT] ✅ Network available');
-      }
-
-      // Phase 2: Wait for file system access (up to 1 minute)
-      debugPrint('[INIT] Phase 2: Checking file system access...');
-      final appDir = AppDirectories.appDataDirectory.path;
-      final fsAvailable =
-          await FileSystemCheckerService.waitForFileSystemAccess(
-            testPath: appDir,
-            timeout: const Duration(minutes: 1),
-          );
-      if (!fsAvailable) {
-        debugPrint(
-          '[INIT] ⚠️ File system timeout reached - attempting to proceed',
-        );
-      } else {
-        debugPrint('[INIT] ✅ File system accessible');
-      }
-
-      // Phase 3: Enhanced database initialization will use autostart-aware retry logic
-      debugPrint(
-        '[INIT] Phase 3: Initializing database with enhanced retry...',
-      );
-
-      // Phase 4: Proactive session refresh if close to expiry
-      debugPrint('[INIT] Phase 4: Checking session expiry...');
-      try {
-        await SessionAuthService().checkAndRefreshSession();
-        debugPrint('[INIT] ✅ Session check completed');
-      } catch (e) {
-        debugPrint('[INIT] ⚠️ Session refresh check failed: $e');
-      }
-    } else if (isAutostart) {
-      debugPrint(
-        '[INIT] 🚀 AUTOSTART DETECTED (mobile) - Using standard initialization',
-      );
-
-      // Also check session on mobile autostart
-      try {
-        await SessionAuthService().checkAndRefreshSession();
-      } catch (e) {
-        debugPrint('[INIT] ⚠️ Session refresh check failed: $e');
-      }
-    }
-  } else {
-    // Web platform - check session if available
+    // Initialize Database early (ensure connection pool ready)
     try {
-      await SessionAuthService().checkAndRefreshSession();
+      debugPrint('[INIT] Initializing database...');
+      await DatabaseHelper.database;
+      debugPrint('[INIT] ✅ Database initialized and ready');
     } catch (e) {
-      // Ignore errors on web (may not have sessions)
+      debugPrint('[INIT] ⚠️ Database initialization failed: $e');
+      // Don't block app startup - database will retry on first use
     }
-  }
 
-  // Initialize server config service for native (multi-server support)
-  if (!kIsWeb) {
+    // Initialize SecureStorage early (ensure keychain/credential store accessible)
+    try {
+      debugPrint('[INIT] Validating secure storage access...');
+      // Test read to ensure keychain is accessible (may need user unlock on some platforms)
+      await ClientIdService.getClientId();
+      debugPrint('[INIT] ✅ Secure storage accessible');
+    } catch (e) {
+      debugPrint('[INIT] ⚠️ Secure storage access validation failed: $e');
+      // Don't block - will retry on first actual use
+    }
+
+    // Initialize server config early (needed for session checks)
     await ServerConfigService.init();
     debugPrint('[INIT] ✅ ServerConfigService initialized');
 
+    // ========================================
+    // PHASE 2: Server Availability Check
+    // ========================================
+    // Check if servers are configured - if not, skip heavy initialization
+    // User will be routed to server-selection screen
+    final bool hasServers = ServerConfigService.hasServers();
+
+    if (!hasServers) {
+      debugPrint(
+        '[INIT] ⚠️ No servers configured - skipping session checks and autostart logic',
+      );
+      debugPrint('[INIT] User will be prompted to add a server');
+      // Skip to Phase 3 for minimal setup (deep links, API config, theme)
+    } else {
+      // ========================================
+      // PHASE 2A: Autostart Detection & Enhanced Initialization
+      // ========================================
+      // Detect autostart scenario (presence of session without explicit login action)
+      // This helps identify cases where window appears before initialization completes
+      final bool isAutostart = await _detectAutostart();
+      final bool isDesktop =
+          !kIsWeb &&
+          (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+
+      if (isAutostart && isDesktop) {
+        debugPrint(
+          '[INIT] 🚀 DESKTOP AUTOSTART DETECTED - Using enhanced initialization',
+        );
+        debugPrint('[INIT] Platform: ${Platform.operatingSystem}');
+
+        // Phase 1: Wait for network interface (up to 3 minutes)
+        debugPrint('[INIT] Phase 1: Checking network availability...');
+        final networkAvailable = await NetworkCheckerService.waitForNetwork();
+        if (!networkAvailable) {
+          debugPrint('[INIT] ⚠️ Network timeout reached - proceeding anyway');
+        } else {
+          debugPrint('[INIT] ✅ Network available');
+        }
+
+        // Phase 2: Wait for file system access (up to 1 minute)
+        debugPrint('[INIT] Phase 2: Checking file system access...');
+        final appDir = AppDirectories.appDataDirectory.path;
+        final fsAvailable =
+            await FileSystemCheckerService.waitForFileSystemAccess(
+              testPath: appDir,
+              timeout: const Duration(minutes: 1),
+            );
+        if (!fsAvailable) {
+          debugPrint(
+            '[INIT] ⚠️ File system timeout reached - attempting to proceed',
+          );
+        } else {
+          debugPrint('[INIT] ✅ File system accessible');
+        }
+
+        // Phase 3: Enhanced database initialization will use autostart-aware retry logic
+        debugPrint(
+          '[INIT] Phase 3: Initializing database with enhanced retry...',
+        );
+
+        // Phase 4: Proactive session refresh if close to expiry (for active server)
+        debugPrint('[INIT] Phase 4: Checking session expiry...');
+        try {
+          final activeServer = ServerConfigService.getActiveServer();
+          if (activeServer != null) {
+            final clientId = await ClientIdService.getClientId();
+            await SessionAuthService().checkAndRefreshSession(
+              serverUrl: activeServer.serverUrl,
+              clientId: clientId,
+            );
+            debugPrint(
+              '[INIT] ✅ Session check completed for ${activeServer.serverUrl}',
+            );
+          }
+        } catch (e) {
+          debugPrint('[INIT] ⚠️ Session refresh check failed: $e');
+        }
+      } else if (isAutostart) {
+        debugPrint(
+          '[INIT] 🚀 AUTOSTART DETECTED (mobile) - Using standard initialization',
+        );
+
+        // Also check session on mobile autostart
+        try {
+          final activeServer = ServerConfigService.getActiveServer();
+          if (activeServer != null) {
+            final clientId = await ClientIdService.getClientId();
+            await SessionAuthService().checkAndRefreshSession(
+              serverUrl: activeServer.serverUrl,
+              clientId: clientId,
+            );
+          }
+        } catch (e) {
+          debugPrint('[INIT] ⚠️ Session refresh check failed: $e');
+        }
+      }
+    } // End hasServers check
+  } else {
+    // ========================================
+    // PHASE 2 (Web): Session Check
+    // ========================================
+    // Web platform - check if session exists before attempting refresh
+    // Use hostname as server identifier (e.g., "app.peerwave.com" or "localhost:3000")
+    final serverIdentifier = Uri.base.host.isNotEmpty
+        ? Uri.base.host
+        : 'localhost';
+
+    try {
+      final clientId = await ClientIdService.getClientId();
+      final sessionAuth = SessionAuthService();
+
+      // Check if session exists before attempting refresh
+      final hasSession = await sessionAuth.hasSession(
+        clientId: clientId,
+        serverUrl: serverIdentifier,
+      );
+
+      if (hasSession) {
+        debugPrint(
+          '[INIT] Session found for $serverIdentifier - checking expiry...',
+        );
+        await sessionAuth.checkAndRefreshSession(
+          serverUrl: serverIdentifier,
+          clientId: clientId,
+        );
+        debugPrint(
+          '[INIT] ✅ Web session check completed for $serverIdentifier',
+        );
+      } else {
+        debugPrint(
+          '[INIT] ℹ️ No session found for $serverIdentifier - skipping refresh',
+        );
+      }
+    } catch (e) {
+      debugPrint('[INIT] ⚠️ Web session check failed: $e');
+      // Ignore errors on web (will prompt for login)
+    }
+  }
+
+  // ========================================
+  // PHASE 3: Server Configuration & API Setup
+  // ========================================
+  // Server configuration for native (multi-server support)
+  if (!kIsWeb) {
     // DEBUG: Inspect secure storage contents
     try {
       await DebugStorage.printAllStoredKeys();
@@ -274,27 +317,33 @@ Future<void> main() async {
       '[INIT] ✅ Web platform: Using relative paths (resolve to ${Uri.base.origin})',
     );
   } else {
-    // Native platforms: Load server URL from ServerConfigService if available
-    if (serverUrl == null || serverUrl.isEmpty) {
-      // ServerConfig is initialized later, so we need to load it early here
-      await ServerConfigService.init();
-      final activeServer = ServerConfigService.getActiveServer();
-      if (activeServer != null) {
-        serverUrl = activeServer.serverUrl;
-        debugPrint('[INIT] ✅ Loaded active server: $serverUrl');
-        ApiService.setBaseUrl(serverUrl);
-      } else {
-        serverUrl =
-            'http://localhost:3000'; // Fallback only if no servers configured
-        debugPrint('[INIT] ⚠️ No active server, using fallback: $serverUrl');
-      }
+    // Native platforms: Use already-initialized ServerConfigService
+    // (ServerConfigService.init() was called in Phase 1)
+    final activeServer = ServerConfigService.getActiveServer();
+    if (activeServer != null) {
+      serverUrl = activeServer.serverUrl;
+      debugPrint('[INIT] ✅ Using active server: $serverUrl');
+      ApiService.setBaseUrl(serverUrl);
+    } else {
+      // No servers configured - use fallback (user will be prompted to add server)
+      serverUrl = 'http://localhost:3000';
+      debugPrint('[INIT] ⚠️ No active server, using fallback: $serverUrl');
     }
     debugPrint('[INIT] ✅ API base URL set to: $serverUrl (non-web platform)');
   }
 
+  // ========================================
+  // PHASE 4: Initialize API Service (now that we have server URL)
+  // ========================================
+  await ApiService.init();
+  debugPrint('[INIT] ✅ ApiService initialized');
+
   // NOTE: ICE server configuration is loaded AFTER login (requires authentication)
   // See auth_layout_web.dart -> successful login callback
 
+  // ========================================
+  // PHASE 5: Theme Provider
+  // ========================================
   // Initialize Theme Provider
   debugPrint('[INIT] Initializing Theme Provider...');
   final themeProvider = ThemeProvider();
@@ -478,24 +527,32 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     try {
       final socketService = SocketService();
 
-      // Check if already connected
-      if (socketService.isConnected) {
-        debugPrint('[LIFECYCLE] Socket already connected - no action needed');
-        return;
-      }
+      // With multi-server support, reconnect ALL servers on app resume
+      debugPrint('[LIFECYCLE] Reconnecting all servers...');
 
       // Add a short delay to allow network to stabilize after app resume
       // This helps prevent DNS resolution failures on mobile
-      debugPrint('[LIFECYCLE] Waiting for network to stabilize...');
       await Future.delayed(Duration(milliseconds: 500));
 
-      debugPrint('[LIFECYCLE] Reconnecting socket...');
-      await socketService.connect();
-      debugPrint('[LIFECYCLE] ✅ Socket reconnected successfully');
+      await socketService.connectAllServers();
+
+      // Verify active server is connected
+      final activeSocket = socketService.socket;
+      final isActiveConnected = activeSocket?.connected ?? false;
+
+      if (isActiveConnected) {
+        debugPrint(
+          '[LIFECYCLE] ✅ All servers reconnected, active server connected',
+        );
+      } else {
+        debugPrint(
+          '[LIFECYCLE] ⚠️ Reconnection complete but active server not connected',
+        );
+      }
     } catch (e) {
-      debugPrint('[LIFECYCLE] ❌ Failed to reconnect socket: $e');
+      debugPrint('[LIFECYCLE] ❌ Failed to reconnect servers: $e');
       // Don't throw - allow app to continue functioning
-      // Socket will retry connection according to its configuration
+      // Sockets will retry connection according to their configuration
     }
   }
 
@@ -719,1197 +776,51 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     debugPrint('[MAIN] 🏗️ Creating GoRouter...');
 
     // Common routes shared across all platforms (registration flow, mobile auth)
-    final List<GoRoute> commonRoutes = [
-      // Mobile server selection route (Android/iOS only)
-      GoRoute(
-        path: '/mobile-server-selection',
-        pageBuilder: (context, state) {
-          return const MaterialPage(child: MobileServerSelectionScreen());
-        },
-      ),
-      // Chrome Custom Tab callback route (handles deep link after auth)
-      // Note: Manually triggers CustomTabAuthService completion since GoRouter
-      // intercepts the deep link before app_links can deliver it to the service.
-      GoRoute(
-        path: '/callback',
-        builder: (context, state) {
-          final token = state.uri.queryParameters['token'];
-          final cancelled = state.uri.queryParameters['cancelled'] == 'true';
-
-          debugPrint(
-            '[ROUTER] /callback route - token: ${token != null}, cancelled: $cancelled',
-          );
-
-          // Complete token exchange and navigate after a delay
-          if (token != null && token.isNotEmpty) {
-            // Check if authenticate() is waiting for the token BEFORE completing it
-            // This check must happen before completeWithToken() which clears the completer
-            final isAuthenticateWaiting =
-                CustomTabAuthService.instance.hasAuthCompleter;
-
-            // Complete the auth completer (unblocks authenticate() call in background)
-            CustomTabAuthService.instance.completeWithToken(token);
-
-            if (isAuthenticateWaiting) {
-              // authenticate() is waiting - it will call finishLogin() and navigate
-              debugPrint(
-                '[ROUTER] ✓ Token sent to authenticate() - it will handle finishLogin',
-              );
-
-              // Show loading spinner while authenticate() completes
-              // The screen will navigate away once authenticate() finishes
-              // No need to do anything else here
-            } else {
-              // No authenticate() waiting - handle token exchange ourselves
-              debugPrint(
-                '[ROUTER] No authenticate() waiting - handling token exchange',
-              );
-
-              () async {
-                // Get server URL from active server config
-                final activeServer = ServerConfigService.getActiveServer();
-                if (activeServer == null) {
-                  debugPrint('[ROUTER] ✗ No active server configured');
-                  if (context.mounted) {
-                    context.go('/mobile-webauthn');
-                  }
-                  return;
-                }
-
-                try {
-                  // Call finishLogin which will handle the token exchange
-                  // It creates its own completer internally
-                  await CustomTabAuthService.instance.finishLogin(
-                    token: token,
-                    serverUrl: activeServer.serverUrl,
-                  );
-
-                  // If we reach here, login was successful
-                  debugPrint(
-                    '[ROUTER] ✓ Token exchange successful, navigating to /app/activities',
-                  );
-                  if (context.mounted) {
-                    context.go('/app/activities');
-                  }
-                } catch (e) {
-                  debugPrint('[ROUTER] ✗ Token exchange failed: $e');
-                  if (context.mounted) {
-                    context.go('/mobile-webauthn');
-                  }
-                }
-              }();
-            }
-          } else {
-            // Cancelled or no token - go back to login immediately
-            CustomTabAuthService.instance.completeWithToken(null);
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) {
-                context.go('/mobile-webauthn');
-              }
-            });
-          }
-
-          // Show spinner with polling and abort button
-          return _AuthCallbackLoadingScreen(
-            hasToken: token != null && token.isNotEmpty,
-          );
-        },
-      ),
-      // Mobile WebAuthn login route (Android/iOS only)
-      GoRoute(
-        path: '/mobile-webauthn',
-        pageBuilder: (context, state) {
-          final serverUrl = state.extra as String?;
-          return MaterialPage(
-            child: MobileWebAuthnLoginScreen(serverUrl: serverUrl),
-          );
-        },
-      ),
-      // Mobile Backup Code login route (Android/iOS only)
-      GoRoute(
-        path: '/mobile-backupcode-login',
-        pageBuilder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>?;
-          final serverUrl = extra?['serverUrl'] as String?;
-          return MaterialPage(
-            child: MobileBackupcodeLoginScreen(serverUrl: serverUrl),
-          );
-        },
-      ),
-      // OTP verification (used by both web and mobile registration)
-      GoRoute(
-        path: '/otp',
-        builder: (context, state) {
-          final extra = state.extra;
-          String email = '';
-          String serverUrl = '';
-          int wait = 0;
-          if (extra is Map<String, dynamic>) {
-            email = extra['email'] ?? '';
-            serverUrl = extra['serverUrl'] ?? '';
-            wait = extra['wait'] ?? 0;
-          }
-          if (email.isEmpty || serverUrl.isEmpty) {
-            return Scaffold(
-              body: Center(child: Text('Missing email or serverUrl')),
-            );
-          }
-          return OtpWebPage(
-            email: email,
-            serverUrl: serverUrl,
-            clientId: _clientId,
-            wait: wait,
-          );
-        },
-      ),
-      // Registration routes (shared by web and mobile)
-      GoRoute(
-        path: '/register/invitation',
-        builder: (context, state) {
-          final extra = state.extra as Map?;
-          final email = extra?['email'] as String? ?? '';
-          final serverUrl = extra?['serverUrl'] as String?;
-          if (email.isEmpty) {
-            return Scaffold(
-              body: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text('Email required'),
-                    TextButton(
-                      onPressed: () => context.go('/login'),
-                      child: const Text('Back to Login'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-          return InvitationEntryPage(email: email, serverUrl: serverUrl);
-        },
-      ),
-      GoRoute(
-        path: '/register/backupcode',
-        builder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>?;
-          final serverUrl = extra?['serverUrl'] as String?;
-          final email = extra?['email'] as String?;
-          return BackupCodeListPage(serverUrl: serverUrl, email: email);
-        },
-      ),
-      GoRoute(
-        path: '/register/webauthn',
-        builder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>?;
-          final serverUrl = extra?['serverUrl'] as String?;
-          final email = extra?['email'] as String?;
-          return RegisterWebauthnPage(serverUrl: serverUrl, email: email);
-        },
-      ),
-      GoRoute(
-        path: '/register/profile',
-        builder: (context, state) => const RegisterProfilePage(),
-      ),
-    ];
+    final List<GoRoute> commonRoutes = getAuthRoutes(clientId: _clientId ?? '');
 
     // Use ShellRoute for native, flat routes for web
     final List<RouteBase> routes = kIsWeb
         ? [
             ...commonRoutes, // Add common registration & mobile routes
+            ...getAuthRoutesWeb(
+              clientId: _clientId ?? '',
+            ), // Add web-specific auth routes
             GoRoute(path: '/', redirect: (context, state) => '/app'),
-            GoRoute(
-              path: '/magic-link',
-              builder: (context, state) {
-                final extra = state.extra;
-                debugPrint(
-                  'Navigated to /magic-link with extra: $extra, kIsWeb: $kIsWeb, clientId: $_clientId, extra is String: ${extra is String}',
-                );
-                return const MagicLinkWebPage();
-              },
-            ),
-            GoRoute(
-              path: '/backupcode/recover',
-              pageBuilder: (context, state) {
-                return MaterialPage(child: const BackupCodeRecoveryPage());
-              },
-            ),
-            GoRoute(
-              path: '/login',
-              pageBuilder: (context, state) {
-                final qp = state.uri.queryParameters;
-                final fromApp =
-                    (qp['from'] ?? '').trim().toLowerCase() == 'app';
-                final email = qp['email']?.trim();
-                return MaterialPage(
-                  child: AuthLayout(
-                    clientId: _clientId,
-                    fromApp: fromApp,
-                    initialEmail: email,
-                  ),
-                );
-              },
-            ),
-            GoRoute(
-              path: '/server-selection',
-              pageBuilder: (context, state) {
-                final extra = state.extra as Map<String, dynamic>?;
-                final isAddingServer =
-                    extra?['isAddingServer'] as bool? ?? false;
-                return MaterialPage(
-                  child: ServerSelectionScreen(isAddingServer: isAddingServer),
-                );
-              },
-            ),
-            GoRoute(
-              path: '/signal-setup',
-              builder: (context, state) => const SignalSetupScreen(),
-            ),
-            // ========================================
             // External Participant (Guest) Routes
-            // ========================================
-            // Unified guest join - key generation + pre-join in one view
-            GoRoute(
-              path: '/join/meeting/:token',
-              builder: (context, state) {
-                final token = state.pathParameters['token'];
-                if (token == null || token.isEmpty) {
-                  return Scaffold(
-                    body: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.error,
-                            size: 64,
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                          const SizedBox(height: 16),
-                          const Text('Invalid invitation link'),
-                          const SizedBox(height: 16),
-                          TextButton(
-                            onPressed: () => context.go('/login'),
-                            child: const Text('Go to Login'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-
-                return ExternalPreJoinView(
-                  invitationToken: token,
-                  onAdmitted: () {
-                    debugPrint(
-                      '[EXTERNAL] Guest admitted, navigating to conference...',
-                    );
-
-                    // Get meeting ID from session storage (web only)
-                    if (kIsWeb) {
-                      try {
-                        final storage = html.window.sessionStorage;
-                        final meetingId = storage['external_meeting_id'];
-                        final displayName =
-                            storage['external_display_name'] ?? 'Guest';
-
-                        if (meetingId != null && meetingId.isNotEmpty) {
-                          final isExternal =
-                              storage['external_is_external'] == 'true';
-                          debugPrint(
-                            '[EXTERNAL] Navigating to meeting video: $meetingId (isExternal: $isExternal)',
-                          );
-                          context.go(
-                            '/meeting/video/$meetingId?external=true',
-                            extra: {
-                              'meetingTitle': displayName,
-                              'isExternal': isExternal,
-                            },
-                          );
-                        } else {
-                          debugPrint(
-                            '[EXTERNAL] ERROR: No meeting ID in session storage',
-                          );
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text(
-                                'Error: Missing meeting information',
-                              ),
-                              backgroundColor: Theme.of(
-                                context,
-                              ).colorScheme.error,
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        debugPrint('[EXTERNAL] ERROR getting meeting ID: $e');
-                      }
-                    }
-                  },
-                  onDeclined: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text(
-                          'Your request to join was declined',
-                        ),
-                        backgroundColor: Theme.of(context).colorScheme.error,
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-
-            GoRoute(
-              path: '/meeting/rsvp',
-              builder: (context, state) {
-                final qp = state.uri.queryParameters;
-                final meetingId = qp['meetingId'] ?? '';
-                final status = qp['status'] ?? '';
-                final email = qp['email'] ?? '';
-                final token = qp['token'] ?? '';
-
-                if (meetingId.isEmpty ||
-                    status.isEmpty ||
-                    email.isEmpty ||
-                    token.isEmpty) {
-                  return Scaffold(
-                    body: Center(child: Text('Missing RSVP parameters')),
-                  );
-                }
-
-                return MeetingRsvpConfirmationScreen(
-                  meetingId: meetingId,
-                  status: status,
-                  email: email,
-                  token: token,
-                );
-              },
-            ),
-            // ========================================
-            // Meeting Video Route (Outside ShellRoute for guests)
-            // ========================================
-            GoRoute(
-              path: '/meeting/video/:meetingId',
-              redirect: (context, state) async {
-                final meetingId = state.pathParameters['meetingId']!;
-                final extra = state.extra as Map<String, dynamic>?;
-                final isExternal =
-                    extra?['isExternal'] == true ||
-                    state.uri.queryParameters['external'] == 'true';
-
-                // Skip auth check for external guests (explicitly marked or query param)
-                if (isExternal) {
-                  return null;
-                }
-
-                // Check authorization for authenticated users
-                final hasAccess = await MeetingAuthorizationService.instance
-                    .checkMeetingAccess(meetingId);
-                if (!hasAccess) {
-                  debugPrint(
-                    '[ROUTER] ❌ Unauthorized access to meeting: $meetingId',
-                  );
-                  return '/app/meetings';
-                }
-                return null;
-              },
-              builder: (context, state) {
-                final meetingId = state.pathParameters['meetingId']!;
-                final extra = state.extra as Map<String, dynamic>?;
-                final isExternal =
-                    extra?['isExternal'] == true ||
-                    state.uri.queryParameters['external'] == 'true';
-
-                debugPrint(
-                  '[ROUTE_BUILDER] WEB Meeting video route builder called',
-                );
-                debugPrint('[ROUTE_BUILDER] meetingId: $meetingId');
-                debugPrint('[ROUTE_BUILDER] extra: $extra');
-                debugPrint(
-                  '[ROUTE_BUILDER] query params: ${state.uri.queryParameters}',
-                );
-                debugPrint('[ROUTE_BUILDER] isExternal: $isExternal');
-                debugPrint(
-                  '[ROUTE_BUILDER] Loading view: ${isExternal ? "GuestMeetingVideoView" : "MeetingVideoConferenceView"}',
-                );
-
-                // Use guest view for external participants (query param or extra flag)
-                if (isExternal) {
-                  return GuestMeetingVideoView(
-                    meetingId: meetingId,
-                    meetingTitle: extra?['meetingTitle'] ?? 'Meeting',
-                    selectedCamera: extra?['selectedCamera'],
-                    selectedMicrophone: extra?['selectedMicrophone'],
-                  );
-                }
-
-                // For authenticated users, wrap in AppLayout
-                return AppLayout(
-                  child: MeetingVideoConferenceView(
-                    meetingId: meetingId,
-                    meetingTitle: extra?['meetingTitle'] ?? 'Meeting',
-                    selectedCamera: extra?['selectedCamera'],
-                    selectedMicrophone: extra?['selectedMicrophone'],
-                  ),
-                );
-              },
-            ),
+            ...getMeetingRoutesExternal(),
             ShellRoute(
               builder: (context, state, child) => AppLayout(child: child),
               routes: [
-                // ========================================
-                // Main App Route - Redirect to Activities
-                // ========================================
-                GoRoute(
-                  path: '/app',
-                  redirect: (context, state) => '/app/activities',
-                ),
-                // ========================================
-                // Dashboard View Routes (Refactored)
-                // ========================================
-                GoRoute(
-                  path: '/app/activities',
-                  builder: (context, state) {
-                    return FutureBuilder<String?>(
-                      future: loadWebApiServer(),
-                      builder: (context, snapshot) {
-                        final host = snapshot.data ?? 'localhost:3000';
-                        return ActivitiesViewPage(host: host);
-                      },
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/app/messages/:id',
-                  builder: (context, state) {
-                    final contactUuid = state.pathParameters['id'];
-                    final extra = state.extra as Map<String, dynamic>?;
-                    final host = extra?['host'] as String? ?? 'localhost:3000';
-                    final displayName =
-                        extra?['displayName'] as String? ?? 'Unknown';
-
-                    return MessagesViewPage(
-                      host: host,
-                      initialContactUuid: contactUuid,
-                      initialDisplayName: displayName,
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/app/messages',
-                  builder: (context, state) {
-                    final extra = state.extra as Map<String, dynamic>?;
-                    final host = extra?['host'] as String? ?? 'localhost:3000';
-
-                    return MessagesViewPage(
-                      host: host,
-                      initialContactUuid: null,
-                      initialDisplayName: null,
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/app/messages/:uuid',
-                  builder: (context, state) {
-                    final contactUuid = state.pathParameters['uuid'];
-                    final extra = state.extra as Map<String, dynamic>?;
-                    final host = extra?['host'] as String? ?? 'localhost:3000';
-                    final displayName =
-                        extra?['displayName'] as String? ?? 'Unknown';
-
-                    return MessagesViewPage(
-                      host: host,
-                      initialContactUuid: contactUuid,
-                      initialDisplayName: displayName,
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/app/channels/:id',
-                  builder: (context, state) {
-                    final channelUuid = state.pathParameters['id'];
-                    final extra = state.extra as Map<String, dynamic>?;
-                    final host = extra?['host'] as String? ?? 'localhost:3000';
-                    final name = extra?['name'] as String? ?? 'Unknown';
-                    final type = extra?['type'] as String? ?? 'public';
-
-                    return ChannelsViewPage(
-                      host: host,
-                      initialChannelUuid: channelUuid,
-                      initialChannelName: name,
-                      initialChannelType: type,
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/app/channels',
-                  builder: (context, state) {
-                    final extra = state.extra as Map<String, dynamic>?;
-                    final host = extra?['host'] as String? ?? 'localhost:3000';
-
-                    return ChannelsViewPage(
-                      host: host,
-                      initialChannelUuid: null,
-                      initialChannelName: null,
-                      initialChannelType: null,
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/app/people',
-                  builder: (context, state) {
-                    return FutureBuilder<String?>(
-                      future: loadWebApiServer(),
-                      builder: (context, snapshot) {
-                        final host = snapshot.data ?? 'localhost:3000';
-                        return PeopleViewPage(host: host);
-                      },
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/app/files',
-                  builder: (context, state) {
-                    return FutureBuilder<String?>(
-                      future: loadWebApiServer(),
-                      builder: (context, snapshot) {
-                        final host = snapshot.data ?? 'localhost:3000';
-                        return FilesViewPage(host: host);
-                      },
-                    );
-                  },
-                ),
-                // ========================================
+                // Main App View Routes
+                ...getAppRoutesWeb(),
                 // Meetings & Calls
-                // ========================================
-                GoRoute(
-                  path: '/app/meetings',
-                  builder: (context, state) => const MeetingsScreen(),
-                ),
-                GoRoute(
-                  path: '/meeting/prejoin/:meetingId',
-                  redirect: (context, state) async {
-                    final meetingId = state.pathParameters['meetingId']!;
-                    final hasAccess = await MeetingAuthorizationService.instance
-                        .checkMeetingAccess(meetingId);
-                    if (!hasAccess) {
-                      debugPrint(
-                        '[ROUTER] ❌ Unauthorized access to meeting: $meetingId',
-                      );
-                      return '/app/meetings';
-                    }
-                    return null;
-                  },
-                  builder: (context, state) {
-                    final meetingId = state.pathParameters['meetingId']!;
-                    return MeetingPreJoinView(meetingId: meetingId);
-                  },
-                ),
-                // ========================================
-                // P2P File Transfer routes
-                // ========================================
-                GoRoute(
-                  path: '/file-transfer',
-                  builder: (context, state) => const SocketAwareWidget(
-                    featureName: 'File Transfer Hub',
-                    child: FileTransferHub(),
-                  ),
-                ),
-                GoRoute(
-                  path: '/file-upload',
-                  builder: (context, state) => const SocketAwareWidget(
-                    featureName: 'File Upload',
-                    child: FileUploadScreen(),
-                  ),
-                ),
-                GoRoute(
-                  path: '/file-manager',
-                  builder: (context, state) => const SocketAwareWidget(
-                    featureName: 'File Manager',
-                    child: FileManagerScreen(),
-                  ),
-                ),
-                GoRoute(
-                  path: '/file-browser',
-                  builder: (context, state) => const SocketAwareWidget(
-                    featureName: 'File Browser',
-                    child: FileBrowserScreen(),
-                  ),
-                ),
-                GoRoute(
-                  path: '/downloads',
-                  builder: (context, state) => const DownloadsScreen(),
-                ),
-                ShellRoute(
-                  builder: (context, state, child) =>
-                      SettingsSidebar(child: child),
-                  routes: [
-                    GoRoute(
-                      path: '/app/settings',
-                      redirect: (context, state) => '/app/settings/general',
-                    ),
-                    GoRoute(
-                      path: '/app/settings/webauthn',
-                      builder: (context, state) => const WebauthnPageWrapper(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/backupcode/list',
-                      builder: (context, state) =>
-                          const BackupCodeSettingsPage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/general',
-                      builder: (context, state) => const GeneralSettingsPage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/profile',
-                      builder: (context, state) => const ProfilePage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/sessions',
-                      builder: (context, state) => const SessionsPage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/notifications',
-                      builder: (context, state) =>
-                          const NotificationSettingsPage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/voice-video',
-                      builder: (context, state) =>
-                          const VoiceVideoSettingsPage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/troubleshoot',
-                      builder: (context, state) {
-                        // Create troubleshoot provider with dependencies
-                        final signalService = SignalService.instance;
-                        final troubleshootService = TroubleshootService(
-                          signalService: signalService,
-                        );
-
-                        return ChangeNotifierProvider(
-                          create: (_) => TroubleshootProvider(
-                            service: troubleshootService,
-                          ),
-                          child: const TroubleshootPage(),
-                        );
-                      },
-                    ),
-                    GoRoute(
-                      path: '/app/settings/system-tray',
-                      builder: (context, state) =>
-                          const SystemTraySettingsPage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/server',
-                      builder: (context, state) => const ServerSettingsPage(),
-                      redirect: (context, state) {
-                        final roleProvider = context.read<RoleProvider>();
-                        // Only allow access if user has server.manage permission
-                        if (!roleProvider.hasServerPermission(
-                          'server.manage',
-                        )) {
-                          return '/app/settings';
-                        }
-                        return null; // Allow navigation
-                      },
-                    ),
-                    GoRoute(
-                      path: '/app/settings/roles',
-                      builder: (context, state) => const RoleManagementScreen(),
-                      redirect: (context, state) {
-                        final roleProvider = context.read<RoleProvider>();
-                        // Only allow access if user is admin
-                        if (!roleProvider.isAdmin) {
-                          return '/app/settings';
-                        }
-                        return null; // Allow navigation
-                      },
-                    ),
-                    GoRoute(
-                      path: '/app/settings/users',
-                      builder: (context, state) => const UserManagementScreen(),
-                      redirect: (context, state) {
-                        final roleProvider = context.read<RoleProvider>();
-                        // Only allow access if user has user.manage permission
-                        if (!roleProvider.hasServerPermission('user.manage')) {
-                          return '/app/settings';
-                        }
-                        return null; // Allow navigation
-                      },
-                    ),
-                    GoRoute(
-                      path: '/app/settings/blocked-users',
-                      builder: (context, state) => const BlockedUsersPage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/abuse-center',
-                      builder: (context, state) => const AbuseCenterPage(),
-                      redirect: (context, state) {
-                        final roleProvider = context.read<RoleProvider>();
-                        // Only allow access if user has server.manage permission
-                        if (!roleProvider.hasServerPermission(
-                          'server.manage',
-                        )) {
-                          return '/app/settings';
-                        }
-                        return null; // Allow navigation
-                      },
-                    ),
-                  ],
-                ),
+                ...getMeetingRoutes(),
+                // File Transfer routes
+                ...getFileRoutes(),
+                // Settings routes
+                getSettingsRoutes(),
               ],
             ),
           ]
         : [
-            // Mobile server selection route (outside ShellRoute - no navbar)
-            GoRoute(
-              path: '/mobile-server-selection',
-              pageBuilder: (context, state) {
-                final extra = state.extra as Map<String, dynamic>?;
-                final errorMessage = extra?['errorMessage'] as String?;
-                return MaterialPage(
-                  fullscreenDialog: true,
-                  child: MobileServerSelectionScreen(
-                    errorMessage: errorMessage,
-                  ),
-                );
-              },
-            ),
-            // Mobile WebAuthn login route (outside ShellRoute - no navbar)
-            GoRoute(
-              path: '/mobile-webauthn',
-              pageBuilder: (context, state) {
-                final serverUrl = state.extra as String?;
-                return MaterialPage(
-                  fullscreenDialog: true,
-                  child: MobileWebAuthnLoginScreen(serverUrl: serverUrl),
-                );
-              },
-            ),
-            // Server selection route (outside ShellRoute - no navbar, has own AppBar)
-            GoRoute(
-              path: '/server-selection',
-              pageBuilder: (context, state) {
-                final extra = state.extra as Map<String, dynamic>?;
-                final isAddingServer =
-                    extra?['isAddingServer'] as bool? ?? false;
-                return MaterialPage(
-                  fullscreenDialog: true,
-                  child: ServerSelectionScreen(isAddingServer: isAddingServer),
-                );
-              },
-            ),
+            // Native server configuration routes (multi-server setup)
+            ...getServerConfigRoutes(),
             // Add common registration routes for native platforms
             ...commonRoutes,
             ShellRoute(
               builder: (context, state, child) => AppLayout(child: child),
               routes: [
                 GoRoute(path: '/', redirect: (context, state) => '/app'),
-                // Signal setup route (inside ShellRoute for native - shows server navbar)
-                GoRoute(
-                  path: '/signal-setup',
-                  builder: (context, state) => const SignalSetupScreen(),
-                ),
-                GoRoute(
-                  path: '/meeting/rsvp',
-                  builder: (context, state) {
-                    final qp = state.uri.queryParameters;
-                    final meetingId = qp['meetingId'] ?? '';
-                    final status = qp['status'] ?? '';
-                    final email = qp['email'] ?? '';
-                    final token = qp['token'] ?? '';
-
-                    if (meetingId.isEmpty ||
-                        status.isEmpty ||
-                        email.isEmpty ||
-                        token.isEmpty) {
-                      return const Scaffold(
-                        body: Center(child: Text('Missing RSVP parameters')),
-                      );
-                    }
-
-                    return MeetingRsvpConfirmationScreen(
-                      meetingId: meetingId,
-                      status: status,
-                      email: email,
-                      token: token,
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/magic-link',
-                  builder: (context, state) {
-                    final extra = state.extra;
-                    debugPrint(
-                      'Navigated to /magic-link with extra: $extra, kIsWeb: $kIsWeb, clientId: $_clientId, extra is String: ${extra is String}',
-                    );
-                    if (extra is String && extra.isNotEmpty) {
-                      debugPrint(
-                        "Rendering MagicLinkWebPageWithServer, clientId: $_clientId",
-                      );
-                      return MagicLinkWebPageWithServer(
-                        serverUrl: extra,
-                        clientId: _clientId,
-                      );
-                    }
-                    return const MagicLinkWebPage();
-                  },
-                ),
-                GoRoute(
-                  path: '/login',
-                  pageBuilder: (context, state) {
-                    final qp = state.uri.queryParameters;
-                    final fromApp =
-                        (qp['from'] ?? '').trim().toLowerCase() == 'app';
-                    final email = qp['email']?.trim();
-                    return MaterialPage(
-                      fullscreenDialog: true,
-                      child: AuthLayout(
-                        clientId: _clientId,
-                        fromApp: fromApp,
-                        initialEmail: email,
-                      ),
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/dashboard',
-                  pageBuilder: (context, state) {
-                    return MaterialPage(child: const DashboardPage());
-                  },
-                ),
-                GoRoute(
-                  path: '/app',
-                  builder: (context, state) => const SizedBox.shrink(),
-                ),
-                // View routes
-                GoRoute(
-                  path: '/app/channels/:id',
-                  builder: (context, state) {
-                    final channelUuid = state.pathParameters['id'];
-                    final extra = state.extra as Map<String, dynamic>?;
-                    final server = ServerConfigService.getActiveServer();
-                    final host =
-                        extra?['host'] as String? ??
-                        server?.serverUrl ??
-                        'localhost:3000';
-                    final name = extra?['name'] as String? ?? 'Unknown';
-                    final type = extra?['type'] as String? ?? 'public';
-
-                    return ChannelsViewPage(
-                      host: host,
-                      initialChannelUuid: channelUuid,
-                      initialChannelName: name,
-                      initialChannelType: type,
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/app/channels',
-                  builder: (context, state) {
-                    final server = ServerConfigService.getActiveServer();
-                    final extra = state.extra as Map<String, dynamic>?;
-                    final host =
-                        extra?['host'] as String? ??
-                        server?.serverUrl ??
-                        'localhost:3000';
-
-                    return ChannelsViewPage(
-                      host: host,
-                      initialChannelUuid: null,
-                      initialChannelName: null,
-                      initialChannelType: null,
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/app/messages/:id',
-                  builder: (context, state) {
-                    final contactUuid = state.pathParameters['id'];
-                    final extra = state.extra as Map<String, dynamic>?;
-                    final server = ServerConfigService.getActiveServer();
-                    final host =
-                        extra?['host'] as String? ??
-                        server?.serverUrl ??
-                        'localhost:3000';
-                    final displayName =
-                        extra?['displayName'] as String? ?? 'Unknown';
-
-                    return MessagesViewPage(
-                      host: host,
-                      initialContactUuid: contactUuid,
-                      initialDisplayName: displayName,
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/app/messages',
-                  builder: (context, state) {
-                    final server = ServerConfigService.getActiveServer();
-                    final extra = state.extra as Map<String, dynamic>?;
-                    final host =
-                        extra?['host'] as String? ??
-                        server?.serverUrl ??
-                        'localhost:3000';
-
-                    return MessagesViewPage(
-                      host: host,
-                      initialContactUuid: null,
-                      initialDisplayName: null,
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/app/activities',
-                  builder: (context, state) {
-                    final server = ServerConfigService.getActiveServer();
-                    return ActivitiesViewPage(
-                      host: server?.serverUrl ?? 'localhost:3000',
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/app/people',
-                  builder: (context, state) {
-                    final server = ServerConfigService.getActiveServer();
-                    return PeopleViewPage(
-                      host: server?.serverUrl ?? 'localhost:3000',
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/app/files',
-                  builder: (context, state) {
-                    final server = ServerConfigService.getActiveServer();
-                    return FilesViewPage(
-                      host: server?.serverUrl ?? 'localhost:3000',
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: '/app/meetings',
-                  builder: (context, state) => const MeetingsScreen(),
-                ),
-                GoRoute(
-                  path: '/meeting/prejoin/:meetingId',
-                  redirect: (context, state) async {
-                    final meetingId = state.pathParameters['meetingId']!;
-                    final hasAccess = await MeetingAuthorizationService.instance
-                        .checkMeetingAccess(meetingId);
-                    if (!hasAccess) {
-                      debugPrint(
-                        '[ROUTER] ❌ Unauthorized access to meeting: $meetingId',
-                      );
-                      return '/app/meetings';
-                    }
-                    return null;
-                  },
-                  builder: (context, state) {
-                    final meetingId = state.pathParameters['meetingId']!;
-                    return MeetingPreJoinView(meetingId: meetingId);
-                  },
-                ),
-                GoRoute(
-                  path: '/meeting/video/:meetingId',
-                  redirect: (context, state) async {
-                    final meetingId = state.pathParameters['meetingId']!;
-                    final extra = state.extra as Map<String, dynamic>?;
-                    final isExternal =
-                        extra?['isExternal'] == true ||
-                        state.uri.queryParameters['external'] == 'true';
-
-                    // Skip auth check for external guests (explicitly marked or query param)
-                    if (isExternal) {
-                      return null;
-                    }
-
-                    // Check authorization for authenticated users
-                    final hasAccess = await MeetingAuthorizationService.instance
-                        .checkMeetingAccess(meetingId);
-                    if (!hasAccess) {
-                      debugPrint(
-                        '[ROUTER] ❌ Unauthorized access to meeting: $meetingId',
-                      );
-                      return '/app/meetings';
-                    }
-                    return null;
-                  },
-                  builder: (context, state) {
-                    final meetingId = state.pathParameters['meetingId']!;
-                    final extra = state.extra as Map<String, dynamic>?;
-                    final isExternal =
-                        extra?['isExternal'] == true ||
-                        state.uri.queryParameters['external'] == 'true';
-
-                    // Use guest view for external participants (query param or extra flag)
-                    if (isExternal) {
-                      return GuestMeetingVideoView(
-                        meetingId: meetingId,
-                        meetingTitle: extra?['meetingTitle'] ?? 'Meeting',
-                        selectedCamera: extra?['selectedCamera'],
-                        selectedMicrophone: extra?['selectedMicrophone'],
-                      );
-                    }
-
-                    // Use standard view for authenticated users
-                    return MeetingVideoConferenceView(
-                      meetingId: meetingId,
-                      meetingTitle: extra?['meetingTitle'] ?? 'Meeting',
-                      selectedCamera: extra?['selectedCamera'],
-                      selectedMicrophone: extra?['selectedMicrophone'],
-                    );
-                  },
-                ),
-                // P2P File Transfer routes
-                GoRoute(
-                  path: '/file-transfer',
-                  builder: (context, state) => const SocketAwareWidget(
-                    featureName: 'File Transfer Hub',
-                    child: FileTransferHub(),
-                  ),
-                ),
-                GoRoute(
-                  path: '/file-upload',
-                  builder: (context, state) => const SocketAwareWidget(
-                    featureName: 'File Upload',
-                    child: FileUploadScreen(),
-                  ),
-                ),
-                GoRoute(
-                  path: '/file-manager',
-                  builder: (context, state) => const SocketAwareWidget(
-                    featureName: 'File Manager',
-                    child: FileManagerScreen(),
-                  ),
-                ),
-                GoRoute(
-                  path: '/file-browser',
-                  builder: (context, state) => const SocketAwareWidget(
-                    featureName: 'File Browser',
-                    child: FileBrowserScreen(),
-                  ),
-                ),
-                GoRoute(
-                  path: '/downloads',
-                  builder: (context, state) => const DownloadsScreen(),
-                ),
+                // Native-specific auth routes (signal setup, magic link, login)
+                ...getAuthRoutesNative(clientId: _clientId ?? ''),
+                // Main App View Routes
+                ...getAppRoutesNative(),
+                // Meetings & Calls
+                ...getMeetingRoutes(),
+                // File Transfer routes
+                ...getFileRoutes(),
                 // Settings routes
-                ShellRoute(
-                  builder: (context, state, child) =>
-                      SettingsSidebar(child: child),
-                  routes: [
-                    GoRoute(
-                      path: '/app/settings',
-                      redirect: (context, state) => '/app/settings/general',
-                    ),
-                    GoRoute(
-                      path: '/app/settings/webauthn',
-                      builder: (context, state) => const WebauthnPageWrapper(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/backupcode/list',
-                      builder: (context, state) =>
-                          const BackupCodeSettingsPage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/general',
-                      builder: (context, state) => const GeneralSettingsPage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/profile',
-                      builder: (context, state) => const ProfilePage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/sessions',
-                      builder: (context, state) => const SessionsPage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/notifications',
-                      builder: (context, state) =>
-                          const NotificationSettingsPage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/voice-video',
-                      builder: (context, state) =>
-                          const VoiceVideoSettingsPage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/troubleshoot',
-                      builder: (context, state) {
-                        // Create troubleshoot provider with dependencies
-                        final signalService = SignalService.instance;
-                        final troubleshootService = TroubleshootService(
-                          signalService: signalService,
-                        );
-
-                        return ChangeNotifierProvider(
-                          create: (_) => TroubleshootProvider(
-                            service: troubleshootService,
-                          ),
-                          child: const TroubleshootPage(),
-                        );
-                      },
-                    ),
-                    GoRoute(
-                      path: '/app/settings/system-tray',
-                      builder: (context, state) =>
-                          const SystemTraySettingsPage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/server',
-                      builder: (context, state) => const ServerSettingsPage(),
-                      redirect: (context, state) {
-                        final roleProvider = context.read<RoleProvider>();
-                        if (!roleProvider.hasServerPermission(
-                          'server.manage',
-                        )) {
-                          return '/app/settings';
-                        }
-                        return null;
-                      },
-                    ),
-                    GoRoute(
-                      path: '/app/settings/roles',
-                      builder: (context, state) => const RoleManagementScreen(),
-                      redirect: (context, state) {
-                        final roleProvider = context.read<RoleProvider>();
-                        if (!roleProvider.isAdmin) {
-                          return '/app/settings';
-                        }
-                        return null;
-                      },
-                    ),
-                    GoRoute(
-                      path: '/app/settings/users',
-                      builder: (context, state) => const UserManagementScreen(),
-                      redirect: (context, state) {
-                        final roleProvider = context.read<RoleProvider>();
-                        if (!roleProvider.hasServerPermission('user.manage')) {
-                          return '/app/settings';
-                        }
-                        return null;
-                      },
-                    ),
-                    GoRoute(
-                      path: '/app/settings/blocked-users',
-                      builder: (context, state) => const BlockedUsersPage(),
-                    ),
-                    GoRoute(
-                      path: '/app/settings/abuse-center',
-                      builder: (context, state) => const AbuseCenterPage(),
-                      redirect: (context, state) {
-                        final roleProvider = context.read<RoleProvider>();
-                        if (!roleProvider.hasServerPermission(
-                          'server.manage',
-                        )) {
-                          return '/app/settings';
-                        }
-                        return null;
-                      },
-                    ),
-                  ],
-                ),
+                getSettingsRoutes(),
               ],
             ),
           ];
@@ -2018,7 +929,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             if (!kIsWeb) {
               // Clear HMAC session for native
               final clientId = await ClientIdService.getClientId();
-              await SessionAuthService().clearSession(clientId);
+              final activeServer = ServerConfigService.getActiveServer();
+              if (activeServer != null) {
+                await SessionAuthService().clearSession(
+                  clientId,
+                  serverUrl: activeServer.serverUrl,
+                );
+              }
               AuthService.isLoggedIn = false;
 
               // Redirect to server-selection to re-authenticate
@@ -2072,12 +989,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               debugPrint(
                 '[ROUTER] App route detected - checking keys status...',
               );
+
               try {
                 final status = await SignalSetupService.instance
                     .checkKeysStatus();
                 final needsSetup = status['needsSetup'] as bool;
                 final missingKeys =
-                    status['missingKeys'] as Map<String, dynamic>;
+                    status['missingKeys'] as Map<String, dynamic>? ??
+                    <String, dynamic>{};
 
                 debugPrint(
                   '[ROUTER] Keys status: needsSetup=$needsSetup, missingKeys=$missingKeys',
@@ -2394,14 +1313,31 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 /// initialization completes, which is common with autostart.
 Future<bool> _detectAutostart() async {
   try {
-    // Check if a session exists (indicates autostart scenario)
+    // Check if a session exists for the active server (indicates autostart scenario)
     final clientId = await ClientIdService.getClientId();
     final sessionAuth = SessionAuthService();
-    final hasSession = await sessionAuth.hasSession(clientId);
 
-    if (hasSession) {
-      debugPrint('[INIT] Session found - likely autostart scenario');
-      return true;
+    // For native, check active server; for web, use hostname
+    String? serverIdentifier;
+    if (!kIsWeb) {
+      final activeServer = ServerConfigService.getActiveServer();
+      serverIdentifier = activeServer?.serverUrl;
+    } else {
+      serverIdentifier = Uri.base.host.isNotEmpty ? Uri.base.host : 'localhost';
+    }
+
+    if (serverIdentifier != null) {
+      final hasSession = await sessionAuth.hasSession(
+        clientId: clientId,
+        serverUrl: serverIdentifier,
+      );
+
+      if (hasSession) {
+        debugPrint(
+          '[INIT] Session found for $serverIdentifier - likely autostart scenario',
+        );
+        return true;
+      }
     }
 
     return false;
@@ -2412,111 +1348,3 @@ Future<bool> _detectAutostart() async {
 }
 
 /// Loading screen for auth callback with polling and abort button
-class _AuthCallbackLoadingScreen extends StatefulWidget {
-  final bool hasToken;
-
-  const _AuthCallbackLoadingScreen({required this.hasToken});
-
-  @override
-  State<_AuthCallbackLoadingScreen> createState() =>
-      _AuthCallbackLoadingScreenState();
-}
-
-class _AuthCallbackLoadingScreenState
-    extends State<_AuthCallbackLoadingScreen> {
-  Timer? _pollTimer;
-  int _secondsElapsed = 0;
-  static const _maxWaitSeconds =
-      120; // Match Chrome Custom Tab timeout (2 minutes)
-
-  @override
-  void initState() {
-    super.initState();
-    _startPolling();
-  }
-
-  @override
-  void dispose() {
-    _pollTimer?.cancel();
-    super.dispose();
-  }
-
-  void _startPolling() {
-    // Poll every 500ms to check if login succeeded
-    _pollTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
-      _secondsElapsed++;
-
-      // Check if user is now logged in
-      if (AuthService.isLoggedIn && mounted) {
-        debugPrint('[AUTH_CALLBACK] ✓ Login detected via polling');
-        timer.cancel();
-        context.go('/app/activities');
-        return;
-      }
-
-      // Timeout after 2 minutes (matches Chrome Custom Tab timeout)
-      if (_secondsElapsed >= _maxWaitSeconds * 2) {
-        // *2 because we poll twice per second
-        debugPrint(
-          '[AUTH_CALLBACK] ⏱️ Timeout - cancelling auth and returning to login',
-        );
-        timer.cancel();
-        CustomTabAuthService.instance.cancelAuth();
-        if (mounted) {
-          context.go('/mobile-webauthn');
-        }
-      }
-    });
-  }
-
-  void _abort() {
-    debugPrint('[AUTH_CALLBACK] ❌ User aborted authentication');
-    _pollTimer?.cancel();
-    CustomTabAuthService.instance.cancelAuth();
-    context.go('/mobile-webauthn');
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 24),
-              Text(
-                'Completing authentication...',
-                style: Theme.of(context).textTheme.titleMedium,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'This should only take a moment',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withOpacity(0.6),
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 48),
-              OutlinedButton.icon(
-                onPressed: _abort,
-                icon: const Icon(Icons.close),
-                label: const Text('Cancel'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Theme.of(context).colorScheme.error,
-                  side: BorderSide(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

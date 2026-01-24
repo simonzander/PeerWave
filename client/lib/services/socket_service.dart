@@ -9,6 +9,8 @@ import 'signal_service.dart';
 import 'session_auth_service.dart';
 import 'clientid_native.dart' if (dart.library.js) 'clientid_web.dart';
 import 'server_connection_service.dart';
+import 'server_config_web.dart'
+    if (dart.library.io) 'server_config_native.dart';
 // Import auth service conditionally
 import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
 
@@ -43,11 +45,25 @@ class SocketService {
   bool _listenersRegistered = false; // 🔒 Track listener registration state
   bool _isConnected = false; // Internal connection state tracking
 
+  // Named listener storage for compatibility with native multi-server API
+  // On web, we only have one socket, but we track registrations by name
+  final Map<String, Map<String, Function(dynamic)>> _namedListeners = {};
+  final Map<String, Function(dynamic)> _wrappedCallbacks =
+      {}; // event_registrationName -> wrappedCallback
+
   // Public getter for socket (needed by SocketFileClient)
   io.Socket? get socket => _socket;
 
   /// Check if listeners are registered and client is ready
   bool get isReady => _listenersRegistered && (_socket?.connected ?? false);
+
+  /// Connect to all servers (web only supports single server - this is for API compatibility)
+  Future<void> connectAllServers() async {
+    debugPrint(
+      '[SOCKET SERVICE] Web: connectAllServers called (single server mode)',
+    );
+    await connect();
+  }
 
   Future<void> connect() async {
     // Check if socket exists and is truly connected
@@ -257,16 +273,40 @@ class SocketService {
     );
     debugPrint('[SOCKET SERVICE] Stack trace: ${StackTrace.current}');
     resetReadyState(); // Reset ready state before disconnect
+    _namedListeners.clear();
+    _wrappedCallbacks.clear();
     _socket?.disconnect();
     _socket = null;
   }
 
-  void registerListener(String event, Function(dynamic) callback) {
+  /// Register a named listener (web single-socket version)
+  /// [event] - Socket event name to listen for
+  /// [callback] - Callback function
+  /// [registrationName] - Optional unique name for this registration (for tracking/removal)
+  void registerListener(
+    String event,
+    Function(dynamic) callback, {
+    String registrationName = 'default',
+  }) {
     // Debug: Check socket state
     debugPrint(
       '[SOCKET SERVICE] 🔍 registerListener($event) called - socket: ${_socket != null ? "EXISTS (id=${_socket!.id})" : "NULL"}',
     );
 
+    // Store named listener
+    final listenerInfo = _namedListeners.putIfAbsent(
+      registrationName,
+      () => {},
+    );
+    if (listenerInfo.containsKey(event)) {
+      debugPrint(
+        '[SOCKET SERVICE] ⚠️ Listener [$registrationName] for event "$event" already registered, skipping',
+      );
+      return;
+    }
+    listenerInfo[event] = callback;
+
+    // Legacy listener storage (keep for _reregisterAllListeners)
     final callbacks = _listeners.putIfAbsent(event, () => []);
     if (!callbacks.contains(callback)) {
       // Wrap the callback to track socket receives
@@ -275,21 +315,34 @@ class SocketService {
         callback(data);
       }
 
+      // Store wrapped callback for removal
+      _wrappedCallbacks['${event}_$registrationName'] = wrappedCallback;
       callbacks.add(callback);
 
       // Check socket state and register accordingly
       if (_socket == null) {
         // Socket doesn't exist yet - store for later registration
         debugPrint(
-          '[SOCKET SERVICE] 📦 Socket is null, listener for $event stored (will register on connect)',
+          '[SOCKET SERVICE] 📦 Socket is null, listener [$registrationName] for $event stored (will register on connect)',
         );
       } else {
         // Socket exists - register with wrapped callback
         _socket!.on(event, wrappedCallback);
         if (_socket!.connected) {
           debugPrint(
-            '[SOCKET SERVICE] ✅ Registered listener for $event (socket connected)',
+            '[SOCKET SERVICE] ✅ Registered listener [$registrationName] for $event (socket connected)',
           );
+
+          // If this is the first listener and socket is connected, send clientReady
+          if (!_listenersRegistered) {
+            _listenersRegistered = true;
+            _socket!.emit('clientReady', {
+              'timestamp': DateTime.now().toIso8601String(),
+            });
+            debugPrint(
+              '[SOCKET SERVICE] ✅ clientReady sent after first listener registration',
+            );
+          }
         } else {
           debugPrint(
             '[SOCKET SERVICE] 📝 Registered listener for $event (socket connecting...)',
@@ -371,10 +424,44 @@ class SocketService {
     debugPrint('[SOCKET SERVICE] Ready state reset');
   }
 
-  void unregisterListener(String event, Function(dynamic) callback) {
-    _listeners[event]?.remove(callback);
-    if (_socket != null) {
-      _socket!.off(event, callback);
+  /// Unregister a named listener
+  /// [event] - The event to unregister
+  /// [registrationName] - Optional name used when registering (default: 'default')
+  void unregisterListener(String event, {String registrationName = 'default'}) {
+    // Remove from named listeners
+    final listenerInfo = _namedListeners[registrationName];
+    if (listenerInfo != null) {
+      final callback = listenerInfo.remove(event);
+      if (listenerInfo.isEmpty) {
+        _namedListeners.remove(registrationName);
+      }
+
+      // Remove from legacy storage
+      if (callback != null) {
+        _listeners[event]?.remove(callback);
+      }
+
+      // Remove wrapped callback from socket
+      final wrappedCallback = _wrappedCallbacks.remove(
+        '${event}_$registrationName',
+      );
+      if (_socket != null && wrappedCallback != null) {
+        _socket!.off(event, wrappedCallback);
+        debugPrint(
+          '[SOCKET SERVICE] Unregistered [$registrationName] for "$event"',
+        );
+      }
+    }
+  }
+
+  /// Unregister all events for a named registration
+  void unregisterAllForName(String registrationName) {
+    final listenerInfo = _namedListeners[registrationName];
+    if (listenerInfo == null) return;
+
+    final events = listenerInfo.keys.toList();
+    for (final event in events) {
+      unregisterListener(event, registrationName: registrationName);
     }
   }
 
@@ -397,11 +484,24 @@ class SocketService {
 
         // Import necessary services
         final clientId = await ClientIdService.getClientId();
-        final hasSession = await SessionAuthService().hasSession(clientId);
+
+        // Get active server URL for multi-server support
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer == null) {
+          debugPrint('[SOCKET SERVICE] ⚠️ No active server configured');
+          _socket?.emit('authenticate', null);
+          return;
+        }
+        final serverUrl = activeServer.serverUrl;
+
+        final hasSession = await SessionAuthService().hasSession(
+          clientId: clientId,
+          serverUrl: serverUrl,
+        );
 
         if (!hasSession) {
           debugPrint(
-            '[SOCKET SERVICE] ⚠️ No HMAC session found for socket auth',
+            '[SOCKET SERVICE] ⚠️ No HMAC session found for socket auth @ $serverUrl',
           );
           _socket?.emit('authenticate', null);
           return;
@@ -413,6 +513,7 @@ class SocketService {
 
         final sessionSecret = await SessionAuthService().getSessionSecret(
           clientId,
+          serverUrl: serverUrl,
         );
         if (sessionSecret == null) {
           debugPrint('[SOCKET SERVICE] ⚠️ No session secret found');

@@ -19,16 +19,31 @@ class SecureSessionStorage {
     wOptions: WindowsOptions(useBackwardCompatibility: false),
   );
 
-  // Key prefixes for organization
+  // Key prefixes for organization (server-scoped)
   static const _sessionSecretPrefix = 'session_secret_';
   static const _sessionMetadataPrefix = 'session_metadata_';
   static const _clientIdKey = 'client_id';
-  static const _refreshTokenKey = 'refresh_token';
-  static const _sessionExpiryKey = 'session_expiry';
+  static const _refreshTokenPrefix = 'refresh_token_'; // Now server-scoped
+  static const _sessionExpiryPrefix = 'session_expiry_'; // Now server-scoped
 
-  /// Save session secret for a client with retry on Windows file lock errors
-  Future<void> saveSessionSecret(String clientId, String sessionSecret) async {
-    final key = '$_sessionSecretPrefix$clientId';
+  /// Generate server-scoped key
+  String _makeServerScopedKey(
+    String prefix,
+    String serverUrl,
+    String clientId,
+  ) {
+    // Sanitize server URL for use in key (replace special chars)
+    final sanitized = serverUrl.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    return '${prefix}${sanitized}_$clientId';
+  }
+
+  /// Save session secret for a client+server with retry on Windows file lock errors
+  Future<void> saveSessionSecret(
+    String clientId,
+    String sessionSecret, {
+    required String serverUrl,
+  }) async {
+    final key = _makeServerScopedKey(_sessionSecretPrefix, serverUrl, clientId);
 
     // Retry logic for Windows file locking issues
     int retries = 3;
@@ -36,11 +51,16 @@ class SecureSessionStorage {
       try {
         await _storage.write(key: key, value: sessionSecret);
 
-        // Save metadata (timestamp)
-        final metadataKey = '$_sessionMetadataPrefix$clientId';
+        // Save metadata (timestamp + server)
+        final metadataKey = _makeServerScopedKey(
+          _sessionMetadataPrefix,
+          serverUrl,
+          clientId,
+        );
         final metadata = {
           'created_at': DateTime.now().toIso8601String(),
           'client_id': clientId,
+          'server_url': serverUrl,
         };
         await _storage.write(key: metadataKey, value: metadata.toString());
         return; // Success
@@ -53,9 +73,12 @@ class SecureSessionStorage {
     }
   }
 
-  /// Get session secret for a client with retry on Windows file lock errors
-  Future<String?> getSessionSecret(String clientId) async {
-    final key = '$_sessionSecretPrefix$clientId';
+  /// Get session secret for a client+server with retry on Windows file lock errors
+  Future<String?> getSessionSecret(
+    String clientId, {
+    required String serverUrl,
+  }) async {
+    final key = _makeServerScopedKey(_sessionSecretPrefix, serverUrl, clientId);
 
     // Retry logic for Windows file locking issues
     int retries = 3;
@@ -76,16 +99,26 @@ class SecureSessionStorage {
     return null;
   }
 
-  /// Check if session secret exists for client
-  Future<bool> hasSessionSecret(String clientId) async {
-    final secret = await getSessionSecret(clientId);
+  /// Check if session secret exists for client+server
+  Future<bool> hasSessionSecret(
+    String clientId, {
+    required String serverUrl,
+  }) async {
+    final secret = await getSessionSecret(clientId, serverUrl: serverUrl);
     return secret != null && secret.isNotEmpty;
   }
 
-  /// Delete session secret for a client
-  Future<void> deleteSessionSecret(String clientId) async {
-    final key = '$_sessionSecretPrefix$clientId';
-    final metadataKey = '$_sessionMetadataPrefix$clientId';
+  /// Delete session secret for a client+server
+  Future<void> deleteSessionSecret(
+    String clientId, {
+    required String serverUrl,
+  }) async {
+    final key = _makeServerScopedKey(_sessionSecretPrefix, serverUrl, clientId);
+    final metadataKey = _makeServerScopedKey(
+      _sessionMetadataPrefix,
+      serverUrl,
+      clientId,
+    );
 
     await _storage.delete(key: key);
     await _storage.delete(key: metadataKey);
@@ -155,11 +188,21 @@ class SecureSessionStorage {
   }
 
   /// Save refresh token with retry on Windows file lock errors
-  Future<void> saveRefreshToken(String refreshToken) async {
+  Future<void> saveRefreshToken(
+    String refreshToken, {
+    required String serverUrl,
+  }) async {
+    final clientId = await getClientId();
+    if (clientId == null) {
+      throw Exception('ClientId not found');
+    }
+
+    final key = _makeServerScopedKey(_refreshTokenPrefix, serverUrl, clientId);
+
     int retries = 3;
     while (retries > 0) {
       try {
-        await _storage.write(key: _refreshTokenKey, value: refreshToken);
+        await _storage.write(key: key, value: refreshToken);
         return; // Success
       } catch (e) {
         retries--;
@@ -170,11 +213,16 @@ class SecureSessionStorage {
   }
 
   /// Get refresh token with retry on Windows file lock errors
-  Future<String?> getRefreshToken() async {
+  Future<String?> getRefreshToken({required String serverUrl}) async {
+    final clientId = await getClientId();
+    if (clientId == null) return null;
+
+    final key = _makeServerScopedKey(_refreshTokenPrefix, serverUrl, clientId);
+
     int retries = 3;
     while (retries > 0) {
       try {
-        return await _storage.read(key: _refreshTokenKey);
+        return await _storage.read(key: key);
       } catch (e) {
         retries--;
         if (retries == 0) {
@@ -190,22 +238,43 @@ class SecureSessionStorage {
   }
 
   /// Delete refresh token
-  Future<void> deleteRefreshToken() async {
-    await _storage.delete(key: _refreshTokenKey);
+  Future<void> deleteRefreshToken({required String serverUrl}) async {
+    final clientId = await getClientId();
+    if (clientId == null) return;
+
+    final key = _makeServerScopedKey(_refreshTokenPrefix, serverUrl, clientId);
+    await _storage.delete(key: key);
   }
 
   /// Save session expiry date
-  Future<void> saveSessionExpiry(String expiryDate) async {
-    await _storage.write(key: _sessionExpiryKey, value: expiryDate);
+  Future<void> saveSessionExpiry(
+    String expiryDate, {
+    required String serverUrl,
+  }) async {
+    final clientId = await getClientId();
+    if (clientId == null) {
+      throw Exception('ClientId not found');
+    }
+
+    final key = _makeServerScopedKey(_sessionExpiryPrefix, serverUrl, clientId);
+    await _storage.write(key: key, value: expiryDate);
   }
 
   /// Get session expiry date
-  Future<String?> getSessionExpiry() async {
-    return await _storage.read(key: _sessionExpiryKey);
+  Future<String?> getSessionExpiry({required String serverUrl}) async {
+    final clientId = await getClientId();
+    if (clientId == null) return null;
+
+    final key = _makeServerScopedKey(_sessionExpiryPrefix, serverUrl, clientId);
+    return await _storage.read(key: key);
   }
 
   /// Delete session expiry
-  Future<void> deleteSessionExpiry() async {
-    await _storage.delete(key: _sessionExpiryKey);
+  Future<void> deleteSessionExpiry({required String serverUrl}) async {
+    final clientId = await getClientId();
+    if (clientId == null) return;
+
+    final key = _makeServerScopedKey(_sessionExpiryPrefix, serverUrl, clientId);
+    await _storage.delete(key: key);
   }
 }

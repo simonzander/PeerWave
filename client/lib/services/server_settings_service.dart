@@ -6,6 +6,11 @@ import 'server_config_web.dart'
 
 /// Singleton service to manage server settings
 /// Caches settings to minimize API calls
+///
+/// Multi-Server Support:
+/// - Maintains separate settings cache per server
+/// - Auto-switches based on active server from ServerConfigService
+/// - No manual cache clearing needed when switching servers
 class ServerSettingsService {
   static final ServerSettingsService _instance =
       ServerSettingsService._internal();
@@ -13,17 +18,40 @@ class ServerSettingsService {
 
   ServerSettingsService._internal();
 
-  Map<String, dynamic>? _cachedSettings;
-  DateTime? _cacheTime;
+  // Per-server cache: serverId/serverUrl -> settings
+  final Map<String, Map<String, dynamic>> _cachedSettings = {};
+  final Map<String, DateTime> _cacheTime = {};
   static const Duration _cacheDuration = Duration(minutes: 5);
+
+  /// Get current server ID (for native) or key (for web)
+  String? get _currentServerKey {
+    if (kIsWeb) {
+      // Web: Use fixed key (no multi-server support)
+      return 'web';
+    } else {
+      // Native: Use server ID from active server
+      final activeServer = ServerConfigService.getActiveServer();
+      return activeServer?.id;
+    }
+  }
 
   /// Get server settings from cache or fetch from server
   Future<Map<String, dynamic>> getSettings() async {
+    final serverKey = _currentServerKey;
+    if (serverKey == null) {
+      debugPrint('[ServerSettings] ⚠️ No active server, returning defaults');
+      return _getDefaultSettings();
+    }
+
     // Return cached settings if still valid
-    if (_cachedSettings != null && _cacheTime != null) {
-      final age = DateTime.now().difference(_cacheTime!);
+    if (_cachedSettings.containsKey(serverKey) &&
+        _cacheTime.containsKey(serverKey)) {
+      final age = DateTime.now().difference(_cacheTime[serverKey]!);
       if (age < _cacheDuration) {
-        return _cachedSettings!;
+        debugPrint(
+          '[ServerSettings] Using cached settings for $serverKey (age: ${age.inMinutes}min)',
+        );
+        return _cachedSettings[serverKey]!;
       }
     }
 
@@ -46,20 +74,27 @@ class ServerSettingsService {
 
       if (resp.statusCode == 200) {
         final data = resp.data;
-        _cachedSettings = {
+        final settings = {
           'serverName': data['serverName'] ?? 'PeerWave Server',
           'serverPicture': data['serverPicture'],
           'registrationMode': data['registrationMode'] ?? 'open',
           'allowedEmailSuffixes': data['allowedEmailSuffixes'] ?? [],
         };
-        _cacheTime = DateTime.now();
-        return _cachedSettings!;
+        _cachedSettings[serverKey] = settings;
+        _cacheTime[serverKey] = DateTime.now();
+        debugPrint('[ServerSettings] ✓ Cached settings for $serverKey');
+        return settings;
       }
     } catch (e) {
       debugPrint('[ServerSettings] Failed to fetch settings: $e');
     }
 
     // Return default settings on error
+    return _getDefaultSettings();
+  }
+
+  /// Get default server settings
+  Map<String, dynamic> _getDefaultSettings() {
     return {
       'serverName': 'PeerWave Server',
       'serverPicture': null,
@@ -68,14 +103,19 @@ class ServerSettingsService {
     };
   }
 
-  /// Get current registration mode
+  /// Get current registration mode for active server
   String get registrationMode {
-    return _cachedSettings?['registrationMode'] ?? 'open';
+    final serverKey = _currentServerKey;
+    if (serverKey == null) return 'open';
+    return _cachedSettings[serverKey]?['registrationMode'] ?? 'open';
   }
 
-  /// Get allowed email suffixes
+  /// Get allowed email suffixes for active server
   List<String> get allowedEmailSuffixes {
-    final suffixes = _cachedSettings?['allowedEmailSuffixes'];
+    final serverKey = _currentServerKey;
+    if (serverKey == null) return [];
+
+    final suffixes = _cachedSettings[serverKey]?['allowedEmailSuffixes'];
     if (suffixes is List) {
       return suffixes.cast<String>();
     }
@@ -111,19 +151,37 @@ class ServerSettingsService {
     return true;
   }
 
-  /// Clear cached settings (force refresh on next getSettings call)
+  /// Clear cached settings for current server (force refresh on next getSettings call)
   void clearCache() {
-    _cachedSettings = null;
-    _cacheTime = null;
+    final serverKey = _currentServerKey;
+    if (serverKey != null) {
+      debugPrint('[ServerSettings] Clearing cache for $serverKey');
+      _cachedSettings.remove(serverKey);
+      _cacheTime.remove(serverKey);
+    }
   }
 
-  /// Get server name
+  /// Clear all cached settings (all servers)
+  void clearAllCaches() {
+    debugPrint('[ServerSettings] Clearing all server caches');
+    _cachedSettings.clear();
+    _cacheTime.clear();
+  }
+
+  /// Get server name for active server
   String get serverName {
-    return _cachedSettings?['serverName'] ?? 'PeerWave Server';
+    final serverKey = _currentServerKey;
+    if (serverKey == null) return 'PeerWave Server';
+    return _cachedSettings[serverKey]?['serverName'] ?? 'PeerWave Server';
   }
 
-  /// Get server picture
+  /// Get server picture for active server
   String? get serverPicture {
-    return _cachedSettings?['serverPicture'];
+    final serverKey = _currentServerKey;
+    if (serverKey == null) return null;
+    return _cachedSettings[serverKey]?['serverPicture'];
   }
+
+  /// Get total cache size (number of cached servers)
+  int get totalCacheSize => _cachedSettings.length;
 }

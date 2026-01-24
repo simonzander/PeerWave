@@ -6,8 +6,11 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/server_config_native.dart';
 import '../services/device_identity_service.dart';
+import '../services/user_profile_service.dart';
+import '../services/storage/sqlite_message_store.dart';
 import '../providers/unread_messages_provider.dart';
 import '../theme/semantic_colors.dart';
+import '../core/events/event_bus.dart';
 
 /// Discord-like server panel for native clients
 /// Shows list of connected servers with icons and notification badges
@@ -51,47 +54,72 @@ class _ServerPanelState extends State<ServerPanel> {
   }
 
   void _updateActiveServerBadge() {
-    if (_activeServerId != null && _unreadProvider != null) {
-      final total =
-          _unreadProvider!.totalChannelUnread +
-          _unreadProvider!.totalDirectMessageUnread +
-          _unreadProvider!.totalActivityNotifications;
+    // Update badges for all servers using per-server unread counts
+    if (_unreadProvider != null) {
       setState(() {
-        final index = _servers.indexWhere((s) => s.id == _activeServerId);
-        if (index != -1) {
-          _servers[index].unreadCount = total;
+        for (final server in _servers) {
+          final unreadCount = _unreadProvider!.getTotalUnreadForServer(
+            server.id,
+          );
+          final index = _servers.indexWhere((s) => s.id == server.id);
+          if (index != -1) {
+            _servers[index].unreadCount = unreadCount;
+          }
         }
       });
     }
   }
 
   void _loadServers() {
+    final newServers = ServerConfigService.getAllServers();
+    final newActiveId = ServerConfigService.getActiveServer()?.id;
+
     setState(() {
-      _servers = ServerConfigService.getAllServers();
-      _activeServerId = ServerConfigService.getActiveServer()?.id;
+      _servers = newServers;
+      _activeServerId = newActiveId;
     });
 
-    // Load server metadata (name and picture) for all servers
+    // Load server metadata (name and picture) for all servers - batch update
+    final futures = <Future>[];
     for (final server in _servers) {
-      ServerConfigService.updateServerMetadata(server.id).then((_) {
-        if (mounted) {
-          setState(() {
-            _servers = ServerConfigService.getAllServers();
-          });
-        }
-      });
+      futures.add(ServerConfigService.updateServerMetadata(server.id));
     }
+
+    Future.wait(futures).then((_) {
+      if (mounted) {
+        setState(() {
+          _servers = ServerConfigService.getAllServers();
+
+          // Load unread counts for all servers and update badges
+          if (_unreadProvider != null) {
+            for (final server in _servers) {
+              final unreadCount = _unreadProvider!.getTotalUnreadForServer(
+                server.id,
+              );
+              final index = _servers.indexWhere((s) => s.id == server.id);
+              if (index != -1) {
+                _servers[index].unreadCount = unreadCount;
+              }
+            }
+          }
+        });
+      }
+    });
   }
 
   Future<void> _switchServer(String serverId) async {
-    // Save current server's unread count before switching
+    // Load unread counts for the new server
     if (_unreadProvider != null) {
-      await ServerConfigService.saveCurrentServerUnreadCount(
-        _unreadProvider!.totalChannelUnread,
-        _unreadProvider!.totalDirectMessageUnread,
-        _unreadProvider!.totalActivityNotifications,
-      );
+      try {
+        await _unreadProvider!.loadFromStorage(serverId);
+        debugPrint('[ServerPanel] ✓ Unread counts loaded for new server');
+      } catch (e) {
+        debugPrint('[ServerPanel] ⚠️ Failed to load unread counts: $e');
+      }
     }
+
+    // TODO: Database needs per-server connections, can't close while other servers active
+    // await DatabaseHelper.close();
 
     await ServerConfigService.setActiveServer(serverId);
     await ServerConfigService.resetUnreadCount(serverId);
@@ -111,11 +139,31 @@ class _ServerPanelState extends State<ServerPanel> {
       }
     }
 
+    // Reload own profile for the new server (profiles are now cached per-server)
+    try {
+      await UserProfileService.instance.loadOwnProfile();
+      debugPrint('[ServerPanel] ✓ Own profile loaded for new server');
+    } catch (e) {
+      debugPrint('[ServerPanel] ⚠️ Failed to load own profile: $e');
+    }
+
     setState(() {
       _activeServerId = serverId;
     });
 
     widget.onServerSelected?.call(serverId);
+
+    // Emit server switched event for UI components to reload data
+    EventBus.instance.emit(AppEvent.serverSwitched, <String, dynamic>{
+      'serverId': serverId,
+    });
+    debugPrint('[ServerPanel] ✓ Server switched event emitted: $serverId');
+
+    // Reload server list to refresh UI and update all badges
+    await Future.delayed(
+      Duration(milliseconds: 100),
+    ); // Small delay for state to settle
+    _loadServers();
 
     // Trigger reload of the app
     if (mounted) {
@@ -130,6 +178,19 @@ class _ServerPanelState extends State<ServerPanel> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: Icon(
+                Icons.mark_email_read,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              title: const Text('Mark All as Read'),
+              subtitle: const Text('Clear all unread badges'),
+              onTap: () async {
+                Navigator.pop(context);
+                await _markAllAsRead(server);
+              },
+            ),
+            const Divider(),
             ListTile(
               leading: Icon(
                 Icons.logout,
@@ -164,6 +225,62 @@ class _ServerPanelState extends State<ServerPanel> {
         ),
       ),
     );
+  }
+
+  Future<void> _markAllAsRead(ServerConfig server) async {
+    try {
+      debugPrint('[ServerPanel] Marking all as read for server: ${server.id}');
+
+      // Switch to this server temporarily if not already active
+      final previousServerId = _activeServerId;
+      final needsSwitch = _activeServerId != server.id;
+
+      if (needsSwitch) {
+        await ServerConfigService.setActiveServer(server.id);
+        setState(() {
+          _activeServerId = server.id;
+        });
+      }
+
+      // Clear unread counts in provider (server-aware)
+      if (_unreadProvider != null) {
+        _unreadProvider!.resetAll();
+        debugPrint('[ServerPanel] ✓ Reset all unread counts in provider');
+      }
+
+      // Mark all notifications as read in database
+      final SqliteMessageStore messageStore =
+          await SqliteMessageStore.getInstance();
+      await messageStore.markAllNotificationsAsRead();
+      debugPrint(
+        '[ServerPanel] ✓ Marked all notifications as read in database',
+      );
+
+      // Switch back to previous server if needed
+      if (needsSwitch && previousServerId != null) {
+        await ServerConfigService.setActiveServer(previousServerId);
+        setState(() {
+          _activeServerId = previousServerId;
+        });
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'All notifications marked as read for ${server.getDisplayName()}',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[ServerPanel] Error marking all as read: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to mark as read: $e')));
+      }
+    }
   }
 
   Future<void> _logoutFromServer(ServerConfig server) async {
@@ -326,7 +443,7 @@ class _ServerPanelState extends State<ServerPanel> {
               onTap: () {
                 context.push(
                   '/server-selection',
-                  extra: {'isAddingServer': true},
+                  extra: <String, dynamic>{'isAddingServer': true},
                 );
               },
             ),
@@ -523,7 +640,7 @@ class _AddServerButton extends StatelessWidget {
         height: 48,
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
             width: 2,

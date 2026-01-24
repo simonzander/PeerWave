@@ -49,11 +49,22 @@ class MeetingAuthorizationService {
         final clientId = await ClientIdService.getClientId();
         debugPrint('[CLIENT_ID] Found current client ID: $clientId');
 
+        // Get active server URL for multi-server support
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer == null) {
+          debugPrint('[MEETING_AUTH] ⚠️ No active server configured');
+          return false;
+        }
+        final serverUrl = activeServer.serverUrl;
+
         // Check if session exists before trying to use it
-        final hasSession = await SessionAuthService().hasSession(clientId);
+        final hasSession = await SessionAuthService().hasSession(
+          clientId: clientId,
+          serverUrl: serverUrl,
+        );
         if (!hasSession) {
           debugPrint(
-            '[MEETING_AUTH] ⚠️ No session secret found, cannot authenticate',
+            '[MEETING_AUTH] ⚠️ No session secret found, cannot authenticate @ $serverUrl',
           );
           debugPrint(
             '[MEETING_AUTH] ❌ Authentication required to check meeting access',
@@ -64,8 +75,11 @@ class MeetingAuthorizationService {
         headers = await SessionAuthService().generateAuthHeaders(
           clientId: clientId,
           requestPath: '/api/meetings/$meetingId',
+          serverUrl: serverUrl,
         );
-        debugPrint('[MEETING_AUTH] ✓ Generated HMAC auth headers for native');
+        debugPrint(
+          '[MEETING_AUTH] ✓ Generated HMAC auth headers for native @ $serverUrl',
+        );
       }
       // Web: Cookies are automatically included by http client
 
@@ -135,6 +149,7 @@ class MeetingAuthorizationService {
       final headers = await SessionAuthService().generateAuthHeaders(
         clientId: clientId,
         requestPath: '/api/meetings/$meetingId',
+        serverUrl: serverUrl,
       );
 
       final response = await http.get(Uri.parse(url), headers: headers);

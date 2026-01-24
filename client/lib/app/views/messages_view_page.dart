@@ -96,7 +96,10 @@ class _MessagesViewPageState extends BaseViewState<MessagesViewPage> {
       onMessageTap: (uuid, displayName) {
         // Navigate to specific message conversation
         debugPrint('[MESSAGES_VIEW] Navigate to: $uuid ($displayName)');
-        context.go('/app/messages/$uuid', extra: {'displayName': displayName});
+        context.go(
+          '/app/messages/$uuid',
+          extra: <String, dynamic>{'displayName': displayName},
+        );
       },
       isLoadingPeople: _isLoadingContextPanel,
       onLoadMorePeople: _loadMoreRecentPeople,

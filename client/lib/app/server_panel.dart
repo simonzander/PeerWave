@@ -37,6 +37,30 @@ class _ServerPanelState extends State<ServerPanel> {
     });
   }
 
+  Future<void> _markAllAsRead(_ServerMeta server) async {
+    try {
+      // For web, this is a simplified implementation
+      // Just update the UI - the actual mark-as-read happens on the server
+      setState(() {
+        final idx = servers.indexWhere((s) => s.host == server.host);
+        if (idx != -1) {
+          servers[idx] = _ServerMeta(
+            host: server.host,
+            mail: server.mail,
+            name: server.name,
+            socket: server.socket,
+            hasServerError: server.hasServerError,
+            hasAuthError: server.hasAuthError,
+            missedNotifications: 0, // Clear the badge
+          );
+        }
+      });
+      _showSnackBar('Notifications marked as read for ${server.name}');
+    } catch (e) {
+      _showSnackBar('Failed to mark as read: $e');
+    }
+  }
+
   List<_ServerMeta> servers = [];
 
   @override
@@ -53,7 +77,10 @@ class _ServerPanelState extends State<ServerPanel> {
       if (currentUri != '/dashboard') {
         router.go(
           '/dashboard',
-          extra: {'socket': servers[0].socket, 'host': servers[0].host},
+          extra: <String, dynamic>{
+            'socket': servers[0].socket,
+            'host': servers[0].host,
+          },
         );
       }
     }
@@ -316,7 +343,7 @@ class _ServerIcon extends StatelessWidget {
                   }
                   GoRouter.of(
                     context,
-                  ).go('/login', extra: {'host': server.host});
+                  ).go('/login', extra: <String, dynamic>{'host': server.host});
                 }
                 if (server.hasServerError) {
                   // Try to reload server meta and status
@@ -339,7 +366,10 @@ class _ServerIcon extends StatelessWidget {
                 if (!server.hasAuthError && !server.hasServerError) {
                   GoRouter.of(context).go(
                     '/dashboard',
-                    extra: {'socket': server.socket, 'host': server.host},
+                    extra: <String, dynamic>{
+                      'socket': server.socket,
+                      'host': server.host,
+                    },
                   );
                 }
               },
@@ -358,15 +388,40 @@ class _ServerIcon extends StatelessWidget {
                     ),
                     items: [
                       const PopupMenuItem<String>(
+                        value: 'markRead',
+                        child: Row(
+                          children: [
+                            Icon(Icons.mark_email_read, size: 20),
+                            SizedBox(width: 8),
+                            Text('Mark All as Read'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem<String>(
                         value: 'logout',
-                        child: Text('Logout'),
+                        child: Row(
+                          children: [
+                            Icon(Icons.logout, size: 20),
+                            SizedBox(width: 8),
+                            Text('Logout'),
+                          ],
+                        ),
                       ),
                       const PopupMenuItem<String>(
                         value: 'remove',
-                        child: Text('Remove Server'),
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_forever, size: 20),
+                            SizedBox(width: 8),
+                            Text('Remove Server'),
+                          ],
+                        ),
                       ),
                     ],
                   );
+                  if (selected == 'markRead') {
+                    parentState._markAllAsRead(server);
+                  }
                   if (selected == 'remove') {
                     parentState._removeServer(server.host);
                   }
