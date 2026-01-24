@@ -275,7 +275,11 @@ class _AuthLayoutState extends State<AuthLayout> {
         if (!mounted) return;
         context.go(
           '/otp',
-          extra: {'email': _lastEmail ?? '', 'serverUrl': urlString, 'wait': 0},
+          extra: <String, dynamic>{
+            'email': _lastEmail ?? '',
+            'serverUrl': urlString,
+            'wait': 0,
+          },
         );
       } else if (status == 202) {
         final apiServer = await loadWebApiServer();
@@ -402,9 +406,10 @@ class _AuthLayoutState extends State<AuthLayout> {
         }
         if (data['status'] == "recovery") {
           if (!mounted) return;
-          GoRouter.of(
-            context,
-          ).go('/recovery', extra: {'email': email, 'serverUrl': urlString});
+          GoRouter.of(context).go(
+            '/recovery',
+            extra: <String, dynamic>{'email': email, 'serverUrl': urlString},
+          );
         }
         setState(() {
           _loginStatus = null;
@@ -852,7 +857,7 @@ class _AuthLayoutState extends State<AuthLayout> {
                               if (mode == 'invitation_only') {
                                 context.go(
                                   '/register/invitation',
-                                  extra: {'email': email},
+                                  extra: <String, dynamic>{'email': email},
                                 );
                                 return;
                               }

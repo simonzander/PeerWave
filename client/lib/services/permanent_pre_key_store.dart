@@ -107,7 +107,9 @@ class PermanentPreKeyStore extends PreKeyStore {
         .toList();
 
     // CRITICAL FIX: Server expects { preKeys: [...] } not just [...]
-    SocketService().emit("storePreKeys", {'preKeys': preKeyPayload});
+    SocketService().emit("storePreKeys", <String, dynamic>{
+      'preKeys': preKeyPayload,
+    });
 
     // Store locally
     for (final record in preKeys) {
@@ -549,7 +551,7 @@ class PermanentPreKeyStore extends PreKeyStore {
 
     // Only send to server if requested (skip during sync cleanup)
     if (sendToServer) {
-      SocketService().emit("removePreKey", {'id': preKeyId});
+      SocketService().emit("removePreKey", <String, dynamic>{'id': preKeyId});
     }
   }
 

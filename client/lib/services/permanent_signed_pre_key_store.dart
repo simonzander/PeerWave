@@ -195,7 +195,9 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
         debugPrint(
           '[SIGNED_PREKEY_SETUP] Removing old server key: ${key.record.id}',
         );
-        SocketService().emit("removeSignedPreKey", {'id': key.record.id});
+        SocketService().emit("removeSignedPreKey", <String, dynamic>{
+          'id': key.record.id,
+        });
         serverDeleted++;
       }
 
@@ -279,7 +281,9 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
         debugPrint(
           "[SIGNED_PREKEY] Auto-cleanup: Removing old server key ${key.record.id} (keeping only $signedPreKeyId)",
         );
-        SocketService().emit("removeSignedPreKey", {'id': key.record.id});
+        SocketService().emit("removeSignedPreKey", <String, dynamic>{
+          'id': key.record.id,
+        });
       }
     }
 
@@ -318,7 +322,9 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
   @override
   Future<void> removeSignedPreKey(int signedPreKeyId) async {
     debugPrint("Removing signed pre key: $signedPreKeyId");
-    SocketService().emit("removeSignedPreKey", {'id': signedPreKeyId});
+    SocketService().emit("removeSignedPreKey", <String, dynamic>{
+      'id': signedPreKeyId,
+    });
 
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
@@ -476,7 +482,9 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
         debugPrint(
           '[SIGNED_PREKEY_ROTATION] Removing old server key: ${key.record.id}',
         );
-        SocketService().emit("removeSignedPreKey", {'id': key.record.id});
+        SocketService().emit("removeSignedPreKey", <String, dynamic>{
+          'id': key.record.id,
+        });
         serverDeleted++;
       }
 

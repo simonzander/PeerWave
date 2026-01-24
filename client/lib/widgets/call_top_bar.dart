@@ -239,7 +239,9 @@ class _CallTopBarState extends State<CallTopBar> {
                           if (service.isMeeting) {
                             GoRouter.of(navigatorContext).go(
                               '/meeting/video/$channelId',
-                              extra: {'meetingTitle': channelName ?? 'Meeting'},
+                              extra: <String, dynamic>{
+                                'meetingTitle': channelName ?? 'Meeting',
+                              },
                             );
                           } else {
                             GoRouter.of(navigatorContext).go(

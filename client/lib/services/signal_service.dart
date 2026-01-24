@@ -352,7 +352,9 @@ class SignalService {
     bool hasMore = true;
 
     // Emit sync started event
-    EventBus.instance.emit(AppEvent.syncStarted, {'total': totalCount});
+    EventBus.instance.emit(AppEvent.syncStarted, <String, dynamic>{
+      'total': totalCount,
+    });
 
     while (hasMore && synced < totalCount) {
       try {
@@ -438,13 +440,17 @@ class SignalService {
         });
       } else {
         debugPrint('[SIGNAL SERVICE] 🎉 Sync complete!');
-        EventBus.instance.emit(AppEvent.syncComplete, {'processed': processed});
+        EventBus.instance.emit(AppEvent.syncComplete, <String, dynamic>{
+          'processed': processed,
+        });
       }
     } catch (e) {
       debugPrint(
         '[SIGNAL SERVICE] ❌ Error handling pending messages response: $e',
       );
-      EventBus.instance.emit(AppEvent.syncError, {'error': e.toString()});
+      EventBus.instance.emit(AppEvent.syncError, <String, dynamic>{
+        'error': e.toString(),
+      });
     }
   }
 
@@ -1702,7 +1708,9 @@ class SignalService {
                 },
               )
               .toList();
-          SocketService().emit("storePreKeys", {'preKeys': preKeysPayload});
+          SocketService().emit("storePreKeys", <String, dynamic>{
+            'preKeys': preKeysPayload,
+          });
           debugPrint(
             '[SIGNAL SERVICE][PREKEY_SYNC] ✓ Uploaded ${missingPreKeys.length} missing PreKeys',
           );
@@ -1903,7 +1911,9 @@ class SignalService {
               },
             )
             .toList();
-        SocketService().emit("storePreKeys", {'preKeys': preKeysPayload});
+        SocketService().emit("storePreKeys", <String, dynamic>{
+          'preKeys': preKeysPayload,
+        });
       } else if (preKeysCount < localPreKeyIds.length) {
         // 🔒 SECURITY FIX: Server has fewer PreKeys than local
         // This means some PreKeys were consumed while we were offline
@@ -2486,7 +2496,9 @@ class SignalService {
           debugPrint(
             '[SIGNAL SERVICE][REINFORCEMENT] Removing old server key: ${key.record.id}',
           );
-          SocketService().emit("removeSignedPreKey", {'id': key.record.id});
+          SocketService().emit("removeSignedPreKey", <String, dynamic>{
+            'id': key.record.id,
+          });
         }
       }
 
@@ -2520,7 +2532,9 @@ class SignalService {
             )
             .toList();
 
-        SocketService().emit("storePreKeys", {'preKeys': preKeysPayload});
+        SocketService().emit("storePreKeys", <String, dynamic>{
+          'preKeys': preKeysPayload,
+        });
       } else {
         debugPrint(
           '[SIGNAL SERVICE][REINFORCEMENT] Found ${localPreKeyIds.length} local PreKey IDs - loading for upload...',
@@ -2545,7 +2559,9 @@ class SignalService {
         debugPrint(
           '[SIGNAL SERVICE][REINFORCEMENT] Uploading ${preKeysPayload.length} PreKeys to server',
         );
-        SocketService().emit("storePreKeys", {'preKeys': preKeysPayload});
+        SocketService().emit("storePreKeys", <String, dynamic>{
+          'preKeys': preKeysPayload,
+        });
       }
 
       debugPrint(
@@ -3620,7 +3636,7 @@ class SignalService {
 
   void deleteItemFromServer(String itemId) {
     debugPrint("[SIGNAL SERVICE] Deleting item with itemId: $itemId");
-    SocketService().emit("deleteItem", {'itemId': itemId});
+    SocketService().emit("deleteItem", <String, dynamic>{'itemId': itemId});
   }
 
   void deleteItem(String itemId) async {
@@ -3637,7 +3653,9 @@ class SignalService {
 
   void deleteGroupItemFromServer(String itemId) async {
     debugPrint("[SIGNAL SERVICE] Deleting group item with itemId: $itemId");
-    SocketService().emit("deleteGroupItem", {'itemId': itemId});
+    SocketService().emit("deleteGroupItem", <String, dynamic>{
+      'itemId': itemId,
+    });
   }
 
   void deleteGroupItem(String itemId, String channelId) async {
@@ -6881,7 +6899,9 @@ class SignalService {
         return;
       }
 
-      SocketService().emit("markGroupItemRead", {'itemId': itemId});
+      SocketService().emit("markGroupItemRead", <String, dynamic>{
+        'itemId': itemId,
+      });
 
       debugPrint('[SIGNAL_SERVICE] Marked group item $itemId as read');
     } catch (e) {

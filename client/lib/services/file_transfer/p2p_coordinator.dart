@@ -1998,7 +1998,10 @@ class P2PCoordinator extends ChangeNotifier {
       _pendingChunkMetadata[peerId] = metadataMap;
 
       // Send ACK back to seeder so they can send binary chunk
-      final ackMessage = {'type': 'chunkMetadataAck', 'chunkIndex': chunkIndex};
+      final ackMessage = <String, dynamic>{
+        'type': 'chunkMetadataAck',
+        'chunkIndex': chunkIndex,
+      };
 
       debugPrint('[P2P] Sending metadata ACK for chunk $chunkIndex');
       await webrtcService.sendData(

@@ -145,7 +145,10 @@ class MagicKeyService {
       }
 
       // Call verification endpoint
-      final requestData = {'key': magicKey, 'clientid': clientId};
+      final requestData = <String, dynamic>{
+        'key': magicKey,
+        'clientid': clientId,
+      };
 
       if (deviceInfo != null) {
         requestData['deviceInfo'] = deviceInfo;

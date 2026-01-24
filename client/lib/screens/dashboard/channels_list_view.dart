@@ -1003,7 +1003,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
 
           context.go(
             '/app/channels/$uuid',
-            extra: {'name': name, 'type': type},
+            extra: <String, dynamic>{'name': name, 'type': type},
           );
         },
       ),
@@ -1170,7 +1170,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
         if (mounted) {
           context.go(
             '/app/channels/$channelId',
-            extra: {'name': channelName, 'type': channelType},
+            extra: <String, dynamic>{'name': channelName, 'type': channelType},
           );
         }
       } else {

@@ -153,7 +153,9 @@ class _ServerPanelState extends State<ServerPanel> {
     widget.onServerSelected?.call(serverId);
 
     // Emit server switched event for UI components to reload data
-    EventBus.instance.emit(AppEvent.serverSwitched, {'serverId': serverId});
+    EventBus.instance.emit(AppEvent.serverSwitched, <String, dynamic>{
+      'serverId': serverId,
+    });
     debugPrint('[ServerPanel] ✓ Server switched event emitted: $serverId');
 
     // Reload server list to refresh UI and update all badges

@@ -995,7 +995,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                     .checkKeysStatus();
                 final needsSetup = status['needsSetup'] as bool;
                 final missingKeys =
-                    (status['missingKeys'] as Map?)?.cast<String, dynamic>() ??
+                    status['missingKeys'] as Map<String, dynamic>? ??
                     <String, dynamic>{};
 
                 debugPrint(

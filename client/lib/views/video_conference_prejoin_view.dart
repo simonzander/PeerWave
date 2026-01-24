@@ -591,7 +591,9 @@ class _VideoConferencePreJoinViewState
       }
 
       // Confirm E2EE key status to server
-      SocketService().emit('video:confirm-e2ee-key', {'channelId': meetingId});
+      SocketService().emit('video:confirm-e2ee-key', <String, dynamic>{
+        'channelId': meetingId,
+      });
 
       final joinData = {
         'channelId': meetingId,

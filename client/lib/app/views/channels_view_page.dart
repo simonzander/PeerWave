@@ -227,7 +227,10 @@ class _ChannelsViewPageState extends BaseViewState<ChannelsViewPage> {
       onChannelTap: (uuid, name, type) {
         // Navigate to specific channel
         debugPrint('[CHANNELS_VIEW] Navigate to: $uuid ($name, type: $type)');
-        context.go('/app/channels/$uuid', extra: {'name': name, 'type': type});
+        context.go(
+          '/app/channels/$uuid',
+          extra: <String, dynamic>{'name': name, 'type': type},
+        );
       },
       onCreateChannel: () {
         debugPrint('[CHANNELS_VIEW] Create new channel');

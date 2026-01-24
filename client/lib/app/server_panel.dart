@@ -53,7 +53,10 @@ class _ServerPanelState extends State<ServerPanel> {
       if (currentUri != '/dashboard') {
         router.go(
           '/dashboard',
-          extra: {'socket': servers[0].socket, 'host': servers[0].host},
+          extra: <String, dynamic>{
+            'socket': servers[0].socket,
+            'host': servers[0].host,
+          },
         );
       }
     }
@@ -316,7 +319,7 @@ class _ServerIcon extends StatelessWidget {
                   }
                   GoRouter.of(
                     context,
-                  ).go('/login', extra: {'host': server.host});
+                  ).go('/login', extra: <String, dynamic>{'host': server.host});
                 }
                 if (server.hasServerError) {
                   // Try to reload server meta and status
@@ -339,7 +342,10 @@ class _ServerIcon extends StatelessWidget {
                 if (!server.hasAuthError && !server.hasServerError) {
                   GoRouter.of(context).go(
                     '/dashboard',
-                    extra: {'socket': server.socket, 'host': server.host},
+                    extra: <String, dynamic>{
+                      'socket': server.socket,
+                      'host': server.host,
+                    },
                   );
                 }
               },

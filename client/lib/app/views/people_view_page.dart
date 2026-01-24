@@ -170,7 +170,10 @@ class _PeopleViewPageState extends BaseViewState<PeopleViewPage> {
     debugPrint('[PEOPLE_VIEW] Person tapped: $displayName ($uuid)');
 
     // Navigate to messages view with specific conversation
-    context.go('/app/messages/$uuid', extra: {'displayName': displayName});
+    context.go(
+      '/app/messages/$uuid',
+      extra: <String, dynamic>{'displayName': displayName},
+    );
   }
 
   @override
