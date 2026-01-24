@@ -3615,15 +3615,21 @@ class SignalService {
       }
     }
 
-    // NEW: Trigger specific receiveItem callbacks (type:sender)
+    // NEW: Trigger specific receiveItem callbacks (type:conversationUserId)
+    // 🔑 CRITICAL: Use the same logic as newConversation event - for multi-device sync
     if (type != null && sender != null) {
-      final key = '$type:$sender';
+      // Determine the conversation user ID (same logic as newConversation event above)
+      final conversationUserId = isOwnMessage
+          ? (originalRecipient ?? recipient)
+          : sender;
+
+      final key = '$type:$conversationUserId';
       if (_receiveItemCallbacks.containsKey(key)) {
         for (final callback in _receiveItemCallbacks[key]!) {
           callback(item);
         }
         debugPrint(
-          '[SIGNAL SERVICE] Triggered ${_receiveItemCallbacks[key]!.length} receiveItem callbacks for $key',
+          '[SIGNAL SERVICE] Triggered ${_receiveItemCallbacks[key]!.length} receiveItem callbacks for $key (conversationUserId=$conversationUserId, isOwnMessage=$isOwnMessage)',
         );
       }
     }
