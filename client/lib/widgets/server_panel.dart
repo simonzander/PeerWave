@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../services/server_config_native.dart';
 import '../services/device_identity_service.dart';
 import '../services/user_profile_service.dart';
+import '../services/storage/sqlite_message_store.dart';
 import '../providers/unread_messages_provider.dart';
 import '../theme/semantic_colors.dart';
 import '../core/events/event_bus.dart';
@@ -179,6 +180,19 @@ class _ServerPanelState extends State<ServerPanel> {
           children: [
             ListTile(
               leading: Icon(
+                Icons.mark_email_read,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              title: const Text('Mark All as Read'),
+              subtitle: const Text('Clear all unread badges'),
+              onTap: () async {
+                Navigator.pop(context);
+                await _markAllAsRead(server);
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: Icon(
                 Icons.logout,
                 color: Theme.of(context).colorScheme.error,
               ),
@@ -211,6 +225,62 @@ class _ServerPanelState extends State<ServerPanel> {
         ),
       ),
     );
+  }
+
+  Future<void> _markAllAsRead(ServerConfig server) async {
+    try {
+      debugPrint('[ServerPanel] Marking all as read for server: ${server.id}');
+
+      // Switch to this server temporarily if not already active
+      final previousServerId = _activeServerId;
+      final needsSwitch = _activeServerId != server.id;
+
+      if (needsSwitch) {
+        await ServerConfigService.setActiveServer(server.id);
+        setState(() {
+          _activeServerId = server.id;
+        });
+      }
+
+      // Clear unread counts in provider (server-aware)
+      if (_unreadProvider != null) {
+        _unreadProvider!.resetAll();
+        debugPrint('[ServerPanel] ✓ Reset all unread counts in provider');
+      }
+
+      // Mark all notifications as read in database
+      final SqliteMessageStore messageStore =
+          await SqliteMessageStore.getInstance();
+      await messageStore.markAllNotificationsAsRead();
+      debugPrint(
+        '[ServerPanel] ✓ Marked all notifications as read in database',
+      );
+
+      // Switch back to previous server if needed
+      if (needsSwitch && previousServerId != null) {
+        await ServerConfigService.setActiveServer(previousServerId);
+        setState(() {
+          _activeServerId = previousServerId;
+        });
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'All notifications marked as read for ${server.getDisplayName()}',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[ServerPanel] Error marking all as read: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to mark as read: $e')));
+      }
+    }
   }
 
   Future<void> _logoutFromServer(ServerConfig server) async {
