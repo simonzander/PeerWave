@@ -17,7 +17,6 @@ import '../../services/signal_service.dart';
 import '../../services/socket_service_native.dart'
     if (dart.library.html) '../../services/socket_service.dart';
 import '../../services/api_service.dart';
-import '../../services/user_profile_service.dart';
 import '../../services/server_config_native.dart'
     if (dart.library.html) '../../services/server_config_web.dart';
 import '../../providers/role_provider.dart';
@@ -770,17 +769,10 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     Map<String, dynamic> file,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
-    final userProfileService = UserProfileService.instance;
 
-    // Get shareInfo with server details
+    // Get shareInfo with locally saved user details (displayName, picture, server)
+    // No need to fetch from UserProfileService since we saved it when sharing
     final shareInfo = (file['shareInfo'] as Map?)?.cast<String, dynamic>();
-
-    // Load profiles if not cached
-    for (final userId in sharedWith) {
-      if (!userProfileService.isProfileCached(userId)) {
-        userProfileService.loadProfiles([userId]);
-      }
-    }
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -811,11 +803,10 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
             spacing: 8,
             runSpacing: 8,
             children: sharedWith.take(5).map((userId) {
-              final displayName = userProfileService.getDisplayName(userId);
-              final picture = userProfileService.getPicture(userId);
-
-              // Get server info for this user
+              // Get user info from locally saved shareInfo (includes displayName, picture, server)
               final userInfo = shareInfo?[userId] as Map?;
+              final displayName = userInfo?['displayName'] as String?;
+              final picture = userInfo?['picture'] as String?;
               final server = userInfo?['server'] as String?;
               String? serverDisplay;
               if (server != null) {

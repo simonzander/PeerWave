@@ -5,6 +5,7 @@ import 'socket_file_client.dart';
 import 'storage_interface.dart';
 import 'encryption_service.dart';
 import '../signal_service.dart';
+import '../user_profile_service.dart';
 import '../server_config_web.dart'
     if (dart.library.io) '../server_config_native.dart';
 import '../../web_config.dart';
@@ -933,14 +934,32 @@ class FileTransferService {
         final currentShareInfo =
             (metadata['shareInfo'] as Map?)?.cast<String, dynamic>() ?? {};
 
-        // Add new users to shareInfo
+        // Add new users to shareInfo with displayName from local cache
+        // Ensure profiles are loaded first
+        final userIdsToLoad = userIds
+            .where(
+              (userId) => !UserProfileService.instance.isProfileCached(userId),
+            )
+            .toList();
+        if (userIdsToLoad.isNotEmpty) {
+          try {
+            await UserProfileService.instance.loadProfiles(userIdsToLoad);
+          } catch (e) {
+            debugPrint('[FILE TRANSFER] Warning: Could not load profiles: $e');
+          }
+        }
+
         for (final userId in userIds) {
           if (!currentShareInfo.containsKey(userId)) {
-            // TODO: Get user display name from contacts/profiles
-            // For now, just store userId and server
+            // Get displayName from UserProfileService (now loaded)
+            final displayName =
+                UserProfileService.instance.getDisplayName(userId) ?? userId;
+            final picture = UserProfileService.instance.getPicture(userId);
+
             currentShareInfo[userId] = {
               'server': currentServer ?? 'unknown',
-              'displayName': userId, // Fallback to userId for now
+              'displayName': displayName,
+              'picture': picture,
               'addedAt': DateTime.now().toIso8601String(),
             };
           }

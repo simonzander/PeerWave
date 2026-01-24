@@ -1,9 +1,12 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'signal_service.dart';
 import 'video_conference_service.dart';
 import 'user_profile_service.dart';
+import 'server_config_web.dart'
+    if (dart.library.io) 'server_config_native.dart';
+import '../web_config.dart';
 import 'storage/sqlite_message_store.dart';
 
 /// Global service that listens for all incoming messages (1:1 and group)
@@ -537,8 +540,50 @@ class MessageListenerService {
               }.toList();
 
               if (mergedSharedWith.length != existingSharedWith.length) {
+                // Get current server URL
+                String? currentServer;
+                if (kIsWeb) {
+                  currentServer = await loadWebApiServer();
+                } else {
+                  currentServer =
+                      ServerConfigService.getActiveServer()?.serverUrl;
+                }
+
+                // Update shareInfo with sender's displayName
+                final currentShareInfo =
+                    (metadata['shareInfo'] as Map?)?.cast<String, dynamic>() ??
+                    {};
+                if (!currentShareInfo.containsKey(senderId)) {
+                  // Ensure sender profile is loaded
+                  if (!UserProfileService.instance.isProfileCached(senderId)) {
+                    try {
+                      await UserProfileService.instance.loadProfile(senderId);
+                    } catch (e) {
+                      debugPrint(
+                        '[FILE SHARE] Warning: Could not load sender profile: $e',
+                      );
+                    }
+                  }
+
+                  // Get displayName from UserProfileService (now loaded)
+                  final displayName =
+                      UserProfileService.instance.getDisplayName(senderId) ??
+                      senderId;
+                  final picture = UserProfileService.instance.getPicture(
+                    senderId,
+                  );
+
+                  currentShareInfo[senderId] = {
+                    'server': currentServer ?? 'unknown',
+                    'displayName': displayName,
+                    'picture': picture,
+                    'addedAt': DateTime.now().toIso8601String(),
+                  };
+                }
+
                 await fileTransferService.updateFileMetadata(fileId, {
                   'sharedWith': mergedSharedWith,
+                  'shareInfo': currentShareInfo,
                   'lastSync': DateTime.now().millisecondsSinceEpoch,
                 });
                 debugPrint(
@@ -558,6 +603,34 @@ class MessageListenerService {
 
               // Get file info from server to have all metadata ready
               try {
+                // Get current server URL
+                String? currentServer;
+                if (kIsWeb) {
+                  currentServer = await loadWebApiServer();
+                } else {
+                  currentServer =
+                      ServerConfigService.getActiveServer()?.serverUrl;
+                }
+
+                // Ensure sender profile is loaded
+                if (!UserProfileService.instance.isProfileCached(senderId)) {
+                  try {
+                    await UserProfileService.instance.loadProfile(senderId);
+                  } catch (e) {
+                    debugPrint(
+                      '[FILE SHARE] Warning: Could not load sender profile: $e',
+                    );
+                  }
+                }
+
+                // Get displayName from UserProfileService (now loaded)
+                final displayName =
+                    UserProfileService.instance.getDisplayName(senderId) ??
+                    senderId;
+                final picture = UserProfileService.instance.getPicture(
+                  senderId,
+                );
+
                 final fileInfo = await socketFileClient.getFileInfo(fileId);
                 await fileTransferService.saveFileMetadata({
                   'fileId': fileId,
@@ -574,6 +647,14 @@ class MessageListenerService {
                   'sharedWith': [
                     senderId,
                   ], // Start with sender only (will merge on announce)
+                  'shareInfo': {
+                    senderId: {
+                      'server': currentServer ?? 'unknown',
+                      'displayName': displayName,
+                      'picture': picture,
+                      'addedAt': DateTime.now().toIso8601String(),
+                    },
+                  },
                   'downloadedChunks': [],
                 });
                 debugPrint(
