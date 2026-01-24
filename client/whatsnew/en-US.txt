@@ -1,30 +1,5 @@
-🚀 What's New in PeerWave v1.1.13
-
-✨ New Features
-• Add deleteServerWithData method to ServerConfigService
-• Implement unread message handling and server management in AppDrawer
-• Enhance font handling with fallback to system fonts when Google Fonts are unavailable
-• Improve user profile handling in file transfer and message listener services
-• Add 'Mark All as Read' functionality with UI integration and database updates
-• Enhance conversation deletion with improved event handling and navigation
-• Enhance multi-server support with event handling and caching improvements
-• Implement multi-server support with server switch event handling
-• Add conversation deletion functionality in direct messages screen
-• Implement multi-device support for read receipts and message storage
-• Implement in-memory tracking for user presence and update status handling
-• Enhance server initialization and socket communication with new emit methods
-• Enhance SocketService for multi-server support and named listener management
-• Enhance app initialization phases and database access validation
-• Add native server configuration routes and settings routes
-• Add native and web authentication routes
-• add device info collection for enhanced client identification across platforms
+🚀 What's New in PeerWave v1.1.14
 
 🐛 Bug Fixes
-• remove unused dependency 'passport-fido2-webauthn' from package.json and package-lock.json
-• integrate connect-session-sequelize for session management
-• simplify token exchange rate limiter key generation logic
-• increase rate limits for authentication and registration endpoints
-• preserve original recipient user ID for multi-device sync
-• refreshToken scope
-• signal-setup called on each nav but keys where valid
+• add RefreshToken model to client route dependencies
 
