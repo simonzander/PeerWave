@@ -1,5 +1,5 @@
-🚀 What's New in PeerWave v1.1.15
+🚀 What's New in PeerWave v1.1.16
 
 🐛 Bug Fixes
-• update server ID handling for web to use a fixed 'web' identifier
+• update receiveItem callback logic to use conversationUserId for multi-device sync
 
