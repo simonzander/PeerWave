@@ -58,7 +58,7 @@ class PresenceService {
       );
       debugPrint('[PRESENCE SERVICE] Raw data: $data');
       try {
-        final map = data as Map<String, dynamic>;
+        final map = Map<String, dynamic>.from(data as Map);
         final userId = map['user_id'] as String;
         final status = map['status'] as String?;
         final lastSeenStr = map['last_seen'] as String?;
@@ -102,7 +102,7 @@ class PresenceService {
     _socketService.registerListener('presence:user_connected', (data) {
       debugPrint('[PRESENCE SERVICE] Received presence:user_connected: $data');
       try {
-        final map = data as Map<String, dynamic>;
+        final map = Map<String, dynamic>.from(data as Map);
         final userId = map['user_id'] as String;
         final lastSeenStr = map['last_seen'] as String?;
 
@@ -142,7 +142,7 @@ class PresenceService {
         '[PRESENCE SERVICE] Received presence:user_disconnected: $data',
       );
       try {
-        final map = data as Map<String, dynamic>;
+        final map = Map<String, dynamic>.from(data as Map);
         final userId = map['user_id'] as String;
         final lastSeenStr = map['last_seen'] as String?;
 
