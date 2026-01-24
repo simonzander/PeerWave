@@ -9,7 +9,7 @@ import '../services/device_identity_service.dart';
 import '../services/user_profile_service.dart';
 import '../providers/unread_messages_provider.dart';
 import '../theme/semantic_colors.dart';
-import '../services/event_bus.dart';
+import '../core/events/event_bus.dart';
 
 /// Discord-like server panel for native clients
 /// Shows list of connected servers with icons and notification badges

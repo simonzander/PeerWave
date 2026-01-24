@@ -9,29 +9,53 @@ import 'server_config_web.dart'
 ///
 /// Singleton service that fetches and caches ICE server configuration
 /// from the server's /client/meta endpoint.
+///
+/// Multi-Server Support:
+/// - Maintains separate ICE config cache per server
+/// - Auto-switches based on active server from ServerConfigService
+/// - No manual cache clearing needed when switching servers
 class IceConfigService extends ChangeNotifier {
   static final IceConfigService _instance = IceConfigService._internal();
   factory IceConfigService() => _instance;
   IceConfigService._internal();
 
-  ClientMetaResponse? _clientMeta;
-  bool _isLoaded = false;
-  DateTime? _lastLoaded;
-  String? _serverUrl;
+  // Per-server cache: serverId/serverUrl -> ClientMetaResponse
+  final Map<String, ClientMetaResponse?> _clientMetaCache = {};
+  final Map<String, bool> _isLoadedCache = {};
+  final Map<String, DateTime?> _lastLoadedCache = {};
 
   // Cache TTL: Reload config after 12 hours (half of TURN credential lifetime)
   static const Duration _cacheTtl = Duration(hours: 12);
 
-  /// Get cached client meta response
-  ClientMetaResponse? get clientMeta => _clientMeta;
+  /// Get current server ID (for native) or URL (for web)
+  String? get _currentServerKey {
+    if (kIsWeb) {
+      // Web: Use server URL as key (no multi-server support)
+      return 'web';
+    } else {
+      // Native: Use server ID from active server
+      final activeServer = ServerConfigService.getActiveServer();
+      return activeServer?.id;
+    }
+  }
 
-  /// Check if config is loaded
-  bool get isLoaded => _isLoaded;
+  /// Get cached client meta response for current server
+  ClientMetaResponse? get clientMeta {
+    final key = _currentServerKey;
+    return key != null ? _clientMetaCache[key] : null;
+  }
 
-  /// Get ICE servers in WebRTC-compatible format
+  /// Check if config is loaded for current server
+  bool get isLoaded {
+    final key = _currentServerKey;
+    return key != null ? (_isLoadedCache[key] ?? false) : false;
+  }
+
+  /// Get ICE servers in WebRTC-compatible format for current server
   Map<String, dynamic> getIceServers() {
-    if (_clientMeta != null) {
-      return _clientMeta!.toWebRtcConfig();
+    final meta = clientMeta;
+    if (meta != null) {
+      return meta.toWebRtcConfig();
     }
 
     // Fallback to Google STUN
@@ -43,53 +67,57 @@ class IceConfigService extends ChangeNotifier {
     };
   }
 
-  /// Load ICE server configuration from LiveKit
+  /// Load ICE server configuration from LiveKit for current server
   Future<void> loadConfig({bool force = false, String? serverUrl}) async {
-    // Update server URL if provided
-    if (serverUrl != null) {
-      _serverUrl = serverUrl;
+    final serverKey = _currentServerKey;
+    if (serverKey == null) {
+      debugPrint('[ICE CONFIG] ⚠️ No active server, cannot load config');
+      return;
     }
 
-    // Get server URL from appropriate source
-    if (_serverUrl == null || _serverUrl!.isEmpty) {
+    // Get actual server URL for API calls
+    String? actualServerUrl = serverUrl;
+    if (actualServerUrl == null || actualServerUrl.isEmpty) {
       if (kIsWeb) {
         // Web: Load from web config
-        _serverUrl = await loadWebApiServer();
+        actualServerUrl = await loadWebApiServer();
       } else {
         // Native: Get from ServerConfigService
         final activeServer = ServerConfigService.getActiveServer();
         if (activeServer != null) {
-          _serverUrl = activeServer.serverUrl;
-          debugPrint('[ICE CONFIG] Using active server: $_serverUrl');
+          actualServerUrl = activeServer.serverUrl;
+          debugPrint('[ICE CONFIG] Using active server: $actualServerUrl');
         }
       }
     }
 
     // Ensure we have a valid server URL
-    if (_serverUrl == null || _serverUrl!.isEmpty) {
+    if (actualServerUrl == null || actualServerUrl.isEmpty) {
       debugPrint('[ICE CONFIG] ⚠️ No server URL available, using fallback');
-      _serverUrl = 'http://localhost:3000'; // Fallback
+      actualServerUrl = 'http://localhost:3000'; // Fallback
     }
 
     // Ensure server URL has protocol (only add if doesn't have one)
-    if (!_serverUrl!.startsWith('http://') &&
-        !_serverUrl!.startsWith('https://')) {
-      _serverUrl = 'https://$_serverUrl';
+    if (!actualServerUrl.startsWith('http://') &&
+        !actualServerUrl.startsWith('https://')) {
+      actualServerUrl = 'https://$actualServerUrl';
     }
 
-    debugPrint('[ICE CONFIG] Using server URL: $_serverUrl');
+    debugPrint('[ICE CONFIG] Loading config for server key: $serverKey');
+    debugPrint('[ICE CONFIG] Server URL: $actualServerUrl');
 
     // Check if we need to reload (cache expired or forced)
-    if (!force && _isLoaded && _lastLoaded != null) {
-      final age = DateTime.now().difference(_lastLoaded!);
+    final lastLoaded = _lastLoadedCache[serverKey];
+    if (!force && (_isLoadedCache[serverKey] ?? false) && lastLoaded != null) {
+      final age = DateTime.now().difference(lastLoaded);
       if (age < _cacheTtl) {
         debugPrint(
-          '[ICE CONFIG] Using cached config (age: ${age.inMinutes}min)',
+          '[ICE CONFIG] Using cached config for $serverKey (age: ${age.inMinutes}min)',
         );
         return;
       }
       debugPrint(
-        '[ICE CONFIG] Cache expired (age: ${age.inHours}h), reloading...',
+        '[ICE CONFIG] Cache expired for $serverKey (age: ${age.inHours}h), reloading...',
       );
     }
 
@@ -116,25 +144,24 @@ class IceConfigService extends ChangeNotifier {
           }
         }
 
-        _clientMeta = ClientMetaResponse(
+        final config = ClientMetaResponse(
           name: 'PeerWave',
           version: '1.0.0',
           iceServers: servers,
         );
 
-        _isLoaded = true;
-        _lastLoaded = DateTime.now();
+        _clientMetaCache[serverKey] = config;
+        _isLoadedCache[serverKey] = true;
+        _lastLoadedCache[serverKey] = DateTime.now();
 
-        debugPrint('[ICE CONFIG] ✅ LiveKit ICE config loaded successfully');
-        debugPrint(
-          '[ICE CONFIG] ICE Servers: ${_clientMeta!.iceServers.length}',
-        );
+        debugPrint('[ICE CONFIG] ✅ LiveKit ICE config loaded for $serverKey');
+        debugPrint('[ICE CONFIG] ICE Servers: ${config.iceServers.length}');
         debugPrint(
           '[ICE CONFIG] TTL: ${data['ttl']}s, Expires: ${data['expiresAt']}',
         );
 
-        for (var i = 0; i < _clientMeta!.iceServers.length; i++) {
-          final server = _clientMeta!.iceServers[i];
+        for (var i = 0; i < config.iceServers.length; i++) {
+          final server = config.iceServers[i];
           debugPrint('[ICE CONFIG]   [$i] ${server.urls.join(", ")}');
           if (server.username != null) {
             debugPrint('[ICE CONFIG]       Auth: JWT-based (LiveKit)');
@@ -156,16 +183,21 @@ class IceConfigService extends ChangeNotifier {
 
   /// Use fallback configuration (public STUN only)
   void _useFallback() {
-    debugPrint('[ICE CONFIG] Using fallback configuration (public STUN only)');
-    _clientMeta = ClientMetaResponse(
+    final serverKey = _currentServerKey;
+    if (serverKey == null) return;
+
+    debugPrint(
+      '[ICE CONFIG] Using fallback configuration for $serverKey (public STUN only)',
+    );
+    _clientMetaCache[serverKey] = ClientMetaResponse(
       name: 'PeerWave',
       version: 'unknown',
       iceServers: [
         IceServer(urls: ['stun:stun.l.google.com:19302']),
       ],
     );
-    _isLoaded = true;
-    _lastLoaded = DateTime.now();
+    _isLoadedCache[serverKey] = true;
+    _lastLoadedCache[serverKey] = DateTime.now();
     notifyListeners();
   }
 
@@ -175,25 +207,50 @@ class IceConfigService extends ChangeNotifier {
     await loadConfig(force: true);
   }
 
-  /// Clear cached configuration
+  /// Clear cached configuration for current server
   void clearCache() {
-    debugPrint('[ICE CONFIG] Clearing cache');
-    _clientMeta = null;
-    _isLoaded = false;
-    _lastLoaded = null;
+    final serverKey = _currentServerKey;
+    if (serverKey != null) {
+      debugPrint('[ICE CONFIG] Clearing cache for $serverKey');
+      _clientMetaCache.remove(serverKey);
+      _isLoadedCache.remove(serverKey);
+      _lastLoadedCache.remove(serverKey);
+      notifyListeners();
+    }
+  }
+
+  /// Clear all cached configurations (all servers)
+  void clearAllCaches() {
+    debugPrint('[ICE CONFIG] Clearing all server caches');
+    _clientMetaCache.clear();
+    _isLoadedCache.clear();
+    _lastLoadedCache.clear();
     notifyListeners();
   }
 
-  /// Check if configuration should be reloaded (cache expired)
+  /// Check if configuration should be reloaded (cache expired) for current server
   bool shouldReload() {
-    if (!_isLoaded || _lastLoaded == null) return true;
-    final age = DateTime.now().difference(_lastLoaded!);
+    final serverKey = _currentServerKey;
+    if (serverKey == null) return true;
+
+    final isLoaded = _isLoadedCache[serverKey] ?? false;
+    final lastLoaded = _lastLoadedCache[serverKey];
+
+    if (!isLoaded || lastLoaded == null) return true;
+    final age = DateTime.now().difference(lastLoaded);
     return age >= _cacheTtl;
   }
 
-  /// Get cache age in minutes
+  /// Get cache age in minutes for current server
   int? getCacheAgeMinutes() {
-    if (_lastLoaded == null) return null;
-    return DateTime.now().difference(_lastLoaded!).inMinutes;
+    final serverKey = _currentServerKey;
+    if (serverKey == null) return null;
+
+    final lastLoaded = _lastLoadedCache[serverKey];
+    if (lastLoaded == null) return null;
+    return DateTime.now().difference(lastLoaded).inMinutes;
   }
+
+  /// Get total cache size (number of cached servers)
+  int get totalCacheSize => _clientMetaCache.length;
 }
