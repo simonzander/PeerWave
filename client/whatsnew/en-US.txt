@@ -1,8 +1,9 @@
-🚀 What's New in PeerWave v1.1.11
+🚀 What's New in PeerWave v1.1.12
 
 ✨ New Features
-• enhance version bump workflow to detect client and server changes
+• add step to read release notes from client directory for GitHub release
 
 🐛 Bug Fixes
-• enhance authentication loading screen with polling and abort functionality
+• improve branch detection to handle force pushes and null SHA
+• enhance branch detection logic to handle null SHA
 
