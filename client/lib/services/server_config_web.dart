@@ -52,6 +52,7 @@ class ServerConfigService {
     String? iconPath,
   }) async => throw UnimplementedError('Web does not support multi-server');
   static Future<bool> removeServer(String serverId) async => false;
+  static Future<bool> deleteServerWithData(String serverId) async => false;
   static List<ServerConfig> getAllServers() => [];
   static ServerConfig? getActiveServer() => null;
   static Future<void> setActiveServer(String serverId) async {}
