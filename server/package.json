@@ -19,7 +19,7 @@
     "bcrypt": "^6.0.0",
     "bulma-toast": "^2.4.4",
     "connect-session-sequelize": "^8.0.4",
-    "cors": "^2.8.5",
+    "cors": "^2.8.6",
     "emailjs": "^4.0.3",
     "express": "^4.22.1",
     "express-rate-limit": "^8.2.1",
