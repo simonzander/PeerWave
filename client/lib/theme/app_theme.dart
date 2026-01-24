@@ -42,28 +42,40 @@ class AppTheme {
   static const String monospaceFontFamily = 'Fira Code';
 
   /// Helper: Gibt den korrekten TextStyle mit der richtigen Font-Variante zurück
+  /// Fällt auf System-Fonts zurück wenn Google Fonts nicht verfügbar sind
   static TextStyle _getFontStyle({
     required double fontSize,
     required FontWeight fontWeight,
     required Color color,
     double? letterSpacing,
   }) {
-    if (useSemiCondensed) {
-      // Verwende die spezifische SemiCondensed Variante
-      return GoogleFonts.nunitoSans(
+    try {
+      if (useSemiCondensed) {
+        // Verwende die spezifische SemiCondensed Variante
+        return GoogleFonts.nunitoSans(
+          fontSize: fontSize,
+          fontWeight: fontWeight,
+          color: color,
+          letterSpacing: letterSpacing,
+          // SemiCondensed hat eine eigene font-feature
+        );
+      } else {
+        return GoogleFonts.getFont(
+          fontFamily,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
+          color: color,
+          letterSpacing: letterSpacing,
+        );
+      }
+    } catch (e) {
+      // Fallback to system font when offline or Google Fonts unavailable
+      return TextStyle(
         fontSize: fontSize,
         fontWeight: fontWeight,
         color: color,
         letterSpacing: letterSpacing,
-        // SemiCondensed hat eine eigene font-feature
-      );
-    } else {
-      return GoogleFonts.getFont(
-        fontFamily,
-        fontSize: fontSize,
-        fontWeight: fontWeight,
-        color: color,
-        letterSpacing: letterSpacing,
+        fontFamily: 'sans-serif', // System default
       );
     }
   }
@@ -183,11 +195,19 @@ class AppTheme {
     // Debug: Print font info
     debugPrint('🎨 AppTheme: Loading font family: $fontFamily');
 
-    // Basis TextTheme mit Google Font
-    final baseTextTheme = GoogleFonts.getTextTheme(fontFamily);
-    debugPrint(
-      '🎨 AppTheme: Base TextTheme created with family: ${baseTextTheme.bodyMedium?.fontFamily}',
-    );
+    // Basis TextTheme mit Google Font (mit Fehlerbehandlung)
+    TextTheme baseTextTheme;
+    try {
+      baseTextTheme = GoogleFonts.getTextTheme(fontFamily);
+      debugPrint(
+        '🎨 AppTheme: Base TextTheme created with family: ${baseTextTheme.bodyMedium?.fontFamily}',
+      );
+    } catch (e) {
+      debugPrint(
+        '🎨 AppTheme: Google Fonts unavailable (offline?), using system fonts',
+      );
+      baseTextTheme = const TextTheme();
+    }
 
     final textTheme = baseTextTheme.copyWith(
       // Display (Largest)
@@ -296,13 +316,24 @@ class AppTheme {
 
   /// TextTheme für Monospace (Code, technische Inhalte)
   static TextTheme monoTextTheme(ColorScheme scheme) {
-    return GoogleFonts.getTextTheme(
-      monospaceFontFamily,
-      TextTheme(
-        bodyMedium: TextStyle(color: scheme.onSurface),
-        bodySmall: TextStyle(color: scheme.onSurfaceVariant),
-      ),
-    );
+    try {
+      return GoogleFonts.getTextTheme(
+        monospaceFontFamily,
+        TextTheme(
+          bodyMedium: TextStyle(color: scheme.onSurface),
+          bodySmall: TextStyle(color: scheme.onSurfaceVariant),
+        ),
+      );
+    } catch (e) {
+      // Fallback to system monospace font
+      return TextTheme(
+        bodyMedium: TextStyle(color: scheme.onSurface, fontFamily: 'monospace'),
+        bodySmall: TextStyle(
+          color: scheme.onSurfaceVariant,
+          fontFamily: 'monospace',
+        ),
+      );
+    }
   }
 
   /// Debug-Funktion: Gibt alle verfügbaren Google Fonts aus
