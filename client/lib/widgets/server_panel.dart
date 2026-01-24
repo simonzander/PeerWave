@@ -53,46 +53,68 @@ class _ServerPanelState extends State<ServerPanel> {
   }
 
   void _updateActiveServerBadge() {
-    if (_activeServerId != null && _unreadProvider != null) {
-      final total =
-          _unreadProvider!.totalChannelUnread +
-          _unreadProvider!.totalDirectMessageUnread +
-          _unreadProvider!.totalActivityNotifications;
+    // Update badges for all servers using per-server unread counts
+    if (_unreadProvider != null) {
       setState(() {
-        final index = _servers.indexWhere((s) => s.id == _activeServerId);
-        if (index != -1) {
-          _servers[index].unreadCount = total;
+        for (final server in _servers) {
+          final unreadCount = _unreadProvider!.getTotalUnreadForServer(
+            server.id,
+          );
+          final index = _servers.indexWhere((s) => s.id == server.id);
+          if (index != -1) {
+            _servers[index].unreadCount = unreadCount;
+          }
         }
       });
     }
   }
 
   void _loadServers() {
+    final newServers = ServerConfigService.getAllServers();
+    final newActiveId = ServerConfigService.getActiveServer()?.id;
+
     setState(() {
-      _servers = ServerConfigService.getAllServers();
-      _activeServerId = ServerConfigService.getActiveServer()?.id;
+      _servers = newServers;
+      _activeServerId = newActiveId;
     });
 
-    // Load server metadata (name and picture) for all servers
+    // Load server metadata (name and picture) for all servers - batch update
+    final futures = <Future>[];
     for (final server in _servers) {
-      ServerConfigService.updateServerMetadata(server.id).then((_) {
-        if (mounted) {
-          setState(() {
-            _servers = ServerConfigService.getAllServers();
-          });
-        }
-      });
+      futures.add(ServerConfigService.updateServerMetadata(server.id));
     }
+
+    Future.wait(futures).then((_) {
+      if (mounted) {
+        setState(() {
+          _servers = ServerConfigService.getAllServers();
+
+          // Load unread counts for all servers and update badges
+          if (_unreadProvider != null) {
+            for (final server in _servers) {
+              final unreadCount = _unreadProvider!.getTotalUnreadForServer(
+                server.id,
+              );
+              final index = _servers.indexWhere((s) => s.id == server.id);
+              if (index != -1) {
+                _servers[index].unreadCount = unreadCount;
+              }
+            }
+          }
+        });
+      }
+    });
   }
 
   Future<void> _switchServer(String serverId) async {
-    // Save current server's unread count before switching
+    // Load unread counts for the new server
     if (_unreadProvider != null) {
-      await ServerConfigService.saveCurrentServerUnreadCount(
-        _unreadProvider!.totalChannelUnread,
-        _unreadProvider!.totalDirectMessageUnread,
-        _unreadProvider!.totalActivityNotifications,
-      );
+      try {
+        await _unreadProvider!.loadFromStorage(serverId);
+        debugPrint('[ServerPanel] ✓ Unread counts loaded for new server');
+      } catch (e) {
+        debugPrint('[ServerPanel] ⚠️ Failed to load unread counts: $e');
+      }
     }
 
     // TODO: Database needs per-server connections, can't close while other servers active
@@ -116,11 +138,7 @@ class _ServerPanelState extends State<ServerPanel> {
       }
     }
 
-    // Clear profile cache to prevent showing profiles from previous server
-    UserProfileService.instance.clearCache();
-    debugPrint('[ServerPanel] ✓ Profile cache cleared for server switch');
-
-    // Reload own profile for the new server
+    // Reload own profile for the new server (profiles are now cached per-server)
     try {
       await UserProfileService.instance.loadOwnProfile();
       debugPrint('[ServerPanel] ✓ Own profile loaded for new server');
@@ -138,7 +156,7 @@ class _ServerPanelState extends State<ServerPanel> {
     EventBus.instance.emit(AppEvent.serverSwitched, {'serverId': serverId});
     debugPrint('[ServerPanel] ✓ Server switched event emitted: $serverId');
 
-    // Reload server list to refresh UI and fix icon display
+    // Reload server list to refresh UI and update all badges
     await Future.delayed(
       Duration(milliseconds: 100),
     ); // Small delay for state to settle
@@ -353,7 +371,7 @@ class _ServerPanelState extends State<ServerPanel> {
               onTap: () {
                 context.push(
                   '/server-selection',
-                  extra: {'isAddingServer': true},
+                  extra: <String, dynamic>{'isAddingServer': true},
                 );
               },
             ),

@@ -409,9 +409,7 @@ class ServerConfigService {
     if (index != -1) {
       _servers[index] = server.copyWith(lastActive: DateTime.now());
 
-      // Re-sort by lastActive
-      _servers.sort((a, b) => b.lastActive.compareTo(a.lastActive));
-
+      // Keep servers in their original order (don't sort by lastActive)
       await _saveServers();
     }
 

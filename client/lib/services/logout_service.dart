@@ -194,9 +194,9 @@ class LogoutService {
       debugPrint('[LOGOUT] Cleaning up Signal setup...');
       SignalSetupService.instance.cleanupOnLogout();
 
-      // 3. Clear user profiles cache
+      // 3. Clear user profiles cache (all servers)
       debugPrint('[LOGOUT] Clearing user profiles...');
-      UserProfileService.instance.clearCache();
+      UserProfileService.instance.clearAllCaches();
 
       // 4. For NATIVE: Clear HMAC session (but keep database)
       if (!kIsWeb) {

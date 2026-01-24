@@ -17,6 +17,8 @@ import '../providers/unread_messages_provider.dart';
 import '../providers/role_provider.dart';
 import '../providers/file_transfer_stats_provider.dart';
 import 'storage/database_helper.dart';
+import 'server_config_native.dart'
+    if (dart.library.html) 'server_config_web.dart';
 // Meeting and Call services
 import 'meeting_service.dart';
 import 'call_service.dart';
@@ -248,8 +250,13 @@ class PostLoginInitService {
         // Unread messages
         Future(() async {
           try {
-            await unreadProvider.loadFromStorage();
-            debugPrint('[POST_LOGIN_INIT]   ✓ Unread messages loaded');
+            final activeServer = ServerConfigService.getActiveServer();
+            if (activeServer != null) {
+              await unreadProvider.loadFromStorage(activeServer.id);
+              debugPrint(
+                '[POST_LOGIN_INIT]   ✓ Unread messages loaded for server ${activeServer.id}',
+              );
+            }
           } catch (e) {
             debugPrint('[POST_LOGIN_INIT]   ⚠️ Unread messages error: $e');
           }

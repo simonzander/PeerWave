@@ -34,32 +34,67 @@ class _CachedProfile {
 ///
 /// Cache TTL: 24 hours
 /// Server Offline: Operations fail with exception instead of showing UUIDs
+///
+/// Multi-Server Support:
+/// - Maintains separate profile caches per server
+/// - Automatically switches to current server's cache
+/// - No need to clear cache when switching servers
 class UserProfileService {
   static final UserProfileService instance = UserProfileService._();
   UserProfileService._();
 
-  // Cache: uuid -> {profile data + timestamp}
-  final Map<String, _CachedProfile> _cache = {};
+  // Per-server cache: serverId -> uuid -> {profile data + timestamp}
+  final Map<String, Map<String, _CachedProfile>> _cache = {};
 
-  // Track UUIDs currently being loaded (prevent duplicate requests)
-  final Set<String> _loadingUuids = {};
+  // Track UUIDs currently being loaded per server: serverId -> Set<uuid>
+  final Map<String, Set<String>> _loadingUuids = {};
 
-  // Callbacks waiting for profiles to load: uuid -> List of callbacks
-  final Map<String, List<void Function(Map<String, dynamic>?)>>
+  // Callbacks waiting for profiles to load: serverId -> uuid -> List of callbacks
+  final Map<String, Map<String, List<void Function(Map<String, dynamic>?)>>>
   _pendingCallbacks = {};
 
   bool _isInitialLoading = false;
 
-  /// Get current user's UUID (from own profile cache)
+  /// Get the current active server ID
+  String? get _currentServerId {
+    if (kIsWeb) {
+      return null; // Web doesn't use multi-server yet
+    }
+    final activeServer = ServerConfigService.getActiveServer();
+    return activeServer?.id;
+  }
+
+  /// Get or create the profile cache for a server
+  Map<String, _CachedProfile> _getServerCache(String? serverId) {
+    if (serverId == null) return {};
+    return _cache.putIfAbsent(serverId, () => {});
+  }
+
+  /// Get or create the loading set for a server
+  Set<String> _getLoadingSet(String? serverId) {
+    if (serverId == null) return {};
+    return _loadingUuids.putIfAbsent(serverId, () => {});
+  }
+
+  /// Get or create the pending callbacks map for a server
+  Map<String, List<void Function(Map<String, dynamic>?)>> _getPendingCallbacks(
+    String? serverId,
+  ) {
+    if (serverId == null) return {};
+    return _pendingCallbacks.putIfAbsent(serverId, () => {});
+  }
+
+  /// Get current user's UUID (from own profile cache for current server)
   /// Returns null if own profile not loaded yet
   String? get currentUserUuid {
+    final serverCache = _getServerCache(_currentServerId);
     debugPrint(
-      '[UserProfileService] currentUserUuid getter called. Cache size: ${_cache.length}',
+      '[UserProfileService] currentUserUuid getter called. Server: $_currentServerId, Cache size: ${serverCache.length}',
     );
 
     // Find own profile in cache by checking for the profile that matches current user
     // The own profile is cached during loadOwnProfile()
-    for (final entry in _cache.entries) {
+    for (final entry in serverCache.entries) {
       final profile = entry.value.data;
       debugPrint(
         '[UserProfileService] Checking profile UUID: ${entry.key}, isOwnProfile: ${profile['isOwnProfile']}',
@@ -72,13 +107,15 @@ class UserProfileService {
     }
 
     // Fallback: check if we have exactly one profile cached (likely our own)
-    if (_cache.length == 1) {
-      final uuid = _cache.keys.first;
+    if (serverCache.length == 1) {
+      final uuid = serverCache.keys.first;
       debugPrint('[UserProfileService] Using fallback (single profile): $uuid');
       return uuid;
     }
 
-    debugPrint('[UserProfileService] No own profile found in cache');
+    debugPrint(
+      '[UserProfileService] No own profile found in cache for server $_currentServerId',
+    );
     return null;
   }
 
@@ -144,16 +181,20 @@ class UserProfileService {
     }
   }
 
-  /// Load profiles for a list of UUIDs (batch operation)
+  /// Load profiles for a list of UUIDs (batch operation) for current server
   Future<void> loadProfiles(List<String> uuids) async {
     if (uuids.isEmpty) return;
+
+    final serverId = _currentServerId;
+    final serverCache = _getServerCache(serverId);
+    final loadingSet = _getLoadingSet(serverId);
 
     // Filter out already cached (non-stale) UUIDs
     final uuidsToLoad = <String>[];
     for (final uuid in uuids) {
-      final cached = _cache[uuid];
+      final cached = serverCache[uuid];
       if (cached == null || cached.isStale) {
-        if (!_loadingUuids.contains(uuid)) {
+        if (!loadingSet.contains(uuid)) {
           uuidsToLoad.add(uuid);
         }
       }
@@ -161,13 +202,13 @@ class UserProfileService {
 
     if (uuidsToLoad.isEmpty) {
       debugPrint(
-        '[UserProfileService] All ${uuids.length} profiles already cached',
+        '[UserProfileService] All ${uuids.length} profiles already cached for server $serverId',
       );
       return;
     }
 
     // Mark as loading
-    _loadingUuids.addAll(uuidsToLoad);
+    loadingSet.addAll(uuidsToLoad);
 
     try {
       debugPrint(
@@ -216,21 +257,23 @@ class UserProfileService {
         for (final profile in profiles) {
           if (profile is Map && profile['uuid'] != null) {
             final uuid = profile['uuid'] as String;
-            _cacheProfile(uuid, Map<String, dynamic>.from(profile));
+            _cacheProfile(uuid, Map<String, dynamic>.from(profile), serverId);
           }
         }
 
         debugPrint(
-          '[UserProfileService] ✓ Loaded ${profiles.length}/${uuidsToLoad.length} profiles',
+          '[UserProfileService] ✓ Loaded ${profiles.length}/${uuidsToLoad.length} profiles for server $serverId',
         );
       } else {
         throw Exception('Failed to load profiles: ${resp.statusCode}');
       }
     } catch (e) {
-      debugPrint('[UserProfileService] ✗ Error loading profiles: $e');
+      debugPrint(
+        '[UserProfileService] ✗ Error loading profiles for server $serverId: $e',
+      );
       rethrow;
     } finally {
-      _loadingUuids.removeAll(uuidsToLoad);
+      loadingSet.removeAll(uuidsToLoad);
     }
   }
 
@@ -242,7 +285,10 @@ class UserProfileService {
   /// Ensure a profile is loaded. Throws if server is unavailable.
   /// Use this before displaying messages from a user.
   Future<void> ensureProfileLoaded(String uuid) async {
-    final cached = _cache[uuid];
+    final serverId = _currentServerId;
+    final serverCache = _getServerCache(serverId);
+    final loadingSet = _getLoadingSet(serverId);
+    final cached = serverCache[uuid];
 
     // Already cached and fresh
     if (cached != null && !cached.isStale) {
@@ -250,10 +296,10 @@ class UserProfileService {
     }
 
     // Already loading
-    if (_loadingUuids.contains(uuid)) {
+    if (loadingSet.contains(uuid)) {
       // Wait for it to finish (simple polling, could use Completer for better approach)
       int attempts = 0;
-      while (_loadingUuids.contains(uuid) && attempts < 50) {
+      while (loadingSet.contains(uuid) && attempts < 50) {
         await Future.delayed(const Duration(milliseconds: 100));
         attempts++;
       }
@@ -271,12 +317,15 @@ class UserProfileService {
 
   /// Ensure multiple profiles are loaded. Throws if server is unavailable.
   Future<void> ensureProfilesLoaded(List<String> uuids) async {
+    final serverId = _currentServerId;
+    final serverCache = _getServerCache(serverId);
+    final loadingSet = _getLoadingSet(serverId);
     final uuidsToLoad = <String>[];
 
     for (final uuid in uuids) {
-      final cached = _cache[uuid];
+      final cached = serverCache[uuid];
       if (cached == null || cached.isStale) {
-        if (!_loadingUuids.contains(uuid)) {
+        if (!loadingSet.contains(uuid)) {
           uuidsToLoad.add(uuid);
         }
       }
@@ -291,8 +340,13 @@ class UserProfileService {
     }
   }
 
-  /// Cache a profile with current timestamp
-  void _cacheProfile(String uuid, Map<String, dynamic> data) {
+  /// Cache a profile with current timestamp for a specific server
+  void _cacheProfile(String uuid, Map<String, dynamic> data, String? serverId) {
+    if (serverId == null) return;
+
+    final serverCache = _getServerCache(serverId);
+    final pendingCallbacks = _getPendingCallbacks(serverId);
+
     // Extract picture as String (handle both direct string and nested objects)
     String? pictureData;
     final picture = data['picture'];
@@ -326,7 +380,7 @@ class UserProfileService {
       'isOwnProfile': data['isOwnProfile'], // Preserve isOwnProfile marker
     };
 
-    _cache[uuid] = _CachedProfile(
+    serverCache[uuid] = _CachedProfile(
       profileData,
       DateTime.now(),
       presenceStatus: presenceStatus,
@@ -334,7 +388,7 @@ class UserProfileService {
     );
 
     // Notify any pending callbacks
-    final callbacks = _pendingCallbacks.remove(uuid);
+    final callbacks = pendingCallbacks.remove(uuid);
     if (callbacks != null) {
       for (final callback in callbacks) {
         try {
@@ -346,10 +400,11 @@ class UserProfileService {
     }
   }
 
-  /// Get displayName for a UUID
+  /// Get displayName for a UUID (current server)
   /// Returns null if not cached (caller should handle loading)
   String? getDisplayName(String uuid) {
-    final cached = _cache[uuid];
+    final serverCache = _getServerCache(_currentServerId);
+    final cached = serverCache[uuid];
     if (cached == null) return null;
     if (cached.isStale) return null; // Don't return stale data
     return cached.data['displayName'] as String?;
@@ -386,8 +441,13 @@ class UserProfileService {
     String uuid, {
     void Function(Map<String, dynamic>?)? onLoaded,
   }) {
+    final serverId = _currentServerId;
+    final serverCache = _getServerCache(serverId);
+    final loadingSet = _getLoadingSet(serverId);
+    final pendingCallbacks = _getPendingCallbacks(serverId);
+
     // Check cache first
-    final cached = _cache[uuid];
+    final cached = serverCache[uuid];
     if (cached != null && !cached.isStale) {
       // Already cached - return immediately
       return cached.data;
@@ -395,15 +455,15 @@ class UserProfileService {
 
     // Not cached - register callback and trigger load
     if (onLoaded != null) {
-      _pendingCallbacks.putIfAbsent(uuid, () => []).add(onLoaded);
+      pendingCallbacks.putIfAbsent(uuid, () => []).add(onLoaded);
     }
 
     // Trigger load if not already loading
-    if (!_loadingUuids.contains(uuid)) {
+    if (!loadingSet.contains(uuid)) {
       loadProfile(uuid).catchError((e) {
         debugPrint('[UserProfileService] Failed to load profile $uuid: $e');
         // Call callbacks with null on error
-        final callbacks = _pendingCallbacks.remove(uuid);
+        final callbacks = pendingCallbacks.remove(uuid);
         if (callbacks != null) {
           for (final callback in callbacks) {
             try {
@@ -419,34 +479,38 @@ class UserProfileService {
     return null; // Will call onLoaded when ready
   }
 
-  /// Get atName for a UUID
+  /// Get atName for a UUID (current server)
   String? getAtName(String uuid) {
-    final cached = _cache[uuid];
+    final serverCache = _getServerCache(_currentServerId);
+    final cached = serverCache[uuid];
     if (cached == null || cached.isStale) return null;
     return cached.data['atName'] as String?;
   }
 
-  /// Get profile picture (base64 or URL) for a UUID
+  /// Get profile picture (base64 or URL) for a UUID (current server)
   String? getPicture(String uuid) {
-    final cached = _cache[uuid];
+    final serverCache = _getServerCache(_currentServerId);
+    final cached = serverCache[uuid];
     if (cached == null || cached.isStale) return null;
     return cached.data['picture'] as String?;
   }
 
-  /// Get full profile data for a UUID
+  /// Get full profile data for a UUID (current server)
   Map<String, dynamic>? getProfile(String uuid) {
-    final cached = _cache[uuid];
+    final serverCache = _getServerCache(_currentServerId);
+    final cached = serverCache[uuid];
     if (cached == null || cached.isStale) return null;
     return cached.data;
   }
 
-  /// Check if profile is cached and fresh
+  /// Check if profile is cached and fresh (current server)
   bool isProfileCached(String uuid) {
-    final cached = _cache[uuid];
+    final serverCache = _getServerCache(_currentServerId);
+    final cached = serverCache[uuid];
     return cached != null && !cached.isStale;
   }
 
-  /// Resolve multiple UUIDs to displayNames
+  /// Resolve multiple UUIDs to displayNames (current server)
   Map<String, String?> resolveDisplayNames(List<String> uuids) {
     final result = <String, String?>{};
     for (var uuid in uuids) {
@@ -455,21 +519,46 @@ class UserProfileService {
     return result;
   }
 
-  /// Clear cache (useful when logging out)
+  /// Clear cache for current server only
   void clearCache() {
-    _cache.clear();
-    _loadingUuids.clear();
+    final serverId = _currentServerId;
+    if (serverId != null) {
+      _cache.remove(serverId);
+      _loadingUuids.remove(serverId);
+      _pendingCallbacks.remove(serverId);
+      debugPrint('[UserProfileService] ✓ Cache cleared for server $serverId');
+    }
   }
 
-  /// Check if initial profiles are loaded
-  bool get isLoaded => _cache.isNotEmpty;
+  /// Clear cache for all servers (useful when logging out)
+  void clearAllCaches() {
+    _cache.clear();
+    _loadingUuids.clear();
+    _pendingCallbacks.clear();
+    debugPrint('[UserProfileService] ✓ All server caches cleared');
+  }
 
-  /// Get cache size (for debugging)
-  int get cacheSize => _cache.length;
+  /// Check if initial profiles are loaded for current server
+  bool get isLoaded {
+    final serverCache = _getServerCache(_currentServerId);
+    return serverCache.isNotEmpty;
+  }
 
-  /// Find user UUID by atName (searches cache)
+  /// Get cache size for current server (for debugging)
+  int get cacheSize {
+    final serverCache = _getServerCache(_currentServerId);
+    return serverCache.length;
+  }
+
+  /// Get total cache size across all servers (for debugging)
+  int get totalCacheSize {
+    return _cache.values.fold(0, (sum, cache) => sum + cache.length);
+  }
+
+  /// Find user UUID by atName (searches cache for current server)
   String? findUuidByAtName(String atName) {
-    for (final entry in _cache.entries) {
+    final serverCache = _getServerCache(_currentServerId);
+    for (final entry in serverCache.entries) {
       final profile = entry.value;
       if (!profile.isStale) {
         final profileAtName = profile.data['atName'] as String?;
@@ -481,7 +570,7 @@ class UserProfileService {
     return null;
   }
 
-  /// Get profile by atName (searches cache)
+  /// Get profile by atName (searches cache for current server)
   Map<String, dynamic>? getProfileByAtName(String atName) {
     final uuid = findUuidByAtName(atName);
     if (uuid != null) {
@@ -490,43 +579,48 @@ class UserProfileService {
     return null;
   }
 
-  /// Get presence status for a UUID ('online', 'busy', 'offline')
+  /// Get presence status for a UUID ('online', 'busy', 'offline') for current server
   /// Returns cached presence if available, null otherwise
   String? getPresenceStatus(String uuid) {
-    final cached = _cache[uuid];
+    final serverCache = _getServerCache(_currentServerId);
+    final cached = serverCache[uuid];
     if (cached == null || cached.isStale) return null;
     return cached.presenceStatus ?? 'offline';
   }
 
-  /// Get last seen timestamp for a UUID
+  /// Get last seen timestamp for a UUID (current server)
   /// Returns null if not available or user is currently online
   DateTime? getLastSeen(String uuid) {
-    final cached = _cache[uuid];
+    final serverCache = _getServerCache(_currentServerId);
+    final cached = serverCache[uuid];
     if (cached == null || cached.isStale) return null;
     return cached.lastSeen;
   }
 
-  /// Check if a user is online (online or busy)
+  /// Check if a user is online (online or busy) on current server
   /// Returns false if not cached or offline
   bool isUserOnline(String uuid) {
     final status = getPresenceStatus(uuid);
     return status == 'online' || status == 'busy';
   }
 
-  /// Check if a user is busy (in a call)
+  /// Check if a user is busy (in a call) on current server
   /// Returns false if not cached or not busy
   bool isUserBusy(String uuid) {
     final status = getPresenceStatus(uuid);
     return status == 'busy';
   }
 
-  /// Update presence status for a user (called from PresenceService real-time updates)
+  /// Update presence status for a user on current server (called from PresenceService real-time updates)
   void updatePresenceStatus(String uuid, String status, DateTime? lastSeen) {
-    final cached = _cache[uuid];
+    final serverCache = _getServerCache(_currentServerId);
+    final cached = serverCache[uuid];
     if (cached != null) {
       cached.presenceStatus = status;
       cached.lastSeen = lastSeen;
-      debugPrint('[UserProfileService] Updated presence for $uuid: $status');
+      debugPrint(
+        '[UserProfileService] Updated presence for $uuid: $status (server: $_currentServerId)',
+      );
     }
   }
 
@@ -572,9 +666,9 @@ class UserProfileService {
           debugPrint(
             '[UserProfileService] Setting isOwnProfile=true for uuid=$uuid',
           );
-          _cacheProfile(uuid, profileData);
+          _cacheProfile(uuid, profileData, _currentServerId);
           debugPrint(
-            '[UserProfileService] ✓ Cached own profile: $uuid with isOwnProfile=${profileData['isOwnProfile']}',
+            '[UserProfileService] ✓ Cached own profile: $uuid with isOwnProfile=${profileData['isOwnProfile']} (server: $_currentServerId)',
           );
         } else {
           debugPrint('[UserProfileService] ✗ No uuid in profile response');

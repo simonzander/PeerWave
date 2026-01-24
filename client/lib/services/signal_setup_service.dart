@@ -124,10 +124,13 @@ class SignalSetupService {
         '[SIGNAL SETUP] [$currentStep/$totalSteps] Loading unread message counts...',
       );
       try {
-        await unreadProvider.loadFromStorage();
-        debugPrint(
-          '[SIGNAL SETUP] ✓ Loaded unread message counts from storage',
-        );
+        final activeServer = ServerConfigService.getActiveServer();
+        if (activeServer != null) {
+          await unreadProvider.loadFromStorage(activeServer.id);
+          debugPrint(
+            '[SIGNAL SETUP] ✓ Loaded unread message counts for server ${activeServer.id}',
+          );
+        }
       } catch (e) {
         debugPrint('[SIGNAL SETUP] ⚠ Error loading unread message counts: $e');
       }
