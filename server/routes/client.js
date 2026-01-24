@@ -1455,17 +1455,20 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     
     // Check if key exists and not expired
     // Validate randomHash doesn't access prototype properties
-    if (!randomHash || typeof randomHash !== 'string' || randomHash.includes('__')) {
+    if (!randomHash || typeof randomHash !== 'string' || 
+        randomHash.includes('__') || 
+        randomHash === 'constructor' || 
+        randomHash === 'prototype') {
         return res.status(400).json({ status: "failed", message: "Invalid magic link format" });
     }
-    const entry = magicLinks[randomHash];
-    if (!entry) {
+    const entry = magicLinks.get(randomHash);
+    if (!entry || typeof entry !== 'object') {
         return res.status(400).json({ status: "failed", message: "Invalid or expired magic link" });
     }
     
     // Check expiration
     if (entry.expires < Date.now()) {
-        delete magicLinks[randomHash];
+        magicLinks.delete(randomHash);
         return res.status(400).json({ status: "failed", message: "Magic link has expired" });
     }
     
@@ -1531,7 +1534,7 @@ clientRoutes.post("/magic/verify", async (req, res) => {
     }
     
     // Delete used magic link (randomHash already validated above)
-    delete magicLinks[randomHash];
+    magicLinks.delete(randomHash);
     
     // Generate session secret for native clients (HMAC authentication)
     const sessionSecret = crypto.randomBytes(32).toString('base64url');

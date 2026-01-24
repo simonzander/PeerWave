@@ -1972,19 +1972,19 @@ authRoutes.get("/magic/generate", sessionLimiter, verifyAuthEither, async (req, 
         const magicKey = `${serverUrl}|${randomHash}|${timestamp}|${signature}`;
         
         // Store in temporary store (one-time use)
-        magicLinks[randomHash] = { 
+        magicLinks.set(randomHash, { 
             email: user.email, 
             uuid: req.userId, 
             expires: expiresAt,
             used: false  // Flag for one-time use
-        };
+        });
         
         // Cleanup expired keys
-        Object.keys(magicLinks).forEach(key => {
-            if (magicLinks[key].expires < Date.now()) {
-                delete magicLinks[key];
+        for (const [key, value] of magicLinks.entries()) {
+            if (value.expires < Date.now()) {
+                magicLinks.delete(key);
             }
-        });
+        }
         
         res.json({ magicKey: magicKey, expiresAt: expiresAt });
     } catch (error) {
