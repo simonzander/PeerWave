@@ -1,5 +1,5 @@
-🚀 What's New in PeerWave v1.1.14
+🚀 What's New in PeerWave v1.1.15
 
 🐛 Bug Fixes
-• add RefreshToken model to client route dependencies
+• update server ID handling for web to use a fixed 'web' identifier
 
