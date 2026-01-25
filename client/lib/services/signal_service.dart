@@ -3364,8 +3364,64 @@ class SignalService {
       debugPrint(
         '[SIGNAL SERVICE] ✗ Decryption failed for itemId: $itemId - $e',
       );
-      // Return empty string on error (will be filtered out later)
-      return '';
+
+      // Store failed decryption with status='decrypt_failed' so user sees there was an issue
+      if (itemId != null && data['channel'] == null) {
+        try {
+          final messageStore = await SqliteMessageStore.getInstance();
+          final messageTimestamp =
+              data['timestamp'] ??
+              data['createdAt'] ??
+              DateTime.now().toIso8601String();
+          final messageType = data['type'] as String?;
+
+          // Check if this is from own device (multi-device sync)
+          final isOwnMessage = sender == _currentUserId;
+          final recipient = data['recipient'] as String?;
+          final originalRecipient = data['originalRecipient'] as String?;
+
+          if (isOwnMessage) {
+            // Failed to decrypt message from own device
+            final isMultiDeviceSync = (recipient == _currentUserId);
+            final actualRecipient = isMultiDeviceSync
+                ? (originalRecipient ?? recipient ?? 'UNKNOWN')
+                : (recipient ?? 'UNKNOWN');
+
+            await messageStore.storeSentMessage(
+              itemId: itemId,
+              recipientId: actualRecipient,
+              message: 'Decryption failed',
+              timestamp: messageTimestamp,
+              type: messageType ?? 'message',
+              status: 'decrypt_failed',
+            );
+            debugPrint(
+              "[SIGNAL SERVICE] ✓ Stored failed decryption as SENT with decrypt_failed status",
+            );
+          } else {
+            // Failed to decrypt message from another user
+            await messageStore.storeReceivedMessage(
+              itemId: itemId,
+              sender: sender,
+              senderDeviceId: senderDeviceId,
+              message: 'Decryption failed',
+              timestamp: messageTimestamp,
+              type: messageType ?? 'message',
+              status: 'decrypt_failed',
+            );
+            debugPrint(
+              "[SIGNAL SERVICE] ✓ Stored failed decryption as RECEIVED with decrypt_failed status",
+            );
+          }
+        } catch (storageError) {
+          debugPrint(
+            "[SIGNAL SERVICE] ✗ Failed to store decrypt_failed message: $storageError",
+          );
+        }
+      }
+
+      // Return special marker for decrypt failure
+      return 'Decryption failed';
     }
   }
 
@@ -3434,10 +3490,13 @@ class SignalService {
         "[SIGNAL SERVICE] ⚠️ Decryption failed - deleting from server to prevent stuck message",
       );
       deleteItemFromServer(itemId);
-      return;
+
+      // Set message to 'Decryption failed' to continue processing and show user
+      message = 'Decryption failed';
     }
 
-    // Skip messages only if decryption returned empty (should be rare now)
+    // Check if decryption failed (message will be 'Decryption failed')
+    // Don't skip - we want to show the decrypt_failed status to user
     if (message.isEmpty) {
       debugPrint(
         "[SIGNAL SERVICE] Skipping message - decryption returned empty",
@@ -5324,6 +5383,31 @@ class SignalService {
                   });
                 }
               }
+
+              // Store session_reset system message for user visibility
+              if (itemId != null) {
+                try {
+                  final messageStore = await SqliteMessageStore.getInstance();
+                  final messageTimestamp = DateTime.now().toIso8601String();
+
+                  await messageStore.storeReceivedMessage(
+                    itemId: '${itemId}_session_reset',
+                    sender: senderId,
+                    senderDeviceId: deviceId,
+                    message: 'Secure session was reset',
+                    timestamp: messageTimestamp,
+                    type: 'system',
+                    status: 'session_reset',
+                  );
+                  debugPrint(
+                    '[SIGNAL SERVICE] ✓ Stored session_reset system message',
+                  );
+                } catch (storageError) {
+                  debugPrint(
+                    '[SIGNAL SERVICE] ✗ Failed to store session_reset message: $storageError',
+                  );
+                }
+              }
             } catch (notifyError) {
               debugPrint(
                 '[SIGNAL SERVICE] ⚠️ Failed to send recovery notification: $notifyError',
@@ -5421,6 +5505,31 @@ class SignalService {
               debugPrint(
                 '[SIGNAL SERVICE] ℹ️ Session corruption notification sent',
               );
+
+              // Store session_reset system message for user visibility
+              if (itemId != null) {
+                try {
+                  final messageStore = await SqliteMessageStore.getInstance();
+                  final messageTimestamp = DateTime.now().toIso8601String();
+
+                  await messageStore.storeReceivedMessage(
+                    itemId: '${itemId}_session_reset',
+                    sender: senderId,
+                    senderDeviceId: deviceId,
+                    message: 'Secure session was reset',
+                    timestamp: messageTimestamp,
+                    type: 'system',
+                    status: 'session_reset',
+                  );
+                  debugPrint(
+                    '[SIGNAL SERVICE] ✓ Stored session_reset system message',
+                  );
+                } catch (storageError) {
+                  debugPrint(
+                    '[SIGNAL SERVICE] ✗ Failed to store session_reset message: $storageError',
+                  );
+                }
+              }
             } catch (notifyError) {
               debugPrint(
                 '[SIGNAL SERVICE] ⚠️ Failed to send notification: $notifyError',
@@ -5445,7 +5554,8 @@ class SignalService {
       }
     } catch (e, st) {
       debugPrint('[ERROR] Exception while decrypting message: $e\n$st');
-      return '';
+      // Return error marker instead of empty string
+      return 'Decryption failed';
     }
   }
 
@@ -7263,7 +7373,24 @@ class SignalService {
           '[SIGNAL] Sending identity change notification to $userId...',
         );
         try {
-          // Create system message payload
+          // Store new_identity system message for user visibility
+          final messageStore = await SqliteMessageStore.getInstance();
+          final messageTimestamp = DateTime.now().toIso8601String();
+          final newIdentityItemId = '${Uuid().v4()}_new_identity';
+
+          await messageStore.storeReceivedMessage(
+            itemId: newIdentityItemId,
+            sender: userId,
+            senderDeviceId: deviceId,
+            message:
+                'Security update detected. This conversation is now secured again.',
+            timestamp: messageTimestamp,
+            type: 'system',
+            status: 'new_identity',
+          );
+          debugPrint('[SIGNAL] ✓ Stored new_identity system message');
+
+          // Create system message payload for legacy support
           final notificationPayload = jsonEncode({
             'type': 'identityKeyChanged',
             'changedUserId': userId,

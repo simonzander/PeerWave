@@ -265,10 +265,18 @@ class _MessageListState extends State<MessageList> {
       case 'read':
         return Icon(Icons.done_all, size: 16, color: theme.colorScheme.primary);
       case 'failed':
+      case 'decrypt_failed':
+      case 'session_reset':
         return Icon(
           Icons.error_outline,
           size: 16,
           color: theme.colorScheme.error,
+        );
+      case 'new_identity':
+        return Icon(
+          Icons.lock_outline,
+          size: 16,
+          color: theme.colorScheme.warning,
         );
       default:
         return const SizedBox.shrink();
@@ -645,6 +653,46 @@ class _MessageListState extends State<MessageList> {
   Widget _buildMessageContent(Map<String, dynamic> msg, String text) {
     final type = msg['type'] as String?;
     final metadata = msg['metadata'];
+
+    // Check if decryption failed
+    final status = msg['status'] as String?;
+    if (status == 'decrypt_failed') {
+      final errorTheme = Theme.of(context);
+      return Text(
+        text,
+        style: TextStyle(
+          color: errorTheme.colorScheme.error,
+          fontSize: 15,
+          fontStyle: FontStyle.italic,
+        ),
+      );
+    }
+
+    // Check if session was reset
+    if (status == 'session_reset') {
+      final errorTheme = Theme.of(context);
+      return Text(
+        text,
+        style: TextStyle(
+          color: errorTheme.colorScheme.error,
+          fontSize: 15,
+          fontStyle: FontStyle.italic,
+        ),
+      );
+    }
+
+    // Check if new identity was detected
+    if (status == 'new_identity') {
+      final theme = Theme.of(context);
+      return Text(
+        text,
+        style: TextStyle(
+          color: theme.colorScheme.warning,
+          fontSize: 15,
+          fontStyle: FontStyle.italic,
+        ),
+      );
+    }
 
     // Image message - display base64 image
     if (type == 'image') {

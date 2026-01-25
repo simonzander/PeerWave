@@ -114,6 +114,7 @@ class SqliteMessageStore {
     String? channelId,
     required String timestamp,
     required String type,
+    String? status, // Optional status (e.g., 'decrypt_failed')
     Map<String, dynamic>? metadata,
   }) async {
     final db = await DatabaseHelper.database;
@@ -139,6 +140,7 @@ class SqliteMessageStore {
       'timestamp': timestamp,
       'type': type,
       'direction': 'received',
+      if (status != null) 'status': status, // Add status if provided
       'metadata': metadata != null ? jsonEncode(metadata) : null,
       'decrypted_at': DateTime.now().toIso8601String(),
     }, conflictAlgorithm: ConflictAlgorithm.replace);
