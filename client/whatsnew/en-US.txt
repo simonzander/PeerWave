@@ -1,5 +1,9 @@
-🚀 What's New in PeerWave v1.1.16
+🚀 What's New in PeerWave v1.2.1
+
+✨ New Features
+• implement active conversation tracking to suppress notifications for open chats
 
 🐛 Bug Fixes
-• update receiveItem callback logic to use conversationUserId for multi-device sync
+• enhance message handling for decryption failures and session resets
+• enhance multi-device sync handling by enforcing originalRecipient requirement
 
