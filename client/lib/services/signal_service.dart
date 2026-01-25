@@ -408,7 +408,8 @@ class SignalService {
       // Process each message in the batch
       for (final item in items) {
         try {
-          await receiveItem(item);
+          // Cast item to Map<String, dynamic> before processing
+          await receiveItem(Map<String, dynamic>.from(item as Map));
           processed++;
 
           // Emit progress event for UI
@@ -1371,15 +1372,16 @@ class SignalService {
       registeredEvents.add("connect");
 
       SocketService().registerListener("receiveItem", (data) {
-        receiveItem(data);
+        receiveItem(Map<String, dynamic>.from(data as Map));
       }, registrationName: 'SignalService');
       registeredEvents.add("receiveItem");
 
       SocketService().registerListener("groupMessage", (data) {
+        final dataMap = Map<String, dynamic>.from(data as Map);
         // Handle group message via callback system
         if (_itemTypeCallbacks.containsKey('groupMessage')) {
           for (final callback in _itemTypeCallbacks['groupMessage']!) {
-            callback(data);
+            callback(dataMap);
           }
         }
       }, registrationName: 'SignalService');
@@ -1387,15 +1389,16 @@ class SignalService {
 
       // NEW: Group Item Socket.IO listener
       SocketService().registerListener("groupItem", (data) {
+        final dataMap = Map<String, dynamic>.from(data as Map);
         // Update unread count for group messages (ONLY for messages from OTHER users)
         if (_unreadMessagesProvider != null &&
-            data['channel'] != null &&
-            data['type'] != null) {
-          final channelId = data['channel'] as String;
-          final messageType = data['type'] as String;
-          final sender = data['sender'] as String?;
+            dataMap['channel'] != null &&
+            dataMap['type'] != null) {
+          final channelId = dataMap['channel'] as String;
+          final messageType = dataMap['type'] as String;
+          final sender = dataMap['sender'] as String?;
           final isOwnMessage = sender == _currentUserId;
-          final itemId = data['itemId'] as String?;
+          final itemId = dataMap['itemId'] as String?;
 
           // Check if this is an activity notification type
           const activityTypes = {
@@ -1429,9 +1432,9 @@ class SignalService {
         }
 
         // ✅ Emit EventBus event for new group message/item (after decryption in callbacks)
-        final type = data['type'];
-        final channel = data['channel'];
-        final sender = data['sender'] as String?;
+        final type = dataMap['type'];
+        final channel = dataMap['channel'];
+        final sender = dataMap['sender'] as String?;
         final isOwnMsg = sender == _currentUserId;
 
         if (type != null && channel != null) {
@@ -1450,24 +1453,24 @@ class SignalService {
             debugPrint(
               '[SIGNAL SERVICE] → EVENT_BUS: newMessage (group) - type=$type, channel=$channel, isOwnMsg=$isOwnMsg',
             );
-            EventBus.instance.emit(AppEvent.newMessage, data);
+            EventBus.instance.emit(AppEvent.newMessage, dataMap);
           } else if (activityTypes.contains(type) && !isOwnMsg) {
             // Only emit notification for OTHER users' activity messages
             debugPrint(
               '[SIGNAL SERVICE] → EVENT_BUS: newNotification (group) - type=$type, channel=$channel',
             );
-            EventBus.instance.emit(AppEvent.newNotification, data);
+            EventBus.instance.emit(AppEvent.newNotification, dataMap);
           }
         }
 
         // Handle emote messages (reactions)
         if (type == 'emote') {
-          _handleEmoteMessage(data, isGroupChat: true);
+          _handleEmoteMessage(dataMap, isGroupChat: true);
         }
 
         if (_itemTypeCallbacks.containsKey('groupItem')) {
           for (final callback in _itemTypeCallbacks['groupItem']!) {
-            callback(data);
+            callback(dataMap);
           }
         }
 
@@ -1476,7 +1479,7 @@ class SignalService {
           final key = '$type:$channel';
           if (_receiveItemChannelCallbacks.containsKey(key)) {
             for (final callback in _receiveItemChannelCallbacks[key]!) {
-              callback(data);
+              callback(dataMap);
             }
             debugPrint(
               '[SIGNAL SERVICE] Triggered ${_receiveItemChannelCallbacks[key]!.length} receiveItemChannel callbacks for $key',
@@ -1488,9 +1491,10 @@ class SignalService {
 
       // NEW: Group Item delivery confirmation
       SocketService().registerListener("groupItemDelivered", (data) {
+        final dataMap = Map<String, dynamic>.from(data as Map);
         if (_deliveryCallbacks.containsKey('groupItem')) {
           for (final callback in _deliveryCallbacks['groupItem']!) {
-            callback(data['itemId']);
+            callback(dataMap['itemId']);
           }
         }
       }, registrationName: 'SignalService');
@@ -1498,52 +1502,56 @@ class SignalService {
 
       // NEW: Group Item read update
       SocketService().registerListener("groupItemReadUpdate", (data) {
+        final dataMap = Map<String, dynamic>.from(data as Map);
         if (_readCallbacks.containsKey('groupItem')) {
           for (final callback in _readCallbacks['groupItem']!) {
-            callback(data);
+            callback(dataMap);
           }
         }
       }, registrationName: 'SignalService');
       registeredEvents.add("groupItemReadUpdate");
 
       SocketService().registerListener("deliveryReceipt", (data) async {
-        await _handleDeliveryReceipt(data);
+        await _handleDeliveryReceipt(Map<String, dynamic>.from(data as Map));
       }, registrationName: 'SignalService');
       registeredEvents.add("deliveryReceipt");
 
       SocketService().registerListener("groupMessageReadReceipt", (data) {
-        _handleGroupMessageReadReceipt(data);
+        _handleGroupMessageReadReceipt(Map<String, dynamic>.from(data as Map));
       }, registrationName: 'SignalService');
       registeredEvents.add("groupMessageReadReceipt");
 
       // 🚀 NEW: Pending messages notification from server
       SocketService().registerListener("pendingMessagesAvailable", (data) {
-        _handlePendingMessagesAvailable(data);
+        _handlePendingMessagesAvailable(Map<String, dynamic>.from(data as Map));
       }, registrationName: 'SignalService');
       registeredEvents.add("pendingMessagesAvailable");
 
       // 🚀 NEW: Pending messages response from server
       SocketService().registerListener("pendingMessagesResponse", (data) {
-        _handlePendingMessagesResponse(data);
+        _handlePendingMessagesResponse(Map<String, dynamic>.from(data as Map));
       }, registrationName: 'SignalService');
       registeredEvents.add("pendingMessagesResponse");
 
       // 🚀 NEW: Pending messages fetch error
       SocketService().registerListener("fetchPendingMessagesError", (data) {
+        final dataMap = Map<String, dynamic>.from(data as Map);
         debugPrint(
-          '[SIGNAL SERVICE] ❌ Error fetching pending messages: ${data['error']}',
+          '[SIGNAL SERVICE] ❌ Error fetching pending messages: ${dataMap['error']}',
         );
       }, registrationName: 'SignalService');
       registeredEvents.add("fetchPendingMessagesError");
 
       // 🔄 NEW: Session recovery notification - sender should resend message
       SocketService().registerListener("sessionRecoveryRequested", (data) {
-        _handleSessionRecoveryRequested(data);
+        _handleSessionRecoveryRequested(Map<String, dynamic>.from(data as Map));
       }, registrationName: 'SignalService');
       registeredEvents.add("sessionRecoveryRequested");
 
       SocketService().registerListener("signalStatusResponse", (status) async {
-        await _ensureSignalKeysPresent(status);
+        await _ensureSignalKeysPresent(
+          Map<String, dynamic>.from(status as Map),
+        );
 
         // Check SignedPreKey rotation after status check
         await _checkSignedPreKeyRotation();
@@ -1555,14 +1563,15 @@ class SignalService {
         data,
       ) async {
         try {
-          final groupId = data['groupId'] as String;
-          final senderId = data['senderId'] as String;
+          final dataMap = Map<String, dynamic>.from(data as Map);
+          final groupId = dataMap['groupId'] as String;
+          final senderId = dataMap['senderId'] as String;
           // Parse senderDeviceId as int (socket might send String)
-          final senderDeviceId = data['senderDeviceId'] is int
-              ? data['senderDeviceId'] as int
-              : int.parse(data['senderDeviceId'].toString());
+          final senderDeviceId = dataMap['senderDeviceId'] is int
+              ? dataMap['senderDeviceId'] as int
+              : int.parse(dataMap['senderDeviceId'].toString());
           final distributionMessageBase64 =
-              data['distributionMessage'] as String;
+              dataMap['distributionMessage'] as String;
 
           debugPrint(
             '[SIGNAL_SERVICE] Received sender key distribution from $senderId:$senderDeviceId for group $groupId',
@@ -1589,7 +1598,9 @@ class SignalService {
 
       // 🔒 SECURITY: Handle PreKey ID sync response
       SocketService().registerListener("myPreKeyIdsResponse", (data) async {
-        await _handlePreKeyIdsSyncResponse(data);
+        await _handlePreKeyIdsSyncResponse(
+          Map<String, dynamic>.from(data as Map),
+        );
       }, registrationName: 'SignalService');
       registeredEvents.add("myPreKeyIdsResponse");
 
@@ -1623,7 +1634,10 @@ class SignalService {
     // Forward user status events (if server sends them)
     SocketService().registerListener('user:status', (data) {
       debugPrint('[SIGNAL SERVICE] → EVENT_BUS: userStatusChanged');
-      EventBus.instance.emit(AppEvent.userStatusChanged, data);
+      EventBus.instance.emit(
+        AppEvent.userStatusChanged,
+        Map<String, dynamic>.from(data as Map),
+      );
     }, registrationName: 'SignalService');
 
     debugPrint('[SIGNAL SERVICE] ✓ Event Bus forwarding active');
@@ -3446,8 +3460,10 @@ class SignalService {
     );
     debugPrint("[SIGNAL SERVICE] receiveItem: $data");
 
-    // Cast to Map<String, dynamic> (handles _serverId from native socket service)
-    final dataMap = (data as Map).cast<String, dynamic>();
+    // Cast to Map<String, dynamic> - handle both socket events and direct calls
+    final dataMap = data is Map<String, dynamic>
+        ? data
+        : Map<String, dynamic>.from(data as Map);
 
     final type = dataMap['type'];
     final sender = dataMap['sender']; // z.B. Absender-UUID
