@@ -9,8 +9,10 @@ plugins {
 }
 
 // Calculate version code from semantic version and build number
-// Formula: (major * 10000) + (minor * 100) + (patch * 10) + buildNumber
-// Example: 1.1.1+10 -> (1*10000) + (1*100) + (1*10) + 10 = 10120
+// Formula: (major * 1000000000) + (minor * 1000000) + (patch * 1000) + buildNumber
+// Example: 1.2.1+1 -> (1*1000000000) + (2*1000000) + (1*1000) + 1 = 1002001001
+// Allows: major (0-2147), minor (0-999), patch (0-999), build_number (0-999)
+// Max versionCode: 2,147,483,647 (32-bit signed integer limit)
 fun calculateVersionCode(versionName: String, buildNumber: Int): Int {
     val version = versionName.split(".")
     if (version.size != 3) {
@@ -22,7 +24,7 @@ fun calculateVersionCode(versionName: String, buildNumber: Int): Int {
     val minor = version[1].toIntOrNull() ?: 0
     val patch = version[2].toIntOrNull() ?: 0
     
-    val calculatedCode = (major * 10000) + (minor * 100) + (patch * 10) + buildNumber
+    val calculatedCode = (major * 1000000000) + (minor * 1000000) + (patch * 1000) + buildNumber
     println("Calculated version code: $calculatedCode from version $versionName+$buildNumber")
     return calculatedCode
 }
