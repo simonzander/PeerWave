@@ -1,5 +1,5 @@
-🚀 What's New in PeerWave v1.2.2
+🚀 What's New in PeerWave v1.2.3
 
 🐛 Bug Fixes
-• update version code calculation formula for accuracy
+• ensure consistent data type handling for socket events and message processing
 
