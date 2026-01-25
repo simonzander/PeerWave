@@ -19,6 +19,7 @@ import '../../services/file_transfer/p2p_coordinator.dart';
 import '../../services/file_transfer/socket_file_client.dart';
 import '../../services/storage/sqlite_group_message_store.dart';
 import '../../services/event_bus.dart';
+import '../../services/active_conversation_service.dart';
 import '../../models/role.dart';
 import '../../models/file_message.dart';
 import '../../extensions/snackbar_extensions.dart';
@@ -74,12 +75,22 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
   @override
   void initState() {
     super.initState();
+
+    // Set this channel as active to suppress notifications
+    ActiveConversationService.instance.setActiveGroupChannel(
+      widget.channelUuid,
+    );
+
     _initialize();
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
+
+    // Clear active conversation to re-enable notifications
+    ActiveConversationService.instance.clearActiveConversation();
+
     SignalService.instance.unregisterItemCallback(
       'groupItem',
       _handleGroupItem,
@@ -103,6 +114,12 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       debugPrint(
         '[SIGNAL_GROUP] Channel changed from ${oldWidget.channelUuid} to ${widget.channelUuid}',
       );
+
+      // Update active conversation tracking
+      ActiveConversationService.instance.setActiveGroupChannel(
+        widget.channelUuid,
+      );
+
       _messages = []; // Clear old messages
       _messageOffset = 0;
       _hasMoreMessages = true;

@@ -67,7 +67,7 @@ class NotificationServiceAndroid {
 
       // Initialize notification plugin
       const androidSettings = AndroidInitializationSettings(
-        '@mipmap/ic_launcher',
+        '@drawable/ic_notification', // Use drawable icon for notifications
       );
       const initSettings = InitializationSettings(android: androidSettings);
 
@@ -550,7 +550,7 @@ class NotificationServiceAndroid {
             channelId == _channelIdCalls || channelId == _channelIdMentions
             ? Priority.high
             : Priority.defaultPriority,
-        icon: '@mipmap/ic_launcher',
+        icon: '@drawable/ic_notification', // Use proper notification icon
         enableVibration: true,
         playSound: false, // We play custom sounds
         actions: actions

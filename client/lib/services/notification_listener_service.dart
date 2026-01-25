@@ -5,6 +5,7 @@ import 'event_bus.dart';
 import 'notification_service.dart' as desktop;
 import 'notification_service_android.dart';
 import 'user_profile_service.dart';
+import 'active_conversation_service.dart';
 
 /// Listens to EventBus events and triggers appropriate notifications
 ///
@@ -244,6 +245,15 @@ class NotificationListenerService {
     required String message,
     String? messageType,
   }) {
+    // Check if this conversation is currently open - suppress notification if so
+    if (ActiveConversationService.instance
+        .shouldSuppressDirectMessageNotification(senderId)) {
+      debugPrint(
+        '[NotificationListener] ⏭️ Suppressing DM notification - conversation is open',
+      );
+      return;
+    }
+
     debugPrint(
       '[NotificationListener] 💬 Showing 1:1 notification (type: $messageType)',
     );
@@ -262,6 +272,16 @@ class NotificationListenerService {
     required String message,
     String? messageType,
   }) {
+    // Check if this channel is currently open - suppress notification if so
+    if (ActiveConversationService.instance.shouldSuppressGroupNotification(
+      channelId,
+    )) {
+      debugPrint(
+        '[NotificationListener] ⏭️ Suppressing group notification - channel is open',
+      );
+      return;
+    }
+
     debugPrint(
       '[NotificationListener] 💬 Showing group notification (type: $messageType)',
     );

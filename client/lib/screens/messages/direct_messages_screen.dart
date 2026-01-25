@@ -20,6 +20,7 @@ import '../../services/starred_conversations_service.dart';
 import '../../services/file_transfer/p2p_coordinator.dart';
 import '../../services/file_transfer/socket_file_client.dart';
 import '../../services/event_bus.dart';
+import '../../services/active_conversation_service.dart';
 import '../../models/file_message.dart';
 import '../../extensions/snackbar_extensions.dart';
 import '../../providers/unread_messages_provider.dart';
@@ -72,6 +73,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   @override
   void initState() {
     super.initState();
+
+    // Set this conversation as active to suppress notifications
+    ActiveConversationService.instance.setActiveDirectMessage(
+      widget.recipientUuid,
+    );
+
     _initialize();
     _checkBlockStatus();
   }
@@ -79,6 +86,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+
+    // Clear active conversation to re-enable notifications
+    ActiveConversationService.instance.clearActiveConversation();
 
     // ✅ Unregister specific callbacks for this conversation
     for (final type in displayableMessageTypes) {
@@ -104,6 +114,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       debugPrint(
         '[DIRECT_MESSAGES] Recipient changed from ${oldWidget.recipientUuid} to ${widget.recipientUuid}',
       );
+
+      // Update active conversation tracking
+      ActiveConversationService.instance.setActiveDirectMessage(
+        widget.recipientUuid,
+      );
+
       _messages = []; // Clear old messages
       _messageOffset = 0;
       _hasMoreMessages = true;
