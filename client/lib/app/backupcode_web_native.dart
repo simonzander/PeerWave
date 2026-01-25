@@ -71,15 +71,12 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
       Directory directory;
 
       if (Platform.isAndroid) {
-        // For Android 13+ (API 33+), try app-specific external storage first (no permission needed)
-        // For older Android, request storage permission
-        final androidInfo = await Permission.storage.status;
-
-        // Try to use external storage (Downloads folder) with permission
-        if (androidInfo.isDenied || androidInfo.isPermanentlyDenied) {
-          final status = await Permission.storage.request();
-
-          if (!status.isGranted) {
+        // Request storage permission
+        final status = await Permission.storage.request();
+        if (!status.isGranted) {
+          // Try requesting manage external storage for Android 11+
+          final manageStatus = await Permission.manageExternalStorage.request();
+          if (!manageStatus.isGranted) {
             // Fallback to app-specific storage (no permission needed)
             directory =
                 await getExternalStorageDirectory() ??
@@ -110,7 +107,7 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
             }
           }
         } else {
-          // Already granted - use Downloads folder
+          // Permission granted - use Downloads folder
           directory = Directory('/storage/emulated/0/Download');
           if (!await directory.exists()) {
             directory =

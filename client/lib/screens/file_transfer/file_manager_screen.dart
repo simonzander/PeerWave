@@ -2,11 +2,14 @@ import 'dart:typed_data';
 import 'dart:convert';
 import 'package:universal_html/html.dart' as html;
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:mime/mime.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../services/file_transfer/storage_interface.dart';
 import '../../services/file_transfer/socket_file_client.dart';
 import '../../services/file_transfer/chunking_service.dart';
@@ -1162,8 +1165,19 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
 
       // Check if we have all chunks
       final availableChunks = await storage.getAvailableChunks(fileId);
-      final downloadedChunks =
-          (file['downloadedChunks'] as List?)?.cast<int>() ?? availableChunks;
+
+      // Handle downloadedChunks which can be either List<int> or int
+      final downloadedChunksRaw = file['downloadedChunks'];
+      final List<int> downloadedChunks;
+
+      if (downloadedChunksRaw is List) {
+        downloadedChunks = downloadedChunksRaw.cast<int>();
+      } else if (downloadedChunksRaw is int) {
+        // If it's an int (count), use available chunks instead
+        downloadedChunks = availableChunks;
+      } else {
+        downloadedChunks = availableChunks;
+      }
 
       if (downloadedChunks.isEmpty) {
         _showError('No chunks available to download');
@@ -2124,13 +2138,62 @@ class _DownloadFileProgressDialogState
   }
 
   Future<void> _triggerBrowserDownload(Uint8List bytes, String fileName) async {
-    // Create blob URL and trigger download (web-specific)
-    final blob = html.Blob([bytes]);
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    html.AnchorElement(href: url)
-      ..setAttribute('download', fileName)
-      ..click();
-    html.Url.revokeObjectUrl(url);
+    if (kIsWeb) {
+      // Web: Create blob URL and trigger download
+      final blob = html.Blob([bytes]);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      html.AnchorElement(href: url)
+        ..setAttribute('download', fileName)
+        ..click();
+      html.Url.revokeObjectUrl(url);
+    } else {
+      // Native: Save to Downloads directory
+      try {
+        // Request storage permission
+        final status = await Permission.storage.request();
+        if (!status.isGranted) {
+          // Try requesting manage external storage for Android 11+
+          if (await Permission.manageExternalStorage.request().isGranted) {
+            // Permission granted, continue
+          } else {
+            throw Exception('Storage permission denied');
+          }
+        }
+
+        // Get Downloads directory
+        Directory? downloadsDir;
+
+        if (Platform.isAndroid) {
+          // Android: Use external storage Downloads
+          downloadsDir = Directory('/storage/emulated/0/Download');
+          if (!await downloadsDir.exists()) {
+            downloadsDir = await getExternalStorageDirectory();
+          }
+        } else if (Platform.isIOS || Platform.isMacOS) {
+          // iOS/macOS: Use app documents directory (iOS doesn't have direct Downloads access)
+          downloadsDir = await getApplicationDocumentsDirectory();
+        } else {
+          // Windows/Linux: Use downloads directory if available
+          downloadsDir = await getDownloadsDirectory();
+        }
+
+        if (downloadsDir == null) {
+          throw Exception('Could not access downloads directory');
+        }
+
+        // Create file path
+        final filePath = '${downloadsDir.path}/$fileName';
+        final file = File(filePath);
+
+        // Write file
+        await file.writeAsBytes(bytes);
+
+        debugPrint('[FILE_MANAGER] File saved to: $filePath');
+      } catch (e) {
+        debugPrint('[FILE_MANAGER] Error saving file: $e');
+        rethrow;
+      }
+    }
   }
 
   @override
