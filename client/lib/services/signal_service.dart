@@ -3117,8 +3117,11 @@ class SignalService {
               'itemId': msg['item_id'],
               'message': msg['message'],
               'timestamp': msg['timestamp'],
-              'recipientId':
-                  msg['sender'], // sender field stores recipient for sent messages
+              // ⚠️ SCHEMA QUIRK: SQLite 'sender' column stores different data based on direction:
+              // - For RECEIVED messages: 'sender' = who sent it (their userId)
+              // - For SENT messages: 'sender' = who we sent TO (the recipientId)
+              // This is confusing but avoiding it would require schema migration.
+              'recipientId': msg['sender'],
               'type': msg['type'],
               'status': msg['status'], // Include status
             },
@@ -3230,13 +3233,37 @@ class SignalService {
           final recipient = data['recipient'] as String?;
           final originalRecipient = data['originalRecipient'] as String?;
 
+          // Declare actualRecipient outside blocks so it can be reused later
+          late final String actualRecipient;
+
           if (isOwnMessage) {
             // Message from own device → Store as SENT message
-            // 🔑 CRITICAL: Use originalRecipient if available (multi-device sync case)
+            // BREAKING CHANGE: Multi-device sync MUST include originalRecipient
             // When Bob Device 1 sends to Alice, Bob Device 2 receives it with:
             // - sender=Bob, recipient=Bob, originalRecipient=Alice
             // We must store it as "Bob → Alice", not "Bob → Bob"
-            final actualRecipient = originalRecipient ?? recipient ?? sender;
+            final isMultiDeviceSync = (recipient == _currentUserId);
+
+            if (isMultiDeviceSync && originalRecipient == null) {
+              debugPrint(
+                '[SIGNAL SERVICE] ❌ Multi-device sync message missing originalRecipient during storage',
+              );
+              throw Exception(
+                'Cannot store sync message: originalRecipient required but missing',
+              );
+            }
+
+            actualRecipient = isMultiDeviceSync
+                ? originalRecipient!
+                : (recipient ?? _currentUserId ?? 'UNKNOWN');
+
+            // Final validation: actualRecipient must not be self or unknown
+            if (actualRecipient == _currentUserId ||
+                actualRecipient == 'UNKNOWN') {
+              debugPrint(
+                '[SIGNAL SERVICE] ⚠️ Warning: Attempting to store message to self (recipient=$actualRecipient)',
+              );
+            }
 
             debugPrint(
               "[SIGNAL SERVICE] 📤 Storing message from own device (Device $senderDeviceId) as SENT to $actualRecipient",
@@ -3256,6 +3283,19 @@ class SignalService {
             );
           } else {
             // Message from another user → Store as RECEIVED message
+            // For received messages, recipient field from server indicates who received it (us)
+            // Validate recipient field exists for non-sync messages
+            if (recipient == null) {
+              debugPrint(
+                '[SIGNAL SERVICE] ❌ Received message missing recipient field',
+              );
+              throw Exception(
+                'Cannot store received message: recipient field missing',
+              );
+            }
+            actualRecipient =
+                recipient; // For received messages, use server's recipient field
+
             debugPrint(
               "[SIGNAL SERVICE] 📥 Storing message from other user ($sender) as RECEIVED",
             );
@@ -3272,12 +3312,10 @@ class SignalService {
           // Update recent conversations list
           final conversationsStore =
               await SqliteRecentConversationsStore.getInstance();
-          // Use the OTHER user's ID (not own ID)
-          // 🔑 CRITICAL: For multi-device sync (isOwnMessage=true), use originalRecipient
-          // This ensures Bob Device 2 creates conversation with Alice, not Bob
-          final conversationUserId = isOwnMessage
-              ? (originalRecipient ?? recipient ?? sender)
-              : sender;
+          // ✅ Reuse actualRecipient calculated above (no recalculation, no fallbacks)
+          // For own messages: conversation is with actualRecipient
+          // For received messages: conversation is with sender
+          final conversationUserId = isOwnMessage ? actualRecipient : sender;
           await conversationsStore.addOrUpdateConversation(
             userId: conversationUserId,
             displayName: conversationUserId, // Will be enriched by UI layer
@@ -3415,24 +3453,55 @@ class SignalService {
     final originalRecipient =
         dataMap['originalRecipient']; // Original recipient for multi-device sync
 
-    // If this is a multi-device sync message (current user is sender AND recipient), use originalRecipient
-    // This means we're receiving our own message on another device
-    final actualRecipient =
-        (sender == _currentUserId &&
-            recipient == _currentUserId &&
-            originalRecipient != null)
-        ? originalRecipient
-        : recipient;
+    // 🔒 BREAKING CHANGE: Multi-device sync messages MUST include originalRecipient
+    // For multi-device sync: sender == currentUserId AND recipient == currentUserId
+    final isMultiDeviceSync =
+        (sender == _currentUserId && recipient == _currentUserId);
+
+    if (isMultiDeviceSync && originalRecipient == null) {
+      debugPrint(
+        '[SIGNAL SERVICE] ❌ CRITICAL: Multi-device sync message missing originalRecipient!',
+      );
+      debugPrint('[SIGNAL SERVICE] sender=$sender, recipient=$recipient');
+      debugPrint(
+        '[SIGNAL SERVICE] Server must send originalRecipient for sync messages',
+      );
+      throw Exception(
+        'Protocol violation: Multi-device sync message missing originalRecipient field',
+      );
+    }
+
+    // Determine actual recipient (conversation context)
+    final actualRecipient = isMultiDeviceSync ? originalRecipient! : recipient;
+
+    // Validate that recipient exists
+    if (actualRecipient == null) {
+      debugPrint('[SIGNAL SERVICE] ❌ CRITICAL: Message has no recipient!');
+      debugPrint(
+        '[SIGNAL SERVICE] sender=$sender, recipient=$recipient, originalRecipient=$originalRecipient',
+      );
+      throw Exception('Protocol violation: Message missing recipient field');
+    }
+
+    // 🔑 Calculate message direction and conversation context BEFORE creating item
+    final isOwnMessage = sender == _currentUserId;
+
+    // 🔑 Calculate conversation context (who this message is with)
+    // For own messages: conversation is with the recipient
+    // For received messages: conversation is with the sender
+    final conversationWith = isOwnMessage ? actualRecipient : sender;
 
     final item = {
       'itemId': itemId,
       'sender': sender,
       'senderDeviceId': senderDeviceId,
-      'recipient':
-          actualRecipient, // Use the actual recipient, not the sync recipient
+      'recipient': actualRecipient, // The actual conversation recipient
+      'conversationWith':
+          conversationWith, // ✨ NEW: Explicit conversation context
       'type': type,
       'message': message,
-      // 🔑 CRITICAL: Include originalRecipient for multi-device read receipt routing
+      'isOwnMessage': isOwnMessage, // ✨ NEW: Clear direction indicator
+      // Keep originalRecipient for backward compatibility with read receipts
       if (originalRecipient != null) 'originalRecipient': originalRecipient,
     };
 
@@ -3508,7 +3577,7 @@ class SignalService {
 
     // ✅ Update unread count for non-system messages (only 'message' and 'file' types)
     // Only increment for messages from OTHER users, not own messages
-    final isOwnMessage = sender == _currentUserId;
+    // (isOwnMessage already calculated above)
     if (!isSystemMessage && !isOwnMessage && _unreadMessagesProvider != null) {
       // Check if this is an activity notification type
       const activityTypes = {
@@ -3575,15 +3644,10 @@ class SignalService {
           _handleEmoteMessage(item, isGroupChat: false);
         }
 
-        // Also emit newConversation if this is the first message from this sender
-        // (Views can check their conversation list to determine if it's truly new)
-        // Use the OTHER user's ID for conversation (not own ID)
-        // 🔑 CRITICAL: For multi-device sync, use originalRecipient
-        final conversationUserId = isOwnMessage
-            ? (originalRecipient ?? recipient)
-            : sender;
+        // Emit newConversation event (views check if it's truly new)
+        // ✅ Reuse conversationWith from item (already calculated above)
         EventBus.instance.emit(AppEvent.newConversation, {
-          'conversationId': conversationUserId,
+          'conversationId': conversationWith,
           'isChannel': false,
           'isOwnMessage': isOwnMessage,
         });
@@ -3615,21 +3679,16 @@ class SignalService {
       }
     }
 
-    // NEW: Trigger specific receiveItem callbacks (type:conversationUserId)
-    // 🔑 CRITICAL: Use the same logic as newConversation event - for multi-device sync
-    if (type != null && sender != null) {
-      // Determine the conversation user ID (same logic as newConversation event above)
-      final conversationUserId = isOwnMessage
-          ? (originalRecipient ?? recipient)
-          : sender;
-
-      final key = '$type:$conversationUserId';
+    // NEW: Trigger specific receiveItem callbacks (type:conversationWith)
+    // ✅ Reuse conversationWith from item (already calculated above)
+    if (type != null && conversationWith != null) {
+      final key = '$type:$conversationWith';
       if (_receiveItemCallbacks.containsKey(key)) {
         for (final callback in _receiveItemCallbacks[key]!) {
           callback(item);
         }
         debugPrint(
-          '[SIGNAL SERVICE] Triggered ${_receiveItemCallbacks[key]!.length} receiveItem callbacks for $key (conversationUserId=$conversationUserId, isOwnMessage=$isOwnMessage)',
+          '[SIGNAL SERVICE] Triggered ${_receiveItemCallbacks[key]!.length} receiveItem callbacks for $key (conversationWith=$conversationWith, isOwnMessage=$isOwnMessage)',
         );
       }
     }
@@ -4887,8 +4946,13 @@ class SignalService {
 
         debugPrint('[SIGNAL SERVICE] Step 9: Build data packet');
         // Use the pre-generated itemId from before the loop
+        // 🔧 FIX: Always use originalRecipientUserId as recipient to prevent self-conversations
+        // The recipientDeviceId identifies which device gets the message
+        // This ensures messages sent to "Alice" always show as "Alice" conversation,
+        // even when syncing to sender's own devices
         final data = {
-          'recipient': recipientAddress.getName(),
+          'recipient':
+              originalRecipientUserId, // ✅ Always use the original intended recipient
           'recipientDeviceId': recipientAddress.getDeviceId(),
           'type': type,
           'payload': serialized,
@@ -4896,13 +4960,11 @@ class SignalService {
           'itemId': messageItemId,
         };
 
-        // If this is a multi-device sync (sending to own other devices), include originalRecipient
+        // Debug logging for multi-device sync
         final isSenderDevice = (recipientAddress.getName() == _currentUserId);
         if (isSenderDevice) {
-          data['originalRecipient'] =
-              originalRecipientUserId; // The actual original recipient of the message
           debugPrint(
-            '[SIGNAL SERVICE] Multi-device sync - originalRecipient: $originalRecipientUserId',
+            '[SIGNAL SERVICE] Multi-device sync - sending to own device ${recipientAddress.getDeviceId()} with recipient: $originalRecipientUserId',
           );
         }
 
@@ -7097,9 +7159,18 @@ class SignalService {
       final preKeys = generatePreKeys(preKeyId, preKeyId);
       if (preKeys.isNotEmpty) {
         await preKeyStore.storePreKey(preKeyId, preKeys.first);
-        debugPrint(
-          '[SIGNAL SERVICE] ✓ PreKey $preKeyId regenerated and uploaded async',
+        debugPrint('[SIGNAL SERVICE] ✓ PreKey $preKeyId regenerated locally');
+
+        // Upload regenerated PreKey to server (fire-and-forget)
+        // Server-side checks and PreKey count monitoring (< 20) will handle any failures
+        final preKeyPublic = base64Encode(
+          preKeys.first.getKeyPair().publicKey.serialize(),
         );
+        SocketService().emit("storePreKey", {
+          'preKeyId': preKeyId,
+          'preKeyPublic': preKeyPublic,
+        });
+        debugPrint('[SIGNAL SERVICE] ✓ PreKey $preKeyId upload initiated');
       }
     } catch (e) {
       debugPrint(
