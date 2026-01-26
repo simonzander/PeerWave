@@ -34,10 +34,14 @@ class DownloadManager extends ChangeNotifier {
   int maxRetries = 3;
   Duration retryDelay = const Duration(seconds: 5);
 
+  // Callback for download completion
+  final void Function(String fileId, String fileName)? onDownloadComplete;
+
   DownloadManager({
     required this.storage,
     required this.chunkingService,
     required this.encryptionService,
+    this.onDownloadComplete,
   });
 
   /// Start a new download
@@ -447,6 +451,9 @@ class DownloadManager extends ChangeNotifier {
     });
 
     debugPrint('[DOWNLOAD] ✓ Download complete, status set to seeding');
+
+    // Trigger completion callback
+    onDownloadComplete?.call(fileId, task.fileName);
 
     notifyListeners();
   }

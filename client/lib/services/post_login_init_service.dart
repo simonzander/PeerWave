@@ -1,5 +1,8 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'signal_service.dart';
 import 'signal_setup_service.dart';
@@ -429,6 +432,7 @@ class PostLoginInitService {
         storage: _fileStorage!,
         chunkingService: _chunkingService!,
         encryptionService: _encryptionService!,
+        onDownloadComplete: _handleDownloadComplete,
       );
       debugPrint('[POST_LOGIN_INIT] ✓ Download manager ready');
 
@@ -585,5 +589,154 @@ class PostLoginInitService {
     _p2pCoordinator = null;
 
     debugPrint('[POST_LOGIN_INIT] ✓ State reset');
+  }
+
+  /// Handle download completion - Auto-export to Downloads folder on Android/iOS
+  Future<void> _handleDownloadComplete(String fileId, String fileName) async {
+    debugPrint('[POST_LOGIN_INIT] Download complete: $fileName ($fileId)');
+
+    // Only auto-export on mobile platforms (Android/iOS)
+    if (kIsWeb || !(Platform.isAndroid || Platform.isIOS)) {
+      debugPrint(
+        '[POST_LOGIN_INIT] Skipping auto-export (not mobile platform)',
+      );
+      return;
+    }
+
+    try {
+      debugPrint(
+        '[POST_LOGIN_INIT] Starting auto-export to Downloads folder...',
+      );
+
+      final storage = _fileStorage;
+      final encryptionService = _encryptionService;
+      final chunkingService = _chunkingService;
+
+      if (storage == null ||
+          encryptionService == null ||
+          chunkingService == null) {
+        debugPrint(
+          '[POST_LOGIN_INIT] ❌ Services not initialized, cannot export',
+        );
+        return;
+      }
+
+      // Get file metadata
+      final metadata = await storage.getFileMetadata(fileId);
+      if (metadata == null) {
+        debugPrint('[POST_LOGIN_INIT] ❌ File metadata not found');
+        return;
+      }
+
+      final chunkCount = metadata['chunkCount'] as int? ?? 0;
+      final availableChunks = await storage.getAvailableChunks(fileId);
+
+      if (availableChunks.length != chunkCount) {
+        debugPrint(
+          '[POST_LOGIN_INIT] ⚠️ Not all chunks available (${availableChunks.length}/$chunkCount)',
+        );
+        return;
+      }
+
+      // Get file encryption key
+      final fileKey = await storage.getFileKey(fileId);
+      if (fileKey == null) {
+        debugPrint('[POST_LOGIN_INIT] ❌ File encryption key not found');
+        return;
+      }
+
+      // Decrypt and assemble chunks
+      final decryptedChunks = <ChunkData>[];
+      for (final chunkIndex in availableChunks) {
+        final encryptedBytes = await storage.getChunk(fileId, chunkIndex);
+        final chunkMetadata = await storage.getChunkMetadata(
+          fileId,
+          chunkIndex,
+        );
+
+        if (encryptedBytes == null || chunkMetadata == null) continue;
+
+        final iv = chunkMetadata['iv'] as Uint8List?;
+        if (iv == null) continue;
+
+        final decryptedBytes = await encryptionService.decryptChunk(
+          encryptedBytes,
+          fileKey,
+          iv,
+        );
+
+        if (decryptedBytes != null) {
+          final chunkHash = chunkMetadata['chunkHash'] as String? ?? '';
+          decryptedChunks.add(
+            ChunkData(
+              chunkIndex: chunkIndex,
+              data: decryptedBytes,
+              hash: chunkHash,
+              size: decryptedBytes.length,
+            ),
+          );
+        }
+      }
+
+      final fileBytes = await chunkingService.assembleChunks(
+        decryptedChunks,
+        verifyHashes: false,
+      );
+
+      if (fileBytes == null) {
+        debugPrint('[POST_LOGIN_INIT] ❌ Failed to assemble file');
+        return;
+      }
+
+      // Save to Downloads directory
+      await _saveToDownloads(fileBytes, fileName);
+      debugPrint('[POST_LOGIN_INIT] ✅ Auto-export complete: $fileName');
+    } catch (e) {
+      debugPrint('[POST_LOGIN_INIT] ❌ Auto-export failed: $e');
+    }
+  }
+
+  /// Save file bytes to Downloads directory (Android/iOS)
+  Future<void> _saveToDownloads(Uint8List bytes, String fileName) async {
+    try {
+      // Request storage permission
+      final status = await Permission.storage.request();
+      if (!status.isGranted) {
+        // Try requesting manage external storage for Android 11+
+        if (!await Permission.manageExternalStorage.request().isGranted) {
+          throw Exception('Storage permission denied');
+        }
+      }
+
+      // Get Downloads directory
+      Directory? downloadsDir;
+
+      if (Platform.isAndroid) {
+        // Android: Use external storage Downloads
+        downloadsDir = Directory('/storage/emulated/0/Download');
+        if (!await downloadsDir.exists()) {
+          downloadsDir = await getExternalStorageDirectory();
+        }
+      } else if (Platform.isIOS) {
+        // iOS: Use app documents directory
+        downloadsDir = await getApplicationDocumentsDirectory();
+      }
+
+      if (downloadsDir == null) {
+        throw Exception('Could not access downloads directory');
+      }
+
+      // Create file path
+      final filePath = '${downloadsDir.path}/$fileName';
+      final file = File(filePath);
+
+      // Write file
+      await file.writeAsBytes(bytes);
+
+      debugPrint('[POST_LOGIN_INIT] ✓ File saved to: $filePath');
+    } catch (e) {
+      debugPrint('[POST_LOGIN_INIT] ✗ Error saving file: $e');
+      rethrow;
+    }
   }
 }
