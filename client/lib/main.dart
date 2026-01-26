@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'auth/magic_link_native.dart' show MagicLinkWebPageWithServer;
 
 import 'services/signal_setup_service.dart';
@@ -75,9 +77,33 @@ import 'services/idb_factory_web.dart'
     if (dart.library.io) 'services/idb_factory_native.dart';
 import 'services/network_checker_service.dart';
 import 'services/filesystem_checker_service.dart';
+import 'services/fcm_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ========================================
+  // 5️⃣ Initialize Firebase (Flutter)
+  // ========================================
+  try {
+    if (!kIsWeb) {
+      // Only initialize on native platforms (Android/iOS)
+      debugPrint('[INIT] Initializing Firebase...');
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      debugPrint('[INIT] ✅ Firebase initialized');
+
+      // Initialize FCM Service (will be called after login)
+      // Note: FCM initialization requires device ID, so it's deferred to post-login
+      debugPrint('[INIT] FCM Service ready (will initialize after login)');
+    }
+  } catch (e, stackTrace) {
+    debugPrint('[INIT] ⚠️ Firebase initialization failed: $e');
+    debugPrint('[INIT] Stack trace: $stackTrace');
+    // Don't block app startup - Firebase is optional
+  }
+
   String? initialMagicKey;
 
   // NOTE: Client ID generation moved to POST-LOGIN flow
