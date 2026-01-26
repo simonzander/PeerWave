@@ -102,8 +102,8 @@ class FCMService {
     try {
       debugPrint('[FCM] Registering token with server...');
 
-      // Get device ID from DeviceIdentityService
-      final deviceId = DeviceIdentityService.instance.deviceId;
+      // Get client ID (UUID) from DeviceIdentityService
+      final clientId = DeviceIdentityService.instance.clientId;
 
       // Determine platform
       final platform = defaultTargetPlatform == TargetPlatform.android
@@ -116,13 +116,11 @@ class FCMService {
       final lastSeen = DateTime.now().toIso8601String();
 
       // Register with server via API
-      // TODO: Implement this endpoint in your API service
-      // For now, we'll use a direct HTTP call
       final response = await ApiService.dio.post(
         '/api/push/register',
         data: {
           'fcm_token': token,
-          'device_id': deviceId,
+          'client_id': clientId,
           'platform': platform,
           'last_seen': lastSeen,
         },
@@ -130,7 +128,7 @@ class FCMService {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         debugPrint('[FCM] ✅ Token registered with server');
-        debugPrint('[FCM]   Device ID: $deviceId');
+        debugPrint('[FCM]   Client ID: $clientId');
         debugPrint('[FCM]   Platform: $platform');
       } else {
         debugPrint('[FCM] ⚠️ Unexpected status code: ${response.statusCode}');

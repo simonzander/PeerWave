@@ -1372,6 +1372,69 @@ const RefreshToken = sequelize.define('RefreshToken', {
     ]
 });
 
+// Define PushToken model (Firebase Cloud Messaging)
+const PushToken = sequelize.define('PushToken', {
+    id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true
+    },
+    user_id: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'Users',
+            key: 'uuid'
+        }
+    },
+    client_id: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        unique: true,
+        references: {
+            model: 'Clients',
+            key: 'clientid'
+        }
+    },
+    fcm_token: {
+        type: DataTypes.TEXT,
+        allowNull: false
+    },
+    platform: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+            isIn: [['android', 'ios']]
+        }
+    },
+    last_seen: {
+        type: DataTypes.DATE,
+        allowNull: false
+    },
+    created_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW
+    },
+    updated_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW
+    }
+}, {
+    tableName: 'push_tokens',
+    timestamps: false,
+    indexes: [
+        {
+            fields: ['user_id']
+        },
+        {
+            fields: ['client_id'],
+            unique: true
+        }
+    ]
+});
+
 // Define associations for blocked users
 User.hasMany(BlockedUser, { foreignKey: 'blocker_uuid', as: 'blockedByUser' });
 User.hasMany(BlockedUser, { foreignKey: 'blocked_uuid', as: 'blockedUsers' });
@@ -1391,6 +1454,12 @@ User.hasMany(RefreshToken, { foreignKey: 'user_id', as: 'refreshTokens' });
 RefreshToken.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 ClientSession.hasMany(RefreshToken, { foreignKey: 'client_id', as: 'refreshTokens' });
 RefreshToken.belongsTo(ClientSession, { foreignKey: 'client_id', as: 'session' });
+
+// Define associations for push tokens
+User.hasMany(PushToken, { foreignKey: 'user_id', as: 'pushTokens' });
+PushToken.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+Client.hasMany(PushToken, { foreignKey: 'client_id', as: 'pushTokens' });
+PushToken.belongsTo(Client, { foreignKey: 'client_id', as: 'client' });
 
 
 module.exports = {
@@ -1419,6 +1488,7 @@ module.exports = {
     MeetingRsvp,
     BlockedUser,
     AbuseReport,
+    PushToken,
     sequelize,
     temporaryStorage,
     dbReady

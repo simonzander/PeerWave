@@ -27,6 +27,7 @@ const path = require('path');
 const writeQueue = require('./db/writeQueue');
 const { initCleanupJob, runCleanup } = require('./jobs/cleanup');
 const logger = require('./utils/logger');
+const { sendMessageNotification } = require('./services/push_notifications');
 
 // ==================== SECURITY: FORMAT STRING SANITIZATION ====================
 // Helper function to safely log user-controlled values
@@ -384,6 +385,7 @@ app.use((req, res, next) => {
   const callRoutes = require('./routes/calls');
   const presenceRoutes = require('./routes/presence');
   const blockReportRoutes = require('./routes/block_report');
+  const pushRoutes = require('./routes/push');
   // External routes need io instance for notifications
   const createExternalRoutes = require('./routes/external');
 
@@ -444,6 +446,9 @@ app.use((req, res, next) => {
   
   // === BLOCK & REPORT ENDPOINTS (Moderate) ===
   app.use('/api', blockReportRoutes);
+  
+  // === PUSH NOTIFICATION ENDPOINTS ===
+  app.use('/api/push', pushRoutes);
   
   app.use(clientRoutes);
   app.use('/api', roleRoutes);
@@ -1716,6 +1721,28 @@ io.sockets.on("connection", socket => {
         } else {
           logger.info('[SIGNAL SERVER] Target device offline, message stored in DB');
           logger.debug('[SIGNAL SERVER] Offline device:', { recipientUserId: sanitizeForLog(recipientUserId), recipientDeviceId: sanitizeForLog(recipientDeviceId) });
+          
+          // Send push notification to offline device (if configured)
+          if (!isSelfMessage) {
+            // Get sender info for notification
+            const senderUser = await User.findOne({
+              where: { uuid: senderUserId },
+              attributes: ['displayName', 'email']
+            });
+            const senderName = senderUser?.displayName || senderUser?.email || 'Someone';
+            
+            // Send push notification (only if device is offline)
+            sendMessageNotification(
+              recipientUserId,
+              senderName,
+              'You have a new message',
+              {
+                senderId: senderUserId,
+                senderDeviceId: senderDeviceId,
+                itemId: itemId
+              }
+            ).catch(err => logger.error('[PUSH] Error sending message notification:', err));
+          }
         }
        } else {
          logger.error('[SIGNAL SERVER] ERROR: sendItem blocked - not authenticated');

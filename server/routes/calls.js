@@ -4,6 +4,8 @@ const meetingService = require('../services/meetingService');
 const presenceService = require('../services/presenceService');
 const { verifySessionAuth, verifyAuthEither } = require('../middleware/sessionAuth');
 const logger = require('../utils/logger');
+const { sendCallNotification, sendMeetingNotification } = require('../services/push_notifications');
+const { User } = require('../db/model');
 
 /**
  * Create instant call (wrapper around createMeeting)
@@ -149,6 +151,45 @@ router.post('/calls/:callId/invite', verifyAuthEither, async (req, res) => {
       role: 'meeting_member',
       status: 'invited'
     });
+
+    // Send push notification for instant call
+    if (call.is_instant_call) {
+      // Get caller info
+      const caller = await User.findOne({
+        where: { uuid: currentUserId },
+        attributes: ['displayName', 'email']
+      });
+      const callerName = caller?.displayName || caller?.email || 'Someone';
+      
+      // Send push notification (only to offline devices)
+      sendCallNotification(
+        user_id,
+        callerName,
+        {
+          callId: callId,
+          callType: call.voice_only ? 'audio' : 'video',
+          callerId: currentUserId,
+          title: call.title
+        }
+      ).catch(err => logger.error('[PUSH] Error sending call notification:', err));
+    } else {
+      // For scheduled meetings, send meeting notification
+      const organizer = await User.findOne({
+        where: { uuid: call.created_by },
+        attributes: ['displayName', 'email']
+      });
+      const organizerName = organizer?.displayName || organizer?.email || 'Someone';
+      
+      sendMeetingNotification(
+        user_id,
+        call.title,
+        organizerName,
+        {
+          meetingId: callId,
+          roomName: call.room_name
+        }
+      ).catch(err => logger.error('[PUSH] Error sending meeting notification:', err));
+    }
 
     res.status(201).json(newParticipant);
   } catch (error) {

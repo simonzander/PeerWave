@@ -86,8 +86,8 @@ Future<void> main() async {
   // 5️⃣ Initialize Firebase (Flutter)
   // ========================================
   try {
-    if (!kIsWeb) {
-      // Only initialize on native platforms (Android/iOS)
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      // Only initialize on mobile platforms (Android/iOS)
       debugPrint('[INIT] Initializing Firebase...');
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
