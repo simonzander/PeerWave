@@ -40,6 +40,8 @@ import 'file_transfer/storage_factory_web.dart'
     if (dart.library.io) 'file_transfer/storage_factory_native.dart';
 // Video conference imports
 import 'video_conference_service.dart';
+// FCM imports
+import 'fcm_service.dart';
 
 /// Orchestrates all post-login service initialization in the correct order
 ///
@@ -530,6 +532,26 @@ class PostLoginInitService {
         // E2EE service (no explicit init needed - lazy)
         Future(() async {
           debugPrint('[POST_LOGIN_INIT]   ✓ E2EE service ready (lazy)');
+        }),
+
+        // ========================================
+        // 🔔 FCM Push Notifications (Android/iOS)
+        // ========================================
+        Future(() async {
+          if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+            try {
+              debugPrint('[POST_LOGIN_INIT]   Initializing FCM service...');
+              await FCMService().initialize();
+              debugPrint('[POST_LOGIN_INIT]   ✓ FCM service initialized');
+            } catch (e) {
+              debugPrint('[POST_LOGIN_INIT]   ⚠️ FCM initialization error: $e');
+              // Don't fail initialization if FCM fails
+            }
+          } else {
+            debugPrint(
+              '[POST_LOGIN_INIT]   ℹ️ FCM not available on this platform',
+            );
+          }
         }),
       ]);
 

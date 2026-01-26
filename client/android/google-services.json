@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "569967816098",
+    "project_id": "peerwave-labs",
+    "storage_bucket": "peerwave-labs.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:569967816098:android:f4ef99b2865c16f95056fb",
+        "android_client_info": {
+          "package_name": "org.peerwave.client"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyADrf4-jJCmR1f-W-oJil3PKl8NyPnWc0M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
