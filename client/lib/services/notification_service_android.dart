@@ -72,7 +72,7 @@ class NotificationServiceAndroid {
       const initSettings = InitializationSettings(android: androidSettings);
 
       await _notifications.initialize(
-        initSettings,
+        settings: initSettings,
         onDidReceiveNotificationResponse: _onNotificationTapped,
       );
 
@@ -566,10 +566,10 @@ class NotificationServiceAndroid {
       final notificationDetails = NotificationDetails(android: androidDetails);
 
       await _notifications.show(
-        id,
-        title,
-        body,
-        notificationDetails,
+        id: id,
+        title: title,
+        body: body,
+        notificationDetails: notificationDetails,
         payload: payload,
       );
 
