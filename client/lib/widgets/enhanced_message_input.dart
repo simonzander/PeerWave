@@ -937,11 +937,15 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
       // Start recording with audio recorder
       // Use platform-specific encoder for cross-platform compatibility
       // Windows MediaFoundation supports: aacLc, flac, pcm16bits, wav (NOT opus)
-      // Solution: Use aacLc on Windows for compressed format with broad playback support
-      final encoder = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
+      // Android: AAC-LC has better hardware support than Opus (prevents codec resource errors)
+      // Solution: Use aacLc on Windows and Android for broad compatibility
+      final encoder =
+          !kIsWeb &&
+              (defaultTargetPlatform == TargetPlatform.windows ||
+                  defaultTargetPlatform == TargetPlatform.android)
           ? AudioEncoder
-                .aacLc // Windows: AAC-LC (compressed, widely supported)
-          : AudioEncoder.opus; // Other platforms: Opus
+                .aacLc // Windows & Android: AAC-LC (widely supported)
+          : AudioEncoder.opus; // iOS/Web: Opus
 
       debugPrint(
         '[MESSAGE_INPUT] Starting recording with encoder: $encoder on platform: $defaultTargetPlatform',
@@ -950,7 +954,9 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
       try {
         // AAC and Opus both support bitRate and sampleRate
         final config =
-            !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
+            !kIsWeb &&
+                (defaultTargetPlatform == TargetPlatform.windows ||
+                    defaultTargetPlatform == TargetPlatform.android)
             ? const RecordConfig(
                 encoder: AudioEncoder.aacLc,
                 bitRate: 128000,
@@ -964,14 +970,18 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
               );
 
         // Get temporary directory and create a file path
-        // Windows requires a valid file path, empty string doesn't work
+        // Windows and Android need a valid file path for AAC encoding
         String? recordingPath;
-        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+        if (!kIsWeb &&
+            (defaultTargetPlatform == TargetPlatform.windows ||
+                defaultTargetPlatform == TargetPlatform.android)) {
           final tempDir = await getTemporaryDirectory();
           final fileName =
               'recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
           recordingPath = path.join(tempDir.path, fileName);
-          debugPrint('[MESSAGE_INPUT] Windows recording path: $recordingPath');
+          debugPrint(
+            '[MESSAGE_INPUT] Recording path for $defaultTargetPlatform: $recordingPath',
+          );
         }
 
         debugPrint('[MESSAGE_INPUT] Recording config: $config');

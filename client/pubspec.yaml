@@ -34,7 +34,7 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  google_fonts: ^7.1.0  # Google Fonts für schöne Schriftarten
+  google_fonts: ^8.0.0  # Google Fonts für schöne Schriftarten
   go_router: ^17.0.1
   http: ^1.5.0
   provider: ^6.1.2
@@ -71,7 +71,7 @@ dependencies:
   flutter_image_compress: ^2.3.0
   record: ^6.1.2
   permission_handler: ^12.0.1
-  flutter_local_notifications: ^19.5.0  # Android/iOS native notifications
+  flutter_local_notifications: ^20.0.0  # Android/iOS native notifications
   local_auth: ^3.0.0  # Biometric authentication (Face ID, Touch ID, fingerprint)
   just_audio: ^0.10.5
   audioplayers: ^6.1.0  # For Windows desktop audio playback
@@ -96,6 +96,8 @@ dependencies:
   launch_at_startup: ^0.5.1  # Autostart functionality for desktop
   js: ^0.7.1  # JavaScript interop (legacy, transitioning to dart:js_interop)
   collection: ^1.18.0  # Collection utilities
+  firebase_core: ^4.4.0  # iOS/Android push notifications (excluded from Windows build)
+  firebase_messaging: ^16.1.1  # iOS/Android FCM (excluded from Windows build)
 
 dev_dependencies:
   # The "flutter_lints" package below contains a set of recommended lints to

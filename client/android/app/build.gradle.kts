@@ -8,6 +8,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Apply Google Services plugin conditionally (only for release builds with Firebase)
+// Debug builds don't need it since org.peerwave.client.debug is not registered in Firebase
+if (gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 // Calculate version code from semantic version and build number
 // Formula: (major * 1000000000) + (minor * 1000000) + (patch * 1000) + buildNumber
 // Example: 1.2.1+1 -> (1*1000000000) + (2*1000000) + (1*1000) + 1 = 1002001001
@@ -100,6 +106,14 @@ flutter {
 }
 
 dependencies {
+    // Import the Firebase BoM
+    implementation(platform("com.google.firebase:firebase-bom:34.8.0"))
+
+    // TODO: Add the dependencies for Firebase products you want to use
+    // When using the BoM, don't specify versions in Firebase dependencies
+    // https://firebase.google.com/docs/android/setup#available-libraries
+
+    // Core library desugaring for Java 8+ APIs (required by flutter_local_notifications)
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 

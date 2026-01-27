@@ -78,6 +78,14 @@ import 'services/filesystem_checker_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ========================================
+  // 5️⃣ Initialize Firebase (Flutter) - Mobile Only
+  // ========================================
+  // Firebase initialization will be handled by FCM service on iOS/Android
+  // Windows/Linux/macOS use NoOp stub - no Firebase SDK needed
+  debugPrint('[INIT] Firebase will be initialized on mobile platforms only');
+
   String? initialMagicKey;
 
   // NOTE: Client ID generation moved to POST-LOGIN flow

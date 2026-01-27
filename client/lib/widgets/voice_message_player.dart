@@ -190,11 +190,18 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
 
         // Detect format from first bytes or use .m4a as universal fallback
         String extension = '.m4a'; // AAC container, widely supported
-        if (audioBytes.length > 4) {
+        if (audioBytes.length > 8) {
           // Check for Opus magic number (OpusHead)
           final header = String.fromCharCodes(audioBytes.take(8));
           if (header.contains('Opus')) {
             extension = '.opus';
+          }
+          // Check for AAC/M4A magic number (ftyp)
+          else if (audioBytes.length > 12) {
+            final m4aHeader = String.fromCharCodes(audioBytes.skip(4).take(4));
+            if (m4aHeader == 'ftyp') {
+              extension = '.m4a'; // Confirmed M4A/AAC format
+            }
           }
         }
 
