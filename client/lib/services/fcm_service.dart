@@ -1,11 +1,15 @@
 import 'dart:async';
+import 'dart:io' show Platform;
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import '../firebase_options.dart';
 import 'api_service.dart';
 import 'device_identity_service.dart';
 
-/// Firebase Cloud Messaging Service
+/// Firebase Cloud Messaging Service (Mobile Only - iOS/Android)
 /// Handles FCM token management, push notifications, and token refresh
+/// Windows/Linux/macOS use stub implementation
 class FCMService {
   static final FCMService _instance = FCMService._internal();
   factory FCMService() => _instance;
@@ -17,6 +21,7 @@ class FCMService {
   bool _initialized = false;
 
   /// Initialize FCM service
+  /// - Initialize Firebase (if not already done)
   /// - Request notification permissions (Android 13+)
   /// - Get FCM token
   /// - Register token with server
@@ -27,7 +32,22 @@ class FCMService {
       return;
     }
 
+    // CRITICAL: Only initialize on supported platforms
+    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
+      debugPrint('[FCM] Not available on this platform (Windows/Linux/macOS)');
+      return;
+    }
+
     try {
+      // Initialize Firebase if not already initialized
+      if (Firebase.apps.isEmpty) {
+        debugPrint('[FCM] Initializing Firebase...');
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
+        debugPrint('[FCM] ✅ Firebase initialized');
+      }
+
       _messaging = FirebaseMessaging.instance;
 
       // ========================================

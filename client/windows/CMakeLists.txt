@@ -57,6 +57,11 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# CRITICAL: Exclude Firebase from Windows builds
+# Firebase C++ SDK has unresolved linker errors on Windows and is only needed for iOS/Android
+# This removal happens AFTER the include but must be BEFORE any plugin processing
+list(REMOVE_ITEM FLUTTER_PLUGIN_LIST firebase_core firebase_messaging)
+message(STATUS "Excluded firebase_core and firebase_messaging from Windows build (mobile-only plugins)")
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can

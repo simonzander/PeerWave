@@ -40,8 +40,8 @@ import 'file_transfer/storage_factory_web.dart'
     if (dart.library.io) 'file_transfer/storage_factory_native.dart';
 // Video conference imports
 import 'video_conference_service.dart';
-// FCM imports
-import 'fcm_service.dart';
+// FCM imports (stub for desktop, real implementation for mobile)
+import 'fcm_service_stub.dart' if (dart.library.io) 'fcm_service.dart';
 
 /// Orchestrates all post-login service initialization in the correct order
 ///

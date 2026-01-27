@@ -6,8 +6,12 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
-    // Add the Google services Gradle plugin
-    id("com.google.gms.google-services")
+}
+
+// Apply Google Services plugin conditionally (only for release builds with Firebase)
+// Debug builds don't need it since org.peerwave.client.debug is not registered in Firebase
+if (gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }) {
+    apply(plugin = "com.google.gms.google-services")
 }
 
 // Calculate version code from semantic version and build number
@@ -109,11 +113,7 @@ dependencies {
     // When using the BoM, don't specify versions in Firebase dependencies
     // https://firebase.google.com/docs/android/setup#available-libraries
 
-    // Core library desugaring for Java 8+ APIs
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
-}
-
-dependencies {
+    // Core library desugaring for Java 8+ APIs (required by flutter_local_notifications)
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
