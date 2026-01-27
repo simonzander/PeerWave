@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:file_picker/file_picker.dart';
 import '../services/api_service.dart';
 import '../services/server_config_native.dart';
 import '../widgets/registration_progress_bar.dart';
@@ -68,56 +68,49 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
   Future<void> _saveBackupCodes(BuildContext context) async {
     try {
       final codes = backupCodesController.text;
-      Directory directory;
 
       if (Platform.isAndroid) {
-        // Request storage permission
-        final status = await Permission.storage.request();
-        if (!status.isGranted) {
-          // Try requesting manage external storage for Android 11+
-          final manageStatus = await Permission.manageExternalStorage.request();
-          if (!manageStatus.isGranted) {
-            // Fallback to app-specific storage (no permission needed)
-            directory =
-                await getExternalStorageDirectory() ??
-                await getApplicationDocumentsDirectory();
+        // Android: Use FilePicker to let user choose save location (no permission needed)
+        final codesContent = 'PeerWave Backup Codes\n\n$codes';
+        final bytes = utf8.encode(codesContent);
 
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'Storage permission denied. Saving to app folder: ${directory.path}',
-                  ),
-                  backgroundColor: Theme.of(context).colorScheme.secondary,
-                  action: SnackBarAction(
-                    label: 'Settings',
-                    onPressed: () => openAppSettings(),
-                  ),
-                  duration: const Duration(seconds: 5),
-                ),
-              );
-            }
-          } else {
-            // Permission granted - use Downloads folder
-            directory = Directory('/storage/emulated/0/Download');
-            if (!await directory.exists()) {
-              directory =
-                  await getExternalStorageDirectory() ??
-                  await getApplicationDocumentsDirectory();
-            }
+        final filePath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save Backup Codes',
+          fileName: 'peerwave_backup_codes.txt',
+          bytes: Uint8List.fromList(bytes),
+        );
+
+        if (filePath == null) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('File save cancelled')),
+            );
           }
-        } else {
-          // Permission granted - use Downloads folder
-          directory = Directory('/storage/emulated/0/Download');
-          if (!await directory.exists()) {
-            directory =
-                await getExternalStorageDirectory() ??
-                await getApplicationDocumentsDirectory();
-          }
+          return;
         }
-      } else {
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Backup codes saved to $filePath'),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+            ),
+          );
+        }
+        return;
+      }
+
+      // iOS/Desktop: Save to appropriate directory
+      Directory directory;
+
+      if (Platform.isIOS) {
         // iOS: Save to Documents folder (accessible via Files app)
         directory = await getApplicationDocumentsDirectory();
+      } else {
+        // Desktop: Use downloads directory
+        directory =
+            await getDownloadsDirectory() ??
+            await getApplicationDocumentsDirectory();
       }
 
       final file = File('${directory.path}/peerwave_backup_codes.txt');

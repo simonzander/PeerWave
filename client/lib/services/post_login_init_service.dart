@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'signal_service.dart';
 import 'signal_setup_service.dart';
@@ -718,38 +717,38 @@ class PostLoginInitService {
     }
   }
 
-  /// Save file bytes to Downloads directory (Android/iOS)
+  /// Save file bytes to appropriate directory (uses app-specific storage for Android)
   Future<void> _saveToDownloads(Uint8List bytes, String fileName) async {
     try {
-      // Request storage permission
-      final status = await Permission.storage.request();
-      if (!status.isGranted) {
-        // Try requesting manage external storage for Android 11+
-        if (!await Permission.manageExternalStorage.request().isGranted) {
-          throw Exception('Storage permission denied');
-        }
-      }
-
-      // Get Downloads directory
-      Directory? downloadsDir;
+      // Get appropriate directory based on platform
+      Directory? targetDir;
 
       if (Platform.isAndroid) {
-        // Android: Use external storage Downloads
-        downloadsDir = Directory('/storage/emulated/0/Download');
-        if (!await downloadsDir.exists()) {
-          downloadsDir = await getExternalStorageDirectory();
+        // Android: Use app-specific external storage (no permissions needed)
+        // Files will be visible in Files app under "Internal Storage/Android/data/com.yourapp/files"
+        targetDir = await getExternalStorageDirectory();
+        if (targetDir != null) {
+          // Create a Downloads subdirectory within app storage
+          final downloadsSubdir = Directory('${targetDir.path}/Downloads');
+          if (!await downloadsSubdir.exists()) {
+            await downloadsSubdir.create(recursive: true);
+          }
+          targetDir = downloadsSubdir;
         }
       } else if (Platform.isIOS) {
-        // iOS: Use app documents directory
-        downloadsDir = await getApplicationDocumentsDirectory();
+        // iOS: Use app documents directory (accessible via Files app)
+        targetDir = await getApplicationDocumentsDirectory();
+      } else {
+        // Desktop: Use downloads directory
+        targetDir = await getDownloadsDirectory();
       }
 
-      if (downloadsDir == null) {
-        throw Exception('Could not access downloads directory');
+      if (targetDir == null) {
+        throw Exception('Could not access storage directory');
       }
 
       // Create file path
-      final filePath = '${downloadsDir.path}/$fileName';
+      final filePath = '${targetDir.path}/$fileName';
       final file = File(filePath);
 
       // Write file

@@ -9,7 +9,6 @@ import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:mime/mime.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../../services/file_transfer/storage_interface.dart';
 import '../../services/file_transfer/socket_file_client.dart';
 import '../../services/file_transfer/chunking_service.dart';
@@ -2147,46 +2146,38 @@ class _DownloadFileProgressDialogState
         ..click();
       html.Url.revokeObjectUrl(url);
     } else {
-      // Native: Save to Downloads directory
+      // Native: Save to appropriate directory
       try {
-        // Request storage permission
-        final status = await Permission.storage.request();
-        if (!status.isGranted) {
-          // Try requesting manage external storage for Android 11+
-          if (await Permission.manageExternalStorage.request().isGranted) {
-            // Permission granted, continue
-          } else {
-            throw Exception('Storage permission denied');
-          }
-        }
-
-        // Get Downloads directory
-        Directory? downloadsDir;
+        // Save file using platform-appropriate method
+        String? filePath;
 
         if (Platform.isAndroid) {
-          // Android: Use external storage Downloads
-          downloadsDir = Directory('/storage/emulated/0/Download');
-          if (!await downloadsDir.exists()) {
-            downloadsDir = await getExternalStorageDirectory();
+          // Android: Use FilePicker to let user choose save location (scoped storage)
+          filePath = await FilePicker.platform.saveFile(
+            dialogTitle: 'Save File',
+            fileName: fileName,
+            bytes: bytes,
+          );
+
+          if (filePath == null) {
+            throw Exception('File save cancelled');
           }
         } else if (Platform.isIOS || Platform.isMacOS) {
           // iOS/macOS: Use app documents directory (iOS doesn't have direct Downloads access)
-          downloadsDir = await getApplicationDocumentsDirectory();
+          final downloadsDir = await getApplicationDocumentsDirectory();
+          filePath = '${downloadsDir.path}/$fileName';
+          final file = File(filePath);
+          await file.writeAsBytes(bytes);
         } else {
-          // Windows/Linux: Use downloads directory if available
-          downloadsDir = await getDownloadsDirectory();
+          // Windows/Linux: Use downloads directory
+          final downloadsDir = await getDownloadsDirectory();
+          if (downloadsDir == null) {
+            throw Exception('Could not access downloads directory');
+          }
+          filePath = '${downloadsDir.path}/$fileName';
+          final file = File(filePath);
+          await file.writeAsBytes(bytes);
         }
-
-        if (downloadsDir == null) {
-          throw Exception('Could not access downloads directory');
-        }
-
-        // Create file path
-        final filePath = '${downloadsDir.path}/$fileName';
-        final file = File(filePath);
-
-        // Write file
-        await file.writeAsBytes(bytes);
 
         debugPrint('[FILE_MANAGER] File saved to: $filePath');
       } catch (e) {

@@ -12,19 +12,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     
-    <!-- Storage/Photo permissions for image picker -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- Storage permissions - using scoped storage via file_picker and image_picker -->
+    <!-- READ_EXTERNAL_STORAGE for Android 12 and below -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     
-    <!-- Storage permissions for file downloads (Android 13+) -->
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    
-    <!-- Write permission for older Android versions -->
+    <!-- WRITE_EXTERNAL_STORAGE for older Android versions only -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-    
-    <!-- Manage external storage for Android 11+ (API 30+) - needed for Downloads folder -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
     
     <!-- Optional: For better WebRTC performance -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
