@@ -222,6 +222,39 @@ class SignalService {
     }
   }
 
+  /// Get prekey fingerprints (SHA256 hash of public key) for validation
+  /// Returns map of keyId -> hash for all 110 keys (complete validation)
+  Future<Map<int, String>> _getPreKeyFingerprints() async {
+    try {
+      final keyIds = await preKeyStore.getAllPreKeyIds();
+      final fingerprints = <int, String>{};
+
+      // Send all 110 keys for validation (complete verification)
+      for (final id in keyIds) {
+        try {
+          final preKey = await preKeyStore.loadPreKey(id);
+          final publicKeyBytes = preKey.getKeyPair().publicKey.serialize();
+          final hash = base64Encode(
+            publicKeyBytes,
+          ); // Use public key itself as fingerprint
+          fingerprints[id] = hash;
+        } catch (e) {
+          debugPrint(
+            '[SIGNAL SERVICE] Failed to get fingerprint for prekey $id: $e',
+          );
+        }
+      }
+
+      debugPrint(
+        '[SIGNAL SERVICE] Generated ${fingerprints.length} prekey fingerprints for validation',
+      );
+      return fingerprints;
+    } catch (e) {
+      debugPrint('[SIGNAL SERVICE] Error generating prekey fingerprints: $e');
+      return {};
+    }
+  }
+
   /// Helper: Handle key sync requirements from server validation
   Future<void> _handleKeySyncRequired(
     Map<String, dynamic> validationResult,
@@ -703,6 +736,9 @@ class SignalService {
     debugPrint('[SIGNAL INIT] Validating keys before clientReady...');
 
     try {
+      // Get local prekey fingerprints for validation
+      final preKeyFingerprints = await _getPreKeyFingerprints();
+
       // HTTP request to validate/sync keys (blocking, with response code)
       final response = await ApiService.post(
         '/signal/validate-and-sync',
@@ -710,6 +746,8 @@ class SignalService {
           'localIdentityKey': await _getLocalIdentityPublicKey(),
           'localSignedPreKeyId': await _getLatestSignedPreKeyId(),
           'localPreKeyCount': await _getLocalPreKeyCount(),
+          'preKeyFingerprints':
+              preKeyFingerprints, // NEW: Send hashes for validation
         },
       );
 
@@ -776,16 +814,19 @@ class SignalService {
       final preKeyIds = await preKeyStore.getAllPreKeyIds();
       debugPrint('[SIGNAL INIT] Current PreKey count: ${preKeyIds.length}');
 
-      if (preKeyIds.length >= 110) {
+      const int TARGET_PREKEYS = 110; // Signal Protocol recommendation
+      const int MIN_PREKEYS = 20; // Regenerate threshold
+
+      if (preKeyIds.length >= MIN_PREKEYS) {
         debugPrint(
-          '[SIGNAL INIT] PreKeys sufficient (${preKeyIds.length}/110), skipping...',
+          '[SIGNAL INIT] PreKeys sufficient (${preKeyIds.length}/$TARGET_PREKEYS), skipping...',
         );
         onProgress('Signal Protocol ready', 112, 112, 100.0);
         return;
       }
 
       debugPrint(
-        '[SIGNAL INIT] ⚠️ PreKeys insufficient (${preKeyIds.length}/110), regenerating...',
+        '[SIGNAL INIT] ⚠️ PreKeys insufficient (${preKeyIds.length}/$TARGET_PREKEYS), regenerating...',
       );
 
       // Just regenerate PreKeys without full initialization
@@ -902,183 +943,70 @@ class SignalService {
     await Future.delayed(const Duration(milliseconds: 50));
 
     // Step 3: Generate PreKeys in batches (110 keys, 10 per batch)
-    // 🔧 OPTIMIZED: Only get IDs (no decryption needed for validation)
     var existingPreKeyIds = await preKeyStore.getAllPreKeyIds();
 
-    // 🔧 CLEANUP: Remove ALL PreKeys if corrupted (>110 keys OR any ID >= 110)
-    final hasExcessKeys = existingPreKeyIds.length > 110;
-    final hasInvalidIds = existingPreKeyIds.any((id) => id >= 110);
+    // CLEANUP: Remove excess PreKeys if > 110 (keep incrementing IDs)
+    const int TARGET_PREKEYS = 110;
+    final hasExcessKeys = existingPreKeyIds.length > TARGET_PREKEYS;
 
-    if (hasExcessKeys || hasInvalidIds) {
-      if (hasExcessKeys) {
-        debugPrint(
-          '[SIGNAL INIT] ⚠️ Found ${existingPreKeyIds.length} PreKeys (expected max 110)',
-        );
-      }
-      if (hasInvalidIds) {
-        final invalidIds = existingPreKeyIds.where((id) => id >= 110).toList();
-        debugPrint(
-          '[SIGNAL INIT] ⚠️ Found invalid PreKey IDs (>= 110): $invalidIds',
-        );
-      }
-
+    if (hasExcessKeys) {
       debugPrint(
-        '[SIGNAL INIT] 🔧 Deleting ALL PreKeys and regenerating fresh set (IDs 0-109)...',
+        '[SIGNAL INIT] Found ${existingPreKeyIds.length} PreKeys (expected $TARGET_PREKEYS)',
       );
+      debugPrint('[SIGNAL INIT] Deleting excess PreKeys...');
 
-      // Delete ALL existing PreKeys
-      for (final id in existingPreKeyIds) {
+      // Delete excess PreKeys (keep lowest IDs)
+      final sortedIds = List<int>.from(existingPreKeyIds)..sort();
+      final toDelete = sortedIds.skip(TARGET_PREKEYS).toList();
+      for (final id in toDelete) {
         await preKeyStore.removePreKey(id, sendToServer: true);
       }
 
-      existingPreKeyIds = [];
+      existingPreKeyIds = sortedIds.take(TARGET_PREKEYS).toList();
       debugPrint(
-        '[SIGNAL INIT] ✓ Cleanup complete, will generate fresh 110 PreKeys',
+        '[SIGNAL INIT] Cleanup complete, now have ${existingPreKeyIds.length} PreKeys',
       );
     }
 
-    final neededPreKeys = 110 - existingPreKeyIds.length;
+    final neededPreKeys = TARGET_PREKEYS - existingPreKeyIds.length;
 
     if (neededPreKeys > 0) {
+      debugPrint('[SIGNAL INIT] Need to generate $neededPreKeys pre keys');
+
+      // ✅ Delegate to preKeyStore.checkPreKeys() which handles incrementing IDs correctly
+      // This ensures consistency between initialization and normal operation
       debugPrint(
-        '[SIGNAL INIT] Generating $neededPreKeys pre keys (IDs must be 0-109)',
+        '[SIGNAL INIT] Delegating to preKeyStore.checkPreKeys() for proper ID allocation',
       );
 
-      // Find missing IDs in range 0-109
-      final existingIds = existingPreKeyIds.toSet();
-      final missingIds = List.generate(
-        110,
-        (i) => i,
-      ).where((id) => !existingIds.contains(id)).toList();
-
-      if (missingIds.length != neededPreKeys) {
-        debugPrint(
-          '[SIGNAL INIT] ⚠️ Mismatch: need $neededPreKeys keys but found ${missingIds.length} missing IDs',
-        );
-        // This shouldn't happen, but if it does, regenerate everything
-        for (final id in existingPreKeyIds) {
-          await preKeyStore.removePreKey(id, sendToServer: true);
-        }
-        existingPreKeyIds = [];
-        missingIds.clear();
-        missingIds.addAll(List.generate(110, (i) => i));
-      }
-
-      // 🚀 OPTIMIZED: Generate keys using contiguous range batching
-      // This analyzes missing IDs and batches contiguous ranges for speed
-      final contiguousRanges = _findContiguousRanges(missingIds);
+      // Use preKeyStore's logic which correctly handles incrementing IDs
       int keysGeneratedInSession = 0;
+      final startCount = existingPreKeyIds.length;
 
-      debugPrint(
-        '[SIGNAL INIT] Found ${contiguousRanges.length} range(s) to generate',
-      );
+      // Call preKeyStore.checkPreKeys() which handles generation with proper ID allocation
+      try {
+        await preKeyStore.checkPreKeys();
 
-      // 🚀 BATCH UPLOAD: Process ranges in batches of 20 keys for HTTP upload
-      const int uploadBatchSize = 20;
-      List<PreKeyRecord> uploadBatch = [];
+        // Get updated count
+        final updatedIds = await preKeyStore.getAllPreKeyIds();
+        keysGeneratedInSession = updatedIds.length - startCount;
 
-      for (final range in contiguousRanges) {
-        if (range.length > 1) {
-          // BATCH GENERATION: Multiple contiguous IDs (FAST!)
-          final start = range.first;
-          final end = range.last;
-          debugPrint(
-            '[SIGNAL INIT] Batch generating PreKeys $start-$end (${range.length} keys)',
-          );
+        debugPrint(
+          '[SIGNAL INIT] ✓ Generated $keysGeneratedInSession PreKeys via checkPreKeys()',
+        );
 
-          final preKeys = generatePreKeys(start, end);
-
-          // Add to upload batch
-          for (final preKey in preKeys) {
-            uploadBatch.add(preKey);
-
-            // Upload batch when it reaches uploadBatchSize or this is the last key
-            if (uploadBatch.length >= uploadBatchSize ||
-                keysGeneratedInSession + uploadBatch.length >=
-                    missingIds.length) {
-              final success = await preKeyStore.storePreKeysBatch(uploadBatch);
-
-              if (success) {
-                keysGeneratedInSession += uploadBatch.length;
-
-                // Update progress based on batch size
-                final totalKeysNow =
-                    existingPreKeyIds.length + keysGeneratedInSession;
-                updateProgress(
-                  'Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...',
-                  currentStep + keysGeneratedInSession,
-                );
-              } else {
-                debugPrint(
-                  '[SIGNAL INIT] ⚠️ Batch upload failed, will retry on next initialization',
-                );
-              }
-
-              uploadBatch.clear();
-            }
-          }
-
-          // Small delay between ranges
-          await Future.delayed(const Duration(milliseconds: 50));
-        } else {
-          // SINGLE GENERATION: Isolated gap (unavoidable)
-          final id = range.first;
-          debugPrint('[SIGNAL INIT] Single generating PreKey $id');
-
-          final preKeys = generatePreKeys(id, id);
-          if (preKeys.isNotEmpty) {
-            uploadBatch.add(preKeys.first);
-
-            // Upload batch when it reaches uploadBatchSize or this is the last key
-            if (uploadBatch.length >= uploadBatchSize ||
-                keysGeneratedInSession + uploadBatch.length >=
-                    missingIds.length) {
-              final success = await preKeyStore.storePreKeysBatch(uploadBatch);
-
-              if (success) {
-                keysGeneratedInSession += uploadBatch.length;
-
-                // Update progress based on batch size
-                final totalKeysNow =
-                    existingPreKeyIds.length + keysGeneratedInSession;
-                updateProgress(
-                  'Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...',
-                  currentStep + keysGeneratedInSession,
-                );
-              } else {
-                debugPrint(
-                  '[SIGNAL INIT] ⚠️ Batch upload failed, will retry on next initialization',
-                );
-              }
-
-              uploadBatch.clear();
-            }
-          }
-        }
-      }
-
-      // Upload any remaining keys in the batch
-      if (uploadBatch.isNotEmpty) {
-        final success = await preKeyStore.storePreKeysBatch(uploadBatch);
-
-        if (success) {
-          keysGeneratedInSession += uploadBatch.length;
-
-          final totalKeysNow =
-              existingPreKeyIds.length + keysGeneratedInSession;
-          updateProgress(
-            'Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...',
-            currentStep + keysGeneratedInSession,
-          );
-        } else {
-          debugPrint(
-            '[SIGNAL INIT] ⚠️ Final batch upload failed, will retry on next initialization',
-          );
-        }
+        // Update progress
+        final totalKeysNow = updatedIds.length;
+        updateProgress(
+          'Pre keys ready ($totalKeysNow/110)',
+          currentStep + keysGeneratedInSession,
+        );
+      } catch (e) {
+        debugPrint('[SIGNAL INIT] ⚠️ PreKey generation failed: $e');
       }
 
       // Update currentStep by total keys generated
-      currentStep += missingIds.length;
+      currentStep += keysGeneratedInSession;
 
       // Track metrics for diagnostics (if any keys were generated)
       if (keysGeneratedInSession > 0) {
@@ -1088,8 +1016,9 @@ class SignalService {
         );
       }
     } else {
+      const int TARGET_PREKEYS = 110; // Define constant locally for this scope
       debugPrint(
-        '[SIGNAL INIT] Pre keys already sufficient (${existingPreKeyIds.length}/110)',
+        '[SIGNAL INIT] Pre keys already sufficient (${existingPreKeyIds.length}/$TARGET_PREKEYS)',
       );
       // Skip to end
       currentStep = totalSteps;
@@ -1223,130 +1152,36 @@ class SignalService {
     final neededPreKeys = 110 - existingPreKeyIds.length;
 
     if (neededPreKeys > 0) {
+      debugPrint('[SIGNAL INIT] Need to generate $neededPreKeys pre keys');
+
+      // ✅ Delegate to preKeyStore.checkPreKeys() which handles incrementing IDs correctly
       debugPrint(
-        '[SIGNAL INIT] Generating $neededPreKeys pre keys (IDs must be 0-109)',
+        '[SIGNAL INIT] Delegating to preKeyStore.checkPreKeys() for proper ID allocation',
       );
 
-      // Find missing IDs in range 0-109
-      final existingIds = existingPreKeyIds.toSet();
-      final missingIds = List.generate(
-        110,
-        (i) => i,
-      ).where((id) => !existingIds.contains(id)).toList();
-
-      if (missingIds.length != neededPreKeys) {
-        debugPrint(
-          '[SIGNAL INIT] ⚠️ Mismatch: need $neededPreKeys keys but found ${missingIds.length} missing IDs',
-        );
-        // Regenerate everything
-        for (final id in existingPreKeyIds) {
-          await preKeyStore.removePreKey(id, sendToServer: true);
-        }
-        existingPreKeyIds = [];
-        missingIds.clear();
-        missingIds.addAll(List.generate(110, (i) => i));
-      }
-
-      // Generate keys using contiguous range batching
-      final contiguousRanges = _findContiguousRanges(missingIds);
+      // Use preKeyStore's logic which correctly handles incrementing IDs
       int keysGeneratedInSession = 0;
+      final startCount = existingPreKeyIds.length;
 
-      debugPrint(
-        '[SIGNAL INIT] Found ${contiguousRanges.length} range(s) to generate',
-      );
+      try {
+        await preKeyStore.checkPreKeys();
 
-      const int uploadBatchSize = 20;
-      List<PreKeyRecord> uploadBatch = [];
+        // Get updated count
+        final updatedIds = await preKeyStore.getAllPreKeyIds();
+        keysGeneratedInSession = updatedIds.length - startCount;
 
-      for (final range in contiguousRanges) {
-        if (range.length > 1) {
-          final start = range.first;
-          final end = range.last;
-          debugPrint(
-            '[SIGNAL INIT] Batch generating PreKeys $start-$end (${range.length} keys)',
-          );
+        debugPrint(
+          '[SIGNAL INIT] ✓ Generated $keysGeneratedInSession PreKeys via checkPreKeys()',
+        );
 
-          final preKeys = generatePreKeys(start, end);
-
-          for (final preKey in preKeys) {
-            uploadBatch.add(preKey);
-
-            if (uploadBatch.length >= uploadBatchSize ||
-                keysGeneratedInSession + uploadBatch.length >=
-                    missingIds.length) {
-              final success = await preKeyStore.storePreKeysBatch(uploadBatch);
-
-              if (success) {
-                keysGeneratedInSession += uploadBatch.length;
-
-                final totalKeysNow =
-                    existingPreKeyIds.length + keysGeneratedInSession;
-                updateProgress(
-                  'Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...',
-                  currentStep + keysGeneratedInSession,
-                );
-              } else {
-                debugPrint(
-                  '[SIGNAL INIT] ⚠️ Batch upload failed, will retry on next initialization',
-                );
-              }
-
-              uploadBatch.clear();
-            }
-          }
-        } else {
-          // Single key generation
-          final id = range.first;
-          debugPrint('[SIGNAL INIT] Generating single PreKey $id');
-
-          final preKeys = generatePreKeys(id, id);
-          if (preKeys.isNotEmpty) {
-            uploadBatch.add(preKeys.first);
-
-            if (uploadBatch.length >= uploadBatchSize ||
-                keysGeneratedInSession + uploadBatch.length >=
-                    missingIds.length) {
-              final success = await preKeyStore.storePreKeysBatch(uploadBatch);
-
-              if (success) {
-                keysGeneratedInSession += uploadBatch.length;
-
-                final totalKeysNow =
-                    existingPreKeyIds.length + keysGeneratedInSession;
-                updateProgress(
-                  'Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...',
-                  currentStep + keysGeneratedInSession,
-                );
-              } else {
-                debugPrint(
-                  '[SIGNAL INIT] ⚠️ Batch upload failed, will retry on next initialization',
-                );
-              }
-
-              uploadBatch.clear();
-            }
-          }
-        }
-      }
-
-      // Upload any remaining keys in the batch
-      if (uploadBatch.isNotEmpty) {
-        final success = await preKeyStore.storePreKeysBatch(uploadBatch);
-
-        if (success) {
-          keysGeneratedInSession += uploadBatch.length;
-
-          final totalKeysNow =
-              existingPreKeyIds.length + keysGeneratedInSession;
-          updateProgress(
-            'Generating pre keys $keysGeneratedInSession of ${missingIds.length} needed (total: $totalKeysNow/110)...',
-            currentStep + keysGeneratedInSession,
-          );
-        } else {
-          debugPrint(
-            '[SIGNAL INIT] ⚠️ Final batch upload failed, will retry on next initialization',
-          );
-        }
+        // Update progress
+        final totalKeysNow = updatedIds.length;
+        updateProgress(
+          'Pre keys ready ($totalKeysNow/110)',
+          currentStep + keysGeneratedInSession,
+        );
+      } catch (e) {
+        debugPrint('[SIGNAL INIT] ⚠️ PreKey generation failed: $e');
       }
 
       debugPrint(

@@ -478,12 +478,13 @@ clientRoutes.post("/signal/validate-and-sync", verifyAuthEither, async (req, res
     }
     
     try {
-        const { localIdentityKey, localSignedPreKeyId, localPreKeyCount } = req.body;
+        const { localIdentityKey, localSignedPreKeyId, localPreKeyCount, preKeyFingerprints } = req.body;
         
         const validationResult = {
             keysValid: true,
             missingKeys: [],
-            preKeyIdsToDelete: []
+            preKeyIdsToDelete: [],
+            corruptedPreKeys: [] // NEW: List of prekeys with mismatched public keys
         };
         
         // Fetch server state from Client table (Identity key stored here)
@@ -507,7 +508,7 @@ clientRoutes.post("/signal/validate-and-sync", verifyAuthEither, async (req, res
                 owner: sessionUuid,
                 client: sessionDeviceId
             },
-            attributes: ['id']
+            attributes: ['id', 'prekey_id', 'prekey_data'] // Include prekey_data for fingerprint validation
         });
         
         // Validate Identity
@@ -545,6 +546,33 @@ clientRoutes.post("/signal/validate-and-sync", verifyAuthEither, async (req, res
         if (consumedPreKeyIds.length > 0) {
             validationResult.preKeyIdsToDelete = consumedPreKeyIds;
             validationResult.reason = `${consumedPreKeyIds.length} PreKeys consumed`;
+        }
+        
+        // NEW: Validate prekey fingerprints (public key hashes)
+        if (preKeyFingerprints && typeof preKeyFingerprints === 'object') {
+            logger.info('[SIGNAL] Validating prekey fingerprints...');
+            const fingerprintIds = Object.keys(preKeyFingerprints).map(id => parseInt(id));
+            
+            for (const keyId of fingerprintIds) {
+                const localFingerprint = preKeyFingerprints[keyId];
+                
+                // Find matching server prekey
+                const serverPreKey = serverPreKeys.find(k => k.prekey_id === keyId);
+                
+                if (serverPreKey) {
+                    // Compare public keys (fingerprints)
+                    if (serverPreKey.prekey_data !== localFingerprint) {
+                        logger.warn(`[SIGNAL] PreKey ${keyId} has mismatched public key! Local: ${localFingerprint.substring(0, 20)}..., Server: ${serverPreKey.prekey_data.substring(0, 20)}...`);
+                        validationResult.corruptedPreKeys.push(keyId);
+                    }
+                }
+            }
+            
+            if (validationResult.corruptedPreKeys.length > 0) {
+                validationResult.keysValid = false;
+                validationResult.reason = `${validationResult.corruptedPreKeys.length} PreKeys corrupted (public key mismatch)`;
+                logger.error(`[SIGNAL] Found ${validationResult.corruptedPreKeys.length} corrupted prekeys!`);
+            }
         }
         
         res.json(validationResult);
