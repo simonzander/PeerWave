@@ -1,17 +1,5 @@
-🚀 What's New in PeerWave v1.2.4
+🚀 What's New in PeerWave v1.2.5
 
 ✨ New Features
-• enhance IndexedDB and Native storage to handle multiple serialization formats for chunk data and IV
-• implement mobile-only Firebase initialization and stub for non-mobile platforms
-• add monochrome drawable for adaptive icon
-• add download completion callback and auto-export functionality for mobile platforms
-• add Firebase push notification support
-• integrate Firebase Cloud Messaging for push notifications
-
-🐛 Bug Fixes
-• clean Flutter project before installing dependencies
-• update Google Services plugin version to 4.4.4
-• update notification initialization and show method parameters for clarity
-• add storage permissions for file downloads and improve download handling for different platforms
-• enhance audio recording compatibility for Windows and Android; improve audio format detection in voice message player
+• add Firebase Push Notifications environment variables to Docker Compose files
 
