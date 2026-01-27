@@ -246,7 +246,20 @@ class IndexedDBStorage implements FileStorageInterface {
     if (result == null) return null;
 
     final data = result as Map<String, dynamic>;
-    return data['encryptedData'] as Uint8List;
+    final rawData = data['encryptedData'];
+
+    // Handle different serialization formats from IndexedDB
+    if (rawData is Uint8List) {
+      return rawData;
+    } else if (rawData is List) {
+      return Uint8List.fromList(List<int>.from(rawData));
+    } else if (rawData is String) {
+      // Should not happen, but handle just in case
+      debugPrint('[STORAGE] ⚠️ Chunk data is String, this should not happen');
+      return null;
+    }
+
+    return null;
   }
 
   @override
@@ -265,11 +278,21 @@ class IndexedDBStorage implements FileStorageInterface {
     if (result == null) return null;
 
     final data = result as Map<String, dynamic>;
+
+    // Handle IV serialization - might be List or Uint8List
+    final rawIv = data['iv'];
+    Uint8List? iv;
+    if (rawIv is Uint8List) {
+      iv = rawIv;
+    } else if (rawIv is List) {
+      iv = Uint8List.fromList(List<int>.from(rawIv));
+    }
+
     return {
       'fileId': data['fileId'],
       'chunkIndex': data['chunkIndex'],
       'chunkHash': data['chunkHash'],
-      'iv': data['iv'],
+      'iv': iv,
       'chunkSize': data['chunkSize'],
       'status': data['status'],
       'timestamp': data['timestamp'],

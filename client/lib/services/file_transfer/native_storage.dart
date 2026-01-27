@@ -192,7 +192,21 @@ class NativeStorage implements FileStorageInterface {
     int chunkIndex,
   ) async {
     final allMeta = await _getAllChunkMetadata(fileId);
-    return allMeta[chunkIndex.toString()];
+    final meta = allMeta[chunkIndex.toString()];
+
+    if (meta == null) return null;
+
+    // Convert base64 IV string back to Uint8List
+    final ivString = meta['iv'] as String?;
+    Uint8List? iv;
+    if (ivString != null && ivString.isNotEmpty) {
+      iv = base64Decode(ivString);
+    }
+
+    return {
+      ...meta,
+      'iv': iv, // Replace string with Uint8List
+    };
   }
 
   @override
