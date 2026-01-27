@@ -10,9 +10,10 @@ const notifiedMeetings = new Set();
  */
 async function notifyUpcomingMeetings() {
     try {
-        const { Meeting, MeetingParticipant, User } = require('../db/model');
+        const { Meeting, User } = require('../db/model');
         const { sendMeetingNotification } = require('../services/push_notifications');
         const { getDeviceSockets } = require('../server');
+        const meetingMemoryStore = require('../services/meetingMemoryStore');
         
         // Get meetings starting in the next 5 minutes
         const now = new Date();
@@ -31,12 +32,7 @@ async function notifyUpcomingMeetings() {
                     [Op.gte]: now,
                     [Op.lte]: fiveMinutesFromNow
                 }
-            },
-            include: [{
-                model: MeetingParticipant,
-                as: 'participants',
-                attributes: ['user_id', 'role', 'status']
-            }]
+            }
         });
         
         if (upcomingMeetings.length === 0) {
@@ -48,7 +44,7 @@ async function notifyUpcomingMeetings() {
         
         for (const meeting of upcomingMeetings) {
             // Skip if already notified this meeting
-            if (notifiedMeetings.has(meeting.uuid)) {
+            if (notifiedMeetings.has(meeting.meeting_id)) {
                 continue;
             }
             
@@ -60,27 +56,25 @@ async function notifyUpcomingMeetings() {
                 });
                 const organizerName = organizer?.displayName || organizer?.email || 'Someone';
                 
-                // Check each participant
+                // Get participants from invited_participants field (user IDs)
+                const invitedUserIds = meeting.invited_participants || [];
+                
+                // Check each invited participant
                 let notifiedCount = 0;
-                for (const participant of meeting.participants) {
-                    // Skip if participant declined
-                    if (participant.status === 'declined') {
-                        continue;
-                    }
-                    
+                for (const userId of invitedUserIds) {
                     // Check if user has any online devices
                     const userDevices = Array.from(deviceSockets.keys())
-                        .filter(key => key.startsWith(`${participant.user_id}:`));
+                        .filter(key => key.startsWith(`${userId}:`));
                     
                     // Only send notification if user has NO connected devices
                     if (userDevices.length === 0) {
                         await sendMeetingNotification(
-                            participant.user_id,
+                            userId,
                             meeting.title,
                             organizerName,
                             {
-                                meetingId: meeting.uuid,
-                                roomName: meeting.room_name,
+                                meetingId: meeting.meeting_id,
+                                roomName: meeting.title,
                                 startTime: meeting.start_time.toISOString()
                             }
                         ).catch(err => logger.error('[MEETING REMINDER] Error sending notification:', err));
@@ -89,14 +83,14 @@ async function notifyUpcomingMeetings() {
                 }
                 
                 // Mark as notified in memory
-                notifiedMeetings.add(meeting.uuid);
+                notifiedMeetings.add(meeting.meeting_id);
                 totalNotified += notifiedCount;
                 
                 if (notifiedCount > 0) {
                     logger.info(`[MEETING REMINDER] Sent notifications for "${meeting.title}" to ${notifiedCount} offline participants`);
                 }
             } catch (error) {
-                logger.error(`[MEETING REMINDER] Error processing meeting ${meeting.uuid}:`, error);
+                logger.error(`[MEETING REMINDER] Error processing meeting ${meeting.meeting_id}:`, error);
             }
         }
         
@@ -122,16 +116,16 @@ async function cleanupOldNotifications() {
         // Get all notified meeting IDs that are older than 1 hour
         const oldMeetings = await Meeting.findAll({
             where: {
-                uuid: { [Op.in]: Array.from(notifiedMeetings) },
+                meeting_id: { [Op.in]: Array.from(notifiedMeetings) },
                 start_time: { [Op.lt]: oneHourAgo }
             },
-            attributes: ['uuid']
+            attributes: ['meeting_id']
         });
         
         // Remove from notified set
         let cleaned = 0;
         for (const meeting of oldMeetings) {
-            notifiedMeetings.delete(meeting.uuid);
+            notifiedMeetings.delete(meeting.meeting_id);
             cleaned++;
         }
         
