@@ -244,7 +244,9 @@ jobs:
       
       - name: Install dependencies
         working-directory: ./client
-        run: flutter pub get
+        run: |
+          flutter clean
+          flutter pub get
       
       - name: Generate version info
         run: |
