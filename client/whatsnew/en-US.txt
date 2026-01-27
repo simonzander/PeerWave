@@ -1,5 +1,5 @@
-🚀 What's New in PeerWave v1.2.6
+🚀 What's New in PeerWave v1.2.7
 
-✨ New Features
-• implement meeting reminder job to notify offline participants of upcoming meetings
+🐛 Bug Fixes
+• update meeting notification logic to use meeting_id instead of uuid
 
