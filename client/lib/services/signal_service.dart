@@ -252,10 +252,19 @@ class SignalService {
       for (final id in preKeyIdsToDelete) {
         await preKeyStore.removePreKey(id as int);
       }
-      // Note: PreKeys will be regenerated on next check/decrypt
       debugPrint(
-        '[SIGNAL SERVICE] Consumed PreKeys deleted, will regenerate as needed',
+        '[SIGNAL SERVICE] Consumed PreKeys deleted, triggering regeneration...',
       );
+
+      // ✅ FIX: Immediately trigger prekey regeneration after deletion
+      try {
+        await preKeyStore.checkPreKeys();
+        debugPrint(
+          '[SIGNAL SERVICE] ✓ PreKey regeneration triggered successfully',
+        );
+      } catch (e) {
+        debugPrint('[SIGNAL SERVICE] ✗ PreKey regeneration failed: $e');
+      }
     }
   }
 
@@ -675,6 +684,14 @@ class SignalService {
       sentGroupItemsStore = await SentGroupItemsStore.getInstance();
       _storesCreated = true;
       debugPrint('[SIGNAL INIT] ✅ Stores created');
+
+      // ✅ Check and regenerate prekeys if needed after store creation
+      try {
+        await preKeyStore.checkPreKeys();
+        debugPrint('[SIGNAL INIT] ✓ PreKey validation completed');
+      } catch (e) {
+        debugPrint('[SIGNAL INIT] ⚠️ PreKey check failed: $e');
+      }
     } else {
       debugPrint('[SIGNAL INIT] ℹ️  Stores already exist, reusing...');
     }
@@ -1738,12 +1755,21 @@ class SignalService {
           '[SIGNAL SERVICE][PREKEY_SYNC] ⚠️ Only $remainingCount PreKeys remaining after sync',
         );
         debugPrint(
-          '[SIGNAL SERVICE][PREKEY_SYNC] → Regenerating consumed PreKeys in background...',
+          '[SIGNAL SERVICE][PREKEY_SYNC] → Triggering prekey regeneration...',
         );
 
-        // Regenerate consumed PreKeys asynchronously
-        for (final id in consumedPreKeyIds) {
-          _regeneratePreKeyAsync(id);
+        // Use checkPreKeys for batch regeneration (more efficient than individual)
+        try {
+          await preKeyStore.checkPreKeys();
+          debugPrint(
+            '[SIGNAL SERVICE][PREKEY_SYNC] ✓ PreKey regeneration completed',
+          );
+        } catch (e) {
+          debugPrint(
+            '[SIGNAL SERVICE][PREKEY_SYNC] ⚠️ PreKey regeneration failed: $e',
+          );
+          // Don't fallback to individual regeneration - it would spam the server
+          // checkPreKeys will be retried on next sync or before next message send
         }
       }
 
@@ -4741,6 +4767,20 @@ class SignalService {
       );
     }
 
+    // ✅ Check our own prekey count before sending
+    final ourPreKeyCount = (await preKeyStore.getAllPreKeyIds()).length;
+    if (ourPreKeyCount < 10) {
+      debugPrint(
+        '[SIGNAL SERVICE] ⚠️ WARNING: Only $ourPreKeyCount prekeys available!',
+      );
+      // Trigger regeneration in background (don't await - let message send proceed)
+      preKeyStore.checkPreKeys().catchError((e) {
+        debugPrint(
+          '[SIGNAL SERVICE] Background prekey regeneration failed: $e',
+        );
+      });
+    }
+
     debugPrint(
       '[SIGNAL SERVICE] Step 0c: Pre-flight check - does recipient have keys?',
     );
@@ -4781,6 +4821,20 @@ class SignalService {
     debugPrint(
       '[SIGNAL SERVICE] Number of devices (Alice + Bob): ${preKeyBundles.length}',
     );
+
+    // ⚠️ WARN: Excessive device count can cause prekey exhaustion
+    if (preKeyBundles.length > 20) {
+      debugPrint(
+        '[SIGNAL SERVICE] ⚠️ WARNING: ${preKeyBundles.length} devices detected!',
+      );
+      debugPrint(
+        '[SIGNAL SERVICE] This will consume ${preKeyBundles.length} prekeys per message.',
+      );
+      debugPrint(
+        '[SIGNAL SERVICE] Consider cleaning up old/stale devices to prevent prekey exhaustion.',
+      );
+    }
+
     for (final bundle in preKeyBundles) {
       debugPrint(
         '[SIGNAL SERVICE] Device: userId=${bundle['userId']}, deviceId=${bundle['deviceId']}',
