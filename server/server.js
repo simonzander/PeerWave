@@ -26,6 +26,7 @@ let User, Channel, Thread, Client, SignalSignedPreKey, SignalPreKey, Item, Chann
 const path = require('path');
 const writeQueue = require('./db/writeQueue');
 const { initCleanupJob, runCleanup } = require('./jobs/cleanup');
+const { initMeetingReminderJob } = require('./jobs/meetingReminders');
 const logger = require('./utils/logger');
 const { sendMessageNotification } = require('./services/push_notifications');
 
@@ -3780,6 +3781,8 @@ io.sockets.on("connection", socket => {
       // The sending device already has the message via local callback
       // But sender's OTHER devices should receive it (they can decrypt with SenderKey)
       let deliveredCount = 0;
+      const offlineMembers = new Set(); // Track offline members for push notifications
+      
       for (const client of memberClients) {
         // Skip ONLY the specific sending device to prevent duplicate
         // Do NOT skip sender's other devices - they need the message too!
@@ -3800,7 +3803,46 @@ io.sockets.on("connection", socket => {
             timestamp: timestamp || new Date().toISOString()
           });
           deliveredCount++;
+        } else {
+          // Device is offline - mark user for push notification
+          if (client.owner !== userId) { // Don't notify sender's own devices
+            offlineMembers.add(client.owner);
+          }
         }
+      }
+
+      // Send push notifications to offline members (not the sender)
+      if (offlineMembers.size > 0) {
+        // Get sender info for notification
+        const senderUser = await User.findOne({
+          where: { uuid: userId },
+          attributes: ['displayName', 'email']
+        });
+        const senderName = senderUser?.displayName || senderUser?.email || 'Someone';
+        
+        // Get channel info
+        const channel = await Channel.findOne({
+          where: { uuid: channelId },
+          attributes: ['name']
+        });
+        const channelName = channel?.name || 'a group';
+        
+        // Send notification to each offline member
+        for (const offlineMemberId of offlineMembers) {
+          sendMessageNotification(
+            offlineMemberId,
+            senderName,
+            `New message in ${channelName}`,
+            {
+              senderId: userId,
+              channelId: channelId,
+              itemId: itemId,
+              type: 'group_message'
+            }
+          ).catch(err => logger.error('[PUSH] Error sending group message notification:', err));
+        }
+        
+        logger.info(`[GROUP ITEM] Sent push notifications to ${offlineMembers.size} offline members`);
       }
 
       logger.info(`[GROUP ITEM] Broadcast to ${deliveredCount} devices`);
@@ -4910,6 +4952,7 @@ process.on('SIGINT', async () => {
     
     // Step 5: Initialize cleanup and meeting services
     initCleanupJob();
+    initMeetingReminderJob();
     runCleanup();
     const meetingCleanupService = require('./services/meetingCleanupService');
     const presenceService = require('./services/presenceService');
@@ -4940,3 +4983,10 @@ process.on('SIGINT', async () => {
     process.exit(1);
   }
 })();
+
+// Export deviceSockets accessor for cron jobs
+function getDeviceSockets() {
+  return deviceSockets;
+}
+
+module.exports = { getDeviceSockets };
