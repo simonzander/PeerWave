@@ -1,5 +1,2 @@
-🚀 What's New in PeerWave v1.2.9
-
-✨ New Features
-• add granular media permissions for Android 13+ in AndroidManifest.xml
+🚀 What's New in PeerWave v1.2.10
 
