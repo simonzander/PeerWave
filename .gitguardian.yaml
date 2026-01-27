@@ -1,0 +1,26 @@
+# GitGuardian configuration
+# Documentation: https://docs.gitguardian.com/internal-repositories-monitoring/ignoring-irrelevant-secrets
+
+version: 2
+
+# Paths to ignore completely
+paths-ignore:
+  - '**/node_modules/**'
+  - '**/build/**'
+  - '**/.dart_tool/**'
+  - '**/ios/**'
+  - '**/android/**'
+  - '**/windows/**'
+  - '**/macos/**'
+  - '**/linux/**'
+
+# Specific secrets to ignore
+matches-ignore:
+  # Firebase API keys are designed to be public in client applications
+  # Security is enforced through Firebase Security Rules and App Check
+  - name: Firebase Web API Keys
+    match: AIzaSyDSKUdVE42S7M2pxgThGR0M7MN5mk7_qcU
+  - name: Firebase Android API Keys
+    match: AIzaSyADrf4-jJCmR1f-W-oJil3PKl8NyPnWc0M
+  - name: Firebase iOS/macOS API Keys
+    match: AIzaSyDXvy1dU6S67ML68hLOxO5jCYSsIvcK17M
