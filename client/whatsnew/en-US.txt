@@ -1,5 +1,5 @@
-🚀 What's New in PeerWave v1.2.7
+🚀 What's New in PeerWave v1.2.8
 
-🐛 Bug Fixes
-• update meeting notification logic to use meeting_id instead of uuid
+✨ New Features
+• add GitGuardian configuration to manage secret detection
 
