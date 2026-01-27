@@ -1,5 +1,5 @@
-🚀 What's New in PeerWave v1.2.5
+🚀 What's New in PeerWave v1.2.6
 
 ✨ New Features
-• add Firebase Push Notifications environment variables to Docker Compose files
+• implement meeting reminder job to notify offline participants of upcoming meetings
 
