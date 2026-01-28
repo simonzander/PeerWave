@@ -1300,35 +1300,39 @@ io.sockets.on("connection", socket => {
         if (preKeysArray) {
           logger.info(`[SIGNAL SERVER] Receiving ${preKeysArray.length} PreKeys for batch storage`);
           
-          // Enqueue entire batch as a single operation to maintain atomicity
-          await writeQueue.enqueue(async () => {
-            const results = [];
-            for (const preKey of preKeysArray) {
-              if (preKey && preKey.id && preKey.data) {
-                let decoded;
-                try {
-                  decoded = Buffer.from(preKey.data, 'base64');
-                } catch (e) {
-                  logger.error('[SIGNAL SERVER] Invalid base64 in batch prekey_data');
-                  continue;
-                }
-                if (decoded.length !== 33) {
-                  logger.error(`[SIGNAL SERVER] Refusing to store batch pre-key: prekey_data is ${decoded.length} bytes (expected 33). Possible private key leak or wrong format. id=${preKey.id}`);
-                  continue;
-                }
-                const result = await SignalPreKey.findOrCreate({
-                  where: {
-                    prekey_id: preKey.id,
-                    owner: userId,
-                    client: clientId,
-                  },
-                  defaults: {
-                    prekey_data: preKey.data,
-                  }
-                });
-                results.push(result);
+          // Validate and prepare batch records
+          const validPreKeys = [];
+          for (const preKey of preKeysArray) {
+            if (preKey && preKey.id && preKey.data) {
+              let decoded;
+              try {
+                decoded = Buffer.from(preKey.data, 'base64');
+              } catch (e) {
+                logger.error('[SIGNAL SERVER] Invalid base64 in batch prekey_data');
+                continue;
               }
+              if (decoded.length !== 33) {
+                logger.error('[SIGNAL SERVER] Refusing to store batch pre-key: invalid length', {
+                  length: decoded.length,
+                  expected: 33,
+                  keyId: sanitizeForLog(preKey.id)
+                });
+                continue;
+              }
+              validPreKeys.push({
+                owner: userId,
+                client: clientId,
+                prekey_id: preKey.id,
+                prekey_data: preKey.data
+              });
             }
+          }
+          
+          // Use bulkCreate for atomic batch insert (like HTTP endpoint)
+          await writeQueue.enqueue(async () => {
+            const results = await SignalPreKey.bulkCreate(validPreKeys, {
+              updateOnDuplicate: ['prekey_data', 'updatedAt']
+            });
             logger.info(`[SIGNAL SERVER] Successfully stored ${results.length} PreKeys`);
             return results;
           }, `storePreKeys-batch-${preKeysArray.length}`);
@@ -1574,47 +1578,8 @@ io.sockets.on("connection", socket => {
   });
 
   // 🔄 SESSION RECOVERY: Handle session corruption/missing session notifications
-  socket.on("sessionRecoveryNeeded", async (data) => {
-    logger.info('[SIGNAL SERVER] Session recovery notification received');
-    logger.debug('[SIGNAL SERVER] Session recovery data:', { data: sanitizeForLog(data) });
-    try {
-      if(isAuthenticated()) {
-        const { senderUserId, senderDeviceId, recipientUserId, recipientDeviceId, reason } = data;
-        
-        // Validate that the request is from the recipient
-        const currentUserId = getUserId();
-        const currentDeviceId = getDeviceId();
-        if (currentUserId !== recipientUserId || currentDeviceId !== recipientDeviceId) {
-          logger.error('[SIGNAL SERVER] Session recovery request from unauthorized device');
-          return;
-        }
-        
-        logger.info('[SIGNAL SERVER] Forwarding session recovery request to sender');
-        logger.debug('[SIGNAL SERVER] Session recovery forwarding details:', { 
-          senderUserId: sanitizeForLog(senderUserId), 
-          senderDeviceId: sanitizeForLog(senderDeviceId),
-          reason: sanitizeForLog(reason), 
-          recipientUserId: sanitizeForLog(recipientUserId), 
-          recipientDeviceId: sanitizeForLog(recipientDeviceId) 
-        });
-        
-        // Forward notification to the sender who needs to resend
-        safeEmitToDevice(io, senderUserId, senderDeviceId, "sessionRecoveryRequested", {
-          recipientUserId: recipientUserId,
-          recipientDeviceId: recipientDeviceId,
-          reason: reason,
-          requestedAt: new Date().toISOString()
-        });
-        
-        logger.info('[SIGNAL SERVER] Session recovery notification sent to sender');
-        logger.debug('[SIGNAL SERVER] Session recovery sent to:', { senderUserId: sanitizeForLog(senderUserId), senderDeviceId: sanitizeForLog(senderDeviceId) });
-      } else {
-        logger.error('[SIGNAL SERVER] sessionRecoveryNeeded blocked - not authenticated');
-      }
-    } catch (error) {
-      logger.error('[SIGNAL SERVER] Error handling session recovery:', error);
-    }
-  });
+  // Note: sessionRecoveryNeeded removed - Signal Protocol's double-ratchet handles session recovery
+  // When receiver detects corrupted session, they fetch sender's PreKeyBundle and establish new session
 
   socket.on("sendItem", async (data) => {
     logger.info('[SIGNAL SERVER] sendItem event received');

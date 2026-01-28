@@ -168,34 +168,44 @@ class PermanentPreKeyStore extends PreKeyStore {
 
       final allKeyIds = await _getAllPreKeyIds();
 
-      // � OPTIMIZED: Use gap-filling with contiguous range batching
-      if (allKeyIds.length < 20) {
+      // ✅ Signal Protocol: Keep 110 prekeys, regenerate when < 20
+      const int MAX_PREKEY_ID = 16777215; // Signal Protocol max (0xFFFFFF)
+      const int WRAP_THRESHOLD = 16000000; // Start wrapping at 16M
+      const int TARGET_PREKEYS = 110; // Signal Protocol recommendation
+      const int MIN_PREKEYS = 20; // Regenerate threshold
+
+      if (allKeyIds.length < MIN_PREKEYS) {
         debugPrint(
-          "[PREKEY STORE] Not enough pre keys (${allKeyIds.length}/110), generating more",
+          "[PREKEY STORE] Not enough pre keys (${allKeyIds.length}/$TARGET_PREKEYS), generating more",
         );
 
-        // Find missing IDs in range 0-109
-        final existingIds = allKeyIds.toSet();
-        final missingIds = List.generate(
-          110,
-          (i) => i,
-        ).where((id) => !existingIds.contains(id)).toList();
+        // Strategy:
+        // 1. If maxId < WRAP_THRESHOLD: use incrementing IDs (safe, no reuse)
+        // 2. If maxId >= WRAP_THRESHOLD: wrap to 0 and fill gaps (old keys consumed)
+        final maxId = allKeyIds.isEmpty
+            ? -1
+            : allKeyIds.reduce((a, b) => a > b ? a : b);
+        final needed = TARGET_PREKEYS - allKeyIds.length;
 
-        final neededKeys = 110 - allKeyIds.length;
-        debugPrint(
-          "[PREKEY STORE] Need to generate $neededKeys keys, found ${missingIds.length} missing IDs in range 0-109",
-        );
+        List<int> missingIds;
 
-        if (missingIds.length != neededKeys) {
+        if (maxId >= WRAP_THRESHOLD) {
+          // WRAP MODE: Find gaps from 0 upward (old keys must be consumed by now)
           debugPrint(
-            "[PREKEY STORE] ⚠️ Mismatch detected! This should not happen.",
+            "[PREKEY STORE] ⚠️ Max ID reached ($maxId/$MAX_PREKEY_ID), wrapping to fill gaps from 0...",
+          );
+          missingIds = _findGapsFromZero(allKeyIds, needed);
+        } else {
+          // INCREMENT MODE: Normal incrementing (safe, no race condition)
+          final startId = maxId + 1;
+          missingIds = List.generate(needed, (i) => startId + i);
+          debugPrint(
+            "[PREKEY STORE] Using incrementing IDs from $startId (safe mode)",
           );
         }
 
         // Find contiguous ranges for batch generation
-        final contiguousRanges = _findContiguousRanges(
-          missingIds.take(neededKeys).toList(),
-        );
+        final contiguousRanges = _findContiguousRanges(missingIds);
         debugPrint(
           "[PREKEY STORE] Found ${contiguousRanges.length} range(s) to generate",
         );
@@ -326,6 +336,26 @@ class PermanentPreKeyStore extends PreKeyStore {
 
   final String _storeName = 'peerwaveSignalPreKeys';
   final String _keyPrefix = 'prekey_';
+
+  /// Find unused IDs starting from 0 (for wrapping after reaching max ID)
+  /// When we've reached 16M, old keys (0-109) must be consumed, so safe to reuse
+  List<int> _findGapsFromZero(List<int> existingIds, int needed) {
+    final existingSet = existingIds.toSet();
+    final gaps = <int>[];
+
+    // Scan from 0 upward to find unused IDs
+    for (int id = 0; gaps.length < needed && id <= 16777215; id++) {
+      if (!existingSet.contains(id)) {
+        gaps.add(id);
+      }
+    }
+
+    debugPrint(
+      "[PREKEY STORE] Found ${gaps.length} gaps starting from ${gaps.isEmpty ? 'N/A' : gaps.first}",
+    );
+
+    return gaps;
+  }
 
   PermanentPreKeyStore() {
     debugPrint(
