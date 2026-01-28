@@ -767,6 +767,16 @@ class _MessageListState extends State<MessageList> {
 
     // Handle system:session_reset type message (only shown for corruption recovery)
     if (type == 'system:session_reset') {
+      // Extract just the message text from JSON payload
+      String displayText = text;
+      try {
+        final payloadData = jsonDecode(text) as Map<String, dynamic>;
+        displayText = payloadData['message'] as String? ?? text;
+      } catch (e) {
+        // If parsing fails, use original text
+        displayText = text;
+      }
+
       return Container(
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
@@ -792,7 +802,7 @@ class _MessageListState extends State<MessageList> {
             SizedBox(width: 8),
             Flexible(
               child: Text(
-                text,
+                displayText,
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.tertiary,
                   fontSize: 14,

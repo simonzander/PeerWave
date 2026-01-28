@@ -36,6 +36,7 @@ const Set<String> displayableMessageTypes = {
   'file',
   'image',
   'voice',
+  'system:session_reset', // Show session recovery notifications
 };
 
 /// Screen for Direct Messages (1:1 Signal chats)

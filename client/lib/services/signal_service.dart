@@ -3085,12 +3085,28 @@ class SignalService {
       // Cache the decrypted message to prevent re-decryption in SQLite
       // IMPORTANT: Only cache 1:1 messages (no channelId)
       // ❌ SYSTEM MESSAGES: Don't cache read_receipt, delivery_receipt, or other system messages
+      // ✅ EXCEPTION: system:session_reset with recovery reasons SHOULD be stored
       final messageType = data['type'] as String?;
+
+      // Check if this is a session_reset with recovery reason (should be stored)
+      bool isRecoverySessionReset = false;
+      if (messageType == 'system:session_reset') {
+        try {
+          final payloadData = jsonDecode(message) as Map<String, dynamic>;
+          final reason = payloadData['reason'] as String?;
+          isRecoverySessionReset =
+              (reason == 'bad_mac_recovery' || reason == 'no_session_recovery');
+        } catch (e) {
+          // If can't parse, treat as normal system message
+        }
+      }
+
       final isSystemMessage =
           messageType == 'read_receipt' ||
           messageType == 'delivery_receipt' ||
           messageType == 'senderKeyRequest' ||
-          messageType == 'fileKeyRequest';
+          messageType == 'fileKeyRequest' ||
+          (messageType == 'system:session_reset' && !isRecoverySessionReset);
 
       if (itemId != null &&
           message.isNotEmpty &&
@@ -3288,6 +3304,56 @@ class SignalService {
             debugPrint(
               "[SIGNAL SERVICE] ✓ Stored failed decryption as RECEIVED with decrypt_failed status",
             );
+          }
+
+          // 🔄 Emit EventBus event so UI refreshes to show the decrypt_failed message
+          final conversationWith = isOwnMessage
+              ? (originalRecipient ?? recipient ?? sender)
+              : sender;
+
+          debugPrint(
+            '[SIGNAL SERVICE] → EVENT_BUS: newMessage (decrypt_failed) - conversationWith=$conversationWith',
+          );
+
+          final decryptFailedItem = {
+            'itemId': itemId,
+            'type': messageType ?? 'message',
+            'sender': sender,
+            'senderDeviceId': senderDeviceId,
+            'message': 'Decryption failed',
+            'timestamp': messageTimestamp,
+            'status': 'decrypt_failed',
+            'isOwnMessage': isOwnMessage,
+            'conversationWith': conversationWith,
+          };
+
+          EventBus.instance.emit(AppEvent.newMessage, decryptFailedItem);
+
+          // Also emit newConversation so conversation list updates
+          EventBus.instance.emit(AppEvent.newConversation, {
+            'conversationId': conversationWith,
+            'isChannel': false,
+            'isOwnMessage': isOwnMessage,
+          });
+
+          // 🔔 Trigger receiveItem callbacks so UI screens receive the failed message
+          final callbackType = messageType ?? 'message';
+          if (conversationWith != null) {
+            final key = '$callbackType:$conversationWith';
+            if (_receiveItemCallbacks.containsKey(key)) {
+              debugPrint(
+                '[SIGNAL SERVICE] Triggering ${_receiveItemCallbacks[key]!.length} receiveItem callbacks for decrypt_failed message ($key)',
+              );
+              for (final callback in _receiveItemCallbacks[key]!) {
+                try {
+                  callback(decryptFailedItem);
+                } catch (callbackError) {
+                  debugPrint(
+                    '[SIGNAL SERVICE] ⚠️ Callback error for decrypt_failed: $callbackError',
+                  );
+                }
+              }
+            }
           }
         } catch (storageError) {
           debugPrint(
@@ -3691,6 +3757,27 @@ class SignalService {
 
       // Don't trigger regular callbacks for system messages
       return;
+    }
+
+    // ✅ For session_reset recovery messages, trigger EventBus and callbacks
+    // These are marked as non-system messages (isSystemMessage = false) when reason is recovery
+    if (type == 'system:session_reset') {
+      debugPrint(
+        '[SIGNAL SERVICE] → EVENT_BUS: newMessage (session_reset) - sender=$sender',
+      );
+
+      // Emit newMessage event so UI shows the session reset notification
+      EventBus.instance.emit(AppEvent.newMessage, {
+        ...item,
+        'isOwnMessage': isOwnMessage,
+      });
+
+      // Emit newConversation to update conversation list
+      EventBus.instance.emit(AppEvent.newConversation, {
+        'conversationId': conversationWith,
+        'isChannel': false,
+        'isOwnMessage': isOwnMessage,
+      });
     }
 
     // Regular messages: Trigger callbacks
@@ -5138,11 +5225,13 @@ class SignalService {
               try {
                 final messageStore = await SqliteMessageStore.getInstance();
                 final messageTimestamp = DateTime.now().toIso8601String();
+                final sender = senderAddress.getName();
+                final senderDeviceId = senderAddress.getDeviceId();
 
                 await messageStore.storeReceivedMessage(
                   itemId: itemId,
-                  sender: senderAddress.getName(),
-                  senderDeviceId: senderAddress.getDeviceId(),
+                  sender: sender,
+                  senderDeviceId: senderDeviceId,
                   message: 'Decryption failed - invalid encryption keys',
                   timestamp: messageTimestamp,
                   type: 'message',
@@ -5152,6 +5241,38 @@ class SignalService {
                 debugPrint(
                   '[SIGNAL SERVICE] ✓ Stored failed message with decrypt_failed status',
                 );
+
+                // 🔄 Emit EventBus event and trigger callbacks so UI refreshes
+                final decryptFailedItem = {
+                  'itemId': itemId,
+                  'type': 'message',
+                  'sender': sender,
+                  'senderDeviceId': senderDeviceId,
+                  'message': 'Decryption failed - invalid encryption keys',
+                  'timestamp': messageTimestamp,
+                  'status': 'decrypt_failed',
+                  'isOwnMessage': false,
+                  'conversationWith': sender,
+                };
+
+                EventBus.instance.emit(AppEvent.newMessage, decryptFailedItem);
+                EventBus.instance.emit(AppEvent.newConversation, {
+                  'conversationId': sender,
+                  'isChannel': false,
+                  'isOwnMessage': false,
+                });
+
+                // Trigger receiveItem callbacks
+                final key = 'message:$sender';
+                if (_receiveItemCallbacks.containsKey(key)) {
+                  for (final callback in _receiveItemCallbacks[key]!) {
+                    try {
+                      callback(decryptFailedItem);
+                    } catch (e) {
+                      debugPrint('[SIGNAL SERVICE] Callback error: $e');
+                    }
+                  }
+                }
               } catch (storageError) {
                 debugPrint(
                   '[SIGNAL SERVICE] ✗ Failed to store decrypt_failed message: $storageError',
@@ -5263,11 +5384,13 @@ class SignalService {
               try {
                 final messageStore = await SqliteMessageStore.getInstance();
                 final messageTimestamp = DateTime.now().toIso8601String();
+                final sender = senderAddress.getName();
+                final senderDeviceId = senderAddress.getDeviceId();
 
                 await messageStore.storeReceivedMessage(
                   itemId: itemId,
-                  sender: senderAddress.getName(),
-                  senderDeviceId: senderAddress.getDeviceId(),
+                  sender: sender,
+                  senderDeviceId: senderDeviceId,
                   message: 'Decryption failed - no session',
                   timestamp: messageTimestamp,
                   type: 'message',
@@ -5277,6 +5400,38 @@ class SignalService {
                 debugPrint(
                   '[SIGNAL SERVICE] ✓ Stored failed message with decrypt_failed status',
                 );
+
+                // 🔄 Emit EventBus event and trigger callbacks so UI refreshes
+                final decryptFailedItem = {
+                  'itemId': itemId,
+                  'type': 'message',
+                  'sender': sender,
+                  'senderDeviceId': senderDeviceId,
+                  'message': 'Decryption failed - no session',
+                  'timestamp': messageTimestamp,
+                  'status': 'decrypt_failed',
+                  'isOwnMessage': false,
+                  'conversationWith': sender,
+                };
+
+                EventBus.instance.emit(AppEvent.newMessage, decryptFailedItem);
+                EventBus.instance.emit(AppEvent.newConversation, {
+                  'conversationId': sender,
+                  'isChannel': false,
+                  'isOwnMessage': false,
+                });
+
+                // Trigger receiveItem callbacks
+                final key = 'message:$sender';
+                if (_receiveItemCallbacks.containsKey(key)) {
+                  for (final callback in _receiveItemCallbacks[key]!) {
+                    try {
+                      callback(decryptFailedItem);
+                    } catch (e) {
+                      debugPrint('[SIGNAL SERVICE] Callback error: $e');
+                    }
+                  }
+                }
               } catch (storageError) {
                 debugPrint(
                   '[SIGNAL SERVICE] ✗ Failed to store decrypt_failed message: $storageError',
@@ -5359,7 +5514,8 @@ class SignalService {
                   recipientUserId: senderId,
                   type: 'system:session_reset',
                   payload: jsonEncode({
-                    'message': 'Session recovered from NoSessionException',
+                    'message':
+                        'Session recovered. Your last sent messages may not have been decrypted. Consider resending recent messages.',
                     'timestamp': DateTime.now().millisecondsSinceEpoch,
                     'reason': 'no_session_recovery',
                   }),
@@ -5399,11 +5555,13 @@ class SignalService {
               try {
                 final messageStore = await SqliteMessageStore.getInstance();
                 final messageTimestamp = DateTime.now().toIso8601String();
+                final sender = senderAddress.getName();
+                final senderDeviceId = senderAddress.getDeviceId();
 
                 await messageStore.storeReceivedMessage(
                   itemId: itemId,
-                  sender: senderAddress.getName(),
-                  senderDeviceId: senderAddress.getDeviceId(),
+                  sender: sender,
+                  senderDeviceId: senderDeviceId,
                   message: 'Decryption failed - session corrupted',
                   timestamp: messageTimestamp,
                   type: 'message',
@@ -5413,6 +5571,38 @@ class SignalService {
                 debugPrint(
                   '[SIGNAL SERVICE] ✓ Stored failed message with decrypt_failed status',
                 );
+
+                // 🔄 Emit EventBus event and trigger callbacks so UI refreshes
+                final decryptFailedItem = {
+                  'itemId': itemId,
+                  'type': 'message',
+                  'sender': sender,
+                  'senderDeviceId': senderDeviceId,
+                  'message': 'Decryption failed - session corrupted',
+                  'timestamp': messageTimestamp,
+                  'status': 'decrypt_failed',
+                  'isOwnMessage': false,
+                  'conversationWith': sender,
+                };
+
+                EventBus.instance.emit(AppEvent.newMessage, decryptFailedItem);
+                EventBus.instance.emit(AppEvent.newConversation, {
+                  'conversationId': sender,
+                  'isChannel': false,
+                  'isOwnMessage': false,
+                });
+
+                // Trigger receiveItem callbacks
+                final key = 'message:$sender';
+                if (_receiveItemCallbacks.containsKey(key)) {
+                  for (final callback in _receiveItemCallbacks[key]!) {
+                    try {
+                      callback(decryptFailedItem);
+                    } catch (e) {
+                      debugPrint('[SIGNAL SERVICE] Callback error: $e');
+                    }
+                  }
+                }
               } catch (storageError) {
                 debugPrint(
                   '[SIGNAL SERVICE] ✗ Failed to store decrypt_failed message: $storageError',
@@ -5504,7 +5694,8 @@ class SignalService {
                   recipientUserId: senderId,
                   type: 'system:session_reset',
                   payload: jsonEncode({
-                    'message': 'Connection recovered from encryption error',
+                    'message':
+                        'Encryption session recovered. Your last sent messages may not have been decrypted. Consider resending recent messages.',
                     'timestamp': DateTime.now().millisecondsSinceEpoch,
                     'reason': 'bad_mac_recovery',
                   }),
