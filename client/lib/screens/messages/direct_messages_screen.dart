@@ -607,7 +607,11 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           debugPrint('[DM_SCREEN] ✓ Message appended to UI list');
 
           // Send read receipt if this is a received message
-          if (!isLocalSent && item['sender'] == widget.recipientUuid) {
+          // ❌ DON'T send read receipt if decryption failed
+          final messageStatus = item['status'] as String?;
+          if (!isLocalSent &&
+              item['sender'] == widget.recipientUuid &&
+              messageStatus != 'decrypt_failed') {
             final senderDeviceId = item['senderDeviceId'] is int
                 ? item['senderDeviceId'] as int
                 : int.parse(item['senderDeviceId'].toString());
@@ -616,6 +620,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
               item['sender'],
               senderDeviceId,
               originalRecipient: item['originalRecipient'],
+            );
+          } else if (messageStatus == 'decrypt_failed') {
+            debugPrint(
+              '[DM_SCREEN] ⚠️ Skipping read receipt for decrypt_failed message: ${item['itemId']}',
             );
           }
 
@@ -880,7 +888,8 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           'payload': msg['message'],
           'time': msg['timestamp'],
           'isLocalSent': isLocalSent,
-          'status': isLocalSent ? (msg['status'] ?? 'sent') : null,
+          'status':
+              msg['status'], // Include status for both sent and received messages
           'type': msg['type'],
           'metadata': msg['metadata'],
           'reactions': msg['reactions'] ?? '{}', // Include reactions

@@ -1802,17 +1802,28 @@ class SignalService {
           '[SIGNAL SERVICE] ⚠️ Sync gap: Server has $preKeysCount, local has ${localPreKeyIds.length}',
         );
         debugPrint(
-          '[SIGNAL SERVICE] → Some PreKeys were consumed while offline',
-        );
-        debugPrint(
-          '[SIGNAL SERVICE] → Requesting server PreKey IDs to identify consumed keys...',
+          '[SIGNAL SERVICE] → Server likely has different PreKeys, will upload missing ones',
         );
 
-        // Request server's PreKey IDs to identify which were consumed
-        SocketService().emit("getMyPreKeyIds", null);
+        // Upload all our PreKeys - server will accept only non-duplicates
+        final preKeysToUpload = [];
+        for (final keyId in localPreKeyIds) {
+          final keyRecord = await preKeyStore.loadPreKey(keyId);
+          final keyPair = keyRecord.getKeyPair();
+          preKeysToUpload.add({
+            'id': keyId,
+            'key': base64Encode(keyPair.publicKey.serialize()),
+          });
+        }
 
-        // Server will respond with "myPreKeyIdsResponse" event
-        // We'll handle the sync in that listener (needs to be added)
+        if (preKeysToUpload.isNotEmpty) {
+          debugPrint(
+            '[SIGNAL SERVICE] 📤 Uploading ${preKeysToUpload.length} PreKeys to close sync gap',
+          );
+          SocketService().emit("storePreKeys", <String, dynamic>{
+            'preKeys': preKeysToUpload,
+          });
+        }
       } else {
         // Server has enough PreKeys (>= 20) or same count as local
         debugPrint(
@@ -3564,6 +3575,31 @@ class SignalService {
       // Meeting E2EE key response via 1-to-1 Signal message
       await _handleMeetingE2EEKeyResponse(item);
       isSystemMessage = true;
+    } else if (type == 'system:session_reset') {
+      // Session reset notification - only save if it's due to corruption
+      // Parse the payload to check the reason
+      try {
+        final payloadData = jsonDecode(message) as Map<String, dynamic>;
+        final reason = payloadData['reason'] as String?;
+
+        if (reason == 'bad_mac_recovery') {
+          // This is a real problem - save it for user visibility
+          debugPrint(
+            '[SIGNAL SERVICE] Session reset due to corruption - will be saved for user visibility',
+          );
+          isSystemMessage = false; // Save and show to user
+        } else {
+          // Normal rotation or other reasons - don't show to user
+          debugPrint(
+            '[SIGNAL SERVICE] Session reset for routine maintenance - not showing to user',
+          );
+          isSystemMessage = true; // Don't save, just process
+        }
+      } catch (e) {
+        // If we can't parse, treat as system message (don't show)
+        debugPrint('[SIGNAL SERVICE] Could not parse session reset reason: $e');
+        isSystemMessage = true;
+      }
     }
 
     // ✅ Update unread count for non-system messages (only 'message' and 'file' types)
@@ -5068,12 +5104,24 @@ class SignalService {
           }
         } catch (e) {
           // Handle PreKey-specific errors (missing PreKey, invalid signature, etc.)
-          final errorStr = e.toString().toLowerCase();
-          if (errorStr.contains('prekey') ||
-              errorStr.contains('no valid') ||
-              errorStr.contains('invalidkey') ||
-              errorStr.contains('signedprekeyrecord') ||
-              errorStr.contains('signature')) {
+          final errorStr = e.toString();
+
+          // Check if this is actually a Bad Mac error (session corruption)
+          // Note: Check both exact case and lowercase for compatibility
+          if (errorStr.contains('Bad Mac') ||
+              errorStr.toLowerCase().contains('bad mac')) {
+            // This is NOT a PreKey error, it's session corruption
+            // Re-throw so it gets caught by the Bad Mac handler below
+            rethrow;
+          }
+
+          final errorStrLower = errorStr.toLowerCase();
+
+          if (errorStrLower.contains('prekey') ||
+              errorStrLower.contains('no valid') ||
+              errorStrLower.contains('invalidkey') ||
+              errorStrLower.contains('signedprekeyrecord') ||
+              errorStrLower.contains('signature')) {
             debugPrint(
               '[SIGNAL SERVICE] ⚠️ PreKey/SignedPreKey decryption failed: $e',
             );
@@ -5083,6 +5131,32 @@ class SignalService {
             debugPrint(
               '[SIGNAL SERVICE] Sender needs to fetch fresh PreKeyBundle and resend',
             );
+
+            // 🔴 CRITICAL: Store failed message so user sees what happened
+            if (itemId != null) {
+              try {
+                final messageStore = await SqliteMessageStore.getInstance();
+                final messageTimestamp = DateTime.now().toIso8601String();
+
+                await messageStore.storeReceivedMessage(
+                  itemId: itemId,
+                  sender: senderAddress.getName(),
+                  senderDeviceId: senderAddress.getDeviceId(),
+                  message: 'Decryption failed - invalid encryption keys',
+                  timestamp: messageTimestamp,
+                  type: 'message',
+                  status: 'decrypt_failed',
+                  metadata: {'reason': 'invalid_prekey'},
+                );
+                debugPrint(
+                  '[SIGNAL SERVICE] ✓ Stored failed message with decrypt_failed status',
+                );
+              } catch (storageError) {
+                debugPrint(
+                  '[SIGNAL SERVICE] ✗ Failed to store decrypt_failed message: $storageError',
+                );
+              }
+            }
 
             // Notify sender that their PreKey/bundle is invalid
             try {
@@ -5182,20 +5256,44 @@ class SignalService {
             debugPrint(
               '[SIGNAL SERVICE] ⚠️ NoSessionException - no session exists for ${senderAddress.getName()}:${senderAddress.getDeviceId()}',
             );
+
+            // 🔴 CRITICAL: Store failed message FIRST so user sees what happened
+            if (itemId != null) {
+              try {
+                final messageStore = await SqliteMessageStore.getInstance();
+                final messageTimestamp = DateTime.now().toIso8601String();
+
+                await messageStore.storeReceivedMessage(
+                  itemId: itemId,
+                  sender: senderAddress.getName(),
+                  senderDeviceId: senderAddress.getDeviceId(),
+                  message: 'Decryption failed - no session',
+                  timestamp: messageTimestamp,
+                  type: 'message',
+                  status: 'decrypt_failed',
+                  metadata: {'reason': 'no_session'},
+                );
+                debugPrint(
+                  '[SIGNAL SERVICE] ✓ Stored failed message with decrypt_failed status',
+                );
+              } catch (storageError) {
+                debugPrint(
+                  '[SIGNAL SERVICE] ✗ Failed to store decrypt_failed message: $storageError',
+                );
+              }
+            }
+
+            // 🔄 DOUBLE RATCHET RECOVERY: Receiver establishes new session
             debugPrint(
-              '[SIGNAL SERVICE] This usually happens after a corrupted session was deleted',
-            );
-            debugPrint(
-              '[SIGNAL SERVICE] Sender needs to send a PreKey message (cipherType: 3) to establish new session',
+              '[SIGNAL SERVICE] 🔄 Initiating session recovery by fetching sender\'s PreKeyBundle',
             );
 
-            // 🚀 AUTO-RECOVERY: Notify sender to resend their message
             try {
               final senderId = senderAddress.getName();
               final deviceId = senderAddress.getDeviceId();
               final recoveryKey = '$senderId:$deviceId';
 
-              // 🔒 LOOP PREVENTION: Check if we recently sent recovery for this address
+              // 🔒 LOOP PREVENTION: Check if we recently attempted recovery for this address
               final lastAttempt = _sessionRecoveryLastAttempt[recoveryKey];
               if (lastAttempt != null) {
                 final timeSinceLastAttempt = DateTime.now().difference(
@@ -5203,7 +5301,7 @@ class SignalService {
                 );
                 if (timeSinceLastAttempt.inSeconds < 30) {
                   debugPrint(
-                    '[SIGNAL SERVICE] ⚠️ Recovery notification already sent ${timeSinceLastAttempt.inSeconds}s ago - skipping to prevent spam',
+                    '[SIGNAL SERVICE] ⚠️ Recovery already attempted ${timeSinceLastAttempt.inSeconds}s ago - skipping to prevent spam',
                   );
                   return '';
                 }
@@ -5211,71 +5309,74 @@ class SignalService {
 
               _sessionRecoveryLastAttempt[recoveryKey] = DateTime.now();
 
-              // Delete our session with sender to ensure clean bidirectional state
-              final recipientAddress = SignalProtocolAddress(
-                senderId,
-                deviceId,
+              // Fetch sender's PreKeyBundle
+              final response = await ApiService.get(
+                '/signal/get-prekey-bundle',
+                queryParameters: {
+                  'userId': senderId,
+                  'deviceId': deviceId.toString(),
+                },
               );
-              final hadSession = await sessionStore.containsSession(
-                recipientAddress,
-              );
-              if (hadSession) {
-                await sessionStore.deleteSession(recipientAddress);
+
+              if (response.statusCode == 200) {
+                final bundle = response.data as Map<String, dynamic>;
+                debugPrint('[SIGNAL SERVICE] ✓ Fetched sender\'s PreKeyBundle');
+
+                // Build Signal PreKeyBundle
+                final signalPreKeyBundle = _buildPreKeyBundleFromJson(bundle);
+
+                // Establish new session by processing their bundle
+                final sessionBuilder = SessionBuilder(
+                  sessionStore,
+                  preKeyStore,
+                  signedPreKeyStore,
+                  identityStore,
+                  senderAddress,
+                );
+
+                await sessionBuilder.processPreKeyBundle(signalPreKeyBundle);
                 debugPrint(
-                  '[SIGNAL SERVICE] ✓ Deleted our session with sender for clean state',
+                  '[SIGNAL SERVICE] ✓ New session established with sender',
+                );
+
+                // Send a system:session_reset message to establish bidirectional session
+                // This ensures sender also has a session with us
+                debugPrint(
+                  '[SIGNAL SERVICE] 📤 Sending system:session_reset message to establish bidirectional session',
+                );
+
+                try {
+                  await sendItem(
+                    recipientUserId: senderId,
+                    type: 'system:session_reset',
+                    payload: jsonEncode({
+                      'message': 'Session recovered from NoSessionException',
+                      'timestamp': DateTime.now().millisecondsSinceEpoch,
+                      'reason': 'no_session_recovery',
+                    }),
+                    forcePreKeyMessage:
+                        false, // Use existing session we just built
+                  );
+
+                  debugPrint(
+                    '[SIGNAL SERVICE] ✓ Session recovery complete - bidirectional session established',
+                  );
+                } catch (sendError) {
+                  debugPrint(
+                    '[SIGNAL SERVICE] ⚠️ Failed to send system message: $sendError',
+                  );
+                }
+              } else {
+                debugPrint(
+                  '[SIGNAL SERVICE] ✗ Failed to fetch PreKeyBundle: ${response.statusCode}',
                 );
               }
-
-              // Note: No need to notify sender - Signal Protocol will handle recovery
-              // When sender sends next message, it will be a PreKeyMessage that establishes session
+            } catch (recoveryError) {
               debugPrint(
-                '[SIGNAL SERVICE] ℹ️ No session - will accept PreKeyMessage from sender',
-              );
-
-              // Also notify UI (optional - user doesn't need to do anything)
-              if (_itemTypeCallbacks.containsKey('sessionCorrupted')) {
-                for (final callback
-                    in _itemTypeCallbacks['sessionCorrupted']!) {
-                  callback({
-                    'senderId': senderId,
-                    'deviceId': deviceId,
-                    'message':
-                        'Session recovery in progress - sender will resend automatically.',
-                  });
-                }
-              }
-
-              // Store session_reset system message for user visibility
-              if (itemId != null) {
-                try {
-                  final messageStore = await SqliteMessageStore.getInstance();
-                  final messageTimestamp = DateTime.now().toIso8601String();
-
-                  await messageStore.storeReceivedMessage(
-                    itemId: '${itemId}_session_reset',
-                    sender: senderId,
-                    senderDeviceId: deviceId,
-                    message: 'Secure session was reset',
-                    timestamp: messageTimestamp,
-                    type: 'system',
-                    status: 'session_reset',
-                  );
-                  debugPrint(
-                    '[SIGNAL SERVICE] ✓ Stored session_reset system message',
-                  );
-                } catch (storageError) {
-                  debugPrint(
-                    '[SIGNAL SERVICE] ✗ Failed to store session_reset message: $storageError',
-                  );
-                }
-              }
-            } catch (notifyError) {
-              debugPrint(
-                '[SIGNAL SERVICE] ⚠️ Failed to send recovery notification: $notifyError',
+                '[SIGNAL SERVICE] ✗ Session recovery failed: $recoveryError',
               );
             }
 
-            // Return empty - sender will automatically resend as PreKey message
             return '';
           }
 
@@ -5288,6 +5389,32 @@ class SignalService {
             debugPrint(
               '[SIGNAL SERVICE] Deleting corrupted session for ${senderAddress.getName()}:${senderAddress.getDeviceId()}',
             );
+
+            // 🔴 CRITICAL: Store failed message FIRST so user sees what happened
+            if (itemId != null) {
+              try {
+                final messageStore = await SqliteMessageStore.getInstance();
+                final messageTimestamp = DateTime.now().toIso8601String();
+
+                await messageStore.storeReceivedMessage(
+                  itemId: itemId,
+                  sender: senderAddress.getName(),
+                  senderDeviceId: senderAddress.getDeviceId(),
+                  message: 'Decryption failed - session corrupted',
+                  timestamp: messageTimestamp,
+                  type: 'message',
+                  status: 'decrypt_failed',
+                  metadata: {'reason': 'bad_mac'}, // Store reason for UI
+                );
+                debugPrint(
+                  '[SIGNAL SERVICE] ✓ Stored failed message with decrypt_failed status',
+                );
+              } catch (storageError) {
+                debugPrint(
+                  '[SIGNAL SERVICE] ✗ Failed to store decrypt_failed message: $storageError',
+                );
+              }
+            }
 
             // Delete the corrupted session (already not working)
             await sessionStore.deleteSession(senderAddress);
@@ -5351,42 +5478,45 @@ class SignalService {
                   '[SIGNAL SERVICE] ✓ New session established with sender\'s bundle',
                 );
 
-                // Send a "session reset" notification as a PreKeyMessage
-                // This triggers sender's double ratchet to accept our new session
-                final sessionResetPayload = jsonEncode({
-                  'type': 'session_reset',
-                  'timestamp': DateTime.now().millisecondsSinceEpoch,
-                  'message': 'Session re-established',
-                });
-
-                // Encrypt as PreKeyMessage to force sender to update their session
-                final sessionCipher = SessionCipher(
-                  sessionStore,
-                  preKeyStore,
-                  signedPreKeyStore,
-                  identityStore,
-                  senderAddress,
-                );
-
-                final encryptedMessage = await sessionCipher.encrypt(
-                  Uint8List.fromList(utf8.encode(sessionResetPayload)),
-                );
-
-                // Send to sender - this will overwrite their corrupted session
-                SocketService().emit('sendMessage', {
-                  'recipient': senderId,
-                  'recipientDeviceId': deviceId,
-                  'payload': base64Encode(encryptedMessage.serialize()),
-                  'cipherType': encryptedMessage.getType(),
-                  'type': 'session_reset',
-                });
-
+                // 🔑 CRITICAL: Send a message to establish bidirectional session
+                // This is required so sender's device updates their session state
+                // Without this, sender keeps using corrupted session and messages fail
                 debugPrint(
-                  '[SIGNAL SERVICE] ✓ Sent session reset PreKeyMessage to sender',
+                  '[SIGNAL SERVICE] 📤 Sending system message to establish sender\'s session',
                 );
-                debugPrint(
-                  '[SIGNAL SERVICE] ✓ Sender will update their session and can now send messages',
-                );
+
+                try {
+                  // Use sendItem to properly establish bidirectional session
+                  // This will send to all sender's devices, ensuring they all update their session
+                  await sendItem(
+                    recipientUserId: senderId,
+                    type: 'system:session_reset',
+                    payload: jsonEncode({
+                      'message': 'Connection recovered from encryption error',
+                      'timestamp': DateTime.now().millisecondsSinceEpoch,
+                      'reason': 'bad_mac_recovery',
+                    }),
+                    forcePreKeyMessage:
+                        false, // Use existing session we just built
+                  );
+
+                  debugPrint(
+                    '[SIGNAL SERVICE] ✓ System message sent - sender\'s session now synchronized',
+                  );
+                  debugPrint(
+                    '[SIGNAL SERVICE] ✓ Both parties can now exchange messages normally',
+                  );
+                } catch (sendError) {
+                  debugPrint(
+                    '[SIGNAL SERVICE] ⚠️ Failed to send system message: $sendError',
+                  );
+                  debugPrint(
+                    '[SIGNAL SERVICE] Session established locally but sender not notified',
+                  );
+                  debugPrint(
+                    '[SIGNAL SERVICE] Sender will update session when they receive next message',
+                  );
+                }
               } else {
                 debugPrint(
                   '[SIGNAL SERVICE] ⚠️ Failed to fetch PreKeyBundle: ${response.statusCode}',

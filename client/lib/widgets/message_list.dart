@@ -274,9 +274,9 @@ class _MessageListState extends State<MessageList> {
         );
       case 'new_identity':
         return Icon(
-          Icons.lock_outline,
+          Icons.warning_amber_rounded,
           size: 16,
-          color: theme.colorScheme.warning,
+          color: Colors.amber.shade700,
         );
       default:
         return const SizedBox.shrink();
@@ -657,39 +657,150 @@ class _MessageListState extends State<MessageList> {
     // Check if decryption failed
     final status = msg['status'] as String?;
     if (status == 'decrypt_failed') {
-      final errorTheme = Theme.of(context);
-      return Text(
-        text,
-        style: TextStyle(
-          color: errorTheme.colorScheme.error,
-          fontSize: 15,
-          fontStyle: FontStyle.italic,
+      // Extract reason if available
+      final reason = msg['reason'] as String?;
+      final displayText = reason != null && reason.isNotEmpty
+          ? '$text ($reason)'
+          : text;
+
+      return Container(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(
+            context,
+          ).colorScheme.errorContainer.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 16,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                displayText,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontSize: 14,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
 
     // Check if session was reset
     if (status == 'session_reset') {
-      final errorTheme = Theme.of(context);
-      return Text(
-        text,
-        style: TextStyle(
-          color: errorTheme.colorScheme.error,
-          fontSize: 15,
-          fontStyle: FontStyle.italic,
+      return Container(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(
+            context,
+          ).colorScheme.errorContainer.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.lock_reset,
+              size: 16,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                text,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontSize: 14,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
 
-    // Check if new identity was detected
+    // Check if new identity was detected (device reinstalled or security issue)
     if (status == 'new_identity') {
-      final theme = Theme.of(context);
-      return Text(
-        text,
-        style: TextStyle(
-          color: theme.colorScheme.warning,
-          fontSize: 15,
-          fontStyle: FontStyle.italic,
+      return Container(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.amber.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: Colors.amber.withValues(alpha: 0.6),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              size: 18,
+              color: Colors.amber.shade700,
+            ),
+            SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                text,
+                style: TextStyle(
+                  color: Colors.amber.shade900,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Handle system:session_reset type message (only shown for corruption recovery)
+    if (type == 'system:session_reset') {
+      return Container(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(
+            context,
+          ).colorScheme.tertiaryContainer.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: Theme.of(
+              context,
+            ).colorScheme.tertiary.withValues(alpha: 0.5),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.security,
+              size: 16,
+              color: Theme.of(context).colorScheme.tertiary,
+            ),
+            SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                text,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.tertiary,
+                  fontSize: 14,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
