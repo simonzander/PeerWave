@@ -5309,66 +5309,69 @@ class SignalService {
 
               _sessionRecoveryLastAttempt[recoveryKey] = DateTime.now();
 
-              // Fetch sender's PreKeyBundle
-              final response = await ApiService.get(
-                '/signal/get-prekey-bundle',
-                queryParameters: {
-                  'userId': senderId,
-                  'deviceId': deviceId.toString(),
-                },
+              // Fetch sender's PreKeyBundle using existing function with retry logic
+              final bundles = await fetchPreKeyBundleForUser(senderId);
+
+              // Find the bundle for the specific device that sent the message
+              Map<String, dynamic>? bundle;
+              try {
+                bundle = bundles.firstWhere((b) => b['deviceId'] == deviceId);
+              } catch (e) {
+                // No bundle found for this device
+                bundle = null;
+              }
+
+              if (bundle == null) {
+                debugPrint(
+                  '[SIGNAL SERVICE] ✗ No bundle found for device $deviceId',
+                );
+                return '';
+              }
+
+              debugPrint('[SIGNAL SERVICE] ✓ Fetched sender\'s PreKeyBundle');
+
+              // Build Signal PreKeyBundle
+              final signalPreKeyBundle = _buildPreKeyBundleFromJson(bundle);
+
+              // Establish new session by processing their bundle
+              final sessionBuilder = SessionBuilder(
+                sessionStore,
+                preKeyStore,
+                signedPreKeyStore,
+                identityStore,
+                senderAddress,
               );
 
-              if (response.statusCode == 200) {
-                final bundle = response.data as Map<String, dynamic>;
-                debugPrint('[SIGNAL SERVICE] ✓ Fetched sender\'s PreKeyBundle');
+              await sessionBuilder.processPreKeyBundle(signalPreKeyBundle);
+              debugPrint(
+                '[SIGNAL SERVICE] ✓ New session established with sender',
+              );
 
-                // Build Signal PreKeyBundle
-                final signalPreKeyBundle = _buildPreKeyBundleFromJson(bundle);
+              // Send a system:session_reset message to establish bidirectional session
+              // This ensures sender also has a session with us
+              debugPrint(
+                '[SIGNAL SERVICE] 📤 Sending system:session_reset message to establish bidirectional session',
+              );
 
-                // Establish new session by processing their bundle
-                final sessionBuilder = SessionBuilder(
-                  sessionStore,
-                  preKeyStore,
-                  signedPreKeyStore,
-                  identityStore,
-                  senderAddress,
+              try {
+                await sendItem(
+                  recipientUserId: senderId,
+                  type: 'system:session_reset',
+                  payload: jsonEncode({
+                    'message': 'Session recovered from NoSessionException',
+                    'timestamp': DateTime.now().millisecondsSinceEpoch,
+                    'reason': 'no_session_recovery',
+                  }),
+                  forcePreKeyMessage:
+                      false, // Use existing session we just built
                 );
 
-                await sessionBuilder.processPreKeyBundle(signalPreKeyBundle);
                 debugPrint(
-                  '[SIGNAL SERVICE] ✓ New session established with sender',
+                  '[SIGNAL SERVICE] ✓ Session recovery complete - bidirectional session established',
                 );
-
-                // Send a system:session_reset message to establish bidirectional session
-                // This ensures sender also has a session with us
+              } catch (sendError) {
                 debugPrint(
-                  '[SIGNAL SERVICE] 📤 Sending system:session_reset message to establish bidirectional session',
-                );
-
-                try {
-                  await sendItem(
-                    recipientUserId: senderId,
-                    type: 'system:session_reset',
-                    payload: jsonEncode({
-                      'message': 'Session recovered from NoSessionException',
-                      'timestamp': DateTime.now().millisecondsSinceEpoch,
-                      'reason': 'no_session_recovery',
-                    }),
-                    forcePreKeyMessage:
-                        false, // Use existing session we just built
-                  );
-
-                  debugPrint(
-                    '[SIGNAL SERVICE] ✓ Session recovery complete - bidirectional session established',
-                  );
-                } catch (sendError) {
-                  debugPrint(
-                    '[SIGNAL SERVICE] ⚠️ Failed to send system message: $sendError',
-                  );
-                }
-              } else {
-                debugPrint(
-                  '[SIGNAL SERVICE] ✗ Failed to fetch PreKeyBundle: ${response.statusCode}',
+                  '[SIGNAL SERVICE] ⚠️ Failed to send system message: $sendError',
                 );
               }
             } catch (recoveryError) {
@@ -5448,83 +5451,82 @@ class SignalService {
 
               _sessionRecoveryLastAttempt[recoveryKey] = DateTime.now();
 
-              // Fetch sender's PreKeyBundle
-              final response = await ApiService.get(
-                '/signal/get-prekey-bundle',
-                queryParameters: {
-                  'userId': senderId,
-                  'deviceId': deviceId.toString(),
-                },
+              // Fetch sender's PreKeyBundle using existing function with retry logic
+              final bundles = await fetchPreKeyBundleForUser(senderId);
+
+              // Find the bundle for the specific device that sent the message
+              Map<String, dynamic>? bundle;
+              try {
+                bundle = bundles.firstWhere((b) => b['deviceId'] == deviceId);
+              } catch (e) {
+                // No bundle found for this device
+                bundle = null;
+              }
+
+              if (bundle == null) {
+                debugPrint(
+                  '[SIGNAL SERVICE] ✗ No bundle found for device $deviceId',
+                );
+                return '';
+              }
+
+              debugPrint('[SIGNAL SERVICE] ✓ Fetched sender\'s PreKeyBundle');
+
+              // Build Signal PreKeyBundle
+              final signalPreKeyBundle = _buildPreKeyBundleFromJson(bundle);
+
+              // Establish new session by processing their bundle
+              final sessionBuilder = SessionBuilder(
+                sessionStore,
+                preKeyStore,
+                signedPreKeyStore,
+                identityStore,
+                senderAddress,
               );
 
-              if (response.statusCode == 200) {
-                final bundle = response.data as Map<String, dynamic>;
-                debugPrint('[SIGNAL SERVICE] ✓ Fetched sender\'s PreKeyBundle');
+              await sessionBuilder.processPreKeyBundle(signalPreKeyBundle);
+              debugPrint(
+                '[SIGNAL SERVICE] ✓ New session established with sender\'s bundle',
+              );
 
-                // Build Signal PreKeyBundle
-                final signalPreKeyBundle = _buildPreKeyBundleFromJson(bundle);
+              // 🔑 CRITICAL: Send a message to establish bidirectional session
+              // This is required so sender's device updates their session state
+              // Without this, sender keeps using corrupted session and messages fail
+              debugPrint(
+                '[SIGNAL SERVICE] 📤 Sending system message to establish sender\'s session',
+              );
 
-                // Establish new session by processing their bundle
-                final sessionBuilder = SessionBuilder(
-                  sessionStore,
-                  preKeyStore,
-                  signedPreKeyStore,
-                  identityStore,
-                  senderAddress,
+              try {
+                // Use sendItem to properly establish bidirectional session
+                // This will send to all sender's devices, ensuring they all update their session
+                await sendItem(
+                  recipientUserId: senderId,
+                  type: 'system:session_reset',
+                  payload: jsonEncode({
+                    'message': 'Connection recovered from encryption error',
+                    'timestamp': DateTime.now().millisecondsSinceEpoch,
+                    'reason': 'bad_mac_recovery',
+                  }),
+                  forcePreKeyMessage:
+                      false, // Use existing session we just built
                 );
 
-                await sessionBuilder.processPreKeyBundle(signalPreKeyBundle);
                 debugPrint(
-                  '[SIGNAL SERVICE] ✓ New session established with sender\'s bundle',
-                );
-
-                // 🔑 CRITICAL: Send a message to establish bidirectional session
-                // This is required so sender's device updates their session state
-                // Without this, sender keeps using corrupted session and messages fail
-                debugPrint(
-                  '[SIGNAL SERVICE] 📤 Sending system message to establish sender\'s session',
-                );
-
-                try {
-                  // Use sendItem to properly establish bidirectional session
-                  // This will send to all sender's devices, ensuring they all update their session
-                  await sendItem(
-                    recipientUserId: senderId,
-                    type: 'system:session_reset',
-                    payload: jsonEncode({
-                      'message': 'Connection recovered from encryption error',
-                      'timestamp': DateTime.now().millisecondsSinceEpoch,
-                      'reason': 'bad_mac_recovery',
-                    }),
-                    forcePreKeyMessage:
-                        false, // Use existing session we just built
-                  );
-
-                  debugPrint(
-                    '[SIGNAL SERVICE] ✓ System message sent - sender\'s session now synchronized',
-                  );
-                  debugPrint(
-                    '[SIGNAL SERVICE] ✓ Both parties can now exchange messages normally',
-                  );
-                } catch (sendError) {
-                  debugPrint(
-                    '[SIGNAL SERVICE] ⚠️ Failed to send system message: $sendError',
-                  );
-                  debugPrint(
-                    '[SIGNAL SERVICE] Session established locally but sender not notified',
-                  );
-                  debugPrint(
-                    '[SIGNAL SERVICE] Sender will update session when they receive next message',
-                  );
-                }
-              } else {
-                debugPrint(
-                  '[SIGNAL SERVICE] ⚠️ Failed to fetch PreKeyBundle: ${response.statusCode}',
+                  '[SIGNAL SERVICE] ✓ System message sent - sender\'s session now synchronized',
                 );
                 debugPrint(
-                  '[SIGNAL SERVICE] Will retry on next message from sender',
+                  '[SIGNAL SERVICE] ✓ Both parties can now exchange messages normally',
                 );
-                // Note: No fallback needed - if bundle fetch fails, we'll retry on next message
+              } catch (sendError) {
+                debugPrint(
+                  '[SIGNAL SERVICE] ⚠️ Failed to send system message: $sendError',
+                );
+                debugPrint(
+                  '[SIGNAL SERVICE] Session established locally but sender not notified',
+                );
+                debugPrint(
+                  '[SIGNAL SERVICE] Sender will update session when they receive next message',
+                );
               }
             } catch (recoveryError) {
               debugPrint(
