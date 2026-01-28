@@ -3576,16 +3576,17 @@ class SignalService {
       await _handleMeetingE2EEKeyResponse(item);
       isSystemMessage = true;
     } else if (type == 'system:session_reset') {
-      // Session reset notification - only save if it's due to corruption
+      // Session reset notification - save if it's due to recovery from errors
       // Parse the payload to check the reason
       try {
         final payloadData = jsonDecode(message) as Map<String, dynamic>;
         final reason = payloadData['reason'] as String?;
 
-        if (reason == 'bad_mac_recovery') {
-          // This is a real problem - save it for user visibility
+        if (reason == 'bad_mac_recovery' || reason == 'no_session_recovery') {
+          // Session was recovered from an error - save it for user visibility
+          // so both parties know the session was reset
           debugPrint(
-            '[SIGNAL SERVICE] Session reset due to corruption - will be saved for user visibility',
+            '[SIGNAL SERVICE] Session reset due to recovery ($reason) - will be saved for user visibility',
           );
           isSystemMessage = false; // Save and show to user
         } else {
