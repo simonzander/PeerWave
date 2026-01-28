@@ -44,7 +44,7 @@ dependencies:
   flutter_secure_storage: ^10.0.0
   shared_preferences: ^2.0.6
   socket_io_client: ^3.1.4
-  dio: ^5.9.0
+  dio: ^5.9.1
   cookie_jar: ^4.0.8
   dio_cookie_manager: ^3.3.0
   web: ^1.1.1
