@@ -19,6 +19,7 @@ const { autoAssignRoles } = require('../db/autoAssignRoles');
 const { hasServerPermission } = require('../db/roleHelpers');
 const livekitWrapper = require('../lib/livekit-wrapper');
 const { verifySessionAuth, verifyAuthEither } = require('../middleware/sessionAuth');
+const { signalKeyLimiter } = require('../middleware/rateLimiter');
 
 async function getLocationFromIp(ip) {
     const response = await fetch(`https://ipapi.co/${ip}/json/`);
@@ -562,7 +563,11 @@ clientRoutes.post("/signal/validate-and-sync", verifyAuthEither, async (req, res
                 if (serverPreKey) {
                     // Compare public keys (fingerprints)
                     if (serverPreKey.prekey_data !== localFingerprint) {
-                        logger.warn(`[SIGNAL] PreKey ${keyId} has mismatched public key! Local: ${localFingerprint.substring(0, 20)}..., Server: ${serverPreKey.prekey_data.substring(0, 20)}...`);
+                        logger.warn('[SIGNAL] PreKey has mismatched public key', {
+                            keyId: keyId,
+                            localFingerprint: sanitizeForLog(localFingerprint.substring(0, 20)),
+                            serverFingerprint: sanitizeForLog(serverPreKey.prekey_data.substring(0, 20))
+                        });
                         validationResult.corruptedPreKeys.push(keyId);
                     }
                 }
@@ -689,7 +694,7 @@ clientRoutes.post("/signal/prekeys/batch", verifyAuthEither, async (req, res) =>
 });
 
 // Upload Identity Key via REST API (alternative to Socket.IO)
-clientRoutes.post("/signal/identity", verifyAuthEither, async (req, res) => {
+clientRoutes.post("/signal/identity", signalKeyLimiter, verifyAuthEither, async (req, res) => {
     const sessionUuid = req.userId || req.session.uuid;
     const sessionDeviceId = req.deviceId || req.session.deviceId;
     
@@ -748,7 +753,7 @@ clientRoutes.post("/signal/identity", verifyAuthEither, async (req, res) => {
 });
 
 // Upload Signed PreKey via REST API (alternative to Socket.IO)
-clientRoutes.post("/signal/signedprekey", verifyAuthEither, async (req, res) => {
+clientRoutes.post("/signal/signedprekey", signalKeyLimiter, verifyAuthEither, async (req, res) => {
     const sessionUuid = req.userId || req.session.uuid;
     const sessionDeviceId = req.deviceId || req.session.deviceId;
     
@@ -815,7 +820,7 @@ clientRoutes.post("/signal/signedprekey", verifyAuthEither, async (req, res) => 
 });
 
 // Delete all Signal keys via REST API (alternative to Socket.IO)
-clientRoutes.delete("/signal/keys", verifyAuthEither, async (req, res) => {
+clientRoutes.delete("/signal/keys", signalKeyLimiter, verifyAuthEither, async (req, res) => {
     const sessionUuid = req.userId || req.session.uuid;
     const sessionDeviceId = req.deviceId || req.session.deviceId;
     

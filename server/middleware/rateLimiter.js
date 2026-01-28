@@ -123,6 +123,29 @@ const sessionLimiter = rateLimit({
   }
 });
 
+// Moderate limiter for Signal key management operations
+const signalKeyLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 100, // Max 100 key operations per 5 minutes per IP
+  message: 'Too many Signal key operations, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { trustProxy: false },
+  handler: (req, res) => {
+    logger.warn('[RATE_LIMIT] Signal key operation limit exceeded', { 
+      ip: req.ip, 
+      path: req.path,
+      userId: req.userId || req.session?.uuid 
+    });
+    res.status(429).json({
+      status: 'error',
+      error: 'Too many key operations',
+      message: 'Please try again later',
+      retryAfter: Math.ceil(req.rateLimit.resetTime / 1000)
+    });
+  }
+});
+
 module.exports = {
   apiLimiter,
   authLimiter,
@@ -130,5 +153,6 @@ module.exports = {
   fileLimiter,
   queryLimiter,
   passwordResetLimiter,
-  sessionLimiter
+  sessionLimiter,
+  signalKeyLimiter
 };

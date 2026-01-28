@@ -1312,7 +1312,11 @@ io.sockets.on("connection", socket => {
                 continue;
               }
               if (decoded.length !== 33) {
-                logger.error(`[SIGNAL SERVER] Refusing to store batch pre-key: prekey_data is ${decoded.length} bytes (expected 33). Possible private key leak or wrong format. id=${preKey.id}`);
+                logger.error('[SIGNAL SERVER] Refusing to store batch pre-key: invalid length', {
+                  length: decoded.length,
+                  expected: 33,
+                  keyId: sanitizeForLog(preKey.id)
+                });
                 continue;
               }
               validPreKeys.push({
