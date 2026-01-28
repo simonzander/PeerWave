@@ -688,6 +688,199 @@ clientRoutes.post("/signal/prekeys/batch", verifyAuthEither, async (req, res) =>
     }
 });
 
+// Upload Identity Key via REST API (alternative to Socket.IO)
+clientRoutes.post("/signal/identity", verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
+    const sessionDeviceId = req.deviceId || req.session.deviceId;
+    
+    if (!sessionUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        const { publicKey, registrationId } = req.body;
+        
+        if (!publicKey || !registrationId) {
+            return res.status(400).json({ 
+                status: "error", 
+                message: "Missing publicKey or registrationId" 
+            });
+        }
+        
+        // Find client record
+        const clientQuery = req.sessionAuth && req.clientId 
+            ? { owner: sessionUuid, clientid: req.clientId }
+            : { owner: sessionUuid, device_id: sessionDeviceId };
+        
+        const client = await Client.findOne({ where: clientQuery });
+        
+        if (!client) {
+            return res.status(404).json({ 
+                status: "error", 
+                message: "Client device not found" 
+            });
+        }
+        
+        // Update identity key
+        await writeQueue.enqueue(async () => {
+            return await Client.update(
+                { public_key: publicKey, registration_id: registrationId },
+                { where: { owner: sessionUuid, clientid: client.clientid } }
+            );
+        }, 'signalIdentity-REST');
+        
+        logger.info('[SIGNAL IDENTITY] Identity key stored', { 
+            userUuid: sanitizeForLog(sessionUuid), 
+            deviceId: sanitizeForLog(client.clientid) 
+        });
+        
+        res.status(200).json({ 
+            status: "success", 
+            message: "Identity key stored successfully" 
+        });
+    } catch (error) {
+        logger.error('[SIGNAL IDENTITY] Error storing identity key', error);
+        res.status(500).json({ 
+            status: "error", 
+            message: "Internal server error" 
+        });
+    }
+});
+
+// Upload Signed PreKey via REST API (alternative to Socket.IO)
+clientRoutes.post("/signal/signedprekey", verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
+    const sessionDeviceId = req.deviceId || req.session.deviceId;
+    
+    if (!sessionUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        const { id, data, signature } = req.body;
+        
+        if (typeof id !== 'number' || !data || !signature) {
+            return res.status(400).json({ 
+                status: "error", 
+                message: "Missing required fields: id (number), data, signature" 
+            });
+        }
+        
+        // Find client record
+        const clientQuery = req.sessionAuth && req.clientId 
+            ? { owner: sessionUuid, clientid: req.clientId }
+            : { owner: sessionUuid, device_id: sessionDeviceId };
+        
+        const client = await Client.findOne({ where: clientQuery });
+        
+        if (!client) {
+            return res.status(404).json({ 
+                status: "error", 
+                message: "Client device not found" 
+            });
+        }
+        
+        // Store signed pre-key
+        await writeQueue.enqueue(async () => {
+            return await SignalSignedPreKey.findOrCreate({
+                where: {
+                    signed_prekey_id: id,
+                    owner: sessionUuid,
+                    client: client.clientid,
+                },
+                defaults: {
+                    signed_prekey_data: data,
+                    signed_prekey_signature: signature,
+                }
+            });
+        }, `storeSignedPreKey-REST-${id}`);
+        
+        logger.info('[SIGNAL SIGNEDPREKEY] SignedPreKey stored', { 
+            userUuid: sanitizeForLog(sessionUuid), 
+            deviceId: sanitizeForLog(client.clientid),
+            keyId: id
+        });
+        
+        res.status(200).json({ 
+            status: "success", 
+            message: "SignedPreKey stored successfully" 
+        });
+    } catch (error) {
+        logger.error('[SIGNAL SIGNEDPREKEY] Error storing SignedPreKey', error);
+        res.status(500).json({ 
+            status: "error", 
+            message: "Internal server error" 
+        });
+    }
+});
+
+// Delete all Signal keys via REST API (alternative to Socket.IO)
+clientRoutes.delete("/signal/keys", verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
+    const sessionDeviceId = req.deviceId || req.session.deviceId;
+    
+    if (!sessionUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        // Find client record
+        const clientQuery = req.sessionAuth && req.clientId 
+            ? { owner: sessionUuid, clientid: req.clientId }
+            : { owner: sessionUuid, device_id: sessionDeviceId };
+        
+        const client = await Client.findOne({ where: clientQuery });
+        
+        if (!client) {
+            return res.status(404).json({ 
+                status: "error", 
+                message: "Client device not found" 
+            });
+        }
+        
+        // Delete all keys
+        const results = await writeQueue.enqueue(async () => {
+            const [identityCleared, preKeysDeleted, signedPreKeysDeleted] = await Promise.all([
+                // Clear identity key
+                Client.update(
+                    { public_key: null, registration_id: null },
+                    { where: { owner: sessionUuid, clientid: client.clientid } }
+                ),
+                // Delete all PreKeys
+                SignalPreKey.destroy({
+                    where: { owner: sessionUuid, client: client.clientid }
+                }),
+                // Delete all SignedPreKeys
+                SignalSignedPreKey.destroy({
+                    where: { owner: sessionUuid, client: client.clientid }
+                })
+            ]);
+            
+            return { identityCleared, preKeysDeleted, signedPreKeysDeleted };
+        }, 'deleteAllSignalKeys-REST');
+        
+        logger.info('[SIGNAL DELETE] All keys deleted', { 
+            userUuid: sanitizeForLog(sessionUuid), 
+            deviceId: sanitizeForLog(client.clientid),
+            preKeysDeleted: results.preKeysDeleted,
+            signedPreKeysDeleted: results.signedPreKeysDeleted
+        });
+        
+        res.status(200).json({ 
+            status: "success", 
+            message: "All Signal keys deleted successfully",
+            preKeysDeleted: results.preKeysDeleted,
+            signedPreKeysDeleted: results.signedPreKeysDeleted
+        });
+    } catch (error) {
+        logger.error('[SIGNAL DELETE] Error deleting keys', error);
+        res.status(500).json({ 
+            status: "error", 
+            message: "Internal server error" 
+        });
+    }
+});
+
 clientRoutes.get("/signal/prekey_bundle/:userId", verifyAuthEither, async (req, res) => {
     const { userId } = req.params;
     const sessionUuid = req.userId || req.session.uuid;

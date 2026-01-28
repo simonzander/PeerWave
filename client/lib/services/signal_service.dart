@@ -22,6 +22,7 @@ import 'storage/sqlite_recent_conversations_store.dart';
 import 'storage/database_helper.dart';
 import 'user_profile_service.dart';
 import 'device_identity_service.dart';
+import 'device_scoped_storage_service.dart';
 import 'web/webauthn_crypto_service.dart';
 import 'native_crypto_service.dart';
 import 'event_bus.dart';
@@ -51,6 +52,9 @@ class SignalService {
   // Track last session recovery attempt to prevent spam (used for double-ratchet recovery)
   final Map<String, DateTime> _sessionRecoveryLastAttempt =
       {}; // address -> timestamp
+
+  // Track last self-verification check to prevent excessive calls (rate limiting)
+  DateTime? _lastSelfVerificationCheck;
 
   final Map<String, List<Function(dynamic)>> _itemTypeCallbacks = {};
   final Map<String, List<Function(String)>> _deliveryCallbacks = {};
@@ -2215,32 +2219,46 @@ class SignalService {
         '[SIGNAL SERVICE][REINFORCEMENT] Starting forced key reinforcement...',
       );
 
-      // Step 1: Tell server to delete all keys for this device
+      // Step 1: Delete all keys on server via REST API (synchronous)
       debugPrint(
         '[SIGNAL SERVICE][REINFORCEMENT] Step 1: Deleting corrupted server keys...',
       );
-      SocketService().emit("deleteAllSignalKeys", {
-        'reason': 'corruption_detected_auto_recovery',
-      });
+      final deleteResponse = await ApiService.delete('/signal/keys');
 
-      // Wait for server to process deletion
-      await Future.delayed(Duration(seconds: 1));
+      if (deleteResponse.statusCode != 200) {
+        throw Exception('Failed to delete keys: ${deleteResponse.statusCode}');
+      }
 
-      // Step 2: Re-upload Identity
+      final deleteResult = deleteResponse.data as Map<String, dynamic>;
+      debugPrint(
+        '[SIGNAL SERVICE][REINFORCEMENT] ✓ Keys deleted: ${deleteResult['preKeysDeleted']} PreKeys, ${deleteResult['signedPreKeysDeleted']} SignedPreKeys',
+      );
+
+      // Step 2: Re-upload Identity via REST API (synchronous)
       debugPrint(
         '[SIGNAL SERVICE][REINFORCEMENT] Step 2: Re-uploading Identity key...',
       );
       final identityData = await identityStore.getIdentityKeyPairData();
       final registrationId = await identityStore.getLocalRegistrationId();
-      SocketService().emit("signalIdentity", {
-        'publicKey': identityData['publicKey'],
-        'registrationId': registrationId.toString(),
-      });
 
-      await Future.delayed(Duration(milliseconds: 500));
+      final identityResponse = await ApiService.post(
+        '/signal/identity',
+        data: {
+          'publicKey': identityData['publicKey'],
+          'registrationId': registrationId.toString(),
+        },
+      );
 
-      // Step 3 & 4: Upload SignedPreKey and PreKeys
-      await _uploadKeysOnly();
+      if (identityResponse.statusCode != 200) {
+        throw Exception(
+          'Failed to upload identity: ${identityResponse.statusCode}',
+        );
+      }
+
+      debugPrint('[SIGNAL SERVICE][REINFORCEMENT] ✓ Identity key uploaded');
+
+      // Step 3 & 4: Upload SignedPreKey and PreKeys via REST API (synchronous)
+      await _uploadKeysViaRestApi();
 
       // Step 5: Delete all sessions and SenderKeys (key reinforcement means keys changed)
       if (_storesCreated) {
@@ -2267,6 +2285,12 @@ class SignalService {
           );
         }
       }
+
+      // Step 6: Re-establish sessions with recent contacts (non-blocking)
+      debugPrint(
+        '[SIGNAL SERVICE][REINFORCEMENT] Step 6: Re-establishing sessions with recent contacts...',
+      );
+      _reestablishRecentSessions();
 
       debugPrint(
         '[SIGNAL SERVICE][REINFORCEMENT] ========================================',
@@ -2307,7 +2331,151 @@ class SignalService {
     return success;
   }
 
-  /// 🔧 Upload SignedPreKey and PreKeys only (identity already uploaded separately)
+  /// � Re-establish sessions with recent contacts after key healing
+  /// Called asynchronously (non-blocking) after session/key deletion
+  /// Proactively builds sessions so next messages don't require PreKey fetch
+  void _reestablishRecentSessions() async {
+    try {
+      debugPrint(
+        '[SIGNAL_REESTABLISH] ========================================',
+      );
+      debugPrint(
+        '[SIGNAL_REESTABLISH] Starting session re-establishment with recent contacts...',
+      );
+
+      // Get recent conversations from SQLite
+      final conversationsStore =
+          await SqliteRecentConversationsStore.getInstance();
+      final recentConvs = await conversationsStore.getRecentConversations(
+        limit: 10, // Only top 10 most recent
+      );
+
+      if (recentConvs.isEmpty) {
+        debugPrint(
+          '[SIGNAL_REESTABLISH] No recent conversations found, skipping',
+        );
+        return;
+      }
+
+      debugPrint(
+        '[SIGNAL_REESTABLISH] Found ${recentConvs.length} recent conversations',
+      );
+
+      int successCount = 0;
+      int failCount = 0;
+
+      // Process each contact
+      for (final conv in recentConvs) {
+        final userId = conv['userId'] as String?;
+        if (userId == null || userId == _currentUserId) continue;
+
+        try {
+          debugPrint('[SIGNAL_REESTABLISH] Fetching PreKeyBundle for: $userId');
+
+          // Fetch their PreKeyBundle
+          final response = await ApiService.get(
+            '/signal/prekey_bundle/$userId',
+          );
+          final devices = response.data is String
+              ? jsonDecode(response.data)
+              : response.data;
+
+          if (devices is! List || devices.isEmpty) {
+            debugPrint('[SIGNAL_REESTABLISH] No devices for $userId, skipping');
+            continue;
+          }
+
+          // Process first device only (primary device)
+          final deviceData = devices.first;
+          final deviceId = deviceData['deviceId'] as int;
+
+          // Parse and convert bundle data (same way as fetchPreKeyBundleForUser)
+          final registrationId = deviceData['registration_id'] is int
+              ? deviceData['registration_id'] as int
+              : int.parse(deviceData['registration_id'].toString());
+
+          final preKeyId = deviceData['preKey']['prekey_id'] is int
+              ? deviceData['preKey']['prekey_id'] as int
+              : int.parse(deviceData['preKey']['prekey_id'].toString());
+
+          final signedPreKeyId =
+              deviceData['signedPreKey']['signed_prekey_id'] is int
+              ? deviceData['signedPreKey']['signed_prekey_id'] as int
+              : int.parse(
+                  deviceData['signedPreKey']['signed_prekey_id'].toString(),
+                );
+
+          final identityKeyBytes = base64Decode(deviceData['public_key']);
+          final identityKey = IdentityKey.fromBytes(identityKeyBytes, 0);
+
+          final preKeyPublic = Curve.decodePoint(
+            base64Decode(deviceData['preKey']['prekey_data']),
+            0,
+          );
+
+          final signedPreKeyPublic = Curve.decodePoint(
+            base64Decode(deviceData['signedPreKey']['signed_prekey_data']),
+            0,
+          );
+
+          final signedPreKeySignature = base64Decode(
+            deviceData['signedPreKey']['signed_prekey_signature'],
+          );
+
+          // Build PreKeyBundle
+          final bundle = PreKeyBundle(
+            registrationId,
+            deviceId,
+            preKeyId,
+            preKeyPublic,
+            signedPreKeyId,
+            signedPreKeyPublic,
+            signedPreKeySignature,
+            identityKey,
+          );
+
+          // Build session
+          final address = SignalProtocolAddress(userId, deviceId);
+          final sessionBuilder = SessionBuilder(
+            sessionStore,
+            preKeyStore,
+            signedPreKeyStore,
+            identityStore,
+            address,
+          );
+
+          await sessionBuilder.processPreKeyBundle(bundle);
+
+          debugPrint(
+            '[SIGNAL_REESTABLISH] ✓ Session established with $userId:$deviceId',
+          );
+          successCount++;
+        } catch (e) {
+          debugPrint(
+            '[SIGNAL_REESTABLISH] ⚠️ Failed to establish session with $userId: $e',
+          );
+          failCount++;
+        }
+
+        // Small delay to avoid overwhelming the server
+        await Future.delayed(Duration(milliseconds: 100));
+      }
+
+      debugPrint(
+        '[SIGNAL_REESTABLISH] ========================================',
+      );
+      debugPrint(
+        '[SIGNAL_REESTABLISH] ✅ Re-establishment complete: $successCount succeeded, $failCount failed',
+      );
+    } catch (e, stackTrace) {
+      debugPrint(
+        '[SIGNAL_REESTABLISH] ❌ Error during session re-establishment: $e',
+      );
+      debugPrint('[SIGNAL_REESTABLISH] Stack trace: $stackTrace');
+    }
+  }
+
+  /// �🔧 Upload SignedPreKey and PreKeys only (identity already uploaded separately)
   /// Used when identity was already uploaded and we just need to upload the other keys
   Future<void> _uploadKeysOnly() async {
     try {
@@ -2464,6 +2632,155 @@ class SignalService {
     }
   }
 
+  /// Upload SignedPreKey and PreKeys via REST API (synchronous, waits for server confirmation)
+  /// Used during healing to ensure keys are persisted before verification
+  Future<void> _uploadKeysViaRestApi() async {
+    try {
+      // Step 3: Re-upload SignedPreKey
+      debugPrint(
+        '[SIGNAL SERVICE][REINFORCEMENT] Step 3: Re-uploading SignedPreKey via REST API...',
+      );
+      final identityKeyPair = await identityStore.getIdentityKeyPair();
+
+      // Check if we have a valid SignedPreKey, if not regenerate
+      final allSignedPreKeys = await signedPreKeyStore.loadSignedPreKeys();
+      SignedPreKeyRecord signedPreKey;
+
+      if (allSignedPreKeys.isEmpty) {
+        debugPrint(
+          '[SIGNAL SERVICE][REINFORCEMENT] No local SignedPreKey found - generating new one',
+        );
+        signedPreKey = generateSignedPreKey(identityKeyPair, 0);
+        await signedPreKeyStore.storeSignedPreKey(
+          signedPreKey.id,
+          signedPreKey,
+        );
+      } else {
+        signedPreKey = allSignedPreKeys.last;
+
+        // Validate signature before uploading
+        final localPublicKey = Curve.decodePoint(
+          identityKeyPair.getPublicKey().serialize(),
+          0,
+        );
+        final isValid = Curve.verifySignature(
+          localPublicKey,
+          signedPreKey.getKeyPair().publicKey.serialize(),
+          signedPreKey.signature,
+        );
+
+        if (!isValid) {
+          debugPrint(
+            '[SIGNAL SERVICE][REINFORCEMENT] Local SignedPreKey signature invalid - regenerating',
+          );
+          signedPreKey = generateSignedPreKey(identityKeyPair, 0);
+          await signedPreKeyStore.storeSignedPreKey(
+            signedPreKey.id,
+            signedPreKey,
+          );
+        }
+      }
+
+      // Upload via REST API (synchronous)
+      final signedPreKeyResponse = await ApiService.post(
+        '/signal/signedprekey',
+        data: {
+          'id': signedPreKey.id,
+          'data': base64Encode(signedPreKey.getKeyPair().publicKey.serialize()),
+          'signature': base64Encode(signedPreKey.signature),
+        },
+      );
+
+      if (signedPreKeyResponse.statusCode != 200) {
+        throw Exception(
+          'Failed to upload SignedPreKey: ${signedPreKeyResponse.statusCode}',
+        );
+      }
+
+      debugPrint('[SIGNAL SERVICE][REINFORCEMENT] ✓ SignedPreKey uploaded');
+
+      // Step 4: Re-upload all PreKeys via REST API
+      debugPrint(
+        '[SIGNAL SERVICE][REINFORCEMENT] Step 4: Re-uploading PreKeys via REST API...',
+      );
+      final localPreKeyIds = await preKeyStore.getAllPreKeyIds();
+
+      List<Map<String, dynamic>> preKeysPayload;
+
+      if (localPreKeyIds.isEmpty) {
+        debugPrint(
+          '[SIGNAL SERVICE][REINFORCEMENT] No local PreKeys found - generating 110 new ones',
+        );
+        final newPreKeys = generatePreKeys(0, 109);
+        for (final preKey in newPreKeys) {
+          await preKeyStore.storePreKey(preKey.id, preKey);
+        }
+
+        // Track metrics for diagnostics
+        KeyManagementMetrics.recordPreKeyRegeneration(
+          newPreKeys.length,
+          reason: 'Reinforcement recovery via REST API',
+        );
+
+        preKeysPayload = newPreKeys
+            .map(
+              (pk) => {
+                'id': pk.id,
+                'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
+              },
+            )
+            .toList();
+      } else {
+        debugPrint(
+          '[SIGNAL SERVICE][REINFORCEMENT] Found ${localPreKeyIds.length} local PreKey IDs - loading for upload...',
+        );
+
+        // Load PreKeys in batch
+        preKeysPayload = <Map<String, dynamic>>[];
+        for (final id in localPreKeyIds) {
+          try {
+            final preKey = await preKeyStore.loadPreKey(id);
+            preKeysPayload.add({
+              'id': preKey.id,
+              'data': base64Encode(preKey.getKeyPair().publicKey.serialize()),
+            });
+          } catch (e) {
+            debugPrint(
+              '[SIGNAL SERVICE][REINFORCEMENT] ⚠️ Failed to load PreKey $id: $e',
+            );
+          }
+        }
+      }
+
+      debugPrint(
+        '[SIGNAL SERVICE][REINFORCEMENT] Uploading ${preKeysPayload.length} PreKeys to server via REST API',
+      );
+
+      // Upload via REST API (synchronous)
+      final preKeysResponse = await ApiService.post(
+        '/signal/prekeys/batch',
+        data: {'preKeys': preKeysPayload},
+      );
+
+      if (preKeysResponse.statusCode != 200 &&
+          preKeysResponse.statusCode != 202) {
+        throw Exception(
+          'Failed to upload PreKeys: ${preKeysResponse.statusCode}',
+        );
+      }
+
+      debugPrint(
+        '[SIGNAL SERVICE][REINFORCEMENT] ✅ All keys uploaded via REST API and confirmed by server',
+      );
+    } catch (e, stackTrace) {
+      debugPrint(
+        '[SIGNAL SERVICE][REINFORCEMENT] ❌ Error uploading keys via REST API: $e',
+      );
+      debugPrint('[SIGNAL SERVICE][REINFORCEMENT] Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
   /// Check if SignedPreKey needs rotation and rotate if necessary
   /// Called automatically after signalStatus check
   Future<void> _checkSignedPreKeyRotation() async {
@@ -2499,6 +2816,14 @@ class SignalService {
 
   /// 🔍 SELF-VERIFICATION: Verify our own keys are valid on the server
   /// This should be called after initialization and before sending messages
+  ///
+  /// Also called AUTOMATICALLY (async, non-blocking) when:
+  /// - We encounter invalid PreKeyBundles from other users
+  /// - Session building fails due to signature errors
+  /// - Any key validation error suggests mutual corruption
+  ///
+  /// Rate-limited to once every 5 minutes to prevent excessive server load
+  ///
   /// Returns true if keys are valid, false if issues detected
   Future<bool> verifyOwnKeysOnServer() async {
     try {
@@ -2635,6 +2960,142 @@ class SignalService {
       debugPrint('[SIGNAL_SELF_VERIFY] ❌ Verification failed with error: $e');
       debugPrint('[SIGNAL_SELF_VERIFY] Stack trace: $stackTrace');
       return false;
+    }
+  }
+
+  /// 🛡️ PROACTIVE SELF-VERIFICATION: Trigger async self-check with rate limiting
+  /// Called when we encounter issues that suggest our keys might also be invalid
+  /// Rate-limited to once every 5 minutes to avoid excessive server load
+  /// Uses persistent storage to prevent re-checks across page reloads
+  /// If corruption is detected, automatically triggers key reinforcement
+  void _triggerAsyncSelfVerification(String reason) async {
+    try {
+      // PERSISTENT rate limiting: Check last verification time from storage
+      final storage = DeviceScopedStorageService.instance;
+      final lastCheckStr = await storage.getDecrypted(
+        'signal_verification',
+        'signal_verification',
+        'last_self_verification_check',
+      );
+
+      if (lastCheckStr != null) {
+        try {
+          final lastCheck = DateTime.parse(lastCheckStr);
+          final timeSinceLastCheck = DateTime.now().difference(lastCheck);
+
+          if (timeSinceLastCheck.inMinutes < 5) {
+            debugPrint(
+              '[SIGNAL_SELF_CHECK] ⏳ Skipping self-verification (last checked ${timeSinceLastCheck.inMinutes}min ago, persisted)',
+            );
+            return;
+          }
+        } catch (e) {
+          debugPrint('[SIGNAL_SELF_CHECK] Failed to parse last check time: $e');
+        }
+      }
+
+      // Also check in-memory (faster for rapid calls)
+      if (_lastSelfVerificationCheck != null) {
+        final timeSinceLastCheck = DateTime.now().difference(
+          _lastSelfVerificationCheck!,
+        );
+        if (timeSinceLastCheck.inMinutes < 5) {
+          debugPrint(
+            '[SIGNAL_SELF_CHECK] ⏳ Skipping self-verification (checked ${timeSinceLastCheck.inMinutes}min ago, in-memory)',
+          );
+          return;
+        }
+      }
+
+      // Record check time (both in-memory and persistent)
+      _lastSelfVerificationCheck = DateTime.now();
+      await storage.storeEncrypted(
+        'signal_verification',
+        'signal_verification',
+        'last_self_verification_check',
+        DateTime.now().toIso8601String(),
+      );
+
+      debugPrint(
+        '[SIGNAL_SELF_CHECK] 🛡️ Triggering async self-verification: $reason',
+      );
+
+      // Run verification asynchronously (non-blocking)
+      verifyOwnKeysOnServer()
+          .then((isValid) async {
+            if (!isValid) {
+              debugPrint(
+                '[SIGNAL_SELF_CHECK] ❌ Self-verification FAILED - our keys are corrupted!',
+              );
+
+              // Check if we can trigger healing (rate-limited to prevent loops)
+              if (_keyReinforcementInProgress) {
+                debugPrint(
+                  '[SIGNAL_SELF_CHECK] ⏳ Key reinforcement already in progress, skipping',
+                );
+                return;
+              }
+
+              if (_lastKeyReinforcementTime != null) {
+                final timeSinceLastReinforcement = DateTime.now().difference(
+                  _lastKeyReinforcementTime!,
+                );
+                if (timeSinceLastReinforcement.inMinutes < 10) {
+                  debugPrint(
+                    '[SIGNAL_SELF_CHECK] ⏳ Key reinforcement done ${timeSinceLastReinforcement.inMinutes}min ago, waiting',
+                  );
+                  return;
+                }
+              }
+
+              debugPrint(
+                '[SIGNAL_SELF_CHECK] 🔧 Triggering automatic key reinforcement...',
+              );
+
+              final healingSuccess = await _forceServerKeyReinforcement();
+
+              if (healingSuccess) {
+                debugPrint(
+                  '[SIGNAL_SELF_CHECK] ✅ Automatic healing completed successfully',
+                );
+
+                // Immediately re-verify to confirm healing worked
+                // No artificial delay - the healing already waited for uploads
+                debugPrint(
+                  '[SIGNAL_SELF_CHECK] 🔍 Re-verifying keys after healing...',
+                );
+                final isNowValid = await verifyOwnKeysOnServer();
+
+                if (isNowValid) {
+                  debugPrint(
+                    '[SIGNAL_SELF_CHECK] ✅ Verification after healing: PASSED',
+                  );
+                } else {
+                  debugPrint(
+                    '[SIGNAL_SELF_CHECK] ❌ Verification after healing: STILL FAILED',
+                  );
+                  debugPrint(
+                    '[SIGNAL_SELF_CHECK] → Keys may need more time to propagate, or upload failed',
+                  );
+                }
+              } else {
+                debugPrint('[SIGNAL_SELF_CHECK] ❌ Automatic healing failed');
+              }
+            } else {
+              debugPrint(
+                '[SIGNAL_SELF_CHECK] ✅ Self-verification passed - our keys are valid',
+              );
+            }
+          })
+          .catchError((error) {
+            debugPrint(
+              '[SIGNAL_SELF_CHECK] ⚠️ Self-verification error: $error',
+            );
+          });
+    } catch (e) {
+      debugPrint(
+        '[SIGNAL_SELF_CHECK] ⚠️ Error in self-verification trigger: $e',
+      );
     }
   }
 
@@ -4816,6 +5277,13 @@ class SignalService {
             '[SIGNAL SERVICE] ⚠️ Skipping device ${bundle['userId']}:${bundle['deviceId']} - invalid PreKeyBundle',
           );
           skippedCount++;
+
+          // 🛡️ PROACTIVE SELF-CHECK: When we encounter invalid bundles, verify our own keys
+          // This helps diagnose mutual corruption scenarios faster
+          _triggerAsyncSelfVerification(
+            'Invalid bundle detected from recipient',
+          );
+
           continue; // Skip this device, try next one
         }
 
@@ -4955,6 +5423,10 @@ class SignalService {
                 '[SIGNAL SERVICE] Bundle may be corrupted or out of sync',
               );
               debugPrint('[SIGNAL SERVICE] Skipping this device...');
+
+              // 🛡️ PROACTIVE SELF-CHECK: Bundle processing failed, verify our keys too
+              _triggerAsyncSelfVerification('Bundle processing error: $e');
+
               skippedCount++;
               continue; // Skip to next device
             }
