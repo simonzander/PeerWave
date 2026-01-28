@@ -1232,6 +1232,11 @@ class SignalService {
           '[SIGNAL SERVICE] Socket reconnected, processing offline queue...',
         );
         _processOfflineQueue();
+
+        // 🔍 SELF-HEALING: Verify our keys after reconnect (async, non-blocking, rate-limited)
+        // This catches any server-side key corruption that happened while offline
+        // Uses _triggerAsyncSelfVerification which has built-in rate limiting (5min)
+        _triggerAsyncSelfVerification('socket_reconnect');
       }, registrationName: 'SignalService');
       registeredEvents.add("connect");
 
