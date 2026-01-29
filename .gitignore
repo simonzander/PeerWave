@@ -269,3 +269,10 @@ BUGS.md
 client/local_packages/passkeys_web/.dart_tool/extension_discovery/vs_code.json
 client/linux/flutter/generated_plugin_registrant.cc
 client/linux/flutter/generated_plugins.cmake
+*.backup.dart
+REFACTORING_INTEGRATION_COMPLETE.md
+SIGNAL_REFACTORING_PROGRESS.md
+client/lib/services/signal/README.md
+client/test/signal/README.md
+client/test/signal/TEST_STATUS.md
+client/test/signal/HONEST_STATUS.md

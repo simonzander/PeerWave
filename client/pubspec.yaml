@@ -107,6 +107,14 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
+  
+  # Testing dependencies
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  mockito: ^5.4.4
+  build_runner: ^2.4.8
 
 # Override passkeys_web with fixed local version that doesn't crash
 dependency_overrides:
