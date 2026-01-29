@@ -2956,6 +2956,75 @@ class SignalService {
         );
       }
 
+      // 6. Verify PreKey fingerprints (hashes) to detect corruption
+      final serverFingerprints =
+          serverData['preKeyFingerprints'] as Map<String, dynamic>?;
+      if (serverFingerprints != null && serverFingerprints.isNotEmpty) {
+        debugPrint('[SIGNAL_SELF_VERIFY] Validating PreKey fingerprints...');
+
+        // Get local PreKey fingerprints
+        final localFingerprints = await _getPreKeyFingerprints();
+
+        // Compare fingerprints
+        int matchCount = 0;
+        int mismatchCount = 0;
+        final mismatches = <String>[];
+
+        for (final entry in serverFingerprints.entries) {
+          final keyId = entry.key;
+          final serverHash = entry.value as String?;
+          final localHash = localFingerprints[keyId];
+
+          if (localHash == null) {
+            debugPrint(
+              '[SIGNAL_SELF_VERIFY] ⚠️ PreKey $keyId on server but not in local store',
+            );
+            mismatchCount++;
+            mismatches.add(keyId);
+          } else if (serverHash != localHash) {
+            debugPrint('[SIGNAL_SELF_VERIFY] ❌ PreKey $keyId HASH MISMATCH!');
+            debugPrint(
+              '[SIGNAL_SELF_VERIFY]   Local:  ${localHash.substring(0, 20)}...',
+            );
+            debugPrint(
+              '[SIGNAL_SELF_VERIFY]   Server: ${serverHash?.substring(0, 20)}...',
+            );
+            mismatchCount++;
+            mismatches.add(keyId);
+          } else {
+            matchCount++;
+          }
+        }
+
+        // Check for local keys not on server
+        for (final keyId in localFingerprints.keys) {
+          if (!serverFingerprints.containsKey(keyId)) {
+            debugPrint(
+              '[SIGNAL_SELF_VERIFY] ⚠️ PreKey $keyId in local store but not on server',
+            );
+            mismatchCount++;
+            mismatches.add(keyId);
+          }
+        }
+
+        debugPrint(
+          '[SIGNAL_SELF_VERIFY] PreKey validation: $matchCount matched, $mismatchCount mismatched',
+        );
+
+        if (mismatchCount > 0) {
+          debugPrint(
+            '[SIGNAL_SELF_VERIFY] ❌ PreKey corruption detected! Mismatched keys: ${mismatches.take(5).join(", ")}${mismatches.length > 5 ? "..." : ""}',
+          );
+          return false;
+        }
+
+        debugPrint('[SIGNAL_SELF_VERIFY] ✓ All PreKey hashes valid');
+      } else {
+        debugPrint(
+          '[SIGNAL_SELF_VERIFY] ⚠️ No PreKey fingerprints from server (old endpoint version)',
+        );
+      }
+
       debugPrint(
         '[SIGNAL_SELF_VERIFY] ========================================',
       );

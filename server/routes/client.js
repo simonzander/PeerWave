@@ -450,18 +450,33 @@ clientRoutes.get("/signal/status/minimal", verifyAuthEither, async (req, res) =>
             order: [['id', 'DESC']]
         });
         
-        // Count PreKeys
-        const preKeyCount = await SignalPreKey.count({
+        // Fetch PreKeys with their public key data for hash validation
+        const preKeys = await SignalPreKey.findAll({
             where: {
                 owner: sessionUuid,
                 client: sessionDeviceId
-            }
+            },
+            attributes: ['prekey_id', 'prekey_data'],
+            limit: 110 // Max expected PreKeys
         });
+        
+        // Generate PreKey fingerprints (hashes) for validation
+        // Client will compare these hashes to detect corrupted PreKeys
+        const preKeyFingerprints = {};
+        for (const preKey of preKeys) {
+            if (preKey.prekey_data) {
+                // Use the public key data itself as fingerprint (same as client)
+                preKeyFingerprints[preKey.prekey_id.toString()] = preKey.prekey_data;
+            }
+        }
         
         res.json({
             identityKey: client?.public_key || null,
+            signedPreKey: signedPreKey?.signed_prekey_data || null,
+            signedPreKeySignature: signedPreKey?.signed_prekey_signature || null,
             signedPreKeyId: signedPreKey?.id || null,
-            preKeyCount: preKeyCount
+            preKeysCount: preKeys.length,
+            preKeyFingerprints: preKeyFingerprints
         });
     } catch (error) {
         logger.error('[SIGNAL] Error fetching minimal status', error);
