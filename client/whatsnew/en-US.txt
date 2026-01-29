@@ -1,5 +1,5 @@
-🚀 What's New in PeerWave v1.3.2
+🚀 What's New in PeerWave v1.3.3
 
 🐛 Bug Fixes
-• implement self-healing key verification on socket reconnect
+• enhance PreKey validation by adding fingerprint comparison for corruption detection
 
