@@ -479,7 +479,7 @@ class SignalService {
       final response = await ApiService.post(
         '/signal/validate-and-sync',
         data: {
-          'localIdentityKey': await keyManager.getLocalIdentityPublicKey(),
+          'localIdentityKey': await keyManager.getPublicKey(),
           'localSignedPreKeyId': await keyManager.getLatestSignedPreKeyId(),
           'localPreKeyCount': await keyManager.getLocalPreKeyCount(),
           'preKeyFingerprints':

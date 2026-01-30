@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'device_scoped_storage_service.dart';
+import 'api_service.dart';
 import '../core/metrics/key_management_metrics.dart';
 
 /// Wrapper for a signed pre-key and its metadata.
@@ -266,12 +267,24 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
     final publicKey = base64Encode(record.getKeyPair().publicKey.serialize());
     final signature = base64Encode(record.signature);
 
-    // Upload to server
-    SocketService().emit("storeSignedPreKey", {
-      'id': signedPreKeyId,
-      'data': publicKey,
-      "signature": signature,
-    });
+    // Upload to server with acknowledgment
+    try {
+      final response = await ApiService.post(
+        '/signal/signed-prekey',
+        data: {'id': signedPreKeyId, 'data': publicKey, 'signature': signature},
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          'Failed to upload signed pre key: ${response.statusCode}',
+        );
+      }
+
+      debugPrint('[SIGNED_PRE_KEY_STORE] ✓ Signed pre key uploaded to server');
+    } catch (e) {
+      debugPrint('[SIGNED_PRE_KEY_STORE] Error uploading signed pre key: $e');
+      rethrow;
+    }
 
     // CRITICAL: After uploading new key, delete ALL other keys from server
     // This ensures server always advertises only the newest signedPreKey

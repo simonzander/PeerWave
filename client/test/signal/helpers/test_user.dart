@@ -33,7 +33,7 @@ class TestUser {
     );
 
     // Ensure keys exist (generates if needed)
-    await keyManager.ensureIdentityKeyExists();
+    await keyManager.getIdentityKeyPair();
 
     _initialized = true;
   }

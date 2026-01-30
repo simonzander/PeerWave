@@ -54,7 +54,7 @@ void main() {
       final keyManager = await SignalKeyManager.create();
 
       // Get local identity public key
-      final publicKey = await keyManager.getLocalIdentityPublicKey();
+      final publicKey = await keyManager.getPublicKey();
       expect(publicKey, isNotNull);
       expect(publicKey, isNotEmpty);
 
@@ -197,7 +197,7 @@ void main() {
         clientId: 'client-111',
       );
       final keyManager1 = await SignalKeyManager.create();
-      final key1 = await keyManager1.getLocalIdentityPublicKey();
+      final key1 = await keyManager1.getPublicKey();
 
       // Second identity (should create separate storage)
       await initializeTestDeviceIdentity(
@@ -206,7 +206,7 @@ void main() {
         clientId: 'client-222',
       );
       final keyManager2 = await SignalKeyManager.create();
-      final key2 = await keyManager2.getLocalIdentityPublicKey();
+      final key2 = await keyManager2.getPublicKey();
 
       // Each should have unique identity keys
       expect(key1, isNotNull);
