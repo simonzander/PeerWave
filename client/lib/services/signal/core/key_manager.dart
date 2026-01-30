@@ -864,4 +864,93 @@ class SignalKeyManager {
       rethrow;
     }
   }
+
+  // ============================================================================
+  // KEY EVENT HANDLERS (Socket.IO Integration)
+  // ============================================================================
+
+  /// Upload missing keys detected by server
+  ///
+  /// When the server notifies us that we're missing keys (via signalStatus event),
+  /// this method generates and uploads the missing components.
+  ///
+  /// Called by: SessionListeners when server indicates missing keys
+  Future<void> uploadMissingKeys() async {
+    try {
+      debugPrint('[KEY_MANAGER] Uploading missing keys...');
+
+      // Re-upload all keys to ensure server has everything
+      // This is a comprehensive fix that covers identity, signed, and prekeys
+      await uploadAllKeysToServer();
+
+      debugPrint('[KEY_MANAGER] ✓ Missing keys uploaded');
+    } catch (e, stack) {
+      debugPrint('[KEY_MANAGER] Error uploading missing keys: $e');
+      debugPrint('[KEY_MANAGER] Stack: $stack');
+      rethrow;
+    }
+  }
+
+  /// Synchronize local PreKey IDs with server state
+  ///
+  /// The server sends us a list of PreKey IDs it has stored. We compare with
+  /// our local store and upload any PreKeys that the server is missing.
+  ///
+  /// Called by: SessionListeners when 'preKeyIdsSyncResponse' socket event fires
+  Future<void> syncPreKeyIds(List<int> serverKeyIds) async {
+    try {
+      debugPrint(
+        '[KEY_MANAGER] Syncing PreKey IDs (server has ${serverKeyIds.length})',
+      );
+
+      // Get local PreKey IDs
+      final localKeyIds = <int>[];
+      for (int id = 1; id <= 110; id++) {
+        try {
+          await preKeyStore.loadPreKey(id);
+          localKeyIds.add(id);
+        } catch (e) {
+          // Key doesn't exist locally
+        }
+      }
+
+      debugPrint('[KEY_MANAGER] Local PreKeys: ${localKeyIds.length}');
+
+      // Find PreKeys that exist locally but not on server
+      final missingOnServer = localKeyIds
+          .where((id) => !serverKeyIds.contains(id))
+          .toList();
+
+      if (missingOnServer.isEmpty) {
+        debugPrint('[KEY_MANAGER] ✓ Server has all local PreKeys');
+        return;
+      }
+
+      debugPrint(
+        '[KEY_MANAGER] Server missing ${missingOnServer.length} PreKeys: $missingOnServer',
+      );
+
+      // Upload missing PreKeys
+      final preKeysToUpload = <PreKeyRecord>[];
+      for (final id in missingOnServer) {
+        try {
+          final preKey = await preKeyStore.loadPreKey(id);
+          preKeysToUpload.add(preKey);
+        } catch (e) {
+          debugPrint('[KEY_MANAGER] Failed to load PreKey $id: $e');
+        }
+      }
+
+      if (preKeysToUpload.isNotEmpty) {
+        await uploadPreKeys(preKeysToUpload);
+        debugPrint(
+          '[KEY_MANAGER] ✓ Uploaded ${preKeysToUpload.length} missing PreKeys',
+        );
+      }
+    } catch (e, stack) {
+      debugPrint('[KEY_MANAGER] Error syncing PreKey IDs: $e');
+      debugPrint('[KEY_MANAGER] Stack: $stack');
+      // Don't rethrow - this is a sync operation
+    }
+  }
 }

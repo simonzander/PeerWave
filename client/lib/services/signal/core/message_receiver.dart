@@ -547,4 +547,132 @@ class MessageReceiver {
 
     debugPrint('[MESSAGE_RECEIVER] ✓ Identity trusted and session reset');
   }
+
+  // ============================================================================
+  // MESSAGE RECEPTION (Socket.IO Integration)
+  // ============================================================================
+
+  /// Receive and process incoming encrypted message
+  ///
+  /// Handles:
+  /// - Message decryption
+  /// - Callback notification
+  /// - Error handling and recovery
+  ///
+  /// Called by: MessageListeners when 'receiveItem' socket event fires
+  Future<void> receiveItem(Map<String, dynamic> data) async {
+    try {
+      final itemId = data['itemId'] as String;
+      final sender = data['sender'] as String;
+      final senderDeviceId = data['senderDeviceId'] as int;
+      final payload = data['payload'] as String;
+      final cipherType = data['cipherType'] as int;
+
+      debugPrint(
+        '[MESSAGE_RECEIVER] Receiving item: $itemId from $sender:$senderDeviceId',
+      );
+
+      // Decrypt the message
+      final senderAddress = SignalProtocolAddress(sender, senderDeviceId);
+      final plaintext = await decryptItem(
+        senderAddress: senderAddress,
+        payload: payload,
+        cipherType: cipherType,
+        itemId: itemId,
+      );
+
+      if (plaintext.isEmpty) {
+        debugPrint('[MESSAGE_RECEIVER] ⚠️ Decryption returned empty plaintext');
+        return;
+      }
+
+      // Trigger callbacks
+      final type = data['type'] as String? ?? 'message';
+      if (receiveItemCallbacks.containsKey(type)) {
+        final callbackData = {...data, 'message': plaintext, 'decrypted': true};
+
+        for (final callback in receiveItemCallbacks[type]!) {
+          try {
+            callback(callbackData);
+          } catch (e) {
+            debugPrint('[MESSAGE_RECEIVER] Error in callback: $e');
+          }
+        }
+      }
+
+      debugPrint('[MESSAGE_RECEIVER] ✓ Message processed: $itemId');
+    } catch (e, stack) {
+      debugPrint('[MESSAGE_RECEIVER] ❌ Error processing message: $e');
+      debugPrint('[MESSAGE_RECEIVER] Stack: $stack');
+      // TODO: Use ErrorHandler when available
+      // ErrorHandler.handleReceiveError(e, data);
+      rethrow;
+    }
+  }
+
+  /// Handle delivery receipt notification
+  ///
+  /// Updates message status to 'delivered' in local storage
+  /// and triggers registered callbacks.
+  ///
+  /// Called by: MessageListeners when 'deliveryReceipt' socket event fires
+  Future<void> handleDeliveryReceipt(Map<String, dynamic> data) async {
+    try {
+      final itemId = data['itemId'] as String;
+      debugPrint('[MESSAGE_RECEIVER] Delivery receipt for: $itemId');
+
+      // TODO: Update message store when available
+      // await messageStore.markAsDelivered(itemId);
+
+      // Trigger callbacks
+      final deliveryCallbacks = receiveItemCallbacks['delivery'] ?? [];
+      for (final callback in deliveryCallbacks) {
+        try {
+          callback({'itemId': itemId, 'status': 'delivered'});
+        } catch (e) {
+          debugPrint('[MESSAGE_RECEIVER] Error in delivery callback: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('[MESSAGE_RECEIVER] Error handling delivery receipt: $e');
+    }
+  }
+
+  /// Handle read receipt notification
+  ///
+  /// Updates message status to 'read' in local storage
+  /// and triggers registered callbacks.
+  ///
+  /// Called by: MessageListeners when 'readReceipt' socket event fires
+  Future<void> handleReadReceipt(Map<String, dynamic> data) async {
+    try {
+      final itemId = data['itemId'] as String;
+      final readByUserId = data['readByUserId'] as String?;
+      final readByDeviceId = data['readByDeviceId'] as int?;
+
+      debugPrint(
+        '[MESSAGE_RECEIVER] Read receipt for: $itemId by $readByUserId:$readByDeviceId',
+      );
+
+      // TODO: Update message store when available
+      // await messageStore.markAsRead(itemId);
+
+      // Trigger callbacks
+      final readCallbacks = receiveItemCallbacks['read'] ?? [];
+      for (final callback in readCallbacks) {
+        try {
+          callback({
+            'itemId': itemId,
+            'readByUserId': readByUserId,
+            'readByDeviceId': readByDeviceId,
+            'status': 'read',
+          });
+        } catch (e) {
+          debugPrint('[MESSAGE_RECEIVER] Error in read callback: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('[MESSAGE_RECEIVER] Error handling read receipt: $e');
+    }
+  }
 }

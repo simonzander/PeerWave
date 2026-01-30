@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
-import 'signal_service.dart';
+import 'signal_service.dart'; // Direct import - not from barrel file
 import 'user_profile_service.dart';
 import '../providers/unread_messages_provider.dart';
 import 'message_listener_service.dart';

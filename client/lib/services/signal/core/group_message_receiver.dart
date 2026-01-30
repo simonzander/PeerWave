@@ -432,4 +432,121 @@ class GroupMessageReceiver {
       // Don't throw - this is cleanup
     }
   }
+
+  // ============================================================================
+  // GROUP MESSAGE RECEPTION (Socket.IO Integration)
+  // ============================================================================
+
+  /// Receive and process incoming encrypted group message
+  ///
+  /// Handles:
+  /// - Group message decryption using sender keys
+  /// - Automatic sender key request if missing
+  /// - Callback notification
+  ///
+  /// Called by: GroupListeners when 'receiveItemChannel' socket event fires
+  Future<void> receiveItemChannel(Map<String, dynamic> data) async {
+    try {
+      final itemId = data['itemId'] as String;
+      final channelId = data['channelId'] as String;
+      final senderId = data['sender'] as String;
+      final senderDeviceId = data['senderDeviceId'] as int;
+      final ciphertextBase64 = data['payload'] as String;
+
+      debugPrint(
+        '[GROUP_RECEIVER] Receiving group message: $itemId in $channelId from $senderId:$senderDeviceId',
+      );
+
+      // Decrypt the group message
+      final plaintext = await decryptGroupMessage(
+        channelId,
+        senderId,
+        senderDeviceId,
+        ciphertextBase64,
+      );
+
+      debugPrint(
+        '[GROUP_RECEIVER] ✓ Group message decrypted: $itemId (${plaintext.length} chars)',
+      );
+
+      // TODO: Trigger callbacks when callback system is integrated
+      // For now, just log success
+    } catch (e, stack) {
+      debugPrint('[GROUP_RECEIVER] ❌ Error receiving group message: $e');
+      debugPrint('[GROUP_RECEIVER] Stack: $stack');
+      // TODO: Use ErrorHandler when available
+      // ErrorHandler.handleReceiveError(e, data);
+      rethrow;
+    }
+  }
+
+  /// Handle group message reaction
+  ///
+  /// Updates reaction state and triggers callbacks
+  ///
+  /// Called by: GroupListeners when 'receiveItemChannelReaction' socket event fires
+  Future<void> handleReaction(Map<String, dynamic> data) async {
+    try {
+      final itemId = data['itemId'] as String;
+      final reaction = data['reaction'] as String?;
+      final senderId = data['sender'] as String;
+
+      debugPrint(
+        '[GROUP_RECEIVER] Group reaction: $reaction on $itemId by $senderId',
+      );
+
+      // TODO: Update reaction store when available
+      // TODO: Trigger reaction callbacks
+    } catch (e) {
+      debugPrint('[GROUP_RECEIVER] Error handling reaction: $e');
+    }
+  }
+
+  /// Handle group message read receipt
+  ///
+  /// Updates read status and triggers callbacks
+  ///
+  /// Called by: GroupListeners when 'groupMessageReadReceipt' socket event fires
+  Future<void> handleReadReceipt(Map<String, dynamic> data) async {
+    try {
+      final itemId = data['itemId'] as String;
+      final channelId = data['channelId'] as String?;
+      final readByUserId = data['readByUserId'] as String?;
+
+      debugPrint(
+        '[GROUP_RECEIVER] Group read receipt: $itemId in ${channelId ?? "unknown"} by $readByUserId',
+      );
+
+      // TODO: Update message store when available
+      // TODO: Trigger read receipt callbacks
+    } catch (e) {
+      debugPrint('[GROUP_RECEIVER] Error handling read receipt: $e');
+    }
+  }
+
+  /// Handle sender key request from another group member
+  ///
+  /// Sends our current sender key distribution message to the requester
+  ///
+  /// Called by: GroupListeners when 'senderKeyRequest' socket event fires
+  Future<void> handleSenderKeyRequest(Map<String, dynamic> data) async {
+    try {
+      final channelId = data['channelId'] as String;
+      final requesterId = data['requesterId'] as String;
+      final requesterDeviceId = data['requesterDeviceId'] as int? ?? 1;
+
+      debugPrint(
+        '[GROUP_RECEIVER] Sender key request from $requesterId:$requesterDeviceId for $channelId',
+      );
+
+      // TODO: Generate and send sender key distribution message
+      // This requires access to GroupMessageSender or similar
+      // For now, just log the request
+      debugPrint(
+        '[GROUP_RECEIVER] TODO: Send sender key to $requesterId for $channelId',
+      );
+    } catch (e) {
+      debugPrint('[GROUP_RECEIVER] Error handling sender key request: $e');
+    }
+  }
 }

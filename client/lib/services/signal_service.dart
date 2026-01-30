@@ -37,6 +37,7 @@ import 'signal/core/message_sender.dart';
 import 'signal/core/message_receiver.dart';
 import 'signal/core/group_message_sender.dart';
 import 'signal/core/group_message_receiver.dart';
+import 'signal/listeners/listener_registry.dart';
 
 class SignalService {
   static final SignalService instance = SignalService._internal();
@@ -380,134 +381,6 @@ class SignalService {
     );
 
     debugPrint('[SIGNAL SERVICE] Offline queue processing complete');
-  }
-
-  /// 🚀 Handle pending messages notification from server
-  void _handlePendingMessagesAvailable(Map<String, dynamic> data) {
-    final count = data['count'] as int;
-    final timestamp = data['timestamp'] as String?;
-
-    debugPrint(
-      '[SIGNAL SERVICE] 📬 $count pending messages available (timestamp: $timestamp)',
-    );
-
-    // Start background sync automatically
-    _syncPendingMessages(count);
-  }
-
-  /// 🚀 Sync pending messages from server with pagination
-  Future<void> _syncPendingMessages(int totalCount) async {
-    debugPrint(
-      '[SIGNAL SERVICE] 🔄 Starting sync of $totalCount pending messages',
-    );
-
-    int offset = 0;
-    int synced = 0;
-    const batchSize = 20;
-    bool hasMore = true;
-
-    // Emit sync started event
-    EventBus.instance.emit(AppEvent.syncStarted, <String, dynamic>{
-      'total': totalCount,
-    });
-
-    while (hasMore && synced < totalCount) {
-      try {
-        debugPrint(
-          '[SIGNAL SERVICE] Requesting batch: offset=$offset, limit=$batchSize',
-        );
-
-        // Request batch from server
-        SocketService().emit('fetchPendingMessages', {
-          'limit': batchSize,
-          'offset': offset,
-        });
-
-        // Wait for response (we'll handle it in _handlePendingMessagesResponse)
-        // The response handler will process messages and update counters
-
-        // For now, we need to track this sync operation
-        // We'll use a simple flag to know when a batch is complete
-        await Future.delayed(
-          Duration(milliseconds: 500),
-        ); // Give server time to respond
-
-        break; // Exit for now - we'll improve this with proper async handling
-      } catch (e) {
-        debugPrint('[SIGNAL SERVICE] ❌ Batch sync error: $e');
-        EventBus.instance.emit(AppEvent.syncError, {
-          'error': e.toString(),
-          'synced': synced,
-          'total': totalCount,
-        });
-        break;
-      }
-    }
-  }
-
-  /// 🚀 Handle pending messages response from server
-  Future<void> _handlePendingMessagesResponse(Map<String, dynamic> data) async {
-    try {
-      final items = data['items'] as List;
-      final hasMore = data['hasMore'] as bool;
-      final offset = data['offset'] as int;
-      final batchTotal = data['total'] as int;
-
-      debugPrint(
-        '[SIGNAL SERVICE] 📨 Received batch: ${items.length} messages, hasMore=$hasMore, offset=$offset',
-      );
-
-      int processed = 0;
-      int failed = 0;
-
-      // Process each message in the batch
-      for (final item in items) {
-        try {
-          // Cast item to Map<String, dynamic> before processing
-          await receiveItem(Map<String, dynamic>.from(item as Map));
-          processed++;
-
-          // Emit progress event for UI
-          EventBus.instance.emit(AppEvent.syncProgress, {
-            'current': offset + processed,
-            'total': offset + batchTotal, // Approximate total
-          });
-        } catch (e) {
-          debugPrint(
-            '[SIGNAL SERVICE] ⚠️ Failed to process pending message: $e',
-          );
-          failed++;
-          // Continue with next message
-        }
-      }
-
-      debugPrint(
-        '[SIGNAL SERVICE] ✓ Batch processed: $processed succeeded, $failed failed',
-      );
-
-      // If there are more messages, fetch next batch
-      if (hasMore) {
-        debugPrint('[SIGNAL SERVICE] Fetching next batch...');
-        await Future.delayed(Duration(milliseconds: 100)); // Rate limiting
-
-        SocketService().emit('fetchPendingMessages', {
-          'limit': 20,
-          'offset': offset + items.length,
-        });
-      } else {
-        debugPrint('[SIGNAL SERVICE] 🎉 Sync complete!');
-        EventBus.instance.emit(AppEvent.syncComplete, <String, dynamic>{
-          'processed': processed,
-        });
-      }
-    } catch (e) {
-      debugPrint(
-        '[SIGNAL SERVICE] ❌ Error handling pending messages response: $e',
-      );
-      EventBus.instance.emit(AppEvent.syncError, <String, dynamic>{
-        'error': e.toString(),
-      });
-    }
   }
 
   /// Create stores and initialize modular services
@@ -1129,33 +1002,31 @@ class SignalService {
 
     debugPrint('[SIGNAL SERVICE] Registering Socket.IO listeners...');
 
-    // ✅ Track registered events for rollback on failure
-    final registeredEvents = <String>[];
-
     try {
+      // 🆕 Register modular signal listeners via ListenerRegistry
+      await ListenerRegistry.instance.registerAll(
+        messageReceiver: messageReceiver,
+        groupReceiver: groupMessageReceiver,
+        sessionManager: sessionManager,
+        keyManager: keyManager,
+        healingService: healingService,
+        unreadMessagesProvider: _unreadMessagesProvider,
+        currentUserId: _currentUserId,
+        currentDeviceId: _currentDeviceId,
+      );
+
+      // ⚠️ Signal service-specific listeners that can't be modularized:
+
       // Setup offline queue processing on reconnect
+      // (Requires access to sendItem/sendGroupItem methods)
       SocketService().registerListener("connect", (_) {
         debugPrint(
           '[SIGNAL SERVICE] Socket reconnected, processing offline queue...',
         );
         _processOfflineQueue();
-
-        // 🔍 SELF-HEALING: Verify our keys after reconnect (async, non-blocking, rate-limited)
-        // This catches any server-side key corruption that happened while offline
-        // Uses healingService which has built-in rate limiting (5min)
-        healingService.triggerAsyncSelfVerification(
-          reason: 'socket_reconnect',
-          userId: _currentUserId!,
-          deviceId: _currentDeviceId!,
-        );
       }, registrationName: 'SignalService');
-      registeredEvents.add("connect");
 
-      SocketService().registerListener("receiveItem", (data) {
-        receiveItem(Map<String, dynamic>.from(data as Map));
-      }, registrationName: 'SignalService');
-      registeredEvents.add("receiveItem");
-
+      // Legacy groupMessage callback system (deprecated)
       SocketService().registerListener("groupMessage", (data) {
         final dataMap = Map<String, dynamic>.from(data as Map);
         // Handle group message via callback system
@@ -1165,234 +1036,18 @@ class SignalService {
           }
         }
       }, registrationName: 'SignalService');
-      registeredEvents.add("groupMessage");
-
-      // NEW: Group Item Socket.IO listener
-      SocketService().registerListener("groupItem", (data) {
-        final dataMap = Map<String, dynamic>.from(data as Map);
-        // Update unread count for group messages (ONLY for messages from OTHER users)
-        if (_unreadMessagesProvider != null &&
-            dataMap['channel'] != null &&
-            dataMap['type'] != null) {
-          final channelId = dataMap['channel'] as String;
-          final messageType = dataMap['type'] as String;
-          final sender = dataMap['sender'] as String?;
-          final isOwnMessage = sender == _currentUserId;
-          final itemId = dataMap['itemId'] as String?;
-
-          // Check if this is an activity notification type
-          const activityTypes = {
-            'emote',
-            'mention',
-            'missingcall',
-            'addtochannel',
-            'removefromchannel',
-            'permissionchange',
-          };
-
-          // Only increment for messages from OTHER users
-          if (!isOwnMessage) {
-            if (activityTypes.contains(messageType)) {
-              // Activity notification - increment activity counter
-              if (itemId != null) {
-                _unreadMessagesProvider!.incrementActivityNotification(itemId);
-                debugPrint(
-                  '[SIGNAL SERVICE] ✓ Activity notification: $messageType ($itemId)',
-                );
-              }
-            } else {
-              // Regular message - increment channel counter
-              _unreadMessagesProvider!.incrementIfBadgeType(
-                messageType,
-                channelId,
-                true,
-              );
-            }
-          }
-        }
-
-        // ✅ Emit EventBus event for new group message/item (after decryption in callbacks)
-        final type = dataMap['type'];
-        final channel = dataMap['channel'];
-        final sender = dataMap['sender'] as String?;
-        final isOwnMsg = sender == _currentUserId;
-
-        if (type != null && channel != null) {
-          // Emit for actual content (message, file) and activity notifications
-          const activityTypes = {
-            'emote',
-            'mention',
-            'missingcall',
-            'addtochannel',
-            'removefromchannel',
-            'permissionchange',
-          };
-
-          // Only emit newMessage event for messages from OTHER users
-          if ((type == 'message' || type == 'file') && !isOwnMsg) {
-            debugPrint(
-              '[SIGNAL SERVICE] → EVENT_BUS: newMessage (group) - type=$type, channel=$channel, isOwnMsg=$isOwnMsg',
-            );
-            EventBus.instance.emit(AppEvent.newMessage, dataMap);
-          } else if (activityTypes.contains(type) && !isOwnMsg) {
-            // Only emit notification for OTHER users' activity messages
-            debugPrint(
-              '[SIGNAL SERVICE] → EVENT_BUS: newNotification (group) - type=$type, channel=$channel',
-            );
-            EventBus.instance.emit(AppEvent.newNotification, dataMap);
-          }
-        }
-
-        // Handle emote messages (reactions)
-        if (type == 'emote') {
-          _handleEmoteMessage(dataMap, isGroupChat: true);
-        }
-
-        if (_itemTypeCallbacks.containsKey('groupItem')) {
-          for (final callback in _itemTypeCallbacks['groupItem']!) {
-            callback(dataMap);
-          }
-        }
-
-        // NEW: Trigger specific receiveItemChannel callbacks (type:channel)
-        if (type != null && channel != null) {
-          final key = '$type:$channel';
-          if (_receiveItemChannelCallbacks.containsKey(key)) {
-            for (final callback in _receiveItemChannelCallbacks[key]!) {
-              callback(dataMap);
-            }
-            debugPrint(
-              '[SIGNAL SERVICE] Triggered ${_receiveItemChannelCallbacks[key]!.length} receiveItemChannel callbacks for $key',
-            );
-          }
-        }
-      }, registrationName: 'SignalService');
-      registeredEvents.add("groupItem");
-
-      // NEW: Group Item delivery confirmation
-      SocketService().registerListener("groupItemDelivered", (data) {
-        final dataMap = Map<String, dynamic>.from(data as Map);
-        if (_deliveryCallbacks.containsKey('groupItem')) {
-          for (final callback in _deliveryCallbacks['groupItem']!) {
-            callback(dataMap['itemId']);
-          }
-        }
-      }, registrationName: 'SignalService');
-      registeredEvents.add("groupItemDelivered");
-
-      // NEW: Group Item read update
-      SocketService().registerListener("groupItemReadUpdate", (data) {
-        final dataMap = Map<String, dynamic>.from(data as Map);
-        if (_readCallbacks.containsKey('groupItem')) {
-          for (final callback in _readCallbacks['groupItem']!) {
-            callback(dataMap);
-          }
-        }
-      }, registrationName: 'SignalService');
-      registeredEvents.add("groupItemReadUpdate");
-
-      SocketService().registerListener("deliveryReceipt", (data) async {
-        await _handleDeliveryReceipt(Map<String, dynamic>.from(data as Map));
-      }, registrationName: 'SignalService');
-      registeredEvents.add("deliveryReceipt");
-
-      SocketService().registerListener("groupMessageReadReceipt", (data) {
-        _handleGroupMessageReadReceipt(Map<String, dynamic>.from(data as Map));
-      }, registrationName: 'SignalService');
-      registeredEvents.add("groupMessageReadReceipt");
-
-      // 🚀 NEW: Pending messages notification from server
-      SocketService().registerListener("pendingMessagesAvailable", (data) {
-        _handlePendingMessagesAvailable(Map<String, dynamic>.from(data as Map));
-      }, registrationName: 'SignalService');
-      registeredEvents.add("pendingMessagesAvailable");
-
-      // 🚀 NEW: Pending messages response from server
-      SocketService().registerListener("pendingMessagesResponse", (data) {
-        _handlePendingMessagesResponse(Map<String, dynamic>.from(data as Map));
-      }, registrationName: 'SignalService');
-      registeredEvents.add("pendingMessagesResponse");
-
-      // 🚀 NEW: Pending messages fetch error
-      SocketService().registerListener("fetchPendingMessagesError", (data) {
-        final dataMap = Map<String, dynamic>.from(data as Map);
-        debugPrint(
-          '[SIGNAL SERVICE] ❌ Error fetching pending messages: ${dataMap['error']}',
-        );
-      }, registrationName: 'SignalService');
-      registeredEvents.add("fetchPendingMessagesError");
-
-      // Note: sessionRecoveryRequested listener removed - Signal Protocol's double-ratchet handles recovery
-
-      SocketService().registerListener("signalStatusResponse", (status) async {
-        await _ensureSignalKeysPresent(
-          Map<String, dynamic>.from(status as Map),
-        );
-
-        // Check SignedPreKey rotation after status check
-        await keyManager.checkAndRotateSignedPreKey();
-      }, registrationName: 'SignalService');
-      registeredEvents.add("signalStatusResponse");
-
-      // NEW: Receive sender key distribution messages
-      SocketService().registerListener("receiveSenderKeyDistribution", (
-        data,
-      ) async {
-        try {
-          final dataMap = Map<String, dynamic>.from(data as Map);
-          final groupId = dataMap['groupId'] as String;
-          final senderId = dataMap['senderId'] as String;
-          // Parse senderDeviceId as int (socket might send String)
-          final senderDeviceId = dataMap['senderDeviceId'] is int
-              ? dataMap['senderDeviceId'] as int
-              : int.parse(dataMap['senderDeviceId'].toString());
-          final distributionMessageBase64 =
-              dataMap['distributionMessage'] as String;
-
-          debugPrint(
-            '[SIGNAL_SERVICE] Received sender key distribution from $senderId:$senderDeviceId for group $groupId',
-          );
-
-          final distributionMessageBytes = base64Decode(
-            distributionMessageBase64,
-          );
-          await processSenderKeyDistribution(
-            groupId,
-            senderId,
-            senderDeviceId,
-            distributionMessageBytes,
-          );
-
-          debugPrint('[SIGNAL_SERVICE] ✓ Sender key distribution processed');
-        } catch (e) {
-          debugPrint(
-            '[SIGNAL_SERVICE] Error processing sender key distribution: $e',
-          );
-        }
-      }, registrationName: 'SignalService');
-      registeredEvents.add("receiveSenderKeyDistribution");
-
-      // 🔒 SECURITY: Handle PreKey ID sync response
-      SocketService().registerListener("myPreKeyIdsResponse", (data) async {
-        await _handlePreKeyIdsSyncResponse(
-          Map<String, dynamic>.from(data as Map),
-        );
-      }, registrationName: 'SignalService');
-      registeredEvents.add("myPreKeyIdsResponse");
 
       // Setup Event Bus forwarding for user/channel events
       _setupEventBusForwarding();
 
       _listenersRegistered = true;
       debugPrint(
-        '[SIGNAL SERVICE] ✅ All ${registeredEvents.length} Socket.IO listeners registered successfully',
+        '[SIGNAL SERVICE] ✅ All signal listeners registered successfully',
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
       // Rollback: Reset flag so retry is possible
       debugPrint('[SIGNAL SERVICE] ⚠️ Error during listener registration: $e');
-      debugPrint(
-        '[SIGNAL SERVICE] ${registeredEvents.length} listeners may be partially registered',
-      );
+      debugPrint('[SIGNAL SERVICE] Stack trace: $stackTrace');
 
       _listenersRegistered = false;
       debugPrint(
@@ -1417,130 +1072,6 @@ class SignalService {
     }, registrationName: 'SignalService');
 
     debugPrint('[SIGNAL SERVICE] ✓ Event Bus forwarding active');
-  }
-
-  /// 🔒 SECURITY: Handle PreKey IDs sync response from server
-  /// This ensures we never re-upload consumed PreKeys
-  Future<void> _handlePreKeyIdsSyncResponse(Map<String, dynamic> data) async {
-    try {
-      final serverPreKeyIds = (data['preKeyIds'] as List?)?.cast<int>() ?? [];
-      debugPrint(
-        '[SIGNAL SERVICE][PREKEY_SYNC] Server has ${serverPreKeyIds.length} PreKeys: $serverPreKeyIds',
-      );
-
-      // Get local PreKey IDs
-      final localPreKeyIds = await preKeyStore.getAllPreKeyIds();
-      debugPrint(
-        '[SIGNAL SERVICE][PREKEY_SYNC] Local has ${localPreKeyIds.length} PreKeys: $localPreKeyIds',
-      );
-
-      // Find consumed PreKeys (exist locally but not on server)
-      final consumedPreKeyIds = localPreKeyIds
-          .where((id) => !serverPreKeyIds.contains(id))
-          .toList();
-      debugPrint(
-        '[SIGNAL SERVICE][PREKEY_SYNC] Consumed PreKeys (to delete locally): $consumedPreKeyIds',
-      );
-
-      // Find missing PreKeys (exist locally but not on server, and not consumed)
-      final missingPreKeyIds = localPreKeyIds
-          .where(
-            (id) =>
-                !serverPreKeyIds.contains(id) &&
-                !consumedPreKeyIds.contains(id),
-          )
-          .toList();
-      debugPrint(
-        '[SIGNAL SERVICE][PREKEY_SYNC] Missing PreKeys (to upload): $missingPreKeyIds',
-      );
-
-      // Delete consumed PreKeys from local storage
-      for (final id in consumedPreKeyIds) {
-        try {
-          await preKeyStore.removePreKey(
-            id,
-            sendToServer: false,
-          ); // Don't notify server
-          debugPrint(
-            '[SIGNAL SERVICE][PREKEY_SYNC] ✓ Deleted consumed PreKey $id from local storage',
-          );
-        } catch (e) {
-          debugPrint(
-            '[SIGNAL SERVICE][PREKEY_SYNC] ⚠️ Failed to delete PreKey $id: $e',
-          );
-        }
-      }
-
-      // Upload missing PreKeys to server
-      if (missingPreKeyIds.isNotEmpty) {
-        debugPrint(
-          '[SIGNAL SERVICE][PREKEY_SYNC] Uploading ${missingPreKeyIds.length} missing PreKeys to server...',
-        );
-
-        final missingPreKeys = <PreKeyRecord>[];
-        for (final id in missingPreKeyIds) {
-          try {
-            final preKey = await preKeyStore.loadPreKey(id);
-            missingPreKeys.add(preKey);
-          } catch (e) {
-            debugPrint(
-              '[SIGNAL SERVICE][PREKEY_SYNC] ⚠️ Failed to load PreKey $id: $e',
-            );
-          }
-        }
-
-        if (missingPreKeys.isNotEmpty) {
-          final preKeysPayload = missingPreKeys
-              .map(
-                (pk) => {
-                  'id': pk.id,
-                  'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
-                },
-              )
-              .toList();
-          SocketService().emit("storePreKeys", <String, dynamic>{
-            'preKeys': preKeysPayload,
-          });
-          debugPrint(
-            '[SIGNAL SERVICE][PREKEY_SYNC] ✓ Uploaded ${missingPreKeys.length} missing PreKeys',
-          );
-        }
-      }
-
-      // Check if we need to generate new PreKeys
-      final remainingCount = localPreKeyIds.length - consumedPreKeyIds.length;
-      if (remainingCount < 20) {
-        debugPrint(
-          '[SIGNAL SERVICE][PREKEY_SYNC] ⚠️ Only $remainingCount PreKeys remaining after sync',
-        );
-        debugPrint(
-          '[SIGNAL SERVICE][PREKEY_SYNC] → Triggering prekey regeneration...',
-        );
-
-        // Use checkPreKeys for batch regeneration (more efficient than individual)
-        try {
-          await preKeyStore.checkPreKeys();
-          debugPrint(
-            '[SIGNAL SERVICE][PREKEY_SYNC] ✓ PreKey regeneration completed',
-          );
-        } catch (e) {
-          debugPrint(
-            '[SIGNAL SERVICE][PREKEY_SYNC] ⚠️ PreKey regeneration failed: $e',
-          );
-          // Don't fallback to individual regeneration - it would spam the server
-          // checkPreKeys will be retried on next sync or before next message send
-        }
-      }
-
-      debugPrint(
-        '[SIGNAL SERVICE][PREKEY_SYNC] ✅ PreKey sync completed successfully',
-      );
-    } catch (e, stackTrace) {
-      debugPrint(
-        '[SIGNAL SERVICE][PREKEY_SYNC] ❌ Error during PreKey sync: $e',
-      );
-      debugPrint('[SIGNAL SERVICE][PREKEY_SYNC] Stack trace: $stackTrace');
-    }
   }
 
   Future<void> _ensureSignalKeysPresent(dynamic status) async {
@@ -3637,18 +3168,6 @@ class SignalService {
     if (_deliveryCallbacks.containsKey('default')) {
       for (final callback in _deliveryCallbacks['default']!) {
         callback(itemId);
-      }
-    }
-  }
-
-  /// Handle group message read receipt (from Socket.IO)
-  void _handleGroupMessageReadReceipt(Map<String, dynamic> data) {
-    debugPrint('[SIGNAL SERVICE] Group message read receipt received: $data');
-
-    // Trigger callbacks with the full receipt data
-    if (_itemTypeCallbacks.containsKey('groupMessageReadReceipt')) {
-      for (final callback in _itemTypeCallbacks['groupMessageReadReceipt']!) {
-        callback(data);
       }
     }
   }

@@ -452,4 +452,83 @@ class SessionManager {
     }
     return true;
   }
+
+  // ============================================================================
+  // SESSION EVENT HANDLERS (Socket.IO Integration)
+  // ============================================================================
+
+  /// Handle session invalidation from remote party
+  ///
+  /// When a remote user deletes their session with us (e.g., due to errors,
+  /// device reset, or security policy), we need to delete our session with them
+  /// to stay synchronized.
+  ///
+  /// Called by: SessionListeners when 'sessionInvalidated' socket event fires
+  Future<void> handleSessionInvalidation(String userId, int deviceId) async {
+    try {
+      debugPrint(
+        '[SESSION_MANAGER] Handling session invalidation from $userId:$deviceId',
+      );
+
+      final address = SignalProtocolAddress(userId, deviceId);
+
+      // Check if we have a session
+      if (await sessionStore.containsSession(address)) {
+        // Delete the session
+        await sessionStore.deleteSession(address);
+        debugPrint(
+          '[SESSION_MANAGER] ✓ Deleted session with $userId:$deviceId due to remote invalidation',
+        );
+      } else {
+        debugPrint(
+          '[SESSION_MANAGER] No session exists with $userId:$deviceId, nothing to delete',
+        );
+      }
+
+      // Session will be re-established on next message send
+    } catch (e, stack) {
+      debugPrint('[SESSION_MANAGER] Error handling session invalidation: $e');
+      debugPrint('[SESSION_MANAGER] Stack: $stack');
+      // Don't rethrow - this is a cleanup operation
+    }
+  }
+
+  /// Handle identity key change from remote party
+  ///
+  /// When a remote user rotates their identity key (e.g., security policy,
+  /// suspected compromise, or device reinstall), we need to:
+  /// 1. Delete all sessions with that user
+  /// 2. Trust the new identity key on next contact
+  ///
+  /// Called by: SessionListeners when 'identityKeyChanged' socket event fires
+  Future<void> handleIdentityKeyChange(String userId) async {
+    try {
+      debugPrint('[SESSION_MANAGER] Handling identity key change for $userId');
+
+      // Delete all sessions with this user (all devices)
+      // We only know the userId, not specific deviceIds
+      // In a full implementation, you'd enumerate all sessions for this user
+
+      // For now, delete the primary session (device 1)
+      final primaryAddress = SignalProtocolAddress(userId, 1);
+      if (await sessionStore.containsSession(primaryAddress)) {
+        await sessionStore.deleteSession(primaryAddress);
+        debugPrint(
+          '[SESSION_MANAGER] ✓ Deleted primary session with $userId due to identity key change',
+        );
+      }
+
+      // TODO: Implement session enumeration to delete ALL sessions for this user
+      // This would require enhancing the session store to query by userId
+
+      // The new identity key will be trusted automatically on next session establishment
+      debugPrint(
+        '[SESSION_MANAGER] Sessions with $userId will be re-established with new identity key',
+      );
+    } catch (e, stack) {
+      debugPrint('[SESSION_MANAGER] Error handling identity key change: $e');
+      debugPrint('[SESSION_MANAGER] Stack: $stack');
+      // Don't rethrow - this is a cleanup operation
+    }
+  }
 }
