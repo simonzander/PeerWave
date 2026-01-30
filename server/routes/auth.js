@@ -1594,7 +1594,7 @@ authRoutes.post('/webauthn/authenticate-challenge', async (req, res) => {
     } catch (error) {
         logger.error('[WEBAUTHN AUTH] Error generating challenge', error);
         if(error.code === 401 && error.email) {
-            const otp = Math.floor(100000 + Math.random() * 900000); // Generate a 6-digit OTP
+            const otp = Math.floor(10000 + Math.random() * 90000); // Generate a 5-digit OTP
             const email = error.email; // Get the registered email
             
             // Send recovery email (if SMTP is configured)
