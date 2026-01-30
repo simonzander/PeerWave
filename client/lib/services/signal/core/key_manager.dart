@@ -2,11 +2,22 @@ import 'package:flutter/foundation.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'dart:convert';
 import '../../api_service.dart';
+import '../../socket_service.dart'
+    if (dart.library.io) '../../socket_service_native.dart';
 import '../../permanent_identity_key_store.dart';
 import '../../permanent_pre_key_store.dart';
 import '../../permanent_signed_pre_key_store.dart';
 import '../../sender_key_store.dart';
 import '../../../core/metrics/key_management_metrics.dart';
+import 'healing_service.dart';
+import 'key/identity_key_manager.dart';
+import 'key/signed_pre_key_manager.dart';
+import 'key/pre_key_manager.dart';
+
+// Export specialized managers for external use
+export 'key/identity_key_manager.dart';
+export 'key/signed_pre_key_manager.dart';
+export 'key/pre_key_manager.dart';
 
 /// Manages Signal Protocol cryptographic keys
 ///
@@ -17,7 +28,8 @@ import '../../../core/metrics/key_management_metrics.dart';
 /// - Key upload via REST API
 /// - Store creation and initialization
 ///
-/// This class is the source of truth for all key operations
+/// This class coordinates specialized key managers and is the source of truth
+/// for all key operations.
 ///
 /// Usage:
 /// ```dart
@@ -35,6 +47,11 @@ class SignalKeyManager {
   PermanentPreKeyStore? _preKeyStore;
   PermanentSignedPreKeyStore? _signedPreKeyStore;
   PermanentSenderKeyStore? _senderKeyStore;
+
+  // Specialized key managers
+  IdentityKeyManager? _identityKeyManager;
+  SignedPreKeyManager? _signedPreKeyManager;
+  PreKeyManager? _preKeyManager;
 
   bool _initialized = false;
 
@@ -58,6 +75,24 @@ class SignalKeyManager {
   PermanentSenderKeyStore get senderKeyStore {
     if (_senderKeyStore == null) throw StateError('KeyManager not initialized');
     return _senderKeyStore!;
+  }
+
+  // Getters for specialized managers
+  IdentityKeyManager get identityKeyManager {
+    if (_identityKeyManager == null)
+      throw StateError('KeyManager not initialized');
+    return _identityKeyManager!;
+  }
+
+  SignedPreKeyManager get signedPreKeyManager {
+    if (_signedPreKeyManager == null)
+      throw StateError('KeyManager not initialized');
+    return _signedPreKeyManager!;
+  }
+
+  PreKeyManager get preKeyManager {
+    if (_preKeyManager == null) throw StateError('KeyManager not initialized');
+    return _preKeyManager!;
   }
 
   bool get isInitialized => _initialized;
@@ -90,8 +125,16 @@ class SignalKeyManager {
     _signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
     _senderKeyStore = await PermanentSenderKeyStore.create();
 
+    // Initialize specialized managers
+    _identityKeyManager = IdentityKeyManager(_identityStore!);
+    _signedPreKeyManager = SignedPreKeyManager(
+      _identityStore!,
+      _signedPreKeyStore!,
+    );
+    _preKeyManager = PreKeyManager(_preKeyStore!);
+
     // Validate keys exist
-    await ensureIdentityKeyExists();
+    await _identityKeyManager!.ensureIdentityKeyExists();
 
     debugPrint('[KEY_MANAGER] ✓ Initialized');
     _initialized = true;
@@ -152,6 +195,15 @@ class SignalKeyManager {
     final identityKeyPair = await _identityStore!.getIdentityKeyPair();
     _signedPreKeyStore = PermanentSignedPreKeyStore(identityKeyPair);
     _senderKeyStore = await PermanentSenderKeyStore.create();
+
+    // Initialize specialized managers
+    _identityKeyManager = IdentityKeyManager(_identityStore!);
+    _signedPreKeyManager = SignedPreKeyManager(
+      _identityStore!,
+      _signedPreKeyStore!,
+    );
+    _preKeyManager = PreKeyManager(_preKeyStore!);
+
     currentStep++;
     updateProgress('Identity key pair ready', currentStep);
     await Future.delayed(const Duration(milliseconds: 50));
@@ -173,63 +225,14 @@ class SignalKeyManager {
     updateProgress('Signed pre key ready', currentStep);
     await Future.delayed(const Duration(milliseconds: 50));
 
-    // Step 3: Generate PreKeys (110 keys)
+    // Step 3: Generate PreKeys (110 keys) - Delegate to PreKeyManager
     var existingPreKeyIds = await _preKeyStore!.getAllPreKeyIds();
-
-    // Cleanup excess PreKeys if > 110
-    const int targetPrekeys = 110;
-    if (existingPreKeyIds.length > targetPrekeys) {
-      debugPrint(
-        '[KEY_MANAGER] Found ${existingPreKeyIds.length} PreKeys (expected $targetPrekeys)',
-      );
-      debugPrint('[KEY_MANAGER] Deleting excess PreKeys...');
-
-      final sortedIds = List<int>.from(existingPreKeyIds)..sort();
-      final toDelete = sortedIds.skip(targetPrekeys).toList();
-      for (final id in toDelete) {
-        await _preKeyStore!.removePreKey(id, sendToServer: true);
-      }
-
-      existingPreKeyIds = sortedIds.take(targetPrekeys).toList();
-      debugPrint(
-        '[KEY_MANAGER] Cleanup complete, now have ${existingPreKeyIds.length} PreKeys',
-      );
-    }
-
-    final neededPreKeys = targetPrekeys - existingPreKeyIds.length;
-
-    if (neededPreKeys > 0) {
-      debugPrint('[KEY_MANAGER] Need to generate $neededPreKeys pre keys');
-
-      try {
-        await _preKeyStore!.checkPreKeys();
-        final updatedIds = await _preKeyStore!.getAllPreKeyIds();
-        final keysGenerated = updatedIds.length - existingPreKeyIds.length;
-
-        debugPrint('[KEY_MANAGER] ✓ Generated $keysGenerated PreKeys');
-
-        updateProgress(
-          'Pre keys ready (${updatedIds.length}/110)',
-          currentStep + keysGenerated,
-        );
-        currentStep += keysGenerated;
-
-        if (keysGenerated > 0) {
-          KeyManagementMetrics.recordPreKeyRegeneration(
-            keysGenerated,
-            reason: 'Initialization',
-          );
-        }
-      } catch (e) {
-        debugPrint('[KEY_MANAGER] ⚠️ PreKey generation failed: $e');
-      }
-    } else {
-      debugPrint(
-        '[KEY_MANAGER] Pre keys already sufficient (${existingPreKeyIds.length}/$targetPrekeys)',
-      );
-      currentStep = totalSteps;
-      updateProgress('Pre keys already ready', currentStep);
-    }
+    await _preKeyManager!.generatePreKeysForInit(
+      onProgress,
+      currentStep,
+      existingPreKeyIds,
+    );
+    currentStep = 112; // Update to final step count
 
     // Final progress update
     updateProgress('Signal Protocol ready', totalSteps);
@@ -239,67 +242,16 @@ class SignalKeyManager {
   }
 
   /// Regenerate PreKeys when already initialized but PreKeys are missing
+  /// Delegates to PreKeyManager
   Future<void> _regeneratePreKeysWithProgress(
     Function(String statusText, int current, int total, double percentage)
     onProgress,
     List<int> existingPreKeyIds,
   ) async {
-    const int totalSteps = 110;
-    int currentStep = existingPreKeyIds.length;
-
-    void updateProgress(String status, int step) {
-      final percentage = (step / totalSteps * 100).clamp(0.0, 100.0);
-      onProgress(status, step, totalSteps, percentage);
-    }
-
-    debugPrint('[KEY_MANAGER] Starting PreKey regeneration...');
-    debugPrint(
-      '[KEY_MANAGER] Existing PreKeys: ${existingPreKeyIds.length}/110',
+    await _preKeyManager!.regeneratePreKeysWithProgress(
+      onProgress,
+      existingPreKeyIds,
     );
-
-    // Check for invalid IDs (>= 110)
-    final hasInvalidIds = existingPreKeyIds.any((id) => id >= 110);
-    if (hasInvalidIds) {
-      final invalidIds = existingPreKeyIds.where((id) => id >= 110).toList();
-      debugPrint(
-        '[KEY_MANAGER] ⚠️ Found invalid PreKey IDs (>= 110): $invalidIds',
-      );
-      debugPrint(
-        '[KEY_MANAGER] 🔧 Deleting ALL PreKeys and regenerating fresh set...',
-      );
-
-      for (final id in existingPreKeyIds) {
-        await preKeyStore.removePreKey(id, sendToServer: true);
-      }
-
-      existingPreKeyIds = [];
-      debugPrint(
-        '[KEY_MANAGER] ✓ Cleanup complete, will generate fresh 110 PreKeys',
-      );
-    }
-
-    final neededPreKeys = 110 - existingPreKeyIds.length;
-
-    if (neededPreKeys > 0) {
-      debugPrint('[KEY_MANAGER] Need to generate $neededPreKeys pre keys');
-
-      try {
-        await preKeyStore.checkPreKeys();
-        final updatedIds = await preKeyStore.getAllPreKeyIds();
-        final keysGenerated = updatedIds.length - existingPreKeyIds.length;
-
-        debugPrint('[KEY_MANAGER] ✓ Generated $keysGenerated PreKeys');
-        updateProgress(
-          'Pre keys ready (${updatedIds.length}/110)',
-          currentStep + keysGenerated,
-        );
-      } catch (e) {
-        debugPrint('[KEY_MANAGER] ⚠️ PreKey generation failed: $e');
-      }
-    }
-
-    updateProgress('Signal Protocol ready', totalSteps);
-    debugPrint('[KEY_MANAGER] ✓ PreKey regeneration successful');
   }
 
   /// Validate keys with server
@@ -394,48 +346,23 @@ class SignalKeyManager {
 
   /// Generate and store PreKeys in a range
   /// Returns list of generated PreKey records
+  /// Delegates to PreKeyManager
   Future<List<PreKeyRecord>> generatePreKeysInRange(int start, int end) async {
-    debugPrint(
-      '[KEY_MANAGER] Generating PreKeys from $start to $end (${end - start + 1} keys)',
-    );
-
-    final preKeys = generatePreKeys(start, end);
-
-    for (final preKey in preKeys) {
-      await preKeyStore.storePreKey(preKey.id, preKey);
-    }
-
-    debugPrint('[KEY_MANAGER] ✓ Generated ${preKeys.length} PreKeys');
-    return preKeys;
+    return await _preKeyManager!.generatePreKeysInRange(start, end);
   }
 
   /// Generate and store a new SignedPreKey
   /// Returns the generated SignedPreKey record
+  /// Delegates to SignedPreKeyManager
   Future<SignedPreKeyRecord> generateNewSignedPreKey(int keyId) async {
-    debugPrint('[KEY_MANAGER] Generating SignedPreKey with ID $keyId');
-
-    final identityKeyPair = await identityStore.getIdentityKeyPair();
-    final signedPreKey = generateSignedPreKey(identityKeyPair, keyId);
-
-    await signedPreKeyStore.storeSignedPreKey(keyId, signedPreKey);
-
-    debugPrint('[KEY_MANAGER] ✓ Generated SignedPreKey');
-    return signedPreKey;
+    return await _signedPreKeyManager!.generateNewSignedPreKey(keyId);
   }
 
   /// Ensure identity key pair exists, generate if missing
   /// Returns the identity key pair
-  ///
-  /// Note: The identity store handles generation automatically via getIdentityKeyPairData()
-  /// This method just ensures the key pair is loaded
+  /// Delegates to IdentityKeyManager
   Future<IdentityKeyPair> ensureIdentityKeyExists() async {
-    try {
-      // This will auto-generate if missing
-      return await identityStore.getIdentityKeyPair();
-    } catch (e) {
-      debugPrint('[KEY_MANAGER] Error ensuring identity key exists: $e');
-      rethrow;
-    }
+    return await _identityKeyManager!.ensureIdentityKeyExists();
   }
 
   // ============================================================================
@@ -443,66 +370,28 @@ class SignalKeyManager {
   // ============================================================================
 
   /// Get local identity public key as base64 string
+  /// Delegates to IdentityKeyManager
   Future<String?> getLocalIdentityPublicKey() async {
-    try {
-      final identity = await identityStore.getIdentityKeyPairData();
-      return identity['publicKey'];
-    } catch (e) {
-      debugPrint('[KEY_MANAGER] Error getting local identity public key: $e');
-      return null;
-    }
+    return await _identityKeyManager!.getLocalIdentityPublicKey();
   }
 
   /// Get latest SignedPreKey ID
+  /// Delegates to SignedPreKeyManager
   Future<int?> getLatestSignedPreKeyId() async {
-    try {
-      final keys = await signedPreKeyStore.loadSignedPreKeys();
-      return keys.isNotEmpty ? keys.last.id : null;
-    } catch (e) {
-      debugPrint('[KEY_MANAGER] Error getting latest SignedPreKey ID: $e');
-      return null;
-    }
+    return await _signedPreKeyManager!.getLatestSignedPreKeyId();
   }
 
   /// Get local PreKey count
+  /// Delegates to PreKeyManager
   Future<int> getLocalPreKeyCount() async {
-    try {
-      final ids = await preKeyStore.getAllPreKeyIds();
-      return ids.length;
-    } catch (e) {
-      debugPrint('[KEY_MANAGER] Error getting local PreKey count: $e');
-      return 0;
-    }
+    return await _preKeyManager!.getLocalPreKeyCount();
   }
 
   /// Generate PreKey fingerprints (hashes) for validation
   /// Returns map of keyId -> hash for all keys
+  /// Delegates to PreKeyManager
   Future<Map<String, String>> getPreKeyFingerprints() async {
-    try {
-      final keyIds = await preKeyStore.getAllPreKeyIds();
-      final fingerprints = <String, String>{};
-
-      for (final id in keyIds) {
-        try {
-          final preKey = await preKeyStore.loadPreKey(id);
-          final publicKeyBytes = preKey.getKeyPair().publicKey.serialize();
-          final hash = base64Encode(publicKeyBytes);
-          fingerprints[id.toString()] = hash;
-        } catch (e) {
-          debugPrint(
-            '[KEY_MANAGER] Failed to get fingerprint for PreKey $id: $e',
-          );
-        }
-      }
-
-      debugPrint(
-        '[KEY_MANAGER] Generated ${fingerprints.length} PreKey fingerprints',
-      );
-      return fingerprints;
-    } catch (e) {
-      debugPrint('[KEY_MANAGER] Error generating PreKey fingerprints: $e');
-      return {};
-    }
+    return await _preKeyManager!.getPreKeyFingerprints();
   }
 
   // ============================================================================
@@ -510,42 +399,21 @@ class SignalKeyManager {
   // ============================================================================
 
   /// Check if SignedPreKey needs rotation (older than 7 days)
+  /// Delegates to SignedPreKeyManager
   Future<bool> needsSignedPreKeyRotation() async {
-    return await signedPreKeyStore.needsRotation();
+    return await _signedPreKeyManager!.needsSignedPreKeyRotation();
   }
 
   /// Rotate SignedPreKey and upload to server
+  /// Delegates to SignedPreKeyManager
   Future<void> rotateSignedPreKey() async {
-    try {
-      debugPrint('[KEY_MANAGER] Starting SignedPreKey rotation...');
-
-      final identityKeyPair = await identityStore.getIdentityKeyPair();
-      await signedPreKeyStore.rotateSignedPreKey(identityKeyPair);
-
-      debugPrint('[KEY_MANAGER] ✓ SignedPreKey rotation completed');
-    } catch (e, stackTrace) {
-      debugPrint('[KEY_MANAGER] Error during SignedPreKey rotation: $e');
-      debugPrint('[KEY_MANAGER] Stack trace: $stackTrace');
-      rethrow;
-    }
+    return await _signedPreKeyManager!.rotateSignedPreKey();
   }
 
   /// Check and perform SignedPreKey rotation if needed
+  /// Delegates to SignedPreKeyManager
   Future<void> checkAndRotateSignedPreKey() async {
-    try {
-      final needsRotation = await needsSignedPreKeyRotation();
-      if (needsRotation) {
-        debugPrint('[KEY_MANAGER] SignedPreKey rotation needed');
-        await rotateSignedPreKey();
-      } else {
-        debugPrint(
-          '[KEY_MANAGER] SignedPreKey rotation not needed (< 7 days old)',
-        );
-      }
-    } catch (e, stackTrace) {
-      debugPrint('[KEY_MANAGER] Error during rotation check: $e');
-      debugPrint('[KEY_MANAGER] Stack trace: $stackTrace');
-    }
+    return await _signedPreKeyManager!.checkAndRotateSignedPreKey();
   }
 
   // ============================================================================
@@ -553,72 +421,21 @@ class SignalKeyManager {
   // ============================================================================
 
   /// Upload identity key to server
+  /// Delegates to IdentityKeyManager
   Future<void> uploadIdentityKey() async {
-    debugPrint('[KEY_MANAGER] Uploading identity key to server...');
-
-    final identityData = await identityStore.getIdentityKeyPairData();
-    final registrationId = await identityStore.getLocalRegistrationId();
-
-    final response = await ApiService.post(
-      '/signal/identity',
-      data: {
-        'publicKey': identityData['publicKey'],
-        'registrationId': registrationId.toString(),
-      },
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to upload identity: ${response.statusCode}');
-    }
-
-    debugPrint('[KEY_MANAGER] ✓ Identity key uploaded');
+    return await _identityKeyManager!.uploadIdentityKey();
   }
 
   /// Upload SignedPreKey to server
+  /// Delegates to SignedPreKeyManager
   Future<void> uploadSignedPreKey(SignedPreKeyRecord signedPreKey) async {
-    debugPrint('[KEY_MANAGER] Uploading SignedPreKey to server...');
-
-    final response = await ApiService.post(
-      '/signal/signedprekey',
-      data: {
-        'id': signedPreKey.id,
-        'data': base64Encode(signedPreKey.getKeyPair().publicKey.serialize()),
-        'signature': base64Encode(signedPreKey.signature),
-      },
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to upload SignedPreKey: ${response.statusCode}');
-    }
-
-    debugPrint('[KEY_MANAGER] ✓ SignedPreKey uploaded');
+    return await _signedPreKeyManager!.uploadSignedPreKey(signedPreKey);
   }
 
   /// Upload PreKeys to server in batch
+  /// Delegates to PreKeyManager
   Future<void> uploadPreKeys(List<PreKeyRecord> preKeys) async {
-    debugPrint(
-      '[KEY_MANAGER] Uploading ${preKeys.length} PreKeys to server...',
-    );
-
-    final preKeysPayload = preKeys
-        .map(
-          (pk) => {
-            'id': pk.id,
-            'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
-          },
-        )
-        .toList();
-
-    final response = await ApiService.post(
-      '/signal/prekeys/batch',
-      data: {'preKeys': preKeysPayload},
-    );
-
-    if (response.statusCode != 200 && response.statusCode != 202) {
-      throw Exception('Failed to upload PreKeys: ${response.statusCode}');
-    }
-
-    debugPrint('[KEY_MANAGER] ✓ ${preKeys.length} PreKeys uploaded');
+    return await _preKeyManager!.uploadPreKeys(preKeys);
   }
 
   /// Delete all keys on server
@@ -897,60 +714,535 @@ class SignalKeyManager {
   /// our local store and upload any PreKeys that the server is missing.
   ///
   /// Called by: SessionListeners when 'preKeyIdsSyncResponse' socket event fires
+  /// Delegates to PreKeyManager
   Future<void> syncPreKeyIds(List<int> serverKeyIds) async {
-    try {
+    return await _preKeyManager!.syncPreKeyIds(serverKeyIds);
+  }
+
+  // ============================================================================
+  // KEY VALIDATION AND SYNC (Moved from SignalService)
+  // ============================================================================
+
+  /// Validate and sync keys with server (signalStatus response handler)
+  ///
+  /// This is the main entry point for key validation, called when server
+  /// sends signalStatus response. Performs comprehensive validation:
+  /// - Identity key matching
+  /// - SignedPreKey validation
+  /// - PreKey count synchronization
+  ///
+  /// Auto-recovers from most issues by re-uploading correct keys.
+  ///
+  /// Parameters:
+  /// - status: Server response from signalStatus event
+  /// - isInitialized: Whether signal service is fully initialized
+  /// - healingService: Optional healing service for corruption recovery
+  /// - currentUserId: Current user UUID (for healing)
+  /// - currentDeviceId: Current device ID (for healing)
+  Future<void> validateAndSyncKeys({
+    required dynamic status,
+    required bool isInitialized,
+    SignalHealingService? healingService,
+    String? currentUserId,
+    int? currentDeviceId,
+  }) async {
+    debugPrint('[KEY_MANAGER][VALIDATION] validateAndSyncKeys called');
+
+    // Check if user is authenticated
+    if (status is Map && status['error'] != null) {
       debugPrint(
-        '[KEY_MANAGER] Syncing PreKey IDs (server has ${serverKeyIds.length})',
+        '[KEY_MANAGER][VALIDATION] ERROR: ${status['error']} - Cannot upload Signal keys without authentication',
+      );
+      return;
+    }
+
+    // Guard: Only run after initialization is complete
+    if (!isInitialized) {
+      debugPrint(
+        '[KEY_MANAGER][VALIDATION] ⚠️ Not initialized yet, skipping key sync check',
+      );
+      return;
+    }
+
+    // 1. Identity - Validate that server's public key matches local identity
+    final identityData = await identityStore.getIdentityKeyPairData();
+    final localPublicKey = identityData['publicKey'] as String;
+    final serverPublicKey = (status is Map)
+        ? status['identityPublicKey'] as String?
+        : null;
+
+    debugPrint('[KEY_MANAGER][VALIDATION] Local public key: $localPublicKey');
+    debugPrint('[KEY_MANAGER][VALIDATION] Server public key: $serverPublicKey');
+
+    if (serverPublicKey != null && serverPublicKey != localPublicKey) {
+      // CRITICAL: Server has different public key than local!
+      debugPrint(
+        '[KEY_MANAGER][VALIDATION] ⚠️ CRITICAL: Identity key mismatch detected!',
+      );
+      debugPrint(
+        '[KEY_MANAGER][VALIDATION] → AUTO-RECOVERY: Re-uploading correct identity from client',
       );
 
-      // Get local PreKey IDs
-      final localKeyIds = <int>[];
-      for (int id = 1; id <= 110; id++) {
-        try {
-          await preKeyStore.loadPreKey(id);
-          localKeyIds.add(id);
-        } catch (e) {
-          // Key doesn't exist locally
-        }
-      }
-
-      debugPrint('[KEY_MANAGER] Local PreKeys: ${localKeyIds.length}');
-
-      // Find PreKeys that exist locally but not on server
-      final missingOnServer = localKeyIds
-          .where((id) => !serverKeyIds.contains(id))
-          .toList();
-
-      if (missingOnServer.isEmpty) {
-        debugPrint('[KEY_MANAGER] ✓ Server has all local PreKeys');
-        return;
-      }
-
-      debugPrint(
-        '[KEY_MANAGER] Server missing ${missingOnServer.length} PreKeys: $missingOnServer',
-      );
-
-      // Upload missing PreKeys
-      final preKeysToUpload = <PreKeyRecord>[];
-      for (final id in missingOnServer) {
-        try {
-          final preKey = await preKeyStore.loadPreKey(id);
-          preKeysToUpload.add(preKey);
-        } catch (e) {
-          debugPrint('[KEY_MANAGER] Failed to load PreKey $id: $e');
-        }
-      }
-
-      if (preKeysToUpload.isNotEmpty) {
-        await uploadPreKeys(preKeysToUpload);
+      // 🔧 AUTO-FIX: Client is source of truth - re-upload correct identity
+      try {
         debugPrint(
-          '[KEY_MANAGER] ✓ Uploaded ${preKeysToUpload.length} missing PreKeys',
+          '[KEY_MANAGER][VALIDATION] Deleting incorrect server identity...',
+        );
+        SocketService().emit("deleteAllSignalKeys", {
+          'reason':
+              'Identity key mismatch - server has wrong key, re-uploading from client',
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+
+        await Future.delayed(Duration(milliseconds: 500));
+
+        debugPrint(
+          '[KEY_MANAGER][VALIDATION] Uploading correct identity from local storage...',
+        );
+        final registrationId = await identityStore.getLocalRegistrationId();
+        SocketService().emit("signalIdentity", {
+          'publicKey': localPublicKey,
+          'registrationId': registrationId.toString(),
+        });
+
+        await Future.delayed(Duration(milliseconds: 500));
+
+        debugPrint(
+          '[KEY_MANAGER][VALIDATION] Uploading SignedPreKey and PreKeys...',
+        );
+        await uploadSignedPreKeyAndPreKeys();
+
+        debugPrint(
+          '[KEY_MANAGER][VALIDATION] ✅ Identity mismatch resolved - server now has correct keys',
+        );
+        return; // Skip rest of validation - keys are fresh
+      } catch (e) {
+        debugPrint('[KEY_MANAGER][VALIDATION] ❌ Auto-recovery failed: $e');
+        throw Exception(
+          'Identity key mismatch detected and auto-recovery failed. '
+          'Server has different public key than local storage. '
+          'Please logout and login again to fix this issue.',
         );
       }
-    } catch (e, stack) {
-      debugPrint('[KEY_MANAGER] Error syncing PreKey IDs: $e');
-      debugPrint('[KEY_MANAGER] Stack: $stack');
-      // Don't rethrow - this is a sync operation
+    }
+
+    if (status is Map && status['identity'] != true) {
+      debugPrint('[KEY_MANAGER][VALIDATION] Uploading missing identity');
+      final registrationId = await identityStore.getLocalRegistrationId();
+      SocketService().emit("signalIdentity", {
+        'publicKey': localPublicKey,
+        'registrationId': registrationId.toString(),
+      });
+    } else if (serverPublicKey != null) {
+      debugPrint(
+        '[KEY_MANAGER][VALIDATION] ✓ Identity key validated - local matches server',
+      );
+
+      // 🔍 DEEP VALIDATION: Check if server state is internally consistent
+      await validateServerKeyConsistency(
+        status: Map<String, dynamic>.from(status as Map),
+        healingService: healingService,
+        currentUserId: currentUserId,
+        currentDeviceId: currentDeviceId,
+      );
+    }
+
+    // 2. PreKeys - Sync check
+    final int preKeysCount = (status is Map && status['preKeys'] is int)
+        ? status['preKeys']
+        : 0;
+    debugPrint(
+      '[KEY_MANAGER][VALIDATION] ========================================',
+    );
+    debugPrint('[KEY_MANAGER][VALIDATION] PreKey Sync Check:');
+    debugPrint('[KEY_MANAGER][VALIDATION]   Server count: $preKeysCount');
+
+    final localPreKeyIds = await preKeyStore.getAllPreKeyIds();
+    debugPrint(
+      '[KEY_MANAGER][VALIDATION]   Local count:  ${localPreKeyIds.length}',
+    );
+    debugPrint(
+      '[KEY_MANAGER][VALIDATION]   Difference:   ${localPreKeyIds.length - preKeysCount}',
+    );
+    debugPrint(
+      '[KEY_MANAGER][VALIDATION] ========================================',
+    );
+
+    if (preKeysCount < 20) {
+      // Server critically low
+      if (localPreKeyIds.isEmpty) {
+        debugPrint(
+          '[KEY_MANAGER][VALIDATION] ⚠️ CRITICAL: No local PreKeys found!',
+        );
+        return;
+      } else if (preKeysCount == 0) {
+        debugPrint(
+          '[KEY_MANAGER][VALIDATION] ⚠️ Server has 0 PreKeys but local has ${localPreKeyIds.length}',
+        );
+        debugPrint(
+          '[KEY_MANAGER][VALIDATION] Uploading local PreKeys to server (first-time sync)...',
+        );
+        final localPreKeys = await preKeyStore.getAllPreKeys();
+        final preKeysPayload = localPreKeys
+            .map(
+              (pk) => {
+                'id': pk.id,
+                'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
+              },
+            )
+            .toList();
+        SocketService().emit("storePreKeys", <String, dynamic>{
+          'preKeys': preKeysPayload,
+        });
+      } else if (preKeysCount < localPreKeyIds.length) {
+        debugPrint(
+          '[KEY_MANAGER][VALIDATION] ⚠️ Sync gap: Server has $preKeysCount, local has ${localPreKeyIds.length}',
+        );
+
+        final preKeysToUpload = [];
+        for (final keyId in localPreKeyIds) {
+          final keyRecord = await preKeyStore.loadPreKey(keyId);
+          final keyPair = keyRecord.getKeyPair();
+          preKeysToUpload.add({
+            'id': keyId,
+            'key': base64Encode(keyPair.publicKey.serialize()),
+          });
+        }
+
+        if (preKeysToUpload.isNotEmpty) {
+          debugPrint(
+            '[KEY_MANAGER][VALIDATION] 📤 Uploading ${preKeysToUpload.length} PreKeys to close sync gap',
+          );
+          SocketService().emit("storePreKeys", <String, dynamic>{
+            'preKeys': preKeysToUpload,
+          });
+        }
+      }
+    } else if (localPreKeyIds.length > preKeysCount) {
+      final difference = localPreKeyIds.length - preKeysCount;
+
+      if (difference > 5) {
+        debugPrint(
+          '[KEY_MANAGER][VALIDATION] 🔄 Local has $difference more PreKeys than server',
+        );
+        SocketService().emit("getMyPreKeyIds", null);
+      }
+    }
+
+    // 3. SignedPreKey
+    final signedPreKey = status is Map ? status['signedPreKey'] : null;
+    if (signedPreKey == null) {
+      debugPrint(
+        '[KEY_MANAGER][VALIDATION] No signed pre-key on server, uploading',
+      );
+      final allSigned = await signedPreKeyStore.loadSignedPreKeys();
+      if (allSigned.isNotEmpty) {
+        final latest = allSigned.last;
+        SocketService().emit("storeSignedPreKey", {
+          'id': latest.id,
+          'data': base64Encode(latest.getKeyPair().publicKey.serialize()),
+          'signature': base64Encode(latest.signature),
+        });
+      }
+    } else {
+      await validateOwnSignedPreKey(Map<String, dynamic>.from(status as Map));
+    }
+  }
+
+  /// Validate owner's own SignedPreKey on the server
+  ///
+  /// Ensures the device owner's SignedPreKey has valid signature.
+  /// Auto-recovers by regenerating if signature is invalid.
+  /// Delegates to SignedPreKeyManager
+  Future<void> validateOwnSignedPreKey(Map<String, dynamic> status) async {
+    return await _signedPreKeyManager!.validateOwnSignedPreKey(status);
+  }
+
+  /// Deep validation of server key consistency
+  ///
+  /// Detects if server has corrupted or inconsistent keys.
+  /// CLIENT IS SOURCE OF TRUTH - if corruption detected, triggers healing.
+  Future<void> validateServerKeyConsistency({
+    required Map<String, dynamic> status,
+    SignalHealingService? healingService,
+    String? currentUserId,
+    int? currentDeviceId,
+  }) async {
+    try {
+      debugPrint(
+        '[KEY_MANAGER][DEEP-VALIDATION] ========================================',
+      );
+      debugPrint(
+        '[KEY_MANAGER][DEEP-VALIDATION] Checking server key consistency...',
+      );
+
+      bool corruptionDetected = false;
+      final List<String> corruptionReasons = [];
+
+      // Get local identity key (source of truth)
+      final identityKeyPair = await identityStore.getIdentityKeyPair();
+      final localIdentityKey = identityKeyPair.getPublicKey();
+      final localPublicKey = Curve.decodePoint(localIdentityKey.serialize(), 0);
+
+      // Validate SignedPreKey consistency with Identity
+      final signedPreKeyData = status['signedPreKey'];
+      if (signedPreKeyData != null) {
+        final signedPreKeyPublicBase64 =
+            signedPreKeyData['signed_prekey_data'] as String?;
+        final signedPreKeySignatureBase64 =
+            signedPreKeyData['signed_prekey_signature'] as String?;
+
+        if (signedPreKeyPublicBase64 != null &&
+            signedPreKeySignatureBase64 != null) {
+          try {
+            final signedPreKeyPublicBytes = base64Decode(
+              signedPreKeyPublicBase64,
+            );
+            final signedPreKeySignatureBytes = base64Decode(
+              signedPreKeySignatureBase64,
+            );
+            final signedPreKeyPublic = Curve.decodePoint(
+              signedPreKeyPublicBytes,
+              0,
+            );
+
+            final isValid = Curve.verifySignature(
+              localPublicKey,
+              signedPreKeyPublic.serialize(),
+              signedPreKeySignatureBytes,
+            );
+
+            if (!isValid) {
+              corruptionDetected = true;
+              corruptionReasons.add(
+                'SignedPreKey signature does NOT match local Identity key',
+              );
+              debugPrint(
+                '[KEY_MANAGER][DEEP-VALIDATION] ❌ SignedPreKey signature invalid!',
+              );
+            } else {
+              debugPrint(
+                '[KEY_MANAGER][DEEP-VALIDATION] ✓ SignedPreKey signature valid',
+              );
+            }
+          } catch (e) {
+            corruptionDetected = true;
+            corruptionReasons.add('SignedPreKey data is malformed: $e');
+            debugPrint(
+              '[KEY_MANAGER][DEEP-VALIDATION] ❌ SignedPreKey malformed: $e',
+            );
+          }
+        } else {
+          corruptionDetected = true;
+          corruptionReasons.add('SignedPreKey missing required fields');
+          debugPrint(
+            '[KEY_MANAGER][DEEP-VALIDATION] ❌ SignedPreKey incomplete',
+          );
+        }
+      } else {
+        corruptionDetected = true;
+        corruptionReasons.add('No SignedPreKey on server');
+        debugPrint(
+          '[KEY_MANAGER][DEEP-VALIDATION] ❌ No SignedPreKey on server',
+        );
+      }
+
+      // Check PreKey count consistency
+      final preKeysCount = (status['preKeys'] is int) ? status['preKeys'] : 0;
+      if (preKeysCount == 0) {
+        final localPreKeyIds = await preKeyStore.getAllPreKeyIds();
+        if (localPreKeyIds.isNotEmpty) {
+          corruptionDetected = true;
+          corruptionReasons.add(
+            'Client has ${localPreKeyIds.length} PreKeys but server has 0',
+          );
+          debugPrint(
+            '[KEY_MANAGER][DEEP-VALIDATION] ❌ PreKeys missing from server',
+          );
+        }
+      }
+
+      debugPrint(
+        '[KEY_MANAGER][DEEP-VALIDATION] ========================================',
+      );
+
+      // If corruption detected, trigger healing
+      if (corruptionDetected) {
+        debugPrint(
+          '[KEY_MANAGER][DEEP-VALIDATION] ⚠️⚠️⚠️  CORRUPTION DETECTED  ⚠️⚠️⚠️',
+        );
+        debugPrint('[KEY_MANAGER][DEEP-VALIDATION] Reasons:');
+        for (final reason in corruptionReasons) {
+          debugPrint('[KEY_MANAGER][DEEP-VALIDATION]   - $reason');
+        }
+
+        if (healingService != null &&
+            currentUserId != null &&
+            currentDeviceId != null) {
+          debugPrint(
+            '[KEY_MANAGER][DEEP-VALIDATION] 🔧 INITIATING AUTO-RECOVERY...',
+          );
+
+          final reinforcementSuccess = await healingService
+              .forceServerKeyReinforcement(
+                userId: currentUserId,
+                deviceId: currentDeviceId,
+              );
+
+          if (reinforcementSuccess) {
+            debugPrint(
+              '[KEY_MANAGER][DEEP-VALIDATION] ✅ Auto-recovery completed - keys uploaded',
+            );
+          } else {
+            debugPrint('[KEY_MANAGER][DEEP-VALIDATION] ❌ Auto-recovery failed');
+          }
+        } else {
+          debugPrint(
+            '[KEY_MANAGER][DEEP-VALIDATION] ⚠️ Cannot trigger healing - missing dependencies',
+          );
+        }
+      } else {
+        debugPrint(
+          '[KEY_MANAGER][DEEP-VALIDATION] ✅ Server keys are consistent and valid',
+        );
+      }
+    } catch (e, stackTrace) {
+      debugPrint(
+        '[KEY_MANAGER][DEEP-VALIDATION] ⚠️ Error during validation: $e',
+      );
+      debugPrint('[KEY_MANAGER][DEEP-VALIDATION] Stack trace: $stackTrace');
+    }
+  }
+
+  /// Upload SignedPreKey and PreKeys only (identity already uploaded separately)
+  ///
+  /// Used when identity was already uploaded and we just need to upload the other keys.
+  /// Part of auto-recovery flow.
+  Future<void> uploadSignedPreKeyAndPreKeys() async {
+    try {
+      debugPrint('[KEY_MANAGER][UPLOAD] Uploading SignedPreKey and PreKeys...');
+      final identityKeyPair = await identityStore.getIdentityKeyPair();
+
+      // Upload SignedPreKey
+      final allSignedPreKeys = await signedPreKeyStore.loadSignedPreKeys();
+      SignedPreKeyRecord signedPreKey;
+
+      if (allSignedPreKeys.isEmpty) {
+        debugPrint(
+          '[KEY_MANAGER][UPLOAD] No local SignedPreKey - generating new one',
+        );
+        signedPreKey = generateSignedPreKey(identityKeyPair, 0);
+        await signedPreKeyStore.storeSignedPreKey(
+          signedPreKey.id,
+          signedPreKey,
+        );
+      } else {
+        signedPreKey = allSignedPreKeys.last;
+
+        // Validate signature before uploading
+        final localPublicKey = Curve.decodePoint(
+          identityKeyPair.getPublicKey().serialize(),
+          0,
+        );
+        final isValid = Curve.verifySignature(
+          localPublicKey,
+          signedPreKey.getKeyPair().publicKey.serialize(),
+          signedPreKey.signature,
+        );
+
+        if (!isValid) {
+          debugPrint(
+            '[KEY_MANAGER][UPLOAD] Local SignedPreKey invalid - regenerating',
+          );
+          signedPreKey = generateSignedPreKey(identityKeyPair, 0);
+          await signedPreKeyStore.storeSignedPreKey(
+            signedPreKey.id,
+            signedPreKey,
+          );
+        }
+      }
+
+      SocketService().emit("storeSignedPreKey", {
+        'id': signedPreKey.id,
+        'data': base64Encode(signedPreKey.getKeyPair().publicKey.serialize()),
+        'signature': base64Encode(signedPreKey.signature),
+      });
+
+      await Future.delayed(Duration(milliseconds: 500));
+
+      // Cleanup old SignedPreKeys
+      final allStoredKeys = await signedPreKeyStore
+          .loadAllStoredSignedPreKeys();
+      if (allStoredKeys.length > 1) {
+        allStoredKeys.sort((a, b) {
+          if (a.createdAt == null) return 1;
+          if (b.createdAt == null) return -1;
+          return b.createdAt!.compareTo(a.createdAt!);
+        });
+
+        for (final key in allStoredKeys) {
+          if (key.record.id == allStoredKeys.first.record.id) continue;
+          SocketService().emit("removeSignedPreKey", <String, dynamic>{
+            'id': key.record.id,
+          });
+        }
+      }
+
+      // Upload PreKeys
+      final localPreKeyIds = await preKeyStore.getAllPreKeyIds();
+
+      if (localPreKeyIds.isEmpty) {
+        debugPrint(
+          '[KEY_MANAGER][UPLOAD] No local PreKeys - generating 110 new ones',
+        );
+        final newPreKeys = generatePreKeys(0, 109);
+        for (final preKey in newPreKeys) {
+          await preKeyStore.storePreKey(preKey.id, preKey);
+        }
+
+        KeyManagementMetrics.recordPreKeyRegeneration(
+          newPreKeys.length,
+          reason: 'Recovery upload',
+        );
+
+        final preKeysPayload = newPreKeys
+            .map(
+              (pk) => {
+                'id': pk.id,
+                'data': base64Encode(pk.getKeyPair().publicKey.serialize()),
+              },
+            )
+            .toList();
+
+        SocketService().emit("storePreKeys", <String, dynamic>{
+          'preKeys': preKeysPayload,
+        });
+      } else {
+        final preKeysPayload = <Map<String, dynamic>>[];
+        for (final id in localPreKeyIds) {
+          try {
+            final preKey = await preKeyStore.loadPreKey(id);
+            preKeysPayload.add({
+              'id': preKey.id,
+              'data': base64Encode(preKey.getKeyPair().publicKey.serialize()),
+            });
+          } catch (e) {
+            debugPrint(
+              '[KEY_MANAGER][UPLOAD] ⚠️ Failed to load PreKey $id: $e',
+            );
+          }
+        }
+
+        SocketService().emit("storePreKeys", <String, dynamic>{
+          'preKeys': preKeysPayload,
+        });
+      }
+
+      debugPrint('[KEY_MANAGER][UPLOAD] ✅ Keys uploaded successfully');
+    } catch (e, stackTrace) {
+      debugPrint('[KEY_MANAGER][UPLOAD] ❌ Error uploading keys: $e');
+      debugPrint('[KEY_MANAGER][UPLOAD] Stack trace: $stackTrace');
+      rethrow;
     }
   }
 }
