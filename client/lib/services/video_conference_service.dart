@@ -230,7 +230,7 @@ class VideoConferenceService extends ChangeNotifier {
         }
       }
 
-      SocketService().registerListener(
+      SocketService.instance.registerListener(
         'video:participants-info',
         listener,
         registrationName: 'VideoConferenceService',
@@ -239,7 +239,7 @@ class VideoConferenceService extends ChangeNotifier {
       debugPrint(
         '[VideoConf] 📤 Emitting video:check-participants for: $meetingId',
       );
-      SocketService().emit('video:check-participants', {
+      SocketService.instance.emit('video:check-participants', {
         'channelId': meetingId,
       });
 
@@ -251,7 +251,7 @@ class VideoConferenceService extends ChangeNotifier {
         },
       );
 
-      SocketService().unregisterListener(
+      SocketService.instance.unregisterListener(
         'video:participants-info',
         registrationName: 'VideoConferenceService',
       );
@@ -1544,7 +1544,7 @@ class VideoConferenceService extends ChangeNotifier {
     // Emit Socket.IO leave event on unexpected disconnection
     if (_currentChannelId != null) {
       try {
-        SocketService().emit('video:leave-channel', {
+        SocketService.instance.emit('video:leave-channel', {
           'channelId': _currentChannelId,
         });
         debugPrint(
@@ -1606,7 +1606,7 @@ class VideoConferenceService extends ChangeNotifier {
       // Emit Socket.IO leave event BEFORE disconnecting from LiveKit
       if (_currentChannelId != null) {
         try {
-          SocketService().emit('video:leave-channel', {
+          SocketService.instance.emit('video:leave-channel', {
             'channelId': _currentChannelId,
           });
           debugPrint('[VideoConf] ✓ Emitted video:leave-channel to server');

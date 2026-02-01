@@ -283,6 +283,8 @@ class IncomingMessageProcessor {
   /// Delete item from server
   void _deleteItemFromServer(String itemId) {
     debugPrint("[INCOMING_PROCESSOR] Deleting item with itemId: $itemId");
-    SocketService().emit("deleteItem", <String, dynamic>{'itemId': itemId});
+    SocketService.instance.emit("deleteItem", <String, dynamic>{
+      'itemId': itemId,
+    });
   }
 }

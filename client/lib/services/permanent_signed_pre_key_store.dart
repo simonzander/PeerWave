@@ -101,7 +101,9 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
 
   PermanentSignedPreKeyStore(this.identityKeyPair) {
     // Listen for incoming signed prekeys from server
-    SocketService().registerListener("getSignedPreKeysResponse", (data) async {
+    SocketService.instance.registerListener("getSignedPreKeysResponse", (
+      data,
+    ) async {
       // Server does not store private keys; nothing to reconstruct here.
       if (data.isEmpty) {
         debugPrint("No signed pre keys found, creating new one");
@@ -196,7 +198,7 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
         debugPrint(
           '[SIGNED_PREKEY_SETUP] Removing old server key: ${key.record.id}',
         );
-        SocketService().emit("removeSignedPreKey", <String, dynamic>{
+        SocketService.instance.emit("removeSignedPreKey", <String, dynamic>{
           'id': key.record.id,
         });
         serverDeleted++;
@@ -219,7 +221,7 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
       '$_keyPrefix${signedPreKeyId}_meta';
 
   Future<void> loadRemoteSignedPreKeys() async {
-    SocketService().emit("getSignedPreKeys", null);
+    SocketService.instance.emit("getSignedPreKeys", null);
   }
 
   @override
@@ -294,7 +296,7 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
         debugPrint(
           "[SIGNED_PREKEY] Auto-cleanup: Removing old server key ${key.record.id} (keeping only $signedPreKeyId)",
         );
-        SocketService().emit("removeSignedPreKey", <String, dynamic>{
+        SocketService.instance.emit("removeSignedPreKey", <String, dynamic>{
           'id': key.record.id,
         });
       }
@@ -335,7 +337,7 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
   @override
   Future<void> removeSignedPreKey(int signedPreKeyId) async {
     debugPrint("Removing signed pre key: $signedPreKeyId");
-    SocketService().emit("removeSignedPreKey", <String, dynamic>{
+    SocketService.instance.emit("removeSignedPreKey", <String, dynamic>{
       'id': signedPreKeyId,
     });
 
@@ -495,7 +497,7 @@ class PermanentSignedPreKeyStore extends SignedPreKeyStore {
         debugPrint(
           '[SIGNED_PREKEY_ROTATION] Removing old server key: ${key.record.id}',
         );
-        SocketService().emit("removeSignedPreKey", <String, dynamic>{
+        SocketService.instance.emit("removeSignedPreKey", <String, dynamic>{
           'id': key.record.id,
         });
         serverDeleted++;

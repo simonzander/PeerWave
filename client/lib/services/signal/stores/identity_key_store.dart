@@ -29,8 +29,22 @@ import '../../api_service.dart';
 /// 3. You DON'T need to manually call saveIdentity() unless handling identity changes
 /// 4. Use removeIdentity() when user blocks/removes contact
 ///
+/// 🌐 Multi-Server Support:
+/// This store is server-scoped via KeyManager.
+/// - apiService: Used for HTTP uploads (server-scoped, knows baseUrl)
+/// - socketService: Used for real-time events (server-scoped, knows serverUrl)
+///
+/// Storage isolation is automatic:
+/// - DeviceIdentityService provides unique deviceId per server
+/// - DeviceScopedStorageService creates isolated databases automatically
+/// - No serverUrl needed in store code!
+///
 /// Uses encrypted device-scoped storage (IndexedDB on web, native storage on desktop)
 mixin PermanentIdentityKeyStore implements IdentityKeyStore {
+  // Abstract getters - provided by KeyManager
+  ApiService get apiService;
+  SocketService get socketService;
+
   final String _storeName = 'peerwaveSignalIdentityKeys';
   final String _keyPrefix = 'identity_';
   IdentityKeyPair? identityKeyPair;
@@ -51,25 +65,6 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
       _storeName,
       _storeName,
       _identityKey(address),
-    );
-
-    if (value != null) {
-      return IdentityKey.fromBytes(base64Decode(value), 0);
-    }
-    return null;
-  }
-
-  /// Get identity key for a specific server (multi-server support)
-  Future<IdentityKey?> getIdentityForServer(
-    SignalProtocolAddress address,
-    String serverUrl,
-  ) async {
-    final storage = DeviceScopedStorageService.instance;
-    final value = await storage.getDecrypted(
-      _storeName,
-      _storeName,
-      _identityKey(address),
-      serverUrl: serverUrl,
     );
 
     if (value != null) {
@@ -240,7 +235,7 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
       final publicKey = await getPublicKey();
       final registrationId = await getLocalRegistrationId();
 
-      final response = await ApiService.post(
+      final response = await apiService.post(
         '/signal/identity',
         data: {
           'publicKey': publicKey,
@@ -257,18 +252,6 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
       debugPrint('[IDENTITY_KEY_STORE] Error uploading identity key: $e');
       rethrow;
     }
-  }
-
-  /// Get identity key pair for a specific server (multi-server support)
-  Future<IdentityKeyPair> getIdentityKeyPairForServer(String serverUrl) async {
-    final identityData = await getIdentityKeyPairDataForServer(serverUrl);
-    final publicKeyBytes = base64Decode(identityData['publicKey']!);
-    final publicKey = Curve.decodePoint(publicKeyBytes, 0);
-    final publicIdentityKey = IdentityKey(publicKey);
-    final privateKey = Curve.decodePrivatePoint(
-      base64Decode(identityData['privateKey']!),
-    );
-    return IdentityKeyPair(publicIdentityKey, privateKey);
   }
 
   @override
@@ -359,38 +342,6 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
       'privateKey': privateKeyBase64,
       'registrationId': registrationId,
     };
-  }
-
-  /// Loads identity key pair data for a specific server (multi-server support)
-  Future<Map<String, String?>> getIdentityKeyPairDataForServer(
-    String serverUrl,
-  ) async {
-    final storage = DeviceScopedStorageService.instance;
-    final encryptedData = await storage.getDecrypted(
-      'peerwaveSignal',
-      'identityKeyPair',
-      'identityKeyPair',
-      serverUrl: serverUrl,
-    );
-
-    if (encryptedData != null && encryptedData is Map) {
-      final publicKeyBase64 = encryptedData['publicKey'] as String?;
-      final privateKeyBase64 = encryptedData['privateKey'] as String?;
-      var regIdObj = encryptedData['registrationId'];
-      final registrationId = regIdObj?.toString();
-
-      if (publicKeyBase64 != null &&
-          privateKeyBase64 != null &&
-          registrationId != null) {
-        return {
-          'publicKey': publicKeyBase64,
-          'privateKey': privateKeyBase64,
-          'registrationId': registrationId,
-        };
-      }
-    }
-
-    throw Exception('No identity key pair found for server: $serverUrl');
   }
 
   Future<Map<String, String>> _generateIdentityKeyPair() async {
@@ -522,7 +473,7 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
       // 5. Request server-side deletion of all keys
       debugPrint('[IDENTITY_KEY_STORE] Requesting server-side key deletion...');
       try {
-        SocketService().emit("deleteAllSignalKeys", {
+        socketService.emit("deleteAllSignalKeys", {
           'reason': 'IdentityKeyPair regenerated',
           'timestamp': DateTime.now().toIso8601String(),
         });

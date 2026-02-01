@@ -49,40 +49,40 @@ class MessageListenerService {
     debugPrint('[MESSAGE_LISTENER] Initializing global message listeners...');
 
     // Listen for 1:1 messages
-    SocketService().registerListener(
+    SocketService.instance.registerListener(
       'receiveItem',
       _handleDirectMessage,
       registrationName: 'MessageListenerService',
     );
 
     // Listen for group messages
-    SocketService().registerListener(
+    SocketService.instance.registerListener(
       'groupItem',
       _handleGroupMessage,
       registrationName: 'MessageListenerService',
     );
 
     // Listen for file share updates (P2P)
-    SocketService().registerListener(
+    SocketService.instance.registerListener(
       'file_share_update',
       _handleFileShareUpdate,
       registrationName: 'MessageListenerService',
     );
 
     // Listen for delivery receipts
-    SocketService().registerListener(
+    SocketService.instance.registerListener(
       'deliveryReceipt',
       _handleDeliveryReceipt,
       registrationName: 'MessageListenerService',
     );
-    SocketService().registerListener(
+    SocketService.instance.registerListener(
       'groupItemDelivered',
       _handleGroupDeliveryReceipt,
       registrationName: 'MessageListenerService',
     );
 
     // Listen for read receipts
-    SocketService().registerListener(
+    SocketService.instance.registerListener(
       'groupItemReadUpdate',
       _handleGroupReadReceipt,
       registrationName: 'MessageListenerService',
@@ -97,7 +97,7 @@ class MessageListenerService {
     if (!_isInitialized) return;
 
     // Unregister all listeners for MessageListenerService
-    SocketService().unregisterAllForName('MessageListenerService');
+    SocketService.instance.unregisterAllForName('MessageListenerService');
 
     _notificationCallbacks.clear();
     _isInitialized = false;

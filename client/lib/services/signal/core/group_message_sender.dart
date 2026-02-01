@@ -245,7 +245,7 @@ class GroupMessageSender {
       if (serialized.isNotEmpty) {
         try {
           final senderKeyBase64 = base64Encode(serialized);
-          SocketService().emit('storeSenderKey', {
+          SocketService.instance.emit('storeSenderKey', {
             'groupId': groupId,
             'senderKey': senderKeyBase64,
           });
@@ -267,7 +267,7 @@ class GroupMessageSender {
           debugPrint(
             '[GROUP_SENDER] Broadcasting sender key distribution message...',
           );
-          SocketService().emit('broadcastSenderKey', {
+          SocketService.instance.emit('broadcastSenderKey', {
             'groupId': groupId,
             'distributionMessage': base64Encode(serialized),
           });
@@ -563,7 +563,7 @@ class GroupMessageSender {
       }
 
       // Send via Socket.IO (always send, even if not stored)
-      SocketService().emit("sendGroupItem", {
+      SocketService.instance.emit("sendGroupItem", {
         'channelId': channelId,
         'itemId': itemId,
         'type': type,
@@ -609,7 +609,7 @@ class GroupMessageSender {
       final senderKeyBase64 = base64Encode(distributionMessage);
 
       // Upload to server
-      SocketService().emit('storeSenderKey', {
+      SocketService.instance.emit('storeSenderKey', {
         'groupId': channelId,
         'senderKey': senderKeyBase64,
       });
@@ -633,7 +633,7 @@ class GroupMessageSender {
         '[GROUP_SENDER] Requesting sender key from $fromUserId for group $groupId',
       );
 
-      SocketService().emit('requestSenderKey', {
+      SocketService.instance.emit('requestSenderKey', {
         'groupId': groupId,
         'fromUserId': fromUserId,
       });

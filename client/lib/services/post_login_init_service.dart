@@ -152,7 +152,7 @@ class PostLoginInitService {
       debugPrint(
         '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Connecting to all Socket.IO servers...',
       );
-      await SocketService().connectAllServers();
+      await SocketService.instance.connectAllServers();
       debugPrint('[POST_LOGIN_INIT] ✓ Socket.IO connected to all servers');
 
       // ========================================

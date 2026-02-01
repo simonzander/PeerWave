@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'key_manager.dart';
 import 'session_manager.dart';
 import '../../device_scoped_storage_service.dart';
@@ -48,7 +50,9 @@ class SignalHealingService {
 
   // Delegate to SessionManager and KeyManager for stores
   PermanentSessionStore get sessionStore => sessionManager.sessionStore;
-  PermanentSenderKeyStore get senderKeyStore => keyManager.senderKeyStore;
+  // KeyManager has PermanentSenderKeyStore mixin, can be used directly
+  PermanentSenderKeyStore get senderKeyStore =>
+      keyManager as PermanentSenderKeyStore;
 
   bool get isInitialized => _initialized;
 
@@ -115,8 +119,7 @@ class SignalHealingService {
       debugPrint('[HEALING] 🛡️ Triggering async self-verification: $reason');
 
       // Run verification asynchronously (non-blocking)
-      keyManager
-          .verifyOwnKeysOnServer(userId, deviceId)
+      verifyOwnKeysOnServer(userId, deviceId)
           .then((isValid) async {
             if (!isValid) {
               debugPrint(
@@ -155,7 +158,7 @@ class SignalHealingService {
 
                 // Re-verify to confirm healing worked
                 debugPrint('[HEALING] 🔍 Re-verifying keys after healing...');
-                final isNowValid = await keyManager.verifyOwnKeysOnServer(
+                final isNowValid = await verifyOwnKeysOnServer(
                   userId,
                   deviceId,
                 );
@@ -430,4 +433,161 @@ class SignalHealingService {
 
   /// Get time of last key reinforcement (for rate limiting)
   DateTime? get lastKeyReinforcementTime => _lastKeyReinforcementTime;
+
+  // ============================================================================
+  // KEY VALIDATION METHODS
+  // ============================================================================
+
+  /// Verify our own keys are valid on the server
+  /// Returns true if all keys are valid, false if corruption detected
+  ///
+  /// Validates:
+  /// - Identity key exists and matches
+  /// - SignedPreKey exists and signature is valid
+  /// - PreKeys exist in adequate quantity
+  /// - PreKey fingerprints match (hash validation)
+  Future<bool> verifyOwnKeysOnServer(String userId, int deviceId) async {
+    try {
+      debugPrint('[HEALING] ========================================');
+      debugPrint('[HEALING] Starting key verification on server...');
+      debugPrint('[HEALING] User: $userId, Device: $deviceId');
+
+      // Fetch key status from server
+      final response = await keyManager.apiService.get(
+        '/signal/status/minimal',
+        queryParameters: {'userId': userId, 'deviceId': deviceId.toString()},
+      );
+
+      final serverData = response.data as Map<String, dynamic>;
+
+      // 1. Verify identity key
+      final serverIdentityKey = serverData['identityKey'] as String?;
+      if (serverIdentityKey == null) {
+        debugPrint('[HEALING] ❌ Server has NO identity key!');
+        return false;
+      }
+
+      final localIdentityKey = await keyManager.getPublicKey();
+      if (serverIdentityKey != localIdentityKey) {
+        debugPrint('[HEALING] ❌ Identity key MISMATCH!');
+        debugPrint('[HEALING]   Local:  $localIdentityKey');
+        debugPrint('[HEALING]   Server: $serverIdentityKey');
+        return false;
+      }
+      debugPrint('[HEALING] ✓ Identity key matches');
+
+      // 2. Verify SignedPreKey
+      final serverSignedPreKey = serverData['signedPreKey'] as String?;
+      final serverSignedPreKeySignature =
+          serverData['signedPreKeySignature'] as String?;
+
+      if (serverSignedPreKey == null || serverSignedPreKeySignature == null) {
+        debugPrint('[HEALING] ❌ Server has NO SignedPreKey!');
+        return false;
+      }
+
+      // Verify SignedPreKey signature
+      try {
+        final identityKeyPair = await keyManager.getIdentityKeyPair();
+        final localPublicKey = Curve.decodePoint(
+          identityKeyPair.getPublicKey().serialize(),
+          0,
+        );
+        final signedPreKeyBytes = base64Decode(serverSignedPreKey);
+        final signatureBytes = base64Decode(serverSignedPreKeySignature);
+
+        final isValid = Curve.verifySignature(
+          localPublicKey,
+          signedPreKeyBytes,
+          signatureBytes,
+        );
+
+        if (!isValid) {
+          debugPrint('[HEALING] ❌ SignedPreKey signature INVALID!');
+          return false;
+        }
+        debugPrint('[HEALING] ✓ SignedPreKey valid');
+      } catch (e) {
+        debugPrint('[HEALING] ❌ SignedPreKey validation error: $e');
+        return false;
+      }
+
+      // 3. Verify PreKeys count
+      final preKeysCount = serverData['preKeysCount'] as int? ?? 0;
+      if (preKeysCount == 0) {
+        debugPrint('[HEALING] ❌ Server has ZERO PreKeys!');
+        return false;
+      }
+
+      if (preKeysCount < 10) {
+        debugPrint('[HEALING] ⚠️ Low PreKey count: $preKeysCount');
+      } else {
+        debugPrint('[HEALING] ✓ PreKeys count adequate: $preKeysCount');
+      }
+
+      // 4. Verify PreKey fingerprints (hash validation)
+      final serverFingerprints =
+          serverData['preKeyFingerprints'] as Map<String, dynamic>?;
+      if (serverFingerprints != null && serverFingerprints.isNotEmpty) {
+        debugPrint('[HEALING] Validating PreKey fingerprints...');
+
+        final localFingerprints = await keyManager.getPreKeyFingerprints();
+
+        int matchCount = 0;
+        int mismatchCount = 0;
+        final mismatches = <String>[];
+
+        // Compare server vs local
+        for (final entry in serverFingerprints.entries) {
+          final keyId = entry.key;
+          final serverHash = entry.value as String?;
+          final localHash = localFingerprints[keyId];
+
+          if (localHash == null) {
+            debugPrint('[HEALING] ⚠️ PreKey $keyId on server but not local');
+            mismatchCount++;
+            mismatches.add(keyId);
+          } else if (serverHash != localHash) {
+            debugPrint('[HEALING] ❌ PreKey $keyId HASH MISMATCH!');
+            mismatchCount++;
+            mismatches.add(keyId);
+          } else {
+            matchCount++;
+          }
+        }
+
+        // Check for local keys not on server
+        for (final keyId in localFingerprints.keys) {
+          if (!serverFingerprints.containsKey(keyId)) {
+            debugPrint('[HEALING] ⚠️ PreKey $keyId local but not on server');
+            mismatchCount++;
+            mismatches.add(keyId);
+          }
+        }
+
+        debugPrint(
+          '[HEALING] PreKey validation: $matchCount matched, $mismatchCount mismatched',
+        );
+
+        if (mismatchCount > 0) {
+          debugPrint(
+            '[HEALING] ❌ PreKey corruption detected! Mismatched: ${mismatches.take(5).join(", ")}',
+          );
+          return false;
+        }
+
+        debugPrint('[HEALING] ✓ All PreKey hashes valid');
+      } else {
+        debugPrint('[HEALING] ⚠️ No PreKey fingerprints from server');
+      }
+
+      debugPrint('[HEALING] ========================================');
+      debugPrint('[HEALING] ✅ All keys verified successfully');
+      return true;
+    } catch (e, stackTrace) {
+      debugPrint('[HEALING] ❌ Verification failed: $e');
+      debugPrint('[HEALING] Stack trace: $stackTrace');
+      return false;
+    }
+  }
 }

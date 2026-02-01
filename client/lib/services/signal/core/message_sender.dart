@@ -520,7 +520,7 @@ class MessageSender {
         }
 
         debugPrint('[MESSAGE_SENDER] Step 10: Sending item via socket');
-        SocketService().emit("sendItem", data);
+        SocketService.instance.emit("sendItem", data);
         successCount++;
 
         final isPreKeyMessage = ciphertextMessage.getType() == 3;

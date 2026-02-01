@@ -19,7 +19,7 @@ class SocketFileClient {
   }
 
   /// Get current socket from SocketService (always uses active server)
-  dynamic get _socket => SocketService().socket;
+  dynamic get _socket => SocketService.instance.socket;
 
   // ============================================
   // FILE ANNOUNCEMENT & DISCOVERY
@@ -38,7 +38,7 @@ class SocketFileClient {
     // Check socket connection
     final socket = _socket;
     if (socket == null) {
-      final isConnected = SocketService().isConnected;
+      final isConnected = SocketService.instance.isConnected;
       throw Exception(
         'Socket not connected (isConnected: $isConnected). Please check your internet connection and try again.',
       );

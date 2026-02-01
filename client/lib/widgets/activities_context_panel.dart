@@ -49,7 +49,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
   }
 
   void _listenToSocketEvents() {
-    final socketService = SocketService();
+    final socketService = SocketService.instance;
     if (socketService.socket == null) {
       debugPrint('[ACTIVITIES_PANEL] Socket not connected');
       return;

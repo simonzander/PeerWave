@@ -305,97 +305,161 @@ class RetryInterceptor extends Interceptor {
 }
 
 class ApiService {
-  static final Dio dio = Dio();
-  static CookieJar? _cookieJar;
-  static bool _initialized = false;
+  static final ApiService _instance = ApiService._internal();
+  static ApiService get instance => _instance;
 
-  /// Get or create cookie jar (persistent for mobile, memory-only for others)
-  static Future<CookieJar> getCookieJar() async {
-    if (_cookieJar != null) {
-      return _cookieJar!;
+  // Multi-server support: serverId/serverKey -> Dio instance
+  final Map<String, Dio> _dioInstances = {};
+  final Map<String, CookieJar> _cookieJars = {};
+
+  /// Private constructor for singleton
+  ApiService._internal() {
+    debugPrint('[API SERVICE] 🏗️ Creating singleton instance');
+  }
+
+  /// Get current server key (web: 'web', native: server.id)
+  String? get _currentServerKey {
+    if (kIsWeb) {
+      return 'web';
+    } else {
+      final activeServer = ServerConfigService.getActiveServer();
+      return activeServer?.id;
+    }
+  }
+
+  /// Get Dio instance for a specific server by key
+  Dio getDioForServer(String serverKey, {String? serverUrl}) {
+    return _dioInstances.putIfAbsent(serverKey, () {
+      final dio = Dio();
+
+      // For web: Always use relative paths (empty baseUrl)
+      // For native: Use the provided serverUrl or get from ServerConfig
+      if (kIsWeb) {
+        dio.options.baseUrl = '';
+        debugPrint('[API SERVICE] Web: using relative paths for $serverKey');
+      } else {
+        String? baseUrl = serverUrl;
+        if (baseUrl == null) {
+          // Try to get from ServerConfigService
+          final server = ServerConfigService.getServerById(serverKey);
+          baseUrl = server?.serverUrl;
+        }
+        if (baseUrl != null) {
+          final cleanBaseUrl = baseUrl.endsWith('/')
+              ? baseUrl.substring(0, baseUrl.length - 1)
+              : baseUrl;
+          dio.options.baseUrl = cleanBaseUrl;
+          debugPrint(
+            '[API SERVICE] Native: baseUrl = ${dio.options.baseUrl} for $serverKey',
+          );
+        }
+      }
+
+      return dio;
+    });
+  }
+
+  /// Get or create Dio instance for current active server
+  Dio get _dio {
+    final serverKey = _currentServerKey;
+    if (serverKey == null) {
+      throw Exception('No active server configured');
+    }
+    return getDioForServer(serverKey);
+  }
+
+  /// Get or create cookie jar for specific server
+  Future<CookieJar> getCookieJarForServer(String serverKey) async {
+    if (_cookieJars.containsKey(serverKey)) {
+      return _cookieJars[serverKey]!;
     }
 
+    CookieJar cookieJar;
+
     if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
-      // Mobile: Use persistent cookie jar to save session cookies
+      // Mobile: Use persistent cookie jar to save session cookies (per server)
       try {
         final appDocDir = await getApplicationDocumentsDirectory();
-        final cookiePath = '${appDocDir.path}/.cookies/';
-        _cookieJar = PersistCookieJar(
+        final cookiePath = '${appDocDir.path}/.cookies/$serverKey/';
+        cookieJar = PersistCookieJar(
           storage: FileStorage(cookiePath),
           ignoreExpires: false,
         );
         debugPrint('[API SERVICE] Using persistent cookie jar: $cookiePath');
       } catch (e) {
         debugPrint('[API SERVICE] Error creating persistent cookie jar: $e');
-        _cookieJar = CookieJar();
+        cookieJar = CookieJar();
       }
     } else {
       // Web and desktop: Use memory-only cookie jar
-      _cookieJar = CookieJar();
-      debugPrint('[API SERVICE] Using memory-only cookie jar');
+      cookieJar = CookieJar();
+      debugPrint('[API SERVICE] Using memory-only cookie jar for $serverKey');
     }
 
-    return _cookieJar!;
+    _cookieJars[serverKey] = cookieJar;
+    return cookieJar;
   }
 
-  /// Set base URL for Dio (used for native platforms only)
-  /// For web, this is a no-op - relative paths are always used
-  static void setBaseUrl(String baseUrl) {
-    if (kIsWeb) {
-      debugPrint(
-        '[API SERVICE] ⚠️ setBaseUrl called on web (ignored - using relative paths)',
-      );
+  /// Get or create cookie jar for current active server
+  Future<CookieJar> getCookieJar() async {
+    final serverKey = _currentServerKey;
+    if (serverKey == null) {
+      throw Exception('No active server configured');
+    }
+    return getCookieJarForServer(serverKey);
+  }
+
+  /// Initialize Dio for a specific server
+  Future<void> initForServer(String serverKey, {String? serverUrl}) async {
+    final dio = getDioForServer(serverKey, serverUrl: serverUrl);
+
+    // Check if already initialized (has interceptors)
+    if (dio.interceptors.isNotEmpty) {
+      debugPrint('[API SERVICE] Already initialized for $serverKey');
       return;
     }
-    dio.options.baseUrl = baseUrl.endsWith('/')
-        ? baseUrl.substring(0, baseUrl.length - 1)
-        : baseUrl;
-    debugPrint('[API SERVICE] Base URL set to: ${dio.options.baseUrl}');
+
+    // Add cookie manager for native clients
+    if (!kIsWeb) {
+      final cookieJar = await getCookieJarForServer(serverKey);
+      dio.interceptors.add(CookieManager(cookieJar));
+    }
+
+    // Add SessionAuth interceptor first (handles both baseUrl and auth headers for native)
+    dio.interceptors.add(SessionAuthInterceptor());
+
+    // Add 401 Unauthorized interceptor (should be after auth headers added)
+    dio.interceptors.add(UnauthorizedInterceptor());
+
+    // Add custom retry interceptor for handling 503 (database busy) and network errors
+    dio.interceptors.add(
+      RetryInterceptor(
+        dio: dio,
+        maxRetries: 3,
+        retryDelays: const [
+          Duration(seconds: 2), // First retry after 2s
+          Duration(seconds: 4), // Second retry after 4s
+          Duration(seconds: 8), // Third retry after 8s
+        ],
+      ),
+    );
+
+    debugPrint('[API SERVICE] ✅ Initialized for $serverKey');
   }
 
-  static Future<void> init() async {
-    // For web: ALWAYS clear baseUrl to ensure relative paths resolve to current origin
-    // This must happen on every init() call, not just first time
-    if (kIsWeb) {
-      dio.options.baseUrl = '';
-      debugPrint(
-        '[API SERVICE] Web platform: baseUrl cleared (using relative paths)',
-      );
+  /// Initialize for current active server
+  Future<void> init() async {
+    final serverKey = _currentServerKey;
+    if (serverKey == null) {
+      debugPrint('[API SERVICE] No active server, skipping init');
+      return;
     }
-
-    if (!_initialized) {
-      // Add cookie manager for native clients
-      if (!kIsWeb) {
-        final cookieJar = await getCookieJar();
-        dio.interceptors.add(CookieManager(cookieJar));
-      }
-
-      // Add SessionAuth interceptor first (handles both baseUrl and auth headers for native)
-      dio.interceptors.add(SessionAuthInterceptor());
-
-      // Add 401 Unauthorized interceptor (should be after auth headers added)
-      dio.interceptors.add(UnauthorizedInterceptor());
-
-      // Add custom retry interceptor for handling 503 (database busy) and network errors
-      dio.interceptors.add(
-        RetryInterceptor(
-          dio: dio,
-          maxRetries: 3,
-          retryDelays: const [
-            Duration(seconds: 2), // First retry after 2s
-            Duration(seconds: 4), // Second retry after 4s
-            Duration(seconds: 8), // Third retry after 8s
-          ],
-        ),
-      );
-
-      _initialized = true;
-    }
+    await initForServer(serverKey);
   }
 
   /// Ensure host has http:// or https:// prefix
   /// This prevents CORS errors when constructing API URLs
-  static String ensureHttpPrefix(String host) {
+  String ensureHttpPrefix(String host) {
     if (host.startsWith('http://') || host.startsWith('https://')) {
       return host;
     }
@@ -404,9 +468,9 @@ class ApiService {
 
   /// Build API URL - relative for web (uses baseUrl), full URL for native
   /// Example: buildUrl('/client/profile') -> '/client/profile' (web) or 'http://server/client/profile' (native)
-  static String buildUrl(String path) {
+  String buildUrl(String path) {
     if (kIsWeb) {
-      // Web: Use relative path (baseUrl is already configured in dio.options.baseUrl)
+      // Web: Use relative path (baseUrl is already configured in _dio.options.baseUrl)
       return path.startsWith('/') ? path : '/$path';
     } else {
       // Native: Return path as-is (SessionAuthInterceptor will handle full URL construction)
@@ -414,56 +478,56 @@ class ApiService {
     }
   }
 
-  static Future<Response> get(
+  Future<Response> get(
     String url, {
     Map<String, dynamic>? queryParameters,
     Options? options,
   }) {
     if (kIsWeb) {
-      debugPrint('[API GET] URL: $url, baseUrl: "${dio.options.baseUrl}"');
+      debugPrint('[API GET] URL: $url, baseUrl: "${_dio.options.baseUrl}"');
     }
     options ??= Options();
     options = options.copyWith(
       contentType: 'application/json',
       extra: {...?options.extra, 'withCredentials': true},
     );
-    return dio.get(url, queryParameters: queryParameters, options: options);
+    return _dio.get(url, queryParameters: queryParameters, options: options);
   }
 
-  static Future<Response> post(String url, {dynamic data, Options? options}) {
+  Future<Response> post(String url, {dynamic data, Options? options}) {
     options ??= Options();
     options = options.copyWith(
       contentType: 'application/json',
       extra: {...?options.extra, 'withCredentials': true},
     );
-    return dio.post(url, data: data, options: options);
+    return _dio.post(url, data: data, options: options);
   }
 
-  static Future<Response> delete(String url, {dynamic data, Options? options}) {
+  Future<Response> delete(String url, {dynamic data, Options? options}) {
     options ??= Options();
     options = options.copyWith(
       contentType: 'application/json',
       extra: {...?options.extra, 'withCredentials': true},
     );
-    return dio.delete(url, data: data, options: options);
+    return _dio.delete(url, data: data, options: options);
   }
 
-  static Future<Response> patch(String url, {dynamic data, Options? options}) {
+  Future<Response> patch(String url, {dynamic data, Options? options}) {
     options ??= Options();
     options = options.copyWith(
       contentType: 'application/json',
       extra: {...?options.extra, 'withCredentials': true},
     );
-    return dio.patch(url, data: data, options: options);
+    return _dio.patch(url, data: data, options: options);
   }
 
-  static Future<Response> put(String url, {dynamic data, Options? options}) {
+  Future<Response> put(String url, {dynamic data, Options? options}) {
     options ??= Options();
     options = options.copyWith(
       contentType: 'application/json',
       extra: {...?options.extra, 'withCredentials': true},
     );
-    return dio.put(url, data: data, options: options);
+    return _dio.put(url, data: data, options: options);
   }
 
   // ========================================================================
@@ -472,7 +536,7 @@ class ApiService {
 
   /// Emit API-related events to EventBus
   /// Call this after successful API operations that affect app state
-  static void emitEvent(AppEvent event, dynamic data) {
+  void emitEvent(AppEvent event, dynamic data) {
     debugPrint('[API SERVICE] → EVENT_BUS: $event');
     EventBus.instance.emit(event, data);
   }
@@ -483,7 +547,7 @@ class ApiService {
 
   /// Create a new channel
   /// Automatically emits AppEvent.newChannel on success
-  static Future<Response> createChannel({
+  Future<Response> createChannel({
     required String name,
     String? description,
     bool? isPrivate,
@@ -512,14 +576,14 @@ class ApiService {
 
   /// Update an existing channel
   /// Automatically emits AppEvent.channelUpdated on success
-  static Future<Response> updateChannel(
+  Future<Response> updateChannel(
     String channelId, {
     String? name,
     String? description,
     bool? isPrivate,
     String? defaultRoleId,
   }) async {
-    final response = await dio.put(
+    final response = await _dio.put(
       '/client/channels/$channelId',
       data: {
         if (name != null) 'name': name,
@@ -544,7 +608,7 @@ class ApiService {
 
   /// Delete a channel (owner only)
   /// Automatically emits AppEvent.channelDeleted on success
-  static Future<Response> deleteChannel(String channelId) async {
+  Future<Response> deleteChannel(String channelId) async {
     final response = await delete('/api/channels/$channelId');
 
     // Emit event on success
@@ -558,7 +622,7 @@ class ApiService {
 
   /// Leave a channel
   /// Automatically emits AppEvent.channelLeft on success
-  static Future<Response> leaveChannel(String channelId) async {
+  Future<Response> leaveChannel(String channelId) async {
     final response = await post('/api/channels/$channelId/leave');
 
     // Emit event on success
@@ -572,10 +636,7 @@ class ApiService {
 
   /// Kick a user from a channel (requires owner or user.kick permission)
   /// Automatically emits AppEvent.userKicked on success
-  static Future<Response> kickUserFromChannel(
-    String channelId,
-    String userId,
-  ) async {
+  Future<Response> kickUserFromChannel(String channelId, String userId) async {
     final response = await delete('/api/channels/$channelId/members/$userId');
 
     // Emit event on success
@@ -592,7 +653,7 @@ class ApiService {
 
   /// Join a public channel
   /// Automatically emits AppEvent.channelJoined on success
-  static Future<Response> joinChannel(String channelId) async {
+  Future<Response> joinChannel(String channelId) async {
     final response = await post('/client/channels/$channelId/join');
 
     // Emit event on success

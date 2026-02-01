@@ -107,7 +107,7 @@ class PermanentPreKeyStore extends PreKeyStore {
         .toList();
 
     // CRITICAL FIX: Server expects { preKeys: [...] } not just [...]
-    SocketService().emit("storePreKeys", <String, dynamic>{
+    SocketService.instance.emit("storePreKeys", <String, dynamic>{
       'preKeys': preKeyPayload,
     });
 
@@ -281,7 +281,7 @@ class PermanentPreKeyStore extends PreKeyStore {
     // This prevented detection of server/client desync!
     
     debugPrint('[PREKEY STORE] Querying server for PreKey sync check...');
-    SocketService().emit("getPreKeys", null);
+    SocketService.instance.emit("getPreKeys", null);
   }
   */ // END LEGACY REMOTE LOAD
 
@@ -368,7 +368,7 @@ class PermanentPreKeyStore extends PreKeyStore {
 
     /* LEGACY CODE - COMMENTED OUT FOR DEBUGGING
     // Listener for server PreKey query response
-    SocketService().registerListener("getPreKeysResponse", (data) async {
+    SocketService.instance.registerListener("getPreKeysResponse", (data) async {
       debugPrint('[PREKEY STORE] Server has ${data.length} PreKeys');
       final localPreKeys = await _getAllPreKeyIds();
       debugPrint('[PREKEY STORE] Local has ${localPreKeys.length} PreKeys');
@@ -435,7 +435,7 @@ class PermanentPreKeyStore extends PreKeyStore {
     }, registrationName: 'PreKeyStore');
     
     // NEW: Listener for PreKey sync response after storePreKeys
-    SocketService().registerListener("storePreKeysResponse", (response) async {
+    SocketService.instance.registerListener("storePreKeysResponse", (response) async {
       if (response['success'] == true) {
         final List<dynamic> serverPreKeyIds = response['serverPreKeyIds'] ?? [];
         debugPrint('[PREKEY STORE] 🔄 Sync verification: Server has ${serverPreKeyIds.length} PreKey IDs');
@@ -581,7 +581,9 @@ class PermanentPreKeyStore extends PreKeyStore {
 
     // Only send to server if requested (skip during sync cleanup)
     if (sendToServer) {
-      SocketService().emit("removePreKey", <String, dynamic>{'id': preKeyId});
+      SocketService.instance.emit("removePreKey", <String, dynamic>{
+        'id': preKeyId,
+      });
     }
   }
 
@@ -593,7 +595,7 @@ class PermanentPreKeyStore extends PreKeyStore {
   }) async {
     debugPrint("Storing pre key: $preKeyId");
     if (sendToServer) {
-      SocketService().emit("storePreKey", {
+      SocketService.instance.emit("storePreKey", {
         'id': preKeyId,
         'data': base64Encode(record.getKeyPair().publicKey.serialize()),
       });

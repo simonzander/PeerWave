@@ -46,7 +46,7 @@ class TroubleshootService {
 
       // Request server to regenerate identity key
       // This requires re-authentication and full key regeneration
-      SocketService().emit('regenerateIdentityKey', null);
+      SocketService.instance.emit('regenerateIdentityKey', null);
 
       debugPrint('[Troubleshoot] ✓ Identity key regeneration requested');
     } catch (e) {
@@ -61,7 +61,7 @@ class TroubleshootService {
       debugPrint('[Troubleshoot] Deleting signed pre-key...');
 
       // Request deletion and regeneration via server
-      SocketService().emit('deleteAndRegenerateSignedPreKey', null);
+      SocketService.instance.emit('deleteAndRegenerateSignedPreKey', null);
 
       debugPrint('[Troubleshoot] ✓ Signed PreKey deletion requested');
     } catch (e) {
@@ -79,7 +79,7 @@ class TroubleshootService {
       final preKeyIds = await signalService.preKeyStore.getAllPreKeyIds();
 
       // Delete from server
-      SocketService().emit('deleteAllPreKeys', null);
+      SocketService.instance.emit('deleteAllPreKeys', null);
 
       // Remove locally
       for (final id in preKeyIds) {
@@ -87,7 +87,7 @@ class TroubleshootService {
       }
 
       // Trigger key regeneration
-      SocketService().emit('signalStatus', null);
+      SocketService.instance.emit('signalStatus', null);
 
       debugPrint('[Troubleshoot] ✓ Deleted ${preKeyIds.length} PreKeys');
     } catch (e) {
@@ -148,7 +148,7 @@ class TroubleshootService {
       debugPrint('[Troubleshoot] Forcing signed PreKey rotation...');
 
       // Request rotation via server
-      SocketService().emit('rotateSignedPreKey', null);
+      SocketService.instance.emit('rotateSignedPreKey', null);
 
       debugPrint('[Troubleshoot] ✓ Signed PreKey rotation requested');
     } catch (e) {
@@ -171,8 +171,8 @@ class TroubleshootService {
       }
 
       // Delete from server and trigger regeneration
-      SocketService().emit('deleteAllPreKeys', null);
-      SocketService().emit('signalStatus', null);
+      SocketService.instance.emit('deleteAllPreKeys', null);
+      SocketService.instance.emit('signalStatus', null);
 
       debugPrint(
         '[Troubleshoot] ✓ PreKey regeneration requested (${existingIds.length} removed)',
@@ -292,8 +292,8 @@ class TroubleshootService {
         }
       }
 
-      // Use SocketService().isConnected getter for reliable connection status
-      final isConnected = SocketService().isConnected;
+      // Use SocketService.instance.isConnected getter for reliable connection status
+      final isConnected = SocketService.instance.isConnected;
       final connectionStatus = isConnected ? 'Connected' : 'Disconnected';
 
       return model.ServerConfig(
@@ -492,7 +492,7 @@ class TroubleshootService {
       debugPrint('[Troubleshoot] Syncing keys with server...');
 
       // Trigger key upload via signalStatus
-      SocketService().emit('signalStatus', null);
+      SocketService.instance.emit('signalStatus', null);
 
       debugPrint('[Troubleshoot] ✓ Key sync initiated (signalStatus sent)');
     } catch (e) {

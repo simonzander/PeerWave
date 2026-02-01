@@ -185,9 +185,9 @@ class LogoutService {
       }
 
       // 1. Disconnect socket
-      if (SocketService().isConnected) {
+      if (SocketService.instance.isConnected) {
         debugPrint('[LOGOUT] Disconnecting socket...');
-        SocketService().disconnect();
+        SocketService.instance.disconnect();
       }
 
       // 2. Cleanup SignalSetupService

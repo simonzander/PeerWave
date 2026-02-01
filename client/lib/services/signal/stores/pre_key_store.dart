@@ -3,9 +3,12 @@ import 'package:flutter/foundation.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import '../../device_scoped_storage_service.dart';
 import '../../api_service.dart';
+import '../../socket_service.dart'
+    if (dart.library.io) '../../socket_service_native.dart';
 import '../../../web_config.dart';
 import '../../server_config_web.dart'
     if (dart.library.io) '../../server_config_native.dart';
+import '../state/pre_key_state.dart';
 
 /// A persistent pre-key store for Signal Protocol one-time pre-keys.
 ///
@@ -23,7 +26,20 @@ import '../../server_config_web.dart'
 /// - PreKey IDs increment continuously: 0 → 16,777,215 (0xFFFFFF)
 /// - Start: 0-109, Next batch: 110-219, etc.
 /// - At 16M: Wraps to 0 (old keys must be consumed by then)
+///
+/// 🌐 Multi-Server Support:
+/// This store is server-scoped via KeyManager.
+/// - apiService: Used for HTTP uploads (server-scoped, knows baseUrl)
+/// - socketService: Used for real-time events (server-scoped, knows serverUrl)
+///
+/// Storage isolation is automatic:
+/// - DeviceIdentityService provides unique deviceId per server
+/// - DeviceScopedStorageService creates isolated databases automatically
 mixin PermanentPreKeyStore implements PreKeyStore {
+  // Abstract getters - provided by KeyManager
+  ApiService get apiService;
+  SocketService get socketService;
+
   /// 🔒 Guard to prevent concurrent checkPreKeys() calls
   bool _isCheckingPreKeys = false;
 
@@ -75,7 +91,7 @@ mixin PermanentPreKeyStore implements PreKeyStore {
           .toList();
 
       // Send via HTTP POST
-      final response = await ApiService.post(
+      final response = await apiService.post(
         '/signal/prekeys/batch',
         data: {'preKeys': preKeyPayload},
       );
@@ -151,7 +167,7 @@ mixin PermanentPreKeyStore implements PreKeyStore {
 
     // Upload to server via HTTP
     try {
-      final response = await ApiService.post(
+      final response = await apiService.post(
         '/signal/prekeys/batch',
         data: {'preKeys': preKeyPayload},
       );
@@ -268,6 +284,9 @@ mixin PermanentPreKeyStore implements PreKeyStore {
 
       final allKeyIds = await getAllPreKeyIds();
 
+      // Update state
+      PreKeyState.instance.updateCount(allKeyIds.length);
+
       // ✅ Signal Protocol: Keep 110 prekeys, regenerate when < 20
       const int MAX_PREKEY_ID = 16777215; // Signal Protocol max (0xFFFFFF)
       const int WRAP_THRESHOLD = 16000000; // Start wrapping at 16M
@@ -278,6 +297,9 @@ mixin PermanentPreKeyStore implements PreKeyStore {
         debugPrint(
           "[PREKEY STORE] Not enough pre keys (${allKeyIds.length}/$TARGET_PREKEYS), generating more",
         );
+
+        // Mark generation in progress
+        PreKeyState.instance.markGenerating();
 
         // Strategy:
         // 1. If maxId < WRAP_THRESHOLD: use incrementing IDs (safe, no reuse)
@@ -310,7 +332,6 @@ mixin PermanentPreKeyStore implements PreKeyStore {
           "[PREKEY STORE] Found ${contiguousRanges.length} range(s) to generate",
         );
 
-        final newPreKeys = <PreKeyRecord>[];
         for (final range in contiguousRanges) {
           if (range.length > 1) {
             // BATCH GENERATION: Multiple contiguous IDs (FAST!)
@@ -319,25 +340,24 @@ mixin PermanentPreKeyStore implements PreKeyStore {
             debugPrint(
               "[PREKEY STORE] Batch generating PreKeys $start-$end (${range.length} keys)",
             );
-            final keys = generatePreKeys(start, end);
-            newPreKeys.addAll(keys);
+            await generatePreKeysInRange(start, end);
           } else {
             // SINGLE GENERATION: Isolated gap
             final id = range.first;
             debugPrint("[PREKEY STORE] Single generating PreKey $id");
-            final keys = generatePreKeys(id, id);
-            if (keys.isNotEmpty) {
-              newPreKeys.add(keys.first);
-            }
+            await generatePreKeysInRange(id, id);
           }
         }
 
-        await storePreKeys(newPreKeys);
+        debugPrint("[PREKEY STORE] ✓ PreKey generation complete");
 
-        debugPrint(
-          "[PREKEY STORE] ✓ Generated and stored ${newPreKeys.length} new pre keys (filling gaps with batching)",
-        );
+        // Update state with new count
+        final newKeyIds = await getAllPreKeyIds();
+        PreKeyState.instance.markGenerationComplete(newKeyIds.length);
       }
+    } catch (e) {
+      PreKeyState.instance.markError(e.toString());
+      rethrow;
     } finally {
       _isCheckingPreKeys = false;
     }
@@ -533,7 +553,7 @@ mixin PermanentPreKeyStore implements PreKeyStore {
     // Send to server if requested
     if (sendToServer) {
       try {
-        final response = await ApiService.delete('/signal/prekey/$preKeyId');
+        final response = await apiService.delete('/signal/prekey/$preKeyId');
 
         if (response.statusCode != 200 && response.statusCode != 204) {
           debugPrint(
@@ -575,7 +595,7 @@ mixin PermanentPreKeyStore implements PreKeyStore {
     // Upload to server if requested
     if (sendToServer) {
       try {
-        final response = await ApiService.post(
+        final response = await apiService.post(
           '/signal/prekey',
           data: {
             'id': preKeyId,
@@ -678,9 +698,13 @@ mixin PermanentPreKeyStore implements PreKeyStore {
 
     final preKeys = generatePreKeys(start, end);
 
+    // Store locally first (no server upload yet)
     for (final preKey in preKeys) {
-      await storePreKey(preKey.id, preKey);
+      await storePreKey(preKey.id, preKey, sendToServer: false);
     }
+
+    // Upload all keys to server in one batch
+    await uploadPreKeys(preKeys);
 
     debugPrint('[PRE_KEY_MANAGER] ✓ Generated ${preKeys.length} PreKeys');
     return preKeys;
@@ -694,14 +718,11 @@ mixin PermanentPreKeyStore implements PreKeyStore {
   /// - Monitoring key availability
   /// - Determining if regeneration is needed
   /// - Diagnostics and logging
-  Future<int> getLocalPreKeyCount() async {
-    try {
-      final ids = await getAllPreKeyIds();
-      return ids.length;
-    } catch (e) {
-      debugPrint('[PRE_KEY_MANAGER] Error getting local PreKey count: $e');
-      return 0;
-    }
+  ///
+  /// Note: Returns cached count from PreKeyState (non-blocking).
+  /// For accurate count, call checkPreKeys() first which updates the state.
+  int getLocalPreKeyCount() {
+    return PreKeyState.instance.count;
   }
 
   /// Generate PreKey fingerprints (hashes) for validation.
@@ -769,7 +790,7 @@ mixin PermanentPreKeyStore implements PreKeyStore {
         )
         .toList();
 
-    final response = await ApiService.post(
+    final response = await apiService.post(
       '/signal/prekeys/batch',
       data: {'preKeys': preKeysPayload},
     );

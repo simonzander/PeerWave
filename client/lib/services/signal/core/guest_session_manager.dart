@@ -175,7 +175,7 @@ class GuestSessionManager {
       );
 
       // 7. Send via Socket.IO
-      SocketService().emit('meeting:distributeSenderKeyToGuest', {
+      SocketService.instance.emit('meeting:distributeSenderKeyToGuest', {
         'meetingId': meetingId,
         'guestSessionId': guestSessionId,
         'senderDeviceId': currentDeviceId,

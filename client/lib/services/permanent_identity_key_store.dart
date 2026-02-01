@@ -167,9 +167,9 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
       debugPrint('[IDENTITY] Uploading NEW identity key to server...');
 
       // Try socket emit first (faster)
-      if (SocketService().isConnected) {
+      if (SocketService.instance.isConnected) {
         debugPrint('[IDENTITY] Socket connected - using emit');
-        SocketService().emit("signalIdentity", {
+        SocketService.instance.emit("signalIdentity", {
           'publicKey': publicKeyBase64,
           'registrationId': registrationId,
         });
@@ -352,7 +352,7 @@ class PermanentIdentityKeyStore extends IdentityKeyStore {
       // 5. Request server-side deletion of all keys
       debugPrint('[IDENTITY_CLEANUP] Requesting server-side key deletion...');
       try {
-        SocketService().emit("deleteAllSignalKeys", {
+        SocketService.instance.emit("deleteAllSignalKeys", {
           'reason': 'IdentityKeyPair regenerated',
           'timestamp': DateTime.now().toIso8601String(),
         });

@@ -23,8 +23,7 @@ void setSocketUnauthorizedHandler(SocketUnauthorizedCallback callback) {
 /// Receives notifications from all servers while user actively uses one
 class SocketService {
   static final SocketService _instance = SocketService._internal();
-  factory SocketService() => _instance;
-  SocketService._internal();
+  static SocketService get instance => _instance;
 
   // Map of serverId -> Socket instance (one socket per server)
   final Map<String, io.Socket> _sockets = {};
@@ -41,6 +40,13 @@ class SocketService {
   // Track wrapped callbacks per socket: serverId -> eventName -> registrationName -> wrappedCallback
   final Map<String, Map<String, Map<String, Function(dynamic)>>>
   _socketCallbacks = {};
+
+  /// Private constructor for singleton
+  SocketService._internal() {
+    debugPrint(
+      '[SOCKET SERVICE] 🏗️ Creating singleton instance (native multi-server)',
+    );
+  }
 
   // Get socket for active server
   io.Socket? get socket {

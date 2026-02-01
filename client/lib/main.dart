@@ -9,10 +9,10 @@ import 'package:provider/provider.dart';
 import 'package:path/path.dart' as path;
 import 'auth/magic_link_native.dart' show MagicLinkWebPageWithServer;
 
-import 'services/signal_setup_service.dart';
 import 'services/device_identity_service.dart';
 import 'services/logout_service.dart';
 import 'services/preferences_service.dart';
+import 'services/server_settings_service.dart';
 import 'app/app_layout.dart';
 // Use conditional import for 'services/auth_service.dart'
 import 'services/auth_service_web.dart'
@@ -66,6 +66,7 @@ import 'core/routes/meeting_routes.dart';
 import 'core/routes/app_routes.dart';
 import 'core/routes/native/server_config_routes.dart'
     if (dart.library.js) 'core/routes/web/server_config_routes_stub.dart';
+import 'screens/signal_setup_screen.dart';
 import 'core/storage/app_directories.dart';
 import 'services/system_tray_service_web.dart'
     if (dart.library.io) 'services/system_tray_service.dart';
@@ -331,20 +332,28 @@ Future<void> main() async {
     if (activeServer != null) {
       serverUrl = activeServer.serverUrl;
       debugPrint('[INIT] ✅ Using active server: $serverUrl');
-      ApiService.setBaseUrl(serverUrl);
+      // Initialize ApiService for the active server
+      await ApiService.instance.initForServer(
+        activeServer.id,
+        serverUrl: serverUrl,
+      );
+      debugPrint(
+        '[INIT] ✅ ApiService initialized for active server: ${activeServer.id}',
+      );
     } else {
-      // No servers configured - use fallback (user will be prompted to add server)
+      // No servers configured - skip ApiService init (user will be prompted to add server)
       serverUrl = 'http://localhost:3000';
-      debugPrint('[INIT] ⚠️ No active server, using fallback: $serverUrl');
+      debugPrint('[INIT] ⚠️ No active server, skipping ApiService init');
     }
-    debugPrint('[INIT] ✅ API base URL set to: $serverUrl (non-web platform)');
   }
 
   // ========================================
-  // PHASE 4: Initialize API Service (now that we have server URL)
+  // PHASE 4: Initialize API Service for Web
   // ========================================
-  await ApiService.init();
-  debugPrint('[INIT] ✅ ApiService initialized');
+  if (kIsWeb) {
+    await ApiService.instance.init();
+    debugPrint('[INIT] ✅ ApiService initialized for web');
+  }
 
   // NOTE: ICE server configuration is loaded AFTER login (requires authentication)
   // See auth_layout_web.dart -> successful login callback
@@ -533,7 +542,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   Future<void> _reconnectSocket() async {
     try {
-      final socketService = SocketService();
+      final socketService = SocketService.instance;
 
       // With multi-server support, reconnect ALL servers on app resume
       debugPrint('[LIFECYCLE] Reconnecting all servers...');
@@ -786,9 +795,16 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // Common routes shared across all platforms (registration flow, mobile auth)
     final List<GoRoute> commonRoutes = getAuthRoutes(clientId: _clientId ?? '');
 
+    // Signal setup route (after authentication)
+    final signalSetupRoute = GoRoute(
+      path: '/signal-setup',
+      builder: (context, state) => const SignalSetupScreen(),
+    );
+
     // Use ShellRoute for native, flat routes for web
     final List<RouteBase> routes = kIsWeb
         ? [
+            signalSetupRoute, // Signal setup after auth
             ...commonRoutes, // Add common registration & mobile routes
             ...getAuthRoutesWeb(
               clientId: _clientId ?? '',
@@ -811,6 +827,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             ),
           ]
         : [
+            signalSetupRoute, // Signal setup after auth
             // Native server configuration routes (multi-server setup)
             ...getServerConfigRoutes(),
             // Add common registration routes for native platforms
@@ -972,6 +989,28 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           debugPrint('[ROUTER] ========================================');
 
           // ========================================
+          // CREATE SIGNALCLIENT AFTER AUTHENTICATION
+          // ========================================
+          // After successful auth, create SignalClient for active server
+          if (!_postLoginInitComplete && location != '/signal-setup') {
+            debugPrint(
+              '[ROUTER] 🔄 Creating SignalClient for active server...',
+            );
+
+            try {
+              // Check if SignalClient already exists and is initialized
+              if (!ServerSettingsService.instance.isSignalClientInitialized()) {
+                debugPrint('[ROUTER] 📡 SignalClient not initialized');
+                debugPrint('[ROUTER] ↪️ Redirecting to /signal-setup');
+                return '/signal-setup';
+              }
+            } catch (e) {
+              debugPrint('[ROUTER] ❌ Error checking SignalClient: $e');
+              // Continue without blocking - will show error in setup screen
+            }
+          }
+
+          // ========================================
           // POST-LOGIN SERVICE INITIALIZATION (ONCE)
           // ========================================
           // Skip Signal key checks ONLY for authentication flows when NOT logged in
@@ -995,196 +1034,100 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 location == '/' ||
                 location.startsWith('/app/')) {
               debugPrint(
-                '[ROUTER] App route detected - checking keys status...',
+                '[ROUTER] App route detected - checking SignalClient initialization...',
               );
 
               try {
-                final status = await SignalSetupService.instance
-                    .checkKeysStatus();
-                final needsSetup = status['needsSetup'] as bool;
-                final missingKeys =
-                    status['missingKeys'] as Map<String, dynamic>? ??
-                    <String, dynamic>{};
+                if (!ServerSettingsService.instance
+                    .isSignalClientInitialized()) {
+                  debugPrint(
+                    '[ROUTER] SignalClient not initialized - redirecting to /signal-setup',
+                  );
 
-                debugPrint(
-                  '[ROUTER] Keys status: needsSetup=$needsSetup, missingKeys=$missingKeys',
-                );
-
-                if (needsSetup) {
-                  // Save current route if it's a specific /app/* route (not base routes like /app or /)
-                  // This allows restoration after signal-setup completes
+                  // Save current route for restoration after setup
                   if (location.startsWith('/app/') &&
                       location != '/app/' &&
                       location.length > 5) {
-                    // Only save routes like /app/people, /app/messages, etc. (not /app or /)
                     debugPrint(
                       '[MAIN] Saving current route before signal-setup: $location',
                     );
                     await PreferencesService().saveLastRoute(location);
-                  } else {
-                    debugPrint(
-                      '[MAIN] Not saving route (base route or coming from login): $location',
-                    );
                   }
 
-                  // Check if it's an auth issue (device identity or encryption key missing)
-                  // Only for web - native uses HMAC and doesn't have device identity
-                  if (kIsWeb &&
-                      (missingKeys.containsKey('deviceIdentity') ||
-                          missingKeys.containsKey('encryptionKey'))) {
-                    debugPrint(
-                      '[MAIN] Authentication keys missing (IndexedDB deleted?) - logging out...',
-                    );
-
-                    // Logout to clear server session and avoid redirect loop
-                    // This happens when IndexedDB is deleted but server session still exists
-                    await LogoutService.instance.logout(
-                      null,
-                      showMessage: false,
-                    );
-
-                    debugPrint('[MAIN] Logout complete, redirecting to /login');
-                    return '/login';
-                  }
-
-                  // Otherwise, it's a Signal keys setup issue
-                  debugPrint(
-                    '[MAIN] Signal keys need setup, redirecting to /signal-setup',
-                  );
                   return '/signal-setup';
                 }
 
-                // Keys exist - run post-login initialization via PostLoginInitService
-                if (!_postLoginInitComplete &&
-                    !PostLoginInitService.instance.isInitialized) {
-                  debugPrint('[MAIN] ========================================');
-                  debugPrint('[MAIN] Starting post-login initialization...');
-                  debugPrint('[MAIN] ========================================');
-
-                  try {
-                    // Capture providers before any async operations
-                    // ignore: use_build_context_synchronously
-                    final unreadProvider = context
-                        .read<UnreadMessagesProvider>();
-                    // ignore: use_build_context_synchronously
-                    final roleProvider = context.read<RoleProvider>();
-                    // ignore: use_build_context_synchronously
-                    final statsProvider = context
-                        .read<FileTransferStatsProvider>();
-
-                    // Get server URL based on platform
-                    String serverUrl = '';
-                    if (kIsWeb) {
-                      final apiServer = await loadWebApiServer();
-                      serverUrl = apiServer ?? '';
-                    } else {
-                      final activeServer =
-                          ServerConfigService.getActiveServer();
-                      serverUrl = activeServer?.serverUrl ?? '';
-                    }
-
-                    // Ensure server URL has protocol
-                    if (serverUrl.isNotEmpty &&
-                        !serverUrl.startsWith('http://') &&
-                        !serverUrl.startsWith('https://')) {
-                      serverUrl = 'https://$serverUrl';
-                    }
-
-                    await PostLoginInitService.instance.initialize(
-                      serverUrl: serverUrl,
-                      unreadProvider: unreadProvider,
-                      roleProvider: roleProvider,
-                      statsProvider: statsProvider,
-                      onProgress: (step, current, total) {
-                        debugPrint('[MAIN] [$current/$total] $step');
-                      },
-                    );
-
-                    _postLoginInitComplete = true;
-
-                    // Trigger rebuild to update providers with initialized services
-                    if (mounted) {
-                      setState(() {});
-                    }
-
-                    debugPrint(
-                      '[MAIN] ========================================',
-                    );
-                    debugPrint('[MAIN] ✅ Post-login initialization complete');
-                    debugPrint(
-                      '[MAIN] ========================================',
-                    );
-                  } catch (e) {
-                    debugPrint('[MAIN] ⚠ Error during initialization: $e');
-                    // On error, redirect to login to be safe
-                    return '/login';
-                  }
-                }
+                debugPrint('[ROUTER] ✅ SignalClient initialized');
               } catch (e) {
-                debugPrint('[MAIN] ⚠ Error checking keys status: $e');
-                // On error, redirect to login to be safe
-                return '/login';
+                debugPrint('[ROUTER] ❌ Error checking SignalClient: $e');
+                // Continue - will be caught in setup screen
               }
-            } else {
-              // For other app routes (e.g. /app/channels), ensure initialization is done
-              if (!PostLoginInitService.instance.isInitialized) {
-                debugPrint(
-                  '[MAIN] Running initialization for app route: $location',
-                );
+            }
+          }
 
-                try {
-                  // Capture providers before any async operations
-                  // ignore: use_build_context_synchronously
-                  final unreadProvider = context.read<UnreadMessagesProvider>();
-                  // ignore: use_build_context_synchronously
-                  final roleProvider = context.read<RoleProvider>();
-                  // ignore: use_build_context_synchronously
-                  final statsProvider = context
-                      .read<FileTransferStatsProvider>();
+          // ========================================
+          // POST-LOGIN SERVICE INITIALIZATION (ONCE)
+          // ========================================
+          if (!_postLoginInitComplete &&
+              !PostLoginInitService.instance.isInitialized) {
+            debugPrint('[MAIN] ========================================');
+            debugPrint('[MAIN] Starting post-login initialization...');
+            debugPrint('[MAIN] ========================================');
 
-                  // Get server URL based on platform
-                  String serverUrl = '';
-                  if (kIsWeb) {
-                    final apiServer = await loadWebApiServer();
-                    serverUrl = apiServer ?? '';
-                  } else {
-                    final activeServer = ServerConfigService.getActiveServer();
-                    serverUrl = activeServer?.serverUrl ?? '';
-                  }
+            try {
+              // Capture providers before any async operations
+              // ignore: use_build_context_synchronously
+              final unreadProvider = context.read<UnreadMessagesProvider>();
+              // ignore: use_build_context_synchronously
+              final roleProvider = context.read<RoleProvider>();
+              // ignore: use_build_context_synchronously
+              final statsProvider = context.read<FileTransferStatsProvider>();
 
-                  // Ensure server URL has protocol
-                  if (serverUrl.isNotEmpty &&
-                      !serverUrl.startsWith('http://') &&
-                      !serverUrl.startsWith('https://')) {
-                    serverUrl = 'https://$serverUrl';
-                  }
-
-                  await PostLoginInitService.instance.initialize(
-                    serverUrl: serverUrl,
-                    unreadProvider: unreadProvider,
-                    roleProvider: roleProvider,
-                    statsProvider: statsProvider,
-                    onProgress: (step, current, total) {
-                      debugPrint('[MAIN] [$current/$total] $step');
-                    },
-                  );
-
-                  _postLoginInitComplete = true;
-
-                  // Trigger rebuild to update providers with initialized services
-                  if (mounted) {
-                    setState(() {});
-                  }
-                } catch (e) {
-                  debugPrint('[MAIN] ⚠ Error initializing for app route: $e');
-                }
+              // Get server URL based on platform
+              String serverUrl = '';
+              if (kIsWeb) {
+                final apiServer = await loadWebApiServer();
+                serverUrl = apiServer ?? '';
+              } else {
+                final activeServer = ServerConfigService.getActiveServer();
+                serverUrl = activeServer?.serverUrl ?? '';
               }
+
+              // Ensure server URL has protocol
+              if (serverUrl.isNotEmpty &&
+                  !serverUrl.startsWith('http://') &&
+                  !serverUrl.startsWith('https://')) {
+                serverUrl = 'https://$serverUrl';
+              }
+
+              await PostLoginInitService.instance.initialize(
+                serverUrl: serverUrl,
+                unreadProvider: unreadProvider,
+                roleProvider: roleProvider,
+                statsProvider: statsProvider,
+                onProgress: (step, current, total) {
+                  debugPrint('[MAIN] [$current/$total] $step');
+                },
+              );
+
+              _postLoginInitComplete = true;
+
+              // Trigger rebuild to update providers with initialized services
+              if (mounted) {
+                setState(() {});
+              }
+
+              debugPrint('[MAIN] ========================================');
+              debugPrint('[MAIN] ✅ Post-login initialization complete');
+              debugPrint('[MAIN] ========================================');
+            } catch (e) {
+              debugPrint('[MAIN] ⚠ Error during initialization: $e');
+              // On error, redirect to login to be safe
+              return '/login';
             }
           }
         } else {
           // Logout cleanup
-          if (SocketService().isConnected) SocketService().disconnect();
-
           // Reset post-login initialization flag so it runs again on next login
           _postLoginInitComplete = false;
           debugPrint('[MAIN] 🔄 Reset post-login initialization flag');
@@ -1193,8 +1136,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           PostLoginInitService.instance.reset();
           debugPrint('[MAIN] 🔄 Reset PostLoginInitService');
 
-          // Consolidated cleanup via SignalSetupService
-          SignalSetupService.instance.cleanupOnLogout();
+          // Cleanup all servers (SignalClient, SocketService, ApiService, etc.)
+          await ServerSettingsService.instance.removeAllServers();
 
           // Clear roles on logout
           try {

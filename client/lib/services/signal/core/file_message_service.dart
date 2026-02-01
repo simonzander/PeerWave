@@ -103,7 +103,7 @@ class FileMessageService {
       }
 
       // Send via Socket.IO
-      SocketService().emit("sendGroupItem", {
+      SocketService.instance.emit("sendGroupItem", {
         'channelId': channelId,
         'itemId': itemId,
         'type': 'file',
@@ -173,7 +173,7 @@ class FileMessageService {
         );
 
         // Send via Socket.IO
-        SocketService().emit("sendGroupItem", {
+        SocketService.instance.emit("sendGroupItem", {
           'channelId': chatId,
           'itemId': itemId,
           'type': 'file_share_update',
@@ -260,7 +260,7 @@ class FileMessageService {
         );
 
         // Send via Socket.IO
-        SocketService().emit("sendGroupItem", {
+        SocketService.instance.emit("sendGroupItem", {
           'channelId': channelId,
           'itemId': itemId,
           'type': 'video_e2ee_key',

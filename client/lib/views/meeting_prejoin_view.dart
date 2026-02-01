@@ -95,21 +95,21 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       );
 
       // Check socket connection (increased timeout for slower networks)
-      if (!SocketService().isConnected) {
+      if (!SocketService.instance.isConnected) {
         debugPrint('[MeetingPreJoin] Waiting for socket connection...');
         int attempts = 0;
-        while (!SocketService().isConnected && attempts < 150) {
+        while (!SocketService.instance.isConnected && attempts < 150) {
           await Future.delayed(const Duration(milliseconds: 100));
           attempts++;
         }
-        if (!SocketService().isConnected) {
+        if (!SocketService.instance.isConnected) {
           throw Exception('Socket connection timeout after 15 seconds');
         }
       }
 
       // Register as participant using meeting ID as room identifier
       // This will trigger on-demand LiveKit room creation
-      SocketService().emit('video:register-participant', {
+      SocketService.instance.emit('video:register-participant', {
         'channelId': _meeting!.meetingId, // Use meeting ID as room identifier
       });
 
@@ -148,13 +148,13 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         }
       }
 
-      SocketService().registerListener(
+      SocketService.instance.registerListener(
         'video:participants-info',
         listener,
         registrationName: 'MeetingPrejoinView',
       );
 
-      SocketService().emit('video:check-participants', {
+      SocketService.instance.emit('video:check-participants', {
         'channelId': _meeting!.meetingId, // Use meeting ID as room identifier
       });
 
@@ -163,7 +163,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         onTimeout: () => {'error': 'Timeout'},
       );
 
-      SocketService().unregisterListener(
+      SocketService.instance.unregisterListener(
         'video:participants-info',
         registrationName: 'MeetingPrejoinView',
       );
@@ -308,7 +308,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
 
     try {
       // Confirm E2EE key for meeting
-      SocketService().emit('video:confirm-e2ee-key', {
+      SocketService.instance.emit('video:confirm-e2ee-key', {
         'channelId': _meeting!.meetingId, // Use meeting ID as room identifier
       });
 

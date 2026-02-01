@@ -83,7 +83,9 @@ class _MeetingVideoConferenceViewState
   /// Set up Socket.IO listener for guest E2EE key requests (via Signal Protocol)
   /// Guests request LiveKit E2EE key via Socket.IO (since they don't have userId for standard Signal routing)
   void _setupGuestE2EEKeyRequestSocketListener() {
-    SocketService().socket?.on('guest:meeting_e2ee_key_request', (data) async {
+    SocketService.instance.socket?.on('guest:meeting_e2ee_key_request', (
+      data,
+    ) async {
       try {
         debugPrint(
           '[MeetingVideo] 🔐 Received E2EE key request from guest via Socket.IO',
@@ -207,16 +209,16 @@ class _MeetingVideoConferenceViewState
         '[MeetingVideo] Attempting to join socket room: meeting:${widget.meetingId}',
       );
       debugPrint(
-        '[MeetingVideo] Socket connected: ${SocketService().isConnected}',
+        '[MeetingVideo] Socket connected: ${SocketService.instance.isConnected}',
       );
 
-      if (!SocketService().isConnected) {
+      if (!SocketService.instance.isConnected) {
         debugPrint('[MeetingVideo] ⚠️ Socket not connected, waiting...');
         // Wait a bit for socket to connect
         await Future.delayed(const Duration(seconds: 1));
       }
 
-      SocketService().emit('meeting:join-room', {
+      SocketService.instance.emit('meeting:join-room', {
         'meeting_id': widget.meetingId,
       });
       debugPrint('[MeetingVideo] ✓ Emitted meeting:join-room event');
@@ -265,7 +267,7 @@ class _MeetingVideoConferenceViewState
       debugPrint(
         '[MeetingVideo] Leaving socket room: meeting:${widget.meetingId}',
       );
-      SocketService().emit('meeting:leave-room', {
+      SocketService.instance.emit('meeting:leave-room', {
         'meeting_id': widget.meetingId,
       });
 
@@ -283,7 +285,7 @@ class _MeetingVideoConferenceViewState
   @override
   void dispose() {
     // Remove Socket.IO listener for guest E2EE requests
-    SocketService().socket?.off('guest:meeting_e2ee_key_request');
+    SocketService.instance.socket?.off('guest:meeting_e2ee_key_request');
     debugPrint(
       '[MeetingVideo] ✓ Removed Socket.IO listener for guest:meeting_e2ee_key_request',
     );

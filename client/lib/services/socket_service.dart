@@ -3,7 +3,6 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:uuid/uuid.dart';
-import '../web_config.dart';
 import '../core/metrics/network_metrics.dart';
 import 'signal_service.dart';
 import 'session_auth_service.dart';
@@ -27,18 +26,9 @@ void setSocketUnauthorizedHandler(SocketUnauthorizedCallback callback) {
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
-  factory SocketService() {
-    debugPrint(
-      '[SOCKET SERVICE] 🏭 Factory constructor called, returning instance: ${_instance.hashCode}',
-    );
-    return _instance;
-  }
-  SocketService._internal() {
-    debugPrint(
-      '[SOCKET SERVICE] 🏗️ Private constructor called, creating NEW instance',
-    );
-  }
+  static SocketService get instance => _instance;
 
+  String? _serverUrl; // Current server URL (web only supports one)
   io.Socket? _socket;
   final Map<String, List<void Function(dynamic)>> _listeners = {};
   bool _connecting = false;
@@ -50,6 +40,17 @@ class SocketService {
   final Map<String, Map<String, Function(dynamic)>> _namedListeners = {};
   final Map<String, Function(dynamic)> _wrappedCallbacks =
       {}; // event_registrationName -> wrappedCallback
+
+  /// Private constructor for singleton
+  SocketService._internal() {
+    debugPrint('[SOCKET SERVICE] 🏗️ Creating singleton instance (web)');
+  }
+
+  /// Initialize with server URL (web only supports one server)
+  void setServerUrl(String serverUrl) {
+    _serverUrl = serverUrl;
+    debugPrint('[SOCKET SERVICE] Server URL set to: $serverUrl');
+  }
 
   // Public getter for socket (needed by SocketFileClient)
   io.Socket? get socket => _socket;
@@ -88,8 +89,11 @@ class SocketService {
     if (_connecting) return;
     _connecting = true;
     try {
-      final apiServer = await loadWebApiServer();
-      String urlString = apiServer ?? '';
+      // Use the serverUrl from the instance
+      if (_serverUrl == null) {
+        throw Exception('Server URL not set. Call setServerUrl() first.');
+      }
+      String urlString = _serverUrl!;
       if (!urlString.startsWith('http://') &&
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';

@@ -99,7 +99,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       'groupItemReadUpdate',
       _handleReadReceipt,
     );
-    SocketService().unregisterListener(
+    SocketService.instance.unregisterListener(
       'groupItemDelivered',
       registrationName: 'SignalGroupChatScreen',
     );
@@ -428,7 +428,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       'groupItemReadUpdate',
       _handleReadReceipt,
     );
-    SocketService().registerListener(
+    SocketService.instance.registerListener(
       'groupItemDelivered',
       _handleDeliveryReceipt,
       registrationName: 'SignalGroupChatScreen',
@@ -1106,7 +1106,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       });
 
       // CRITICAL: Check socket connection before sending
-      if (!SocketService().isConnected) {
+      if (!SocketService.instance.isConnected) {
         // Add to offline queue
         await OfflineMessageQueue.instance.enqueue(
           QueuedMessage(

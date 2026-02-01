@@ -5,18 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import '../../device_scoped_storage_service.dart';
 import '../../api_service.dart';
-
-/// Wrapper for a signed pre-key record with its creation timestamp.
-///
-/// Needed because:
-/// - SignedPreKeyRecord from libsignal doesn't include createdAt
-/// - We store metadata separately in storage (with '_meta' suffix)
-/// - Rotation logic needs to know key age (7+ days = rotate, 30+ days = delete)
-class StoredSignedPreKey {
-  final SignedPreKeyRecord record;
-  final DateTime? createdAt;
-  StoredSignedPreKey({required this.record, this.createdAt});
-}
+import '../state/signed_pre_key_state.dart';
 
 /// A persistent signed pre-key store for Signal signed pre-keys.
 /// Uses encrypted device-scoped storage (IndexedDB on web, native platform storage on Windows/macOS/Linux).
@@ -31,7 +20,20 @@ class StoredSignedPreKey {
 /// - validateServerSignedPreKey() - Server validation and recovery
 ///
 /// 💡 Key Insight: Just call getSignedPreKey() everywhere - it handles everything!
+///
+/// 🌐 Multi-Server Support:
+/// This store is server-scoped via KeyManager.
+/// - apiService: Used for HTTP uploads (server-scoped, knows baseUrl)
+/// - socketService: Used for real-time events (server-scoped, knows serverUrl)
+///
+/// Storage isolation is automatic:
+/// - DeviceIdentityService provides unique deviceId per server
+/// - DeviceScopedStorageService creates isolated databases automatically
 mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
+  // Abstract getters - provided by KeyManager
+  ApiService get apiService;
+  SocketService get socketService;
+
   /// Identity key pair - must be provided by the class using this mixin
   IdentityKeyPair get identityKeyPair;
 
@@ -42,14 +44,12 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
   // CORE STORAGE OPERATIONS (Low-level access)
   // ============================================================================
 
-  /// Load a single signed pre key with its metadata from storage.
+  /// Load a single signed pre key from storage.
   ///
-  /// Returns [StoredSignedPreKey] containing:
-  /// - `record`: The SignedPreKeyRecord from libsignal
-  /// - `createdAt`: When the key was generated (used for rotation)
+  /// Returns SignedPreKeyRecord or `null` if key doesn't exist.
   ///
-  /// Returns `null` if key doesn't exist.
-  Future<StoredSignedPreKey?> loadStoredSignedPreKey(int signedPreKeyId) async {
+  /// Note: Use [_loadSignedPreKeyMetadata] separately if you need the createdAt timestamp.
+  Future<SignedPreKeyRecord?> loadStoredSignedPreKey(int signedPreKeyId) async {
     if (await containsSignedPreKey(signedPreKeyId)) {
       // ✅ ONLY encrypted device-scoped storage (Web + Native)
       final storage = DeviceScopedStorageService.instance;
@@ -57,11 +57,6 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
         _storeName,
         _storeName,
         _signedPreKey(signedPreKeyId),
-      );
-      final metaValue = await storage.getDecrypted(
-        _storeName,
-        _storeName,
-        _signedPreKeyMeta(signedPreKeyId),
       );
 
       SignedPreKeyRecord? record;
@@ -72,31 +67,50 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
       } else {
         throw Exception('Invalid signed prekey data');
       }
-      DateTime? createdAt;
-      if (metaValue is String) {
-        var meta = jsonDecode(metaValue);
-        if (meta is Map && meta['createdAt'] != null) {
-          createdAt = DateTime.parse(meta['createdAt']);
-        }
-      }
-      return StoredSignedPreKey(record: record, createdAt: createdAt);
+      return record;
     } else {
       return null;
     }
   }
 
-  /// Load all signed pre keys with their metadata from storage.
+  /// Load metadata for a signed pre key (internal helper).
   ///
-  /// Returns list of [StoredSignedPreKey] objects, each containing:
-  /// - `record`: The SignedPreKeyRecord from libsignal
-  /// - `createdAt`: When the key was generated
+  /// Returns Map with 'createdAt' timestamp, or empty map if not found.
+  Future<Map<String, dynamic>> _loadSignedPreKeyMetadata(
+    int signedPreKeyId,
+  ) async {
+    final storage = DeviceScopedStorageService.instance;
+    final metaValue = await storage.getDecrypted(
+      _storeName,
+      _storeName,
+      _signedPreKeyMeta(signedPreKeyId),
+    );
+
+    if (metaValue is String) {
+      try {
+        final meta = jsonDecode(metaValue);
+        if (meta is Map<String, dynamic>) {
+          return meta;
+        }
+      } catch (e) {
+        debugPrint('[SIGNED_PREKEY] Error parsing metadata: $e');
+      }
+    }
+    return {};
+  }
+
+  /// Load all signed pre keys from storage.
+  ///
+  /// Returns list of SignedPreKeyRecord objects.
   ///
   /// Used for:
   /// - Finding newest key for rotation checks
   /// - Cleanup operations (identifying old keys)
   /// - Initialization validation
-  Future<List<StoredSignedPreKey>> loadAllStoredSignedPreKeys() async {
-    final results = <StoredSignedPreKey>[];
+  ///
+  /// Note: Use [_loadSignedPreKeyMetadata] separately if you need timestamps.
+  Future<List<SignedPreKeyRecord>> loadAllStoredSignedPreKeys() async {
+    final results = <SignedPreKeyRecord>[];
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
     var keys = await storage.getAllKeys(_storeName, _storeName);
@@ -112,22 +126,7 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
             record = SignedPreKeyRecord.fromSerialized(value);
           }
           if (record != null) {
-            var metaKey = '${key}_meta';
-            var metaValue = await storage.getDecrypted(
-              _storeName,
-              _storeName,
-              metaKey,
-            );
-            DateTime? createdAt;
-            if (metaValue is String) {
-              var meta = jsonDecode(metaValue);
-              if (meta is Map && meta['createdAt'] != null) {
-                createdAt = DateTime.parse(meta['createdAt']);
-              }
-            }
-            results.add(
-              StoredSignedPreKey(record: record, createdAt: createdAt),
-            );
+            results.add(record);
           }
         }
       }
@@ -156,7 +155,7 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
   /// Call this from KeyManager.init() after identity key pair is loaded.
   Future<void> initializeSignedPreKeyStore() async {
     // Listen for incoming signed prekeys from server
-    SocketService().registerListener("getSignedPreKeysResponse", (data) async {
+    socketService.registerListener("getSignedPreKeysResponse", (data) async {
       // Server does not store private keys; nothing to reconstruct here.
       if (data.isEmpty) {
         debugPrint("No signed pre keys found, creating new one");
@@ -173,44 +172,39 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
         return;
       }
 
-      // Sort by createdAt (newest first)
-      keys.sort((a, b) {
-        if (a.createdAt == null) return 1;
-        if (b.createdAt == null) return -1;
-        return b.createdAt!.compareTo(a.createdAt!);
-      });
+      // Sort by ID (highest = newest)
+      keys.sort((a, b) => b.id.compareTo(a.id));
 
       final newest = keys.first;
       debugPrint(
-        '[SIGNED_PREKEY_SETUP] Found ${keys.length} local signed prekeys, newest ID: ${newest.record.id}',
+        '[SIGNED_PREKEY_SETUP] Found ${keys.length} local signed prekeys, newest ID: ${newest.id}',
       );
 
       // Check if the NEWEST signed prekey is older than 7 days
-      final createdAt = newest.createdAt;
-      if (createdAt != null &&
-          DateTime.now().difference(createdAt).inDays > 7) {
-        debugPrint(
-          '[SIGNED_PREKEY_SETUP] Newest key is ${DateTime.now().difference(createdAt).inDays} days old - rotating',
-        );
-        var newPreSignedKey = generateSignedPreKey(
-          identityKeyPair,
-          keys.length,
-        );
-        await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
-        // Re-fetch keys after rotation
-        keys = await loadAllStoredSignedPreKeys();
-        keys.sort((a, b) {
-          if (a.createdAt == null) return 1;
-          if (b.createdAt == null) return -1;
-          return b.createdAt!.compareTo(a.createdAt!);
-        });
+      final metadata = await _loadSignedPreKeyMetadata(newest.id);
+      final createdAtStr = metadata['createdAt'] as String?;
+      if (createdAtStr != null) {
+        final createdAt = DateTime.parse(createdAtStr);
+        if (DateTime.now().difference(createdAt).inDays > 7) {
+          debugPrint(
+            '[SIGNED_PREKEY_SETUP] Newest key is ${DateTime.now().difference(createdAt).inDays} days old - rotating',
+          );
+          var newPreSignedKey = generateSignedPreKey(
+            identityKeyPair,
+            keys.length,
+          );
+          await storeSignedPreKey(newPreSignedKey.id, newPreSignedKey);
+          // Re-fetch keys after rotation
+          keys = await loadAllStoredSignedPreKeys();
+          keys.sort((a, b) => b.id.compareTo(a.id));
+        }
       }
 
       // Ensure the newest key is uploaded to server (re-upload to be safe)
       debugPrint(
-        '[SIGNED_PREKEY_SETUP] Ensuring newest signed prekey (ID ${keys.first.record.id}) is on server',
+        '[SIGNED_PREKEY_SETUP] Ensuring newest signed prekey (ID ${keys.first.id}) is on server',
       );
-      await storeSignedPreKey(keys.first.record.id, keys.first.record);
+      await storeSignedPreKey(keys.first.id, keys.first);
 
       // Local cleanup: Keep max 3 keys (newest + 2 backups)
       // Delete oldest keys when exceeding limit
@@ -221,10 +215,8 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
         );
 
         for (final key in keysToDelete) {
-          debugPrint(
-            '[SIGNED_PREKEY_SETUP] Deleting local key ${key.record.id}',
-          );
-          await _deleteLocalOnly(key.record.id);
+          debugPrint('[SIGNED_PREKEY_SETUP] Deleting local key ${key.id}');
+          await _deleteLocalOnly(key.id);
         }
 
         debugPrint(
@@ -239,14 +231,12 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
 
       for (final key in keys) {
         // Keep newest key always
-        if (key.record.id == keys.first.record.id) continue;
+        if (key.id == keys.first.id) continue;
 
         // Delete ALL old keys from server immediately
-        debugPrint(
-          '[SIGNED_PREKEY_SETUP] Removing old server key: ${key.record.id}',
-        );
-        SocketService().emit("removeSignedPreKey", <String, dynamic>{
-          'id': key.record.id,
+        debugPrint('[SIGNED_PREKEY_SETUP] Removing old server key: ${key.id}');
+        socketService.emit("removeSignedPreKey", <String, dynamic>{
+          'id': key.id,
         });
         serverDeleted++;
       }
@@ -268,7 +258,7 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
   /// ⚠️ NOTE: Server doesn't store private keys, so this only checks server state.
   /// Used during initialization to verify server has our public key.
   Future<void> loadRemoteSignedPreKeys() async {
-    SocketService().emit("getSignedPreKeys", null);
+    socketService.emit("getSignedPreKeys", null);
   }
 
   // ============================================================================
@@ -287,9 +277,9 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
   /// - Key was rotated and cleaned up
   @override
   Future<SignedPreKeyRecord> loadSignedPreKey(int signedPreKeyId) async {
-    final stored = await loadStoredSignedPreKey(signedPreKeyId);
-    if (stored != null) {
-      return stored.record;
+    final record = await loadStoredSignedPreKey(signedPreKeyId);
+    if (record != null) {
+      return record;
     } else {
       // SignedPreKey not found - this can happen if:
       // 1. Sender used old PreKey bundle (we deleted the signedPreKey)
@@ -303,7 +293,7 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
       // Debug: Show what keys we DO have
       final allKeys = await loadAllStoredSignedPreKeys();
       debugPrint(
-        '[SIGNED_PREKEY] Available local keys: ${allKeys.map((k) => k.record.id).toList()}',
+        '[SIGNED_PREKEY] Available local keys: ${allKeys.map((k) => k.id).toList()}',
       );
 
       debugPrint(
@@ -315,13 +305,10 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
 
   /// Load all signed pre key records (Signal protocol interface).
   ///
-  /// Returns list of [SignedPreKeyRecord] objects (without metadata).
-  /// For records WITH metadata (createdAt), use [loadAllStoredSignedPreKeys].
+  /// Returns list of [SignedPreKeyRecord] objects.
   @override
   Future<List<SignedPreKeyRecord>> loadSignedPreKeys() async {
-    // For compatibility, return only the records (without metadata)
-    final stored = await loadAllStoredSignedPreKeys();
-    return stored.map((e) => e.record).toList();
+    return await loadAllStoredSignedPreKeys();
   }
 
   /// Store a signed pre key record locally and upload to server (Signal protocol interface).
@@ -344,7 +331,7 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
 
     // Upload to server with acknowledgment
     try {
-      final response = await ApiService.post(
+      final response = await apiService.post(
         '/signal/signed-prekey',
         data: {'id': signedPreKeyId, 'data': publicKey, 'signature': signature},
       );
@@ -365,12 +352,12 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
     // This ensures server always advertises only the newest signedPreKey
     final allKeys = await loadAllStoredSignedPreKeys();
     for (final key in allKeys) {
-      if (key.record.id != signedPreKeyId) {
+      if (key.id != signedPreKeyId) {
         debugPrint(
-          "[SIGNED_PREKEY] Auto-cleanup: Removing old server key ${key.record.id} (keeping only $signedPreKeyId)",
+          "[SIGNED_PREKEY] Auto-cleanup: Removing old server key ${key.id} (keeping only $signedPreKeyId)",
         );
-        SocketService().emit("removeSignedPreKey", <String, dynamic>{
-          'id': key.record.id,
+        socketService.emit("removeSignedPreKey", <String, dynamic>{
+          'id': key.id,
         });
       }
     }
@@ -422,7 +409,7 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
   @override
   Future<void> removeSignedPreKey(int signedPreKeyId) async {
     debugPrint("Removing signed pre key: $signedPreKeyId");
-    SocketService().emit("removeSignedPreKey", <String, dynamic>{
+    socketService.emit("removeSignedPreKey", <String, dynamic>{
       'id': signedPreKeyId,
     });
 
@@ -488,25 +475,23 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
         return false;
       }
 
-      // Find the newest key
-      allKeys.sort((a, b) {
-        if (a.createdAt == null && b.createdAt == null) return 0;
-        if (a.createdAt == null) return 1;
-        if (b.createdAt == null) return -1;
-        return b.createdAt!.compareTo(a.createdAt!);
-      });
-
+      // Find the newest key (highest ID)
+      allKeys.sort((a, b) => b.id.compareTo(a.id));
       final newestKey = allKeys.first;
-      if (newestKey.createdAt == null) {
+
+      // Load metadata for newest key
+      final metadata = await _loadSignedPreKeyMetadata(newestKey.id);
+      final createdAtStr = metadata['createdAt'] as String?;
+
+      if (createdAtStr == null) {
         debugPrint(
           '[SIGNED_PREKEY_ROTATION] Newest key has no createdAt timestamp, assuming rotation needed',
         );
         return true;
       }
 
-      final daysSinceCreation = DateTime.now()
-          .difference(newestKey.createdAt!)
-          .inDays;
+      final createdAt = DateTime.parse(createdAtStr);
+      final daysSinceCreation = DateTime.now().difference(createdAt).inDays;
       debugPrint(
         '[SIGNED_PREKEY_ROTATION] Newest SignedPreKey is $daysSinceCreation days old',
       );
@@ -544,10 +529,13 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
     try {
       debugPrint('[SIGNED_PREKEY_ROTATION] Starting SignedPreKey rotation...');
 
+      // Mark rotation in progress
+      SignedPreKeyState.instance.markRotating();
+
       var allKeys = await loadAllStoredSignedPreKeys();
       final nextId = allKeys.isEmpty
           ? 0
-          : allKeys.map((k) => k.record.id).reduce((a, b) => a > b ? a : b) + 1;
+          : allKeys.map((k) => k.id).reduce((a, b) => a > b ? a : b) + 1;
 
       // Generate new SignedPreKey
       debugPrint(
@@ -564,11 +552,7 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
 
       // Re-fetch keys after rotation to get updated list
       allKeys = await loadAllStoredSignedPreKeys();
-      allKeys.sort((a, b) {
-        if (a.createdAt == null) return 1;
-        if (b.createdAt == null) return -1;
-        return b.createdAt!.compareTo(a.createdAt!);
-      });
+      allKeys.sort((a, b) => b.id.compareTo(a.id));
 
       // Local cleanup: Keep max 3 keys (newest + 2 backups)
       // Delete oldest keys when exceeding limit
@@ -579,10 +563,8 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
         );
 
         for (final key in keysToDelete) {
-          debugPrint(
-            '[SIGNED_PREKEY_ROTATION] Deleting local key ${key.record.id}',
-          );
-          await _deleteLocalOnly(key.record.id);
+          debugPrint('[SIGNED_PREKEY_ROTATION] Deleting local key ${key.id}');
+          await _deleteLocalOnly(key.id);
         }
 
         debugPrint(
@@ -595,14 +577,14 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
 
       for (final key in allKeys) {
         // Keep newest key always
-        if (key.record.id == allKeys.first.record.id) continue;
+        if (key.id == allKeys.first.id) continue;
 
         // Delete ALL old keys from server immediately
         debugPrint(
-          '[SIGNED_PREKEY_ROTATION] Removing old server key: ${key.record.id}',
+          '[SIGNED_PREKEY_ROTATION] Removing old server key: ${key.id}',
         );
-        SocketService().emit("removeSignedPreKey", <String, dynamic>{
-          'id': key.record.id,
+        socketService.emit("removeSignedPreKey", <String, dynamic>{
+          'id': key.id,
         });
         serverDeleted++;
       }
@@ -616,9 +598,20 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
       debugPrint(
         '[SIGNED_PREKEY_ROTATION] ✅ Rotation complete: ${allKeys.length} local keys, 1 server key (newest)',
       );
+
+      // Update state
+      final metadata = await _loadSignedPreKeyMetadata(allKeys.first.id);
+      final createdAt = metadata['createdAt'] != null
+          ? DateTime.parse(metadata['createdAt'] as String)
+          : DateTime.now();
+      SignedPreKeyState.instance.markRotationComplete(
+        allKeys.first.id,
+        createdAt,
+      );
     } catch (e, stackTrace) {
       debugPrint('[SIGNED_PREKEY_ROTATION] ❌ ERROR during rotation: $e');
       debugPrint('[SIGNED_PREKEY_ROTATION] Stack trace: $stackTrace');
+      SignedPreKeyState.instance.markError(e.toString());
       rethrow;
     }
   }
@@ -755,17 +748,17 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
 
       if (allKeys.length <= maxSignedPreKeys) return;
 
-      allKeys.sort((a, b) => b.record.id.compareTo(a.record.id));
+      allKeys.sort((a, b) => b.id.compareTo(a.id));
       final keysToDelete = allKeys.skip(maxSignedPreKeys).toList();
 
       if (keysToDelete.isEmpty) return;
 
       debugPrint(
-        '[SIGNED_PRE_KEY_STORE] Cleaning up ${keysToDelete.length} old SignedPreKeys (keeping max $maxSignedPreKeys)...',
+        '[SIGNED_PRE_KEY_STORE] Removing ${keysToDelete.length} old keys...',
       );
 
       for (final key in keysToDelete) {
-        await removeSignedPreKey(key.record.id);
+        await removeSignedPreKey(key.id);
       }
 
       debugPrint('[SIGNED_PRE_KEY_STORE] ✓ Cleanup complete');

@@ -416,7 +416,7 @@ class ServerConfigService {
     await _saveActiveServerId();
 
     // Update SocketService active server for proper message routing
-    SocketService().setActiveServer(serverId);
+    SocketService.instance.setActiveServer(serverId);
 
     debugPrint('[ServerConfig] Set active server: $serverId');
   }

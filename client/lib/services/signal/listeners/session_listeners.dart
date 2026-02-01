@@ -144,7 +144,7 @@ class SessionListeners {
     if (!hasIdentity || !hasSignedPreKey || preKeyCount < 10) {
       debugPrint('[SESSION_LISTENERS] Keys missing or low, triggering upload');
       keyState.markSyncing('Uploading missing keys...');
-      await keyManager.uploadMissingKeys();
+      await keyManager.uploadAllKeysToServer();
       keyState.markComplete();
     } else {
       keyState.markComplete();

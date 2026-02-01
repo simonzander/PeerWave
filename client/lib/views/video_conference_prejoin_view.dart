@@ -81,7 +81,7 @@ class _VideoConferencePreJoinViewState
       debugPrint('[PreJoin] Channel: ${widget.channelId}');
 
       // Step 0: Check socket connection status
-      final socketConnected = SocketService().isConnected;
+      final socketConnected = SocketService.instance.isConnected;
       debugPrint('[PreJoin] Socket connected: $socketConnected');
 
       if (!socketConnected) {
@@ -90,12 +90,12 @@ class _VideoConferencePreJoinViewState
         );
         // Wait up to 5 seconds for socket to connect
         int attempts = 0;
-        while (!SocketService().isConnected && attempts < 50) {
+        while (!SocketService.instance.isConnected && attempts < 50) {
           await Future.delayed(Duration(milliseconds: 100));
           attempts++;
         }
 
-        if (!SocketService().isConnected) {
+        if (!SocketService.instance.isConnected) {
           debugPrint('[PreJoin] ❌ Socket connection timeout after 5 seconds');
           if (mounted) {
             context.showErrorSnackBar(
@@ -251,7 +251,7 @@ class _VideoConferencePreJoinViewState
   /// Register as participant on server
   Future<void> _registerAsParticipant() async {
     try {
-      SocketService().emit('video:register-participant', {
+      SocketService.instance.emit('video:register-participant', {
         'channelId': widget.channelId,
       });
       debugPrint('[PreJoin] Registered as participant');
@@ -281,7 +281,7 @@ class _VideoConferencePreJoinViewState
         }
       }
 
-      SocketService().registerListener(
+      SocketService.instance.registerListener(
         'video:participants-info',
         listener,
         registrationName: 'VideoConferencePrejoinView',
@@ -289,7 +289,7 @@ class _VideoConferencePreJoinViewState
 
       // Request participant info
       debugPrint('[PreJoin][TEST] 📤 Emitting video:check-participants...');
-      SocketService().emit('video:check-participants', {
+      SocketService.instance.emit('video:check-participants', {
         'channelId': widget.channelId,
       });
 
@@ -302,7 +302,7 @@ class _VideoConferencePreJoinViewState
         },
       );
 
-      SocketService().unregisterListener(
+      SocketService.instance.unregisterListener(
         'video:participants-info',
         registrationName: 'VideoConferencePrejoinView',
       );
@@ -591,7 +591,7 @@ class _VideoConferencePreJoinViewState
       }
 
       // Confirm E2EE key status to server
-      SocketService().emit('video:confirm-e2ee-key', <String, dynamic>{
+      SocketService.instance.emit('video:confirm-e2ee-key', <String, dynamic>{
         'channelId': meetingId,
       });
 
