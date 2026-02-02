@@ -1,7 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import '../../socket_service.dart';
-import '../core/group_message_receiver.dart';
+import '../../socket_service.dart'
+    if (dart.library.io) '../../socket_service_native.dart';
+import '../core/messaging/messaging_service.dart';
 import '../../../providers/unread_messages_provider.dart';
 import '../../event_bus.dart';
 
@@ -14,7 +15,7 @@ import '../../event_bus.dart';
 /// - groupItemReadUpdate: Read receipt updates
 /// - receiveSenderKeyDistribution: SenderKey distribution messages
 ///
-/// These listeners delegate processing to GroupMessageReceiver service.
+/// These listeners delegate processing to MessagingService.
 class GroupListeners {
   static const String _registrationName = 'GroupListeners';
   static bool _registered = false;
@@ -23,7 +24,7 @@ class GroupListeners {
 
   /// Register all group message listeners
   static Future<void> register(
-    GroupMessageReceiver receiver, {
+    MessagingService messagingService, {
     UnreadMessagesProvider? unreadMessagesProvider,
     String? currentUserId,
   }) async {
@@ -35,7 +36,7 @@ class GroupListeners {
     _unreadMessagesProvider = unreadMessagesProvider;
     _currentUserId = currentUserId;
 
-    final socket = SocketService();
+    final socket = SocketService.instance;
 
     // Main group item event (replaces receiveItemChannel)
     socket.registerListener('groupItem', (data) async {
@@ -107,10 +108,21 @@ class GroupListeners {
 
         // Handle emote messages (reactions)
         if (type == 'emote') {
-          await receiver.handleReaction(dataMap);
+          // TODO: Implement reaction handling in MessagingService
+          debugPrint('[GROUP_LISTENERS] Reaction handling not yet implemented');
         } else {
           // Regular group message - decrypt and process
-          await receiver.receiveItemChannel(dataMap);
+          // Extract message details
+          final cipherType =
+              dataMap['cipherType'] as int? ?? 3; // Default to SENDERKEY
+          await messagingService.receiveMessage(
+            dataMap: dataMap,
+            type: type ?? 'message',
+            sender: sender ?? '',
+            senderDeviceId: dataMap['senderDeviceId'] as int? ?? 0,
+            cipherType: cipherType,
+            itemId: itemId ?? '',
+          );
         }
       } catch (e, stack) {
         debugPrint('[GROUP_LISTENERS] Error processing groupItem: $e');
@@ -124,7 +136,10 @@ class GroupListeners {
       try {
         final itemId = data['itemId'] as String;
         debugPrint('[GROUP_LISTENERS] Group read receipt for: $itemId');
-        await receiver.handleReadReceipt(data);
+        // TODO: Implement read receipt handling in MessagingService
+        debugPrint(
+          '[GROUP_LISTENERS] Read receipt handling not yet implemented',
+        );
       } catch (e, stack) {
         debugPrint(
           '[GROUP_LISTENERS] Error processing groupMessageReadReceipt: $e',
@@ -184,7 +199,7 @@ class GroupListeners {
         final distributionMessageBytes = base64Decode(
           distributionMessageBase64,
         );
-        await receiver.processSenderKeyDistribution(
+        await messagingService.processSenderKeyDistribution(
           groupId,
           senderId,
           senderDeviceId,
@@ -209,7 +224,7 @@ class GroupListeners {
   static Future<void> unregister() async {
     if (!_registered) return;
 
-    final socket = SocketService();
+    final socket = SocketService.instance;
     socket.unregisterListener('groupItem', registrationName: _registrationName);
     socket.unregisterListener(
       'groupMessageReadReceipt',

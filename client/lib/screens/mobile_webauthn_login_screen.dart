@@ -4,10 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../widgets/app_drawer.dart';
 import '../services/api_service.dart';
 import '../services/webauthn_service_mobile.dart';
-import '../services/clientid_native.dart';
-import '../services/device_identity_service.dart';
 import '../services/server_config_native.dart';
-import '../services/session_auth_service.dart';
 import '../services/custom_tab_auth_service.dart';
 
 /// Mobile WebAuthn login screen for iOS/Android
@@ -155,7 +152,7 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen>
     }
 
     try {
-      final response = await ApiService.dio.get('$_serverUrl/client/meta');
+      final response = await ApiService.instance.get('$_serverUrl/client/meta');
 
       if (response.statusCode == 200) {
         final data = response.data;
@@ -221,7 +218,10 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen>
       );
 
       // Set base URL for API service before authentication
-      ApiService.setBaseUrl(_serverUrl!);
+      await ApiService.instance.initForServer(
+        ServerConfigService.getActiveServer()?.id ?? 'default',
+        serverUrl: _serverUrl!,
+      );
 
       // Use Chrome Custom Tab for authentication (bypasses Android Credential Manager limitations)
       // This allows full WebAuthn spec compliance and cross-RP passkey support

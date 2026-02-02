@@ -23,9 +23,9 @@ class _LicenseFooterState extends State<LicenseFooter> {
 
   Future<void> _loadLicenseInfo() async {
     try {
-      ApiService.init();
-      final dio = ApiService.dio;
-      final resp = await dio.get('/api/license-info');
+      await ApiService.instance.init();
+      // Get license info from API
+      final resp = await ApiService.instance.get('/api/license-info');
 
       if (resp.statusCode == 200) {
         final data = resp.data;

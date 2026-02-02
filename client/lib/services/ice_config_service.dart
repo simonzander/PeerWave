@@ -125,7 +125,7 @@ class IceConfigService extends ChangeNotifier {
       debugPrint('[ICE CONFIG] Loading ICE config from LiveKit...');
 
       // ✅ NEW: Fetch from LiveKit ICE endpoint instead of /client/meta
-      final response = await ApiService.get('/api/livekit/ice-config');
+      final response = await ApiService.instance.get('/api/livekit/ice-config');
 
       if (response.statusCode == 200) {
         final data = response.data;

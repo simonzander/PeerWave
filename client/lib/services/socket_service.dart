@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:uuid/uuid.dart';
 import '../core/metrics/network_metrics.dart';
-import 'signal_service.dart';
 import 'session_auth_service.dart';
 import 'clientid_native.dart' if (dart.library.js) 'clientid_web.dart';
 import 'server_connection_service.dart';
@@ -152,17 +151,11 @@ class SocketService {
           return;
         }
         // Store user info in SignalService for device filtering
-        if (data is Map &&
-            data['authenticated'] == true &&
-            data['uuid'] != null &&
-            data['deviceId'] != null) {
-          // Parse deviceId as int (server sends String)
-          final deviceId = data['deviceId'] is int
-              ? data['deviceId'] as int
-              : int.parse(data['deviceId'].toString());
-          SignalService.instance.setCurrentUserInfo(data['uuid'], deviceId);
+        if (data is Map && data['authenticated'] == true) {
+          // SignalClient gets user info via callbacks on initialization
+          // No need to set it here via deprecated SignalService
           debugPrint(
-            '[SOCKET SERVICE] User info set, socket still connected: ${_socket?.connected}',
+            '[SOCKET SERVICE] Authenticated, socket still connected: ${_socket?.connected}',
           );
 
           // 🚀 CRITICAL: If listeners are already registered, notify server immediately after auth

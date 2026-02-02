@@ -136,7 +136,7 @@ class FCMService {
       final lastSeen = DateTime.now().toIso8601String();
 
       // Register with server via API
-      final response = await ApiService.dio.post(
+      final response = await ApiService.instance.post(
         '/api/push/register',
         data: {
           'fcm_token': token,

@@ -32,7 +32,7 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
 
   Future<void> _fetchBackupCodes() async {
     try {
-      final resp = await ApiService.get('/backupcode/list');
+      final resp = await ApiService.instance.get('/backupcode/list');
       if (resp.statusCode == 200 && resp.data != null) {
         final data = resp.data is String ? json.decode(resp.data) : resp.data;
         if (data is Map && data['backupCodes'] is List) {
@@ -58,7 +58,10 @@ class _BackupCodeSettingsPageState extends State<BackupCodeSettingsPage> {
     });
 
     try {
-      final resp = await ApiService.post('/backupcode/regenerate', data: {});
+      final resp = await ApiService.instance.post(
+        '/backupcode/regenerate',
+        data: {},
+      );
       if (resp.statusCode == 200 && resp.data != null) {
         final data = resp.data is String ? json.decode(resp.data) : resp.data;
         if (data is Map && data['backupCodes'] is List) {

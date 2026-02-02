@@ -1,11 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'dart:convert';
-import '../../permanent_session_store.dart';
-import '../../permanent_pre_key_store.dart';
-import '../../permanent_signed_pre_key_store.dart';
-import '../../permanent_identity_key_store.dart';
-import '../../sender_key_store.dart';
 
 import 'key_manager.dart';
 import 'session_manager.dart';
@@ -38,12 +33,11 @@ class EncryptionService {
   bool _initialized = false;
 
   // Delegate to SessionManager and KeyManager for stores
-  PermanentSessionStore get sessionStore => sessionManager.sessionStore;
-  PermanentPreKeyStore get preKeyStore => keyManager.preKeyStore;
-  PermanentSignedPreKeyStore get signedPreKeyStore =>
-      keyManager.signedPreKeyStore;
-  PermanentIdentityKeyStore get identityStore => keyManager.identityStore;
-  PermanentSenderKeyStore get senderKeyStore => keyManager.senderKeyStore;
+  SessionManager get sessionStore => sessionManager;
+  SignalKeyManager get preKeyStore => keyManager;
+  SignalKeyManager get signedPreKeyStore => keyManager;
+  SignalKeyManager get identityStore => keyManager;
+  SignalKeyManager get senderKeyStore => keyManager;
 
   bool get isInitialized => _initialized;
 

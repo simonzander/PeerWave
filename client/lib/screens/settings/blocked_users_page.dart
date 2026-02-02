@@ -22,7 +22,7 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
   Future<void> _loadBlockedUsers() async {
     setState(() => _isLoading = true);
     try {
-      final response = await ApiService.get('/api/blocked-users');
+      final response = await ApiService.instance.get('/api/blocked-users');
       if (response.statusCode == 200) {
         setState(() {
           _blockedUsers = List<Map<String, dynamic>>.from(response.data);
@@ -63,7 +63,7 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
     if (confirmed != true) return;
 
     try {
-      final response = await ApiService.post(
+      final response = await ApiService.instance.post(
         '/api/unblock',
         data: {'blockedUuid': blockedUuid},
       );

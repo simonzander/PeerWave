@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'signal_service.dart';
 import 'api_service.dart';
 import 'user_profile_service.dart';
 import 'storage/sqlite_message_store.dart';
 import 'storage/sqlite_recent_conversations_store.dart';
+import 'storage/sqlite_group_message_store.dart';
 import 'dart:convert';
 
 /// Service for aggregating and managing activities
@@ -15,8 +15,10 @@ class ActivitiesService {
   static Future<List<Map<String, dynamic>>>
   getWebRTCChannelParticipants() async {
     try {
-      ApiService.init();
-      final resp = await ApiService.get('/client/channels?type=webrtc');
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get(
+        '/client/channels?type=webrtc',
+      );
 
       if (resp.statusCode == 200) {
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
@@ -35,7 +37,7 @@ class ActivitiesService {
 
           // Get participants for each channel
           try {
-            final participantsResp = await ApiService.get(
+            final participantsResp = await ApiService.instance.get(
               '/client/channels/${channel['uuid']}/participants',
             );
             if (participantsResp.statusCode == 200) {
@@ -219,8 +221,8 @@ class ActivitiesService {
 
     try {
       // Get list of Signal channels from API
-      ApiService.init();
-      final resp = await ApiService.get(
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get(
         '/client/channels?type=signal&limit=100',
       );
 
@@ -229,40 +231,20 @@ class ActivitiesService {
       final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
       final channels = (data['channels'] as List<dynamic>? ?? []);
 
-      final store = SignalService.instance.decryptedGroupItemsStore;
+      final groupMessageStore = await SqliteGroupMessageStore.getInstance();
 
       // Get messages for each channel
       for (final channel in channels) {
         final channelId = channel['uuid'] as String?;
         if (channelId == null) continue;
 
-        // Get received group messages
-        final receivedMessages = await store.getChannelItems(channelId);
-
-        // Get sent group items
-        final sentMessages = await SignalService.instance.sentGroupItemsStore
-            .loadSentItems(channelId);
-
-        // Combine all messages and filter by type
-        final allMessages = <Map<String, dynamic>>[
-          ...receivedMessages.where(
-            (msg) => displayableTypes.contains(msg['type'] ?? 'message'),
-          ),
-          ...sentMessages
-              .where(
-                (msg) => displayableTypes.contains(msg['type'] ?? 'message'),
-              )
-              .map(
-                (msg) => {
-                  'itemId': msg['itemId'],
-                  'message': msg['message'],
-                  'timestamp': msg['timestamp'],
-                  'sender': 'self',
-                  'type': msg['type'] ?? 'message',
-                  'channelId': channelId,
-                },
-              ),
-        ];
+        // Get all group messages (sent and received)
+        final allMessages =
+            (await groupMessageStore.getChannelMessages(channelId))
+                .where(
+                  (msg) => displayableTypes.contains(msg['type'] ?? 'message'),
+                )
+                .toList();
 
         if (allMessages.isEmpty) continue;
 

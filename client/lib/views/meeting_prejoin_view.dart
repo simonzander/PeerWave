@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/meeting_service.dart';
 import '../services/video_conference_service.dart';
+import '../services/server_settings_service.dart';
 import '../services/socket_service.dart'
     if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/api_service.dart';
-import '../services/signal_service.dart';
 import '../models/meeting.dart';
 import '../extensions/snackbar_extensions.dart';
 import '../widgets/video_prejoin_widget.dart';
@@ -196,7 +196,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
   Future<void> _loadChannelSenderKeys() async {
     try {
       // Get meeting participants instead of channel participants
-      final response = await ApiService.dio.get(
+      final response = await ApiService.instance.get(
         '/api/meetings/${_meeting!.meetingId}/participants',
       );
 
@@ -210,24 +210,21 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         final deviceId = participant['deviceId'] as int?;
 
         if (userId == null || deviceId == null) continue;
-        if (userId == SignalService.instance.currentUserId &&
-            deviceId == SignalService.instance.currentDeviceId) {
+
+        // Skip our own device
+        final signalClient = await ServerSettingsService.instance
+            .getOrCreateSignalClient();
+        if (userId == signalClient.getCurrentUserId?.call() &&
+            deviceId == signalClient.getCurrentDeviceId?.call()) {
           continue;
         }
 
-        try {
-          await SignalService.instance.loadSenderKeyFromServer(
-            channelId:
-                _meeting!.meetingId, // Use meeting ID as channel identifier
-            userId: userId,
-            deviceId: deviceId,
-            forceReload: false,
-          );
-        } catch (e) {
-          debugPrint(
-            '[MeetingPreJoin] Failed to load sender key for $userId:$deviceId: $e',
-          );
-        }
+        // Note: Sender keys are now loaded on-demand when messages are received
+        // in the new SignalClient architecture. Pre-loading is no longer needed.
+        // The ensureSenderKeyForGroup method will handle this automatically.
+        debugPrint(
+          '[MeetingPreJoin] Participant registered: $userId:$deviceId (sender key will load on-demand)',
+        );
       }
     } catch (e) {
       debugPrint('[MeetingPreJoin] Error loading sender keys: $e');

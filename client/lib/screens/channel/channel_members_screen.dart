@@ -350,7 +350,7 @@ class _ChannelMembersScreenState extends State<ChannelMembersScreen> {
 
                         // Check if user is blocked
                         try {
-                          final blockResponse = await ApiService.get(
+                          final blockResponse = await ApiService.instance.get(
                             '/api/check-blocked/$userId',
                           );
                           if (blockResponse.statusCode == 200 &&

@@ -28,7 +28,7 @@ class AuthService {
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final resp = await ApiService.get('/webauthn/check');
+      final resp = await ApiService.instance.get('/webauthn/check');
       if (resp.statusCode == 200 && resp.data != null) {
         final body = resp.data.toString();
         if (body.contains('{authenticated: true}')) {

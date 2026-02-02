@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
-import '../../socket_service.dart';
+import '../../socket_service.dart'
+    if (dart.library.io) '../../socket_service_native.dart';
 import '../core/session_manager.dart';
 import '../core/key_manager.dart';
-import '../state/key_state.dart';
 
 /// Socket.IO listeners for session and key management
 ///
@@ -27,7 +27,7 @@ class SessionListeners {
       return;
     }
 
-    final socket = SocketService();
+    final socket = SocketService.instance;
 
     // Signal status check response (key validation)
     // Backend emits: signalStatusResponse (not signalStatus)
@@ -100,7 +100,7 @@ class SessionListeners {
   static Future<void> unregister() async {
     if (!_registered) return;
 
-    final socket = SocketService();
+    final socket = SocketService.instance;
     socket.unregisterListener(
       'signalStatusResponse',
       registrationName: _registrationName,
@@ -127,27 +127,23 @@ class SessionListeners {
     Map<String, dynamic> data,
     SignalKeyManager keyManager,
   ) async {
-    final keyState = KeyState.instance;
-
     // Check if keys are present
     final hasIdentity = data['hasIdentity'] as bool? ?? false;
     final hasSignedPreKey = data['hasSignedPreKey'] as bool? ?? false;
     final preKeyCount = data['preKeyCount'] as int? ?? 0;
 
-    keyState.updateKeyAvailability(
-      hasIdentityKey: hasIdentity,
-      hasSignedPreKey: hasSignedPreKey,
-      preKeyCount: preKeyCount,
+    debugPrint(
+      '[SESSION_LISTENERS] Key status - Identity: $hasIdentity, '
+      'SignedPreKey: $hasSignedPreKey, PreKeys: $preKeyCount',
     );
 
     // If keys are missing, trigger key generation
     if (!hasIdentity || !hasSignedPreKey || preKeyCount < 10) {
       debugPrint('[SESSION_LISTENERS] Keys missing or low, triggering upload');
-      keyState.markSyncing('Uploading missing keys...');
       await keyManager.uploadAllKeysToServer();
-      keyState.markComplete();
+      debugPrint('[SESSION_LISTENERS] ✓ Key upload complete');
     } else {
-      keyState.markComplete();
+      debugPrint('[SESSION_LISTENERS] ✓ All keys present and sufficient');
     }
   }
 
@@ -165,7 +161,7 @@ class SessionListeners {
 
   /// Handle listener errors
   static void _handleError(String listener, dynamic error, StackTrace stack) {
-    final keyState = KeyState.instance;
-    keyState.markError('Session listener error: $error');
+    debugPrint('[SESSION_LISTENERS] ✗ Error in $listener: $error');
+    // TODO: Integrate with error tracking system when implemented
   }
 }

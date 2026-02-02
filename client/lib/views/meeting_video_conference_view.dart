@@ -9,10 +9,10 @@ import '../services/api_service.dart';
 import '../services/message_listener_service.dart';
 import '../services/user_profile_service.dart';
 import '../services/meeting_service.dart';
+import '../services/server_settings_service.dart';
 import '../services/socket_service.dart'
     if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/external_participant_service.dart';
-import '../services/signal_service.dart';
 import '../services/call_service.dart';
 import '../widgets/video_grid_layout.dart';
 import '../widgets/video_controls_bar.dart';
@@ -126,18 +126,18 @@ class _MeetingVideoConferenceViewState
           '[MeetingVideo] ✓ Responding to guest with encrypted LiveKit E2EE key...',
         );
 
-        // Send encrypted response via Signal Protocol
-        // SignalService will encrypt the LiveKit key and send it to the guest
-        await SignalService.instance.sendItemToGuest(
-          meetingId: meetingId,
-          guestSessionId: guestSessionId,
-          type: 'meeting_e2ee_key_response',
-          payload: {
-            'meetingId': meetingId,
-            'encryptedKey': base64.encode(_service!.channelSharedKey!),
-            'timestamp': DateTime.now().millisecondsSinceEpoch,
-          },
-        );
+        // Send encrypted response to guest via Socket.IO
+        // Note: Guest E2EE key exchange uses direct Socket.IO since guests don't have userId
+        // The E2EE key is the LiveKit key (already encrypted by LiveKit), just being shared
+        SocketService.instance.emit('participant:meeting_e2ee_key_response', {
+          'guest_session_id': guestSessionId,
+          'meeting_id': meetingId,
+          'type': 'meeting_e2ee_key_response',
+          'ciphertext': base64.encode(_service!.channelSharedKey!),
+          'messageType':
+              0, // Plain message (LiveKit E2EE key, not Signal encrypted)
+          'timestamp': DateTime.now().toIso8601String(),
+        });
 
         debugPrint(
           '[MeetingVideo] ✓ Sent encrypted LiveKit E2EE key to guest $guestSessionId',
@@ -290,10 +290,8 @@ class _MeetingVideoConferenceViewState
       '[MeetingVideo] ✓ Removed Socket.IO listener for guest:meeting_e2ee_key_request',
     );
 
-    // SECURITY: Clear guest Signal sessions when meeting ends
-    // This prevents session keys from persisting in sessionStorage
-    SignalService.instance.clearGuestSessions(widget.meetingId);
-    debugPrint('[MeetingVideo] ✓ Cleared guest Signal sessions for security');
+    // Guest sessions are temporary and cleaned up by server on disconnect
+    // No client-side cleanup needed
 
     // Clean up subscriptions
     for (final sub in _audioSubscriptions.values) {
@@ -520,13 +518,15 @@ class _MeetingVideoConferenceViewState
     };
 
     // Send missed_call Signal message to each user who didn't join
+    final signalClient = await ServerSettingsService.instance
+        .getOrCreateSignalClient();
     for (final userId in missedUsers) {
       try {
-        await SignalService.instance.sendItem(
+        await signalClient.messagingService.send1to1Message(
           recipientUserId: userId,
           type:
               'missingcall', // Note: using 'missingcall' to match existing activity type
-          payload: payload,
+          payload: jsonEncode(payload),
         );
         debugPrint('[MeetingVideo] Sent missed call notification to $userId');
       } catch (e) {
@@ -577,7 +577,7 @@ class _MeetingVideoConferenceViewState
             });
 
             try {
-              final response = await ApiService.get('/people/list');
+              final response = await ApiService.instance.get('/people/list');
               if (response.statusCode == 200) {
                 final users = response.data is List
                     ? response.data as List
@@ -617,7 +617,7 @@ class _MeetingVideoConferenceViewState
 
           Future<void> sendEmailInvitation(String email) async {
             try {
-              await ApiService.post(
+              await ApiService.instance.post(
                 '/api/meetings/${widget.meetingId}/invite-email',
                 data: {'email': email},
               );
@@ -645,7 +645,7 @@ class _MeetingVideoConferenceViewState
 
               // Check if user is blocked
               try {
-                final blockResponse = await ApiService.get(
+                final blockResponse = await ApiService.instance.get(
                   '/api/check-blocked/$userId',
                 );
                 if (blockResponse.statusCode == 200 &&

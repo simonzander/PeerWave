@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
 import '../services/video_conference_service.dart';
-import '../services/signal_service.dart';
 import '../services/api_service.dart';
+import '../services/server_settings_service.dart';
 import '../services/call_service.dart';
 import '../services/socket_service.dart'
     if (dart.library.io) '../services/socket_service_native.dart';
@@ -109,8 +109,10 @@ class _VideoConferencePreJoinViewState
       }
 
       // Check user authentication status
-      final userId = SignalService.instance.currentUserId;
-      final deviceId = SignalService.instance.currentDeviceId;
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClient();
+      final userId = signalClient.getCurrentUserId?.call();
+      final deviceId = signalClient.getCurrentDeviceId?.call();
       debugPrint('[PreJoin] User authentication status:');
       debugPrint('[PreJoin]   - userId: $userId');
       debugPrint('[PreJoin]   - deviceId: $deviceId');
@@ -130,9 +132,9 @@ class _VideoConferencePreJoinViewState
       }
 
       // Step 1: Ensure Signal Service is initialized (should already be initialized by app startup)
-      if (!SignalService.instance.isInitialized) {
+      if (!signalClient.isInitialized) {
         debugPrint(
-          '[PreJoin] ⚠️ Signal Service not initialized! This should not happen.',
+          '[PreJoin] ⚠️ Signal Client not initialized! This should not happen.',
         );
         if (mounted) {
           context.showErrorSnackBar(
@@ -341,7 +343,7 @@ class _VideoConferencePreJoinViewState
 
       // First, check if this is a WebRTC channel
       // Only WebRTC channels have LiveKit participants
-      final channelInfoResp = await ApiService.dio.get(
+      final channelInfoResp = await ApiService.instance.get(
         '/client/channels/${widget.channelId}',
       );
 
@@ -356,7 +358,7 @@ class _VideoConferencePreJoinViewState
       }
 
       // Get all participants' user IDs and device IDs
-      final response = await ApiService.dio.get(
+      final response = await ApiService.instance.get(
         '/client/channels/${widget.channelId}/participants',
       );
 
@@ -369,6 +371,10 @@ class _VideoConferencePreJoinViewState
           response.data['participants'] as List<dynamic>? ?? [];
       debugPrint('[PreJoin] Found ${participants.length} participants');
 
+      // Get SignalClient
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClient();
+
       int loaded = 0;
       int failed = 0;
 
@@ -380,34 +386,21 @@ class _VideoConferencePreJoinViewState
         if (userId == null || deviceId == null) continue;
 
         // Skip our own device (we already have our own key)
-        if (userId == SignalService.instance.currentUserId &&
-            deviceId == SignalService.instance.currentDeviceId) {
+        final currentUserId = signalClient.getCurrentUserId?.call();
+        final currentDeviceId = signalClient.getCurrentDeviceId?.call();
+        if (userId == currentUserId && deviceId == currentDeviceId) {
           continue;
         }
 
-        try {
-          final keyLoaded = await SignalService.instance
-              .loadSenderKeyFromServer(
-                channelId: widget.channelId,
-                userId: userId,
-                deviceId: deviceId,
-                forceReload: false, // Use cached if available
-              );
-
-          if (keyLoaded) {
-            loaded++;
-            debugPrint('[PreJoin] ✓ Loaded sender key for $userId:$deviceId');
-          } else {
-            debugPrint(
-              '[PreJoin] ℹ️ No sender key available for $userId:$deviceId (might not have sent any messages yet)',
-            );
-          }
-        } catch (e) {
-          failed++;
-          debugPrint(
-            '[PreJoin] ⚠️ Failed to load sender key for $userId:$deviceId: $e',
-          );
-        }
+        // TODO: Implement loadSenderKeyFromServer in SignalClient
+        debugPrint('[PreJoin] TODO: Load sender key for $userId:$deviceId');
+        // Placeholder - sender key loading needs to be implemented
+        // await signalClient.messagingService.loadSenderKeyFromServer(
+        //   channelId: widget.channelId,
+        //   userId: userId,
+        //   deviceId: deviceId,
+        //   forceReload: false,
+        // );
       }
 
       debugPrint('[PreJoin] Sender key loading complete:');

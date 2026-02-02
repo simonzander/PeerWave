@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import '../signal.dart';
 import '../state/identity_key_state.dart';
 import '../state/signed_pre_key_state.dart';
 import '../state/pre_key_state.dart';
@@ -10,17 +12,22 @@ import '../state/pre_key_state.dart';
 /// - SignedPreKeyState: Tracks signed pre key rotation and age
 /// - PreKeyState: Tracks pre key count and maintenance
 ///
+/// States are accessed through the SignalClient's KeyManager for proper
+/// multi-server isolation instead of global singletons.
+///
 /// Usage:
 /// ```dart
 /// SignalSetupView(
 ///   onInitialize: () async {
-///     await SignalService.instance.initStoresAndListeners();
+///     final client = await ServerSettingsService.instance.getOrCreateSignalClient();
+///     await client.initialize();
+///     return client;
 ///   },
 ///   onComplete: () => GoRouter.of(context).go('/app/activities'),
 /// )
 /// ```
 class SignalSetupView extends StatefulWidget {
-  final Future<void> Function() onInitialize;
+  final Future<SignalClient> Function() onInitialize;
   final VoidCallback onComplete;
   final VoidCallback? onError;
 
@@ -39,19 +46,27 @@ class _SignalSetupViewState extends State<SignalSetupView> {
   String _statusText = 'Initializing Signal Protocol...';
   double _progress = 0.0;
   bool _hasError = false;
+  SignalClient? _signalClient;
 
   @override
   void initState() {
     super.initState();
-    _setupListeners();
     _triggerInitialization();
   }
 
   Future<void> _triggerInitialization() async {
+    debugPrint('[SIGNAL_SETUP_VIEW] Starting initialization...');
     try {
-      await widget.onInitialize();
+      debugPrint('[SIGNAL_SETUP_VIEW] Calling onInitialize callback...');
+      _signalClient = await widget.onInitialize();
+      debugPrint('[SIGNAL_SETUP_VIEW] ✓ onInitialize completed');
+      debugPrint('[SIGNAL_SETUP_VIEW] Setting up state listeners...');
+      _setupListeners();
+      debugPrint('[SIGNAL_SETUP_VIEW] Checking initial state...');
       _checkInitialState();
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('[SIGNAL_SETUP_VIEW] ❌ Initialization error: $e');
+      debugPrint('[SIGNAL_SETUP_VIEW] Stack trace: $stackTrace');
       setState(() {
         _hasError = true;
         _statusText = 'Initialization failed: $e';
@@ -61,26 +76,39 @@ class _SignalSetupViewState extends State<SignalSetupView> {
   }
 
   void _setupListeners() {
-    // Watch all three key states
-    IdentityKeyState.instance.addListener(_onStateChanged);
-    SignedPreKeyState.instance.addListener(_onStateChanged);
-    PreKeyState.instance.addListener(_onStateChanged);
+    if (_signalClient == null) {
+      debugPrint(
+        '[SIGNAL_SETUP_VIEW] ⚠️ Cannot setup listeners: SignalClient not initialized',
+      );
+      return;
+    }
+
+    // Watch all three key states from the SignalClient's KeyManager
+    _signalClient!.keyManager.identityKeyState.addListener(_onStateChanged);
+    _signalClient!.keyManager.signedPreKeyState.addListener(_onStateChanged);
+    _signalClient!.keyManager.preKeyState.addListener(_onStateChanged);
   }
 
   @override
   void dispose() {
-    IdentityKeyState.instance.removeListener(_onStateChanged);
-    SignedPreKeyState.instance.removeListener(_onStateChanged);
-    PreKeyState.instance.removeListener(_onStateChanged);
+    if (_signalClient != null) {
+      _signalClient!.keyManager.identityKeyState.removeListener(
+        _onStateChanged,
+      );
+      _signalClient!.keyManager.signedPreKeyState.removeListener(
+        _onStateChanged,
+      );
+      _signalClient!.keyManager.preKeyState.removeListener(_onStateChanged);
+    }
     super.dispose();
   }
 
   void _onStateChanged() {
-    if (!mounted) return;
+    if (!mounted || _signalClient == null) return;
 
-    final identityState = IdentityKeyState.instance;
-    final signedPreKeyState = SignedPreKeyState.instance;
-    final preKeyState = PreKeyState.instance;
+    final identityState = _signalClient!.keyManager.identityKeyState;
+    final signedPreKeyState = _signalClient!.keyManager.signedPreKeyState;
+    final preKeyState = _signalClient!.keyManager.preKeyState;
 
     // Check for errors
     if (identityState.status == IdentityKeyStatus.error ||
@@ -144,16 +172,44 @@ class _SignalSetupViewState extends State<SignalSetupView> {
     // Check if complete (all 3 steps done)
     if (completedSteps == 3 && !_hasError) {
       setState(() {
-        _statusText = 'Signal Protocol ready!';
+        _statusText = 'Verifying keys...';
         _progress = 1.0;
       });
 
-      // Small delay before completion callback
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          widget.onComplete();
-        }
-      });
+      // Trigger post-setup verification
+      debugPrint('[SIGNAL_SETUP_VIEW] Running post-setup key verification...');
+      _signalClient!
+          .verifyKeys()
+          .then((_) {
+            if (mounted) {
+              setState(() {
+                _statusText = 'Signal Protocol ready!';
+              });
+            }
+
+            // Small delay before completion callback
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (mounted) {
+                widget.onComplete();
+              }
+            });
+          })
+          .catchError((e) {
+            debugPrint(
+              '[SIGNAL_SETUP_VIEW] ⚠️ Post-setup verification error: $e',
+            );
+            // Continue anyway - verification errors shouldn't block login
+            if (mounted) {
+              setState(() {
+                _statusText = 'Signal Protocol ready!';
+              });
+            }
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (mounted) {
+                widget.onComplete();
+              }
+            });
+          });
     }
   }
 
@@ -172,24 +228,28 @@ class _SignalSetupViewState extends State<SignalSetupView> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // PeerWave Logo
-              const Text(
-                'PeerWave',
-                style: TextStyle(
-                  fontSize: 48,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue,
-                ),
+              Image.asset(
+                'assets/images/peerwave.png',
+                width: 200,
+                height: 200,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
               const Text(
                 'Secure Collaboration Platform',
-                style: TextStyle(fontSize: 16, color: Colors.grey),
+                style: TextStyle(fontSize: 18, color: Colors.grey),
               ),
-              const SizedBox(height: 64),
+              const SizedBox(height: 48),
 
               // Progress indicator
               if (!_hasError) ...[
-                CircularProgressIndicator(value: _progress),
+                SizedBox(
+                  width: 100,
+                  height: 100,
+                  child: CircularProgressIndicator(
+                    value: _progress,
+                    strokeWidth: 6,
+                  ),
+                ),
                 const SizedBox(height: 24),
                 Text(
                   _statusText,

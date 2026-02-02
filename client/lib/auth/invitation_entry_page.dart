@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
 import '../services/server_settings_service.dart';
+import '../services/server_config_web.dart'
+    if (dart.library.io) '../services/server_config_native.dart';
 import '../web_config.dart';
 import '../widgets/app_drawer.dart';
 
@@ -72,19 +74,22 @@ class _InvitationEntryPageState extends State<InvitationEntryPage> {
         urlString = widget.serverUrl ?? '';
         // Configure ApiService with the server URL for mobile
         if (urlString.isNotEmpty) {
-          ApiService.setBaseUrl(urlString);
+          await ApiService.instance.initForServer(
+            ServerConfigService.getActiveServer()?.id ?? 'default',
+            serverUrl: urlString,
+          );
         }
       }
 
       // Verify invitation token
-      final verifyResp = await ApiService.post(
+      final verifyResp = await ApiService.instance.post(
         '/api/invitations/verify',
         data: {'email': widget.email, 'token': token},
       );
 
       if (verifyResp.statusCode == 200 && verifyResp.data['valid'] == true) {
         // Token is valid, proceed with registration
-        final registerResp = await ApiService.post(
+        final registerResp = await ApiService.instance.post(
           '/register',
           data: {'email': widget.email, 'invitationToken': token},
         );

@@ -222,7 +222,7 @@ class SocketFileClient {
     required List<String> userIds,
   }) async {
     // Check socket connection
-    final socketService = SocketService();
+    final socketService = SocketService.instance;
     final socket = socketService.socket;
     final isConnected = socketService.isConnected;
 

@@ -18,12 +18,22 @@ class SignalSetupScreen extends StatelessWidget {
     return SignalSetupView(
       // Initialize SignalClient for the active server
       onInitialize: () async {
+        debugPrint('[SIGNAL_SETUP_SCREEN] Getting SignalClient...');
         // Get or create SignalClient for active server
         final client = await ServerSettingsService.instance
             .getOrCreateSignalClient();
 
+        debugPrint(
+          '[SIGNAL_SETUP_SCREEN] SignalClient obtained, initializing...',
+        );
         // Initialize SignalClient (creates KeyManager + SessionManager)
         await client.initialize();
+        debugPrint(
+          '[SIGNAL_SETUP_SCREEN] SignalClient initialized successfully',
+        );
+
+        // Return the SignalClient instance
+        return client;
       },
       onComplete: () async {
         // Try to restore last route, otherwise go to /app/activities (default view)

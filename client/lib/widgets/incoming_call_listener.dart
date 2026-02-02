@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:peerwave_client/main.dart';
 import 'package:peerwave_client/services/call_service.dart';
-import 'package:peerwave_client/services/signal_service.dart';
+import 'package:peerwave_client/services/server_settings_service.dart';
 import 'package:peerwave_client/services/sound_service.dart';
 import 'package:peerwave_client/theme/semantic_colors.dart';
 
@@ -29,13 +29,23 @@ class _IncomingCallListenerState extends State<IncomingCallListener> {
     _setupCallListener();
   }
 
-  void _setupCallListener() {
+  void _setupCallListener() async {
     debugPrint('[IncomingCallListener] Setting up call listener callback...');
 
     // Listen for call notifications via Signal Protocol (type: call_notification)
-    SignalService.instance.registerItemCallback('call_notification', (
-      item,
-    ) async {
+    final signalClient = await ServerSettingsService.instance
+        .getOrCreateSignalClient();
+
+    // Wait for SignalClient to be fully initialized
+    if (!signalClient.isInitialized) {
+      debugPrint(
+        '[IncomingCallListener] Waiting for SignalClient initialization...',
+      );
+      // TODO: Add a proper initialization completed event/stream
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
+    signalClient.registerReceiveItemType('call_notification', (item) async {
       debugPrint(
         '[IncomingCallListener] ========== Received call_notification ==========',
       );
@@ -97,7 +107,7 @@ class _IncomingCallListenerState extends State<IncomingCallListener> {
 
   @override
   void dispose() {
-    // Callback cleanup is handled by SignalService
+    // Callback cleanup is handled by SignalClient
     super.dispose();
   }
 

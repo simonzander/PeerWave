@@ -25,15 +25,16 @@ enum IdentityKeyStatus {
 ///
 /// Usage:
 /// ```dart
-/// final state = IdentityKeyState.instance;
+/// // Access through KeyManager (server-scoped)
+/// final state = keyManager.identityKeyState;
 /// state.addListener(() {
 ///   print('Has identity: ${state.hasIdentityKey}');
 ///   print('Status: ${state.status}');
 /// });
 /// ```
 class IdentityKeyState extends ChangeNotifier {
-  static final IdentityKeyState instance = IdentityKeyState._();
-  IdentityKeyState._();
+  // No longer a singleton - instantiated per KeyManager
+  IdentityKeyState();
 
   bool _hasIdentityKey = false;
   int? _registrationId;

@@ -12,7 +12,7 @@ import '../services/video_conference_service.dart';
 import '../services/message_listener_service.dart';
 import '../services/user_profile_service.dart';
 import '../services/api_service.dart';
-import '../services/signal_service.dart';
+import '../services/server_settings_service.dart';
 import '../services/call_service.dart';
 import '../screens/channel/channel_members_screen.dart';
 import '../screens/channel/channel_settings_screen.dart';
@@ -435,17 +435,22 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     }
 
     try {
-      ApiService.init();
-      final resp = await ApiService.get('/client/channels/${widget.channelId}');
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get(
+        '/client/channels/${widget.channelId}',
+      );
 
       if (resp.statusCode == 200) {
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
         if (mounted) {
+          final signalClient = await ServerSettingsService.instance
+              .getOrCreateSignalClient();
+          final currentUserId = signalClient.getCurrentUserId?.call();
+
           setState(() {
             _channelData = Map<String, dynamic>.from(data);
 
             // Check if current user is owner
-            final currentUserId = SignalService.instance.currentUserId;
             _isOwner =
                 currentUserId != null &&
                 _channelData!['owner'] == currentUserId;
@@ -479,10 +484,12 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         'timestamp': DateTime.now().toIso8601String(),
       };
 
-      await SignalService.instance.sendItem(
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClient();
+      await signalClient.messagingService.send1to1Message(
         recipientUserId: userId,
         type: 'missingcall',
-        payload: payload,
+        payload: jsonEncode(payload),
       );
 
       debugPrint(

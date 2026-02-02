@@ -22,6 +22,9 @@ class PreKeyMaintenanceObserver {
   bool _isObserving = false;
   bool _isRegenerating = false;
 
+  // State instance from KeyManager
+  PreKeyState get preKeyState => keyManager.preKeyState;
+
   PreKeyMaintenanceObserver({required this.keyManager});
 
   /// Start observing PreKey count
@@ -31,10 +34,10 @@ class PreKeyMaintenanceObserver {
       return;
     }
 
-    PreKeyState.instance.addListener(_onPreKeyStateChanged);
+    preKeyState.addListener(_onPreKeyStateChanged);
     _isObserving = true;
 
-    final currentCount = PreKeyState.instance.count;
+    final currentCount = preKeyState.count;
     debugPrint(
       '[PREKEY_OBSERVER] Started observing (current count: $currentCount)',
     );
@@ -44,7 +47,7 @@ class PreKeyMaintenanceObserver {
   void stop() {
     if (!_isObserving) return;
 
-    PreKeyState.instance.removeListener(_onPreKeyStateChanged);
+    preKeyState.removeListener(_onPreKeyStateChanged);
     _isObserving = false;
 
     debugPrint('[PREKEY_OBSERVER] Stopped observing');
@@ -52,7 +55,7 @@ class PreKeyMaintenanceObserver {
 
   /// Handle PreKey state changes
   Future<void> _onPreKeyStateChanged() async {
-    final currentCount = PreKeyState.instance.count;
+    final currentCount = preKeyState.count;
 
     // Check if count is below threshold
     if (currentCount >= _lowThreshold) {
@@ -85,7 +88,7 @@ class PreKeyMaintenanceObserver {
 
       await keyManager.checkPreKeys(); // Auto-generates to 110
 
-      final newCount = PreKeyState.instance.count;
+      final newCount = preKeyState.count;
       debugPrint(
         '[PREKEY_OBSERVER] ✅ PreKeys regenerated (new count: $newCount)',
       );

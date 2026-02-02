@@ -63,6 +63,22 @@ class CallbackManager {
     messages.onGroupReceive(type, channelId, callback);
   }
 
+  /// Register a message type callback (from any sender)
+  ///
+  /// Use this for system messages or broadcasts where sender is not known:
+  /// - call_notification (incoming calls from any user)
+  /// - system announcements
+  /// - broadcast messages
+  ///
+  /// [type] - Message type (e.g., 'call_notification', 'system_message')
+  /// [callback] - Function to call when message of this type is received
+  void registerReceiveItemType(
+    String type,
+    Function(Map<String, dynamic>) callback,
+  ) {
+    messages.onTypeReceive(type, callback);
+  }
+
   /// Register delivery receipt callback
   void registerDeliveryCallback(Function(String itemId) callback) {
     delivery.onDelivery(callback);
@@ -134,6 +150,14 @@ class CallbackManager {
     messages.removeGroupReceive(type, channelId, callback);
   }
 
+  /// Unregister specific message type callback
+  void unregisterReceiveItemType(
+    String type,
+    Function(Map<String, dynamic>) callback,
+  ) {
+    messages.removeTypeReceive(type, callback);
+  }
+
   /// Clear all delivery callbacks
   void clearDeliveryCallbacks() {
     delivery.clear();
@@ -157,6 +181,7 @@ class CallbackManager {
     return {
       'messageCallbacks': messages.count,
       'groupCallbacks': messages.groupCount,
+      'typeCallbacks': messages.typeCount,
       'deliveryCallbacks': delivery.count,
       'readCallbacks': delivery.readCount,
       'errorCallbacks': errors.count,

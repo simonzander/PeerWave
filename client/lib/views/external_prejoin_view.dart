@@ -155,7 +155,7 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
 
   Future<void> _loadMeetingInfo() async {
     try {
-      final response = await ApiService.get(
+      final response = await ApiService.instance.get(
         '/api/meetings/external/join/${widget.invitationToken}',
       );
 
@@ -479,7 +479,7 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     if (_meetingId == null) return;
 
     try {
-      final response = await ApiService.get(
+      final response = await ApiService.instance.get(
         '/api/meetings/$_meetingId/livekit-participants',
         queryParameters: {'token': widget.invitationToken},
       );
@@ -657,7 +657,7 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
       '[GuestPreJoin] Fetching keybundle for $participantUserId:$participantDeviceId',
     );
 
-    final response = await ApiService.get(
+    final response = await ApiService.instance.get(
       '/api/meetings/external/$sessionId/participant/$participantUserId/$participantDeviceId/keys',
       queryParameters: {'token': token},
     );
@@ -1062,7 +1062,7 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     _transitionTo(GuestFlowState.requestingAdmission);
 
     try {
-      await ApiService.post(
+      await ApiService.instance.post(
         '/api/meetings/$_meetingId/external/$_sessionId/request-admission',
       );
 

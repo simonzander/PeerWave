@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
-import '../../socket_service.dart';
-import '../state/sync_state.dart';
-import '../core/message_receiver.dart';
-import '../core/group_message_receiver.dart';
+import '../../socket_service.dart'
+    if (dart.library.io) '../../socket_service_native.dart';
+// import '../state/sync_state.dart'; // FIXME: SyncState removed
+import '../core/messaging/messaging_service.dart';
 import '../core/healing_service.dart';
 
 /// Socket.IO listeners for background message synchronization
@@ -16,16 +16,14 @@ import '../core/healing_service.dart';
 class SyncListeners {
   static const String _registrationName = 'SyncListeners';
   static bool _registered = false;
-  static MessageReceiver? _messageReceiver;
-  static GroupMessageReceiver? _groupReceiver;
+  static MessagingService? _messagingService;
   static SignalHealingService? _healingService;
   static String? _currentUserId;
   static int? _currentDeviceId;
 
   /// Register all background sync listeners
   static Future<void> register({
-    MessageReceiver? messageReceiver,
-    GroupMessageReceiver? groupReceiver,
+    MessagingService? messagingService,
     SignalHealingService? healingService,
     String? currentUserId,
     int? currentDeviceId,
@@ -35,14 +33,13 @@ class SyncListeners {
       return;
     }
 
-    _messageReceiver = messageReceiver;
-    _groupReceiver = groupReceiver;
+    _messagingService = messagingService;
     _healingService = healingService;
     _currentUserId = currentUserId;
     _currentDeviceId = currentDeviceId;
 
-    final socket = SocketService();
-    final syncState = SyncState.instance;
+    final socket = SocketService.instance;
+    // final syncState = // syncState.instance; // FIXME: SyncState removed
 
     // Socket reconnected - process offline queue and trigger self-healing
     socket.registerListener('connect', (_) async {
@@ -80,11 +77,7 @@ class SyncListeners {
         debugPrint('[SYNC_LISTENERS] Pending messages available: $count');
 
         if (count > 0) {
-          syncState.startSync(
-            totalMessages: count,
-            syncType: SyncType.pendingMessages,
-            statusText: 'Syncing $count messages...',
-          );
+          debugPrint('[SYNC_LISTENERS] Syncing $count messages...');
 
           // Request pending messages in batches
           socket.emit('requestPendingMessages', {'batchSize': 50});
@@ -94,7 +87,7 @@ class SyncListeners {
           '[SYNC_LISTENERS] Error processing pendingMessagesAvailable: $e',
         );
         debugPrint('[SYNC_LISTENERS] Stack: $stack');
-        syncState.setError(e.toString());
+        // syncState.setError(e.toString());
       }
     }, registrationName: _registrationName);
 
@@ -112,14 +105,14 @@ class SyncListeners {
         // Process each message
         for (final message in messages) {
           await _processPendingMessage(message);
-          syncState.incrementProcessed();
+          // syncState.incrementProcessed();
         }
 
         // Request next batch if available
         if (hasMore) {
           socket.emit('requestPendingMessages', {'batchSize': 50});
         } else {
-          syncState.completeSync();
+          // syncState.completeSync();
           debugPrint('[SYNC_LISTENERS] ✓ Sync complete');
         }
       } catch (e, stack) {
@@ -127,7 +120,7 @@ class SyncListeners {
           '[SYNC_LISTENERS] Error processing pendingMessagesResponse: $e',
         );
         debugPrint('[SYNC_LISTENERS] Stack: $stack');
-        syncState.setError(e.toString());
+        // syncState.setError(e.toString());
       }
     }, registrationName: _registrationName);
 
@@ -135,7 +128,7 @@ class SyncListeners {
     socket.registerListener('syncComplete', (data) async {
       try {
         debugPrint('[SYNC_LISTENERS] Server confirmed sync complete');
-        syncState.completeSync();
+        // syncState.completeSync();
       } catch (e, stack) {
         debugPrint('[SYNC_LISTENERS] Error processing syncComplete: $e');
         debugPrint('[SYNC_LISTENERS] Stack: $stack');
@@ -147,7 +140,7 @@ class SyncListeners {
       try {
         final error = data['error'] as String? ?? 'Unknown error';
         debugPrint('[SYNC_LISTENERS] Fetch pending messages error: $error');
-        syncState.setError(error);
+        // syncState.setError(error);
       } catch (e, stack) {
         debugPrint(
           '[SYNC_LISTENERS] Error processing fetchPendingMessagesError: $e',
@@ -164,7 +157,7 @@ class SyncListeners {
   static Future<void> unregister() async {
     if (!_registered) return;
 
-    final socket = SocketService();
+    final socket = SocketService.instance;
     socket.unregisterListener('connect', registrationName: _registrationName);
     socket.unregisterListener(
       'pendingMessagesAvailable',
@@ -183,8 +176,7 @@ class SyncListeners {
       registrationName: _registrationName,
     );
 
-    _messageReceiver = null;
-    _groupReceiver = null;
+    _messagingService = null;
     _healingService = null;
     _currentUserId = null;
     _currentDeviceId = null;
@@ -195,20 +187,42 @@ class SyncListeners {
   /// Process a single pending message
   static Future<void> _processPendingMessage(dynamic message) async {
     try {
-      final channelId = message['channelId'] as String?;
+      final dataMap = Map<String, dynamic>.from(message as Map);
+      final channelId = dataMap['channelId'] as String?;
+      final itemId = dataMap['itemId'] as String?;
 
       if (channelId != null) {
         // Group message
-        debugPrint(
-          '[SYNC_LISTENERS] Processing group message: ${message['itemId']}',
+        debugPrint('[SYNC_LISTENERS] Processing group message: $itemId');
+        final type = dataMap['type'] as String? ?? 'message';
+        final sender = dataMap['sender'] as String? ?? '';
+        final senderDeviceId = dataMap['senderDeviceId'] as int? ?? 0;
+        final cipherType = dataMap['cipherType'] as int? ?? 3;
+
+        await _messagingService?.receiveMessage(
+          dataMap: dataMap,
+          type: type,
+          sender: sender,
+          senderDeviceId: senderDeviceId,
+          cipherType: cipherType,
+          itemId: itemId ?? '',
         );
-        await _groupReceiver?.receiveItemChannel(message);
       } else {
         // 1:1 message
-        debugPrint(
-          '[SYNC_LISTENERS] Processing 1:1 message: ${message['itemId']}',
+        debugPrint('[SYNC_LISTENERS] Processing 1:1 message: $itemId');
+        final type = dataMap['type'] as String? ?? 'message';
+        final sender = dataMap['sender'] as String? ?? '';
+        final senderDeviceId = dataMap['senderDeviceId'] as int? ?? 0;
+        final cipherType = dataMap['cipherType'] as int? ?? 1;
+
+        await _messagingService?.receiveMessage(
+          dataMap: dataMap,
+          type: type,
+          sender: sender,
+          senderDeviceId: senderDeviceId,
+          cipherType: cipherType,
+          itemId: itemId ?? '',
         );
-        await _messageReceiver?.receiveItem(message);
       }
     } catch (e, stack) {
       debugPrint('[SYNC_LISTENERS] Error processing message: $e');

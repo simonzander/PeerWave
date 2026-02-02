@@ -25,6 +25,11 @@ class IdentityKeyObserver {
   String? _lastIdentityFingerprint;
   bool _isObserving = false;
 
+  // State instances from KeyManager
+  IdentityKeyState get identityKeyState => keyManager.identityKeyState;
+  SignedPreKeyState get signedPreKeyState => keyManager.signedPreKeyState;
+  SenderKeyState get senderKeyState => keyManager.senderKeyState;
+
   IdentityKeyObserver({required this.keyManager});
 
   /// Start observing identity key changes
@@ -34,8 +39,8 @@ class IdentityKeyObserver {
       return;
     }
 
-    _lastIdentityFingerprint = IdentityKeyState.instance.publicKeyFingerprint;
-    IdentityKeyState.instance.addListener(_onIdentityStateChanged);
+    _lastIdentityFingerprint = identityKeyState.publicKeyFingerprint;
+    identityKeyState.addListener(_onIdentityStateChanged);
     _isObserving = true;
 
     debugPrint(
@@ -47,7 +52,7 @@ class IdentityKeyObserver {
   void stop() {
     if (!_isObserving) return;
 
-    IdentityKeyState.instance.removeListener(_onIdentityStateChanged);
+    identityKeyState.removeListener(_onIdentityStateChanged);
     _isObserving = false;
 
     debugPrint('[IDENTITY_OBSERVER] Stopped observing identity key');
@@ -55,7 +60,7 @@ class IdentityKeyObserver {
 
   /// Handle identity state changes
   Future<void> _onIdentityStateChanged() async {
-    final currentFingerprint = IdentityKeyState.instance.publicKeyFingerprint;
+    final currentFingerprint = identityKeyState.publicKeyFingerprint;
 
     // Check if identity actually changed (not just status update)
     if (currentFingerprint == null ||
@@ -83,7 +88,7 @@ class IdentityKeyObserver {
 
       // 1. Regenerate SignedPreKey (CRITICAL - signed by identity)
       debugPrint('[IDENTITY_OBSERVER] Regenerating SignedPreKey...');
-      SignedPreKeyState.instance.markRotating();
+      signedPreKeyState.markRotating();
       await keyManager.rotateSignedPreKey(keyManager.identityKeyPair);
       debugPrint('[IDENTITY_OBSERVER] ✓ SignedPreKey regenerated');
 
@@ -95,7 +100,7 @@ class IdentityKeyObserver {
       // 3. Clear SenderKeys (sessions invalid with old identity)
       debugPrint('[IDENTITY_OBSERVER] Clearing SenderKeys...');
       await _clearAllSenderKeys();
-      SenderKeyState.instance.updateStatus(0, 0); // Reset to 0 groups
+      senderKeyState.updateStatus(0, 0); // Reset to 0 groups
       debugPrint('[IDENTITY_OBSERVER] ✓ SenderKeys cleared');
 
       debugPrint(
@@ -109,10 +114,8 @@ class IdentityKeyObserver {
       debugPrint('[IDENTITY_OBSERVER] Stack trace: $stackTrace');
 
       // Mark states as error
-      SignedPreKeyState.instance.markError(
-        'Failed to regenerate after identity change',
-      );
-      SenderKeyState.instance.markError('Failed to clear: $e');
+      signedPreKeyState.markError('Failed to regenerate after identity change');
+      senderKeyState.markError('Failed to clear: $e');
     }
   }
 

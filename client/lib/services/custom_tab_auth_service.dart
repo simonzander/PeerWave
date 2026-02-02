@@ -194,7 +194,7 @@ class CustomTabAuthService {
       debugPrint('[CustomTabAuth] POST $serverUrl/token/exchange');
 
       // Exchange token for session
-      final response = await ApiService.dio.post(
+      final response = await ApiService.instance.post(
         '$serverUrl/token/exchange',
         data: {'token': token, 'clientId': clientId},
       );
@@ -333,7 +333,7 @@ class CustomTabAuthService {
     try {
       debugPrint('[CustomTabAuth] Revoking token...');
 
-      final response = await ApiService.dio.post(
+      final response = await ApiService.instance.post(
         '$serverUrl/auth/token/revoke',
         data: {'token': token},
       );

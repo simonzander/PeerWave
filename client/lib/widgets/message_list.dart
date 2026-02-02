@@ -14,7 +14,6 @@ import 'emoji_picker_dialog.dart';
 import 'reaction_badge.dart';
 import '../models/file_message.dart';
 import '../theme/semantic_colors.dart';
-import '../services/signal_service.dart';
 import '../services/user_profile_service.dart';
 
 /// Reusable widget for displaying a list of messages
@@ -1108,7 +1107,7 @@ class _MessageListState extends State<MessageList> {
           color: mentionTheme.colorScheme.onSurface,
           fontSize: 15,
         ),
-        currentUserId: SignalService.instance.currentUserId,
+        currentUserId: widget.currentUserId,
         senderInfo: senderProfile,
       );
     }

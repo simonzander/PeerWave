@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
-import '../../socket_service.dart';
-import '../core/message_receiver.dart';
+import '../../socket_service.dart'
+    if (dart.library.io) '../../socket_service_native.dart';
+import '../core/messaging/messaging_service.dart';
+import '../callbacks/callback_manager.dart';
 
 /// Socket.IO listeners for 1:1 encrypted messages
 ///
@@ -9,25 +11,42 @@ import '../core/message_receiver.dart';
 /// - deliveryReceipt: Message delivery confirmations
 /// - readReceipt: Message read confirmations
 ///
-/// These listeners delegate processing to MessageReceiver service.
+/// These listeners delegate processing to MessagingService.
 class MessageListeners {
   static const String _registrationName = 'MessageListeners';
   static bool _registered = false;
 
   /// Register all 1:1 message listeners
-  static Future<void> register(MessageReceiver receiver) async {
+  static Future<void> register(
+    MessagingService messagingService,
+    CallbackManager callbackManager,
+  ) async {
     if (_registered) {
       debugPrint('[MESSAGE_LISTENERS] Already registered');
       return;
     }
 
-    final socket = SocketService();
+    final socket = SocketService.instance;
 
     // Incoming encrypted message
     socket.registerListener('receiveItem', (data) async {
       try {
-        debugPrint('[MESSAGE_LISTENERS] Received item: ${data['itemId']}');
-        await receiver.receiveItem(data);
+        final dataMap = Map<String, dynamic>.from(data as Map);
+        final itemId = dataMap['itemId'] as String;
+        final type = dataMap['type'] as String? ?? 'message';
+        final sender = dataMap['sender'] as String;
+        final senderDeviceId = dataMap['senderDeviceId'] as int;
+        final cipherType = dataMap['cipherType'] as int;
+
+        debugPrint('[MESSAGE_LISTENERS] Received item: $itemId');
+        await messagingService.receiveMessage(
+          dataMap: dataMap,
+          type: type,
+          sender: sender,
+          senderDeviceId: senderDeviceId,
+          cipherType: cipherType,
+          itemId: itemId,
+        );
       } catch (e, stack) {
         debugPrint('[MESSAGE_LISTENERS] Error processing receiveItem: $e');
         debugPrint('[MESSAGE_LISTENERS] Stack: $stack');
@@ -41,7 +60,9 @@ class MessageListeners {
       try {
         final itemId = data['itemId'] as String;
         debugPrint('[MESSAGE_LISTENERS] Delivery receipt for: $itemId');
-        await receiver.handleDeliveryReceipt(data);
+
+        // Notify all registered delivery callbacks
+        callbackManager.notifyDelivery(itemId);
       } catch (e, stack) {
         debugPrint('[MESSAGE_LISTENERS] Error processing deliveryReceipt: $e');
         debugPrint('[MESSAGE_LISTENERS] Stack: $stack');
@@ -52,9 +73,12 @@ class MessageListeners {
     // Read receipt (recipient read message)
     socket.registerListener('readReceipt', (data) async {
       try {
-        final itemId = data['itemId'] as String;
+        final receiptInfo = Map<String, dynamic>.from(data as Map);
+        final itemId = receiptInfo['itemId'] as String;
         debugPrint('[MESSAGE_LISTENERS] Read receipt for: $itemId');
-        await receiver.handleReadReceipt(data);
+
+        // Notify all registered read callbacks
+        callbackManager.notifyRead(receiptInfo);
       } catch (e, stack) {
         debugPrint('[MESSAGE_LISTENERS] Error processing readReceipt: $e');
         debugPrint('[MESSAGE_LISTENERS] Stack: $stack');
@@ -70,7 +94,7 @@ class MessageListeners {
   static Future<void> unregister() async {
     if (!_registered) return;
 
-    final socket = SocketService();
+    final socket = SocketService.instance;
     socket.unregisterListener(
       'receiveItem',
       registrationName: _registrationName,

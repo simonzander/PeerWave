@@ -526,7 +526,9 @@ class ServerConfigService {
       final server = _servers[index];
 
       // Fetch /client/meta
-      final response = await ApiService.get('${server.serverUrl}/client/meta');
+      final response = await ApiService.instance.get(
+        '${server.serverUrl}/client/meta',
+      );
 
       if (response.statusCode == 200) {
         final data = response.data;

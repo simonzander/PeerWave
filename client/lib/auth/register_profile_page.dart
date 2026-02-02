@@ -131,7 +131,7 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
 
     try {
       // Initialize ApiService to ensure baseUrl is set correctly
-      await ApiService.init();
+      await ApiService.instance.init();
 
       final apiServer = await loadWebApiServer();
       String urlString = apiServer ?? '';
@@ -153,7 +153,10 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
             'data:image/${_imageFileName?.split('.').last ?? 'png'};base64,$base64Image';
       }
 
-      final resp = await ApiService.post('/client/profile/setup', data: data);
+      final resp = await ApiService.instance.post(
+        '/client/profile/setup',
+        data: data,
+      );
 
       if (resp.statusCode == 200 || resp.statusCode == 201) {
         // Registration complete
@@ -211,7 +214,9 @@ class _RegisterProfilePageState extends State<RegisterProfilePage> {
           // Get email from API service or storage
           String? userEmail;
           try {
-            final profileResp = await ApiService.get('/client/profile');
+            final profileResp = await ApiService.instance.get(
+              '/client/profile',
+            );
             if (profileResp.statusCode == 200) {
               userEmail = profileResp.data['email'];
             }

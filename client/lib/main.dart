@@ -997,6 +997,66 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               '[ROUTER] 🔄 Creating SignalClient for active server...',
             );
 
+            // CRITICAL: Initialize ApiService and SocketService FIRST
+            // This must happen before we try to initialize SignalClient or redirect to signal-setup
+            if (!PostLoginInitService.instance.isInitialized) {
+              debugPrint(
+                '[ROUTER] 🔧 Initializing ApiService and SocketService first...',
+              );
+
+              try {
+                // Capture providers before any async operations
+                // ignore: use_build_context_synchronously
+                final unreadProvider = context.read<UnreadMessagesProvider>();
+                // ignore: use_build_context_synchronously
+                final roleProvider = context.read<RoleProvider>();
+                // ignore: use_build_context_synchronously
+                final statsProvider = context.read<FileTransferStatsProvider>();
+
+                // Get server URL based on platform
+                String serverUrl = '';
+                if (kIsWeb) {
+                  final apiServer = await loadWebApiServer();
+                  serverUrl = apiServer ?? '';
+                } else {
+                  final activeServer = ServerConfigService.getActiveServer();
+                  serverUrl = activeServer?.serverUrl ?? '';
+                }
+
+                // Ensure server URL has protocol
+                if (serverUrl.isNotEmpty &&
+                    !serverUrl.startsWith('http://') &&
+                    !serverUrl.startsWith('https://')) {
+                  serverUrl = 'https://$serverUrl';
+                }
+
+                await PostLoginInitService.instance.initialize(
+                  serverUrl: serverUrl,
+                  unreadProvider: unreadProvider,
+                  roleProvider: roleProvider,
+                  statsProvider: statsProvider,
+                  onProgress: (step, current, total) {
+                    debugPrint('[MAIN] [$current/$total] $step');
+                  },
+                );
+
+                _postLoginInitComplete = true;
+
+                // Trigger rebuild to update providers with initialized services
+                if (mounted) {
+                  setState(() {});
+                }
+
+                debugPrint(
+                  '[ROUTER] ✅ ApiService and SocketService initialized',
+                );
+              } catch (e) {
+                debugPrint('[ROUTER] ❌ Error during initialization: $e');
+                // On error, redirect to login to be safe
+                return '/login';
+              }
+            }
+
             try {
               // Check if SignalClient already exists and is initialized
               if (!ServerSettingsService.instance.isSignalClientInitialized()) {
@@ -1068,64 +1128,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           // ========================================
           // POST-LOGIN SERVICE INITIALIZATION (ONCE)
           // ========================================
-          if (!_postLoginInitComplete &&
-              !PostLoginInitService.instance.isInitialized) {
-            debugPrint('[MAIN] ========================================');
-            debugPrint('[MAIN] Starting post-login initialization...');
-            debugPrint('[MAIN] ========================================');
-
-            try {
-              // Capture providers before any async operations
-              // ignore: use_build_context_synchronously
-              final unreadProvider = context.read<UnreadMessagesProvider>();
-              // ignore: use_build_context_synchronously
-              final roleProvider = context.read<RoleProvider>();
-              // ignore: use_build_context_synchronously
-              final statsProvider = context.read<FileTransferStatsProvider>();
-
-              // Get server URL based on platform
-              String serverUrl = '';
-              if (kIsWeb) {
-                final apiServer = await loadWebApiServer();
-                serverUrl = apiServer ?? '';
-              } else {
-                final activeServer = ServerConfigService.getActiveServer();
-                serverUrl = activeServer?.serverUrl ?? '';
-              }
-
-              // Ensure server URL has protocol
-              if (serverUrl.isNotEmpty &&
-                  !serverUrl.startsWith('http://') &&
-                  !serverUrl.startsWith('https://')) {
-                serverUrl = 'https://$serverUrl';
-              }
-
-              await PostLoginInitService.instance.initialize(
-                serverUrl: serverUrl,
-                unreadProvider: unreadProvider,
-                roleProvider: roleProvider,
-                statsProvider: statsProvider,
-                onProgress: (step, current, total) {
-                  debugPrint('[MAIN] [$current/$total] $step');
-                },
-              );
-
-              _postLoginInitComplete = true;
-
-              // Trigger rebuild to update providers with initialized services
-              if (mounted) {
-                setState(() {});
-              }
-
-              debugPrint('[MAIN] ========================================');
-              debugPrint('[MAIN] ✅ Post-login initialization complete');
-              debugPrint('[MAIN] ========================================');
-            } catch (e) {
-              debugPrint('[MAIN] ⚠ Error during initialization: $e');
-              // On error, redirect to login to be safe
-              return '/login';
-            }
-          }
+          // This section is now handled earlier in the router redirect (lines 994-1060)
+          // to ensure services are initialized before redirecting to signal-setup
+          // Keeping this comment for reference
         } else {
           // Logout cleanup
           // Reset post-login initialization flag so it runs again on next login

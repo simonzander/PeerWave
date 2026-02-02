@@ -4,8 +4,8 @@ import 'package:crypto/crypto.dart';
 import 'socket_file_client.dart';
 import 'storage_interface.dart';
 import 'encryption_service.dart';
-import '../signal_service.dart';
 import '../user_profile_service.dart';
+import '../server_settings_service.dart';
 import '../server_config_web.dart'
     if (dart.library.io) '../server_config_native.dart';
 import '../../web_config.dart';
@@ -16,7 +16,6 @@ import '../../web_config.dart';
 class FileTransferService {
   final SocketFileClient _socketFileClient;
   final FileStorageInterface _storage;
-  final SignalService? _signalService; // Optional for share updates
   final EncryptionService _encryptionService;
 
   // ============================================
@@ -27,11 +26,9 @@ class FileTransferService {
   FileTransferService({
     required SocketFileClient socketFileClient,
     required FileStorageInterface storage,
-    SignalService? signalService,
     EncryptionService? encryptionService,
   }) : _socketFileClient = socketFileClient,
        _storage = storage,
-       _signalService = signalService,
        _encryptionService = encryptionService ?? EncryptionService() {
     // Setup announce listener for auto-resume
     _setupAnnounceListener();
@@ -798,14 +795,9 @@ class FileTransferService {
     required List<String> userIds,
     String? encryptedFileKey,
   }) async {
-    if (_signalService == null) {
-      debugPrint(
-        '[FILE TRANSFER] Warning: SignalService not available, cannot send share updates',
-      );
-      return;
-    }
-
     try {
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClient();
       // Step 1: Update server FIRST (critical!)
       debugPrint('[FILE TRANSFER] Step 1/3: Updating server share...');
 
@@ -840,15 +832,19 @@ class FileTransferService {
         '[FILE TRANSFER] Broadcasting to ${allSeeders.length} seeders (keeping all in sync)',
       );
 
-      await _signalService.sendFileShareUpdate(
-        chatId: chatId,
-        chatType: chatType,
-        fileId: fileId,
-        action: 'add',
-        affectedUserIds: allSeeders, // ← ALL seeders (existing + new)
-        checksum: checksum, // ← Include checksum for verification
-        encryptedFileKey: encryptedFileKey,
+      // TODO: Implement sendFileShareUpdate on MessagingService
+      debugPrint(
+        '[FILE TRANSFER] TODO: sendFileShareUpdate not yet implemented on MessagingService',
       );
+      // await signalClient.messagingService.sendFileShareUpdate(
+      //   chatId: chatId,
+      //   chatType: chatType,
+      //   fileId: fileId,
+      //   action: 'add',
+      //   affectedUserIds: allSeeders,
+      //   checksum: checksum,
+      //   encryptedFileKey: encryptedFileKey,
+      // );
 
       debugPrint(
         '[FILE TRANSFER] ✓ Signal notifications sent to all ${allSeeders.length} seeders',
@@ -862,17 +858,21 @@ class FileTransferService {
         final recipientUserId = userIds.first;
 
         if (metadata != null) {
-          await _signalService.sendFileItem(
-            recipientUserId: recipientUserId,
-            fileId: fileId,
-            fileName: metadata['fileName'] as String,
-            mimeType: metadata['mimeType'] as String,
-            fileSize: metadata['fileSize'] as int,
-            checksum: metadata['checksum'] as String,
-            chunkCount: metadata['chunkCount'] as int,
-            encryptedFileKey: encryptedFileKey ?? '',
-            message: null, // Optional: could add a message like "Shared file"
+          // TODO: Implement sendFileItem on MessagingService
+          debugPrint(
+            '[FILE TRANSFER] TODO: sendFileItem not yet implemented on MessagingService',
           );
+          // await signalClient.messagingService.sendFileItem(
+          //   recipientUserId: recipientUserId,
+          //   fileId: fileId,
+          //   fileName: metadata['fileName'] as String,
+          //   mimeType: metadata['mimeType'] as String,
+          //   fileSize: metadata['fileSize'] as int,
+          //   checksum: metadata['checksum'] as String,
+          //   chunkCount: metadata['chunkCount'] as int,
+          //   encryptedFileKey: encryptedFileKey ?? '',
+          //   message: null,
+          // );
 
           debugPrint(
             '[FILE TRANSFER] ✓ File message sent to chat with $recipientUserId',
@@ -889,18 +889,24 @@ class FileTransferService {
         );
 
         if (metadata != null) {
-          debugPrint('[FILE TRANSFER] Calling sendFileGroupItem...');
-          await _signalService.sendFileGroupItem(
-            channelId: chatId,
-            fileId: fileId,
-            fileName: metadata['fileName'] as String,
-            mimeType: metadata['mimeType'] as String,
-            fileSize: metadata['fileSize'] as int,
-            checksum: metadata['checksum'] as String,
-            chunkCount: metadata['chunkCount'] as int,
-            encryptedFileKey: encryptedFileKey ?? '',
-            message: null, // Optional: could add a message
+          debugPrint(
+            '[FILE TRANSFER] Preparing to send file message to group chat...',
           );
+          // TODO: Implement sendFileGroupItem on MessagingService
+          debugPrint(
+            '[FILE TRANSFER] TODO: sendFileGroupItem not yet implemented on MessagingService',
+          );
+          // await signalClient.messagingService.sendFileGroupItem(
+          //   channelId: chatId,
+          //   fileId: fileId,
+          //   fileName: metadata['fileName'] as String,
+          //   mimeType: metadata['mimeType'] as String,
+          //   fileSize: metadata['fileSize'] as int,
+          //   checksum: metadata['checksum'] as String,
+          //   chunkCount: metadata['chunkCount'] as int,
+          //   encryptedFileKey: encryptedFileKey ?? '',
+          //   message: null,
+          // );
 
           debugPrint(
             '[FILE TRANSFER] ✓ File message sent to group chat $chatId',
@@ -1057,14 +1063,9 @@ class FileTransferService {
     required String chatType,
     required List<String> userIds,
   }) async {
-    if (_signalService == null) {
-      debugPrint(
-        '[FILE TRANSFER] Warning: SignalService not available, cannot send share updates',
-      );
-      return;
-    }
-
     try {
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClient();
       // Step 1: Update server FIRST
       debugPrint('[FILE TRANSFER] Step 1/3: Updating server share...');
 
@@ -1105,14 +1106,18 @@ class FileTransferService {
         '[FILE TRANSFER] Broadcasting to ${allRecipients.length} users (revoked + remaining seeders)',
       );
 
-      await _signalService.sendFileShareUpdate(
-        chatId: chatId,
-        chatType: chatType,
-        fileId: fileId,
-        action: 'revoke',
-        affectedUserIds: allRecipients, // ← Revoked users + remaining seeders
-        checksum: checksum, // ← Include checksum for verification
+      // TODO: Implement sendFileShareUpdate on MessagingService
+      debugPrint(
+        '[FILE TRANSFER] TODO: sendFileShareUpdate not yet implemented on MessagingService',
       );
+      // await signalClient.messagingService.sendFileShareUpdate(
+      //   chatId: chatId,
+      //   chatType: chatType,
+      //   fileId: fileId,
+      //   action: 'revoke',
+      //   affectedUserIds: allRecipients,
+      //   checksum: checksum,
+      // );
 
       debugPrint(
         '[FILE TRANSFER] ✓ Signal notifications sent to ${allRecipients.length} users',

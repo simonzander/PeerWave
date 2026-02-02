@@ -276,3 +276,4 @@ client/lib/services/signal/README.md
 client/test/signal/README.md
 client/test/signal/TEST_STATUS.md
 client/test/signal/HONEST_STATUS.md
+*.bak

@@ -20,6 +20,11 @@ class MessageCallbacks {
   final Map<String, List<Function(Map<String, dynamic>)>>
   _receiveGroupCallbacks = {};
 
+  /// Message type callbacks (any sender)
+  /// Key format: "type" (e.g., "call_notification")
+  /// Used for system messages and broadcasts where sender is not known
+  final Map<String, List<Function(Map<String, dynamic>)>> _typeCallbacks = {};
+
   /// Register 1:1 message receive callback
   void onReceive(
     String type,
@@ -40,6 +45,12 @@ class MessageCallbacks {
     final key = '$type:$channelId';
     _receiveGroupCallbacks.putIfAbsent(key, () => []).add(callback);
     debugPrint('[MESSAGE_CALLBACKS] Registered group receive: $key');
+  }
+
+  /// Register message type callback (any sender)
+  void onTypeReceive(String type, Function(Map<String, dynamic>) callback) {
+    _typeCallbacks.putIfAbsent(type, () => []).add(callback);
+    debugPrint('[MESSAGE_CALLBACKS] Registered type callback: $type');
   }
 
   /// Notify 1:1 message received
@@ -92,6 +103,29 @@ class MessageCallbacks {
     }
   }
 
+  /// Notify message type received (any sender)
+  void notifyTypeReceive(String type, Map<String, dynamic> data) {
+    final callbacks = _typeCallbacks[type];
+
+    if (callbacks != null && callbacks.isNotEmpty) {
+      debugPrint(
+        '[MESSAGE_CALLBACKS] Notifying ${callbacks.length} type callbacks for: $type',
+      );
+      for (final callback in callbacks) {
+        try {
+          callback(data);
+        } catch (e, stack) {
+          debugPrint(
+            '[MESSAGE_CALLBACKS] Error in type callback for $type: $e',
+          );
+          debugPrint('[MESSAGE_CALLBACKS] Stack: $stack');
+        }
+      }
+    } else {
+      debugPrint('[MESSAGE_CALLBACKS] No type callbacks registered for: $type');
+    }
+  }
+
   /// Remove specific 1:1 receive callback
   void removeReceive(
     String type,
@@ -120,10 +154,20 @@ class MessageCallbacks {
     debugPrint('[MESSAGE_CALLBACKS] Removed group receive: $key');
   }
 
+  /// Remove specific type callback
+  void removeTypeReceive(String type, Function(Map<String, dynamic>) callback) {
+    _typeCallbacks[type]?.remove(callback);
+    if (_typeCallbacks[type]?.isEmpty ?? false) {
+      _typeCallbacks.remove(type);
+    }
+    debugPrint('[MESSAGE_CALLBACKS] Removed type callback: $type');
+  }
+
   /// Clear all callbacks
   void clear() {
     _receiveCallbacks.clear();
     _receiveGroupCallbacks.clear();
+    _typeCallbacks.clear();
     debugPrint('[MESSAGE_CALLBACKS] ✓ All callbacks cleared');
   }
 
@@ -137,6 +181,9 @@ class MessageCallbacks {
     0,
     (sum, callbacks) => sum + callbacks.length,
   );
+
+  int get typeCount =>
+      _typeCallbacks.values.fold(0, (sum, callbacks) => sum + callbacks.length);
 
   /// Get registered callback keys (for debugging)
   List<String> get registeredKeys => _receiveCallbacks.keys.toList();

@@ -1,14 +1,15 @@
 import 'package:flutter/foundation.dart';
-import '../core/message_receiver.dart';
-import '../core/group_message_receiver.dart';
+import '../core/messaging/messaging_service.dart';
 import '../core/session_manager.dart';
 import '../core/key_manager.dart';
 import '../core/healing_service.dart';
+import '../callbacks/callback_manager.dart';
 import '../../../providers/unread_messages_provider.dart';
 import 'message_listeners.dart';
 import 'group_listeners.dart';
 import 'session_listeners.dart';
 import 'sync_listeners.dart';
+import '../../socket_service.dart';
 
 /// Central registry for all Socket.IO listeners
 ///
@@ -40,11 +41,11 @@ class ListenerRegistry {
   /// Should be called once after service initialization.
   /// Guards against duplicate registration.
   Future<void> registerAll({
-    required MessageReceiver messageReceiver,
-    required GroupMessageReceiver groupReceiver,
+    required MessagingService messagingService,
     required SessionManager sessionManager,
     required SignalKeyManager keyManager,
     required SignalHealingService healingService,
+    required CallbackManager callbackManager,
     UnreadMessagesProvider? unreadMessagesProvider,
     String? currentUserId,
     int? currentDeviceId,
@@ -57,12 +58,12 @@ class ListenerRegistry {
     try {
       debugPrint('[LISTENER_REGISTRY] Registering all socket listeners...');
 
-      // Register message listeners (1:1 messages)
-      await MessageListeners.register(messageReceiver);
+      // Register message listeners (1:1 and group messages)
+      await MessageListeners.register(messagingService, callbackManager);
 
       // Register group message listeners
       await GroupListeners.register(
-        groupReceiver,
+        messagingService,
         unreadMessagesProvider: unreadMessagesProvider,
         currentUserId: currentUserId,
       );
@@ -75,8 +76,7 @@ class ListenerRegistry {
 
       // Register background sync listeners
       await SyncListeners.register(
-        messageReceiver: messageReceiver,
-        groupReceiver: groupReceiver,
+        messagingService: messagingService,
         healingService: healingService,
         currentUserId: currentUserId,
         currentDeviceId: currentDeviceId,
@@ -84,6 +84,15 @@ class ListenerRegistry {
 
       _registered = true;
       debugPrint('[LISTENER_REGISTRY] ✓ All listeners registered');
+
+      // Emit clientReady to server
+      try {
+        final socket = SocketService.instance;
+        socket.emit('clientReady', {});
+        debugPrint('[LISTENER_REGISTRY] ✓ Sent clientReady to server');
+      } catch (e) {
+        debugPrint('[LISTENER_REGISTRY] ⚠️ Failed to emit clientReady: $e');
+      }
     } catch (e, stack) {
       debugPrint('[LISTENER_REGISTRY] ✗ Registration failed: $e');
       debugPrint('[LISTENER_REGISTRY] Stack: $stack');

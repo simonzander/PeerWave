@@ -32,9 +32,9 @@ class RoleApiService {
       }
     } else {
       // Native: Use ApiService for HMAC authentication
-      ApiService.init();
-      final response = await ApiService.get(
-        ApiService.buildUrl('/api/user/roles'),
+      await ApiService.instance.init();
+      final response = await ApiService.instance.get(
+        ApiService.instance.buildUrl('/api/user/roles'),
       );
 
       if (response.statusCode == 200) {
@@ -71,9 +71,9 @@ class RoleApiService {
       }
     } else {
       // Native: Use ApiService for HMAC authentication
-      ApiService.init();
-      final response = await ApiService.get(
-        ApiService.buildUrl('/api/roles$scopeParam'),
+      await ApiService.instance.init();
+      final response = await ApiService.instance.get(
+        ApiService.instance.buildUrl('/api/roles$scopeParam'),
       );
 
       if (response.statusCode == 200) {
@@ -210,8 +210,8 @@ class RoleApiService {
       }
     } else {
       // Native: Use ApiService for HMAC authentication
-      ApiService.init();
-      final response = await ApiService.post(
+      await ApiService.instance.init();
+      final response = await ApiService.instance.post(
         '$baseUrl/api/users/$userId/channels/$channelId/roles',
         data: {'roleId': roleId},
       );
@@ -263,8 +263,8 @@ class RoleApiService {
       }
     } else {
       // Native: Use ApiService for HMAC authentication
-      ApiService.init();
-      final response = await ApiService.delete(
+      await ApiService.instance.init();
+      final response = await ApiService.instance.delete(
         '$baseUrl/api/users/$userId/channels/$channelId/roles/$roleId',
       );
 
@@ -320,9 +320,9 @@ class RoleApiService {
       }
     } else {
       // Native: Use ApiService for HMAC authentication
-      ApiService.init();
+      await ApiService.instance.init();
       final searchParam = search != null ? '?search=$search' : '';
-      final response = await ApiService.get(
+      final response = await ApiService.instance.get(
         '$baseUrl/api/channels/$channelId/available-users$searchParam',
       );
 
@@ -382,8 +382,8 @@ class RoleApiService {
       }
     } else {
       // Native: Use ApiService for HMAC authentication
-      ApiService.init();
-      final response = await ApiService.post(
+      await ApiService.instance.init();
+      final response = await ApiService.instance.post(
         '$baseUrl/api/channels/$channelId/members',
         data: {'userId': userId, if (roleId != null) 'roleId': roleId},
       );
@@ -442,8 +442,8 @@ class RoleApiService {
       }
     } else {
       // Native: Use ApiService for HMAC authentication
-      ApiService.init();
-      final response = await ApiService.get(
+      await ApiService.instance.init();
+      final response = await ApiService.instance.get(
         '$baseUrl/api/channels/$channelId/members',
       );
 

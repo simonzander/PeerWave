@@ -5,7 +5,6 @@ import 'package:universal_html/html.dart' as html show window;
 import 'package:go_router/go_router.dart';
 import 'package:dio/dio.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
-import 'signal_setup_service.dart';
 import 'user_profile_service.dart';
 import 'api_service.dart';
 import '../web_config.dart';
@@ -15,6 +14,7 @@ import 'web/webauthn_crypto_service.dart';
 import 'native_crypto_service.dart';
 import 'session_auth_service.dart';
 import 'clientid_native.dart';
+import 'server_settings_service.dart';
 import 'server_config_web.dart'
     if (dart.library.io) 'server_config_native.dart';
 // Import auth service conditionally
@@ -120,7 +120,7 @@ class LogoutService {
               );
               // Continue with logout below
             } else {
-              final response = await ApiService.dio.get(
+              final response = await ApiService.instance.get(
                 '/client/auth/check',
                 options: Options(
                   headers: authHeaders,
@@ -190,9 +190,25 @@ class LogoutService {
         SocketService.instance.disconnect();
       }
 
-      // 2. Cleanup SignalSetupService
-      debugPrint('[LOGOUT] Cleaning up Signal setup...');
-      SignalSetupService.instance.cleanupOnLogout();
+      // 2. Dispose SignalClient and clear per-server resources
+      debugPrint('[LOGOUT] Disposing SignalClient...');
+      try {
+        if (kIsWeb) {
+          // Web: Single server - remove all
+          await ServerSettingsService.instance.removeAllServers();
+        } else {
+          // Native: Remove only active server (preserve other servers)
+          final activeServer = ServerConfigService.getActiveServer();
+          if (activeServer != null) {
+            await ServerSettingsService.instance.removeServer(activeServer.id);
+            debugPrint(
+              '[LOGOUT] ✓ SignalClient disposed for ${activeServer.serverUrl}',
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('[LOGOUT] ⚠️ Error disposing SignalClient: $e');
+      }
 
       // 3. Clear user profiles cache (all servers)
       debugPrint('[LOGOUT] Clearing user profiles...');
@@ -330,8 +346,8 @@ class LogoutService {
           urlString = 'https://$urlString';
         }
 
-        ApiService.init();
-        await ApiService.post('/logout');
+        await ApiService.instance.init();
+        await ApiService.instance.post('/logout');
         debugPrint('[LOGOUT] ✓ Server logout successful');
       } catch (e) {
         debugPrint(

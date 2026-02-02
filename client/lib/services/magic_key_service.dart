@@ -154,7 +154,10 @@ class MagicKeyService {
         requestData['deviceInfo'] = deviceInfo;
       }
 
-      final response = await ApiService.post(verifyUrl, data: requestData);
+      final response = await ApiService.instance.post(
+        verifyUrl,
+        data: requestData,
+      );
 
       if (response.statusCode == 200) {
         final data = response.data;

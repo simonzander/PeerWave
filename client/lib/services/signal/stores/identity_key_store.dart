@@ -7,6 +7,7 @@ import '../../socket_service.dart'
     if (dart.library.io) '../../socket_service_native.dart';
 import '../../device_scoped_storage_service.dart';
 import '../../api_service.dart';
+import '../state/identity_key_state.dart';
 
 /// Manages Signal Protocol Identity Keys with persistent encrypted storage
 ///
@@ -44,6 +45,8 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
   // Abstract getters - provided by KeyManager
   ApiService get apiService;
   SocketService get socketService;
+  bool get hasIdentityKeyPair; // Check if identity key is initialized
+  IdentityKeyState get identityKeyState; // State instance for this server
 
   final String _storeName = 'peerwaveSignalIdentityKeys';
   final String _keyPrefix = 'identity_';
@@ -92,7 +95,7 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
   /// Thread-safe: Includes sync-lock to prevent concurrent generation.
   @override
   Future<IdentityKeyPair> getIdentityKeyPair() async {
-    if (identityKeyPair == null) {
+    if (!hasIdentityKeyPair) {
       final identityData = await getIdentityKeyPairData();
       final publicKeyBytes = base64Decode(identityData['publicKey']!);
       final publicKey = Curve.decodePoint(publicKeyBytes, 0);
@@ -235,7 +238,7 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
       final publicKey = await getPublicKey();
       final registrationId = await getLocalRegistrationId();
 
-      final response = await apiService.post(
+      final response = await ApiService.instance.post(
         '/signal/identity',
         data: {
           'publicKey': publicKey,
@@ -287,6 +290,20 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
       debugPrint(
         '[IDENTITY_KEY_STORE] ✓ Loaded encrypted IdentityKeyPair from device-scoped storage',
       );
+
+      // Update state: identity key loaded
+      if (publicKeyBase64 != null &&
+          privateKeyBase64 != null &&
+          registrationId != null) {
+        identityKeyState.updateIdentity(
+          hasKey: true,
+          registrationId: int.tryParse(registrationId) ?? 0,
+          publicKeyFingerprint: publicKeyBase64.substring(
+            0,
+            16,
+          ), // Simple fingerprint
+        );
+      }
     }
 
     // Generate new identity key pair if not found
@@ -299,6 +316,9 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
       debugPrint(
         '[IDENTITY_KEY_STORE] This will invalidate all existing encrypted sessions.',
       );
+
+      // Mark state as generating
+      identityKeyState.markGenerating();
 
       // 🔒 ACQUIRE LOCK: Prevent concurrent regeneration
       await acquireLock();
@@ -320,6 +340,16 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
           },
         );
         createdNew = true;
+
+        // Mark generation complete
+        identityKeyState.markGenerationComplete(
+          registrationId: int.tryParse(registrationId!) ?? 0,
+          publicKeyFingerprint: publicKeyBase64!.substring(0, 16),
+        );
+      } catch (e) {
+        // Mark error
+        identityKeyState.markError('Failed to generate identity key: $e');
+        rethrow;
       } finally {
         // 🔓 RELEASE LOCK: Even if error occurs
         releaseLock();
@@ -473,11 +503,15 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
       // 5. Request server-side deletion of all keys
       debugPrint('[IDENTITY_KEY_STORE] Requesting server-side key deletion...');
       try {
-        socketService.emit("deleteAllSignalKeys", {
-          'reason': 'IdentityKeyPair regenerated',
-          'timestamp': DateTime.now().toIso8601String(),
-        });
-        debugPrint('[IDENTITY_KEY_STORE] ✓ Server deletion requested');
+        // Use REST API to delete all keys
+        final response = await apiService.delete('/api/signal/keys');
+        if (response.statusCode == 200) {
+          debugPrint('[IDENTITY_KEY_STORE] ✓ Server keys deleted via REST API');
+        } else {
+          debugPrint(
+            '[IDENTITY_KEY_STORE] ⚠️ Failed to delete server keys: ${response.statusCode}',
+          );
+        }
       } catch (e) {
         debugPrint(
           '[IDENTITY_KEY_STORE] Warning: Could not request server deletion: $e',

@@ -246,8 +246,8 @@ class _DashboardPageState extends State<DashboardPage> {
       debugPrint(
         '[DASHBOARD] Loading channels from: /client/channels?limit=20',
       );
-      ApiService.init();
-      final resp = await ApiService.get('/client/channels?limit=20');
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get('/client/channels?limit=20');
       debugPrint('[DASHBOARD] Channel response status: ${resp.statusCode}');
       debugPrint(
         '[DASHBOARD] Channel response data type: ${resp.data.runtimeType}',
@@ -384,8 +384,8 @@ class _DashboardPageState extends State<DashboardPage> {
           '[DASHBOARD] Fetching display names for ${userIdsNeedingNames.length} users from API...',
         );
         try {
-          ApiService.init();
-          final resp = await ApiService.post(
+          await ApiService.instance.init();
+          final resp = await ApiService.instance.post(
             '/client/people/info',
             data: {'userIds': userIdsNeedingNames},
           );

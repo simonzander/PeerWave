@@ -404,7 +404,9 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
     if (senderPicture != null && senderPicture.isNotEmpty) {
       return CircleAvatar(
         radius: 20,
-        backgroundImage: NetworkImage(ApiService.buildUrl(senderPicture)),
+        backgroundImage: NetworkImage(
+          ApiService.instance.buildUrl(senderPicture),
+        ),
         onBackgroundImageError: (_, _) {},
       );
     }

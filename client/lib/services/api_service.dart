@@ -336,7 +336,11 @@ class ApiService {
       // For native: Use the provided serverUrl or get from ServerConfig
       if (kIsWeb) {
         dio.options.baseUrl = '';
-        debugPrint('[API SERVICE] Web: using relative paths for $serverKey');
+        // CRITICAL: Enable credentials (cookies) for CORS requests on web
+        dio.options.extra['withCredentials'] = true;
+        debugPrint(
+          '[API SERVICE] Web: using relative paths for $serverKey with credentials',
+        );
       } else {
         String? baseUrl = serverUrl;
         if (baseUrl == null) {

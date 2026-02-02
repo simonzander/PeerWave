@@ -55,7 +55,7 @@ class _AuthLayoutState extends State<AuthLayout> {
         final deviceId = await _getDeviceId();
         if (token != null && serverUrl.isNotEmpty) {
           try {
-            final resp = await ApiService.post(
+            final resp = await ApiService.instance.post(
               '$serverUrl/magic/verify',
               data: {'token': token, 'deviceId': deviceId},
             );

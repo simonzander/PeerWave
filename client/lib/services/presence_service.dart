@@ -28,7 +28,7 @@ class PresenceService {
   factory PresenceService() => _instance;
   PresenceService._internal();
 
-  final _socketService = SocketService();
+  final _socketService = SocketService.instance;
 
   // Stream controllers
   final _presenceUpdateController = StreamController<UserPresence>.broadcast();
@@ -189,7 +189,7 @@ class PresenceService {
       debugPrint(
         '[PRESENCE SERVICE] Calling /api/presence/bulk?user_ids=$userIdsParam',
       );
-      final response = await ApiService.get(
+      final response = await ApiService.instance.get(
         '/api/presence/bulk?user_ids=$userIdsParam',
       );
       debugPrint('[PRESENCE SERVICE] Response: ${response.data}');

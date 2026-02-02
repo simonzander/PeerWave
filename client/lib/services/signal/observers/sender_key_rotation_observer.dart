@@ -34,6 +34,9 @@ class SenderKeyRotationObserver {
   bool _isObserving = false;
   bool _isRotating = false;
 
+  // State instance from KeyManager
+  SenderKeyState get senderKeyState => keyManager.senderKeyState;
+
   SenderKeyRotationObserver({
     required this.keyManager,
     required this.getCurrentUserId,
@@ -48,7 +51,7 @@ class SenderKeyRotationObserver {
     }
 
     // Listen for state changes (manual triggers)
-    SenderKeyState.instance.addListener(_onSenderKeyStateChanged);
+    senderKeyState.addListener(_onSenderKeyStateChanged);
 
     // Schedule daily automatic checks
     _dailyTimer = Timer.periodic(Duration(hours: 24), (_) async {
@@ -69,7 +72,7 @@ class SenderKeyRotationObserver {
   void stop() {
     if (!_isObserving) return;
 
-    SenderKeyState.instance.removeListener(_onSenderKeyStateChanged);
+    senderKeyState.removeListener(_onSenderKeyStateChanged);
     _dailyTimer?.cancel();
     _dailyTimer = null;
     _isObserving = false;
@@ -80,9 +83,9 @@ class SenderKeyRotationObserver {
   /// Handle sender key state changes
   Future<void> _onSenderKeyStateChanged() async {
     // Check if rotation is needed based on state
-    if (SenderKeyState.instance.keysNeedingRotation > 0 && !_isRotating) {
+    if (senderKeyState.keysNeedingRotation > 0 && !_isRotating) {
       debugPrint(
-        '[SENDERKEY_OBSERVER] State indicates ${SenderKeyState.instance.keysNeedingRotation} keys need rotation',
+        '[SENDERKEY_OBSERVER] State indicates ${senderKeyState.keysNeedingRotation} keys need rotation',
       );
       await _checkAndRotateStaleKeys();
     }
@@ -121,7 +124,7 @@ class SenderKeyRotationObserver {
       // Check sender keys (updates state with stale count)
       await keyManager.checkSenderKeys(myAddress);
 
-      final staleCount = SenderKeyState.instance.keysNeedingRotation;
+      final staleCount = senderKeyState.keysNeedingRotation;
 
       if (staleCount > 0) {
         debugPrint(
@@ -143,7 +146,7 @@ class SenderKeyRotationObserver {
       );
       debugPrint('[SENDERKEY_OBSERVER] Stack trace: $stackTrace');
 
-      SenderKeyState.instance.markError('Failed to rotate stale keys: $e');
+      senderKeyState.markError('Failed to rotate stale keys: $e');
     } finally {
       _isRotating = false;
     }

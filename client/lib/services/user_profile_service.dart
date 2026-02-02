@@ -234,9 +234,9 @@ class UserProfileService {
 
       // Batch request: /people/profiles?uuids=uuid1,uuid2,uuid3
       final uuidsParam = uuidsToLoad.join(',');
-      ApiService.init();
-      final resp = await ApiService.get(
-        ApiService.buildUrl('/people/profiles?uuids=$uuidsParam'),
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get(
+        ApiService.instance.buildUrl('/people/profiles?uuids=$uuidsParam'),
       );
 
       if (resp.statusCode == 200) {
@@ -650,8 +650,10 @@ class UserProfileService {
         urlString = 'https://$urlString';
       }
 
-      ApiService.init();
-      final resp = await ApiService.get(ApiService.buildUrl('/client/profile'));
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get(
+        ApiService.instance.buildUrl('/client/profile'),
+      );
 
       if (resp.statusCode == 200) {
         final data = resp.data;

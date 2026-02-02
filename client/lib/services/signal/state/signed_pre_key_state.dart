@@ -28,15 +28,16 @@ enum SignedPreKeyStatus {
 ///
 /// Usage:
 /// ```dart
-/// final state = SignedPreKeyState.instance;
+/// // Access through KeyManager (server-scoped)
+/// final state = keyManager.signedPreKeyState;
 /// state.addListener(() {
 ///   print('Key age: ${state.ageInDays} days');
 ///   print('Status: ${state.status}');
 /// });
 /// ```
 class SignedPreKeyState extends ChangeNotifier {
-  static final SignedPreKeyState instance = SignedPreKeyState._();
-  SignedPreKeyState._();
+  // No longer a singleton - instantiated per KeyManager
+  SignedPreKeyState();
 
   int? _currentKeyId;
   DateTime? _createdAt;

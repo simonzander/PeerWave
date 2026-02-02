@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 /// Signal Protocol PreKey Bundle
@@ -29,20 +30,41 @@ class KeyBundle {
 
   /// Create from server response
   factory KeyBundle.fromServer(Map<String, dynamic> data) {
+    // Parse nested signedPreKey and preKey objects from server response
+    final signedPreKeyObj = data['signedPreKey'] as Map<String, dynamic>?;
+    final preKeyObj = data['preKey'] as Map<String, dynamic>?;
+
+    if (signedPreKeyObj == null) {
+      throw Exception('Missing signedPreKey in server response');
+    }
+
+    // Handle device_id and registration_id as String or int
+    final deviceIdRaw = data['device_id'];
+    final deviceId = deviceIdRaw is int
+        ? deviceIdRaw
+        : int.parse(deviceIdRaw.toString());
+
+    final regIdRaw = data['registration_id'];
+    final registrationId = regIdRaw is int
+        ? regIdRaw
+        : int.parse(regIdRaw.toString());
+
     return KeyBundle(
       userId: data['userId'] as String,
-      deviceId: data['deviceId'] as int,
-      identityKey: _decodeBase64(data['identityKey'] as String),
-      preKeyId: data['preKeyId'] as int?,
-      preKey: data['preKey'] != null
-          ? _decodeBase64(data['preKey'] as String)
+      deviceId: deviceId,
+      identityKey: _decodeBase64(data['public_key'] as String),
+      preKeyId: preKeyObj?['prekey_id'] as int?,
+      preKey: preKeyObj != null && preKeyObj['prekey_data'] != null
+          ? _decodeBase64(preKeyObj['prekey_data'] as String)
           : null,
-      signedPreKeyId: data['signedPreKeyId'] as int,
-      signedPreKey: _decodeBase64(data['signedPreKey'] as String),
-      signedPreKeySignature: _decodeBase64(
-        data['signedPreKeySignature'] as String,
+      signedPreKeyId: signedPreKeyObj['signed_prekey_id'] as int,
+      signedPreKey: _decodeBase64(
+        signedPreKeyObj['signed_prekey_data'] as String,
       ),
-      registrationId: data['registrationId'] as int,
+      signedPreKeySignature: _decodeBase64(
+        signedPreKeyObj['signed_prekey_signature'] as String,
+      ),
+      registrationId: registrationId,
     );
   }
 
@@ -67,31 +89,12 @@ class KeyBundle {
   /// Get bundle identifier for caching
   String get bundleId => '$userId:$deviceId';
 
-  static Uint8List _decodeBase64(String base64) {
-    // Handle both standard and URL-safe base64
-    String normalized = base64.replaceAll('-', '+').replaceAll('_', '/');
-    // Add padding if needed
-    while (normalized.length % 4 != 0) {
-      normalized += '=';
-    }
-    return Uint8List.fromList(
-      String.fromCharCodes(
-        Uri.decodeComponent(
-          normalized.split('').map((c) {
-            final code = c.codeUnitAt(0);
-            return '%${code.toRadixString(16).padLeft(2, '0')}';
-          }).join(),
-        ).codeUnits,
-      ).codeUnits,
-    );
+  static Uint8List _decodeBase64(String base64String) {
+    return base64Decode(base64String);
   }
 
   static String _encodeBase64(Uint8List bytes) {
-    return Uri.encodeComponent(String.fromCharCodes(bytes))
-        .replaceAll('%', '')
-        .replaceAll('+', '-')
-        .replaceAll('/', '_')
-        .replaceAll('=', '');
+    return base64Encode(bytes);
   }
 
   @override

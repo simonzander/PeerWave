@@ -27,15 +27,15 @@ enum SenderKeyStatus {
 ///
 /// Usage:
 /// ```dart
-/// final state = SenderKeyState.instance;
+/// // Access via KeyManager (server-scoped)
+/// final state = keyManager.senderKeyState;
 /// state.addListener(() {
 ///   print('Groups: ${state.groupCount}');
 ///   print('Needs rotation: ${state.keysNeedingRotation}');
 /// });
 /// ```
 class SenderKeyState extends ChangeNotifier {
-  static final SenderKeyState instance = SenderKeyState._();
-  SenderKeyState._();
+  SenderKeyState();
 
   int _groupCount = 0;
   int _keysNeedingRotation = 0;

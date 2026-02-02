@@ -21,22 +21,23 @@ class OfflineQueueProcessor {
   /// Automatically handles both direct and group messages.
   ///
   /// Parameters:
-  /// - [sendDirectMessage]: Function to send direct messages (recipient, payload, itemId)
-  /// - [sendGroupMessage]: Function to send group messages (channelId, message, itemId)
+  /// - [sendDirectMessage]: Function to send direct messages
+  /// - [sendGroupMessage]: Function to send group messages
   ///
   /// Returns true if processing started, false if already processing or no messages
   Future<bool> processQueue({
-    required Future<void> Function(
-      String recipientId,
-      String payload,
-      String itemId,
-    )
+    required Future<String> Function({
+      required String recipientUserId,
+      required String type,
+      required String payload,
+      String? itemId,
+    })
     sendDirectMessage,
-    required Future<void> Function(
-      String channelId,
-      String message,
-      String itemId,
-    )
+    required Future<String> Function({
+      required String channelId,
+      required String message,
+      String? itemId,
+    })
     sendGroupMessage,
   }) async {
     final queue = OfflineMessageQueue.instance;
@@ -61,9 +62,9 @@ class OfflineQueueProcessor {
             );
 
             await sendGroupMessage(
-              channelId,
-              queuedMessage.text,
-              queuedMessage.itemId,
+              channelId: channelId,
+              message: queuedMessage.text,
+              itemId: queuedMessage.itemId,
             );
             return true;
           } else if (queuedMessage.type == 'direct') {
@@ -74,9 +75,10 @@ class OfflineQueueProcessor {
             );
 
             await sendDirectMessage(
-              recipientId,
-              queuedMessage.text,
-              queuedMessage.itemId,
+              recipientUserId: recipientId,
+              type: 'message',
+              payload: queuedMessage.text,
+              itemId: queuedMessage.itemId,
             );
             return true;
           } else {

@@ -78,7 +78,7 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
       }
 
       // Load server settings
-      final resp = await ApiService.get('/api/server/settings');
+      final resp = await ApiService.instance.get('/api/server/settings');
 
       if (resp.statusCode == 200) {
         final data = resp.data['settings'];
@@ -127,7 +127,7 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
         urlString = server?.serverUrl ?? '';
       }
 
-      final resp = await ApiService.get('/api/server/invitations');
+      final resp = await ApiService.instance.get('/api/server/invitations');
 
       if (resp.statusCode == 200) {
         setState(() {
@@ -172,7 +172,7 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
     setState(() => _loadingLicense = true);
 
     try {
-      final resp = await ApiService.get('/api/license-info');
+      final resp = await ApiService.instance.get('/api/license-info');
 
       if (resp.statusCode == 200) {
         final data = resp.data;
@@ -253,7 +253,10 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
             'data:image/${_imageFileName?.split('.').last ?? 'png'};base64,$base64Image';
       }
 
-      final resp = await ApiService.post('/api/server/settings', data: data);
+      final resp = await ApiService.instance.post(
+        '/api/server/settings',
+        data: data,
+      );
 
       if (resp.statusCode == 200) {
         setState(() {
@@ -301,7 +304,7 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
         urlString = server?.serverUrl ?? '';
       }
 
-      final resp = await ApiService.post(
+      final resp = await ApiService.instance.post(
         '/api/server/invitations/send',
         data: {'email': email},
       );
@@ -348,7 +351,9 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
         urlString = server?.serverUrl ?? '';
       }
 
-      final resp = await ApiService.delete('/api/server/invitations/$id');
+      final resp = await ApiService.instance.delete(
+        '/api/server/invitations/$id',
+      );
 
       if (resp.statusCode == 200) {
         await _loadInvitations();

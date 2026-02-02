@@ -381,6 +381,7 @@ app.use((req, res, next) => {
   const roleRoutes = require('./routes/roles');
   const groupItemRoutes = require('./routes/groupItems');
   const senderKeyRoutes = require('./routes/senderKeys');
+  const signalRoutes = require('./routes/signal');
   const livekitRoutes = require('./routes/livekit');
   const meetingRoutes = require('./routes/meetings');
   const callRoutes = require('./routes/calls');
@@ -419,6 +420,7 @@ app.use((req, res, next) => {
   // === DATABASE QUERIES (Moderate) ===
   app.use('/api/presence', queryLimiter);
   app.use('/api/sender-keys', queryLimiter);
+  app.use('/api/signal', queryLimiter);
   app.use('/api/group-items', queryLimiter);
   app.use('/api/livekit/room', queryLimiter);
   
@@ -455,6 +457,7 @@ app.use((req, res, next) => {
   app.use('/api', roleRoutes);
   app.use('/api/group-items', groupItemRoutes);
   app.use('/api/sender-keys', senderKeyRoutes);
+  app.use('/api/signal', signalRoutes);
   app.use('/api/livekit', livekitRoutes);
   app.use('/api', meetingRoutes);
   app.use('/api', callRoutes);

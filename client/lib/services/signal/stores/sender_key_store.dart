@@ -59,6 +59,9 @@ mixin PermanentSenderKeyStore implements SenderKeyStore {
   ApiService get apiService;
   SocketService get socketService;
 
+  /// State instance for this server - must be provided by KeyManager
+  SenderKeyState get senderKeyState;
+
   String get _storeName => 'peerwaveSenderKeys';
   String get _keyPrefix => 'sender_key_';
 
@@ -105,14 +108,14 @@ mixin PermanentSenderKeyStore implements SenderKeyStore {
 
     if (groupIds.isEmpty) {
       debugPrint('[SENDER_KEY_STORE] No groups with sender keys');
-      SenderKeyState.instance.updateStatus(0, 0);
+      senderKeyState.updateStatus(0, 0);
       return rotationStatus;
     }
 
     debugPrint('[SENDER_KEY_STORE] Checking ${groupIds.length} groups');
 
     // Mark as checking
-    SenderKeyState.instance.markRotating();
+    senderKeyState.markRotating();
 
     for (final groupId in groupIds) {
       try {
@@ -142,9 +145,9 @@ mixin PermanentSenderKeyStore implements SenderKeyStore {
     );
 
     // Update state
-    SenderKeyState.instance.updateStatus(groupIds.length, 0);
+    senderKeyState.updateStatus(groupIds.length, 0);
     if (rotatedCount > 0) {
-      SenderKeyState.instance.markRotationComplete(rotatedCount);
+      senderKeyState.markRotationComplete(rotatedCount);
     }
 
     return rotationStatus;
@@ -279,10 +282,10 @@ mixin PermanentSenderKeyStore implements SenderKeyStore {
   ///
   /// This method:
   /// 1. Generates new sender key distribution message
-  /// 2. Uploads to server via socket for distribution to group members
+  /// 2. Notifies server via REST API
   /// 3. Updates rotation timestamp
   ///
-  /// The server will forward the distribution message to all group members.
+  /// The server acknowledges the rotation event.
   ///
   /// Called automatically by checkSenderKeys() when rotation is needed.
   Future<void> rotateSenderKey({
@@ -295,13 +298,25 @@ mixin PermanentSenderKeyStore implements SenderKeyStore {
       // Create new sender key distribution message
       final senderKeyName = SenderKeyName(groupId, senderAddress);
 
-      socketService.emit('rotateSenderKey', {
-        'groupId': groupId,
-        'address': {
-          'name': senderAddress.getName(),
-          'deviceId': senderAddress.getDeviceId(),
+      // Notify server via REST API
+      final response = await apiService.post(
+        '/signal/sender-key/rotate',
+        data: {
+          'groupId': groupId,
+          'address': {
+            'name': senderAddress.getName(),
+            'deviceId': senderAddress.getDeviceId(),
+          },
         },
-      });
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          '[SENDER_KEY_STORE] ⚠️ Server returned ${response.statusCode} for rotation',
+        );
+      } else {
+        debugPrint('[SENDER_KEY_STORE] ✓ Server acknowledged rotation');
+      }
 
       // Update rotation timestamp
       await updateRotationTimestamp(senderKeyName);

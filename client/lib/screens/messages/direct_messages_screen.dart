@@ -10,7 +10,6 @@ import 'package:uuid/uuid.dart';
 import '../../widgets/message_list.dart';
 import '../../widgets/enhanced_message_input.dart';
 import '../../widgets/user_avatar.dart';
-import '../../services/signal_service.dart';
 import '../../services/socket_service_native.dart'
     if (dart.library.html) '../../services/socket_service.dart';
 import '../../services/offline_message_queue.dart';
@@ -28,6 +27,9 @@ import '../../views/video_conference_prejoin_view.dart';
 import '../../views/video_conference_view.dart';
 import '../../widgets/animated_widgets.dart';
 import '../../services/api_service.dart';
+import '../../services/server_settings_service.dart';
+import '../../services/device_identity_service.dart';
+import '../../services/user_profile_service.dart';
 import '../report_abuse_screen.dart';
 
 /// Whitelist of message types that should be displayed in UI
@@ -92,18 +94,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     ActiveConversationService.instance.clearActiveConversation();
 
     // ✅ Unregister specific callbacks for this conversation
-    for (final type in displayableMessageTypes) {
-      SignalService.instance.unregisterReceiveItem(
-        type,
-        widget.recipientUuid,
-        _handleNewMessageFromCallback,
-      );
-    }
+    // Note: SignalClient disposal is handled by ServerSettingsService
+    // Callbacks will be cleaned up when the client is disposed
 
-    debugPrint('[DM_SCREEN] Unregistered all receiveItem callbacks');
-
-    SignalService.instance.clearDeliveryCallbacks();
-    SignalService.instance.clearReadCallbacks();
     super.dispose();
   }
 
@@ -187,7 +180,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   /// Check if user is blocked
   Future<void> _checkBlockStatus() async {
     try {
-      final response = await ApiService.get(
+      final response = await ApiService.instance.get(
         '/api/check-blocked/${widget.recipientUuid}',
       );
       if (response.statusCode == 200 && mounted) {
@@ -227,7 +220,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     if (confirmed != true) return;
 
     try {
-      final response = await ApiService.post(
+      final response = await ApiService.instance.post(
         '/api/block',
         data: {'blockedUuid': widget.recipientUuid},
       );
@@ -254,7 +247,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   /// Unblock user
   Future<void> _unblockUser() async {
     try {
-      final response = await ApiService.post(
+      final response = await ApiService.instance.post(
         '/api/unblock',
         data: {'blockedUuid': widget.recipientUuid},
       );
@@ -405,9 +398,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
   }
 
-  void _setupReceiptListeners() {
+  void _setupReceiptListeners() async {
+    final signalClient = await ServerSettingsService.instance
+        .getOrCreateSignalClient();
+
     // Listen for delivery receipts
-    SignalService.instance.onDeliveryReceipt((itemId) async {
+    signalClient.onDeliveryReceipt((itemId) async {
       if (!mounted) return;
 
       debugPrint('[DM_SCREEN] Delivery receipt received for itemId: $itemId');
@@ -443,7 +439,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     });
 
     // Listen for read receipts
-    SignalService.instance.onReadReceipt((receiptInfo) async {
+    signalClient.onReadReceipt((receiptInfo) async {
       final itemId = receiptInfo['itemId'] as String;
       final readByDeviceId = receiptInfo['readByDeviceId'] as int?;
       final readByUserId = receiptInfo['readByUserId'] as String?;
@@ -476,7 +472,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
               _messages[msgIndex]['status'] = 'read';
 
               // Delete message from server after read confirmation
-              SignalService.instance.deleteItemFromServer(itemId);
+              signalClient.deleteItemFromServer(itemId);
             } else {
               debugPrint(
                 '[DM_SCREEN] ⚠ Message not found in list for read receipt: $itemId',
@@ -549,10 +545,13 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   }
 
   /// ✅ NEW: Setup granular callbacks for this specific conversation
-  void _setupReceiveItemCallbacks() {
+  void _setupReceiveItemCallbacks() async {
+    final signalClient = await ServerSettingsService.instance
+        .getOrCreateSignalClient();
+
     // Register callback for each displayable message type
     for (final type in displayableMessageTypes) {
-      SignalService.instance.registerReceiveItem(
+      signalClient.registerReceiveItem(
         type,
         widget.recipientUuid,
         _handleNewMessageFromCallback,
@@ -684,8 +683,8 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         return;
       }
 
-      final myDeviceId = SignalService.instance.currentDeviceId;
-      final myUserId = SignalService.instance.currentUserId;
+      final myDeviceId = DeviceIdentityService.instance.deviceId;
+      final myUserId = UserProfileService.instance.currentUserUuid;
 
       // 🔑 MULTI-DEVICE FIX: Determine the correct recipient for the read receipt
       // If sender == myUserId, this is a multi-device sync message
@@ -706,7 +705,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         );
       }
 
-      await SignalService.instance.sendItem(
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClient();
+      await signalClient.messagingService.send1to1Message(
         recipientUserId: readReceiptRecipient,
         type: "read_receipt",
         payload: jsonEncode({'itemId': itemId, 'readByDeviceId': myDeviceId}),
@@ -873,13 +874,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       );
 
       // Transform to UI format
+      final currentUserId = UserProfileService.instance.currentUserUuid;
       final uiMessages = messages.map((msg) {
         final isLocalSent = msg['direction'] == 'sent';
         return {
           'itemId': msg['item_id'],
-          'sender': isLocalSent
-              ? SignalService.instance.currentUserId
-              : msg['sender'],
+          'sender': isLocalSent ? currentUserId : msg['sender'],
           'senderDeviceId': msg['sender_device_id'],
           'senderDisplayName': isLocalSent
               ? 'You'
@@ -983,10 +983,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         messageType == 'image' ||
         messageType == 'voice') {
       setState(() {
+        final currentUserId = UserProfileService.instance.currentUserUuid;
+        final currentDeviceId = DeviceIdentityService.instance.deviceId;
         _messages.add({
           'itemId': itemId,
-          'sender': SignalService.instance.currentUserId,
-          'senderDeviceId': SignalService.instance.currentDeviceId,
+          'sender': currentUserId,
+          'senderDeviceId': currentDeviceId,
           'senderDisplayName': 'You',
           'text': messageType == 'message'
               ? content
@@ -1016,7 +1018,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
 
     // Check connection
-    final socketService = SocketService();
+    final socketService = SocketService.instance;
     final socket = socketService.socket;
     final socketConnected = socketService.isConnected;
     debugPrint(
@@ -1057,13 +1059,15 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     }
 
     try {
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClient();
+
       // Send main message
-      await SignalService.instance.sendItem(
+      await signalClient.messagingService.send1to1Message(
         recipientUserId: widget.recipientUuid,
         type: messageType,
         payload: content,
         itemId: itemId,
-        metadata: metadata,
       );
 
       // Send mention notifications if message has mentions
@@ -1074,16 +1078,17 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         for (final mention in mentions) {
           try {
             final mentionItemId = const Uuid().v4();
+            final currentUserId = UserProfileService.instance.currentUserUuid;
             final mentionPayload = {
               'messageId': itemId,
               'mentionedUserId': mention['userId'],
-              'sender': SignalService.instance.currentUserId,
+              'sender': currentUserId,
               'content': content.length > 50
                   ? '${content.substring(0, 50)}...'
                   : content,
             };
 
-            await SignalService.instance.sendItem(
+            await signalClient.messagingService.send1to1Message(
               itemId: mentionItemId,
               recipientUserId: mention['userId'] as String,
               type: 'mention',
@@ -1314,7 +1319,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                           onReactionAdd: _isBlocked ? null : _addReaction,
                           onReactionRemove: _removeReaction,
                           currentUserId:
-                              SignalService.instance.currentUserId ?? '',
+                              UserProfileService.instance.currentUserUuid ?? '',
                           highlightedMessageId: _highlightedMessageId,
                         ),
                       ),
@@ -1442,8 +1447,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
     try {
       final itemId = const Uuid().v4();
-      final signalService = SignalService.instance;
-      final currentUserId = signalService.currentUserId;
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClient();
+      final currentUserId = UserProfileService.instance.currentUserUuid;
 
       if (currentUserId == null) {
         debugPrint('[DIRECT_MSG] ✗ Cannot add reaction: no current user ID');
@@ -1462,7 +1468,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       final payloadJson = jsonEncode(emotePayload);
 
       // Send via Signal Protocol
-      await signalService.sendItem(
+      await signalClient.messagingService.send1to1Message(
         itemId: itemId,
         recipientUserId: widget.recipientUuid,
         payload: payloadJson,
@@ -1500,8 +1506,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   Future<void> _removeReaction(String messageId, String emoji) async {
     try {
       final itemId = const Uuid().v4();
-      final signalService = SignalService.instance;
-      final currentUserId = signalService.currentUserId;
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClient();
+      final currentUserId = UserProfileService.instance.currentUserUuid;
 
       if (currentUserId == null) {
         debugPrint('[DIRECT_MSG] ✗ Cannot remove reaction: no current user ID');
@@ -1520,7 +1527,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       final payloadJson = jsonEncode(emotePayload);
 
       // Send via Signal Protocol
-      await signalService.sendItem(
+      await signalClient.messagingService.send1to1Message(
         itemId: itemId,
         recipientUserId: widget.recipientUuid,
         payload: payloadJson,
@@ -1583,7 +1590,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       }
 
       // Get Socket File Client
-      final socketService = SocketService();
+      final socketService = SocketService.instance;
       if (socketService.socket == null) {
         throw Exception('Socket not connected');
       }

@@ -31,15 +31,16 @@ enum PreKeyStatus {
 ///
 /// Usage:
 /// ```dart
-/// final state = PreKeyState.instance;
+/// // Access through KeyManager (server-scoped)
+/// final state = keyManager.preKeyState;
 /// state.addListener(() {
 ///   print('PreKeys: ${state.count}/110');
 ///   print('Status: ${state.status}');
 /// });
 /// ```
 class PreKeyState extends ChangeNotifier {
-  static final PreKeyState instance = PreKeyState._();
-  PreKeyState._();
+  // No longer a singleton - instantiated per KeyManager
+  PreKeyState();
 
   int _count = 0;
   PreKeyStatus _status = PreKeyStatus.unknown;

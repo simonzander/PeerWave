@@ -51,9 +51,8 @@ class _SidebarPanelState extends State<SidebarPanel> {
 
   Future<void> _fetchChannels() async {
     try {
-      ApiService.init();
-      final dio = ApiService.dio;
-      final resp = await dio.get('/client/channels');
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get('/client/channels');
       if (resp.statusCode == 200) {
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
         if (data is List) {
@@ -352,10 +351,9 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
   Future<void> _loadRoles() async {
     setState(() => isLoadingRoles = true);
     try {
-      ApiService.init();
-      final dio = ApiService.dio;
+      await ApiService.instance.init();
       final scope = channelType == 'webrtc' ? 'channelWebRtc' : 'channelSignal';
-      final resp = await dio.get('/api/roles?scope=$scope');
+      final resp = await ApiService.instance.get('/api/roles?scope=$scope');
 
       if (resp.statusCode == 200) {
         final data = resp.data;
@@ -540,8 +538,8 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
     if (channelName.isEmpty || selectedRole == null) return;
 
     try {
-      ApiService.init();
-      final resp = await ApiService.createChannel(
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.createChannel(
         name: channelName,
         description: channelDescription,
         isPrivate: isPrivate,

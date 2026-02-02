@@ -99,8 +99,8 @@ class SessionManager with PermanentSessionStore {
     return PreKeyBundle(
       bundle.registrationId,
       bundle.deviceId,
-      bundle.preKeyId ?? 0,
-      preKeyPublic!,
+      bundle.preKeyId,
+      preKeyPublic,
       bundle.signedPreKeyId,
       signedPreKeyPublic,
       bundle.signedPreKeySignature,
@@ -148,7 +148,9 @@ class SessionManager with PermanentSessionStore {
       debugPrint('[SESSION_MANAGER] Establishing session with: $userId');
 
       // Fetch PreKeyBundles for user
-      final response = await apiService.get('/signal/prekey_bundle/$userId');
+      final response = await ApiService.instance.get(
+        '/signal/prekey_bundle/$userId',
+      );
 
       if (response.statusCode != 200) {
         debugPrint(
@@ -296,7 +298,7 @@ class SessionManager with PermanentSessionStore {
           debugPrint('[SESSION_MANAGER] Fetching PreKeyBundle for: $userId');
 
           // Fetch their PreKeyBundle
-          final response = await apiService.get(
+          final response = await ApiService.instance.get(
             '/signal/prekey_bundle/$userId',
           );
           final devices = response.data is String

@@ -5,8 +5,6 @@ import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'key_manager.dart';
 import 'session_manager.dart';
 import '../../device_scoped_storage_service.dart';
-import '../../permanent_session_store.dart';
-import '../../sender_key_store.dart';
 import '../../storage/sqlite_recent_conversations_store.dart';
 
 /// Manages automatic healing and recovery of Signal Protocol keys
@@ -48,11 +46,9 @@ class SignalHealingService {
 
   bool _initialized = false;
 
-  // Delegate to SessionManager and KeyManager for stores
-  PermanentSessionStore get sessionStore => sessionManager.sessionStore;
-  // KeyManager has PermanentSenderKeyStore mixin, can be used directly
-  PermanentSenderKeyStore get senderKeyStore =>
-      keyManager as PermanentSenderKeyStore;
+  // Use SessionManager which has PermanentSessionStore mixin
+  // SessionManager provides all session operations via the mixin
+  // Use keyManager directly which has PermanentSenderKeyStore mixin
 
   bool get isInitialized => _initialized;
 
@@ -282,14 +278,14 @@ class SignalHealingService {
       // Step 5: Delete all sessions and SenderKeys
       debugPrint('[HEALING] Step 5: Deleting sessions and SenderKeys...');
       try {
-        await sessionStore.deleteAllSessionsCompletely();
+        await sessionManager.deleteAllSessionsCompletely();
         debugPrint('[HEALING] ✓ All sessions deleted');
       } catch (e) {
         debugPrint('[HEALING] ⚠️ Error deleting sessions: $e');
       }
 
       try {
-        await senderKeyStore.deleteAllSenderKeys();
+        await keyManager.deleteAllSenderKeys();
         debugPrint('[HEALING] ✓ All SenderKeys deleted');
       } catch (e) {
         debugPrint('[HEALING] ⚠️ Error deleting SenderKeys: $e');

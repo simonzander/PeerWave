@@ -1,4 +1,4 @@
-﻿import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import '../../api_service.dart';
 import '../../socket_service.dart'
@@ -10,6 +10,10 @@ import '../stores/sender_key_store.dart';
 import '../observers/identity_key_observer.dart';
 import '../observers/pre_key_maintenance_observer.dart';
 import '../observers/sender_key_rotation_observer.dart';
+import '../state/identity_key_state.dart';
+import '../state/signed_pre_key_state.dart';
+import '../state/pre_key_state.dart';
+import '../state/sender_key_state.dart';
 
 /// Manages Signal Protocol cryptographic keys
 ///
@@ -59,6 +63,9 @@ class SignalKeyManager
     return _identityKeyPair!;
   }
 
+  /// Check if identity key pair is initialized (for mixins)
+  bool get hasIdentityKeyPair => _identityKeyPair != null;
+
   @override
   set identityKeyPair(IdentityKeyPair? value) {
     _identityKeyPair = value;
@@ -68,6 +75,12 @@ class SignalKeyManager
 
   bool get isInitialized => _initialized;
 
+  // State instances - server-scoped observables
+  late final IdentityKeyState identityKeyState;
+  late final SignedPreKeyState signedPreKeyState;
+  late final PreKeyState preKeyState;
+  late final SenderKeyState senderKeyState;
+
   // Observers - automatic key maintenance and rotation
   late final IdentityKeyObserver _identityObserver;
   late final PreKeyMaintenanceObserver _preKeyObserver;
@@ -76,6 +89,12 @@ class SignalKeyManager
 
   // Private constructor for factory
   SignalKeyManager._({required this.apiService, required this.socketService}) {
+    // Initialize state instances (one per KeyManager = one per server)
+    identityKeyState = IdentityKeyState();
+    signedPreKeyState = SignedPreKeyState();
+    preKeyState = PreKeyState();
+    senderKeyState = SenderKeyState();
+
     _identityObserver = IdentityKeyObserver(keyManager: this);
     _preKeyObserver = PreKeyMaintenanceObserver(keyManager: this);
     // SenderKeyObserver initialized later when user info available
@@ -103,14 +122,20 @@ class SignalKeyManager
 
     debugPrint('[KEY_MANAGER] Initializing...');
 
-    // Get identity key pair (auto-generates if missing) and store it for SignedPreKeyStore mixin
+    // STEP 1: Get identity key pair (auto-generates if missing) and store it for SignedPreKeyStore mixin
+    debugPrint('[KEY_MANAGER] Loading identity key pair...');
     identityKeyPair = await getIdentityKeyPair();
+    debugPrint('[KEY_MANAGER] ✓ Identity key pair loaded');
 
-    // Get signed pre key (auto-generates, auto-rotates, auto-uploads)
-    await getSignedPreKey();
+    // STEP 2: Initialize signed pre key store (requires identityKeyPair to be set)
+    debugPrint('[KEY_MANAGER] Initializing signed pre key store...');
+    await initializeSignedPreKeyStore();
+    debugPrint('[KEY_MANAGER] ✓ Signed pre key store initialized');
 
-    // Check pre keys (auto-maintains 110 keys)
+    // STEP 3: Check pre keys (auto-maintains 110 keys)
+    debugPrint('[KEY_MANAGER] Checking pre keys...');
     await checkPreKeys();
+    debugPrint('[KEY_MANAGER] ✓ Pre keys checked');
 
     // Start observers for automatic key maintenance
     _identityObserver.start();
@@ -118,7 +143,7 @@ class SignalKeyManager
     // SenderKey observer started separately via startSenderKeyObserver()
     debugPrint('[KEY_MANAGER] ✓ Observers started (identity, prekey)');
 
-    debugPrint('[KEY_MANAGER] ✓ Initialized');
+    debugPrint('[KEY_MANAGER] ✅ Initialized');
     _initialized = true;
   }
 
@@ -138,7 +163,7 @@ class SignalKeyManager
       getCurrentDeviceId: getCurrentDeviceId,
     );
     _senderKeyObserver!.start();
-    debugPrint('[KEY_MANAGER] ✓ SenderKey observer started');
+    debugPrint('[KEY_MANAGER] ? SenderKey observer started');
   }
 
   /// Dispose and cleanup observers
@@ -146,7 +171,7 @@ class SignalKeyManager
     _identityObserver.stop();
     _preKeyObserver.stop();
     _senderKeyObserver?.stop();
-    debugPrint('[KEY_MANAGER] ✓ All observers stopped');
+    debugPrint('[KEY_MANAGER] ? All observers stopped');
   }
   // ============================================================================
   // KEY GENERATION
@@ -172,7 +197,7 @@ class SignalKeyManager
   Future<Map<String, dynamic>> deleteAllKeysOnServer() async {
     debugPrint('[KEY_MANAGER] Deleting all keys on server...');
 
-    final response = await apiService.delete('/signal/keys');
+    final response = await ApiService.instance.delete('/signal/keys');
 
     if (response.statusCode != 200) {
       throw Exception('Failed to delete keys: ${response.statusCode}');
@@ -180,7 +205,7 @@ class SignalKeyManager
 
     final result = response.data as Map<String, dynamic>;
     debugPrint(
-      '[KEY_MANAGER] âœ“ Keys deleted: ${result['preKeysDeleted']} PreKeys, ${result['signedPreKeysDeleted']} SignedPreKeys',
+      '[KEY_MANAGER] ✓ Keys deleted: ${result['preKeysDeleted']} PreKeys, ${result['signedPreKeysDeleted']} SignedPreKeys',
     );
 
     return result;
@@ -200,10 +225,22 @@ class SignalKeyManager
       // Get identity key (auto-generates, but doesn't upload - need manual upload for identity)
       final identityData = await getIdentityKeyPairData();
       final registrationId = await getLocalRegistrationId();
-      socketService.emit('signalIdentity', {
-        'publicKey': identityData['publicKey'],
-        'registrationId': registrationId.toString(),
-      });
+
+      // Upload identity via REST API
+      final response = await apiService.post(
+        '/signal/identity',
+        data: {
+          'publicKey': identityData['publicKey'],
+          'registrationId': registrationId,
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          'Failed to upload identity key: ${response.statusCode}',
+        );
+      }
+      debugPrint('[KEY_MANAGER] ✓ Identity key uploaded via REST API');
 
       // Get signed pre key (auto-generates and uploads)
       await getSignedPreKey();
@@ -212,9 +249,9 @@ class SignalKeyManager
       await checkPreKeys();
 
       debugPrint('[KEY_MANAGER] ========================================');
-      debugPrint('[KEY_MANAGER] âœ… All keys uploaded successfully');
+      debugPrint('[KEY_MANAGER] ✅ All keys uploaded successfully');
     } catch (e, stackTrace) {
-      debugPrint('[KEY_MANAGER] âŒ Error uploading keys: $e');
+      debugPrint('[KEY_MANAGER] ❌ Error uploading keys: $e');
       debugPrint('[KEY_MANAGER] Stack trace: $stackTrace');
       rethrow;
     }

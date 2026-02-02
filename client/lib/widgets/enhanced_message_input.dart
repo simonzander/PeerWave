@@ -18,7 +18,7 @@ import 'package:path/path.dart' as path;
 import '../services/file_transfer/storage_interface.dart';
 import '../services/file_transfer/file_transfer_service.dart';
 import '../services/file_transfer/socket_file_client.dart';
-import '../services/signal_service.dart';
+import '../services/server_settings_service.dart';
 
 /// Enhanced message input with all features:
 /// - Emoji picker with skin tones
@@ -782,12 +782,12 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
       // Upload and announce file using FileTransferService
       try {
         final storage = await _getStorage();
-        final signalService = SignalService.instance;
+        final signalClient = await ServerSettingsService.instance
+            .getOrCreateSignalClient();
 
         final fileTransferService = FileTransferService(
           socketFileClient: SocketFileClient(),
           storage: storage,
-          signalService: signalService,
         );
 
         // Upload and announce with recipient in sharedWith
@@ -811,7 +811,7 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
         final chunkCount = (fileBytes.length / (256 * 1024)).ceil();
 
         // Send file via Signal Protocol
-        await signalService.sendFileItem(
+        await signalClient.messagingService.sendFileMessage(
           recipientUserId: widget.recipientUserId!,
           fileId: fileId,
           fileName: file.name,

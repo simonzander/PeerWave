@@ -1,12 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/meeting.dart';
 import 'api_service.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
 import 'meeting_service.dart';
 import 'sound_service.dart';
-import 'signal_service.dart';
 import 'presence_service.dart';
 
 /// Call service - handles instant call creation and notifications
@@ -29,7 +27,7 @@ class CallService {
   factory CallService() => _instance;
   CallService._internal();
 
-  final _socketService = SocketService();
+  final _socketService = SocketService.instance;
   final _meetingService = MeetingService();
   final _soundService = SoundService.instance;
 
@@ -62,18 +60,27 @@ class CallService {
     if (_listenersRegistered) return;
     _listenersRegistered = true;
 
-    // Register Signal callback for call notifications (from any sender)
+    // TODO: Register Signal callback for call notifications (from any sender)
     // Backend sends call data via Signal protocol (encrypted)
-    SignalService.instance.registerItemCallback('call_notification', (data) {
+    //
+    // NEEDS IMPLEMENTATION: SignalClient needs a method to register callbacks
+    // for a specific message type from ANY sender:
+    //   signalClient.callbackManager.registerReceiveItemType('call_notification', callback)
+    //
+    // For now, call notifications are temporarily non-functional.
+    // Callback should handle:
+    // - Data structure: {type, payload, sender, itemId}
+    // - Parse payload JSON string to extract call info
+    // - Play ringtone and add to _incomingCallController stream
+    /*
+    final signalClient = await ServerSettingsService.instance.getOrCreateSignalClient();
+    signalClient.callbackManager.registerReceiveItemType('call_notification', (data) {
       debugPrint('[CALL SERVICE] Received call_notification via Signal: $data');
       try {
-        // Data structure: {type, payload, sender, itemId}
-        // payload is a JSON string that needs to be parsed
         final itemData = data as Map<String, dynamic>;
         final payloadStr = itemData['payload'] as String;
         final callData = jsonDecode(payloadStr) as Map<String, dynamic>;
 
-        // Extract call information (already decrypted)
         final String meetingId = callData['meetingId'] as String;
         final String? channelId = callData['channelId'] as String?;
         final String? channelName = callData['channelName'] as String?;
@@ -87,10 +94,8 @@ class CallService {
           'channel: ${channelName ?? 'Direct Call'}, caller: $callerName',
         );
 
-        // Play ringtone
         _soundService.playRingtone();
 
-        // Add to stream
         _incomingCallController.add({
           'meetingId': meetingId,
           'channelId': channelId,
@@ -103,13 +108,13 @@ class CallService {
       } catch (e, stackTrace) {
         debugPrint('[CALL SERVICE] Error parsing call notification: $e');
         debugPrint('[CALL SERVICE] Stack trace: $stackTrace');
-        // Still notify UI with error state
         _incomingCallController.add({
           'error': true,
           'message': 'Failed to parse call data',
         });
       }
     });
+    */
 
     _socketService.registerListener('call:ringing', (data) {
       debugPrint('[CALL SERVICE] Received call:ringing: $data');
@@ -189,7 +194,7 @@ class CallService {
     final now = DateTime.now();
     final endTime = now.add(const Duration(hours: 24));
 
-    final response = await ApiService.post(
+    final response = await ApiService.instance.post(
       '/api/calls/instant',
       data: {
         'title': title ?? 'Instant Call',
@@ -227,7 +232,7 @@ class CallService {
     // Pre-call validation: Check if any members are online
     // Get online members via API (server already has this logic)
     try {
-      final response = await ApiService.get(
+      final response = await ApiService.instance.get(
         '/api/channels/$channelId/online-members',
       );
       final data = response.data as Map<String, dynamic>;
@@ -303,7 +308,7 @@ class CallService {
       );
 
       // Get online members from server
-      final response = await ApiService.get(
+      final response = await ApiService.instance.get(
         '/api/channels/$channelId/online-members',
       );
       final onlineMembers = (response.data['online_members'] as List)

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../core/metrics/network_metrics.dart';
-import 'signal_service.dart';
 import 'server_config_native.dart';
 import 'auth_service_native.dart';
 import 'session_auth_service.dart';
@@ -348,18 +347,9 @@ class SocketService {
       return;
     }
 
-    if (data is Map &&
-        data['authenticated'] == true &&
-        data['uuid'] != null &&
-        data['deviceId'] != null) {
-      final deviceId = data['deviceId'] is int
-          ? data['deviceId']
-          : int.parse(data['deviceId'].toString());
-
-      // Only set current user info if this is the active server
-      if (serverId == _activeServerId) {
-        SignalService.instance.setCurrentUserInfo(data['uuid'], deviceId);
-      }
+    if (data is Map && data['authenticated'] == true) {
+      // SignalClient gets user info via callbacks on initialization
+      // No need to set it here via deprecated SignalService
 
       // Send clientReady if listeners are registered
       if (_serverListenersRegistered[serverId] ?? false) {

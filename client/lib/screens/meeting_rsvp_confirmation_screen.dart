@@ -37,9 +37,9 @@ class _MeetingRsvpConfirmationScreenState
 
   Future<void> _confirm() async {
     try {
-      ApiService.init();
+      await ApiService.instance.init();
 
-      final response = await ApiService.get(
+      final response = await ApiService.instance.get(
         '/api/meetings/${widget.meetingId}/rsvp/${widget.status}',
         queryParameters: {
           'email': widget.email,

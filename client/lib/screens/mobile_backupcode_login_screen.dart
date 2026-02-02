@@ -114,14 +114,17 @@ class _MobileBackupcodeLoginScreenState
       debugPrint('[MobileBackupcodeLogin] Attempting login for: $email');
 
       // Set base URL for API service
-      ApiService.setBaseUrl(_serverUrl!);
+      await ApiService.instance.initForServer(
+        ServerConfigService.getActiveServer()?.id ?? 'default',
+        serverUrl: _serverUrl!,
+      );
 
       // Get device info
       final deviceInfo = await DeviceInfoHelper.getDeviceDisplayName();
       debugPrint('[MobileBackupcodeLogin] Device info: $deviceInfo');
 
       // Call mobile backup code login endpoint (creates HMAC session)
-      final response = await ApiService.dio.post(
+      final response = await ApiService.instance.post(
         '$_serverUrl/backupcode/mobile-verify',
         data: {
           'email': email,

@@ -168,8 +168,8 @@ class _MessagesListViewState extends State<MessagesListView> {
     // Batch fetch all user info in one request
     if (userIdsToFetch.isNotEmpty) {
       try {
-        ApiService.init();
-        final resp = await ApiService.post(
+        await ApiService.instance.init();
+        final resp = await ApiService.instance.post(
           '/client/people/info',
           data: {'userIds': userIdsToFetch},
         );

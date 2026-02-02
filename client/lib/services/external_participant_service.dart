@@ -29,7 +29,7 @@ class ExternalParticipantService {
   factory ExternalParticipantService() => _instance;
   ExternalParticipantService._internal();
 
-  final _socketService = SocketService();
+  final _socketService = SocketService.instance;
 
   // Stream controllers
   final _guestWaitingController = StreamController<ExternalSession>.broadcast();
@@ -178,7 +178,7 @@ class ExternalParticipantService {
     dynamic signedPreKey,
     List? preKeys,
   }) async {
-    final response = await ApiService.post(
+    final response = await ApiService.instance.post(
       '/api/meetings/external/register',
       data: {
         'invitation_token': invitationToken,
@@ -199,7 +199,7 @@ class ExternalParticipantService {
     required String e2eeSignedPreKey,
     required String e2eePreKeySignature,
   }) async {
-    final response = await ApiService.post(
+    final response = await ApiService.instance.post(
       '/api/external/$sessionId/keys',
       data: {
         'e2ee_identity_key': e2eeIdentityKey,
@@ -213,7 +213,7 @@ class ExternalParticipantService {
 
   /// Check session status (for guests to poll while waiting)
   Future<ExternalSession> getSessionStatus(String sessionId) async {
-    final response = await ApiService.get(
+    final response = await ApiService.instance.get(
       '/api/meetings/external/session/$sessionId',
     );
     return ExternalSession.fromJson(response.data as Map<String, dynamic>);
@@ -225,7 +225,7 @@ class ExternalParticipantService {
 
   /// Get waiting guests for a meeting (authenticated endpoint)
   Future<List<ExternalSession>> getWaitingGuests(String meetingId) async {
-    final response = await ApiService.get(
+    final response = await ApiService.instance.get(
       '/api/meetings/$meetingId/external/waiting',
     );
     final List<dynamic> data = response.data['waiting'] as List<dynamic>? ?? [];
@@ -246,7 +246,7 @@ class ExternalParticipantService {
     final mId = meetingId ?? session?.meetingId ?? '';
     final currentUserId = UserProfileService.instance.currentUserUuid ?? '';
 
-    final response = await ApiService.post(
+    final response = await ApiService.instance.post(
       '/api/meetings/$mId/external/$sessionId/admit',
       data: {'admitted_by': currentUserId},
     );
@@ -266,7 +266,7 @@ class ExternalParticipantService {
     final mId = meetingId ?? session?.meetingId ?? '';
     final currentUserId = UserProfileService.instance.currentUserUuid ?? '';
 
-    final response = await ApiService.post(
+    final response = await ApiService.instance.post(
       '/api/meetings/$mId/external/$sessionId/decline',
       data: {'declined_by': currentUserId, 'reason': reason},
     );
@@ -275,7 +275,7 @@ class ExternalParticipantService {
 
   /// Get all external sessions for a meeting (authenticated endpoint)
   Future<List<ExternalSession>> getMeetingSessions(String meetingId) async {
-    final response = await ApiService.get(
+    final response = await ApiService.instance.get(
       '/api/meetings/$meetingId/external-sessions',
     );
     final List<dynamic> data = response.data as List<dynamic>;
@@ -288,7 +288,7 @@ class ExternalParticipantService {
   ///
   /// This removes the session and prevents the guest from rejoining
   Future<void> revokeSession(String sessionId) async {
-    await ApiService.delete('/api/external/$sessionId');
+    await ApiService.instance.delete('/api/external/$sessionId');
   }
 
   // ============================================================================
@@ -297,7 +297,7 @@ class ExternalParticipantService {
 
   /// Get remaining pre-key count for external session
   Future<Map<String, dynamic>> getRemainingPreKeys(String sessionId) async {
-    final response = await ApiService.get(
+    final response = await ApiService.instance.get(
       '/api/meetings/external/session/$sessionId/prekeys',
     );
     return response.data as Map<String, dynamic>;
@@ -310,7 +310,7 @@ class ExternalParticipantService {
     required String sessionId,
     required List<Map<String, dynamic>> preKeys,
   }) async {
-    final response = await ApiService.post(
+    final response = await ApiService.instance.post(
       '/api/meetings/external/session/$sessionId/prekeys',
       data: {'pre_keys': preKeys},
     );
@@ -324,7 +324,7 @@ class ExternalParticipantService {
     required String sessionId,
     required int preKeyId,
   }) async {
-    final response = await ApiService.post(
+    final response = await ApiService.instance.post(
       '/api/meetings/external/session/$sessionId/consume-prekey',
       data: {'pre_key_id': preKeyId},
     );
@@ -335,7 +335,7 @@ class ExternalParticipantService {
   ///
   /// Returns identity key, signed pre-key, and one available one-time pre-key
   Future<Map<String, dynamic>> getKeysForSession(String sessionId) async {
-    final response = await ApiService.get(
+    final response = await ApiService.instance.get(
       '/api/meetings/external/keys/$sessionId',
     );
     return response.data as Map<String, dynamic>;
