@@ -220,7 +220,7 @@ mixin PermanentSessionStore implements SessionStore {
 
     int deletedCount = 0;
     for (var key in keys) {
-      if (key.startsWith('$_keyPrefix$name}_')) {
+      if (key.startsWith('${_keyPrefix}${name}_')) {
         await storage.deleteEncrypted(_storeName, _storeName, key);
         deletedCount++;
       }
@@ -254,8 +254,8 @@ mixin PermanentSessionStore implements SessionStore {
     final keys = await storage.getAllKeys(_storeName, _storeName);
 
     for (var key in keys) {
-      if (key.startsWith('$_keyPrefix$name}_')) {
-        final deviceIdStr = key.substring('$_keyPrefix$name}_'.length);
+      if (key.startsWith('${_keyPrefix}${name}_')) {
+        final deviceIdStr = key.substring('${_keyPrefix}${name}_'.length);
         final deviceId = int.tryParse(deviceIdStr);
         if (deviceId != null && deviceId != 1) {
           deviceIds.add(deviceId);
@@ -335,8 +335,8 @@ mixin PermanentSessionStore implements SessionStore {
     final keys = await storage.getAllKeys(_storeName, _storeName);
 
     for (var key in keys) {
-      if (key.startsWith('$_keyPrefix$name}_')) {
-        final deviceIdStr = key.substring('$_keyPrefix$name}_'.length);
+      if (key.startsWith('${_keyPrefix}${name}_')) {
+        final deviceIdStr = key.substring('${_keyPrefix}${name}_'.length);
         final deviceId = int.tryParse(deviceIdStr);
         if (deviceId != null) {
           deviceIds.add(deviceId);

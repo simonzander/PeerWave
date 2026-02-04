@@ -21,7 +21,7 @@ class SignalSetupScreen extends StatelessWidget {
         debugPrint('[SIGNAL_SETUP_SCREEN] Getting SignalClient...');
         // Get or create SignalClient for active server
         final client = await ServerSettingsService.instance
-            .getOrCreateSignalClient();
+            .getOrCreateSignalClientWithStoredCredentials();
 
         debugPrint(
           '[SIGNAL_SETUP_SCREEN] SignalClient obtained, initializing...',

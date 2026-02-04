@@ -76,13 +76,13 @@ class SignalClient {
   Timer? _dailyVerificationTimer;
   DateTime? _lastDailyVerification;
 
-  // User/device callbacks for services
-  String? Function()? _getCurrentUserId;
-  int? Function()? _getCurrentDeviceId;
+  // User/device callbacks for services (REQUIRED)
+  String Function() _getCurrentUserId;
+  int Function() _getCurrentDeviceId;
 
   // Public getters for user/device info
-  String? Function()? get getCurrentUserId => _getCurrentUserId;
-  int? Function()? get getCurrentDeviceId => _getCurrentDeviceId;
+  String Function() get getCurrentUserId => _getCurrentUserId;
+  int Function() get getCurrentDeviceId => _getCurrentDeviceId;
 
   bool _initialized = false;
 
@@ -100,8 +100,8 @@ class SignalClient {
     required this.apiService,
     required this.socketService,
     required this.serverKey,
-    String? Function()? getCurrentUserId,
-    int? Function()? getCurrentDeviceId,
+    required String Function() getCurrentUserId,
+    required int Function() getCurrentDeviceId,
   }) : _getCurrentUserId = getCurrentUserId,
        _getCurrentDeviceId = getCurrentDeviceId;
 
@@ -140,8 +140,8 @@ class SignalClient {
     healingService = await SignalHealingService.create(
       keyManager: keyManager,
       sessionManager: sessionManager,
-      getCurrentUserId: _getCurrentUserId ?? () => null,
-      getCurrentDeviceId: _getCurrentDeviceId ?? () => null,
+      getCurrentUserId: _getCurrentUserId,
+      getCurrentDeviceId: _getCurrentDeviceId,
     );
     debugPrint('[SIGNAL_CLIENT] ✓ HealingService created');
 
@@ -160,13 +160,18 @@ class SignalClient {
 
     // Initialize MessagingService
     debugPrint('[SIGNAL_CLIENT] Creating MessagingService...');
+
+    // Get user context - these are guaranteed non-null now
+    final userId = _getCurrentUserId.call();
+    final deviceId = _getCurrentDeviceId.call();
+
     messagingService = await MessagingService.create(
       encryptionService: encryptionService,
       healingService: healingService,
       apiService: apiService,
       socketService: socketService,
-      currentUserId: _getCurrentUserId?.call() ?? '',
-      currentDeviceId: _getCurrentDeviceId?.call() ?? 0,
+      currentUserId: userId,
+      currentDeviceId: deviceId,
       waitForRegeneration: () async {},
       callbackManager: callbackManager,
       regeneratePreKeyAsync: (int keyId) async {
@@ -181,8 +186,8 @@ class SignalClient {
       encryptionService: encryptionService,
       apiService: apiService,
       socketService: socketService,
-      getCurrentUserId: _getCurrentUserId ?? () => null,
-      getCurrentDeviceId: _getCurrentDeviceId ?? () => null,
+      getCurrentUserId: _getCurrentUserId,
+      getCurrentDeviceId: _getCurrentDeviceId,
     );
     debugPrint('[SIGNAL_CLIENT] ✓ MeetingService created');
 
@@ -198,8 +203,8 @@ class SignalClient {
       keyManager: keyManager,
       healingService: healingService,
       callbackManager: callbackManager,
-      currentUserId: _getCurrentUserId?.call(),
-      currentDeviceId: _getCurrentDeviceId?.call(),
+      currentUserId: _getCurrentUserId.call(),
+      currentDeviceId: _getCurrentDeviceId.call(),
     );
     debugPrint('[SIGNAL_CLIENT] ✓ Listeners registered & clientReady sent');
 
@@ -240,13 +245,8 @@ class SignalClient {
       }
     }
 
-    final userId = _getCurrentUserId?.call();
-    final deviceId = _getCurrentDeviceId?.call();
-
-    if (userId == null || deviceId == null) {
-      debugPrint('[SIGNAL_CLIENT] Skipping daily check: user not logged in');
-      return;
-    }
+    final userId = _getCurrentUserId.call();
+    final deviceId = _getCurrentDeviceId.call();
 
     debugPrint('[SIGNAL_CLIENT] 🔍 Running daily key verification check...');
     _lastDailyVerification = DateTime.now();
@@ -264,13 +264,8 @@ class SignalClient {
 
   /// Manually trigger key verification (called after login/setup)
   Future<void> verifyKeys() async {
-    final userId = _getCurrentUserId?.call();
-    final deviceId = _getCurrentDeviceId?.call();
-
-    if (userId == null || deviceId == null) {
-      debugPrint('[SIGNAL_CLIENT] Cannot verify keys: user not logged in');
-      return;
-    }
+    final userId = _getCurrentUserId.call();
+    final deviceId = _getCurrentDeviceId.call();
 
     debugPrint('[SIGNAL_CLIENT] 🔍 Running post-login key verification...');
     await healingService.triggerAsyncSelfVerification(
@@ -285,8 +280,10 @@ class SignalClient {
     _dailyVerificationTimer?.cancel();
     _dailyVerificationTimer = null;
 
-    // Clear all callbacks
-    callbackManager.clearAll();
+    // Clear all callbacks (only if initialized)
+    if (_initialized) {
+      callbackManager.clearAll();
+    }
 
     // Unregister listeners
     await ListenerRegistry.instance.unregisterAll();

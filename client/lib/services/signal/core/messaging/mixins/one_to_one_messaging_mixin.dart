@@ -56,6 +56,7 @@ mixin OneToOneMessagingMixin {
 
       // Encrypt for each device
       final encryptedMessages = <Map<String, dynamic>>[];
+      int encryptionAttempts = 0;
 
       for (final device in devices) {
         // Handle both String and int device_id from API
@@ -63,9 +64,22 @@ mixin OneToOneMessagingMixin {
         final deviceId = deviceIdRaw is int
             ? deviceIdRaw
             : int.parse(deviceIdRaw.toString());
+
+        // Get the actual userId for this device (could be recipient OR sender's other device)
+        final deviceUserId = device['userId'] as String?;
+        if (deviceUserId == null) {
+          debugPrint('[1-TO-1] Skipping device with null userId');
+          continue;
+        }
+
         final recipientAddress = SignalProtocolAddress(
-          recipientUserId,
+          deviceUserId, // Use actual device's userId, not always recipientUserId
           deviceId,
+        );
+
+        encryptionAttempts++;
+        debugPrint(
+          '[1-TO-1] Encrypting for device $deviceUserId:$deviceId (attempt $encryptionAttempts/${devices.length})',
         );
 
         try {
@@ -76,16 +90,14 @@ mixin OneToOneMessagingMixin {
 
           if (!hasSession) {
             debugPrint(
-              '[1-TO-1] No session with $recipientUserId:$deviceId, establishing...',
+              '[1-TO-1] No session with $deviceUserId:$deviceId, establishing...',
             );
             // Use SessionManager to establish session (handles fetching bundles, building session)
             final success = await sessionStore.establishSessionWithUser(
-              recipientUserId,
+              deviceUserId,
             );
             if (!success) {
-              throw Exception(
-                'Failed to establish session with $recipientUserId',
-              );
+              throw Exception('Failed to establish session with $deviceUserId');
             }
           }
 
@@ -97,6 +109,7 @@ mixin OneToOneMessagingMixin {
 
           encryptedMessages.add({
             'deviceId': deviceId,
+            'userId': deviceUserId, // Track which user this message is for
             'ciphertext': base64Encode(ciphertext.serialize()),
             'cipherType': ciphertext.getType(),
           });
@@ -112,14 +125,18 @@ mixin OneToOneMessagingMixin {
 
       // Send to server - one emit per device
       for (final message in encryptedMessages) {
+        final messageUserId = message['userId'] as String;
+
         final data = {
           'itemId': generatedItemId,
-          'recipient': recipientUserId,
+          'recipient': messageUserId, // Use actual device's userId
           'recipientDeviceId': message['deviceId'] as int,
           'type': type,
           'payload': message['ciphertext'] as String,
           'cipherType': (message['cipherType'] as int).toString(),
           'timestamp': DateTime.now().toIso8601String(),
+          'originalRecipient':
+              recipientUserId, // Always set - shows conversation context
         };
 
         debugPrint(
@@ -169,11 +186,18 @@ mixin OneToOneMessagingMixin {
       // Filter out current device (don't send to ourselves)
       final isCurrentDevice =
           (deviceUserId == currentUserId && deviceId == currentDeviceId);
+
+      if (isCurrentDevice) {
+        debugPrint(
+          '[1-TO-1] ⚠️ Filtering out current device: $deviceUserId:$deviceId',
+        );
+      }
+
       return !isCurrentDevice;
     }).toList();
 
     debugPrint(
-      '[1-TO-1] Filtered ${filteredDevices.length} devices (from ${devices.length} total, excluding current device)',
+      '[1-TO-1] Filtered ${filteredDevices.length} devices (from ${devices.length} total, excluding current device $currentUserId:$currentDeviceId)',
     );
 
     return filteredDevices.cast<Map<String, dynamic>>();

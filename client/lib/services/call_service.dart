@@ -73,7 +73,7 @@ class CallService {
     // - Parse payload JSON string to extract call info
     // - Play ringtone and add to _incomingCallController stream
     /*
-    final signalClient = await ServerSettingsService.instance.getOrCreateSignalClient();
+    final signalClient = await ServerSettingsService.instance.getOrCreateSignalClientWithStoredCredentials();
     signalClient.callbackManager.registerReceiveItemType('call_notification', (data) {
       debugPrint('[CALL SERVICE] Received call_notification via Signal: $data');
       try {

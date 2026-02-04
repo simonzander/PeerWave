@@ -35,7 +35,10 @@ class MessageListeners {
         final itemId = dataMap['itemId'] as String;
         final type = dataMap['type'] as String? ?? 'message';
         final sender = dataMap['sender'] as String;
-        final senderDeviceId = dataMap['senderDeviceId'] as int;
+        final senderDeviceIdRaw = dataMap['senderDeviceId'];
+        final senderDeviceId = senderDeviceIdRaw is int
+            ? senderDeviceIdRaw
+            : int.parse(senderDeviceIdRaw.toString());
         final cipherType = dataMap['cipherType'] as int;
 
         debugPrint('[MESSAGE_LISTENERS] Received item: $itemId');

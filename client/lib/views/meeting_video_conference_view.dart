@@ -519,7 +519,7 @@ class _MeetingVideoConferenceViewState
 
     // Send missed_call Signal message to each user who didn't join
     final signalClient = await ServerSettingsService.instance
-        .getOrCreateSignalClient();
+        .getOrCreateSignalClientWithStoredCredentials();
     for (final userId in missedUsers) {
       try {
         await signalClient.messagingService.send1to1Message(

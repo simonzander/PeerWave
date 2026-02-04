@@ -444,7 +444,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
         if (mounted) {
           final signalClient = await ServerSettingsService.instance
-              .getOrCreateSignalClient();
+              .getOrCreateSignalClientWithStoredCredentials();
           final currentUserId = signalClient.getCurrentUserId?.call();
 
           setState(() {
@@ -485,7 +485,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       };
 
       final signalClient = await ServerSettingsService.instance
-          .getOrCreateSignalClient();
+          .getOrCreateSignalClientWithStoredCredentials();
       await signalClient.messagingService.send1to1Message(
         recipientUserId: userId,
         type: 'missingcall',

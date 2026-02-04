@@ -278,14 +278,16 @@ mixin PermanentSenderKeyStore implements SenderKeyStore {
     return GroupCipher(this, senderKeyName);
   }
 
-  /// Rotate sender key and upload to server.
+  /// Rotate sender key locally.
   ///
-  /// This method:
+  /// This method updates the rotation timestamp. The actual sender key rotation
+  /// and distribution to group members must be handled by the caller (typically
+  /// GroupMessagingMixin.createAndDistributeSenderKey) which:
   /// 1. Generates new sender key distribution message
-  /// 2. Notifies server via REST API
-  /// 3. Updates rotation timestamp
+  /// 2. Distributes it to all group members via 1-to-1 encrypted channels
   ///
-  /// The server acknowledges the rotation event.
+  /// Per Signal Protocol: Sender keys are NEVER sent to or stored on the server.
+  /// They are distributed peer-to-peer via encrypted 1-to-1 sessions.
   ///
   /// Called automatically by checkSenderKeys() when rotation is needed.
   Future<void> rotateSenderKey({
@@ -295,33 +297,16 @@ mixin PermanentSenderKeyStore implements SenderKeyStore {
     try {
       debugPrint('[SENDER_KEY_STORE] Rotating sender key for group $groupId');
 
-      // Create new sender key distribution message
-      final senderKeyName = SenderKeyName(groupId, senderAddress);
-
-      // Notify server via REST API
-      final response = await apiService.post(
-        '/signal/sender-key/rotate',
-        data: {
-          'groupId': groupId,
-          'address': {
-            'name': senderAddress.getName(),
-            'deviceId': senderAddress.getDeviceId(),
-          },
-        },
-      );
-
-      if (response.statusCode != 200) {
-        debugPrint(
-          '[SENDER_KEY_STORE] ⚠️ Server returned ${response.statusCode} for rotation',
-        );
-      } else {
-        debugPrint('[SENDER_KEY_STORE] ✓ Server acknowledged rotation');
-      }
-
       // Update rotation timestamp
+      final senderKeyName = SenderKeyName(groupId, senderAddress);
       await updateRotationTimestamp(senderKeyName);
 
-      debugPrint('[SENDER_KEY_STORE] ✓ Sender key rotated for group $groupId');
+      debugPrint(
+        '[SENDER_KEY_STORE] ✓ Sender key rotation timestamp updated for group $groupId',
+      );
+      debugPrint(
+        '[SENDER_KEY_STORE] ⚠️ Caller must distribute new sender key to all group members',
+      );
     } catch (e) {
       debugPrint('[SENDER_KEY_STORE] ✗ Failed to rotate sender key: $e');
       rethrow;

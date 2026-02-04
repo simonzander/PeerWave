@@ -194,14 +194,55 @@ class PostLoginInitService {
       await StarredChannelsService.instance.initialize();
       debugPrint('[POST_LOGIN_INIT] ✓ Starred channels initialized');
 
-      // Step 4: Initialize Signal Protocol stores
+      // Step 4: Load user profile (required for SignalClient)
+      currentStep++;
+      onProgress?.call('Loading user profile...', currentStep, totalSteps);
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Loading user profile...',
+      );
+
+      if (!UserProfileService.instance.isLoaded) {
+        await UserProfileService.instance.initProfiles();
+        debugPrint('[POST_LOGIN_INIT] ✓ User profile loaded');
+      } else {
+        debugPrint('[POST_LOGIN_INIT] ✓ User profile already loaded');
+      }
+
+      // Step 5: Initialize Signal Protocol stores
       currentStep++;
       onProgress?.call('Initializing encryption...', currentStep, totalSteps);
       debugPrint(
         '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing Signal Protocol...',
       );
+
+      // Get userId and deviceId for SignalClient initialization
+      final currentUserId = UserProfileService.instance.currentUserUuid;
+      final currentDeviceId = ServerSettingsService.instance.getDeviceId();
+
+      debugPrint(
+        '[POST_LOGIN_INIT] Initializing SignalClient with userId: $currentUserId, deviceId: $currentDeviceId',
+      );
+
+      // Validate we have required credentials
+      if (currentUserId == null || currentUserId.isEmpty) {
+        throw StateError(
+          'Cannot initialize SignalClient: User ID not available. '
+          'Please ensure authentication completes successfully.',
+        );
+      }
+
+      if (currentDeviceId == null) {
+        throw StateError(
+          'Cannot initialize SignalClient: Device ID not available. '
+          'Please ensure authentication completes and device ID is stored.',
+        );
+      }
+
       final signalClient = await ServerSettingsService.instance
-          .getOrCreateSignalClient();
+          .getOrCreateSignalClient(
+            userId: currentUserId,
+            deviceId: currentDeviceId,
+          );
       if (!signalClient.isInitialized) {
         await signalClient.initialize();
       }
@@ -221,18 +262,6 @@ class PostLoginInitService {
       );
 
       await Future.wait([
-        // User profiles
-        Future(() async {
-          try {
-            if (!UserProfileService.instance.isLoaded) {
-              await UserProfileService.instance.initProfiles();
-              debugPrint('[POST_LOGIN_INIT]   ✓ User profiles loaded');
-            }
-          } catch (e) {
-            debugPrint('[POST_LOGIN_INIT]   ⚠️ User profiles error: $e');
-          }
-        }),
-
         // Message cleanup service
         Future(() async {
           try {

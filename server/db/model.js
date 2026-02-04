@@ -269,47 +269,9 @@ const SignalSignedPreKey = sequelize.define('SignalSignedPreKey', {
     primaryKey: false // (wird ignoriert, aber keine einzelne Spalte ist PK)
 });
 
-// SignalSenderKey - Stores sender keys for TEXT/VIDEO CHANNELS ONLY
-// NOTE: Meetings and instant calls do NOT use this table
-// They use 1:1 Signal sessions for encryption (peer-to-peer key exchange)
-const SignalSenderKey = sequelize.define('SignalSenderKey', {
-    channel: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        references: {
-            model: 'Channels',
-            key: 'uuid'
-        }
-    },
-    client: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        references: {
-            model: 'Clients',
-            key: 'clientid'
-        }
-    },
-    owner: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        references: {
-            model: 'Users',
-            key: 'uuid'
-        }
-    },
-    sender_key: {
-        type: DataTypes.TEXT,
-        allowNull: false,
-    }
-}, {
-    timestamps: true,
-    indexes: [
-        {
-            unique: true,
-            fields: ['channel', 'client']
-        }
-    ]
-});
+// SignalSenderKey - REMOVED (see migration: remove_signal_sender_keys_table.js)
+// Per Signal Protocol: sender keys distributed via 1-to-1 encrypted channels, never stored on server
+const SignalSenderKey = null;
 
 // Group Item Model - stores encrypted items (messages, reactions, etc.) for group chats
 // One encrypted payload for all members - much more efficient than Item table
@@ -1003,12 +965,13 @@ Client.hasMany(SignalSignedPreKey, { foreignKey: 'client' });
 Client.hasMany(SignalPreKey, { foreignKey: 'client' });
 
 // Signal Sender Key associations for Group Chats (text channels only)
-Channel.hasMany(SignalSenderKey, { foreignKey: 'channel' });
-SignalSenderKey.belongsTo(Channel, { foreignKey: 'channel' });
-Client.hasMany(SignalSenderKey, { foreignKey: 'client' });
-SignalSenderKey.belongsTo(Client, { foreignKey: 'client' });
-User.hasMany(SignalSenderKey, { foreignKey: 'owner' });
-SignalSenderKey.belongsTo(User, { foreignKey: 'owner' });
+// SignalSenderKey associations - REMOVED (sender keys not stored on server)
+// Channel.hasMany(SignalSenderKey, { foreignKey: 'channel' });
+// SignalSenderKey.belongsTo(Channel, { foreignKey: 'channel' });
+// Client.hasMany(SignalSenderKey, { foreignKey: 'client' });
+// SignalSenderKey.belongsTo(Client, { foreignKey: 'client' });
+// User.hasMany(SignalSenderKey, { foreignKey: 'owner' });
+// SignalSenderKey.belongsTo(User, { foreignKey: 'owner' });
 
 // Group Item associations (encrypted group messages/items)
 Channel.hasMany(GroupItem, { foreignKey: 'channel', as: 'GroupItems' });

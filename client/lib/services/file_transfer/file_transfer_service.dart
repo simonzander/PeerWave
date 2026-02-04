@@ -797,7 +797,7 @@ class FileTransferService {
   }) async {
     try {
       final signalClient = await ServerSettingsService.instance
-          .getOrCreateSignalClient();
+          .getOrCreateSignalClientWithStoredCredentials();
       // Step 1: Update server FIRST (critical!)
       debugPrint('[FILE TRANSFER] Step 1/3: Updating server share...');
 
@@ -1065,7 +1065,7 @@ class FileTransferService {
   }) async {
     try {
       final signalClient = await ServerSettingsService.instance
-          .getOrCreateSignalClient();
+          .getOrCreateSignalClientWithStoredCredentials();
       // Step 1: Update server FIRST
       debugPrint('[FILE TRANSFER] Step 1/3: Updating server share...');
 

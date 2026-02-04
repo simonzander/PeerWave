@@ -213,7 +213,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
 
         // Skip our own device
         final signalClient = await ServerSettingsService.instance
-            .getOrCreateSignalClient();
+            .getOrCreateSignalClientWithStoredCredentials();
         if (userId == signalClient.getCurrentUserId?.call() &&
             deviceId == signalClient.getCurrentDeviceId?.call()) {
           continue;

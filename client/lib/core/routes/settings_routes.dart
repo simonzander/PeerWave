@@ -84,7 +84,8 @@ ShellRoute getSettingsRoutes() {
         builder: (context, state) {
           // Use FutureBuilder to load SignalClient asynchronously
           return FutureBuilder(
-            future: ServerSettingsService.instance.getOrCreateSignalClient(),
+            future: ServerSettingsService.instance
+                .getOrCreateSignalClientWithStoredCredentials(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());

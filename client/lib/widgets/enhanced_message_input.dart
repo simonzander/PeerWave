@@ -783,7 +783,7 @@ class _EnhancedMessageInputState extends State<EnhancedMessageInput> {
       try {
         final storage = await _getStorage();
         final signalClient = await ServerSettingsService.instance
-            .getOrCreateSignalClient();
+            .getOrCreateSignalClientWithStoredCredentials();
 
         final fileTransferService = FileTransferService(
           socketFileClient: SocketFileClient(),

@@ -444,14 +444,21 @@ class SignalHealingService {
   /// - PreKey fingerprints match (hash validation)
   Future<bool> verifyOwnKeysOnServer(String userId, int deviceId) async {
     try {
+      // Use callbacks to get current user ID and device ID (more reliable than parameters)
+      final actualUserId = getCurrentUserId() ?? userId;
+      final actualDeviceId = getCurrentDeviceId() ?? deviceId;
+
       debugPrint('[HEALING] ========================================');
       debugPrint('[HEALING] Starting key verification on server...');
-      debugPrint('[HEALING] User: $userId, Device: $deviceId');
+      debugPrint('[HEALING] User: $actualUserId, Device: $actualDeviceId');
 
       // Fetch key status from server
       final response = await keyManager.apiService.get(
         '/signal/status/minimal',
-        queryParameters: {'userId': userId, 'deviceId': deviceId.toString()},
+        queryParameters: {
+          'userId': actualUserId,
+          'deviceId': actualDeviceId.toString(),
+        },
       );
 
       final serverData = response.data as Map<String, dynamic>;

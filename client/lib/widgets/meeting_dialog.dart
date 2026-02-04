@@ -858,7 +858,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
         if (userIds.isEmpty) return;
 
         final signalClient = await ServerSettingsService.instance
-            .getOrCreateSignalClient();
+            .getOrCreateSignalClientWithStoredCredentials();
         final senderId = signalClient.getCurrentUserId?.call();
         if (senderId == null || senderId.isEmpty) return;
 

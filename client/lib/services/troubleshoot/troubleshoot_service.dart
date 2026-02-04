@@ -75,7 +75,7 @@ class TroubleshootService {
 
       // Get SignalClient for current server
       final signalClient = await ServerSettingsService.instance
-          .getOrCreateSignalClient();
+          .getOrCreateSignalClientWithStoredCredentials();
 
       // Get all PreKey IDs for logging
       final preKeyIds = await signalClient.keyManager.getAllPreKeyIds();
@@ -166,7 +166,7 @@ class TroubleshootService {
 
       // Get SignalClient for current server
       final signalClient = await ServerSettingsService.instance
-          .getOrCreateSignalClient();
+          .getOrCreateSignalClientWithStoredCredentials();
 
       // Get all existing PreKey IDs for logging
       final existingIds = await signalClient.keyManager.getAllPreKeyIds();
@@ -251,7 +251,7 @@ class TroubleshootService {
 
       // Get SignalClient for current server
       final signalClient = await ServerSettingsService.instance
-          .getOrCreateSignalClient();
+          .getOrCreateSignalClientWithStoredCredentials();
       final userId = signalClient.getCurrentUserId?.call() ?? 'N/A';
 
       // Get identity key fingerprint (first 16 chars of public key)
@@ -368,7 +368,7 @@ class TroubleshootService {
       try {
         // Count PreKeys
         final signalClient = await ServerSettingsService.instance
-            .getOrCreateSignalClient();
+            .getOrCreateSignalClientWithStoredCredentials();
         final preKeyIds = await signalClient.keyManager.getAllPreKeyIds();
         preKeysCount = preKeyIds.length;
       } catch (e) {

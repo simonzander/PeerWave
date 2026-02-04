@@ -1,9 +1,11 @@
 const express = require('express');
-const router = express.Router();
-const { SignalSignedPreKey, SignalPreKey, SignalIdentity } = require('../db/model');
+const { SignalSignedPreKey, SignalPreKey, SignalIdentity, Client, Item } = require('../db/model');
 const { verifyAuthEither } = require('../middleware/sessionAuth');
 const logger = require('../utils/logger');
 const writeQueue = require('../db/writeQueue');
+const { getDeviceSockets } = require('../utils/deviceSockets');
+
+const router = express.Router();
 
 /**
  * POST /api/signal/signed-prekey
@@ -343,6 +345,89 @@ router.post('/sender-key/rotate', verifyAuthEither, async (req, res) => {
   } catch (error) {
     logger.error('Error rotating sender key:', error);
     res.status(500).json({ error: 'Failed to rotate sender key' });
+  }
+});
+
+/**
+ * POST /api/signal/distribute-sender-key
+ * Distribute encrypted sender key to a specific group member
+ * Signal Protocol: Sender keys are distributed via 1-to-1 encrypted channels
+ * Server only routes the encrypted payload, never stores sender keys
+ */
+router.post('/distribute-sender-key', verifyAuthEither, async (req, res) => {
+  try {
+    const senderId = req.userId;
+    const senderClientId = req.clientId;
+    
+    if (!senderId || !senderClientId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { groupId, recipientId, recipientDeviceId, encryptedDistribution, messageType } = req.body;
+    
+    if (!groupId || !recipientId || !recipientDeviceId || !encryptedDistribution || messageType === undefined) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: groupId, recipientId, recipientDeviceId, encryptedDistribution, messageType' 
+      });
+    }
+
+    logger.info('[SIGNAL API] Distributing sender key');
+    logger.debug(`[SIGNAL API] Sender: ${senderId}, Recipient: ${recipientId}:${recipientDeviceId}, Group: ${groupId}`);
+
+    // Get recipient's socket (if online)
+    const deviceSockets = getDeviceSockets();
+    const recipientSocketId = deviceSockets.get(`${recipientId}:${recipientDeviceId}`);
+    
+    // Get sender's device ID for the response
+    const senderClient = await Client.findOne({
+      where: { clientid: senderClientId },
+      attributes: ['device_id']
+    });
+
+    const payload = {
+      groupId,
+      senderId,
+      senderDeviceId: senderClient?.device_id || 1,
+      distributionMessage: encryptedDistribution,  // Encrypted SenderKeyDistributionMessage
+      messageType
+    };
+
+    if (recipientSocketId) {
+      // Recipient is online - deliver immediately via Socket.IO
+      const io = req.app.get('io');
+      
+      if (!io) {
+        logger.error('[SIGNAL API] Socket.IO instance not available');
+        return res.status(500).json({ error: 'Socket.IO not initialized' });
+      }
+      
+      // Use io.to() to emit to a specific socket by ID
+      io.to(recipientSocketId).emit('receiveSenderKeyDistribution', payload);
+      logger.info('[SIGNAL API] ✅ Sender key delivered (online)');
+      return res.json({ success: true, delivered: true });
+    }
+    
+    // Recipient is offline - queue for delivery
+    logger.info('[SIGNAL API] ⚠️ Recipient offline, queuing sender key distribution');
+    
+    await writeQueue.enqueue(async () => {
+      return await Item.create({
+        sender: senderId,
+        deviceSender: senderClient?.device_id || 1,
+        receiver: recipientId,
+        deviceReceiver: recipientDeviceId,
+        type: 'signal:senderKeyDistribution',
+        payload: JSON.stringify(payload),
+        cipherType: messageType,  // The outer encryption type (PreKey or Signal)
+        itemId: `senderkey-${groupId}-${Date.now()}`
+      });
+    }, `senderkey-dist-${recipientId}-${recipientDeviceId}-${Date.now()}`);
+    
+    logger.info('[SIGNAL API] ✅ Sender key queued for offline delivery');
+    res.json({ success: true, delivered: false, queued: true });
+  } catch (error) {
+    logger.error('[SIGNAL API] Error distributing sender key:', error);
+    res.status(500).json({ error: 'Failed to distribute sender key' });
   }
 });
 

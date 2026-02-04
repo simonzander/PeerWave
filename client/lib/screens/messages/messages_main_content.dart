@@ -10,6 +10,7 @@ import '../../services/storage/sqlite_recent_conversations_store.dart';
 import '../../services/recent_conversations_service.dart';
 import '../../services/starred_conversations_service.dart';
 import '../../services/event_bus.dart';
+import '../../services/active_conversation_service.dart';
 import '../../app/views/people_context_data_loader.dart';
 import 'dart:async';
 
@@ -40,6 +41,8 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
   @override
   void initState() {
     super.initState();
+    // Clear active conversation since we're viewing the list, not a specific chat
+    ActiveConversationService.instance.clearActiveConversation();
     _initializeStarredService();
     _loadConversations();
     _searchController.addListener(_onSearchChanged);
@@ -54,21 +57,132 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
       final dataMap = data as Map<String, dynamic>?;
       final userId = dataMap?['userId'] as String?;
       if (userId != null) {
-        debugPrint(
-          '[MESSAGES_MAIN] Conversation deleted event received for: $userId',
-        );
-        // Reload the conversation list
+        debugPrint('[MESSAGES_MAIN] Conversation deleted: $userId');
         _loadConversations();
       }
     });
 
-    // Listen for server switches (multi-server support)
+    // Listen for new messages to update conversation list
+    EventBus.instance.on(AppEvent.newMessage).listen((data) {
+      if (!mounted) return;
+
+      final dataMap = data as Map<String, dynamic>?;
+      if (dataMap == null) return;
+
+      final senderId = dataMap['senderId'] as String?;
+      final message = dataMap['message'] as String?;
+      final messageType = dataMap['type'] as String?;
+      final timestamp = dataMap['timestamp'] as String?;
+      final displayName = dataMap['displayName'] as String? ?? 'Unknown';
+      final picture = dataMap['picture'] as String? ?? '';
+      final atName = dataMap['atName'] as String? ?? '';
+      final isOwnMessage = dataMap['isOwnMessage'] as bool? ?? false;
+
+      debugPrint(
+        '[MESSAGES_MAIN] New message: from=$senderId, isOwn=$isOwnMessage',
+      );
+
+      // For own messages (multi-device), update for originalRecipient
+      // For received messages, update for sender
+      String? conversationUserId;
+      if (isOwnMessage) {
+        // Our own message from another device - update conversation with original recipient
+        conversationUserId = dataMap['originalRecipient'] as String?;
+      } else {
+        // Message from someone else - update their conversation
+        conversationUserId = senderId;
+      }
+
+      if (conversationUserId != null && message != null) {
+        _updateConversationOptimistically(
+          conversationUserId,
+          message,
+          messageType ?? 'message',
+          timestamp ?? DateTime.now().toIso8601String(),
+          displayName,
+          picture,
+          atName,
+        );
+      }
+    });
+
+    // Listen for new conversations
+    EventBus.instance.on(AppEvent.newConversation).listen((data) {
+      if (!mounted) return;
+
+      debugPrint('[MESSAGES_MAIN] New conversation event');
+      _loadConversations();
+    });
+
+    // Listen for server switches
     EventBus.instance.on(AppEvent.serverSwitched).listen((data) {
       if (!mounted) return;
 
-      debugPrint('[MESSAGES_MAIN] Server switched, reloading conversations');
+      debugPrint('[MESSAGES_MAIN] Server switched');
       _loadConversations();
     });
+  }
+
+  /// Update conversation list optimistically with new message data from EventBus
+  void _updateConversationOptimistically(
+    String userId,
+    String message,
+    String messageType,
+    String timestamp,
+    String displayName,
+    String picture,
+    String atName,
+  ) {
+    debugPrint(
+      '[MESSAGES_MAIN] Update conversation: user=$userId, name=$displayName',
+    );
+
+    final existingIndex = _conversations.indexWhere(
+      (conv) => conv['uuid'] == userId,
+    );
+
+    if (existingIndex != -1) {
+      // Update existing conversation
+      final existing = _conversations[existingIndex];
+      setState(() {
+        existing['displayName'] = displayName;
+        existing['picture'] = picture;
+        existing['atName'] = atName;
+        existing['lastMessage'] = PeopleContextDataLoader.formatMessagePreview(
+          messageType,
+          message,
+        );
+        existing['lastMessageTime'] = timestamp;
+        existing['lastMessageType'] = messageType;
+
+        // Move to top
+        _conversations.removeAt(existingIndex);
+        _conversations.insert(0, existing);
+        _applyFilters();
+      });
+      debugPrint('[MESSAGES_MAIN] ✓ Conversation updated');
+    } else {
+      // New conversation - create it
+      setState(() {
+        _conversations.insert(0, {
+          'uuid': userId,
+          'displayName': displayName,
+          'atName': atName,
+          'picture': picture,
+          'online': false,
+          'lastMessage': PeopleContextDataLoader.formatMessagePreview(
+            messageType,
+            message,
+          ),
+          'lastMessageTime': timestamp,
+          'lastMessageType': messageType,
+          'unreadCount': 1,
+          'isStarred': StarredConversationsService.instance.isStarred(userId),
+        });
+        _applyFilters();
+      });
+      debugPrint('[MESSAGES_MAIN] \u2713 New conversation created');
+    }
   }
 
   Future<void> _initializeStarredService() async {
@@ -82,6 +196,8 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
   void dispose() {
     _searchController.dispose();
     _debounceTimer?.cancel();
+    // Ensure we don't leave any active conversation set
+    ActiveConversationService.instance.clearActiveConversation();
     super.dispose();
   }
 
@@ -142,6 +258,19 @@ class _MessagesMainContentState extends State<MessagesMainContent> {
           await RecentConversationsService.getRecentConversations();
 
       debugPrint('[MESSAGES_MAIN] Found ${conversations.length} conversations');
+
+      // Force profiles to be fetched/refreshed for all conversation partners
+      // This ensures displayName is up-to-date after new messages
+      final userIds = conversations
+          .map((c) => c['uuid'])
+          .where((id) => id != null && id.isNotEmpty)
+          .cast<String>()
+          .toList();
+
+      if (userIds.isNotEmpty) {
+        await UserProfileService.instance.loadProfiles(userIds);
+        debugPrint('[MESSAGES_MAIN] Loaded ${userIds.length} user profiles');
+      }
 
       if (conversations.isEmpty) {
         if (mounted) {

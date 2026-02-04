@@ -79,6 +79,10 @@ class SqliteGroupMessageStore {
     try {
       final db = await DatabaseHelper.database;
 
+      debugPrint(
+        '[GROUP STORE] Storing sent message: itemId=$itemId, channelId=$channelId, message="$message"',
+      );
+
       // Encrypt the message content before storage
       final encryptedMessage = await _encryption.encryptString(message);
 
@@ -91,6 +95,7 @@ class SqliteGroupMessageStore {
         'timestamp': timestamp,
         'type': type,
         'direction': 'sent',
+        'status': 'delivered', // Mark as delivered to server
         'decrypted_at': DateTime.now().toIso8601String(),
         'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -123,13 +128,26 @@ class SqliteGroupMessageStore {
       final decryptedResults = <Map<String, dynamic>>[];
       final messagesToDelete = <String>[];
 
+      debugPrint(
+        '[GROUP STORE] Retrieved ${results.length} raw messages for channel $channelId',
+      );
+
       for (var row in results) {
+        debugPrint(
+          '[GROUP STORE] Processing message: itemId=${row['item_id']}, direction=${row['direction']}, sender=${row['sender']}',
+        );
         final decryptedRow = Map<String, dynamic>.from(row);
         if (row['message'] != null) {
           try {
-            decryptedRow['message'] = await _encryption.decryptString(
+            final decryptedMessage = await _encryption.decryptString(
               row['message'],
             );
+            decryptedRow['message'] = decryptedMessage;
+            final preview =
+                decryptedMessage != null && decryptedMessage.length > 50
+                ? '${decryptedMessage.substring(0, 50)}...'
+                : decryptedMessage ?? '';
+            debugPrint('[GROUP STORE] ✓ Decrypted message: "$preview"');
             decryptedResults.add(decryptedRow);
           } catch (e) {
             debugPrint(

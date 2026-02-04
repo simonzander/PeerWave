@@ -110,7 +110,7 @@ class _VideoConferencePreJoinViewState
 
       // Check user authentication status
       final signalClient = await ServerSettingsService.instance
-          .getOrCreateSignalClient();
+          .getOrCreateSignalClientWithStoredCredentials();
       final userId = signalClient.getCurrentUserId?.call();
       final deviceId = signalClient.getCurrentDeviceId?.call();
       debugPrint('[PreJoin] User authentication status:');
@@ -373,7 +373,7 @@ class _VideoConferencePreJoinViewState
 
       // Get SignalClient
       final signalClient = await ServerSettingsService.instance
-          .getOrCreateSignalClient();
+          .getOrCreateSignalClientWithStoredCredentials();
 
       int loaded = 0;
       int failed = 0;

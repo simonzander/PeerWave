@@ -54,6 +54,15 @@ enum AppEvent {
   /// Video conference state changed (joined, left, participant added/removed).
   videoConferenceStateChanged,
 
+  /// Incoming call notification received via Signal Protocol.
+  incomingCall,
+
+  /// Meeting E2EE key exchange request received.
+  meetingKeyRequest,
+
+  /// Meeting E2EE key exchange response received.
+  meetingKeyResponse,
+
   /// Background sync of pending messages has started.
   syncStarted,
 

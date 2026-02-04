@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 
 import '../../../../socket_service.dart';
 import '../../../../../core/events/event_bus.dart' as app_events;
+import '../../../../user_profile_service.dart';
 import '../../encryption_service.dart';
 import '../../session_manager.dart';
+import '../../healing_service.dart';
 import '../../../callbacks/callback_manager.dart';
 
 /// Mixin for receiving and decrypting messages
@@ -14,6 +17,9 @@ mixin MessageReceivingMixin {
   SocketService get socketService;
   CallbackManager get callbackManager;
   SessionManager get sessionStore;
+  SignalHealingService get healingService;
+  String get currentUserId;
+  int get currentDeviceId;
 
   // Required methods from other mixins
   Future<String?> getCachedMessage(String itemId);
@@ -27,8 +33,9 @@ mixin MessageReceivingMixin {
   Future<String> decryptGroupMessage(
     Map<String, dynamic> data,
     String sender,
-    int senderDeviceId,
-  );
+    int senderDeviceId, {
+    Function(String)? onDecrypted,
+  });
 
   /// Process incoming message (1-to-1 or group)
   ///
@@ -46,7 +53,9 @@ mixin MessageReceivingMixin {
     required int cipherType,
     required String itemId,
   }) async {
-    debugPrint('[RECEIVE] Message: $itemId from $sender:$senderDeviceId');
+    debugPrint(
+      '[RECEIVE] Message: $itemId from $sender:$senderDeviceId (receiver: $currentUserId)',
+    );
 
     // PHASE 1: Check cache
     final cached = await getCachedMessage(itemId);
@@ -83,28 +92,74 @@ mixin MessageReceivingMixin {
         return;
       }
 
-      // Handle session corruption - delete and rebuild
+      // ========================================================================
+      // HEALING SERVICE INTEGRATION: Automatic session recovery
+      // ========================================================================
+      debugPrint('[RECEIVE] 🔧 Starting healing service recovery...');
+
       try {
-        debugPrint(
-          '[RECEIVE] Session corrupted, deleting session with $sender:$senderDeviceId',
-        );
         final address = SignalProtocolAddress(sender, senderDeviceId);
+
+        // Step 1: Trigger proactive key verification
+        debugPrint(
+          '[RECEIVE] Step 1: Verifying our keys and identity with server...',
+        );
+        await healingService.triggerAsyncSelfVerification(
+          reason: 'Decryption failure from $sender:$senderDeviceId',
+          userId: currentUserId,
+          deviceId: currentDeviceId,
+        );
+
+        // Step 2: Delete corrupted session
+        debugPrint(
+          '[RECEIVE] Step 2: Deleting corrupted session with $sender:$senderDeviceId',
+        );
         await sessionStore.deleteSession(address);
+        debugPrint('[RECEIVE] ✓ Corrupted session deleted');
 
-        // Attempt to rebuild session
-        debugPrint('[RECEIVE] Rebuilding session with $sender');
-        await sessionStore.establishSessionWithUser(sender);
+        // Step 3: Rebuild session from fresh PreKeyBundle
+        debugPrint('[RECEIVE] Step 3: Rebuilding session with $sender');
+        final success = await sessionStore.establishSessionWithUser(sender);
 
-        // Store a system message about the failure
+        if (success) {
+          debugPrint('[RECEIVE] ✅ Session successfully rebuilt');
+
+          // Store a system message about the recovery
+          await processDecryptedMessage(
+            message:
+                '🔒 Message could not be decrypted. Session has been automatically recovered.',
+            dataMap: dataMap,
+            type: 'system:session_reset',
+            sender: sender,
+            itemId: itemId,
+          );
+        } else {
+          debugPrint('[RECEIVE] ⚠️ Session rebuild failed');
+
+          // Store failure message
+          await processDecryptedMessage(
+            message:
+                '❌ Message could not be decrypted. Session recovery failed. Please contact $sender.',
+            dataMap: dataMap,
+            type: 'system:session_reset',
+            sender: sender,
+            itemId: itemId,
+          );
+        }
+      } catch (rebuildError) {
+        debugPrint(
+          '[RECEIVE] ✗ Healing service recovery failed: $rebuildError',
+        );
+
+        // Store error message
         await processDecryptedMessage(
-          message: '🔒 Message could not be decrypted. Session has been reset.',
+          message:
+              '❌ Message decryption and recovery failed: ${rebuildError.toString()}',
           dataMap: dataMap,
           type: 'system:session_reset',
           sender: sender,
           itemId: itemId,
         );
-      } catch (rebuildError) {
-        debugPrint('[RECEIVE] Failed to rebuild session: $rebuildError');
       }
 
       // Notify UI of failure
@@ -153,11 +208,29 @@ mixin MessageReceivingMixin {
 
     // Group message (sender key)
     if (data['channel'] != null) {
-      return await decryptGroupMessage(data, sender, senderDeviceId);
+      final itemId = data['itemId'] as String?;
+
+      // Pass callback to handle queued message processing
+      return await decryptGroupMessage(
+        data,
+        sender,
+        senderDeviceId,
+        onDecrypted: (decryptedMessage) async {
+          // Process the decrypted message from queue
+          debugPrint('[RECEIVE] Processing queued message: $itemId');
+          await processDecryptedMessage(
+            message: decryptedMessage,
+            dataMap: data,
+            type: data['type'] as String? ?? 'message',
+            sender: sender,
+            itemId: itemId ?? 'unknown',
+          );
+        },
+      );
     }
 
     // 1-to-1 message (session cipher) - use unified decryptMessage
-    final payload = data['message'] as String;
+    final payload = data['payload'] as String;
 
     return await encryptionService.decryptMessage(
       senderAddress: senderAddress,
@@ -180,11 +253,36 @@ mixin MessageReceivingMixin {
       return;
     }
 
-    // Emit event
+    // Check if this is own message (multi-device sync)
+    final currentUserId = UserProfileService.instance.currentUserUuid;
+    final isOwnMessage = (sender == currentUserId);
+
+    // Get sender profile for UI (avoid stale cache lookups)
+    final senderProfile = UserProfileService.instance.getProfile(sender);
+    final displayName =
+        senderProfile?['displayName']?.toString() ??
+        UserProfileService.instance.getDisplayNameOrUuid(sender);
+    final picture = senderProfile?['picture']?.toString() ?? '';
+    final atName = senderProfile?['atName']?.toString() ?? '';
+
+    // Emit event with complete message data for UI (including profile data)
     app_events.EventBus.instance.emit(app_events.AppEvent.newMessage, {
+      'itemId': itemId,
       'senderId': sender,
       'message': message,
-      'timestamp': DateTime.now().toIso8601String(),
+      'timestamp': dataMap['timestamp'] ?? DateTime.now().toIso8601String(),
+      'type': type,
+      'status': 'received',
+      'direction': 'received',
+      'sender': sender,
+      'senderDeviceId': dataMap['senderDeviceId'],
+      'channelId': dataMap['channel'],
+      'metadata': dataMap['metadata'],
+      'isOwnMessage': isOwnMessage,
+      // Include profile data so UI doesn't need to query cache
+      'displayName': displayName,
+      'picture': picture,
+      'atName': atName,
     });
 
     // Trigger callbacks
@@ -197,7 +295,10 @@ mixin MessageReceivingMixin {
         type == 'delivery_receipt' ||
         type == 'senderKeyRequest' ||
         type == 'fileKeyRequest' ||
-        type == 'call_notification';
+        type == 'call_notification' ||
+        type == 'meeting_e2ee_key_request' ||
+        type == 'meeting_e2ee_key_response' ||
+        type == 'signal:senderKeyDistribution';
   }
 
   /// Handle system messages
@@ -208,6 +309,45 @@ mixin MessageReceivingMixin {
   ) async {
     if (type == 'read_receipt') {
       debugPrint('[RECEIVE] Received read receipt');
+
+      // Parse the read receipt payload
+      try {
+        final payload = message.isNotEmpty ? jsonDecode(message) : {};
+        final itemId = payload['itemId'] as String?;
+        final readByDeviceIdRaw = payload['readByDeviceId'];
+
+        // Handle both String and int types for readByDeviceId
+        int? readByDeviceId;
+        if (readByDeviceIdRaw is int) {
+          readByDeviceId = readByDeviceIdRaw;
+        } else if (readByDeviceIdRaw is String) {
+          readByDeviceId = int.tryParse(readByDeviceIdRaw);
+        }
+
+        if (itemId != null) {
+          // Notify read receipt callbacks directly (not general message callbacks)
+          final receiptInfo = {
+            'itemId': itemId,
+            'readByUserId': data['sender'] as String,
+            'readByDeviceId': readByDeviceId,
+            'timestamp': data['timestamp'] ?? DateTime.now().toIso8601String(),
+          };
+
+          callbackManager.delivery.notifyRead(receiptInfo);
+          debugPrint('[RECEIVE] ✓ Read receipt notified for itemId: $itemId');
+        }
+      } catch (e) {
+        debugPrint('[RECEIVE] Error parsing read receipt: $e');
+      }
+    } else if (type == 'signal:senderKeyDistribution') {
+      debugPrint(
+        '[RECEIVE] Sender key distribution from offline queue - will be handled by socket re-emission',
+      );
+
+      // Note: The sender key distribution was queued in Items table
+      // The server will re-deliver it via socket when we come online
+      // The 'receiveSenderKeyDistribution' socket listener will handle it
+      // We just mark it as processed here to clear from queue
     }
   }
 
@@ -217,7 +357,25 @@ mixin MessageReceivingMixin {
     Map<String, dynamic> data,
     String message,
   ) async {
-    // Notify via CallbackManager
+    // Emit EventBus events for system message types
+    if (type == 'call_notification') {
+      app_events.EventBus.instance.emit(app_events.AppEvent.incomingCall, {
+        ...data,
+        'decryptedMessage': message,
+      });
+    } else if (type == 'meeting_e2ee_key_request') {
+      app_events.EventBus.instance.emit(app_events.AppEvent.meetingKeyRequest, {
+        ...data,
+        'decryptedMessage': message,
+      });
+    } else if (type == 'meeting_e2ee_key_response') {
+      app_events.EventBus.instance.emit(
+        app_events.AppEvent.meetingKeyResponse,
+        {...data, 'decryptedMessage': message},
+      );
+    }
+
+    // Legacy callback support (deprecated - use EventBus instead)
     final sender = data['sender'] as String?;
     final channelId = data['channel'] as String?;
 

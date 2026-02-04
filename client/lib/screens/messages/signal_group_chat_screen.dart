@@ -15,7 +15,6 @@ import '../../services/socket_service_native.dart'
 import '../../services/offline_message_queue.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/server_settings_service.dart';
-import '../../services/device_identity_service.dart';
 import '../../services/file_transfer/p2p_coordinator.dart';
 import '../../services/file_transfer/socket_file_client.dart';
 import '../../services/storage/sqlite_group_message_store.dart';
@@ -224,7 +223,12 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         '/api/channels/${widget.channelUuid}/members',
       );
       if (response.statusCode == 200 && response.data != null) {
-        final members = (response.data as List).map((member) {
+        // Handle both List and Map responses (server may return {members: []})
+        final memberList = response.data is List
+            ? response.data as List
+            : (response.data as Map)['members'] as List? ?? [];
+
+        final members = memberList.map((member) {
           return {
             'userId': member['userId']?.toString() ?? '',
             'displayName':
@@ -256,11 +260,11 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
   Future<void> _initializeGroupChannel() async {
     try {
       final signalClient = await ServerSettingsService.instance
-          .getOrCreateSignalClient();
+          .getOrCreateSignalClientWithStoredCredentials();
       final String currentUserId =
           UserProfileService.instance.currentUserUuid ?? '';
-      final int currentDeviceId =
-          DeviceIdentityService.instance.deviceId as int;
+      // Get deviceId from MessagingService (already initialized with correct value)
+      final int currentDeviceId = signalClient.messagingService.currentDeviceId;
 
       // STEP 3: Robust identity key pair check with auto-regenerate attempt
       bool hasIdentityKey = false;
@@ -419,18 +423,22 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     }
   }
 
-  void _setupMessageListener() async {
-    final signalClient = await ServerSettingsService.instance
-        .getOrCreateSignalClient();
+  void _setupMessageListener() {
+    // Listen for new messages via EventBus (unified pattern with 1-to-1)
+    EventBus.instance.on(AppEvent.newMessage).listen((data) {
+      if (!mounted) return;
 
-    // Register callback for group messages in this channel
-    for (final type in displayableMessageTypes) {
-      signalClient.registerReceiveItemChannel(
-        type,
-        widget.channelUuid,
-        _handleGroupItem,
-      );
-    }
+      final dataMap = data as Map<String, dynamic>?;
+      if (dataMap == null) return;
+
+      // Filter for this channel only
+      final channelId = dataMap['channelId'] as String?;
+      if (channelId != widget.channelUuid) return;
+
+      _handleNewMessage(dataMap);
+    });
+
+    // Listen for delivery receipts
     SocketService.instance.registerListener(
       'groupItemDelivered',
       _handleDeliveryReceipt,
@@ -519,55 +527,20 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     }
   }
 
-  /// Handle read receipt updates from other members
-  void _handleReadReceipt(dynamic data) {
+  /// Handle incoming group messages via EventBus (unified pattern with 1-to-1)
+  Future<void> _handleNewMessage(Map<String, dynamic> data) async {
     try {
-      final itemId = data['itemId'] as String;
-      final readCount = data['readCount'] as int;
-      final deliveredCount = data['deliveredCount'] as int;
-      final totalCount = data['totalCount'] as int;
-      final allRead = data['allRead'] as bool;
-
-      debugPrint(
-        '[SIGNAL_GROUP] Read receipt: $readCount/$totalCount read, $deliveredCount delivered',
-      );
-
-      // Update message status in UI
-      setState(() {
-        final msgIndex = _messages.indexWhere((m) => m['itemId'] == itemId);
-        if (msgIndex != -1) {
-          _messages[msgIndex]['readCount'] = readCount;
-          _messages[msgIndex]['deliveredCount'] = deliveredCount;
-          _messages[msgIndex]['totalCount'] = totalCount;
-
-          // Status-Logik:
-          // - 'delivered' (graues Häkchen): Noch nicht alle haben gelesen
-          // - 'read' (2 grüne Häkchen): Alle haben gelesen
-          if (allRead) {
-            _messages[msgIndex]['status'] = 'read'; // Alle haben gelesen
-          } else {
-            _messages[msgIndex]['status'] = 'delivered'; // Noch nicht alle
-          }
-        }
-      });
-    } catch (e) {
-      debugPrint('[SIGNAL_GROUP] Error handling read receipt: $e');
-    }
-  }
-
-  /// Handle incoming group items via Socket.IO (NEW API with auto-reload)
-  Future<void> _handleGroupItem(dynamic data) async {
-    try {
-      final itemId = data['itemId'] as String;
-      final channelId = data['channel'] as String;
-      final senderId = data['sender'] as String;
-      // Parse senderDeviceId as int (socket might send String)
-      final senderDeviceId = data['senderDevice'] is int
-          ? data['senderDevice'] as int
-          : int.parse(data['senderDevice'].toString());
-      final payload = data['payload'] as String;
+      final itemId = data['itemId'] as String?;
+      final senderId = data['senderId'] as String?;
+      final message = data['message'] as String?;
       final timestamp = data['timestamp'] ?? DateTime.now().toIso8601String();
       final itemType = data['type'] as String? ?? 'message';
+      final metadata = data['metadata'] as Map<String, dynamic>?;
+
+      if (itemId == null || senderId == null || message == null) {
+        debugPrint('[SIGNAL_GROUP] Invalid message data, skipping');
+        return;
+      }
 
       // ✅ WHITELIST: Filter out system messages (only display 'message' and 'file')
       if (!displayableMessageTypes.contains(itemType)) {
@@ -575,26 +548,15 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         return;
       }
 
-      // Verify this is for our channel
-      if (channelId != widget.channelUuid) {
-        return;
-      }
-
       // Check if already exists
       if (_messages.any((m) => m['itemId'] == itemId)) {
+        debugPrint('[SIGNAL_GROUP] Message $itemId already exists');
         return;
       }
 
-      debugPrint('[SIGNAL_GROUP] Received groupItem via callback: $itemId');
+      debugPrint('[SIGNAL_GROUP] Received new message via EventBus: $itemId');
 
-      // Message already decrypted by SignalClient - extract from data
-      final decrypted =
-          data['decryptedMessage'] as String? ??
-          data['message'] as String? ??
-          payload;
       final currentUserId = UserProfileService.instance.currentUserUuid;
-
-      // Check if it's own message
       final isOwnMessage = senderId == currentUserId;
 
       // Add to UI
@@ -605,14 +567,15 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           'senderDisplayName': isOwnMessage
               ? 'You'
               : UserProfileService.instance.getDisplayName(senderId),
-          'text': decrypted,
-          'message': decrypted,
+          'text': message,
+          'message': message,
           'time': timestamp,
           'timestamp': timestamp,
           'status': 'received',
           'isOwn': isOwnMessage,
           'isLocalSent': isOwnMessage,
           'type': itemType,
+          if (metadata != null) 'metadata': metadata,
         });
 
         // Sort by timestamp
@@ -627,16 +590,14 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         });
       });
 
-      debugPrint(
-        '[SIGNAL_GROUP] GroupItem decrypted and displayed successfully',
-      );
+      debugPrint('[SIGNAL_GROUP] Message added to UI');
 
       // Send read receipt (only for others' messages)
       if (!isOwnMessage) {
-        _sendReadReceiptForMessage(itemId);
+        await _sendReadReceiptForMessage(itemId);
       }
     } catch (e) {
-      debugPrint('[SIGNAL_GROUP] Error handling groupItem: $e');
+      debugPrint('[SIGNAL_GROUP] Error handling new message: $e');
     }
   }
 
@@ -699,17 +660,6 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     }
   }
 
-  // ========================================
-  // OLD METHODS REMOVED (No longer needed with GroupItem API)
-  // - _handleSenderKeyDistribution: Keys now loaded via REST API
-  // - _handleSenderKeyRequest: No more 1:1 key requests
-  // - _handleSenderKeyRecreated: Keys managed server-side
-  // - _requestSenderKey: Replaced by loadSenderKeyFromServer in SignalService
-  // - _loadSenderKeyFromServer: Replaced by loadSenderKeyFromServer in SignalService
-  // - _processPendingMessages: Auto-reload handles this in decryptGroupItem
-  // - _handleNewMessage: Replaced by _handleGroupItem
-  // ========================================
-
   /// Scroll to a specific message and highlight it
   Future<void> _scrollToMessage(String messageId) async {
     // Wait for widget tree to build
@@ -768,235 +718,138 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     }
 
     try {
-      await ApiService.instance.init();
-      final signalClient = await ServerSettingsService.instance
-          .getOrCreateSignalClient();
       final currentUserId = UserProfileService.instance.currentUserUuid ?? '';
 
-      // Load all messages from local store
+      // ✅ ONLY load from local storage
+      // SignalClient listeners handle all decryption and storage
       final groupMessageStore = await SqliteGroupMessageStore.getInstance();
       final allChannelMessages = await groupMessageStore.getChannelMessages(
         widget.channelUuid,
       );
 
-      // Filter by direction
-      final sentGroupItems = allChannelMessages
-          .where((m) => m['direction'] == 'sent')
-          .toList();
-      final receivedGroupItems = allChannelMessages
-          .where((m) => m['direction'] == 'received')
+      debugPrint(
+        '[SIGNAL_GROUP] Loaded ${allChannelMessages.length} messages from local store',
+      );
+
+      // Combine sent and received items
+      debugPrint('[SIGNAL_GROUP] 📊 Starting message filtering...');
+      debugPrint(
+        '[SIGNAL_GROUP]  Total raw messages: ${allChannelMessages.length}',
+      );
+
+      final allMessages = allChannelMessages
+          .where((m) {
+            final msgType = m['type'] ?? 'message';
+            final isDisplayable = displayableMessageTypes.contains(msgType);
+            if (!isDisplayable) {
+              debugPrint(
+                '[SIGNAL_GROUP] Skipping system message type: $msgType (item: ${m['item_id']})',
+              );
+            }
+            return isDisplayable;
+          })
+          .map((m) {
+            final senderId = m['sender'];
+            final direction = m['direction'] as String?;
+            final isOwnMessage = direction == 'sent';
+
+            return {
+              ...m,
+              'isOwn': isOwnMessage,
+              'isLocalSent': isOwnMessage,
+              'senderDisplayName': isOwnMessage
+                  ? 'You'
+                  : UserProfileService.instance.getDisplayName(senderId),
+              'time': m['timestamp'],
+              'text': m['message'],
+              'status':
+                  m['status'] ??
+                  (isOwnMessage
+                      ? 'delivered'
+                      : null), // Preserve or default status
+            };
+          })
           .toList();
 
-      debugPrint('[SIGNAL_GROUP] Loaded ${sentGroupItems.length} sent items');
-      for (final item in sentGroupItems) {
-        debugPrint(
-          '[SIGNAL_GROUP] Sent item: itemId=${item['itemId']}, type=${item['type']}, message length=${(item['message'] as String?)?.length}',
-        );
+      debugPrint(
+        '[SIGNAL_GROUP]  After filtering: ${allMessages.length} displayable messages',
+      );
+
+      // Remove duplicates and sort
+      debugPrint('[SIGNAL_GROUP] 📊 Removing duplicates and sorting...');
+      final uniqueMessages = <String, Map<String, dynamic>>{};
+      for (final msg in allMessages) {
+        // Database uses snake_case (item_id), check both variants
+        final itemId = (msg['itemId'] ?? msg['item_id']) as String?;
+        if (itemId != null) {
+          uniqueMessages[itemId] = msg;
+        } else {
+          debugPrint(
+            '[SIGNAL_GROUP]  ⚠️ Message missing itemId, keys: ${msg.keys.toList()}',
+          );
+        }
+      }
+      debugPrint('[SIGNAL_GROUP]  Unique messages: ${uniqueMessages.length}');
+
+      final sortedMessages = uniqueMessages.values.toList()
+        ..sort((a, b) {
+          final timeA =
+              DateTime.tryParse(a['time'] ?? a['timestamp'] ?? '') ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final timeB =
+              DateTime.tryParse(b['time'] ?? b['timestamp'] ?? '') ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return timeA.compareTo(timeB);
+        });
+
+      debugPrint('[SIGNAL_GROUP]  Sorted messages: ${sortedMessages.length}');
+
+      // Apply pagination: load last 20 messages, or next 20 older messages
+      final totalMessages = sortedMessages.length;
+      debugPrint(
+        '[SIGNAL_GROUP] 📄 Pagination: total=$totalMessages, loadMore=$loadMore, currentOffset=$_messageOffset',
+      );
+      final List<Map<String, dynamic>> paginatedMessages;
+
+      if (loadMore) {
+        // Load 20 more older messages
+        final newOffset = _messageOffset + 20;
+        final startIndex = totalMessages - newOffset - 20;
+        final endIndex = totalMessages - newOffset;
+
+        if (startIndex < 0) {
+          // No more messages to load
+          paginatedMessages = sortedMessages.sublist(
+            0,
+            endIndex > 0 ? endIndex : 0,
+          );
+          _hasMoreMessages = false;
+        } else {
+          paginatedMessages = sortedMessages.sublist(startIndex, endIndex);
+        }
+
+        // Prepend to existing messages
+        setState(() {
+          _messages.insertAll(0, paginatedMessages);
+          _messageOffset = newOffset;
+          _loadingMore = false;
+        });
+      } else {
+        // Initial load: get last 20 messages
+        final startIndex = totalMessages > 20 ? totalMessages - 20 : 0;
+        paginatedMessages = sortedMessages.sublist(startIndex);
+
+        setState(() {
+          _messages = paginatedMessages;
+          _messageOffset = 20;
+          _hasMoreMessages = totalMessages > 20;
+          _loading = false;
+        });
       }
 
       debugPrint(
-        '[SIGNAL_GROUP] Loaded ${receivedGroupItems.length} received items',
+        '[SIGNAL_GROUP] ✓ Loaded ${paginatedMessages.length} messages',
       );
-
-      // NEW: Load group items from server via REST API
-      final resp = await ApiService.instance.get(
-        '/api/group-items/${widget.channelUuid}?limit=100',
-      );
-
-      if (resp.statusCode == 200) {
-        final items = resp.data['items'] as List<dynamic>;
-        final decryptedItems = <Map<String, dynamic>>[];
-
-        for (final item in items) {
-          try {
-            final itemId = item['itemId'] as String;
-            final senderId = item['sender'] as String;
-            // Parse senderDeviceId as int (REST API might return String)
-            final senderDeviceId = item['senderDevice'] is int
-                ? item['senderDevice'] as int
-                : int.parse(item['senderDevice'].toString());
-            final payload = item['payload'] as String;
-            final timestamp = item['timestamp'] as String;
-            final itemType = item['type'] as String? ?? 'message';
-
-            // Check if already decrypted (in local store)
-            final alreadyDecrypted = receivedGroupItems.any(
-              (m) => m['itemId'] == itemId,
-            );
-            if (alreadyDecrypted) {
-              continue; // Skip, already have it
-            }
-
-            // Check if it's our own message
-            final isOwnMessage = senderId == currentUserId;
-            if (isOwnMessage) {
-              continue; // Skip, will be loaded from sentGroupItems
-            }
-
-            // TODO: Implement decryptGroupItem on SignalClient
-            // For now, skip encrypted messages from server during initial load
-            debugPrint(
-              '[SIGNAL_GROUP] Skipping encrypted message from server: $itemId (TODO: implement decrypt)',
-            );
-            continue;
-
-            // Store in store would happen here
-            /*await groupMessageStore.storeDecryptedGroupItem(
-                  itemId: itemId,
-                  channelId: widget.channelUuid,
-                  sender: senderId,
-                  senderDevice: senderDeviceId,
-                  message: decrypted,
-                  timestamp: timestamp,
-                  type: itemType,
-                );
-
-            // Check if it's own message (shouldn't happen due to earlier check, but for safety)
-            final isItemOwnMessage = senderId == currentUserId;
-
-            decryptedItems.add({
-              'itemId': itemId,
-              'sender': senderId,
-              'senderDisplayName': isItemOwnMessage
-                  ? 'You'
-                  : UserProfileService.instance.getDisplayName(senderId),
-              'text': decrypted,
-              'message': decrypted,
-              'time': timestamp,
-              'timestamp': timestamp,
-              'status': 'received',
-              'isOwn': isItemOwnMessage,
-              'isLocalSent': isItemOwnMessage,
-              'type': itemType,
-            });*/
-          } catch (e) {
-            debugPrint('[SIGNAL_GROUP] Error processing group item: $e');
-          }
-        }
-
-        // Combine sent and received items
-        final allMessages = [
-          ...sentGroupItems
-              .where((m) {
-                final msgType = m['type'] ?? 'message';
-                final isDisplayable = displayableMessageTypes.contains(msgType);
-                if (!isDisplayable) {
-                  debugPrint(
-                    '[SIGNAL_GROUP] Skipping sent system message type: $msgType',
-                  );
-                }
-                return isDisplayable;
-              })
-              .map(
-                (m) => {
-                  ...m,
-                  'isOwn': true,
-                  'isLocalSent': true,
-                  'senderDisplayName': 'You',
-                  'time': m['timestamp'],
-                  'text': m['message'],
-                },
-              ),
-          ...receivedGroupItems
-              .where((m) {
-                final msgType = m['type'] ?? 'message';
-                final isDisplayable = displayableMessageTypes.contains(msgType);
-                if (!isDisplayable) {
-                  debugPrint(
-                    '[SIGNAL_GROUP] Skipping received system message type: $msgType',
-                  );
-                }
-                return isDisplayable;
-              })
-              .map(
-                (m) => {
-                  ...m,
-                  'isOwn': false,
-                  'isLocalSent': false,
-                  'senderDisplayName': () {
-                    final senderId = m['sender'];
-                    final isReceivedOwnMessage = senderId == currentUserId;
-                    final displayName = isReceivedOwnMessage
-                        ? 'You'
-                        : UserProfileService.instance.getDisplayName(senderId);
-                    debugPrint(
-                      '[SIGNAL_GROUP] Mapping received message: senderId=$senderId, displayName=$displayName, type=${m['type']}',
-                    );
-                    return displayName;
-                  }(),
-                  'time': m['timestamp'],
-                  'text': m['message'],
-                },
-              ),
-          ...decryptedItems,
-        ];
-
-        // Remove duplicates and sort
-        final uniqueMessages = <String, Map<String, dynamic>>{};
-        for (final msg in allMessages) {
-          final itemId = msg['itemId'] as String?;
-          if (itemId != null) {
-            uniqueMessages[itemId] = msg;
-          }
-        }
-
-        final sortedMessages = uniqueMessages.values.toList()
-          ..sort((a, b) {
-            final timeA =
-                DateTime.tryParse(a['time'] ?? a['timestamp'] ?? '') ??
-                DateTime.fromMillisecondsSinceEpoch(0);
-            final timeB =
-                DateTime.tryParse(b['time'] ?? b['timestamp'] ?? '') ??
-                DateTime.fromMillisecondsSinceEpoch(0);
-            return timeA.compareTo(timeB);
-          });
-
-        // Apply pagination: load last 20 messages, or next 20 older messages
-        final totalMessages = sortedMessages.length;
-        final List<Map<String, dynamic>> paginatedMessages;
-
-        if (loadMore) {
-          // Load 20 more older messages
-          final newOffset = _messageOffset + 20;
-          final startIndex = totalMessages - newOffset - 20;
-          final endIndex = totalMessages - newOffset;
-
-          if (startIndex < 0) {
-            // No more messages to load
-            paginatedMessages = sortedMessages.sublist(
-              0,
-              endIndex > 0 ? endIndex : 0,
-            );
-            _hasMoreMessages = false;
-          } else {
-            paginatedMessages = sortedMessages.sublist(startIndex, endIndex);
-          }
-
-          // Prepend to existing messages
-          setState(() {
-            _messages.insertAll(0, paginatedMessages);
-            _messageOffset = newOffset;
-            _loadingMore = false;
-          });
-        } else {
-          // Initial load: get last 20 messages
-          final startIndex = totalMessages > 20 ? totalMessages - 20 : 0;
-          paginatedMessages = sortedMessages.sublist(startIndex);
-
-          setState(() {
-            _messages = paginatedMessages;
-            _messageOffset = 20;
-            _hasMoreMessages = totalMessages > 20;
-            _loading = false;
-          });
-        }
-      } else {
-        setState(() {
-          _error = 'Failed to load messages: ${resp.statusCode}';
-          _loading = false;
-          _loadingMore = false;
-        });
-      }
     } catch (e) {
       debugPrint('[SIGNAL_GROUP] Error loading messages: $e');
       setState(() {
@@ -1020,9 +873,8 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
 
     try {
       final signalClient = await ServerSettingsService.instance
-          .getOrCreateSignalClient();
+          .getOrCreateSignalClientWithStoredCredentials();
       final currentUserId = UserProfileService.instance.currentUserUuid ?? '';
-      final currentDeviceId = DeviceIdentityService.instance.deviceId ?? 0;
 
       // Check if SignalClient is initialized
       if (!signalClient.isInitialized) {
@@ -1095,10 +947,13 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         return; // Exit but message stays in queue
       }
 
-      // TODO: Implement sendGroupItem on SignalClient
-      // For now, send directly via socket with manual encryption
-      throw Exception(
-        'Group message sending not yet implemented on SignalClient - TODO: expose sendGroupItem method',
+      // Send group message via SignalClient (already initialized above)
+      await signalClient.messagingService.sendGroupItem(
+        channelId: widget.channelUuid,
+        itemId: itemId,
+        message: text,
+        type: messageType,
+        metadata: metadata,
       );
 
       // Send mention notifications if message has mentions
@@ -1118,9 +973,12 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
                   : text,
             };
 
-            // TODO: Implement sendGroupItem on SignalClient for mentions
-            debugPrint(
-              '[SIGNAL_GROUP] Mention notification skipped (TODO: implement on SignalClient)',
+            // Send mention notification via SignalClient
+            await signalClient.messagingService.sendGroupItem(
+              channelId: widget.channelUuid,
+              itemId: mentionItemId,
+              message: jsonEncode(mentionPayload),
+              type: 'mention_notification',
             );
 
             debugPrint(
@@ -1446,7 +1304,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     try {
       final itemId = const Uuid().v4();
       final signalClient = await ServerSettingsService.instance
-          .getOrCreateSignalClient();
+          .getOrCreateSignalClientWithStoredCredentials();
       final currentUserId = UserProfileService.instance.currentUserUuid;
 
       if (currentUserId == null) {
@@ -1506,7 +1364,7 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     try {
       final itemId = const Uuid().v4();
       final signalClient = await ServerSettingsService.instance
-          .getOrCreateSignalClient();
+          .getOrCreateSignalClientWithStoredCredentials();
       final currentUserId = UserProfileService.instance.currentUserUuid;
 
       if (currentUserId == null) {

@@ -5,6 +5,7 @@ import 'signal/signal.dart';
 import '../web_config.dart';
 import 'server_config_web.dart'
     if (dart.library.io) 'server_config_native.dart';
+import 'user_profile_service.dart';
 
 /// Singleton service to manage per-server resources
 ///
@@ -29,6 +30,9 @@ class ServerSettingsService {
   final Map<String, Map<String, dynamic>> _cachedSettings = {};
   final Map<String, DateTime> _cacheTime = {};
   static const Duration _cacheDuration = Duration(minutes: 5);
+
+  // Per-server device IDs (populated from authentication)
+  final Map<String, int> _deviceIds = {};
 
   // Per-server SignalClient instances (only SignalClient is per-server)
   // ApiService and SocketService are singletons with internal multi-server handling
@@ -228,7 +232,16 @@ class ServerSettingsService {
   // ============================================================================
 
   /// Get or create SignalClient for current server
-  Future<SignalClient> getOrCreateSignalClient() async {
+  ///
+  /// Parameters:
+  /// - [userId]: User ID from authentication response (REQUIRED)
+  /// - [deviceId]: Device ID from authentication response (REQUIRED)
+  ///
+  /// IMPORTANT: userId and deviceId are now mandatory to prevent bugs
+  Future<SignalClient> getOrCreateSignalClient({
+    required String userId,
+    required int deviceId,
+  }) async {
     final serverKey = _currentServerKey;
     if (serverKey == null) {
       throw Exception('No active server configured');
@@ -240,6 +253,15 @@ class ServerSettingsService {
     }
 
     debugPrint('[ServerSettings] Creating SignalClient for $serverKey');
+    debugPrint(
+      '[ServerSettings] Using provided userId and deviceId from authentication',
+    );
+
+    // Store device ID in memory for this server
+    _deviceIds[serverKey] = deviceId;
+    debugPrint(
+      '[ServerSettings] Cached device ID: $deviceId for server: $serverKey',
+    );
 
     // Get server URL
     String? serverUrl;
@@ -270,10 +292,52 @@ class ServerSettingsService {
       apiService: ApiService.instance,
       socketService: SocketService.instance,
       serverKey: serverKey,
+      getCurrentUserId: () => userId,
+      getCurrentDeviceId: () => deviceId,
     );
 
     _signalClients[serverKey] = signalClient;
     return signalClient;
+  }
+
+  /// Convenience method: Get or create SignalClient using stored credentials
+  ///
+  /// This method automatically retrieves userId and deviceId from stored values.
+  /// Use this ONLY after authentication is complete and credentials are stored.
+  ///
+  /// Throws StateError if userId or deviceId are not available.
+  Future<SignalClient> getOrCreateSignalClientWithStoredCredentials() async {
+    final userId = UserProfileService.instance.currentUserUuid;
+    final deviceId = getDeviceId();
+
+    if (userId == null || userId.isEmpty) {
+      throw StateError(
+        'Cannot create SignalClient: User ID not available. '
+        'Ensure authentication completes before initializing SignalClient.',
+      );
+    }
+
+    if (deviceId == null) {
+      throw StateError(
+        'Cannot create SignalClient: Device ID not available. '
+        'Ensure authentication completes and device ID is stored before initializing SignalClient.',
+      );
+    }
+
+    return getOrCreateSignalClient(userId: userId, deviceId: deviceId);
+  }
+
+  /// Set device ID for a server (called after authentication)
+  void setDeviceId(String serverKey, int deviceId) {
+    debugPrint('[ServerSettings] Setting device ID for $serverKey: $deviceId');
+    _deviceIds[serverKey] = deviceId;
+  }
+
+  /// Get device ID for current server
+  int? getDeviceId() {
+    final serverKey = _currentServerKey;
+    if (serverKey == null) return null;
+    return _deviceIds[serverKey];
   }
 
   /// Get SignalClient for current server (returns null if not created)

@@ -12,7 +12,7 @@ const rateLimit = require('express-rate-limit');
 const { sessionLimiter, authLimiter } = require('../middleware/rateLimiter');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const magicLinks = require('../store/magicLinksStore');
-const { User, OTP, Client, ClientSession, RefreshToken, SignalPreKey, SignalSignedPreKey, SignalSenderKey, Item, GroupItem, GroupItemRead, sequelize } = require('../db/model');
+const { User, OTP, Client, ClientSession, RefreshToken, SignalPreKey, SignalSignedPreKey, Item, GroupItem, GroupItemRead, sequelize } = require('../db/model');
 const bcrypt = require("bcrypt");
 const writeQueue = require('../db/writeQueue');
 const { autoAssignRoles } = require('../db/autoAssignRoles');
@@ -122,14 +122,14 @@ async function findOrCreateClient(clientId, userUuid, req, deviceInfo) {
         logger.warn('[CLIENT] Deleted messages', { itemsDeleted, groupItemsDeleted, readReceiptsDeleted });
         
         // Delete all Signal protocol keys (prevents decryption of old messages)
-        const [preKeysDeleted, signedPreKeysDeleted, senderKeysDeleted, sessionsDeleted] = await Promise.all([
+        // Note: SenderKeys removed - not stored on server per Signal Protocol
+        const [preKeysDeleted, signedPreKeysDeleted, sessionsDeleted] = await Promise.all([
             SignalPreKey.destroy({ where: { client: clientId } }),
             SignalSignedPreKey.destroy({ where: { client: clientId } }),
-            SignalSenderKey.destroy({ where: { client: clientId } }),
             ClientSession.destroy({ where: { client_id: clientId } })
         ]);
         
-        logger.warn('[CLIENT] Deleted Signal protocol keys', { preKeysDeleted, signedPreKeysDeleted, senderKeysDeleted, sessionsDeleted });
+        logger.warn('[CLIENT] Deleted Signal protocol keys', { preKeysDeleted, signedPreKeysDeleted, sessionsDeleted });
         
         // Get max device_id for new owner
         const maxDevice = await Client.max('device_id', { where: { owner: userUuid } });

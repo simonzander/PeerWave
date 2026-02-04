@@ -119,7 +119,7 @@ class GroupListeners {
             dataMap: dataMap,
             type: type ?? 'message',
             sender: sender ?? '',
-            senderDeviceId: dataMap['senderDeviceId'] as int? ?? 0,
+            senderDeviceId: dataMap['senderDevice'] as int? ?? 0,
             cipherType: cipherType,
             itemId: itemId ?? '',
           );
@@ -189,21 +189,23 @@ class GroupListeners {
         final senderDeviceId = dataMap['senderDeviceId'] is int
             ? dataMap['senderDeviceId'] as int
             : int.parse(dataMap['senderDeviceId'].toString());
-        final distributionMessageBase64 =
+        final encryptedDistributionBase64 =
             dataMap['distributionMessage'] as String;
+        final messageType = dataMap['messageType'] as int;
 
         debugPrint(
-          '[GROUP_LISTENERS] Received sender key distribution from $senderId:$senderDeviceId for group $groupId',
+          '[GROUP_LISTENERS] Received sender key distribution from $senderId:$senderDeviceId for group $groupId (type: $messageType)',
         );
 
-        final distributionMessageBytes = base64Decode(
-          distributionMessageBase64,
+        final encryptedDistributionBytes = base64Decode(
+          encryptedDistributionBase64,
         );
         await messagingService.processSenderKeyDistribution(
           groupId,
           senderId,
           senderDeviceId,
-          distributionMessageBytes,
+          encryptedDistributionBytes,
+          messageType,
         );
 
         debugPrint('[GROUP_LISTENERS] ✓ Sender key distribution processed');

@@ -21,7 +21,7 @@ const sharedSession = require('socket.io-express-session');
 // Database initialization - MUST happen before loading model
 // This is handled by initializeDatabase() called at the end of the file
 
-let User, Channel, Thread, Client, SignalSignedPreKey, SignalPreKey, Item, ChannelMembers, SignalSenderKey, GroupItem, GroupItemRead;
+let User, Channel, Thread, Client, SignalSignedPreKey, SignalPreKey, Item, ChannelMembers, GroupItem, GroupItemRead;
 
 const path = require('path');
 const writeQueue = require('./db/writeQueue');
@@ -29,6 +29,7 @@ const { initCleanupJob, runCleanup } = require('./jobs/cleanup');
 const { initMeetingReminderJob } = require('./jobs/meetingReminders');
 const logger = require('./utils/logger');
 const { sendMessageNotification } = require('./services/push_notifications');
+const { deviceSockets, getDeviceSockets } = require('./utils/deviceSockets');
 
 // ==================== SECURITY: FORMAT STRING SANITIZATION ====================
 // Helper function to safely log user-controlled values
@@ -199,7 +200,7 @@ function flushPendingMessages(io, socket, userId, deviceId) {
  * Send Signal messages to all users in sharedWith list about update
  * Uses store-and-forward for offline users
  */
-async function sendSharedWithUpdateSignal(fileId, sharedWith) {
+async function sendSharedWithUpdateSignal(fileId, sharedWith, senderUserId) {
   try {
     logger.info(`[SIGNAL] Sending sharedWith update to ${sharedWith.length} users`);
     logger.debug(`[SIGNAL] FileId: ${sanitizeForLog(fileId.substring(0, 8))}`);
@@ -222,6 +223,7 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
         
         // Send to each device
         for (const client of clients) {
+          let recipientDeviceId; // Define outside try to be available in catch
           try {
             // Validate device_id exists
             if (!client.device_id) {
@@ -230,7 +232,7 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
               continue;
             }
             
-            const recipientDeviceId = client.device_id.toString();
+            recipientDeviceId = client.device_id.toString();
             
             // Create Signal message payload
             const message = {
@@ -243,7 +245,7 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
             // Store message in database for offline delivery
             await writeQueue.enqueue(async () => {
               return await Item.create({
-                sender: 'SYSTEM', // System message
+                sender: senderUserId,
                 deviceSender: '0',
                 receiver: userId,
                 deviceReceiver: recipientDeviceId,
@@ -261,7 +263,7 @@ async function sendSharedWithUpdateSignal(fileId, sharedWith) {
             const targetSocketId = deviceSockets.get(`${userId}:${recipientDeviceId}`);
             if (targetSocketId) {
               safeEmitToDevice(io, userId, recipientDeviceId, "receiveItem", {
-                sender: 'SYSTEM',
+                sender: senderUserId,
                 senderDeviceId: '0',
                 recipient: userId,
                 type: 'file:sharedWith-update',
@@ -380,7 +382,7 @@ app.use((req, res, next) => {
   const clientRoutes = require('./routes/client');
   const roleRoutes = require('./routes/roles');
   const groupItemRoutes = require('./routes/groupItems');
-  const senderKeyRoutes = require('./routes/senderKeys');
+  // const senderKeyRoutes = require('./routes/senderKeys'); // REMOVED - sender keys not stored on server
   const signalRoutes = require('./routes/signal');
   const livekitRoutes = require('./routes/livekit');
   const meetingRoutes = require('./routes/meetings');
@@ -419,7 +421,7 @@ app.use((req, res, next) => {
   
   // === DATABASE QUERIES (Moderate) ===
   app.use('/api/presence', queryLimiter);
-  app.use('/api/sender-keys', queryLimiter);
+  // app.use('/api/sender-keys', queryLimiter); // REMOVED - sender keys not stored on server
   app.use('/api/signal', queryLimiter);
   app.use('/api/group-items', queryLimiter);
   app.use('/api/livekit/room', queryLimiter);
@@ -456,7 +458,7 @@ app.use((req, res, next) => {
   app.use(clientRoutes);
   app.use('/api', roleRoutes);
   app.use('/api/group-items', groupItemRoutes);
-  app.use('/api/sender-keys', senderKeyRoutes);
+  // app.use('/api/sender-keys', senderKeyRoutes); // REMOVED - sender keys not stored on server
   app.use('/api/signal', signalRoutes);
   app.use('/api/livekit', livekitRoutes);
   app.use('/api', meetingRoutes);
@@ -628,14 +630,15 @@ const io = require("socket.io")(server);
 // Make io globally available for routes that need it (e.g., external guest notifications)
 global.io = io;
 
+// Make io available to routes via req.app.get('io')
+app.set('io', io);
+
 io.use(sharedSession(sessionMiddleware, { autoSave: true }));
 
 // Initialize external guest namespace for unauthenticated guest connections
 const initializeExternalNamespace = require('./namespaces/external');
 initializeExternalNamespace(io);
 logger.info('[SERVER] External guest namespace initialized');
-
-const deviceSockets = new Map(); // Key: userId:deviceId, Value: socket.id
 
 // Make deviceSockets globally available for guest message routing
 global.deviceSockets = deviceSockets;
@@ -755,7 +758,7 @@ io.sockets.on("connection", socket => {
 
   // Helper function to get userId from either native (HMAC) or web (session) auth
   const getUserId = () => socket.data.userId || socket.handshake.session.uuid;
-  const getDeviceId = () => socket.data.deviceId || socket.handshake.session.deviceId;
+  const getDeviceId = () => socket.data.deviceId !== undefined ? socket.data.deviceId : socket.handshake.session.deviceId;
   const getClientId = () => socket.data.clientId || socket.handshake.session.clientId;
   const isAuthenticated = () => socket.data.sessionAuth || socket.handshake.session.authenticated === true;
 
@@ -1157,7 +1160,7 @@ io.sockets.on("connection", socket => {
         
         let deletedPreKeys = 0;
         let deletedSignedPreKeys = 0;
-        let deletedSenderKeys = 0;
+        // deletedSenderKeys removed - sender keys not stored on server
         
         // 1. Delete all PreKeys
         try {
@@ -1183,22 +1186,12 @@ io.sockets.on("connection", socket => {
           logger.error('[SIGNAL SERVER] Error deleting SignedPreKeys:', error);
         }
         
-        // 3. Delete all SenderKeys
-        try {
-          deletedSenderKeys = await writeQueue.enqueue(async () => {
-            return await SignalSenderKey.destroy({
-              where: { owner: uuid, client: clientId }
-            });
-          }, `deleteAllSenderKeys-${clientId}`);
-          logger.info(`[SIGNAL SERVER] Deleted ${deletedSenderKeys} SenderKeys`);
-        } catch (error) {
-          logger.error('[SIGNAL SERVER] Error deleting SenderKeys:', error);
-        }
+        // 3. SenderKeys deletion removed - sender keys not stored on server
         
         logger.info('[SIGNAL SERVER] Cascade delete completed', {
           preKeys: deletedPreKeys,
           signedPreKeys: deletedSignedPreKeys,
-          senderKeys: deletedSenderKeys
+          // senderKeys removed - not stored on server
         });
         
         // Send confirmation to client
@@ -1206,7 +1199,7 @@ io.sockets.on("connection", socket => {
           success: true,
           deletedPreKeys,
           deletedSignedPreKeys,
-          deletedSenderKeys,
+          // deletedSenderKeys removed - not stored on server
           reason,
           timestamp
         });
@@ -1843,179 +1836,17 @@ io.sockets.on("connection", socket => {
   });
 
   // Store sender key on server (when device creates/distributes sender key)
-  socket.on("storeSenderKey", async (data) => {
-    try {
-      if(!isAuthenticated()) {
-        logger.error('[SIGNAL SERVER] ERROR: storeSenderKey blocked - not authenticated');
-        return;
-      }
+  // storeSenderKey - REMOVED
+  // Signal Protocol: Sender keys are NOT stored on server
+  // Use HTTP POST /api/signal/distribute-sender-key instead
 
-      const { groupId, senderKey } = data;
-      const userId = getUserId();
-      const deviceId = getDeviceId();
+  // broadcastSenderKey - REMOVED
+  // Signal Protocol: Sender keys are distributed individually via encrypted 1-to-1 channels
+  // Use HTTP POST /api/signal/distribute-sender-key for each recipient instead
 
-      // Find the client record
-      const client = await Client.findOne({
-        where: {
-          owner: userId,
-          device_id: deviceId
-        }
-      });
-
-      if (!client) {
-        logger.error('[SIGNAL SERVER] ERROR: Client not found for storeSenderKey');
-        return;
-      }
-
-      // Store or update sender key
-      const [stored, created] = await SignalSenderKey.findOrCreate({
-        where: {
-          channel: groupId,
-          client: client.clientid
-        },
-        defaults: {
-          channel: groupId,
-          client: client.clientid,
-          owner: userId,
-          sender_key: senderKey
-        }
-      });
-
-      if (!created) {
-        // Update existing sender key
-        await stored.update({ sender_key: senderKey });
-      }
-
-      logger.info('[SIGNAL SERVER] Stored sender key');
-      logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}, Group: ${sanitizeForLog(groupId)}`);
-      
-      // Send confirmation
-      socket.emit("senderKeyStored", { groupId, success: true });
-    } catch (error) {
-      logger.error('[SIGNAL SERVER] Error in storeSenderKey', error);
-    }
-  });
-
-  // Broadcast sender key distribution message to all group members
-  socket.on("broadcastSenderKey", async (data) => {
-    try {
-      if(!isAuthenticated()) {
-        logger.error('[SIGNAL SERVER] ERROR: broadcastSenderKey blocked - not authenticated');
-        return;
-      }
-
-      const { groupId, distributionMessage } = data;
-      const userId = getUserId();
-      const deviceId = getDeviceId();
-
-      logger.info('[SIGNAL SERVER] Broadcasting sender key to group');
-      logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}, Group: ${sanitizeForLog(groupId)}`);
-
-      // Get all channel members (same approach as sendGroupItem)
-      const members = await ChannelMembers.findAll({
-        where: { channelId: groupId }
-      });
-
-      if (!members || members.length === 0) {
-        logger.info('[SIGNAL SERVER] No members found for group');
-        logger.debug(`[SIGNAL SERVER] Group: ${sanitizeForLog(groupId)}`);
-        return;
-      }
-
-      // Get all client devices for these members
-      const memberUserIds = members.map(m => m.userId);
-      const memberClients = await Client.findAll({
-        where: {
-          owner: { [require('sequelize').Op.in]: memberUserIds }
-        }
-      });
-
-      // Broadcast to all member devices EXCEPT sender
-      const payload = {
-        groupId,
-        senderId: userId,
-        senderDeviceId: deviceId,
-        distributionMessage
-      };
-
-      let deliveredCount = 0;
-      for (const client of memberClients) {
-        // Skip sender's device
-        if (client.owner === userId && client.device_id === deviceId) {
-          continue;
-        }
-
-        const targetSocketId = deviceSockets.get(`${client.owner}:${client.device_id}`);
-        if (targetSocketId) {
-          safeEmitToDevice(io, client.owner, client.device_id, 'receiveSenderKeyDistribution', payload);
-          deliveredCount++;
-        }
-      }
-
-      logger.info(`[SIGNAL SERVER] Sender key distribution delivered to ${deliveredCount}/${memberClients.length - 1} devices`);
-    } catch (error) {
-      logger.error('[SIGNAL SERVER] Error in broadcastSenderKey', error);
-    }
-  });
-
-  // Retrieve sender key from server (when device needs a missing sender key)
-  socket.on("getSenderKey", async (data) => {
-    try {
-      if(!isAuthenticated()) {
-        logger.error('[SIGNAL SERVER] ERROR: getSenderKey blocked - not authenticated');
-        return;
-      }
-
-      const { groupId, requestedUserId, requestedDeviceId } = data;
-
-      // Find the client record for the requested sender
-      const client = await Client.findOne({
-        where: {
-          owner: requestedUserId,
-          device_id: requestedDeviceId
-        }
-      });
-
-      if (!client) {
-        logger.error('[SIGNAL SERVER] ERROR: Client not found for getSenderKey');
-        logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(requestedUserId)}, Device: ${sanitizeForLog(requestedDeviceId)}`);
-        socket.emit("senderKeyResponse", { groupId, requestedUserId, requestedDeviceId, senderKey: null });
-        return;
-      }
-
-      // Retrieve sender key
-      const senderKeyRecord = await SignalSenderKey.findOne({
-        where: {
-          channel: groupId,
-          client: client.clientid
-        }
-      });
-
-      if (senderKeyRecord) {
-        logger.info('[SIGNAL SERVER] Retrieved sender key');
-        logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(requestedUserId)}, Device: ${sanitizeForLog(requestedDeviceId)}, Group: ${sanitizeForLog(groupId)}`);
-        socket.emit("senderKeyResponse", {
-          groupId,
-          requestedUserId,
-          requestedDeviceId,
-          senderKey: senderKeyRecord.sender_key,
-          success: true
-        });
-      } else {
-        logger.info('[SIGNAL SERVER] Sender key not found');
-        logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(requestedUserId)}, Device: ${sanitizeForLog(requestedDeviceId)}, Group: ${sanitizeForLog(groupId)}`);
-        socket.emit("senderKeyResponse", {
-          groupId,
-          requestedUserId,
-          requestedDeviceId,
-          senderKey: null,
-          success: false
-        });
-      }
-    } catch (error) {
-      logger.error('[SIGNAL SERVER] Error in getSenderKey', error);
-    }
-  });
+  // getSenderKey - REMOVED
+  // Signal Protocol: Sender keys are not stored on server
+  // If a client is missing a sender key, they should request re-distribution from the sender
 
   // SIGNAL HANDLE END
   
@@ -2237,7 +2068,7 @@ io.sockets.on("connection", socket => {
         
         // Send Signal messages to all holders (async, non-blocking)
         setImmediate(() => {
-          sendSharedWithUpdateSignal(fileId, result.sharedWith).catch(err => {
+          sendSharedWithUpdateSignal(fileId, result.sharedWith, userId).catch(err => {
             logger.error('[SIGNAL] Error sending sharedWith update', err);
           });
         });
@@ -3674,6 +3505,8 @@ io.sockets.on("connection", socket => {
       const { channelId, itemId, type, payload, cipherType, timestamp } = data;
       const userId = getUserId();
       const deviceId = getDeviceId();
+      
+      logger.info(`[GROUP ITEM] Sending from device: ${deviceId} (socket.data: ${socket.data.deviceId}, session: ${socket.handshake.session.deviceId})`);
 
       // Validate required fields
       if (!channelId || !itemId || !payload) {
@@ -3737,6 +3570,11 @@ io.sockets.on("connection", socket => {
         }]
       });
 
+      logger.info(`[GROUP ITEM] Found ${members.length} members in channel ${sanitizeForLog(channelId)}`);
+      if (members.length === 0) {
+        logger.warn('[GROUP ITEM] No members found for channel - message will not be delivered');
+      }
+
       // Get all client devices for these members
       const memberUserIds = members.map(m => m.userId);
       const memberClients = await Client.findAll({
@@ -3744,6 +3582,8 @@ io.sockets.on("connection", socket => {
           owner: { [require('sequelize').Op.in]: memberUserIds }
         }
       });
+
+      logger.info(`[GROUP ITEM] Found ${memberClients.length} total devices for ${memberUserIds.length} users`);
 
       // Broadcast to all member devices EXCEPT the specific sending device
       // The sending device already has the message via local callback
@@ -4885,7 +4725,7 @@ process.on('SIGINT', async () => {
     SignalPreKey = models.SignalPreKey;
     Item = models.Item;
     ChannelMembers = models.ChannelMembers;
-    SignalSenderKey = models.SignalSenderKey;
+    // SignalSenderKey = models.SignalSenderKey; // REMOVED - sender keys not stored on server
     GroupItem = models.GroupItem;
     GroupItemRead = models.GroupItemRead;
     const Role = models.Role;
@@ -4951,10 +4791,3 @@ process.on('SIGINT', async () => {
     process.exit(1);
   }
 })();
-
-// Export deviceSockets accessor for cron jobs
-function getDeviceSockets() {
-  return deviceSockets;
-}
-
-module.exports = { getDeviceSockets };

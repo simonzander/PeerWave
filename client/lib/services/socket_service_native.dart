@@ -6,6 +6,7 @@ import 'server_config_native.dart';
 import 'auth_service_native.dart';
 import 'session_auth_service.dart';
 import 'clientid_native.dart';
+import 'server_settings_service.dart';
 
 /// Callback for handling socket unauthorized events
 typedef SocketUnauthorizedCallback = void Function();
@@ -348,6 +349,17 @@ class SocketService {
     }
 
     if (data is Map && data['authenticated'] == true) {
+      // Store device ID from server authentication
+      if (data['deviceId'] != null) {
+        final deviceId = data['deviceId'] as int;
+        debugPrint(
+          '[SOCKET SERVICE] Storing device ID from server: $deviceId for server: $serverId',
+        );
+
+        // Store in ServerSettingsService (in-memory cache)
+        ServerSettingsService.instance.setDeviceId(serverId, deviceId);
+      }
+
       // SignalClient gets user info via callbacks on initialization
       // No need to set it here via deprecated SignalService
 

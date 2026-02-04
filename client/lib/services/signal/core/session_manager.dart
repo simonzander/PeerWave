@@ -90,11 +90,32 @@ class SessionManager with PermanentSessionStore {
 
   /// Convert KeyBundle model to libsignal PreKeyBundle
   PreKeyBundle _toPreKeyBundle(KeyBundle bundle) {
+    debugPrint(
+      '[SESSION_MANAGER] _toPreKeyBundle for ${bundle.userId}:${bundle.deviceId}',
+    );
+    debugPrint(
+      '[SESSION_MANAGER]   hasPreKey: ${bundle.preKey != null}, preKeyId: ${bundle.preKeyId}',
+    );
+    debugPrint('[SESSION_MANAGER]   signedPreKeyId: ${bundle.signedPreKeyId}');
+
     final identityKey = IdentityKey.fromBytes(bundle.identityKey, 0);
-    final preKeyPublic = bundle.preKey != null
-        ? Curve.decodePoint(bundle.preKey!, 0)
-        : null;
+
+    // Only decode preKey if it exists and is not empty
+    ECPublicKey? preKeyPublic;
+    if (bundle.preKey != null && bundle.preKey!.isNotEmpty) {
+      try {
+        preKeyPublic = Curve.decodePoint(bundle.preKey!, 0);
+        debugPrint('[SESSION_MANAGER]   ✓ PreKey decoded successfully');
+      } catch (e) {
+        debugPrint('[SESSION_MANAGER]   ✗ Failed to decode preKey: $e');
+        preKeyPublic = null;
+      }
+    } else {
+      debugPrint('[SESSION_MANAGER]   ℹ No preKey available (null or empty)');
+    }
+
     final signedPreKeyPublic = Curve.decodePoint(bundle.signedPreKey, 0);
+    debugPrint('[SESSION_MANAGER]   ✓ SignedPreKey decoded successfully');
 
     return PreKeyBundle(
       bundle.registrationId,
@@ -189,6 +210,26 @@ class SessionManager with PermanentSessionStore {
     } catch (e) {
       debugPrint('[SESSION_MANAGER] Error establishing session: $e');
       return false;
+    }
+  }
+
+  /// Get device IDs for a user from local session storage.
+  ///
+  /// Returns list of device IDs we have active sessions with.
+  /// Uses getAllDeviceSessions() which queries storage directly - no device ID limit.
+  Future<List<int>> getDeviceIdsForUser(String userId) async {
+    try {
+      // Use PermanentSessionStore's method to get all device IDs from storage
+      // This queries storage directly, so it finds ALL devices regardless of ID number
+      final deviceIds = await getAllDeviceSessions(userId);
+
+      debugPrint(
+        '[SESSION_MANAGER] Found ${deviceIds.length} session(s) for $userId: $deviceIds',
+      );
+      return deviceIds;
+    } catch (e) {
+      debugPrint('[SESSION_MANAGER] Error getting device IDs: $e');
+      return [];
     }
   }
 

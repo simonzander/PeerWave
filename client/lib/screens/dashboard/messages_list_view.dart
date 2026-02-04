@@ -74,17 +74,30 @@ class _MessagesListViewState extends State<MessagesListView> {
 
         // Get recent conversations from SQLite (FAST!)
         var recentConvs = await conversationsStore.getRecentConversations(
-          limit: 50,
+          limit: null, // Get ALL conversations, not just 50
         );
 
-        // FALLBACK: If conversations store is empty, get from messages
-        if (recentConvs.isEmpty) {
-          final uniqueSenders = await messageStore
-              .getAllUniqueConversationPartners();
-          recentConvs = uniqueSenders
-              .map((userId) => {'userId': userId, 'displayName': userId})
-              .toList();
+        // Get all unique senders from messages table
+        final allUniqueSenders = await messageStore
+            .getAllUniqueConversationPartners();
+
+        // Combine both sources: recent_conversations + any missing from messages
+        final conversationUserIds = recentConvs
+            .map((conv) => conv['userId'] ?? conv['uuid'])
+            .where((id) => id != null)
+            .cast<String>()
+            .toSet();
+
+        // Add any conversations that exist in messages but not in recent_conversations
+        for (final userId in allUniqueSenders) {
+          if (!conversationUserIds.contains(userId)) {
+            recentConvs.add({'userId': userId, 'displayName': userId});
+          }
         }
+
+        debugPrint(
+          '[MESSAGES_LIST] Found ${recentConvs.length} total conversations (recent_conversations + messages)',
+        );
 
         // Get last message for each conversation
         for (final conv in recentConvs) {
@@ -94,7 +107,7 @@ class _MessagesListViewState extends State<MessagesListView> {
           // Get all messages from this conversation (FAST indexed query!)
           final allMessages = await messageStore.getMessagesFromConversation(
             userId,
-            types: ['message', 'file'],
+            types: ['message', 'file', 'image', 'voice'],
             limit: 1, // Only need last message
           );
 

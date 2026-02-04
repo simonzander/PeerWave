@@ -499,7 +499,7 @@ roleRoutes.delete('/users/:userId', verifyAuthEither, requireAuth, requirePermis
         await writeQueue.enqueue(
             async () => {
                 // Delete all related records before deleting user
-                const { Client, SignalPreKey, SignalSignedPreKey, SignalSenderKey, 
+                const { Client, SignalPreKey, SignalSignedPreKey,
                         GroupItem, GroupItemRead, ChannelMembers, Channel, 
                         ClientSession, Item } = require('../db/model');
                 
@@ -518,10 +518,10 @@ roleRoutes.delete('/users/:userId', verifyAuthEither, requireAuth, requirePermis
                 const clientIds = userClients.map(c => c.clientid);
                 
                 // 5. Delete all Signal Protocol keys for user's clients
+                // Note: SenderKeys removed - not stored on server per Signal Protocol
                 if (clientIds.length > 0) {
                     await SignalPreKey.destroy({ where: { client: clientIds } });
                     await SignalSignedPreKey.destroy({ where: { client: clientIds } });
-                    await SignalSenderKey.destroy({ where: { client: clientIds } });
                     await ClientSession.destroy({ where: { client_id: clientIds } });
                 }
                 
