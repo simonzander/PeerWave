@@ -35,7 +35,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   google_fonts: ^8.0.1  # Google Fonts für schöne Schriftarten
-  go_router: ^17.0.1
+  go_router: ^17.1.0
   http: ^1.5.0
   provider: ^6.1.2
   app_links: ^7.0.0
