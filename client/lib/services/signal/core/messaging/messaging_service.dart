@@ -1,7 +1,8 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../api_service.dart';
-import '../../../socket_service.dart';
+import '../../../socket_service.dart'
+    if (dart.library.io) '../../../socket_service_native.dart';
 import '../../../storage/sqlite_group_message_store.dart';
 import '../healing_service.dart';
 import '../encryption_service.dart';
@@ -145,6 +146,9 @@ class MessagingService
     try {
       // Initialize stores
       _groupMessageStore = await SqliteGroupMessageStore.getInstance();
+
+      // Register EventBus listeners for sender key exchange
+      await registerSenderKeyEventBusListeners();
 
       _initialized = true;
       debugPrint('[MESSAGING_SERVICE] ✓ Initialized successfully');

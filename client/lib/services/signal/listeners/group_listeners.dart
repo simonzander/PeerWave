@@ -108,8 +108,41 @@ class GroupListeners {
 
         // Handle emote messages (reactions)
         if (type == 'emote') {
-          // TODO: Implement reaction handling in MessagingService
-          debugPrint('[GROUP_LISTENERS] Reaction handling not yet implemented');
+          debugPrint('[GROUP_LISTENERS] Processing emote message');
+
+          // Decrypt the emote message using the same process as regular messages
+          final cipherType = dataMap['cipherType'] as int? ?? 3;
+          await messagingService.receiveMessage(
+            dataMap: dataMap,
+            type: 'emote',
+            sender: sender ?? '',
+            senderDeviceId: dataMap['senderDevice'] as int? ?? 0,
+            cipherType: cipherType,
+            itemId: itemId ?? '',
+          );
+        } else if (type == 'sender_key_request' ||
+            type == 'sender_key_response') {
+          // Handle sender key request/response messages
+          // These are special control messages for targeted sender key exchange
+          debugPrint('[GROUP_LISTENERS] Processing $type from $sender');
+
+          final cipherType = dataMap['cipherType'] as int? ?? 3;
+
+          // Decrypt the message first
+          try {
+            await messagingService.receiveMessage(
+              dataMap: dataMap,
+              type:
+                  type!, // We know type is not null from the conditional check
+              sender: sender ?? '',
+              senderDeviceId: dataMap['senderDevice'] as int? ?? 0,
+              cipherType: cipherType,
+              itemId: itemId ?? '',
+            );
+          } catch (e) {
+            debugPrint('[GROUP_LISTENERS] Failed to decrypt $type: $e');
+            // If decryption fails, we can't process the request
+          }
         } else {
           // Regular group message - decrypt and process
           // Extract message details

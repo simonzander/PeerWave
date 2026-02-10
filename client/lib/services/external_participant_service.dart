@@ -219,6 +219,17 @@ class ExternalParticipantService {
     return ExternalSession.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// Update external session display name (guest)
+  Future<void> updateSessionDisplayName({
+    required String sessionId,
+    required String displayName,
+  }) async {
+    await ApiService.instance.patch(
+      '/api/meetings/external/session/$sessionId',
+      data: {'display_name': displayName},
+    );
+  }
+
   // ============================================================================
   // HTTP API Methods - Admission Control (Authenticated)
   // ============================================================================

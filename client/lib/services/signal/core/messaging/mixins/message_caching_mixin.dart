@@ -29,6 +29,32 @@ mixin MessageCachingMixin {
       return; // Don't cache empty messages
     }
 
+    // Skip ephemeral/system messages (control messages that shouldn't be stored)
+    final messageType = data['type'] as String? ?? 'message';
+    const ephemeralTypes = {
+      // E2EE key exchange
+      'meeting_e2ee_key_request',
+      'meeting_e2ee_key_response',
+      'video_e2ee_key_request',
+      'video_e2ee_key_response',
+      // Signal Protocol control messages
+      'read_receipt',
+      'delivery_receipt',
+      'senderKeyRequest',
+      'fileKeyRequest',
+      'signal:senderKeyDistribution',
+      'system:session_reset',
+      // Call signaling
+      'call_notification',
+    };
+
+    if (ephemeralTypes.contains(messageType)) {
+      debugPrint(
+        '[CACHE] Skipping storage for ephemeral message type: $messageType',
+      );
+      return;
+    }
+
     try {
       // Check if this is a group message
       final channelId = data['channel'] as String?;
@@ -44,7 +70,7 @@ mixin MessageCachingMixin {
           message: message,
           timestamp:
               data['timestamp'] as String? ?? DateTime.now().toIso8601String(),
-          type: data['type'] as String? ?? 'message',
+          type: messageType,
         );
         debugPrint('[CACHE] ✓ Stored group message: $itemId');
       } else {
@@ -56,7 +82,7 @@ mixin MessageCachingMixin {
           message: message,
           timestamp:
               data['timestamp'] as String? ?? DateTime.now().toIso8601String(),
-          type: data['type'] as String? ?? 'message',
+          type: messageType,
         );
         debugPrint('[CACHE] ✓ Stored 1-to-1 message: $itemId');
       }

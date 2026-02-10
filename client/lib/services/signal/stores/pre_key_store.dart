@@ -43,6 +43,10 @@ mixin PermanentPreKeyStore implements PreKeyStore {
   /// State instance for this server - must be provided by KeyManager
   PreKeyState get preKeyState;
 
+  // Retry policy for PreKey uploads (critical publication path)
+  static const int _preKeyUploadMaxRetries = 3;
+  static const Duration _preKeyUploadRetryDelay = Duration(seconds: 2);
+
   /// 🔒 Guard to prevent concurrent checkPreKeys() calls
   bool _isCheckingPreKeys = false;
 
@@ -94,12 +98,13 @@ mixin PermanentPreKeyStore implements PreKeyStore {
           .toList();
 
       // Send via HTTP POST
-      final response = await ApiService.instance.post(
+      final success = await _postPreKeysWithRetry(
         '/signal/prekeys/batch',
         data: {'preKeys': preKeyPayload},
       );
 
-      if (response.statusCode == 200) {
+      if (success) {
+        // Response already validated inside retry helper
         debugPrint(
           "[PREKEY STORE] ✓ Batch upload successful: ${preKeys.length} keys stored on server",
         );
@@ -110,31 +115,13 @@ mixin PermanentPreKeyStore implements PreKeyStore {
         }
 
         return true;
-      } else if (response.statusCode == 202) {
-        // 202 Accepted: Write is queued but not yet completed on server
-        debugPrint(
-          "[PREKEY STORE] ⏳ Batch upload accepted (processing in background): ${preKeys.length} keys",
-        );
-
-        // Store locally immediately (client-side storage is fast)
-        for (final record in preKeys) {
-          await storePreKey(record.id, record, sendToServer: false);
-        }
-
-        // Add a short delay to allow server background write to complete
-        // This prevents immediately checking status before write finishes
-        debugPrint(
-          "[PREKEY STORE] Waiting 2s for background processing to complete...",
-        );
-        await Future.delayed(const Duration(seconds: 2));
-
-        return true; // Consider this a success - write will complete in background
-      } else {
-        debugPrint(
-          "[PREKEY STORE] ✗ Batch upload failed with status ${response.statusCode}",
-        );
-        return false;
       }
+
+      // If we reach here, retries exhausted
+      debugPrint(
+        "[PREKEY STORE] ✗ Batch upload failed after retries (${preKeys.length} keys)",
+      );
+      return false;
     } catch (e) {
       debugPrint("[PREKEY STORE] ✗ Batch upload error: $e");
       return false;
@@ -168,29 +155,49 @@ mixin PermanentPreKeyStore implements PreKeyStore {
         )
         .toList();
 
-    // Upload to server via HTTP
-    try {
-      final response = await ApiService.instance.post(
-        '/signal/prekeys/batch',
-        data: {'preKeys': preKeyPayload},
-      );
+    // Upload to server via HTTP with retry; fail-fast if publication fails
+    final success = await _postPreKeysWithRetry(
+      '/signal/prekeys/batch',
+      data: {'preKeys': preKeyPayload},
+    );
 
-      if (response.statusCode == 200 || response.statusCode == 202) {
-        debugPrint('[PREKEY STORE] ✓ Batch stored on server');
-      } else {
-        debugPrint(
-          '[PREKEY STORE] ⚠️ Server storage failed: ${response.statusCode}',
-        );
-      }
-    } catch (e) {
-      debugPrint('[PREKEY STORE] ⚠️ Server upload error: $e');
-      // Continue - local storage is what matters for decryption
+    if (!success) {
+      throw Exception('[PREKEY STORE] Server upload failed after retries');
     }
 
     // Store locally
     for (final record in preKeys) {
       await storePreKey(record.id, record, sendToServer: false);
     }
+  }
+
+  /// POST helper with bounded retries/backoff for PreKey publication.
+  Future<bool> _postPreKeysWithRetry(
+    String path, {
+    required Map<String, dynamic> data,
+  }) async {
+    for (var attempt = 1; attempt <= _preKeyUploadMaxRetries; attempt++) {
+      try {
+        final response = await apiService.post(path, data: data);
+        final code = response.statusCode;
+        if (code == 200 || code == 202) {
+          return true;
+        }
+        debugPrint(
+          '[PREKEY STORE] ⚠️ PreKey upload attempt $attempt failed (status $code)',
+        );
+      } catch (e) {
+        debugPrint(
+          '[PREKEY STORE] ⚠️ PreKey upload attempt $attempt error: $e',
+        );
+      }
+
+      if (attempt < _preKeyUploadMaxRetries) {
+        await Future.delayed(_preKeyUploadRetryDelay);
+      }
+    }
+
+    return false;
   }
 
   /// Get all PreKey IDs without decrypting (fast for validation/gap analysis).
@@ -556,9 +563,7 @@ mixin PermanentPreKeyStore implements PreKeyStore {
     // Send to server if requested
     if (sendToServer) {
       try {
-        final response = await ApiService.instance.delete(
-          '/signal/prekey/$preKeyId',
-        );
+        final response = await apiService.delete('/signal/prekey/$preKeyId');
 
         if (response.statusCode != 200 && response.statusCode != 204) {
           debugPrint(
@@ -600,7 +605,7 @@ mixin PermanentPreKeyStore implements PreKeyStore {
     // Upload to server if requested
     if (sendToServer) {
       try {
-        final response = await ApiService.instance.post(
+        final response = await apiService.post(
           '/signal/prekey',
           data: {
             'id': preKeyId,
@@ -795,13 +800,13 @@ mixin PermanentPreKeyStore implements PreKeyStore {
         )
         .toList();
 
-    final response = await ApiService.instance.post(
+    final success = await _postPreKeysWithRetry(
       '/signal/prekeys/batch',
       data: {'preKeys': preKeysPayload},
     );
 
-    if (response.statusCode != 200 && response.statusCode != 202) {
-      throw Exception('Failed to upload PreKeys: ${response.statusCode}');
+    if (!success) {
+      throw Exception('Failed to upload PreKeys after retries');
     }
 
     debugPrint('[PRE_KEY_MANAGER] ✓ ${preKeys.length} PreKeys uploaded');

@@ -54,6 +54,10 @@ class _MeetingVideoConferenceViewState
   Timer? _visibilityUpdateTimer;
   int _maxVisibleParticipants = 0;
   final Map<String, StreamSubscription> _audioSubscriptions = {};
+  bool _serviceListenerAttached = false;
+  int _lastRemoteParticipantCount = -1;
+  bool? _lastHasScreenShare;
+  String? _lastScreenShareParticipantId;
 
   // Profile cache
   final Map<String, String> _displayNameCache = {};
@@ -123,24 +127,22 @@ class _MeetingVideoConferenceViewState
         }
 
         debugPrint(
-          '[MeetingVideo] ✓ Responding to guest with encrypted LiveKit E2EE key...',
+          '[MeetingVideo] ✓ Responding to guest with Signal-encrypted LiveKit E2EE key...',
         );
 
-        // Send encrypted response to guest via Socket.IO
-        // Note: Guest E2EE key exchange uses direct Socket.IO since guests don't have userId
-        // The E2EE key is the LiveKit key (already encrypted by LiveKit), just being shared
-        SocketService.instance.emit('participant:meeting_e2ee_key_response', {
-          'guest_session_id': guestSessionId,
-          'meeting_id': meetingId,
-          'type': 'meeting_e2ee_key_response',
-          'ciphertext': base64.encode(_service!.channelSharedKey!),
-          'messageType':
-              0, // Plain message (LiveKit E2EE key, not Signal encrypted)
-          'timestamp': DateTime.now().toIso8601String(),
-        });
+        final requestId = requestData['request_id'] as String?;
+        final signalClient = await ServerSettingsService.instance
+            .getOrCreateSignalClientWithStoredCredentials();
+
+        await signalClient.meetingService.sendE2EEKeyToExternalGuest(
+          guestSessionId: guestSessionId,
+          meetingId: meetingId,
+          encryptedKey: base64.encode(_service!.channelSharedKey!),
+          requestId: requestId,
+        );
 
         debugPrint(
-          '[MeetingVideo] ✓ Sent encrypted LiveKit E2EE key to guest $guestSessionId',
+          '[MeetingVideo] ✓ Sent Signal-encrypted LiveKit E2EE key to guest $guestSessionId',
         );
       } catch (e, stack) {
         debugPrint(
@@ -162,6 +164,8 @@ class _MeetingVideoConferenceViewState
       try {
         _service = Provider.of<VideoConferenceService>(context, listen: false);
         debugPrint('[MeetingVideo] Service obtained from Provider');
+
+        _attachServiceListener();
 
         // Register with MessageListenerService for E2EE
         MessageListenerService.instance.registerVideoConferenceService(
@@ -188,6 +192,41 @@ class _MeetingVideoConferenceViewState
         });
       }
     }
+  }
+
+  void _attachServiceListener() {
+    if (_service == null || _serviceListenerAttached) return;
+
+    _service!.addListener(_onServiceUpdated);
+    _serviceListenerAttached = true;
+
+    _lastRemoteParticipantCount = _service!.remoteParticipants.length;
+    _lastHasScreenShare = _service!.hasActiveScreenShare;
+    _lastScreenShareParticipantId = _service!.currentScreenShareParticipantId;
+  }
+
+  void _onServiceUpdated() {
+    if (!mounted || _service == null) return;
+
+    final remoteCount = _service!.remoteParticipants.length;
+    final hasScreenShare = _service!.hasActiveScreenShare;
+    final screenShareId = _service!.currentScreenShareParticipantId;
+
+    final shouldRefresh =
+        remoteCount != _lastRemoteParticipantCount ||
+        hasScreenShare != _lastHasScreenShare ||
+        screenShareId != _lastScreenShareParticipantId;
+
+    if (!shouldRefresh) return;
+
+    _lastRemoteParticipantCount = remoteCount;
+    _lastHasScreenShare = hasScreenShare;
+    _lastScreenShareParticipantId = screenShareId;
+
+    _updateParticipantStates();
+    _updateVisibility(rebuild: false);
+
+    setState(() {});
   }
 
   Future<void> _joinMeeting() async {
@@ -314,6 +353,11 @@ class _MeetingVideoConferenceViewState
       });
     }
 
+    if (_serviceListenerAttached) {
+      _service?.removeListener(_onServiceUpdated);
+      _serviceListenerAttached = false;
+    }
+
     // Unregister from MessageListenerService
     MessageListenerService.instance.unregisterVideoConferenceService();
     debugPrint(
@@ -323,8 +367,8 @@ class _MeetingVideoConferenceViewState
     super.dispose();
   }
 
-  void _updateVisibility() {
-    if (_service == null || _service!.room == null || !mounted) return;
+  bool _updateVisibility({bool rebuild = true}) {
+    if (_service == null || _service!.room == null || !mounted) return false;
 
     final screenSize = MediaQuery.of(context).size;
     final hasScreenShare = _service!.hasActiveScreenShare;
@@ -335,8 +379,13 @@ class _MeetingVideoConferenceViewState
     if (newMaxVisible != _maxVisibleParticipants) {
       _maxVisibleParticipants = newMaxVisible;
       _updateParticipantStates();
-      setState(() {});
+      if (rebuild) {
+        setState(() {});
+      }
+      return true;
     }
+
+    return false;
   }
 
   int _calculateMaxVisible(Size screenSize, bool hasScreenShare) {

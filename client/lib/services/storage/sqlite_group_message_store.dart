@@ -136,13 +136,28 @@ class SqliteGroupMessageStore {
         debugPrint(
           '[GROUP STORE] Processing message: itemId=${row['item_id']}, direction=${row['direction']}, sender=${row['sender']}',
         );
-        final decryptedRow = Map<String, dynamic>.from(row);
         if (row['message'] != null) {
           try {
             final decryptedMessage = await _encryption.decryptString(
               row['message'],
             );
-            decryptedRow['message'] = decryptedMessage;
+
+            // Build result with consistent field names (matching sqlite_message_store.dart format)
+            final decryptedRow = {
+              'itemId': row['item_id'],
+              'item_id': row['item_id'], // Keep snake_case for compatibility
+              'message': decryptedMessage,
+              'sender': row['sender'],
+              'senderDeviceId': row['sender_device_id'],
+              'sender_device_id': row['sender_device_id'], // Keep both formats
+              'channel_id': row['channel_id'],
+              'timestamp': row['timestamp'],
+              'type': row['type'],
+              'direction': row['direction'],
+              'status': row['status'],
+              'reactions': row['reactions'] ?? '{}', // Always include reactions
+            };
+
             final preview =
                 decryptedMessage != null && decryptedMessage.length > 50
                 ? '${decryptedMessage.substring(0, 50)}...'
@@ -159,6 +174,21 @@ class SqliteGroupMessageStore {
             messagesToDelete.add(row['item_id'] as String);
           }
         } else {
+          // Even for messages without content, include reactions with consistent field names
+          final decryptedRow = {
+            'itemId': row['item_id'],
+            'item_id': row['item_id'],
+            'message': null,
+            'sender': row['sender'],
+            'senderDeviceId': row['sender_device_id'],
+            'sender_device_id': row['sender_device_id'],
+            'channel_id': row['channel_id'],
+            'timestamp': row['timestamp'],
+            'type': row['type'],
+            'direction': row['direction'],
+            'status': row['status'],
+            'reactions': row['reactions'] ?? '{}',
+          };
           decryptedResults.add(decryptedRow);
         }
       }

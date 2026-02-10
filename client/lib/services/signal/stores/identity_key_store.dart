@@ -53,6 +53,20 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
   IdentityKeyPair? identityKeyPair;
   int? localRegistrationId;
 
+  // Cooldown to prevent accidental rapid identity regenerations (dangerous op)
+  static const Duration _identityRegenCooldown = Duration(hours: 1);
+  static const String _identityRegenNamespace = 'signal_identity_regen';
+  static const String _identityRegenTsKey = 'last_regen_iso';
+
+  /// Optional hook to delegate identity regeneration cleanup to healing service
+  /// so server wipes + re-uploads go through centralized backoff logic.
+  Future<void> Function({
+    required String reason,
+    String? userId,
+    int? deviceId,
+  })?
+  onIdentityRegenerated;
+
   // 🔒 SYNC-LOCK: Prevent race conditions during key regeneration
   bool _isRegenerating = false;
   final List<Completer<void>> _pendingOperations = [];
@@ -119,10 +133,12 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
   /// - Testing/debugging
   ///
   /// For normal operations, just use getIdentityKeyPair() - it handles first-time setup automatically.
-  Future<IdentityKeyPair> regenerateIdentityKey() async {
+  Future<IdentityKeyPair> regenerateIdentityKey({bool force = false}) async {
     try {
       debugPrint('[IDENTITY_KEY_STORE] ⚠️ REGENERATING identity key...');
       debugPrint('[IDENTITY_KEY_STORE] This will invalidate ALL sessions!');
+
+      await _enforceIdentityRegenCooldown(force: force);
 
       // Clear cached keypair to force regeneration
       identityKeyPair = null;
@@ -142,10 +158,55 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
       debugPrint(
         '[IDENTITY_KEY_STORE] ✓ New identity key generated and uploaded',
       );
+      await _recordIdentityRegenTimestamp();
       return keyPair;
     } catch (e) {
       debugPrint('[IDENTITY_KEY_STORE] Error regenerating identity key: $e');
       rethrow;
+    }
+  }
+
+  Future<void> _enforceIdentityRegenCooldown({required bool force}) async {
+    if (force) return;
+
+    try {
+      final storage = DeviceScopedStorageService.instance;
+      final lastIso = await storage.getDecrypted(
+        _identityRegenNamespace,
+        _identityRegenNamespace,
+        _identityRegenTsKey,
+      );
+
+      if (lastIso != null) {
+        final last = DateTime.tryParse(lastIso);
+        if (last != null) {
+          final elapsed = DateTime.now().difference(last);
+          if (elapsed < _identityRegenCooldown) {
+            throw StateError(
+              'Identity regeneration is rate-limited. Try again in ${(_identityRegenCooldown - elapsed).inMinutes} minutes or pass force=true.',
+            );
+          }
+        }
+      }
+    } catch (e) {
+      // If cooldown read fails, err on the safer side: block unless forced
+      throw StateError(
+        'Identity regeneration blocked (cooldown check failed): $e',
+      );
+    }
+  }
+
+  Future<void> _recordIdentityRegenTimestamp() async {
+    try {
+      final storage = DeviceScopedStorageService.instance;
+      await storage.storeEncrypted(
+        _identityRegenNamespace,
+        _identityRegenNamespace,
+        _identityRegenTsKey,
+        DateTime.now().toIso8601String(),
+      );
+    } catch (_) {
+      // Non-fatal: regeneration already done
     }
   }
 
@@ -238,7 +299,7 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
       final publicKey = await getPublicKey();
       final registrationId = await getLocalRegistrationId();
 
-      final response = await ApiService.instance.post(
+      final response = await apiService.post(
         '/signal/identity',
         data: {
           'publicKey': publicKey,
@@ -500,22 +561,44 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
         );
       }
 
-      // 5. Request server-side deletion of all keys
-      debugPrint('[IDENTITY_KEY_STORE] Requesting server-side key deletion...');
-      try {
-        // Use REST API to delete all keys
-        final response = await apiService.delete('/api/signal/keys');
-        if (response.statusCode == 200) {
-          debugPrint('[IDENTITY_KEY_STORE] ✓ Server keys deleted via REST API');
-        } else {
+      // 5. Delegate server-side wipe/reupload to healing if available
+      var handledByHealing = false;
+      final healingHook = onIdentityRegenerated;
+      if (healingHook != null) {
+        try {
+          await healingHook(reason: 'identity-regenerated');
+          handledByHealing = true;
           debugPrint(
-            '[IDENTITY_KEY_STORE] ⚠️ Failed to delete server keys: ${response.statusCode}',
+            '[IDENTITY_KEY_STORE] ✓ Triggered healing-based server cleanup',
+          );
+        } catch (e) {
+          debugPrint(
+            '[IDENTITY_KEY_STORE] Warning: Healing hook failed, falling back to direct delete: $e',
           );
         }
-      } catch (e) {
+      }
+
+      // 6. Fallback: delete server-side keys directly if healing hook absent/failed
+      if (!handledByHealing) {
         debugPrint(
-          '[IDENTITY_KEY_STORE] Warning: Could not request server deletion: $e',
+          '[IDENTITY_KEY_STORE] Requesting server-side key deletion...',
         );
+        try {
+          final response = await apiService.delete('/signal/keys');
+          if (response.statusCode == 200) {
+            debugPrint(
+              '[IDENTITY_KEY_STORE] ✓ Server keys deleted via REST API',
+            );
+          } else {
+            debugPrint(
+              '[IDENTITY_KEY_STORE] ⚠️ Failed to delete server keys: ${response.statusCode}',
+            );
+          }
+        } catch (e) {
+          debugPrint(
+            '[IDENTITY_KEY_STORE] Warning: Could not request server deletion: $e',
+          );
+        }
       }
 
       debugPrint('[IDENTITY_KEY_STORE] ✅ Cleanup completed successfully');

@@ -13,6 +13,7 @@ mixin FileMessagingMixin {
     required String type,
     required String payload,
     String? itemId,
+    int? targetDeviceId,
   });
 
   Future<String> sendGroupMessage({

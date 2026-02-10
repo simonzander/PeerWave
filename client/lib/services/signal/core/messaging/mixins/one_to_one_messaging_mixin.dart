@@ -5,7 +5,8 @@ import 'package:uuid/uuid.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 
 import '../../../../api_service.dart';
-import '../../../../socket_service.dart';
+import '../../../../socket_service.dart'
+    if (dart.library.io) '../../../../socket_service_native.dart';
 import '../../../../storage/sqlite_message_store.dart';
 import '../../encryption_service.dart';
 import '../../key_manager.dart';
@@ -32,19 +33,29 @@ mixin OneToOneMessagingMixin {
   /// - Session establishment if needed
   /// - Message encryption using Signal Protocol
   /// - Local message storage
+  ///
+  /// [targetDeviceId] - Optional: When specified, only sends to that specific device.
+  ///                    Useful for peer-to-peer scenarios like video conference key exchange.
   Future<String> send1to1Message({
     required String recipientUserId,
     required String type,
     required String payload,
     String? itemId,
+    int? targetDeviceId,
   }) async {
     final generatedItemId = itemId ?? const Uuid().v4();
 
     debugPrint('[1-TO-1] Sending message to $recipientUserId (type: $type)');
+    if (targetDeviceId != null) {
+      debugPrint('[1-TO-1] Targeting specific device: $targetDeviceId');
+    }
 
     try {
       // Get recipient's devices
-      final devices = await _fetchRecipientDevices(recipientUserId);
+      final devices = await _fetchRecipientDevices(
+        recipientUserId,
+        targetDeviceId: targetDeviceId,
+      );
 
       if (devices.isEmpty) {
         throw Exception('No devices found for user $recipientUserId');
@@ -145,13 +156,36 @@ mixin OneToOneMessagingMixin {
         socketService.emit("sendItem", data);
       }
 
-      // Store locally
-      await storeOutgoingMessage(
-        itemId: generatedItemId,
-        recipientId: recipientUserId,
-        message: payload,
-        type: type,
-      );
+      // Store locally (skip ephemeral/system messages - they're control messages)
+      const ephemeralTypes = {
+        // E2EE key exchange
+        'meeting_e2ee_key_request',
+        'meeting_e2ee_key_response',
+        'video_e2ee_key_request',
+        'video_e2ee_key_response',
+        // Signal Protocol control messages
+        'read_receipt',
+        'delivery_receipt',
+        'senderKeyRequest',
+        'fileKeyRequest',
+        'signal:senderKeyDistribution',
+        'system:session_reset',
+        // Call signaling
+        'call_notification',
+      };
+
+      if (!ephemeralTypes.contains(type)) {
+        await storeOutgoingMessage(
+          itemId: generatedItemId,
+          recipientId: recipientUserId,
+          message: payload,
+          type: type,
+        );
+      } else {
+        debugPrint(
+          '[1-TO-1] Skipping storage for ephemeral message type: $type',
+        );
+      }
 
       debugPrint('[1-TO-1] ✓ Message sent: $generatedItemId');
       return generatedItemId;
@@ -163,9 +197,14 @@ mixin OneToOneMessagingMixin {
   }
 
   /// Fetch all devices for a user
+  ///
+  /// [targetDeviceId] - Optional: When specified, filters to only that device.
+  ///                    Used for peer-to-peer scenarios where messages should
+  ///                    only go to a specific device (e.g., video conference key exchange).
   Future<List<Map<String, dynamic>>> _fetchRecipientDevices(
-    String userId,
-  ) async {
+    String userId, {
+    int? targetDeviceId,
+  }) async {
     final response = await apiService.get('/signal/prekey_bundle/$userId');
 
     // The response is a list of PreKeyBundles for recipient's devices
@@ -174,8 +213,10 @@ mixin OneToOneMessagingMixin {
         (response.data is String ? jsonDecode(response.data) : response.data)
             as List;
 
-    // Filter out only the current sender device (don't send to ourselves)
-    // Keep all recipient devices + sender's other devices
+    // Filter logic:
+    // 1. Always filter out the current sender device (don't send to ourselves)
+    // 2. If targetDeviceId is specified, only keep that specific device
+    // 3. Otherwise, keep all recipient devices + sender's other devices (multi-device sync)
     final filteredDevices = devices.where((device) {
       final deviceUserId = device['userId'] as String?;
       final deviceIdRaw = device['device_id'];
@@ -191,14 +232,34 @@ mixin OneToOneMessagingMixin {
         debugPrint(
           '[1-TO-1] ⚠️ Filtering out current device: $deviceUserId:$deviceId',
         );
+        return false;
       }
 
-      return !isCurrentDevice;
+      // If targetDeviceId is specified, only keep that specific device
+      if (targetDeviceId != null) {
+        final isTargetDevice =
+            (deviceUserId == userId && deviceId == targetDeviceId);
+        if (!isTargetDevice) {
+          debugPrint(
+            '[1-TO-1] ⚠️ Filtering out non-target device: $deviceUserId:$deviceId',
+          );
+        }
+        return isTargetDevice;
+      }
+
+      // Otherwise, keep all other devices (multi-device sync)
+      return true;
     }).toList();
 
-    debugPrint(
-      '[1-TO-1] Filtered ${filteredDevices.length} devices (from ${devices.length} total, excluding current device $currentUserId:$currentDeviceId)',
-    );
+    if (targetDeviceId != null) {
+      debugPrint(
+        '[1-TO-1] Filtered to target device $targetDeviceId: ${filteredDevices.length} device(s)',
+      );
+    } else {
+      debugPrint(
+        '[1-TO-1] Filtered ${filteredDevices.length} devices (from ${devices.length} total, excluding current device $currentUserId:$currentDeviceId)',
+      );
+    }
 
     return filteredDevices.cast<Map<String, dynamic>>();
   }

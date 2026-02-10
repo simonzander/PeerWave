@@ -197,7 +197,7 @@ class SignalKeyManager
   Future<Map<String, dynamic>> deleteAllKeysOnServer() async {
     debugPrint('[KEY_MANAGER] Deleting all keys on server...');
 
-    final response = await ApiService.instance.delete('/signal/keys');
+    final response = await apiService.delete('/signal/keys');
 
     if (response.statusCode != 200) {
       throw Exception('Failed to delete keys: ${response.statusCode}');

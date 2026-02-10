@@ -7,7 +7,29 @@ import 'session_manager.dart';
 import '../../device_scoped_storage_service.dart';
 import '../../storage/sqlite_recent_conversations_store.dart';
 
-/// Manages automatic healing and recovery of Signal Protocol keys
+/// Represents verification outcome without forcing immediate healing on transient
+/// or recoverable issues.
+/// - [isValid]: overall pass/fail for the current check
+/// - [needsHealing]: true only when corruption is confirmed (identity/SPK mismatch or PreKey hash mismatch)
+/// - [reason]: short code describing the outcome
+class VerificationResult {
+  final bool isValid;
+  final bool needsHealing;
+  final String reason;
+  const VerificationResult({
+    required this.isValid,
+    required this.needsHealing,
+    required this.reason,
+  });
+
+  static const ok = VerificationResult(
+    isValid: true,
+    needsHealing: false,
+    reason: 'ok',
+  );
+}
+
+/// Manages automatic healing and recovery of Signal Protocol keys.
 ///
 /// Responsibilities:
 /// - Self-verification triggers with rate limiting
@@ -31,6 +53,16 @@ import '../../storage/sqlite_recent_conversations_store.dart';
 ///   getCurrentUserId: () => userId,
 ///   getCurrentDeviceId: () => deviceId,
 /// );
+///
+/// Healing actions (what is healed, trigger, source):
+/// | Component      | What we heal                                  | Trigger (source)                          | Notes |
+/// |----------------|-----------------------------------------------|-------------------------------------------|-------|
+/// | Identity key   | Verify match; on mismatch → full healing      | `verifyOwnKeysOnServer` (auto)            | Lives on server + local |
+/// | Signed PreKey  | Verify signature; on missing/invalid → heal   | `verifyOwnKeysOnServer` (auto)            | Server + local |
+/// | PreKeys        | Count + hash check; mismatch → heal; missing → resync | `verifyOwnKeysOnServer` (auto)       | Server + local |
+/// | Sessions       | Delete all during healing                     | `forceServerKeyReinforcement` (auto)      | Local only |
+/// | SenderKeys     | Delete all during healing                     | `forceServerKeyReinforcement` (auto)      | Local only (not stored on server) |
+/// | Recent sessions| Re-establish after healing                    | `_reestablishRecentSessions` (auto async) | Local rebuild |
 /// ```
 class SignalHealingService {
   final SignalKeyManager keyManager;
@@ -39,12 +71,23 @@ class SignalHealingService {
   final String? Function() getCurrentUserId;
   final int? Function() getCurrentDeviceId;
 
+  final bool _runInitialVerification;
+
   // Rate limiting
   bool _keyReinforcementInProgress = false;
   DateTime? _lastKeyReinforcementTime;
   DateTime? _lastSelfVerificationCheck;
 
   bool _initialized = false;
+
+  // Healing backoff (persisted)
+  static const _healingStateNamespace = 'signal_healing';
+  static const _healingReasonKey = 'last_reason';
+  static const _healingTimestampKey = 'last_timestamp_iso';
+
+  // Verification result descriptor to avoid over-triggering healing
+  static const int _preKeyHealthyThreshold = 50; // maintain a healthy buffer
+  static const Duration _healingBackoff = Duration(minutes: 10);
 
   // Use SessionManager which has PermanentSessionStore mixin
   // SessionManager provides all session operations via the mixin
@@ -58,26 +101,35 @@ class SignalHealingService {
     required this.sessionManager,
     required this.getCurrentUserId,
     required this.getCurrentDeviceId,
-  });
+    required bool runInitialVerification,
+  }) : _runInitialVerification = runInitialVerification;
 
-  /// Self-initializing factory
+  /// Self-initializing factory.
+  ///
+  /// Parameters: concrete [keyManager], [sessionManager], and callbacks to fetch
+  /// current user/device ids.
+  /// Returns: initialized [SignalHealingService].
   static Future<SignalHealingService> create({
     required SignalKeyManager keyManager,
     required SessionManager sessionManager,
     required String? Function() getCurrentUserId,
     required int? Function() getCurrentDeviceId,
+    bool runInitialVerification = true,
   }) async {
     final service = SignalHealingService._(
       keyManager: keyManager,
       sessionManager: sessionManager,
       getCurrentUserId: getCurrentUserId,
       getCurrentDeviceId: getCurrentDeviceId,
+      runInitialVerification: runInitialVerification,
     );
     await service.init();
     return service;
   }
 
-  /// Initialize (no stores to create - all from dependencies)
+  /// Initialize the service (idempotent). No stores are created here because
+  /// dependencies own them.
+  /// Returns when initialization is complete.
   Future<void> init() async {
     if (_initialized) {
       debugPrint('[HEALING_SERVICE] Already initialized');
@@ -86,27 +138,38 @@ class SignalHealingService {
 
     debugPrint('[HEALING_SERVICE] Initialized (using dependency stores)');
     _initialized = true;
+    if (_runInitialVerification) {
+      // Run an immediate self-verification after init (bypass cooldown once)
+      // to avoid waiting for the 5-minute window on fresh startup.
+      unawaited(
+        triggerAsyncSelfVerification(
+          reason: 'init-boot-check',
+          userId: getCurrentUserId() ?? '',
+          deviceId: getCurrentDeviceId() ?? 0,
+          force: true,
+        ),
+      );
+    }
   }
 
   // ============================================================================
   // SELF-VERIFICATION WITH RATE LIMITING
   // ============================================================================
 
-  /// Trigger async self-verification with rate limiting
+  /// Trigger async self-verification with rate limiting.
   ///
-  /// Called when we encounter issues that suggest our keys might be invalid
-  /// Rate-limited to once every 5 minutes to avoid excessive server load
-  /// Uses persistent storage to prevent re-checks across page reloads
-  ///
-  /// If corruption is detected, automatically triggers key reinforcement
+  /// Parameters: [reason] for telemetry, [userId], [deviceId] as fallbacks.
+  /// Behavior: skips if recently checked; runs verification; triggers healing
+  /// only on confirmed corruption with backoff; remains silent to the user.
   Future<void> triggerAsyncSelfVerification({
     required String reason,
     required String userId,
     required int deviceId,
+    bool force = false,
   }) async {
     try {
       // Check if should run self-verification
-      final shouldRun = await _shouldRunSelfVerification();
+      final shouldRun = force ? true : await _shouldRunSelfVerification();
       if (!shouldRun) return;
 
       // Store timestamp
@@ -116,64 +179,78 @@ class SignalHealingService {
 
       // Run verification asynchronously (non-blocking)
       verifyOwnKeysOnServer(userId, deviceId)
-          .then((isValid) async {
-            if (!isValid) {
-              debugPrint(
-                '[HEALING] ❌ Self-verification FAILED - keys corrupted!',
-              );
+          .then((result) async {
+            if (result.isValid) {
+              debugPrint('[HEALING] ✅ Self-verification passed - keys valid');
+              return;
+            }
 
-              // Check if we can trigger healing (rate-limited to prevent loops)
-              if (_keyReinforcementInProgress) {
-                debugPrint('[HEALING] ⏳ Key reinforcement already in progress');
+            if (!result.needsHealing) {
+              debugPrint(
+                '[HEALING] ⚠️ Verification failed but recoverable/ transient (reason: ${result.reason}) — skipping healing',
+              );
+              return;
+            }
+
+            // Check if we can trigger healing (rate-limited to prevent loops)
+            if (_keyReinforcementInProgress) {
+              debugPrint('[HEALING] ⏳ Key reinforcement already in progress');
+              return;
+            }
+
+            final canHeal = await _shouldHealNow(result.reason);
+            if (!canHeal) {
+              debugPrint(
+                '[HEALING] ⏳ Backing off healing for reason=${result.reason} (recent attempt)',
+              );
+              return;
+            }
+
+            if (_lastKeyReinforcementTime != null) {
+              final timeSinceLastReinforcement = DateTime.now().difference(
+                _lastKeyReinforcementTime!,
+              );
+              if (timeSinceLastReinforcement < _healingBackoff) {
+                debugPrint(
+                  '[HEALING] ⏳ Key reinforcement done ${timeSinceLastReinforcement.inMinutes}min ago, waiting',
+                );
                 return;
               }
+            }
 
-              if (_lastKeyReinforcementTime != null) {
-                final timeSinceLastReinforcement = DateTime.now().difference(
-                  _lastKeyReinforcementTime!,
-                );
-                if (timeSinceLastReinforcement.inMinutes < 10) {
-                  debugPrint(
-                    '[HEALING] ⏳ Key reinforcement done ${timeSinceLastReinforcement.inMinutes}min ago, waiting',
-                  );
-                  return;
-                }
-              }
+            debugPrint(
+              '[HEALING] 🔧 Triggering automatic key reinforcement (reason=${result.reason})...',
+            );
 
-              debugPrint(
-                '[HEALING] 🔧 Triggering automatic key reinforcement...',
+            final healingSuccess = await forceServerKeyReinforcement(
+              userId: userId,
+              deviceId: deviceId,
+            );
+
+            await _recordHealingAttempt(result.reason);
+
+            if (healingSuccess) {
+              debugPrint('[HEALING] ✅ Automatic healing completed');
+
+              // Re-verify to confirm healing worked
+              debugPrint('[HEALING] 🔍 Re-verifying keys after healing...');
+              final postHealResult = await verifyOwnKeysOnServer(
+                userId,
+                deviceId,
               );
 
-              final healingSuccess = await forceServerKeyReinforcement(
-                userId: userId,
-                deviceId: deviceId,
-              );
-
-              if (healingSuccess) {
-                debugPrint('[HEALING] ✅ Automatic healing completed');
-
-                // Re-verify to confirm healing worked
-                debugPrint('[HEALING] 🔍 Re-verifying keys after healing...');
-                final isNowValid = await verifyOwnKeysOnServer(
-                  userId,
-                  deviceId,
-                );
-
-                if (isNowValid) {
-                  debugPrint('[HEALING] ✅ Verification after healing: PASSED');
-                } else {
-                  debugPrint(
-                    '[HEALING] ❌ Verification after healing: STILL FAILED',
-                  );
-                  debugPrint(
-                    '[HEALING] → Keys may need more time to propagate',
-                  );
-                }
+              if (postHealResult.isValid) {
+                debugPrint('[HEALING] ✅ Verification after healing: PASSED');
               } else {
-                debugPrint('[HEALING] ❌ Automatic healing failed');
+                debugPrint(
+                  '[HEALING] ❌ Verification after healing: STILL FAILED (reason=${postHealResult.reason})',
+                );
+                debugPrint(
+                  '[HEALING] → Keys may need more time to propagate or manual attention required',
+                );
               }
             } else {
-              debugPrint('[HEALING] ✅ Self-verification passed - keys valid');
+              debugPrint('[HEALING] ❌ Automatic healing failed');
             }
           })
           .catchError((error) {
@@ -184,7 +261,8 @@ class SignalHealingService {
     }
   }
 
-  /// Check if self-verification should run based on rate limiting
+  /// Check if self-verification should run based on rate limiting.
+  /// Returns: true if allowed to verify now, false if still in cooldown.
   Future<bool> _shouldRunSelfVerification() async {
     // Check persistent rate limiting
     final storage = DeviceScopedStorageService.instance;
@@ -226,7 +304,7 @@ class SignalHealingService {
     return true;
   }
 
-  /// Store self-verification timestamp (both in-memory and persistent)
+  /// Store self-verification timestamp (both in-memory and persistent).
   Future<void> _storeSelfVerificationTimestamp() async {
     _lastSelfVerificationCheck = DateTime.now();
 
@@ -239,16 +317,66 @@ class SignalHealingService {
     );
   }
 
+  /// Decide if healing is allowed now for a given [reason] using persisted backoff.
+  /// Returns: false when the same reason was recently healed and is still in backoff.
+  Future<bool> _shouldHealNow(String reason) async {
+    try {
+      final storage = DeviceScopedStorageService.instance;
+      final lastReason = await storage.getDecrypted(
+        _healingStateNamespace,
+        _healingStateNamespace,
+        _healingReasonKey,
+      );
+      final lastTsIso = await storage.getDecrypted(
+        _healingStateNamespace,
+        _healingStateNamespace,
+        _healingTimestampKey,
+      );
+
+      if (lastReason != null && lastTsIso != null && lastReason == reason) {
+        final lastTs = DateTime.tryParse(lastTsIso);
+        if (lastTs != null) {
+          final elapsed = DateTime.now().difference(lastTs);
+          if (elapsed < _healingBackoff) {
+            return false; // backoff for same reason
+          }
+        }
+      }
+    } catch (_) {
+      // Best effort; do not block healing if storage fails
+    }
+    return true;
+  }
+
+  /// Persist the most recent healing reason/timestamp (best effort, non-fatal).
+  Future<void> _recordHealingAttempt(String reason) async {
+    try {
+      final storage = DeviceScopedStorageService.instance;
+      await storage.storeEncrypted(
+        _healingStateNamespace,
+        _healingStateNamespace,
+        _healingReasonKey,
+        reason,
+      );
+      await storage.storeEncrypted(
+        _healingStateNamespace,
+        _healingStateNamespace,
+        _healingTimestampKey,
+        DateTime.now().toIso8601String(),
+      );
+    } catch (_) {
+      // Non-fatal; healing should not fail because of telemetry persistence
+    }
+  }
+
   // ============================================================================
   // KEY REINFORCEMENT (HEALING)
   // ============================================================================
 
-  /// Force complete key reinforcement to server
-  ///
-  /// Deletes corrupted server keys and re-uploads fresh set from client
-  /// CLIENT IS SOURCE OF TRUTH
-  ///
-  /// Returns true if successful, false on error
+  /// Force complete key reinforcement to server.
+  /// Deletes server identity/SignedPreKey/PreKeys, re-uploads fresh keys,
+  /// purges local sessions and SenderKeys, then rebuilds recent sessions.
+  /// Returns: true on success, false on error.
   Future<bool> forceServerKeyReinforcement({
     required String userId,
     required int deviceId,
@@ -322,8 +450,7 @@ class SignalHealingService {
     return success;
   }
 
-  /// Upload all keys via REST API (synchronous, waits for confirmation)
-  /// Used during healing to ensure keys are persisted before verification
+  /// Upload all keys via REST API (identity, signed prekey, prekeys) and wait for completion.
   Future<void> _uploadKeysViaRestApi() async {
     try {
       await keyManager.uploadAllKeysToServer();
@@ -339,10 +466,8 @@ class SignalHealingService {
   // SESSION RE-ESTABLISHMENT
   // ============================================================================
 
-  /// Re-establish sessions with recent contacts after key healing
-  ///
-  /// Called asynchronously (non-blocking) after session/key deletion
-  /// Proactively builds sessions so next messages don't require PreKey fetch
+  /// Re-establish sessions with recent contacts after key healing.
+  /// Called asynchronously to proactively rebuild sessions for smoother sends.
   void _reestablishRecentSessions(String userId, int deviceId) async {
     try {
       debugPrint('[HEALING] ========================================');
@@ -404,8 +529,8 @@ class SignalHealingService {
     }
   }
 
-  /// Get list of recent conversation partners
-  /// Returns list of user IDs
+  /// Get list of recent conversation partners.
+  /// Returns: list of user IDs ordered by recency (best effort).
   Future<List<String>> _getRecentConversationPartners(int limit) async {
     try {
       final recentConversationsStore =
@@ -434,15 +559,14 @@ class SignalHealingService {
   // KEY VALIDATION METHODS
   // ============================================================================
 
-  /// Verify our own keys are valid on the server
-  /// Returns true if all keys are valid, false if corruption detected
-  ///
-  /// Validates:
-  /// - Identity key exists and matches
-  /// - SignedPreKey exists and signature is valid
-  /// - PreKeys exist in adequate quantity
-  /// - PreKey fingerprints match (hash validation)
-  Future<bool> verifyOwnKeysOnServer(String userId, int deviceId) async {
+  /// Verify our own keys are valid on the server.
+  /// Returns: [VerificationResult] to distinguish corruption vs recoverable/transient states.
+  /// Validates: identity match, SignedPreKey presence/signature, PreKey count/buffer,
+  /// and PreKey fingerprints (hash) equivalence.
+  Future<VerificationResult> verifyOwnKeysOnServer(
+    String userId,
+    int deviceId,
+  ) async {
     try {
       // Use callbacks to get current user ID and device ID (more reliable than parameters)
       final actualUserId = getCurrentUserId() ?? userId;
@@ -467,7 +591,23 @@ class SignalHealingService {
       final serverIdentityKey = serverData['identityKey'] as String?;
       if (serverIdentityKey == null) {
         debugPrint('[HEALING] ❌ Server has NO identity key!');
-        return false;
+        debugPrint('[HEALING] ⚠️ Attempting identity re-upload before healing');
+        try {
+          await keyManager.uploadAllKeysToServer();
+          debugPrint('[HEALING] ✓ Identity re-upload attempted');
+          return const VerificationResult(
+            isValid: true,
+            needsHealing: false,
+            reason: 'identity_reuploaded',
+          );
+        } catch (e) {
+          debugPrint('[HEALING] ⚠️ Identity re-upload failed: $e');
+          return const VerificationResult(
+            isValid: false,
+            needsHealing: true,
+            reason: 'identity_missing',
+          );
+        }
       }
 
       final localIdentityKey = await keyManager.getPublicKey();
@@ -475,7 +615,11 @@ class SignalHealingService {
         debugPrint('[HEALING] ❌ Identity key MISMATCH!');
         debugPrint('[HEALING]   Local:  $localIdentityKey');
         debugPrint('[HEALING]   Server: $serverIdentityKey');
-        return false;
+        return const VerificationResult(
+          isValid: false,
+          needsHealing: true,
+          reason: 'identity_mismatch',
+        );
       }
       debugPrint('[HEALING] ✓ Identity key matches');
 
@@ -485,8 +629,26 @@ class SignalHealingService {
           serverData['signedPreKeySignature'] as String?;
 
       if (serverSignedPreKey == null || serverSignedPreKeySignature == null) {
-        debugPrint('[HEALING] ❌ Server has NO SignedPreKey!');
-        return false;
+        debugPrint(
+          '[HEALING] ⚠️ Server has NO SignedPreKey — attempting re-upload before healing',
+        );
+        try {
+          await keyManager.uploadAllKeysToServer();
+          debugPrint('[HEALING] ✓ SignedPreKey re-upload attempted');
+        } catch (e) {
+          debugPrint('[HEALING] ⚠️ SignedPreKey re-upload failed: $e');
+          return const VerificationResult(
+            isValid: false,
+            needsHealing: true,
+            reason: 'signed_prekey_missing',
+          );
+        }
+        // After a successful re-upload attempt, consider this pass and let next verification re-check
+        return const VerificationResult(
+          isValid: true,
+          needsHealing: false,
+          reason: 'signed_prekey_reuploaded',
+        );
       }
 
       // Verify SignedPreKey signature
@@ -507,23 +669,53 @@ class SignalHealingService {
 
         if (!isValid) {
           debugPrint('[HEALING] ❌ SignedPreKey signature INVALID!');
-          return false;
+          return const VerificationResult(
+            isValid: false,
+            needsHealing: true,
+            reason: 'signed_prekey_invalid',
+          );
         }
         debugPrint('[HEALING] ✓ SignedPreKey valid');
       } catch (e) {
         debugPrint('[HEALING] ❌ SignedPreKey validation error: $e');
-        return false;
+        return const VerificationResult(
+          isValid: false,
+          needsHealing: true,
+          reason: 'signed_prekey_validation_error',
+        );
       }
 
       // 3. Verify PreKeys count
       final preKeysCount = serverData['preKeysCount'] as int? ?? 0;
-      if (preKeysCount == 0) {
-        debugPrint('[HEALING] ❌ Server has ZERO PreKeys!');
-        return false;
-      }
+      final localFingerprints = await keyManager.getPreKeyFingerprints();
 
-      if (preKeysCount < 10) {
-        debugPrint('[HEALING] ⚠️ Low PreKey count: $preKeysCount');
+      if (preKeysCount == 0) {
+        debugPrint('[HEALING] ⚠️ Server has ZERO PreKeys (recoverable)');
+        try {
+          // Upload all local PreKeys to server (server list is empty)
+          await keyManager.syncPreKeyIds(const []);
+          debugPrint('[HEALING] ✓ Uploaded local PreKeys to empty server set');
+        } catch (e) {
+          debugPrint(
+            '[HEALING] ⚠️ Failed to upload PreKeys to empty server: $e',
+          );
+        }
+        try {
+          await keyManager.checkPreKeys();
+          debugPrint('[HEALING] ✓ Ensured local PreKey buffer is healthy');
+        } catch (e) {
+          debugPrint('[HEALING] ⚠️ Failed to top-up PreKeys: $e');
+        }
+      } else if (preKeysCount < _preKeyHealthyThreshold) {
+        debugPrint(
+          '[HEALING] ⚠️ Low PreKey count: $preKeysCount (target ≥ $_preKeyHealthyThreshold)',
+        );
+        try {
+          await keyManager.checkPreKeys();
+          debugPrint('[HEALING] ✓ Triggered PreKey top-up (low buffer)');
+        } catch (e) {
+          debugPrint('[HEALING] ⚠️ Failed to top-up PreKeys: $e');
+        }
       } else {
         debugPrint('[HEALING] ✓ PreKeys count adequate: $preKeysCount');
       }
@@ -534,11 +726,10 @@ class SignalHealingService {
       if (serverFingerprints != null && serverFingerprints.isNotEmpty) {
         debugPrint('[HEALING] Validating PreKey fingerprints...');
 
-        final localFingerprints = await keyManager.getPreKeyFingerprints();
-
         int matchCount = 0;
-        int mismatchCount = 0;
-        final mismatches = <String>[];
+        final hashMismatches = <String>[]; // Same ID, different hash
+        final missingOnServer = <String>[]; // Local key absent on server
+        final serverOnly = <String>[]; // Server key absent locally
 
         // Compare server vs local
         for (final entry in serverFingerprints.entries) {
@@ -547,13 +738,9 @@ class SignalHealingService {
           final localHash = localFingerprints[keyId];
 
           if (localHash == null) {
-            debugPrint('[HEALING] ⚠️ PreKey $keyId on server but not local');
-            mismatchCount++;
-            mismatches.add(keyId);
+            serverOnly.add(keyId);
           } else if (serverHash != localHash) {
-            debugPrint('[HEALING] ❌ PreKey $keyId HASH MISMATCH!');
-            mismatchCount++;
-            mismatches.add(keyId);
+            hashMismatches.add(keyId);
           } else {
             matchCount++;
           }
@@ -562,35 +749,76 @@ class SignalHealingService {
         // Check for local keys not on server
         for (final keyId in localFingerprints.keys) {
           if (!serverFingerprints.containsKey(keyId)) {
-            debugPrint('[HEALING] ⚠️ PreKey $keyId local but not on server');
-            mismatchCount++;
-            mismatches.add(keyId);
+            missingOnServer.add(keyId);
           }
         }
 
         debugPrint(
-          '[HEALING] PreKey validation: $matchCount matched, $mismatchCount mismatched',
+          '[HEALING] PreKey validation: $matchCount matched, ${hashMismatches.length} hash mismatches, ${missingOnServer.length} missing on server, ${serverOnly.length} server-only',
         );
 
-        if (mismatchCount > 0) {
+        if (hashMismatches.isNotEmpty) {
           debugPrint(
-            '[HEALING] ❌ PreKey corruption detected! Mismatched: ${mismatches.take(5).join(", ")}',
+            '[HEALING] ❌ PreKey hash mismatches detected: ${hashMismatches.take(5).join(", ")}',
           );
-          return false;
+          return const VerificationResult(
+            isValid: false,
+            needsHealing: true,
+            reason: 'prekey_hash_mismatch',
+          ); // Corruption: same IDs differ
         }
 
-        debugPrint('[HEALING] ✓ All PreKey hashes valid');
+        // Missing or extra keys are recoverable – resync/upload missing to server
+        if (missingOnServer.isNotEmpty || serverOnly.isNotEmpty) {
+          debugPrint(
+            '[HEALING] ⚠️ PreKey set diverged (recoverable). Missing on server: ${missingOnServer.take(5).join(", ")}; server-only: ${serverOnly.take(5).join(", ")}',
+          );
+          // Delete server-only PreKeys (we lost local private parts)
+          if (serverOnly.isNotEmpty) {
+            for (final idStr in serverOnly) {
+              try {
+                await keyManager.apiService.delete('/signal/prekey/$idStr');
+                debugPrint('[HEALING] ✓ Deleted server-only PreKey $idStr');
+              } catch (e) {
+                debugPrint(
+                  '[HEALING] ⚠️ Failed to delete server-only PreKey $idStr: $e',
+                );
+              }
+            }
+          }
+          try {
+            final serverIds = serverFingerprints.keys.map(int.parse).toList();
+            await keyManager.syncPreKeyIds(serverIds);
+            debugPrint(
+              '[HEALING] ✓ Triggered PreKey resync/upload for missing keys',
+            );
+          } catch (e) {
+            debugPrint('[HEALING] ⚠️ Failed to resync/upload PreKeys: $e');
+          }
+          try {
+            await keyManager.checkPreKeys();
+            debugPrint('[HEALING] ✓ Ensured local PreKey buffer after resync');
+          } catch (e) {
+            debugPrint('[HEALING] ⚠️ Failed to top-up PreKeys post-resync: $e');
+          }
+        }
+
+        debugPrint('[HEALING] ✓ PreKey hashes validated (no corruption)');
       } else {
         debugPrint('[HEALING] ⚠️ No PreKey fingerprints from server');
       }
 
       debugPrint('[HEALING] ========================================');
       debugPrint('[HEALING] ✅ All keys verified successfully');
-      return true;
+      return VerificationResult.ok;
     } catch (e, stackTrace) {
       debugPrint('[HEALING] ❌ Verification failed: $e');
       debugPrint('[HEALING] Stack trace: $stackTrace');
-      return false;
+      return const VerificationResult(
+        isValid: false,
+        needsHealing: false,
+        reason: 'network_or_unknown',
+      );
     }
   }
 }

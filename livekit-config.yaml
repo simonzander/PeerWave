@@ -8,7 +8,7 @@ bind_addresses:
 # Generate with: openssl rand -base64 32
 # Must match LIVEKIT_API_KEY and LIVEKIT_API_SECRET in .env
 keys:
-  your-api-key-here: your-api-secret-here
+  devkey: devkey_secret_token_32chars_min
 
 rtc:
   # Port range for WebRTC connections (RTP media streams)

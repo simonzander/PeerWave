@@ -119,6 +119,12 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       // Load sender keys for the channel
       await _loadChannelSenderKeys();
 
+      // Register E2EE listeners BEFORE requesting keys
+      debugPrint('[MeetingPreJoin] Registering E2EE listeners');
+      VideoConferenceService.instance.registerE2EEListeners(
+        _meeting!.meetingId,
+      );
+
       // Handle E2EE key exchange
       if (_isFirstParticipant) {
         await _generateE2EEKey();

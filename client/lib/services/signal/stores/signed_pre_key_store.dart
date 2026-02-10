@@ -263,7 +263,7 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
       // Delete ALL old keys from server immediately
       debugPrint('[SIGNED_PREKEY_SETUP] Removing old server key: ${key.id}');
       try {
-        await apiService.delete('/api/signal/signed-prekey/${key.id}');
+        await apiService.delete('/signal/signedprekey/${key.id}');
         serverDeleted++;
       } catch (e) {
         debugPrint(
@@ -288,9 +288,9 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
   /// ⚠️ NOTE: Server doesn't store private keys, so this only checks server state.
   /// Used during initialization to verify server has our public key.
   Future<void> loadRemoteSignedPreKeys() async {
-    // Use GET /api/signal/signed-prekeys REST endpoint
+    // Use GET /signal/signedprekeys REST endpoint
     try {
-      final response = await apiService.get('/api/signal/signed-prekeys');
+      final response = await apiService.get('/signal/signedprekeys');
       debugPrint(
         '[SIGNED_PREKEY] Fetched ${response.data['signedPreKeys']?.length ?? 0} keys from server',
       );
@@ -354,7 +354,7 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
   /// This method:
   /// 1. Uploads public key + signature to server via ApiService
   /// 2. Stores full record (including private key) locally with metadata
-  /// 3. Auto-cleans server: removes ALL other keys (server keeps only newest)
+  /// 3. Auto-cleans server: keeps newest + previous key for in-flight bundles
   ///
   /// Throws exception if server upload fails.
   @override
@@ -369,8 +369,8 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
 
     // Upload to server with acknowledgment
     try {
-      final response = await ApiService.instance.post(
-        '/api/signal/signed-prekey',
+      final response = await apiService.post(
+        '/signal/signedprekey',
         data: {'id': signedPreKeyId, 'data': publicKey, 'signature': signature},
       );
 
@@ -386,21 +386,25 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
       rethrow;
     }
 
-    // CRITICAL: After uploading new key, delete ALL other keys from server
-    // This ensures server always advertises only the newest signedPreKey
+    // Keep newest + previous on server to accommodate in-flight bundles
     final allKeys = await loadAllStoredSignedPreKeys();
+    allKeys.sort((a, b) => b.id.compareTo(a.id));
+    final previousId = allKeys.isNotEmpty ? allKeys.first.id : null;
+    final serverKeepIds = <int>{signedPreKeyId};
+    if (previousId != null) {
+      serverKeepIds.add(previousId);
+    }
+
     for (final key in allKeys) {
-      if (key.id != signedPreKeyId) {
-        debugPrint(
-          "[SIGNED_PREKEY] Auto-cleanup: Removing old server key ${key.id} (keeping only $signedPreKeyId)",
-        );
-        try {
-          await apiService.delete('/api/signal/signed-prekey/${key.id}');
-        } catch (e) {
-          debugPrint(
-            '[SIGNED_PREKEY] ⚠️ Failed to delete old key ${key.id}: $e',
-          );
-        }
+      if (serverKeepIds.contains(key.id)) continue;
+
+      debugPrint(
+        '[SIGNED_PREKEY] Auto-cleanup: Removing old server key ${key.id} (keeping ${serverKeepIds.join(', ')})',
+      );
+      try {
+        await apiService.delete('/signal/signedprekey/${key.id}');
+      } catch (e) {
+        debugPrint('[SIGNED_PREKEY] ⚠️ Failed to delete old key ${key.id}: $e');
       }
     }
 
@@ -454,7 +458,7 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
 
     // Delete from server via REST API
     try {
-      await apiService.delete('/api/signal/signed-prekey/$signedPreKeyId');
+      await apiService.delete('/signal/signedprekey/$signedPreKeyId');
       debugPrint('[SIGNED_PREKEY] ✓ Deleted key $signedPreKeyId from server');
     } catch (e) {
       debugPrint(
@@ -624,16 +628,17 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
       // Server cleanup: Remove old signedPreKeys from server IMMEDIATELY
       int serverDeleted = 0;
 
-      for (final key in allKeys) {
-        // Keep newest key always
-        if (key.id == allKeys.first.id) continue;
+      // Keep newest + previous on server to accommodate in-flight bundles
+      final serverKeepIds = allKeys.take(2).map((k) => k.id).toSet();
 
-        // Delete ALL old keys from server immediately
+      for (final key in allKeys) {
+        if (serverKeepIds.contains(key.id)) continue;
+
         debugPrint(
           '[SIGNED_PREKEY_ROTATION] Removing old server key: ${key.id}',
         );
         try {
-          await apiService.delete('/api/signal/signed-prekey/${key.id}');
+          await apiService.delete('/signal/signedprekey/${key.id}');
           serverDeleted++;
         } catch (e) {
           debugPrint(
@@ -649,7 +654,7 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
       }
 
       debugPrint(
-        '[SIGNED_PREKEY_ROTATION] ✅ Rotation complete: ${allKeys.length} local keys, 1 server key (newest)',
+        '[SIGNED_PREKEY_ROTATION] ✅ Rotation complete: ${allKeys.length} local keys, ${serverKeepIds.length} server keys (newest first)',
       );
 
       // Update state

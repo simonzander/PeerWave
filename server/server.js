@@ -661,6 +661,32 @@ global.deviceSockets = deviceSockets;
  * Cleanup: Automatic on disconnect, manual on leave
  */
 const activeVideoParticipants = new Map();
+const prejoinParticipantTtlMs = 1 * 60 * 1000;
+
+function pruneStaleVideoParticipants() {
+  const now = Date.now();
+  const emptyChannels = [];
+
+  for (const [channelId, participants] of activeVideoParticipants.entries()) {
+    participants.forEach(p => {
+      if (!p.hasE2EEKey && now - p.joinedAt > prejoinParticipantTtlMs) {
+        participants.delete(p);
+        logger.info('[VIDEO PARTICIPANTS] Pruned stale prejoin participant');
+        logger.debug(`[VIDEO PARTICIPANTS] User: ${sanitizeForLog(p.userId)}, Channel: ${sanitizeForLog(channelId)}`);
+      }
+    });
+
+    if (participants.size === 0) {
+      emptyChannels.push(channelId);
+    }
+  }
+
+  emptyChannels.forEach(channelId => {
+    activeVideoParticipants.delete(channelId);
+    logger.info('[VIDEO PARTICIPANTS] Channel empty - removed from tracking');
+    logger.debug(`[VIDEO PARTICIPANTS] Channel: ${sanitizeForLog(channelId)}`);
+  });
+}
 
 /**
  * Add participant to active participants list
@@ -3125,6 +3151,7 @@ io.sockets.on("connection", socket => {
    */
   socket.on("video:check-participants", async (data) => {
     try {
+      pruneStaleVideoParticipants();
       // Support both native (socket.data.userId) and web (socket.handshake.session.uuid) clients
       const userId = socket.data.userId || socket.handshake.session.uuid;
       
@@ -3241,6 +3268,7 @@ io.sockets.on("connection", socket => {
    */
   socket.on("video:register-participant", async (data) => {
     try {
+      pruneStaleVideoParticipants();
       if (!isAuthenticated()) {
         logger.error('[VIDEO PARTICIPANTS] Register blocked - not authenticated');
         return;

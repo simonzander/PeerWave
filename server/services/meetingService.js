@@ -251,8 +251,6 @@ class MeetingService {
       throw new Error('No valid fields to update');
     }
 
-    // Add updated_at
-    fields.push('updated_at = CURRENT_TIMESTAMP');
     values.push(meeting_id);
 
     try {

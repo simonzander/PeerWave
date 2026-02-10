@@ -135,6 +135,9 @@ class SignalClient {
     );
     debugPrint('[SIGNAL_CLIENT] ✓ SessionManager created');
 
+    // Cleanup stale local sessions (devices removed server-side).
+    await sessionManager.pruneStaleSessions(limit: 20);
+
     // Initialize HealingService
     debugPrint('[SIGNAL_CLIENT] Creating HealingService...');
     healingService = await SignalHealingService.create(
@@ -144,6 +147,20 @@ class SignalClient {
       getCurrentDeviceId: _getCurrentDeviceId,
     );
     debugPrint('[SIGNAL_CLIENT] ✓ HealingService created');
+
+    // Route identity regenerations through HealingService so server wipes
+    // use the same backoff + full reupload flow.
+    keyManager.onIdentityRegenerated =
+        ({required String reason, String? userId, int? deviceId}) async {
+          final resolvedUserId =
+              userId ?? healingService.getCurrentUserId() ?? '';
+          final resolvedDeviceId =
+              deviceId ?? healingService.getCurrentDeviceId() ?? 0;
+          await healingService.forceServerKeyReinforcement(
+            userId: resolvedUserId,
+            deviceId: resolvedDeviceId,
+          );
+        };
 
     // Initialize EncryptionService
     debugPrint('[SIGNAL_CLIENT] Creating EncryptionService...');

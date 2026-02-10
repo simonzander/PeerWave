@@ -4,7 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 
 import '../../../../api_service.dart';
-import '../../../../socket_service.dart';
+import '../../../../socket_service.dart'
+    if (dart.library.io) '../../../../socket_service_native.dart';
 import '../../encryption_service.dart';
 import '../../key_manager.dart';
 import '../../session_manager.dart';
@@ -43,33 +44,39 @@ mixin GuestSessionMixin {
 
       // 1. Fetch guest's Signal keys
       final response = await apiService.get(
-        '/signal/guest/prekey-bundle',
-        queryParameters: {'guestSessionId': guestSessionId},
+        '/api/meetings/$meetingId/external/$guestSessionId/keys',
       );
 
-      final bundleData = response.data as Map<String, dynamic>;
+      final responseData = response.data;
+      if (responseData is! Map<String, dynamic>) {
+        throw Exception(
+          'Unexpected guest keybundle response: ${responseData.runtimeType}',
+        );
+      }
+      final bundleData = responseData;
 
       // 2. Build session with guest
       final guestAddress = SignalProtocolAddress('guest:$guestSessionId', 0);
 
+      final signedPreKey = bundleData['signed_pre_key'] as Map<String, dynamic>;
+      final oneTimePreKey =
+          bundleData['one_time_pre_key'] as Map<String, dynamic>?;
+
       final bundle = PreKeyBundle(
-        bundleData['registrationId'] as int,
+        0, // External guests do not provide a registration ID
         0, // Guests have device ID 0
-        bundleData['preKeyId'] as int?,
-        bundleData['preKeyPublic'] != null
+        oneTimePreKey != null ? oneTimePreKey['keyId'] as int : null,
+        oneTimePreKey != null
             ? Curve.decodePoint(
-                base64Decode(bundleData['preKeyPublic'] as String),
+                base64Decode(oneTimePreKey['publicKey'] as String),
                 0,
               )
             : null,
-        bundleData['signedPreKeyId'] as int,
-        Curve.decodePoint(
-          base64Decode(bundleData['signedPreKeyPublic'] as String),
-          0,
-        ),
-        base64Decode(bundleData['signedPreKeySignature'] as String),
+        signedPreKey['keyId'] as int,
+        Curve.decodePoint(base64Decode(signedPreKey['publicKey'] as String), 0),
+        base64Decode(signedPreKey['signature'] as String),
         IdentityKey.fromBytes(
-          base64Decode(bundleData['identityKey'] as String),
+          base64Decode(bundleData['identity_key'] as String),
           0,
         ),
       );
@@ -121,6 +128,104 @@ mixin GuestSessionMixin {
       debugPrint('[GUEST_SESSION] ✓ Sender key distributed to guest');
     } catch (e, stackTrace) {
       debugPrint('[GUEST_SESSION] ❌ Failed to distribute key to guest: $e');
+      debugPrint('[GUEST_SESSION] Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Send LiveKit E2EE key to external guest using Signal Protocol
+  Future<void> sendE2EEKeyToExternalGuest({
+    required String guestSessionId,
+    required String meetingId,
+    required String encryptedKey,
+    String? requestId,
+  }) async {
+    try {
+      debugPrint(
+        '[GUEST_SESSION] Sending E2EE key to guest $guestSessionId for meeting $meetingId',
+      );
+
+      // 1. Fetch guest's Signal keys
+      final response = await apiService.get(
+        '/api/meetings/$meetingId/external/$guestSessionId/keys',
+      );
+
+      final responseData = response.data;
+      if (responseData is! Map<String, dynamic>) {
+        throw Exception(
+          'Unexpected guest keybundle response: ${responseData.runtimeType}',
+        );
+      }
+      final bundleData = responseData;
+
+      // 2. Build session with guest
+      final guestAddress = SignalProtocolAddress('guest:$guestSessionId', 0);
+
+      final signedPreKey = bundleData['signed_pre_key'] as Map<String, dynamic>;
+      final oneTimePreKey =
+          bundleData['one_time_pre_key'] as Map<String, dynamic>?;
+
+      final bundle = PreKeyBundle(
+        0, // External guests do not provide a registration ID
+        0, // Guests have device ID 0
+        oneTimePreKey != null ? oneTimePreKey['keyId'] as int : null,
+        oneTimePreKey != null
+            ? Curve.decodePoint(
+                base64Decode(oneTimePreKey['publicKey'] as String),
+                0,
+              )
+            : null,
+        signedPreKey['keyId'] as int,
+        Curve.decodePoint(base64Decode(signedPreKey['publicKey'] as String), 0),
+        base64Decode(signedPreKey['signature'] as String),
+        IdentityKey.fromBytes(
+          base64Decode(bundleData['identity_key'] as String),
+          0,
+        ),
+      );
+
+      final sessionBuilder = SessionBuilder(
+        sessionStore,
+        preKeyStore,
+        signedPreKeyStore,
+        identityStore,
+        guestAddress,
+      );
+
+      await sessionBuilder.processPreKeyBundle(bundle);
+      debugPrint('[GUEST_SESSION] ✓ Session established with guest');
+
+      // 3. Encrypt payload for guest
+      final sessionCipher = SessionCipher(
+        sessionStore,
+        preKeyStore,
+        signedPreKeyStore,
+        identityStore,
+        guestAddress,
+      );
+
+      final payload = jsonEncode({
+        'meetingId': meetingId,
+        'encryptedKey': encryptedKey,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      });
+
+      final encryptedMessage = await sessionCipher.encrypt(
+        Uint8List.fromList(utf8.encode(payload)),
+      );
+
+      // 4. Send to guest via server
+      socketService.emit('participant:meeting_e2ee_key_response', {
+        'guest_session_id': guestSessionId,
+        'meeting_id': meetingId,
+        'ciphertext': base64Encode(encryptedMessage.serialize()),
+        'messageType': encryptedMessage.getType(),
+        if (requestId != null) 'request_id': requestId,
+      });
+
+      debugPrint('[GUEST_SESSION] ✓ Encrypted E2EE key sent to guest');
+    } catch (e, stackTrace) {
+      debugPrint('[GUEST_SESSION] ❌ Failed to send E2EE key to guest: $e');
       debugPrint('[GUEST_SESSION] Stack trace: $stackTrace');
       rethrow;
     }

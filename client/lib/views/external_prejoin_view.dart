@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:go_router/go_router.dart';
 import 'dart:async';
 import 'dart:typed_data';
 import '../utils/html_stub.dart' if (dart.library.html) 'dart:html' as html;
@@ -9,6 +10,7 @@ import '../models/external_session.dart';
 import '../services/external_participant_service.dart';
 import '../services/external_guest_socket_service.dart';
 import '../services/api_service.dart';
+import '../services/signal/utils/guest_signal_helper.dart';
 import '../widgets/video_prejoin_widget.dart';
 
 /// Guest Flow State Machine
@@ -96,10 +98,7 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
   final Set<String> _receivedKeyResponses = {};
 
   // === Signal Protocol Stores (sessionStorage-based for guests) ===
-  signal.InMemorySessionStore? _guestSessionStore;
-  signal.InMemoryPreKeyStore? _guestPreKeyStore;
-  signal.InMemorySignedPreKeyStore? _guestSignedPreKeyStore;
-  signal.InMemoryIdentityKeyStore? _guestIdentityStore;
+  GuestSignalHelper? _guestSignalHelper;
 
   // === Admission Request ===
   DateTime? _lastAdmissionRequest;
@@ -435,6 +434,11 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
       _guestSocket.onAdmissionGranted((data) {
         debugPrint('[GuestPreJoin] Admission granted!');
         _participantPollTimer?.cancel();
+        if (mounted) {
+          setState(() => _isRequestingAdmission = false);
+        }
+        _transitionTo(GuestFlowState.admitted);
+        _navigateToGuestMeeting();
         widget.onAdmitted();
       });
 
@@ -448,6 +452,24 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
       debugPrint('[GuestPreJoin] WebSocket connection error: $e');
       setState(() => _errorMessage = 'Failed to connect to meeting server');
     }
+  }
+
+  void _navigateToGuestMeeting() {
+    if (!mounted || _meetingId == null) return;
+
+    final prejoinState = _prejoinKey.currentState;
+    final selectedCamera = prejoinState?.selectedCamera;
+    final selectedMicrophone = prejoinState?.selectedMicrophone;
+
+    context.go(
+      '/meeting/video/$_meetingId',
+      extra: {
+        'isExternal': true,
+        'meetingTitle': _meetingTitle ?? 'Meeting',
+        'selectedCamera': selectedCamera,
+        'selectedMicrophone': selectedMicrophone,
+      },
+    );
   }
 
   // ========================================
@@ -677,129 +699,13 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     required int participantDeviceId,
     required Map<String, dynamic> keybundle,
   }) async {
-    if (!kIsWeb) {
-      throw Exception('Session storage only available on web');
-    }
+    _guestSignalHelper ??= await GuestSignalHelper.createFromSessionStorage();
 
-    final storage = html.window.sessionStorage;
-
-    // Get guest's identity key from session storage
-    final identityPublic = storage['external_identity_key_public'];
-    final identityPrivate = storage['external_identity_key_private'];
-
-    if (identityPublic == null || identityPrivate == null) {
-      throw Exception('Guest identity keys not found in session storage');
-    }
-
-    // Create Signal stores using session storage (not IndexedDB)
-    // For guests, we use in-memory/sessionStorage stores
-    final privateKeyBytes = Uint8List.fromList(base64Decode(identityPrivate));
-    final publicKeyPoint = signal.Curve.decodePoint(
-      Uint8List.fromList(base64Decode(identityPublic)),
-      0,
+    final address = await _guestSignalHelper!.establishSessionWithParticipant(
+      participantUserId: participantUserId,
+      participantDeviceId: participantDeviceId,
+      keybundle: keybundle,
     );
-    final privateKeyPoint = signal.Curve.decodePrivatePoint(privateKeyBytes);
-
-    final identityKeyPair = signal.IdentityKeyPair(
-      signal.IdentityKey(publicKeyPoint),
-      privateKeyPoint,
-    );
-
-    // Create temporary stores for guest session
-    final sessionStore = signal.InMemorySessionStore();
-    final preKeyStore = signal.InMemoryPreKeyStore();
-    final signedPreKeyStore = signal.InMemorySignedPreKeyStore();
-    final identityStore = signal.InMemoryIdentityKeyStore(identityKeyPair, 0);
-
-    // Load guest's own signed pre-key into the store for decrypting participant's response
-    // When participant encrypts their response, they use the guest's public key from the keybundle
-    // The guest needs the EXACT same signed pre-key (with private key) to decrypt
-    final signedPreKeyJson = storage['external_signed_pre_key'];
-    if (signedPreKeyJson != null) {
-      final signedPreKeyData = jsonDecode(signedPreKeyJson);
-
-      // Deserialize the exact signed pre-key we generated and uploaded to server
-      final serializedBytes = base64Decode(signedPreKeyData['serialized']);
-      final guestSignedPreKey = signal.SignedPreKeyRecord.fromSerialized(
-        serializedBytes,
-      );
-
-      await signedPreKeyStore.storeSignedPreKey(
-        signedPreKeyData['keyId'] as int,
-        guestSignedPreKey,
-      );
-      debugPrint(
-        '[GuestPreJoin] ✓ Loaded guest signed pre-key (ID: ${signedPreKeyData['keyId']}) from sessionStorage',
-      );
-    }
-
-    // Load guest's own pre-keys into the store for decrypting participant's response
-    // The participant uses one of these one-time pre-keys when encrypting their first message
-    final preKeysJson = storage['external_pre_keys'];
-    if (preKeysJson != null) {
-      final preKeysData = jsonDecode(preKeysJson) as List;
-      for (final preKeyData in preKeysData) {
-        final serializedBytes = base64Decode(preKeyData['serialized']);
-        final preKeyRecord = signal.PreKeyRecord.fromBuffer(serializedBytes);
-        await preKeyStore.storePreKey(preKeyData['keyId'] as int, preKeyRecord);
-      }
-      debugPrint(
-        '[GuestPreJoin] ✓ Loaded ${preKeysData.length} guest pre-keys from sessionStorage',
-      );
-    }
-
-    // Build participant's PreKeyBundle
-    final identityKey = signal.IdentityKey(
-      signal.Curve.decodePoint(
-        Uint8List.fromList(base64Decode(keybundle['identity_key'])),
-        0,
-      ),
-    );
-
-    final signedPreKey = keybundle['signed_pre_key'];
-    final oneTimePreKey = keybundle['one_time_pre_key'];
-
-    final bundle = signal.PreKeyBundle(
-      0, // Registration ID
-      participantDeviceId,
-      oneTimePreKey != null ? oneTimePreKey['keyId'] as int : null,
-      oneTimePreKey != null
-          ? signal.Curve.decodePoint(
-              Uint8List.fromList(base64Decode(oneTimePreKey['publicKey'])),
-              0,
-            )
-          : null,
-      signedPreKey['keyId'] as int,
-      signal.Curve.decodePoint(
-        Uint8List.fromList(base64Decode(signedPreKey['publicKey'])),
-        0,
-      ),
-      Uint8List.fromList(base64Decode(signedPreKey['signature'])),
-      identityKey,
-    );
-
-    // Create session address
-    final address = signal.SignalProtocolAddress(
-      participantUserId,
-      participantDeviceId,
-    );
-
-    // Build session
-    final sessionBuilder = signal.SessionBuilder(
-      sessionStore,
-      preKeyStore,
-      signedPreKeyStore,
-      identityStore,
-      address,
-    );
-
-    await sessionBuilder.processPreKeyBundle(bundle);
-
-    // Store session stores in class variables for reuse
-    _guestSessionStore = sessionStore;
-    _guestPreKeyStore = preKeyStore;
-    _guestSignedPreKeyStore = signedPreKeyStore;
-    _guestIdentityStore = identityStore;
 
     debugPrint(
       '[GuestPreJoin] ✓ Established Signal session with $participantUserId:$participantDeviceId',
@@ -813,29 +719,11 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     signal.SignalProtocolAddress address,
     String plaintext,
   ) async {
-    if (_guestSessionStore == null ||
-        _guestPreKeyStore == null ||
-        _guestSignedPreKeyStore == null ||
-        _guestIdentityStore == null) {
+    if (_guestSignalHelper == null) {
       throw Exception('Signal stores not initialized');
     }
 
-    final sessionCipher = signal.SessionCipher(
-      _guestSessionStore!,
-      _guestPreKeyStore!,
-      _guestSignedPreKeyStore!,
-      _guestIdentityStore!,
-      address,
-    );
-
-    final ciphertextMessage = await sessionCipher.encrypt(
-      Uint8List.fromList(utf8.encode(plaintext)),
-    );
-
-    return {
-      'ciphertext': base64Encode(ciphertextMessage.serialize()),
-      'messageType': ciphertextMessage.getType(), // 3=PreKey, 1=Whisper
-    };
+    return _guestSignalHelper!.encrypt(address, plaintext);
   }
 
   /// Decrypt message with Signal Protocol
@@ -844,35 +732,11 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     String ciphertextBase64,
     int messageType,
   ) async {
-    if (_guestSessionStore == null ||
-        _guestPreKeyStore == null ||
-        _guestSignedPreKeyStore == null ||
-        _guestIdentityStore == null) {
+    if (_guestSignalHelper == null) {
       throw Exception('Signal stores not initialized');
     }
 
-    final sessionCipher = signal.SessionCipher(
-      _guestSessionStore!,
-      _guestPreKeyStore!,
-      _guestSignedPreKeyStore!,
-      _guestIdentityStore!,
-      address,
-    );
-
-    final ciphertextBytes = base64Decode(ciphertextBase64);
-    Uint8List plaintext;
-
-    if (messageType == signal.CiphertextMessage.prekeyType) {
-      final preKeyMsg = signal.PreKeySignalMessage(ciphertextBytes);
-      plaintext = await sessionCipher.decryptWithCallback(preKeyMsg, (pt) {});
-    } else if (messageType == signal.CiphertextMessage.whisperType) {
-      final signalMsg = signal.SignalMessage.fromSerialized(ciphertextBytes);
-      plaintext = await sessionCipher.decryptFromSignal(signalMsg);
-    } else {
-      throw Exception('Unknown message type: $messageType');
-    }
-
-    return utf8.decode(plaintext);
+    return _guestSignalHelper!.decrypt(address, ciphertextBase64, messageType);
   }
 
   /// Handle Signal Protocol encrypted E2EE key response from participant
@@ -893,33 +757,41 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
         return;
       }
 
-      debugPrint(
-        '[GuestPreJoin] Received Signal-encrypted E2EE key from $participantUserId:$participantDeviceId',
-      );
+      if (messageType == 0) {
+        debugPrint(
+          '[GuestPreJoin] ⚠️ Received plaintext E2EE key response (messageType=0)',
+        );
 
-      // Decrypt with Signal Protocol
-      final address = signal.SignalProtocolAddress(
-        participantUserId,
-        participantDeviceId,
-      );
-      final decryptedJson = await _decryptWithSignal(
-        address,
-        ciphertext,
-        messageType,
-      );
+        await _storeLivekitE2EEKey(ciphertext, participantUserId);
+      } else {
+        debugPrint(
+          '[GuestPreJoin] Received Signal-encrypted E2EE key from $participantUserId:$participantDeviceId',
+        );
 
-      // Parse decrypted payload
-      final payload = jsonDecode(decryptedJson) as Map<String, dynamic>;
-      final encryptedKey = payload['encryptedKey'] as String?;
+        // Decrypt with Signal Protocol
+        final address = signal.SignalProtocolAddress(
+          participantUserId,
+          participantDeviceId,
+        );
+        final decryptedJson = await _decryptWithSignal(
+          address,
+          ciphertext,
+          messageType,
+        );
 
-      if (encryptedKey == null) {
-        debugPrint('[GuestPreJoin] ✗ No encryptedKey in decrypted payload');
-        _transitionTo(GuestFlowState.keyExchangeFailed);
-        return;
+        // Parse decrypted payload
+        final payload = jsonDecode(decryptedJson) as Map<String, dynamic>;
+        final encryptedKey = payload['encryptedKey'] as String?;
+
+        if (encryptedKey == null) {
+          debugPrint('[GuestPreJoin] ✗ No encryptedKey in decrypted payload');
+          _transitionTo(GuestFlowState.keyExchangeFailed);
+          return;
+        }
+
+        // Store LiveKit E2EE key in session storage
+        await _storeLivekitE2EEKey(encryptedKey, participantUserId);
       }
-
-      // Store LiveKit E2EE key in session storage
-      await _storeLivekitE2EEKey(encryptedKey, participantUserId);
 
       // Mark key as received
       setState(() {
@@ -1062,6 +934,19 @@ class _ExternalPreJoinViewState extends State<ExternalPreJoinView> {
     _transitionTo(GuestFlowState.requestingAdmission);
 
     try {
+      final displayName = _nameController.text.trim();
+      if (displayName.isNotEmpty) {
+        await _externalService.updateSessionDisplayName(
+          sessionId: _sessionId!,
+          displayName: displayName,
+        );
+
+        if (kIsWeb) {
+          final storage = html.window.sessionStorage;
+          storage['external_display_name'] = displayName;
+        }
+      }
+
       await ApiService.instance.post(
         '/api/meetings/$_meetingId/external/$_sessionId/request-admission',
       );

@@ -1,7 +1,8 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../api_service.dart';
-import '../../../socket_service.dart';
+import '../../../socket_service.dart'
+    if (dart.library.io) '../../../socket_service_native.dart';
 import '../encryption_service.dart';
 import '../key_manager.dart';
 import '../session_manager.dart';

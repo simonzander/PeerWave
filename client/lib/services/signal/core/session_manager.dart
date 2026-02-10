@@ -44,6 +44,10 @@ class SessionManager with PermanentSessionStore {
 
   bool _initialized = false;
 
+  static const Duration _sessionCacheTtl = Duration(minutes: 5);
+  static const Duration _deviceStaleTtl = Duration(days: 7);
+  final Map<String, DateTime> _sessionValidationCache = {};
+
   bool get isInitialized => _initialized;
 
   // Private constructor with dependencies
@@ -87,6 +91,30 @@ class SessionManager with PermanentSessionStore {
   // ============================================================================
   // HELPER METHODS
   // ============================================================================
+
+  String _sessionCacheKey(String userId, int deviceId) => '$userId:$deviceId';
+
+  bool _isCacheFresh(DateTime cachedAt) {
+    return DateTime.now().difference(cachedAt) <= _sessionCacheTtl;
+  }
+
+  void _clearSessionCache(String userId, int deviceId) {
+    _sessionValidationCache.remove(_sessionCacheKey(userId, deviceId));
+  }
+
+  bool _isDeviceStale(DateTime? lastSeen, {Duration? ttl}) {
+    if (lastSeen == null) return false;
+    final cutoff = ttl ?? _deviceStaleTtl;
+    return DateTime.now().difference(lastSeen) > cutoff;
+  }
+
+  DateTime? _pickLastSeen(DateTime? serverLastSeen, DateTime? localLastUsed) {
+    if (serverLastSeen == null) return localLastUsed;
+    if (localLastUsed == null) return serverLastSeen;
+    return serverLastSeen.isAfter(localLastUsed)
+        ? serverLastSeen
+        : localLastUsed;
+  }
 
   /// Convert KeyBundle model to libsignal PreKeyBundle
   PreKeyBundle _toPreKeyBundle(KeyBundle bundle) {
@@ -164,14 +192,15 @@ class SessionManager with PermanentSessionStore {
 
   /// Establish session with a user by fetching their PreKeyBundle
   /// Returns true if at least one device session was established
-  Future<bool> establishSessionWithUser(String userId) async {
+  Future<bool> establishSessionWithUser(
+    String userId, {
+    bool applyDeviceCap = false,
+  }) async {
     try {
       debugPrint('[SESSION_MANAGER] Establishing session with: $userId');
 
       // Fetch PreKeyBundles for user
-      final response = await ApiService.instance.get(
-        '/signal/prekey_bundle/$userId',
-      );
+      final response = await apiService.get('/signal/prekey_bundle/$userId');
 
       if (response.statusCode != 200) {
         debugPrint(
@@ -189,14 +218,87 @@ class SessionManager with PermanentSessionStore {
         return false;
       }
 
-      int successCount = 0;
+      final bundles = <KeyBundle>[];
+      final serverDeviceIds = <int>{};
 
       for (final deviceData in devices) {
         try {
           final bundle = KeyBundle.fromServer(
             deviceData as Map<String, dynamic>,
           );
+          bundles.add(bundle);
+          serverDeviceIds.add(bundle.deviceId);
+        } catch (e) {
+          debugPrint('[SESSION_MANAGER] Failed to parse bundle: $e');
+        }
+      }
+
+      if (bundles.isEmpty) {
+        debugPrint('[SESSION_MANAGER] No valid bundles found for $userId');
+        return false;
+      }
+
+      // Prune local sessions for devices that no longer exist on server.
+      if (serverDeviceIds.isNotEmpty) {
+        final localDeviceIds = await getAllDeviceSessions(userId);
+        for (final deviceId in localDeviceIds) {
+          if (!serverDeviceIds.contains(deviceId)) {
+            final address = SignalProtocolAddress(userId, deviceId);
+            await deleteSession(address);
+            _clearSessionCache(userId, deviceId);
+            debugPrint(
+              '[SESSION_MANAGER] Pruned stale session for $userId:$deviceId',
+            );
+          }
+        }
+      }
+
+      int successCount = 0;
+
+      for (final bundle in bundles) {
+        try {
+          final address = SignalProtocolAddress(bundle.userId, bundle.deviceId);
+          final cacheKey = _sessionCacheKey(bundle.userId, bundle.deviceId);
+          final cachedAt = _sessionValidationCache[cacheKey];
+
+          if (applyDeviceCap) {
+            final localLastUsed = await getSessionLastUsed(
+              bundle.userId,
+              bundle.deviceId,
+            );
+            final lastSeen = _pickLastSeen(
+              bundle.signedPreKeyCreatedAt,
+              localLastUsed,
+            );
+
+            if (_isDeviceStale(lastSeen)) {
+              debugPrint(
+                '[SESSION_MANAGER] Skipping stale device ${bundle.userId}:${bundle.deviceId}',
+              );
+              continue;
+            }
+          }
+
+          if (cachedAt != null && _isCacheFresh(cachedAt)) {
+            debugPrint(
+              '[SESSION_MANAGER] Using cached session for ${bundle.userId}:${bundle.deviceId}',
+            );
+            successCount++;
+            continue;
+          }
+
+          final isValid = await validateSessionWithBundle(address, bundle);
+          if (isValid) {
+            _sessionValidationCache[cacheKey] = DateTime.now();
+            debugPrint(
+              '[SESSION_MANAGER] ✓ Session already valid: ${bundle.userId}:${bundle.deviceId}',
+            );
+            successCount++;
+            continue;
+          }
+
           await buildSessionFromBundle(bundle);
+          _sessionValidationCache[cacheKey] = DateTime.now();
           successCount++;
         } catch (e) {
           debugPrint('[SESSION_MANAGER] Failed to build session: $e');
@@ -211,6 +313,38 @@ class SessionManager with PermanentSessionStore {
       debugPrint('[SESSION_MANAGER] Error establishing session: $e');
       return false;
     }
+  }
+
+  /// Filter device IDs to those recently active (local last-used metadata).
+  Future<List<int>> filterActiveDeviceIds(
+    String userId,
+    List<int> deviceIds, {
+    Duration? ttl,
+  }) async {
+    final cutoff = ttl ?? _deviceStaleTtl;
+    final active = <int>[];
+
+    for (final deviceId in deviceIds) {
+      final lastUsed = await getSessionLastUsed(userId, deviceId);
+      if (lastUsed == null) {
+        active.add(deviceId);
+        continue;
+      }
+
+      if (DateTime.now().difference(lastUsed) <= cutoff) {
+        active.add(deviceId);
+      }
+    }
+
+    return active;
+  }
+
+  Future<bool> hasActiveSessionsWithUser(String userId, {Duration? ttl}) async {
+    final deviceIds = await getAllDeviceSessions(userId);
+    if (deviceIds.isEmpty) return false;
+
+    final active = await filterActiveDeviceIds(userId, deviceIds, ttl: ttl);
+    return active.isNotEmpty;
   }
 
   /// Get device IDs for a user from local session storage.
@@ -339,7 +473,7 @@ class SessionManager with PermanentSessionStore {
           debugPrint('[SESSION_MANAGER] Fetching PreKeyBundle for: $userId');
 
           // Fetch their PreKeyBundle
-          final response = await ApiService.instance.get(
+          final response = await apiService.get(
             '/signal/prekey_bundle/$userId',
           );
           final devices = response.data is String
@@ -373,6 +507,80 @@ class SessionManager with PermanentSessionStore {
     } catch (e, stackTrace) {
       debugPrint('[SESSION_MANAGER] Error during re-establishment: $e');
       debugPrint('[SESSION_MANAGER] Stack trace: $stackTrace');
+    }
+  }
+
+  /// Prune local sessions for devices that no longer exist on the server.
+  ///
+  /// Uses the session store to enumerate users/devices, then compares against
+  /// current PreKeyBundle device lists from the server.
+  Future<void> pruneStaleSessions({int limit = 20}) async {
+    try {
+      final users = await getAllSessionUsers();
+      if (users.isEmpty) return;
+
+      final scopedUsers = limit > 0 && users.length > limit
+          ? users.take(limit).toList()
+          : users;
+
+      debugPrint(
+        '[SESSION_MANAGER] Pruning stale sessions for ${scopedUsers.length} users',
+      );
+
+      for (final userId in scopedUsers) {
+        try {
+          final response = await apiService.get(
+            '/signal/prekey_bundle/$userId',
+          );
+
+          if (response.statusCode != 200) {
+            debugPrint(
+              '[SESSION_MANAGER] Skipping $userId (HTTP ${response.statusCode})',
+            );
+            continue;
+          }
+
+          final devices = response.data is String
+              ? jsonDecode(response.data)
+              : response.data;
+
+          if (devices is! List || devices.isEmpty) {
+            continue;
+          }
+
+          final serverDeviceIds = <int>{};
+          for (final deviceData in devices) {
+            try {
+              final bundle = KeyBundle.fromServer(
+                deviceData as Map<String, dynamic>,
+              );
+              serverDeviceIds.add(bundle.deviceId);
+            } catch (e) {
+              debugPrint('[SESSION_MANAGER] Bad bundle for $userId: $e');
+            }
+          }
+
+          if (serverDeviceIds.isEmpty) continue;
+
+          final localDeviceIds = await getAllDeviceSessions(userId);
+          for (final deviceId in localDeviceIds) {
+            if (!serverDeviceIds.contains(deviceId)) {
+              final address = SignalProtocolAddress(userId, deviceId);
+              await deleteSession(address);
+              _clearSessionCache(userId, deviceId);
+              debugPrint(
+                '[SESSION_MANAGER] Pruned stale session for $userId:$deviceId',
+              );
+            }
+          }
+
+          await Future.delayed(const Duration(milliseconds: 50));
+        } catch (e) {
+          debugPrint('[SESSION_MANAGER] Error pruning $userId: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('[SESSION_MANAGER] Error during session pruning: $e');
     }
   }
 
@@ -448,6 +656,7 @@ class SessionManager with PermanentSessionStore {
       if (await containsSession(address)) {
         // Delete the session
         await deleteSession(address);
+        _clearSessionCache(userId, deviceId);
         debugPrint(
           '[SESSION_MANAGER] ✓ Deleted session with $userId:$deviceId due to remote invalidation',
         );
@@ -485,6 +694,7 @@ class SessionManager with PermanentSessionStore {
       final primaryAddress = SignalProtocolAddress(userId, 1);
       if (await containsSession(primaryAddress)) {
         await deleteSession(primaryAddress);
+        _clearSessionCache(userId, 1);
         debugPrint(
           '[SESSION_MANAGER] ✓ Deleted primary session with $userId due to identity key change',
         );

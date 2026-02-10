@@ -2,9 +2,12 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 
-import '../../../../socket_service.dart';
+import '../../../../socket_service.dart'
+    if (dart.library.io) '../../../../socket_service_native.dart';
 import '../../../../../core/events/event_bus.dart' as app_events;
 import '../../../../user_profile_service.dart';
+import '../../../../storage/sqlite_group_message_store.dart';
+import '../../../../event_bus.dart';
 import '../../encryption_service.dart';
 import '../../session_manager.dart';
 import '../../healing_service.dart';
@@ -247,6 +250,58 @@ mixin MessageReceivingMixin {
     required String sender,
     required String itemId,
   }) async {
+    // Handle emote messages (reactions)
+    if (type == 'emote') {
+      try {
+        final emoteData = json.decode(message);
+        final messageId = emoteData['messageId'] as String?;
+        final emoji = emoteData['emoji'] as String?;
+        final action = emoteData['action'] as String?;
+        final reactingSender = emoteData['sender'] as String?;
+        final channelId = emoteData['channelId'] as String?;
+
+        if (messageId != null &&
+            emoji != null &&
+            action != null &&
+            reactingSender != null) {
+          debugPrint(
+            '[RECEIVE] Processing $action reaction: $emoji on message $messageId by $reactingSender',
+          );
+
+          // Update database
+          final groupMessageStore = await SqliteGroupMessageStore.getInstance();
+          if (action == 'add') {
+            await groupMessageStore.addReaction(
+              messageId,
+              emoji,
+              reactingSender,
+            );
+          } else if (action == 'remove') {
+            await groupMessageStore.removeReaction(
+              messageId,
+              emoji,
+              reactingSender,
+            );
+          }
+
+          // Get updated reactions
+          final reactions = await groupMessageStore.getReactions(messageId);
+
+          // Emit event to update UI
+          EventBus.instance.emit(AppEvent.reactionUpdated, {
+            'messageId': messageId,
+            'channelId': channelId,
+            'reactions': reactions,
+          });
+
+          debugPrint('[RECEIVE] ✓ Reaction processed and event emitted');
+        }
+      } catch (e) {
+        debugPrint('[RECEIVE] Error processing emote message: $e');
+      }
+      return; // Don't process emotes as regular messages
+    }
+
     // Skip certain system messages
     if (isSystemMessage(type)) {
       await handleSystemMessage(type, message, dataMap);
@@ -275,7 +330,8 @@ mixin MessageReceivingMixin {
       'status': 'received',
       'direction': 'received',
       'sender': sender,
-      'senderDeviceId': dataMap['senderDeviceId'],
+      'senderDeviceId':
+          dataMap['senderDevice'], // Field is 'senderDevice' in dataMap
       'channelId': dataMap['channel'],
       'metadata': dataMap['metadata'],
       'isOwnMessage': isOwnMessage,
@@ -298,6 +354,8 @@ mixin MessageReceivingMixin {
         type == 'call_notification' ||
         type == 'meeting_e2ee_key_request' ||
         type == 'meeting_e2ee_key_response' ||
+        type == 'sender_key_request' ||
+        type == 'sender_key_response' ||
         type == 'signal:senderKeyDistribution';
   }
 
@@ -348,6 +406,17 @@ mixin MessageReceivingMixin {
       // The server will re-deliver it via socket when we come online
       // The 'receiveSenderKeyDistribution' socket listener will handle it
       // We just mark it as processed here to clear from queue
+    } else if (type == 'meeting_e2ee_key_request' ||
+        type == 'meeting_e2ee_key_response') {
+      // E2EE key exchange messages need to emit EventBus events
+      debugPrint('[RECEIVE] E2EE system message: $type - triggering callbacks');
+      await triggerCallbacks(type, data, message);
+    } else if (type == 'sender_key_request' || type == 'sender_key_response') {
+      // Sender key request/response messages - trigger callbacks
+      debugPrint(
+        '[RECEIVE] Sender key system message: $type - triggering callbacks',
+      );
+      await triggerCallbacks(type, data, message);
     }
   }
 
@@ -364,15 +433,91 @@ mixin MessageReceivingMixin {
         'decryptedMessage': message,
       });
     } else if (type == 'meeting_e2ee_key_request') {
+      // Parse the JSON payload and merge with envelope data
+      Map<String, dynamic> payload = {};
+      try {
+        payload = message.isNotEmpty ? jsonDecode(message) : {};
+      } catch (e) {
+        debugPrint('[RECEIVE] Failed to parse meeting key request payload: $e');
+      }
+
       app_events.EventBus.instance.emit(app_events.AppEvent.meetingKeyRequest, {
         ...data,
+        ...payload, // Merge payload fields (requesterId, meetingId, etc.)
         'decryptedMessage': message,
       });
     } else if (type == 'meeting_e2ee_key_response') {
-      app_events.EventBus.instance.emit(
-        app_events.AppEvent.meetingKeyResponse,
-        {...data, 'decryptedMessage': message},
-      );
+      // Parse the JSON payload and merge with envelope data
+      Map<String, dynamic> payload = {};
+      try {
+        payload = message.isNotEmpty ? jsonDecode(message) : {};
+      } catch (e) {
+        debugPrint(
+          '[RECEIVE] Failed to parse meeting key response payload: $e',
+        );
+      }
+
+      app_events.EventBus.instance.emit(app_events.AppEvent.meetingKeyResponse, {
+        ...data,
+        ...payload, // Merge payload fields (meetingId, encryptedKey, timestamp)
+        'decryptedMessage': message,
+      });
+    } else if (type == 'video_e2ee_key_request') {
+      // Parse the JSON payload and merge with envelope data
+      Map<String, dynamic> payload = {};
+      try {
+        payload = message.isNotEmpty ? jsonDecode(message) : {};
+      } catch (e) {
+        debugPrint('[RECEIVE] Failed to parse video key request payload: $e');
+      }
+
+      app_events.EventBus.instance.emit(app_events.AppEvent.videoKeyRequest, {
+        ...data,
+        ...payload, // Merge payload fields (requesterId, channelId, etc.)
+        'decryptedMessage': message,
+      });
+    } else if (type == 'video_e2ee_key_response') {
+      // Parse the JSON payload and merge with envelope data
+      Map<String, dynamic> payload = {};
+      try {
+        payload = message.isNotEmpty ? jsonDecode(message) : {};
+      } catch (e) {
+        debugPrint('[RECEIVE] Failed to parse video key response payload: $e');
+      }
+
+      app_events.EventBus.instance.emit(app_events.AppEvent.videoKeyResponse, {
+        ...data,
+        ...payload, // Merge payload fields (channelId, encryptedKey, timestamp)
+        'decryptedMessage': message,
+      });
+    } else if (type == 'sender_key_request') {
+      // Parse the JSON payload and merge with envelope data
+      Map<String, dynamic> payload = {};
+      try {
+        payload = message.isNotEmpty ? jsonDecode(message) : {};
+      } catch (e) {
+        debugPrint('[RECEIVE] Failed to parse sender key request payload: $e');
+      }
+
+      app_events.EventBus.instance.emit(app_events.AppEvent.senderKeyRequest, {
+        ...data,
+        ...payload, // Merge payload fields (requesterId, targetUserId, groupId, etc.)
+        'decryptedMessage': message,
+      });
+    } else if (type == 'sender_key_response') {
+      // Parse the JSON payload and merge with envelope data
+      Map<String, dynamic> payload = {};
+      try {
+        payload = message.isNotEmpty ? jsonDecode(message) : {};
+      } catch (e) {
+        debugPrint('[RECEIVE] Failed to parse sender key response payload: $e');
+      }
+
+      app_events.EventBus.instance.emit(app_events.AppEvent.senderKeyResponse, {
+        ...data,
+        ...payload, // Merge payload fields (responderId, requesterId, groupId, etc.)
+        'decryptedMessage': message,
+      });
     }
 
     // Legacy callback support (deprecated - use EventBus instead)

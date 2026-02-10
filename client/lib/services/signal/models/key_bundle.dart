@@ -15,6 +15,7 @@ class KeyBundle {
   final Uint8List signedPreKey;
   final Uint8List signedPreKeySignature;
   final int registrationId;
+  final DateTime? signedPreKeyCreatedAt;
 
   KeyBundle({
     required this.userId,
@@ -26,6 +27,7 @@ class KeyBundle {
     required this.signedPreKey,
     required this.signedPreKeySignature,
     required this.registrationId,
+    this.signedPreKeyCreatedAt,
   });
 
   /// Create from server response
@@ -49,6 +51,13 @@ class KeyBundle {
         ? regIdRaw
         : int.parse(regIdRaw.toString());
 
+    final signedPreKeyCreatedAt = _parseDateTime(
+      signedPreKeyObj['createdAt'] ??
+          signedPreKeyObj['updatedAt'] ??
+          signedPreKeyObj['lastUpdated'] ??
+          signedPreKeyObj['uploadedAt'],
+    );
+
     return KeyBundle(
       userId: data['userId'] as String,
       deviceId: deviceId,
@@ -65,6 +74,7 @@ class KeyBundle {
         signedPreKeyObj['signed_prekey_signature'] as String,
       ),
       registrationId: registrationId,
+      signedPreKeyCreatedAt: signedPreKeyCreatedAt,
     );
   }
 
@@ -91,6 +101,18 @@ class KeyBundle {
 
   static Uint8List _decodeBase64(String base64String) {
     return base64Decode(base64String);
+  }
+
+  static DateTime? _parseDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is int) {
+      return DateTime.fromMillisecondsSinceEpoch(value);
+    }
+    if (value is String) {
+      return DateTime.tryParse(value);
+    }
+    return null;
   }
 
   static String _encodeBase64(Uint8List bytes) {

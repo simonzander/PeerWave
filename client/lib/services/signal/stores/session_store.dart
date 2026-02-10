@@ -62,6 +62,9 @@ mixin PermanentSessionStore implements SessionStore {
 
   String get _storeName => 'peerwaveSignalSessions';
   String get _keyPrefix => 'session_';
+  String get _metaStoreName => 'peerwaveSignalSessionsMeta';
+  String get _metaKeyPrefix => 'session_meta_';
+  static const Duration _lastUsedWriteInterval = Duration(hours: 6);
 
   // ============================================================================
   // PRIVATE HELPER METHODS
@@ -71,6 +74,50 @@ mixin PermanentSessionStore implements SessionStore {
   /// Format: 'session_{userId}_{deviceId}'
   String _sessionKey(SignalProtocolAddress address) =>
       '$_keyPrefix${address.getName()}_${address.getDeviceId()}';
+
+  /// Generate storage key for session metadata.
+  /// Format: 'session_meta_{userId}_{deviceId}'
+  String _sessionMetaKey(SignalProtocolAddress address) =>
+      '$_metaKeyPrefix${address.getName()}_${address.getDeviceId()}';
+
+  Future<void> _touchSessionMeta(SignalProtocolAddress address) async {
+    final storage = DeviceScopedStorageService.instance;
+    final key = _sessionMetaKey(address);
+    final now = DateTime.now();
+
+    try {
+      final existing = await storage.getDecrypted(
+        _metaStoreName,
+        _metaStoreName,
+        key,
+      );
+
+      if (existing != null) {
+        final parsed = jsonDecode(existing) as Map<String, dynamic>;
+        final lastUsedMs = parsed['lastUsedMs'] as int?;
+        if (lastUsedMs != null) {
+          final lastUsed = DateTime.fromMillisecondsSinceEpoch(lastUsedMs);
+          if (now.difference(lastUsed) < _lastUsedWriteInterval) {
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[SESSION_STORE] Error reading session meta: $e');
+    }
+
+    try {
+      final payload = jsonEncode({'lastUsedMs': now.millisecondsSinceEpoch});
+      await storage.storeEncrypted(
+        _metaStoreName,
+        _metaStoreName,
+        key,
+        payload,
+      );
+    } catch (e) {
+      debugPrint('[SESSION_STORE] Error writing session meta: $e');
+    }
+  }
 
   /// Initialize session store - MUST be called after mixin is applied.
   ///
@@ -136,6 +183,7 @@ mixin PermanentSessionStore implements SessionStore {
         );
 
         if (value != null) {
+          await _touchSessionMeta(address);
           return SessionRecord.fromSerialized(base64Decode(value));
         } else {
           return SessionRecord();
@@ -174,6 +222,8 @@ mixin PermanentSessionStore implements SessionStore {
       base64Encode(serialized),
     );
 
+    await _touchSessionMeta(address);
+
     // Update session state
     final count = await getSessionCount();
     signal_state.SessionState.instance.updateStatus(count, 0);
@@ -194,6 +244,11 @@ mixin PermanentSessionStore implements SessionStore {
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
     await storage.deleteEncrypted(_storeName, _storeName, sessionKey);
+    await storage.deleteEncrypted(
+      _metaStoreName,
+      _metaStoreName,
+      _sessionMetaKey(address),
+    );
 
     debugPrint(
       '[SESSION_STORE] Deleted session for ${address.getName()}:${address.getDeviceId()}',
@@ -223,6 +278,13 @@ mixin PermanentSessionStore implements SessionStore {
       if (key.startsWith('${_keyPrefix}${name}_')) {
         await storage.deleteEncrypted(_storeName, _storeName, key);
         deletedCount++;
+      }
+    }
+
+    final metaKeys = await storage.getAllKeys(_metaStoreName, _metaStoreName);
+    for (var key in metaKeys) {
+      if (key.startsWith('${_metaKeyPrefix}${name}_')) {
+        await storage.deleteEncrypted(_metaStoreName, _metaStoreName, key);
       }
     }
 
@@ -294,6 +356,13 @@ mixin PermanentSessionStore implements SessionStore {
       }
     }
 
+    final metaKeys = await storage.getAllKeys(_metaStoreName, _metaStoreName);
+    for (var key in metaKeys) {
+      if (key.startsWith(_metaKeyPrefix)) {
+        await storage.deleteEncrypted(_metaStoreName, _metaStoreName, key);
+      }
+    }
+
     debugPrint('[SESSION_STORE] ✓ Deleted $deletedCount sessions');
 
     // Reset session state
@@ -345,6 +414,30 @@ mixin PermanentSessionStore implements SessionStore {
     }
 
     return deviceIds;
+  }
+
+  /// Get last-used timestamp for a session (local metadata).
+  Future<DateTime?> getSessionLastUsed(String name, int deviceId) async {
+    try {
+      final storage = DeviceScopedStorageService.instance;
+      final key = '$_metaKeyPrefix${name}_$deviceId';
+      final value = await storage.getDecrypted(
+        _metaStoreName,
+        _metaStoreName,
+        key,
+      );
+
+      if (value == null) return null;
+
+      final parsed = jsonDecode(value) as Map<String, dynamic>;
+      final lastUsedMs = parsed['lastUsedMs'] as int?;
+      if (lastUsedMs == null) return null;
+
+      return DateTime.fromMillisecondsSinceEpoch(lastUsedMs);
+    } catch (e) {
+      debugPrint('[SESSION_STORE] Error getting session last-used: $e');
+      return null;
+    }
   }
 
   /// Check if user has any sessions (any device).

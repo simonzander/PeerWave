@@ -286,15 +286,27 @@ class VideoGridLayout extends StatelessWidget {
     final localId = room!.localParticipant?.identity;
     if (localId == null) return const SizedBox.shrink();
 
+    final size = MediaQuery.of(context).size;
+    final isPortrait = size.height > size.width;
+
+    final totalParticipants = participants.length;
+
     // If maxVisibleParticipants is 0 (not calculated yet), show all participants
     // to prevent empty grid on initial load
     final effectiveMaxVisible = maxVisibleParticipants > 0
         ? maxVisibleParticipants
-        : participants.length;
+        : totalParticipants;
+    final maxColumns = isPortrait ? 2 : 4;
+    final maxRows = isPortrait ? 3 : 3;
+    final capacity = maxColumns * maxRows;
+
+    final cappedMaxVisible = effectiveMaxVisible < capacity
+        ? effectiveMaxVisible
+        : capacity;
 
     // Get visibility manager
     final manager = ParticipantVisibilityManager(
-      maxVisibleParticipants: effectiveMaxVisible,
+      maxVisibleParticipants: cappedMaxVisible,
       localParticipantId: localId,
     );
 
@@ -311,38 +323,72 @@ class VideoGridLayout extends StatelessWidget {
     final totalVisible = visibleParticipants.length;
     final totalHidden = participants.length - totalVisible;
 
-    int columns = 1;
-    if (totalVisible > 1) columns = 2;
-    if (totalVisible > 4) columns = 3;
+    final columns = isPortrait
+        ? (totalVisible <= 2 ? 1 : maxColumns)
+        : (totalVisible < maxColumns ? totalVisible : maxColumns);
+    final rows = ((totalVisible + columns - 1) ~/ columns);
+
+    final orderedParticipants = isPortrait && columns > 1
+        ? _orderPortraitGrid(visibleParticipants, rows, columns)
+        : visibleParticipants;
+
+    final childAspectRatio = 16 / 9;
+    final padding = 8.0;
+    final spacing = 8.0;
+
+    final availableWidth = size.width - (padding * 2);
+    final availableHeight = size.height - (padding * 2);
+
+    double tileWidth = availableWidth / columns;
+    double tileHeight = tileWidth * 9 / 16;
+
+    final maxGridHeight = availableHeight - (spacing * (rows - 1));
+    if (tileHeight * rows > maxGridHeight && maxGridHeight > 0) {
+      tileHeight = maxGridHeight / rows;
+      tileWidth = tileHeight * 16 / 9;
+    }
+
+    final gridWidth =
+        (tileWidth * columns) + (spacing * (columns - 1)) + (padding * 2);
+    final gridHeight =
+        (tileHeight * rows) + (spacing * (rows - 1)) + (padding * 2);
 
     return Stack(
       children: [
         Container(
           color: Theme.of(context).colorScheme.surface,
-          child: GridView.builder(
-            padding: const EdgeInsets.all(8),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              childAspectRatio: 16 / 9,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-            ),
-            itemCount: totalVisible,
-            itemBuilder: (context, index) {
-              final item = visibleParticipants[index];
-              final participant = item['participant'];
-              final isLocal = item['isLocal'] as bool;
-              final isPending = item['isPending'] == true;
-              final pendingData = item['pendingData'] as Map<String, dynamic>?;
+          child: Center(
+            child: SizedBox(
+              width: gridWidth,
+              height: gridHeight,
+              child: GridView.builder(
+                padding: EdgeInsets.all(padding),
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  childAspectRatio: childAspectRatio,
+                  crossAxisSpacing: spacing,
+                  mainAxisSpacing: spacing,
+                ),
+                itemCount: orderedParticipants.length,
+                itemBuilder: (context, index) {
+                  final item = orderedParticipants[index];
+                  final participant = item['participant'];
+                  final isLocal = item['isLocal'] as bool;
+                  final isPending = item['isPending'] == true;
+                  final pendingData =
+                      item['pendingData'] as Map<String, dynamic>?;
 
-              return _buildVideoTile(
-                context: context,
-                participant: participant,
-                isLocal: isLocal,
-                isPending: isPending,
-                pendingData: pendingData,
-              );
-            },
+                  return _buildVideoTile(
+                    context: context,
+                    participant: participant,
+                    isLocal: isLocal,
+                    isPending: isPending,
+                    pendingData: pendingData,
+                  );
+                },
+              ),
+            ),
           ),
         ),
 
@@ -358,6 +404,26 @@ class VideoGridLayout extends StatelessWidget {
           ),
       ],
     );
+  }
+
+  List<Map<String, dynamic>> _orderPortraitGrid(
+    List<Map<String, dynamic>> participants,
+    int rows,
+    int columns,
+  ) {
+    final ordered = <Map<String, dynamic>>[];
+    if (participants.isEmpty) return ordered;
+
+    for (int row = 0; row < rows; row++) {
+      for (int col = 0; col < columns; col++) {
+        final sourceIndex = (col * rows) + row;
+        if (sourceIndex < participants.length) {
+          ordered.add(participants[sourceIndex]);
+        }
+      }
+    }
+
+    return ordered;
   }
 
   Widget _buildVideoTile({

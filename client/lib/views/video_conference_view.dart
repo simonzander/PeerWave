@@ -83,6 +83,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   Timer? _visibilityUpdateTimer;
   int _maxVisibleParticipants = 0;
   final Map<String, StreamSubscription> _audioSubscriptions = {};
+  bool _serviceListenerAttached = false;
+  int _lastRemoteParticipantCount = -1;
+  bool? _lastHasScreenShare;
+  String? _lastScreenShareParticipantId;
 
   // Profile cache to prevent flickering
   final Map<String, String> _displayNameCache = {};
@@ -134,6 +138,8 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         _service = Provider.of<VideoConferenceService>(context, listen: false);
         debugPrint('[VideoConferenceView] Service obtained from Provider');
 
+        _attachServiceListener();
+
         // Register with MessageListenerService for E2EE key exchange
         MessageListenerService.instance.registerVideoConferenceService(
           _service!,
@@ -143,6 +149,7 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         );
 
         // Listen for participant joined events to track who actually joined
+        // AND to proactively distribute sender keys
         _service!.onParticipantJoined.listen((participant) {
           // LiveKit identity is "userId:deviceId" in this app.
           final identity = participant.identity;
@@ -157,6 +164,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
               '[VideoConferenceView] User $userId joined, removing from missed call list',
             );
           }
+
+          // SENDER KEY EXCHANGE: Proactively redistribute our sender key when new participant joins
+          // This ensures they have our key before they try to send us E2EE key requests
+          _redistributeSenderKeyForNewParticipant();
         });
 
         // Schedule join for after build completes (only if not already in call)
@@ -180,6 +191,41 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
     // Full-view mode is already set by navigateToCurrentChannelFullView() before navigation
     // So we don't need to call enterFullView() here anymore
+  }
+
+  void _attachServiceListener() {
+    if (_service == null || _serviceListenerAttached) return;
+
+    _service!.addListener(_onServiceUpdated);
+    _serviceListenerAttached = true;
+
+    _lastRemoteParticipantCount = _service!.remoteParticipants.length;
+    _lastHasScreenShare = _service!.hasActiveScreenShare;
+    _lastScreenShareParticipantId = _service!.currentScreenShareParticipantId;
+  }
+
+  void _onServiceUpdated() {
+    if (!mounted || _service == null) return;
+
+    final remoteCount = _service!.remoteParticipants.length;
+    final hasScreenShare = _service!.hasActiveScreenShare;
+    final screenShareId = _service!.currentScreenShareParticipantId;
+
+    final shouldRefresh =
+        remoteCount != _lastRemoteParticipantCount ||
+        hasScreenShare != _lastHasScreenShare ||
+        screenShareId != _lastScreenShareParticipantId;
+
+    if (!shouldRefresh) return;
+
+    _lastRemoteParticipantCount = remoteCount;
+    _lastHasScreenShare = hasScreenShare;
+    _lastScreenShareParticipantId = screenShareId;
+
+    _updateParticipantStates();
+    _updateVisibility(rebuild: false);
+
+    setState(() {});
   }
 
   /// Listen for call:declined socket events to handle timeouts
@@ -410,6 +456,11 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       });
     }
 
+    if (_serviceListenerAttached) {
+      _service?.removeListener(_onServiceUpdated);
+      _serviceListenerAttached = false;
+    }
+
     // Unregister from MessageListenerService
     MessageListenerService.instance.unregisterVideoConferenceService();
     debugPrint(
@@ -502,6 +553,49 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     }
   }
 
+  /// Proactively redistribute sender key when a new participant joins
+  /// This ensures the new participant has our sender key immediately
+  /// before they try to send E2EE key requests
+  Future<void> _redistributeSenderKeyForNewParticipant() async {
+    try {
+      debugPrint(
+        '[VideoConferenceView] 🔄 New participant joined - redistributing sender key',
+      );
+
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClientWithStoredCredentials();
+
+      final activeMemberIds = <String>{};
+      final currentUserId = signalClient.getCurrentUserId?.call();
+      if (currentUserId != null) {
+        activeMemberIds.add(currentUserId);
+      }
+      activeMemberIds.addAll(
+        VideoConferenceService.instance.remoteParticipants.map(
+          (participant) => participant.identity,
+        ),
+      );
+
+      // Force redistribute sender key to all participants (including new one)
+      await signalClient.messagingService.ensureSenderKeyForGroup(
+        widget.channelId,
+        force: true, // Force redistribution
+        activeMemberIds: activeMemberIds.isEmpty
+            ? null
+            : activeMemberIds.toList(),
+      );
+
+      debugPrint(
+        '[VideoConferenceView] ✓ Sender key redistributed for new participant',
+      );
+    } catch (e) {
+      debugPrint(
+        '[VideoConferenceView] ⚠️ Error redistributing sender key: $e',
+      );
+      // Don't throw - this is a best-effort operation
+    }
+  }
+
   /// Send missed call notifications to users who were offline and never got notified
   Future<void> _sendMissedCallNotificationsToOfflineUsers() async {
     // Calculate users who never joined or declined (assumed offline)
@@ -524,8 +618,8 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   }
 
   /// Update visibility based on screen size and participant activity
-  void _updateVisibility() {
-    if (_service == null || _service!.room == null || !mounted) return;
+  bool _updateVisibility({bool rebuild = true}) {
+    if (_service == null || _service!.room == null || !mounted) return false;
 
     final screenSize = MediaQuery.of(context).size;
     final hasScreenShare = _service!.hasActiveScreenShare;
@@ -541,8 +635,13 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       _maxVisibleParticipants = newMaxVisible;
       // Update participant states
       _updateParticipantStates();
-      setState(() {});
+      if (rebuild) {
+        setState(() {});
+      }
+      return true;
     }
+
+    return false;
   }
 
   /// Update participant states with current participants

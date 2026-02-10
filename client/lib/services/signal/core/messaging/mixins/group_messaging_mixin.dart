@@ -3,9 +3,11 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 
-import '../../../../socket_service.dart';
+import '../../../../socket_service.dart'
+    if (dart.library.io) '../../../../socket_service_native.dart';
 import '../../../../storage/sqlite_group_message_store.dart';
 import '../../../../api_service.dart';
+import '../../../../../core/events/event_bus.dart' as app_events;
 import '../../encryption_service.dart';
 import '../../key_manager.dart';
 import '../../session_manager.dart';
@@ -36,6 +38,37 @@ mixin GroupMessagingMixin {
   // 1-hour deduplication window (in-memory, reset on app restart)
   static final Map<String, DateTime> _lastSenderKeySentToDevice = {};
 
+  static const int _senderKeyConcurrency = 15;
+
+  List<Map<String, dynamic>> _filterMembersByActive(
+    List<dynamic> members,
+    List<String>? activeMemberIds,
+  ) {
+    if (activeMemberIds == null) {
+      return members.cast<Map<String, dynamic>>();
+    }
+
+    final activeSet = activeMemberIds.toSet();
+    return members
+        .where((member) => activeSet.contains(member['userId']))
+        .cast<Map<String, dynamic>>()
+        .toList();
+  }
+
+  Future<void> _runWithConcurrency(
+    List<Future<void> Function()> tasks,
+    int concurrency,
+  ) async {
+    for (var i = 0; i < tasks.length; i += concurrency) {
+      final batch = tasks
+          .skip(i)
+          .take(concurrency)
+          .map((task) => task())
+          .toList();
+      await Future.wait(batch);
+    }
+  }
+
   /// Send encrypted group message using sender keys
   ///
   /// Handles:
@@ -54,7 +87,7 @@ mixin GroupMessagingMixin {
 
     try {
       // Ensure sender key exists
-      await ensureSenderKeyForGroup(channelId);
+      await ensureSenderKeyForGroup(channelId, applyDeviceCap: true);
 
       // Encrypt with sender key
       final encrypted = await encryptGroupMessage(channelId, message);
@@ -91,7 +124,17 @@ mixin GroupMessagingMixin {
   }
 
   /// Ensure sender key exists for group
-  Future<void> ensureSenderKeyForGroup(String groupId) async {
+  ///
+  /// Parameters:
+  /// - [groupId]: The group/channel ID
+  /// - [force]: Force redistribution regardless of deduplication metadata (default: false)
+  ///            Used in PreJoin to ensure keys are sent to all participants
+  Future<void> ensureSenderKeyForGroup(
+    String groupId, {
+    bool force = false,
+    List<String>? activeMemberIds,
+    bool applyDeviceCap = false,
+  }) async {
     final myAddress = SignalProtocolAddress(currentUserId, currentDeviceId);
     final senderKeyName = SenderKeyName(groupId, myAddress);
 
@@ -100,7 +143,11 @@ mixin GroupMessagingMixin {
 
     if (!hasSenderKey) {
       debugPrint('[GROUP] Creating sender key for group $groupId');
-      await createAndDistributeSenderKey(groupId);
+      await createAndDistributeSenderKey(
+        groupId,
+        activeMemberIds: activeMemberIds,
+        applyDeviceCap: applyDeviceCap,
+      );
 
       // Verify it was created successfully
       final verified = await senderKeyStore.containsSenderKey(senderKeyName);
@@ -110,10 +157,18 @@ mixin GroupMessagingMixin {
       debugPrint('[GROUP] ✓ Sender key created and verified');
     } else {
       debugPrint('[GROUP] Sender key already exists for group $groupId');
-      // Still distribute to ensure all current members have it
-      // (handles case where new members joined or members cleared storage)
-      debugPrint('[GROUP] Redistributing sender key to current members');
-      await createAndDistributeSenderKey(groupId);
+      // Check if any members need our sender key (targeted distribution)
+      if (force) {
+        debugPrint('[GROUP] Force=true: Redistributing to all members...');
+      } else {
+        debugPrint('[GROUP] Checking which members need our sender key...');
+      }
+      await _sendSenderKeyToMembersWeNeedKeysFrom(
+        groupId,
+        force: force,
+        activeMemberIds: activeMemberIds,
+        applyDeviceCap: applyDeviceCap,
+      );
     }
   }
 
@@ -121,7 +176,16 @@ mixin GroupMessagingMixin {
   ///
   /// This is called before sending each message to ensure bidirectional key exchange.
   /// Uses 1-hour deduplication per device to avoid redundant sends.
-  Future<void> _sendSenderKeyToMembersWeNeedKeysFrom(String groupId) async {
+  ///
+  /// Parameters:
+  /// - [groupId]: The group/channel ID
+  /// - [force]: Bypass deduplication and send to all members (default: false)
+  Future<void> _sendSenderKeyToMembersWeNeedKeysFrom(
+    String groupId, {
+    bool force = false,
+    List<String>? activeMemberIds,
+    bool applyDeviceCap = false,
+  }) async {
     try {
       debugPrint('[GROUP] Checking if any members need our sender key...');
 
@@ -136,12 +200,14 @@ mixin GroupMessagingMixin {
         return;
       }
 
-      final memberList = membersResponse.data is List
+      final rawMembers = membersResponse.data is List
           ? membersResponse.data as List
           : (membersResponse.data as Map)['members'] as List? ?? [];
+      final memberList = _filterMembersByActive(rawMembers, activeMemberIds);
 
-      final myAddress = SignalProtocolAddress(currentUserId, currentDeviceId);
       final now = DateTime.now();
+
+      final tasks = <Future<void> Function()>[];
 
       for (final memberData in memberList) {
         final memberId = memberData['userId'] as String;
@@ -150,7 +216,31 @@ mixin GroupMessagingMixin {
         if (memberId == currentUserId) continue;
 
         // Get device IDs for this member
-        final deviceIds = await sessionStore.getDeviceIdsForUser(memberId);
+        var deviceIds = await sessionStore.getDeviceIdsForUser(memberId);
+
+        if (applyDeviceCap) {
+          deviceIds = await sessionStore.filterActiveDeviceIds(
+            memberId,
+            deviceIds,
+          );
+        }
+
+        if (deviceIds.isEmpty) {
+          final established = await sessionStore.establishSessionWithUser(
+            memberId,
+            applyDeviceCap: applyDeviceCap,
+          );
+
+          if (established) {
+            deviceIds = await sessionStore.getDeviceIdsForUser(memberId);
+            if (applyDeviceCap) {
+              deviceIds = await sessionStore.filterActiveDeviceIds(
+                memberId,
+                deviceIds,
+              );
+            }
+          }
+        }
 
         for (final deviceId in deviceIds) {
           // Check if we have their sender key
@@ -160,34 +250,46 @@ mixin GroupMessagingMixin {
             memberSenderKeyName,
           );
 
-          if (!weHaveTheirKey) {
-            // We don't have their key, send ours (with deduplication)
+          if (!weHaveTheirKey || force) {
+            // We don't have their key, or force=true: send ours (with optional deduplication)
             final dedupeKey = '$groupId:$memberId:$deviceId';
             final lastSent = _lastSenderKeySentToDevice[dedupeKey];
 
-            if (lastSent != null && now.difference(lastSent).inHours < 1) {
+            if (!force &&
+                lastSent != null &&
+                now.difference(lastSent).inHours < 1) {
               debugPrint(
                 '[GROUP]   ⏭️ Skip $memberId:$deviceId (sent ${now.difference(lastSent).inMinutes}m ago)',
               );
               continue;
             }
 
+            final reason = force ? 'forced redistribution' : 'we need theirs';
             debugPrint(
-              '[GROUP]   → Sending sender key to $memberId:$deviceId (we need theirs)',
+              '[GROUP]   → Sending sender key to $memberId:$deviceId ($reason)',
             );
 
-            try {
-              await _sendSenderKeyToDevice(groupId, memberId, deviceId);
-              _lastSenderKeySentToDevice[dedupeKey] = now;
-              debugPrint('[GROUP]   ✓ Sent to $memberId:$deviceId');
-            } catch (e) {
-              debugPrint(
-                '[GROUP]   ⚠️ Failed to send to $memberId:$deviceId: $e',
-              );
-            }
+            tasks.add(() async {
+              try {
+                await _sendSenderKeyToDevice(
+                  groupId,
+                  memberId,
+                  deviceId,
+                  applyDeviceCap: applyDeviceCap,
+                );
+                _lastSenderKeySentToDevice[dedupeKey] = now;
+                debugPrint('[GROUP]   ✓ Sent to $memberId:$deviceId');
+              } catch (e) {
+                debugPrint(
+                  '[GROUP]   ⚠️ Failed to send to $memberId:$deviceId: $e',
+                );
+              }
+            });
           }
         }
       }
+
+      await _runWithConcurrency(tasks, _senderKeyConcurrency);
     } catch (e) {
       debugPrint('[GROUP] ⚠️ Error checking sender keys: $e');
       // Don't throw - message can still be sent
@@ -203,7 +305,11 @@ mixin GroupMessagingMixin {
   /// 4. Establish 1-to-1 sessions with each device (if needed)
   /// 5. Encrypt distribution message individually for each device
   /// 6. Send encrypted copies to each device (skip own devices)
-  Future<void> createAndDistributeSenderKey(String groupId) async {
+  Future<void> createAndDistributeSenderKey(
+    String groupId, {
+    List<String>? activeMemberIds,
+    bool applyDeviceCap = false,
+  }) async {
     final myAddress = SignalProtocolAddress(currentUserId, currentDeviceId);
     final senderKeyName = SenderKeyName(groupId, myAddress);
 
@@ -229,9 +335,10 @@ mixin GroupMessagingMixin {
     }
 
     // Handle both List and Map responses
-    final memberList = membersResponse.data is List
+    final rawMembers = membersResponse.data is List
         ? membersResponse.data as List
         : (membersResponse.data as Map)['members'] as List? ?? [];
+    final memberList = _filterMembersByActive(rawMembers, activeMemberIds);
 
     debugPrint('[GROUP] Fetched ${memberList.length} group members');
 
@@ -239,6 +346,8 @@ mixin GroupMessagingMixin {
     int failCount = 0;
 
     // Step 3-6: For each member, establish sessions and distribute to all devices
+    final tasks = <Future<void> Function()>[];
+
     for (final memberData in memberList) {
       try {
         final memberId = memberData['userId'] as String;
@@ -254,22 +363,40 @@ mixin GroupMessagingMixin {
           continue;
         }
 
-        // Step 3: Fetch prekey bundles for all devices (establishes or refreshes sessions)
-        debugPrint('[GROUP]   Fetching prekey bundles for $memberId...');
-        final bundlesEstablished = await sessionStore.establishSessionWithUser(
-          memberId,
-        );
+        // Step 3: Get device IDs from local session storage
+        var deviceIds = await sessionStore.getDeviceIdsForUser(memberId);
 
-        if (!bundlesEstablished) {
-          debugPrint(
-            '[GROUP]   ✗ Failed to fetch prekey bundles for $memberId',
+        if (applyDeviceCap) {
+          deviceIds = await sessionStore.filterActiveDeviceIds(
+            memberId,
+            deviceIds,
           );
-          failCount++;
-          continue;
         }
 
-        // Step 4: Get device IDs from local session storage
-        final deviceIds = await sessionStore.getDeviceIdsForUser(memberId);
+        if (deviceIds.isEmpty) {
+          debugPrint('[GROUP]   Fetching prekey bundles for $memberId...');
+          final bundlesEstablished = await sessionStore
+              .establishSessionWithUser(
+                memberId,
+                applyDeviceCap: applyDeviceCap,
+              );
+
+          if (!bundlesEstablished) {
+            debugPrint(
+              '[GROUP]   ✗ Failed to fetch prekey bundles for $memberId',
+            );
+            failCount++;
+            continue;
+          }
+
+          deviceIds = await sessionStore.getDeviceIdsForUser(memberId);
+          if (applyDeviceCap) {
+            deviceIds = await sessionStore.filterActiveDeviceIds(
+              memberId,
+              deviceIds,
+            );
+          }
+        }
 
         if (deviceIds.isEmpty) {
           debugPrint('[GROUP]   ✗ No devices found for $memberId');
@@ -283,51 +410,61 @@ mixin GroupMessagingMixin {
         // - Returns SignalMessage if session exists
         // This bundles session establishment with sender key distribution!
         for (final deviceId in deviceIds) {
-          try {
-            debugPrint('[GROUP]     Distributing to $memberId:$deviceId');
+          tasks.add(() async {
+            try {
+              debugPrint('[GROUP]     Distributing to $memberId:$deviceId');
 
-            // Encrypt distribution message for this specific device
-            final memberAddress = SignalProtocolAddress(memberId, deviceId);
-            final sessionCipher = sessionStore.createSessionCipher(
-              memberAddress,
-            );
-            final encryptedDistribution = await sessionCipher.encrypt(
-              distributionBytes,
-            );
-
-            // Send encrypted distribution via HTTP
-            final response = await apiService.post(
-              '/api/signal/distribute-sender-key',
-              data: {
-                'groupId': groupId,
-                'recipientId': memberId,
-                'recipientDeviceId': deviceId,
-                'encryptedDistribution': base64Encode(
-                  encryptedDistribution.serialize(),
-                ),
-                'messageType': encryptedDistribution.getType(),
-              },
-            );
-
-            if (response.statusCode == 200 || response.statusCode == 201) {
-              successCount++;
-              debugPrint('[GROUP]       ✓ Distributed to $memberId:$deviceId');
-            } else {
-              debugPrint(
-                '[GROUP]       ✗ Failed (HTTP ${response.statusCode})',
+              // Encrypt distribution message for this specific device
+              final memberAddress = SignalProtocolAddress(memberId, deviceId);
+              final sessionCipher = sessionStore.createSessionCipher(
+                memberAddress,
               );
+              final encryptedDistribution = await sessionCipher.encrypt(
+                distributionBytes,
+              );
+
+              // Send encrypted distribution via HTTP
+              final response = await apiService.post(
+                '/api/signal/distribute-sender-key',
+                data: {
+                  'groupId': groupId,
+                  'recipientId': memberId,
+                  'recipientDeviceId': deviceId,
+                  'encryptedDistribution': base64Encode(
+                    encryptedDistribution.serialize(),
+                  ),
+                  'messageType': encryptedDistribution.getType(),
+                },
+              );
+
+              if (response.statusCode == 200 || response.statusCode == 201) {
+                successCount++;
+                debugPrint(
+                  '[GROUP]       ✓ Distributed to $memberId:$deviceId',
+                );
+
+                // Update deduplication cache to prevent reciprocal loops
+                final dedupeKey = '$groupId:$memberId:$deviceId';
+                _lastSenderKeySentToDevice[dedupeKey] = DateTime.now();
+              } else {
+                debugPrint(
+                  '[GROUP]       ✗ Failed (HTTP ${response.statusCode})',
+                );
+                failCount++;
+              }
+            } catch (e) {
+              debugPrint('[GROUP]     ✗ Error with device: $e');
               failCount++;
             }
-          } catch (e) {
-            debugPrint('[GROUP]     ✗ Error with device: $e');
-            failCount++;
-          }
+          });
         }
       } catch (e) {
         debugPrint('[GROUP]   ✗ Failed to process member: $e');
         failCount++;
       }
     }
+
+    await _runWithConcurrency(tasks, _senderKeyConcurrency);
 
     debugPrint(
       '[GROUP] ✓ Sender key distribution complete: $successCount succeeded, $failCount failed',
@@ -343,8 +480,9 @@ mixin GroupMessagingMixin {
   Future<void> _sendSenderKeyToDevice(
     String groupId,
     String userId,
-    int deviceId,
-  ) async {
+    int deviceId, {
+    bool applyDeviceCap = false,
+  }) async {
     final myAddress = SignalProtocolAddress(currentUserId, currentDeviceId);
     final senderKeyName = SenderKeyName(groupId, myAddress);
 
@@ -362,7 +500,10 @@ mixin GroupMessagingMixin {
     final distributionBytes = distributionMessage.serialize();
 
     // Establish session with device (if not already established)
-    await sessionStore.establishSessionWithUser(userId);
+    await sessionStore.establishSessionWithUser(
+      userId,
+      applyDeviceCap: applyDeviceCap,
+    );
 
     // Encrypt and send to device
     final deviceAddress = SignalProtocolAddress(userId, deviceId);
@@ -445,7 +586,48 @@ mixin GroupMessagingMixin {
       '[GROUP] ✓ Processed sender key from $senderId:$senderDeviceId for group $groupId',
     );
 
-    // Process any pending messages that were waiting for this sender key
+    // Step 4: Reciprocal exchange - send OUR sender key back to the sender
+    // Only send to the specific device that sent us their key (not broadcast)
+    // Check if they already have our key to prevent unnecessary sends
+    try {
+      // Check if User A already has our (User B's) sender key
+      final ourAddress = SignalProtocolAddress(currentUserId, currentDeviceId);
+      final ourSenderKeyName = SenderKeyName(groupId, ourAddress);
+      final weHaveOurKey = await senderKeyStore.containsSenderKey(
+        ourSenderKeyName,
+      );
+
+      if (!weHaveOurKey) {
+        debugPrint(
+          '[GROUP]   ⏭️ Skip reciprocal send - we don\'t have our own sender key yet',
+        );
+      } else {
+        // Check deduplication timer to prevent loops
+        final dedupeKey = '$groupId:$senderId:$senderDeviceId';
+        final lastSent = _lastSenderKeySentToDevice[dedupeKey];
+        final now = DateTime.now();
+
+        if (lastSent != null && now.difference(lastSent).inHours < 1) {
+          debugPrint(
+            '[GROUP]   ⏭️ Skip reciprocal send to $senderId:$senderDeviceId (sent ${now.difference(lastSent).inMinutes}m ago)',
+          );
+        } else {
+          debugPrint(
+            '[GROUP]   → Sending OUR sender key back to $senderId:$senderDeviceId (reciprocal exchange)',
+          );
+          await _sendSenderKeyToDevice(groupId, senderId, senderDeviceId);
+          _lastSenderKeySentToDevice[dedupeKey] = now;
+          debugPrint(
+            '[GROUP]   ✓ Reciprocal sender key sent to $senderId:$senderDeviceId',
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[GROUP]   ⚠️ Failed to send reciprocal sender key: $e');
+      // Don't throw - we still processed their key successfully
+    }
+
+    // Step 5: Process any pending messages that were waiting for this sender key
     await _processPendingMessagesForSender(groupId, senderId, senderDeviceId);
   }
 
@@ -619,15 +801,34 @@ mixin GroupMessagingMixin {
 
       socketService.emit("sendGroupItem", data);
 
-      // Store locally (only for displayable types)
+      // Store locally (only for displayable types, skip ephemeral/system messages)
       const displayableTypes = {'message', 'file', 'image', 'voice'};
-      if (displayableTypes.contains(type)) {
+      const ephemeralTypes = {
+        // E2EE key exchange
+        'video_e2ee_key_request',
+        'video_e2ee_key_response',
+        // Signal Protocol control messages
+        'read_receipt',
+        'delivery_receipt',
+        'senderKeyRequest',
+        'fileKeyRequest',
+        'signal:senderKeyDistribution',
+        'system:session_reset',
+        // Call signaling
+        'call_notification',
+      };
+
+      if (displayableTypes.contains(type) && !ephemeralTypes.contains(type)) {
         await groupMessageStore.storeSentGroupItem(
           itemId: itemId,
           channelId: channelId,
           message: message,
           timestamp: data['timestamp'] as String,
           type: type,
+        );
+      } else if (ephemeralTypes.contains(type)) {
+        debugPrint(
+          '[GROUP] Skipping storage for ephemeral message type: $type',
         );
       }
 
@@ -644,5 +845,189 @@ mixin GroupMessagingMixin {
   void markGroupItemAsRead(String itemId) {
     socketService.emit('markGroupItemAsRead', {'itemId': itemId});
     debugPrint('[GROUP] Marked item as read: $itemId');
+  }
+
+  // ========================================================================
+  // TARGETED SENDER KEY REQUEST/RESPONSE (On-Demand Exchange)
+  // ========================================================================
+
+  /// Request sender key from a specific device
+  ///
+  /// This sends a targeted request to a specific user:device that has the sender key.
+  /// The recipient will respond by sending their sender key directly to us.
+  ///
+  /// Parameters:
+  /// - [groupId]: The group/channel ID
+  /// - [targetUserId]: User ID to request from
+  /// - [targetDeviceId]: Device ID to request from
+  Future<void> requestSenderKeyFromDevice({
+    required String groupId,
+    required String targetUserId,
+    required int targetDeviceId,
+  }) async {
+    debugPrint(
+      '[GROUP] Requesting sender key from $targetUserId:$targetDeviceId for group $groupId',
+    );
+
+    try {
+      // Ensure we have our own sender key before requesting
+      await ensureSenderKeyForGroup(groupId);
+
+      // Send request via sendGroupItem (encrypted with sender key)
+      final requestId = const Uuid().v4();
+      await sendGroupItem(
+        channelId: groupId,
+        message: jsonEncode({
+          'requesterId': currentUserId,
+          'requesterDeviceId': currentDeviceId,
+          'targetUserId': targetUserId,
+          'targetDeviceId': targetDeviceId,
+          'groupId': groupId,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+        }),
+        itemId: requestId,
+        type: 'sender_key_request',
+      );
+
+      debugPrint(
+        '[GROUP] ✓ Sender key request sent to $targetUserId:$targetDeviceId',
+      );
+    } catch (e) {
+      debugPrint('[GROUP] ❌ Failed to request sender key: $e');
+      rethrow;
+    }
+  }
+
+  /// Handle incoming sender key request
+  ///
+  /// When we receive a request for our sender key, send it directly to the requester.
+  /// This bypasses deduplication to ensure the requester gets the key immediately.
+  ///
+  /// Parameters:
+  /// - [requestData]: Decoded request message containing requester info
+  Future<void> handleSenderKeyRequest(Map<String, dynamic> requestData) async {
+    final String requesterId = requestData['requesterId'] as String;
+    final int requesterDeviceId = requestData['requesterDeviceId'] as int;
+    final String groupId = requestData['groupId'] as String;
+    final String targetUserId = requestData['targetUserId'] as String;
+    final int targetDeviceId = requestData['targetDeviceId'] as int;
+
+    debugPrint(
+      '[GROUP] 📨 Sender key request received from $requesterId:$requesterDeviceId',
+    );
+
+    // Check if this request is for us
+    if (targetUserId != currentUserId || targetDeviceId != currentDeviceId) {
+      debugPrint(
+        '[GROUP]   ⏭️ Request not for us (target: $targetUserId:$targetDeviceId, us: $currentUserId:$currentDeviceId)',
+      );
+      return;
+    }
+
+    try {
+      // Ensure we have our sender key
+      await ensureSenderKeyForGroup(groupId);
+
+      // Send our sender key to the requester (bypass deduplication)
+      debugPrint(
+        '[GROUP]   → Sending sender key to requester $requesterId:$requesterDeviceId',
+      );
+      await _sendSenderKeyToDevice(groupId, requesterId, requesterDeviceId);
+
+      // Also send a response message so they know we responded
+      final responseId = const Uuid().v4();
+      await sendGroupItem(
+        channelId: groupId,
+        message: jsonEncode({
+          'responderId': currentUserId,
+          'responderDeviceId': currentDeviceId,
+          'requesterId': requesterId,
+          'requesterDeviceId': requesterDeviceId,
+          'groupId': groupId,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+        }),
+        itemId: responseId,
+        type: 'sender_key_response',
+      );
+
+      debugPrint(
+        '[GROUP]   ✓ Sender key sent to requester $requesterId:$requesterDeviceId',
+      );
+    } catch (e) {
+      debugPrint('[GROUP]   ❌ Failed to respond to sender key request: $e');
+    }
+  }
+
+  /// Handle incoming sender key response
+  ///
+  /// Confirmation that our sender key request was processed.
+  /// The actual sender key arrives via processSenderKeyDistribution.
+  ///
+  /// Parameters:
+  /// - [responseData]: Decoded response message
+  Future<void> handleSenderKeyResponse(
+    Map<String, dynamic> responseData,
+  ) async {
+    final String responderId = responseData['responderId'] as String;
+    final int responderDeviceId = responseData['responderDeviceId'] as int;
+    final String requesterId = responseData['requesterId'] as String;
+    final int requesterDeviceId = responseData['requesterDeviceId'] as int;
+
+    // Check if this response is for us
+    if (requesterId != currentUserId || requesterDeviceId != currentDeviceId) {
+      return;
+    }
+
+    debugPrint(
+      '[GROUP] ✓ Sender key response received from $responderId:$responderDeviceId',
+    );
+  }
+
+  // ========================================================================
+  // EVENTBUS LISTENER REGISTRATION
+  // ========================================================================
+
+  /// Register EventBus listeners for sender key requests/responses
+  ///
+  /// Call this during SignalClient initialization to enable targeted sender key exchange.
+  /// These listeners handle incoming sender_key_request and sender_key_response messages.
+  Future<void> registerSenderKeyEventBusListeners() async {
+    debugPrint(
+      '[GROUP] Registering EventBus listeners for sender key exchange...',
+    );
+
+    // Listen for sender key requests
+    app_events.EventBus.instance
+        .on<Map<String, dynamic>>(app_events.AppEvent.senderKeyRequest)
+        .listen((data) async {
+          debugPrint('[GROUP] EventBus: sender_key_request received');
+          try {
+            final Map<String, dynamic> requestData = Map<String, dynamic>.from(
+              data,
+            );
+            await handleSenderKeyRequest(requestData);
+          } catch (e) {
+            debugPrint('[GROUP] Error handling sender key request: $e');
+          }
+        });
+
+    // Listen for sender key responses
+    app_events.EventBus.instance
+        .on<Map<String, dynamic>>(app_events.AppEvent.senderKeyResponse)
+        .listen((data) async {
+          debugPrint('[GROUP] EventBus: sender_key_response received');
+          try {
+            final Map<String, dynamic> responseData = Map<String, dynamic>.from(
+              data,
+            );
+            await handleSenderKeyResponse(responseData);
+          } catch (e) {
+            debugPrint('[GROUP] Error handling sender key response: $e');
+          }
+        });
+
+    debugPrint(
+      '[GROUP] ✓ EventBus listeners registered for sender key exchange',
+    );
   }
 }

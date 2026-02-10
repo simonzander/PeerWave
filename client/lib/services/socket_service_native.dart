@@ -122,6 +122,23 @@ class SocketService {
     _activeServerId = serverId;
   }
 
+  /// Set server URL (web compatibility). Maps URL to active server when possible.
+  void setServerUrl(String serverUrl) {
+    final servers = ServerConfigService.getAllServers();
+    final match = servers.where((s) => s.serverUrl == serverUrl).toList();
+    if (match.isNotEmpty) {
+      setActiveServer(match.first.id);
+      debugPrint(
+        '[SOCKET SERVICE] Mapped server URL to active server: $serverUrl',
+      );
+      return;
+    }
+
+    debugPrint(
+      '[SOCKET SERVICE] No server found for URL: $serverUrl (native); leaving active server unchanged',
+    );
+  }
+
   /// Connect to active server only (legacy compatibility)
   Future<void> connect() async {
     final activeServer = ServerConfigService.getActiveServer();
