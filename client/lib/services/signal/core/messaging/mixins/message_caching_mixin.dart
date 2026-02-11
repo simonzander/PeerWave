@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import '../../../../storage/sqlite_message_store.dart';
 import '../../../../storage/sqlite_group_message_store.dart';
 import '../../../../storage/sqlite_recent_conversations_store.dart';
+import '../../../../device_identity_service.dart';
+import '../../../../user_profile_service.dart';
 
 /// Mixin for message caching operations
 mixin MessageCachingMixin {
@@ -43,7 +45,6 @@ mixin MessageCachingMixin {
       'senderKeyRequest',
       'fileKeyRequest',
       'signal:senderKeyDistribution',
-      'system:session_reset',
       // Call signaling
       'call_notification',
     };
@@ -58,6 +59,22 @@ mixin MessageCachingMixin {
     try {
       // Check if this is a group message
       final channelId = data['channel'] as String?;
+      final originalRecipient = data['originalRecipient'] as String?;
+      final currentUserId = UserProfileService.instance.currentUserUuid;
+      final senderDeviceRaw = data['senderDevice'];
+      final senderDevice = senderDeviceRaw is int
+          ? senderDeviceRaw
+          : int.tryParse(senderDeviceRaw?.toString() ?? '');
+      final localDeviceId = DeviceIdentityService.instance.deviceId;
+      final isMultiDeviceSync =
+          channelId == null &&
+          originalRecipient != null &&
+          sender == currentUserId &&
+          (senderDevice == null || senderDevice != localDeviceId);
+
+      debugPrint(
+        '[CACHE] originalRecipient=$originalRecipient sender=$sender senderDevice=$senderDevice localDeviceId=$localDeviceId isMultiDeviceSync=$isMultiDeviceSync',
+      );
 
       if (channelId != null) {
         // Store group message
@@ -73,6 +90,19 @@ mixin MessageCachingMixin {
           type: messageType,
         );
         debugPrint('[CACHE] ✓ Stored group message: $itemId');
+      } else if (isMultiDeviceSync) {
+        // Multi-device sync: store as sent message to preserve conversation context
+        final messageStore = await SqliteMessageStore.getInstance();
+        await messageStore.storeSentMessage(
+          itemId: itemId,
+          recipientId: originalRecipient,
+          message: message,
+          timestamp:
+              data['timestamp'] as String? ?? DateTime.now().toIso8601String(),
+          type: messageType,
+          metadata: {'originalRecipient': originalRecipient},
+        );
+        debugPrint('[CACHE] ✓ Stored multi-device sent message: $itemId');
       } else {
         // Store 1-to-1 message
         final messageStore = await SqliteMessageStore.getInstance();
@@ -83,6 +113,9 @@ mixin MessageCachingMixin {
           timestamp:
               data['timestamp'] as String? ?? DateTime.now().toIso8601String(),
           type: messageType,
+          metadata: originalRecipient != null
+              ? {'originalRecipient': originalRecipient}
+              : null,
         );
         debugPrint('[CACHE] ✓ Stored 1-to-1 message: $itemId');
       }

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
+import 'api_service.dart';
 import 'server_settings_service.dart';
 import 'ice_config_service.dart';
 import 'user_profile_service.dart';
@@ -125,6 +126,17 @@ class PostLoginInitService {
     try {
       final totalSteps = 16; // Updated from 15 to include meeting/call services
       var currentStep = 0;
+
+      // Ensure ApiService is initialized for the active server so auth headers/cookies are ready
+      final activeServer = ServerConfigService.getActiveServer();
+      if (activeServer != null) {
+        await ApiService.instance.initForServer(
+          activeServer.id,
+          serverUrl: activeServer.serverUrl,
+        );
+      } else {
+        debugPrint('[POST_LOGIN_INIT] ⚠️ No active server found before init');
+      }
 
       // ========================================
       // PHASE 1: Network Foundation (SEQUENTIAL)

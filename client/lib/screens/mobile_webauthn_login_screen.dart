@@ -263,7 +263,7 @@ class _MobileWebAuthnLoginScreenState extends State<MobileWebAuthnLoginScreen>
       await Future.delayed(const Duration(milliseconds: 100));
 
       if (mounted) {
-        context.go('/app');
+        context.go('/app/activities');
       }
     } catch (e) {
       debugPrint('[MobileWebAuthnLogin] Error: $e');

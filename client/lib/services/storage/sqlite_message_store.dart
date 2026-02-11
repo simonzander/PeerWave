@@ -754,6 +754,8 @@ class SqliteMessageStore {
       'status': row['status'], // Include status for sent messages
       'decryptedAt': row['decrypted_at'],
       'metadata': metadata, // Include parsed metadata for image/voice messages
+      if (metadata != null && metadata['originalRecipient'] != null)
+        'originalRecipient': metadata['originalRecipient'],
       'reactions': row['reactions'] ?? '{}', // Include reactions
     };
   }

@@ -146,15 +146,29 @@ mixin PermanentSessionStore implements SessionStore {
   /// is needed (X3DH key exchange).
   @override
   Future<bool> containsSession(SignalProtocolAddress address) async {
+    // ✅ ONLY encrypted device-scoped storage (Web + Native)
+    final storage = DeviceScopedStorageService.instance;
+    final key = _sessionKey(address);
     try {
-      // ✅ ONLY encrypted device-scoped storage (Web + Native)
-      final storage = DeviceScopedStorageService.instance;
-      final key = _sessionKey(address);
       final value = await storage.getDecrypted(_storeName, _storeName, key);
       return value != null;
     } catch (e) {
-      debugPrint('[SESSION_STORE] Error checking session existence: $e');
-      rethrow;
+      debugPrint(
+        '[SESSION_STORE] ⚠️ Session decrypt failed, purging ${address.getName()}:${address.getDeviceId()}: $e',
+      );
+      try {
+        await storage.deleteEncrypted(_storeName, _storeName, key);
+        await storage.deleteEncrypted(
+          _metaStoreName,
+          _metaStoreName,
+          _sessionMetaKey(address),
+        );
+      } catch (deleteError) {
+        debugPrint(
+          '[SESSION_STORE] Warning: Failed to delete corrupted session: $deleteError',
+        );
+      }
+      return false;
     }
   }
 
@@ -176,11 +190,35 @@ mixin PermanentSessionStore implements SessionStore {
       if (await containsSession(address)) {
         // ✅ ONLY encrypted device-scoped storage (Web + Native)
         final storage = DeviceScopedStorageService.instance;
-        final value = await storage.getDecrypted(
-          _storeName,
-          _storeName,
-          _sessionKey(address),
-        );
+        dynamic value;
+        try {
+          value = await storage.getDecrypted(
+            _storeName,
+            _storeName,
+            _sessionKey(address),
+          );
+        } catch (e) {
+          debugPrint(
+            '[SESSION_STORE] ⚠️ Session decrypt failed, purging ${address.getName()}:${address.getDeviceId()}: $e',
+          );
+          try {
+            await storage.deleteEncrypted(
+              _storeName,
+              _storeName,
+              _sessionKey(address),
+            );
+            await storage.deleteEncrypted(
+              _metaStoreName,
+              _metaStoreName,
+              _sessionMetaKey(address),
+            );
+          } catch (deleteError) {
+            debugPrint(
+              '[SESSION_STORE] Warning: Failed to delete corrupted session: $deleteError',
+            );
+          }
+          return SessionRecord();
+        }
 
         if (value != null) {
           await _touchSessionMeta(address);

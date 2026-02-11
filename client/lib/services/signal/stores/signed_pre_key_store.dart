@@ -1,6 +1,7 @@
 import '../../socket_service.dart'
     if (dart.library.io) '../../socket_service_native.dart';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import '../../device_scoped_storage_service.dart';
@@ -56,11 +57,35 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
     if (await containsSignedPreKey(signedPreKeyId)) {
       // ✅ ONLY encrypted device-scoped storage (Web + Native)
       final storage = DeviceScopedStorageService.instance;
-      final value = await storage.getDecrypted(
-        _storeName,
-        _storeName,
-        _signedPreKey(signedPreKeyId),
-      );
+      dynamic value;
+      try {
+        value = await storage.getDecrypted(
+          _storeName,
+          _storeName,
+          _signedPreKey(signedPreKeyId),
+        );
+      } catch (e) {
+        debugPrint(
+          '[SIGNED_PREKEY] ⚠️ SignedPreKey decrypt failed, purging $signedPreKeyId: $e',
+        );
+        try {
+          await storage.deleteEncrypted(
+            _storeName,
+            _storeName,
+            _signedPreKey(signedPreKeyId),
+          );
+          await storage.deleteEncrypted(
+            _storeName,
+            _storeName,
+            _signedPreKeyMeta(signedPreKeyId),
+          );
+        } catch (deleteError) {
+          debugPrint(
+            '[SIGNED_PREKEY] Warning: Failed to delete corrupted signed prekey $signedPreKeyId: $deleteError',
+          );
+        }
+        return null;
+      }
 
       SignedPreKeyRecord? record;
       if (value is String) {
@@ -83,11 +108,30 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
     int signedPreKeyId,
   ) async {
     final storage = DeviceScopedStorageService.instance;
-    final metaValue = await storage.getDecrypted(
-      _storeName,
-      _storeName,
-      _signedPreKeyMeta(signedPreKeyId),
-    );
+    dynamic metaValue;
+    try {
+      metaValue = await storage.getDecrypted(
+        _storeName,
+        _storeName,
+        _signedPreKeyMeta(signedPreKeyId),
+      );
+    } catch (e) {
+      debugPrint(
+        '[SIGNED_PREKEY] ⚠️ SignedPreKey metadata decrypt failed, purging $signedPreKeyId: $e',
+      );
+      try {
+        await storage.deleteEncrypted(
+          _storeName,
+          _storeName,
+          _signedPreKeyMeta(signedPreKeyId),
+        );
+      } catch (deleteError) {
+        debugPrint(
+          '[SIGNED_PREKEY] Warning: Failed to delete corrupted metadata $signedPreKeyId: $deleteError',
+        );
+      }
+      return {};
+    }
 
     if (metaValue is String) {
       try {
@@ -120,16 +164,34 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
 
     for (var key in keys) {
       if (key.startsWith(_keyPrefix) && !key.endsWith('_meta')) {
-        var value = await storage.getDecrypted(_storeName, _storeName, key);
-        if (value != null) {
-          SignedPreKeyRecord? record;
-          if (value is String) {
-            record = SignedPreKeyRecord.fromSerialized(base64Decode(value));
-          } else if (value is Uint8List) {
-            record = SignedPreKeyRecord.fromSerialized(value);
+        try {
+          var value = await storage.getDecrypted(_storeName, _storeName, key);
+          if (value != null) {
+            SignedPreKeyRecord? record;
+            if (value is String) {
+              record = SignedPreKeyRecord.fromSerialized(base64Decode(value));
+            } else if (value is Uint8List) {
+              record = SignedPreKeyRecord.fromSerialized(value);
+            }
+            if (record != null) {
+              results.add(record);
+            }
           }
-          if (record != null) {
-            results.add(record);
+        } catch (e) {
+          debugPrint(
+            '[SIGNED_PREKEY] ⚠️ SignedPreKey decrypt failed, purging $key: $e',
+          );
+          try {
+            await storage.deleteEncrypted(_storeName, _storeName, key);
+            await storage.deleteEncrypted(
+              _storeName,
+              _storeName,
+              '${key}_meta',
+            );
+          } catch (deleteError) {
+            debugPrint(
+              '[SIGNED_PREKEY] Warning: Failed to delete corrupted signed prekey $key: $deleteError',
+            );
           }
         }
       }
@@ -367,6 +429,9 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
     final publicKey = base64Encode(record.getKeyPair().publicKey.serialize());
     final signature = base64Encode(record.signature);
 
+    // Ensure ApiService for the active server is initialized (HMAC via interceptor on native)
+    await apiService.init();
+
     // Upload to server with acknowledgment
     try {
       final response = await apiService.post(
@@ -436,12 +501,35 @@ mixin PermanentSignedPreKeyStore implements SignedPreKeyStore {
   Future<bool> containsSignedPreKey(int signedPreKeyId) async {
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
-    var value = await storage.getDecrypted(
-      _storeName,
-      _storeName,
-      _signedPreKey(signedPreKeyId),
-    );
-    return value != null;
+    try {
+      var value = await storage.getDecrypted(
+        _storeName,
+        _storeName,
+        _signedPreKey(signedPreKeyId),
+      );
+      return value != null;
+    } catch (e) {
+      debugPrint(
+        '[SIGNED_PREKEY] ⚠️ SignedPreKey decrypt failed, purging $signedPreKeyId: $e',
+      );
+      try {
+        await storage.deleteEncrypted(
+          _storeName,
+          _storeName,
+          _signedPreKey(signedPreKeyId),
+        );
+        await storage.deleteEncrypted(
+          _storeName,
+          _storeName,
+          _signedPreKeyMeta(signedPreKeyId),
+        );
+      } catch (deleteError) {
+        debugPrint(
+          '[SIGNED_PREKEY] Warning: Failed to delete corrupted signed prekey $signedPreKeyId: $deleteError',
+        );
+      }
+      return false;
+    }
   }
 
   /// Remove a signed pre key from both local storage and server (Signal protocol interface).

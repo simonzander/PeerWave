@@ -378,20 +378,11 @@ class SessionManager with PermanentSessionStore {
       // Convert KeyBundle to PreKeyBundle
       final preKeyBundle = _toPreKeyBundle(keyBundle);
 
-      // Build session
-      final address = SignalProtocolAddress(
+      await buildSessionFromPreKeyBundle(
         keyBundle.userId,
         keyBundle.deviceId,
+        preKeyBundle,
       );
-      final sessionBuilder = SessionBuilder(
-        this, // SessionStore from mixin
-        keyManager, // PreKeyStore from mixin
-        keyManager, // SignedPreKeyStore from mixin
-        keyManager, // IdentityKeyStore from mixin
-        address,
-      );
-
-      await sessionBuilder.processPreKeyBundle(preKeyBundle);
       debugPrint('[SESSION_MANAGER] ✓ Session built: ${keyBundle.bundleId}');
     } catch (e) {
       debugPrint('[SESSION_MANAGER] Error building session: $e');
@@ -405,6 +396,7 @@ class SessionManager with PermanentSessionStore {
     int deviceId,
     PreKeyBundle bundle, {
     Function()? onUntrustedIdentity,
+    bool allowRetry = true,
   }) async {
     try {
       debugPrint(
@@ -424,6 +416,33 @@ class SessionManager with PermanentSessionStore {
       debugPrint('[SESSION_MANAGER] ✓ Session built: $userId:$deviceId');
     } on UntrustedIdentityException catch (e) {
       debugPrint('[SESSION_MANAGER] UntrustedIdentityException: $e');
+      if (allowRetry) {
+        try {
+          debugPrint(
+            '[SESSION_MANAGER] Removing stored identity and retrying session build for $userId:$deviceId',
+          );
+          await keyManager.removeIdentity(
+            SignalProtocolAddress(userId, deviceId),
+          );
+          await deleteSession(SignalProtocolAddress(userId, deviceId));
+        } catch (cleanupError) {
+          debugPrint(
+            '[SESSION_MANAGER] Warning: Failed to purge identity/session for retry: $cleanupError',
+          );
+        }
+
+        await buildSessionFromPreKeyBundle(
+          userId,
+          deviceId,
+          bundle,
+          onUntrustedIdentity: onUntrustedIdentity,
+          allowRetry: false,
+        );
+        debugPrint(
+          '[SESSION_MANAGER] ✓ Session built after purging stale identity for $userId:$deviceId',
+        );
+        return;
+      }
       if (onUntrustedIdentity != null) {
         onUntrustedIdentity();
       }

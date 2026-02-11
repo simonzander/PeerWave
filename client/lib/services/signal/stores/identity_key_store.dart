@@ -70,6 +70,7 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
   // 🔒 SYNC-LOCK: Prevent race conditions during key regeneration
   bool _isRegenerating = false;
   final List<Completer<void>> _pendingOperations = [];
+  bool _forceRegenInProgress = false;
 
   String _identityKey(SignalProtocolAddress address) =>
       '$_keyPrefix${address.getName()}_${address.getDeviceId()}';
@@ -78,11 +79,32 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
   Future<IdentityKey?> getIdentity(SignalProtocolAddress address) async {
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
-    final value = await storage.getDecrypted(
-      _storeName,
-      _storeName,
-      _identityKey(address),
-    );
+    dynamic value;
+    try {
+      value = await storage.getDecrypted(
+        _storeName,
+        _storeName,
+        _identityKey(address),
+      );
+    } catch (e) {
+      // Auto-heal corrupted remote identity entry so sessions can rebuild.
+      debugPrint(
+        '[IDENTITY_KEY_STORE] ⚠️ Remote identity decrypt failed - removing entry: $e',
+      );
+      await _forceRegenerateIdentity(reason: 'remote-identity-decrypt-failed');
+      try {
+        await storage.deleteEncrypted(
+          _storeName,
+          _storeName,
+          _identityKey(address),
+        );
+      } catch (deleteError) {
+        debugPrint(
+          '[IDENTITY_KEY_STORE] Warning: Failed to delete corrupted identity entry: $deleteError',
+        );
+      }
+      value = null;
+    }
 
     if (value != null) {
       return IdentityKey.fromBytes(base64Decode(value), 0);
@@ -278,11 +300,31 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
   /// - Avoiding unnecessary loads
   Future<bool> hasIdentityKey() async {
     final storage = DeviceScopedStorageService.instance;
-    final encryptedData = await storage.getDecrypted(
-      'peerwaveSignal',
-      'identityKeyPair',
-      'identityKeyPair',
-    );
+    dynamic encryptedData;
+    try {
+      encryptedData = await storage.getDecrypted(
+        'peerwaveSignal',
+        'identityKeyPair',
+        'identityKeyPair',
+      );
+    } catch (e) {
+      // Auto-heal corrupted or stale encrypted data (often caused by key mismatch).
+      debugPrint(
+        '[IDENTITY_KEY_STORE] ⚠️ IdentityKeyPair decrypt failed - purging and treating as missing: $e',
+      );
+      try {
+        await storage.deleteEncrypted(
+          'peerwaveSignal',
+          'identityKeyPair',
+          'identityKeyPair',
+        );
+      } catch (deleteError) {
+        debugPrint(
+          '[IDENTITY_KEY_STORE] Warning: Failed to delete corrupted IdentityKeyPair: $deleteError',
+        );
+      }
+      encryptedData = null;
+    }
     return encryptedData != null && encryptedData is Map;
   }
 
@@ -337,16 +379,37 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
 
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
-    final encryptedData = await storage.getDecrypted(
-      'peerwaveSignal',
-      'identityKeyPair',
-      'identityKeyPair',
-    );
+    dynamic encryptedData;
+    try {
+      encryptedData = await storage.getDecrypted(
+        'peerwaveSignal',
+        'identityKeyPair',
+        'identityKeyPair',
+      );
+    } catch (e) {
+      // Auto-heal corrupted or stale encrypted data (often caused by key mismatch).
+      debugPrint(
+        '[IDENTITY_KEY_STORE] ⚠️ IdentityKeyPair decrypt failed - purging and treating as missing: $e',
+      );
+      await _forceRegenerateIdentity(reason: 'identity-keypair-decrypt-failed');
+      try {
+        await storage.deleteEncrypted(
+          'peerwaveSignal',
+          'identityKeyPair',
+          'identityKeyPair',
+        );
+      } catch (deleteError) {
+        debugPrint(
+          '[IDENTITY_KEY_STORE] Warning: Failed to delete corrupted IdentityKeyPair: $deleteError',
+        );
+      }
+      encryptedData = null;
+    }
 
     if (encryptedData != null && encryptedData is Map) {
       publicKeyBase64 = encryptedData['publicKey'] as String?;
       privateKeyBase64 = encryptedData['privateKey'] as String?;
-      var regIdObj = encryptedData['registrationId'];
+      final regIdObj = encryptedData['registrationId'];
       registrationId = regIdObj?.toString();
       debugPrint(
         '[IDENTITY_KEY_STORE] ✓ Loaded encrypted IdentityKeyPair from device-scoped storage',
@@ -775,4 +838,24 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
 
   /// Check if identity key pair is loaded in memory cache
   bool get isCached => identityKeyPair != null && localRegistrationId != null;
+
+  Future<void> _forceRegenerateIdentity({required String reason}) async {
+    if (_forceRegenInProgress) {
+      return;
+    }
+
+    _forceRegenInProgress = true;
+    try {
+      debugPrint(
+        '[IDENTITY_KEY_STORE] ⚠️ Forcing identity regeneration via healing ($reason)',
+      );
+      await regenerateIdentityKey(force: true);
+    } catch (e) {
+      debugPrint(
+        '[IDENTITY_KEY_STORE] Warning: Forced regeneration failed: $e',
+      );
+    } finally {
+      _forceRegenInProgress = false;
+    }
+  }
 }

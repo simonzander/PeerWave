@@ -452,12 +452,30 @@ mixin PermanentPreKeyStore implements PreKeyStore {
   Future<bool> containsPreKey(int preKeyId) async {
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
-    final value = await storage.getDecrypted(
-      _storeName,
-      _storeName,
-      _preKey(preKeyId),
-    );
-    return value != null;
+    try {
+      final value = await storage.getDecrypted(
+        _storeName,
+        _storeName,
+        _preKey(preKeyId),
+      );
+      return value != null;
+    } catch (e) {
+      debugPrint(
+        '[PREKEY STORE] ⚠️ PreKey decrypt failed, purging $preKeyId: $e',
+      );
+      try {
+        await storage.deleteEncrypted(
+          _storeName,
+          _storeName,
+          _preKey(preKeyId),
+        );
+      } catch (deleteError) {
+        debugPrint(
+          '[PREKEY STORE] Warning: Failed to delete corrupted prekey $preKeyId: $deleteError',
+        );
+      }
+      return false;
+    }
 
     /* LEGACY NATIVE STORAGE - DISABLED
     if (kIsWeb) {
@@ -486,11 +504,30 @@ mixin PermanentPreKeyStore implements PreKeyStore {
     if (await containsPreKey(preKeyId)) {
       // ✅ ONLY encrypted device-scoped storage (Web + Native)
       final storage = DeviceScopedStorageService.instance;
-      final value = await storage.getDecrypted(
-        _storeName,
-        _storeName,
-        _preKey(preKeyId),
-      );
+      dynamic value;
+      try {
+        value = await storage.getDecrypted(
+          _storeName,
+          _storeName,
+          _preKey(preKeyId),
+        );
+      } catch (e) {
+        debugPrint(
+          '[PREKEY STORE] ⚠️ PreKey decrypt failed, purging $preKeyId: $e',
+        );
+        try {
+          await storage.deleteEncrypted(
+            _storeName,
+            _storeName,
+            _preKey(preKeyId),
+          );
+        } catch (deleteError) {
+          debugPrint(
+            '[PREKEY STORE] Warning: Failed to delete corrupted prekey $preKeyId: $deleteError',
+          );
+        }
+        throw Exception('PreKey corrupted and purged: $preKeyId');
+      }
 
       if (value != null) {
         return PreKeyRecord.fromBuffer(base64Decode(value));

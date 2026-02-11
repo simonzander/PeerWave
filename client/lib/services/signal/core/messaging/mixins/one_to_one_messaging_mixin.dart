@@ -169,7 +169,6 @@ mixin OneToOneMessagingMixin {
         'senderKeyRequest',
         'fileKeyRequest',
         'signal:senderKeyDistribution',
-        'system:session_reset',
         // Call signaling
         'call_notification',
       };

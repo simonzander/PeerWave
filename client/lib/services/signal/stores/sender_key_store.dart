@@ -188,17 +188,30 @@ mixin PermanentSenderKeyStore implements SenderKeyStore {
     final storage = DeviceScopedStorageService.instance;
 
     // Get existing metadata to preserve messageCount
-    final existingMetadata = await storage.getDecrypted(
-      _storeName,
-      _storeName,
-      metadataKey,
-    );
-    if (existingMetadata != null) {
+    try {
+      final existingMetadata = await storage.getDecrypted(
+        _storeName,
+        _storeName,
+        metadataKey,
+      );
+      if (existingMetadata != null) {
+        try {
+          final existing = jsonDecode(existingMetadata);
+          metadata['messageCount'] = existing['messageCount'] ?? 0;
+        } catch (_) {
+          // Ignore parse errors, use default metadata
+        }
+      }
+    } catch (e) {
+      debugPrint(
+        '[SENDER_KEY_STORE] ⚠️ Sender key metadata decrypt failed, purging: $e',
+      );
       try {
-        final existing = jsonDecode(existingMetadata);
-        metadata['messageCount'] = existing['messageCount'] ?? 0;
-      } catch (e) {
-        // Ignore parse errors, use default metadata
+        await storage.deleteEncrypted(_storeName, _storeName, metadataKey);
+      } catch (deleteError) {
+        debugPrint(
+          '[SENDER_KEY_STORE] Warning: Failed to delete corrupted metadata: $deleteError',
+        );
       }
     }
 
@@ -227,10 +240,27 @@ mixin PermanentSenderKeyStore implements SenderKeyStore {
   @override
   Future<SenderKeyRecord> loadSenderKey(SenderKeyName senderKeyName) async {
     final key = _getStorageKey(senderKeyName);
+    final metadataKey = '${key}_metadata';
 
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
-    final value = await storage.getDecrypted(_storeName, _storeName, key);
+    dynamic value;
+    try {
+      value = await storage.getDecrypted(_storeName, _storeName, key);
+    } catch (e) {
+      debugPrint(
+        '[SENDER_KEY_STORE] ⚠️ Sender key decrypt failed, purging: $e',
+      );
+      try {
+        await storage.deleteEncrypted(_storeName, _storeName, key);
+        await storage.deleteEncrypted(_storeName, _storeName, metadataKey);
+      } catch (deleteError) {
+        debugPrint(
+          '[SENDER_KEY_STORE] Warning: Failed to delete corrupted sender key: $deleteError',
+        );
+      }
+      return SenderKeyRecord();
+    }
 
     if (value != null) {
       final bytes = base64Decode(value);
@@ -529,13 +559,40 @@ mixin PermanentSenderKeyStore implements SenderKeyStore {
     String serverUrl,
   ) async {
     final key = _getStorageKey(senderKeyName);
+    final metadataKey = '${key}_metadata';
     final storage = DeviceScopedStorageService.instance;
-    final value = await storage.getDecrypted(
-      _storeName,
-      _storeName,
-      key,
-      serverUrl: serverUrl,
-    );
+    dynamic value;
+    try {
+      value = await storage.getDecrypted(
+        _storeName,
+        _storeName,
+        key,
+        serverUrl: serverUrl,
+      );
+    } catch (e) {
+      debugPrint(
+        '[SENDER_KEY_STORE] ⚠️ Sender key decrypt failed (server $serverUrl), purging: $e',
+      );
+      try {
+        await storage.deleteEncrypted(
+          _storeName,
+          _storeName,
+          key,
+          serverUrl: serverUrl,
+        );
+        await storage.deleteEncrypted(
+          _storeName,
+          _storeName,
+          metadataKey,
+          serverUrl: serverUrl,
+        );
+      } catch (deleteError) {
+        debugPrint(
+          '[SENDER_KEY_STORE] Warning: Failed to delete corrupted sender key (server $serverUrl): $deleteError',
+        );
+      }
+      return SenderKeyRecord();
+    }
 
     if (value != null) {
       final bytes = base64Decode(value);
@@ -561,20 +618,33 @@ mixin PermanentSenderKeyStore implements SenderKeyStore {
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
 
-    final metadataValue = await storage.getDecrypted(
-      _storeName,
-      _storeName,
-      metadataKey,
-    );
-    if (metadataValue != null) {
-      final metadata = jsonDecode(metadataValue);
-      metadata['messageCount'] = (metadata['messageCount'] ?? 0) + 1;
-      await storage.storeEncrypted(
+    try {
+      final metadataValue = await storage.getDecrypted(
         _storeName,
         _storeName,
         metadataKey,
-        jsonEncode(metadata),
       );
+      if (metadataValue != null) {
+        final metadata = jsonDecode(metadataValue);
+        metadata['messageCount'] = (metadata['messageCount'] ?? 0) + 1;
+        await storage.storeEncrypted(
+          _storeName,
+          _storeName,
+          metadataKey,
+          jsonEncode(metadata),
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        '[SENDER_KEY_STORE] ⚠️ Sender key metadata decrypt failed, purging: $e',
+      );
+      try {
+        await storage.deleteEncrypted(_storeName, _storeName, metadataKey);
+      } catch (deleteError) {
+        debugPrint(
+          '[SENDER_KEY_STORE] Warning: Failed to delete corrupted metadata: $deleteError',
+        );
+      }
     }
   }
 
@@ -607,25 +677,38 @@ mixin PermanentSenderKeyStore implements SenderKeyStore {
     // ✅ ONLY encrypted device-scoped storage (Web + Native)
     final storage = DeviceScopedStorageService.instance;
 
-    final metadataValue = await storage.getDecrypted(
-      _storeName,
-      _storeName,
-      metadataKey,
-    );
-    if (metadataValue != null) {
-      final metadata = jsonDecode(metadataValue);
-      metadata['lastRotation'] = DateTime.now().toIso8601String();
-      metadata['messageCount'] = 0; // Reset counter
-      await storage.storeEncrypted(
+    try {
+      final metadataValue = await storage.getDecrypted(
         _storeName,
         _storeName,
         metadataKey,
-        jsonEncode(metadata),
       );
+      if (metadataValue != null) {
+        final metadata = jsonDecode(metadataValue);
+        metadata['lastRotation'] = DateTime.now().toIso8601String();
+        metadata['messageCount'] = 0; // Reset counter
+        await storage.storeEncrypted(
+          _storeName,
+          _storeName,
+          metadataKey,
+          jsonEncode(metadata),
+        );
 
+        debugPrint(
+          '[SENDER_KEY_STORE] Updated rotation timestamp for group ${senderKeyName.groupId}',
+        );
+      }
+    } catch (e) {
       debugPrint(
-        '[SENDER_KEY_STORE] Updated rotation timestamp for group ${senderKeyName.groupId}',
+        '[SENDER_KEY_STORE] ⚠️ Sender key metadata decrypt failed, purging: $e',
       );
+      try {
+        await storage.deleteEncrypted(_storeName, _storeName, metadataKey);
+      } catch (deleteError) {
+        debugPrint(
+          '[SENDER_KEY_STORE] Warning: Failed to delete corrupted metadata: $deleteError',
+        );
+      }
     }
   }
 }

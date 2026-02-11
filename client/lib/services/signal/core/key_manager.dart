@@ -14,6 +14,7 @@ import '../state/identity_key_state.dart';
 import '../state/signed_pre_key_state.dart';
 import '../state/pre_key_state.dart';
 import '../state/sender_key_state.dart';
+import 'store_health_check.dart';
 
 /// Manages Signal Protocol cryptographic keys
 ///
@@ -122,17 +123,20 @@ class SignalKeyManager
 
     debugPrint('[KEY_MANAGER] Initializing...');
 
-    // STEP 1: Get identity key pair (auto-generates if missing) and store it for SignedPreKeyStore mixin
+    // STEP 1: Heal corrupted store entries before initializing key material
+    await SignalStoreHealthCheck.run(identityStore: this);
+
+    // STEP 2: Get identity key pair (auto-generates if missing) and store it for SignedPreKeyStore mixin
     debugPrint('[KEY_MANAGER] Loading identity key pair...');
     identityKeyPair = await getIdentityKeyPair();
     debugPrint('[KEY_MANAGER] ✓ Identity key pair loaded');
 
-    // STEP 2: Initialize signed pre key store (requires identityKeyPair to be set)
+    // STEP 3: Initialize signed pre key store (requires identityKeyPair to be set)
     debugPrint('[KEY_MANAGER] Initializing signed pre key store...');
     await initializeSignedPreKeyStore();
     debugPrint('[KEY_MANAGER] ✓ Signed pre key store initialized');
 
-    // STEP 3: Check pre keys (auto-maintains 110 keys)
+    // STEP 4: Check pre keys (auto-maintains 110 keys)
     debugPrint('[KEY_MANAGER] Checking pre keys...');
     await checkPreKeys();
     debugPrint('[KEY_MANAGER] ✓ Pre keys checked');

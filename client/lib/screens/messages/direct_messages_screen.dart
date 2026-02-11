@@ -579,6 +579,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     final itemId = item['itemId'] as String?;
     if (itemId == null) return;
 
+    final itemType = item['type'] as String? ?? 'message';
+    if (!displayableMessageTypes.contains(itemType)) {
+      debugPrint('[DM_SCREEN] Skipping non-displayable type: $itemType');
+      return;
+    }
+
     // Check if message already exists
     final exists = _messages.any((msg) => msg['itemId'] == itemId);
     if (exists) {
@@ -600,7 +606,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       'time': item['timestamp'] ?? DateTime.now().toIso8601String(),
       'isLocalSent': isOwnMessage,
       'status': isOwnMessage ? (item['status'] ?? 'sent') : 'received',
-      'type': item['type'],
+      'type': itemType,
       'metadata': item['metadata'],
       'reactions': item['reactions'] ?? '{}',
       if (item['originalRecipient'] != null)

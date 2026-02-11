@@ -1,9 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
-import 'dart:convert';
-import 'dart:io' show Platform;
 import 'package:path_provider/path_provider.dart';
 import 'event_bus.dart';
 import '../core/metrics/network_metrics.dart';
@@ -102,6 +103,9 @@ class SessionAuthInterceptor extends Interceptor {
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
+    debugPrint(
+      '[SessionAuth] Interceptor start for ${options.method} ${options.path}',
+    );
     // Only add auth headers for native platforms
     if (!kIsWeb) {
       try {
@@ -147,6 +151,10 @@ class SessionAuthInterceptor extends Interceptor {
             serverUrl: serverUrl,
           );
 
+          debugPrint(
+            '[SessionAuth] hasSession=$hasSession for $serverUrl (clientId=$clientId, path=${options.path})',
+          );
+
           if (hasSession) {
             // HMAC authentication: Add signature headers for persistent mobile auth
             // Extract just the path from the full URL for signature calculation
@@ -174,6 +182,18 @@ class SessionAuthInterceptor extends Interceptor {
             options.headers.addAll(authHeaders);
             debugPrint(
               '[SessionAuth] Added HMAC auth headers: ${options.path} (path: $pathOnly)',
+            );
+            debugPrint(
+              '[SessionAuth] Headers now: ${options.headers.map((k, v) {
+                final lower = k.toLowerCase();
+                if (lower.startsWith('x-')) {
+                  if (v is String && v.length > 12) {
+                    return MapEntry(k, '${v.substring(0, 6)}...');
+                  }
+                  return MapEntry(k, v);
+                }
+                return MapEntry(k, v);
+              })}',
             );
           } else {
             // Session cookies: Automatically sent by CookieManager
@@ -404,6 +424,40 @@ class ApiService {
     return cookieJar;
   }
 
+  /// Copy cookies from an "external" server key (used during magic verify) into a target server key
+  /// Useful when a session cookie is set before the server is added to the config (native only)
+  Future<void> copyCookiesFromExternalServer({
+    required String serverUrl,
+    required String toServerKey,
+  }) async {
+    if (kIsWeb) return; // web uses relative paths and shared jar
+
+    final fromKey = 'external:$serverUrl';
+    final sourceJar = _cookieJars[fromKey];
+    if (sourceJar == null) {
+      debugPrint('[API SERVICE] No source cookies for $fromKey');
+      return;
+    }
+
+    final targetJar = await getCookieJarForServer(toServerKey);
+    final uri = Uri.parse(serverUrl);
+
+    try {
+      final cookies = await sourceJar.loadForRequest(uri);
+      if (cookies.isEmpty) {
+        debugPrint('[API SERVICE] No cookies to copy from $fromKey');
+        return;
+      }
+
+      await targetJar.saveFromResponse(uri, cookies);
+      debugPrint(
+        '[API SERVICE] Copied ${cookies.length} cookies from $fromKey to $toServerKey',
+      );
+    } catch (e) {
+      debugPrint('[API SERVICE] Error copying cookies: $e');
+    }
+  }
+
   /// Get or create cookie jar for current active server
   Future<CookieJar> getCookieJar() async {
     final serverKey = _currentServerKey;
@@ -417,38 +471,49 @@ class ApiService {
   Future<void> initForServer(String serverKey, {String? serverUrl}) async {
     final dio = getDioForServer(serverKey, serverUrl: serverUrl);
 
-    // Check if already initialized (has interceptors)
-    if (dio.interceptors.isNotEmpty) {
-      debugPrint('[API SERVICE] Already initialized for $serverKey');
-      return;
-    }
+    final hasCookieManager = dio.interceptors.any((i) => i is CookieManager);
+    final hasSessionAuth = dio.interceptors.any(
+      (i) => i is SessionAuthInterceptor,
+    );
+    final hasUnauthorized = dio.interceptors.any(
+      (i) => i is UnauthorizedInterceptor,
+    );
+    final hasRetry = dio.interceptors.any((i) => i is RetryInterceptor);
 
     // Add cookie manager for native clients
-    if (!kIsWeb) {
+    if (!kIsWeb && !hasCookieManager) {
       final cookieJar = await getCookieJarForServer(serverKey);
       dio.interceptors.add(CookieManager(cookieJar));
     }
 
     // Add SessionAuth interceptor first (handles both baseUrl and auth headers for native)
-    dio.interceptors.add(SessionAuthInterceptor());
+    if (!hasSessionAuth) {
+      dio.interceptors.add(SessionAuthInterceptor());
+    }
 
     // Add 401 Unauthorized interceptor (should be after auth headers added)
-    dio.interceptors.add(UnauthorizedInterceptor());
+    if (!hasUnauthorized) {
+      dio.interceptors.add(UnauthorizedInterceptor());
+    }
 
     // Add custom retry interceptor for handling 503 (database busy) and network errors
-    dio.interceptors.add(
-      RetryInterceptor(
-        dio: dio,
-        maxRetries: 3,
-        retryDelays: const [
-          Duration(seconds: 2), // First retry after 2s
-          Duration(seconds: 4), // Second retry after 4s
-          Duration(seconds: 8), // Third retry after 8s
-        ],
-      ),
-    );
+    if (!hasRetry) {
+      dio.interceptors.add(
+        RetryInterceptor(
+          dio: dio,
+          maxRetries: 3,
+          retryDelays: const [
+            Duration(seconds: 2), // First retry after 2s
+            Duration(seconds: 4), // Second retry after 4s
+            Duration(seconds: 8), // Third retry after 8s
+          ],
+        ),
+      );
+    }
 
-    debugPrint('[API SERVICE] ✅ Initialized for $serverKey');
+    debugPrint(
+      '[API SERVICE] ✅ Initialized for $serverKey (cookie=$hasCookieManager, sessionAuth=$hasSessionAuth, unauthorized=$hasUnauthorized, retry=$hasRetry)',
+    );
   }
 
   /// Initialize for current active server
@@ -505,6 +570,33 @@ class ApiService {
       extra: {...?options.extra, 'withCredentials': true},
     );
     return _dio.post(url, data: data, options: options);
+  }
+
+  /// Post to a specific server URL without requiring an active server
+  /// Used for flows like magic-key verification before a server is configured
+  Future<Response> postToServer({
+    required String serverUrl,
+    required String path,
+    dynamic data,
+    Options? options,
+  }) async {
+    // Use the serverUrl as the key so we reuse cookies/interceptors per host
+    final serverKey = 'external:$serverUrl';
+
+    // Ensure the Dio instance is initialized with interceptors and cookie jar
+    await initForServer(serverKey, serverUrl: serverUrl);
+
+    final dio = getDioForServer(serverKey, serverUrl: serverUrl);
+
+    options ??= Options();
+    options = options.copyWith(
+      contentType: 'application/json',
+      extra: {...?options.extra, 'withCredentials': true},
+    );
+
+    // Always send a path so the baseUrl is respected
+    final cleanPath = path.startsWith('/') ? path : '/$path';
+    return dio.post(cleanPath, data: data, options: options);
   }
 
   Future<Response> delete(String url, {dynamic data, Options? options}) {

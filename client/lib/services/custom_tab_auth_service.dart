@@ -259,12 +259,18 @@ class CustomTabAuthService {
           }
 
           // Save server configuration (prevents redirect to server selection)
-          await ServerConfigService.addServer(
+          final serverConfig = await ServerConfigService.addServer(
             serverUrl: serverUrl,
             credentials: sessionSecret,
             // displayName will be auto-generated from serverUrl if not provided
           );
           debugPrint('[CustomTabAuth] ✓ Server configuration saved');
+
+          // Set active server so subsequent navigation lands in the new context
+          await ServerConfigService.setActiveServer(serverConfig.id);
+          debugPrint(
+            '[CustomTabAuth] ✓ Active server set to ${serverConfig.id}',
+          );
 
           // Set login flag to true (required for router redirect logic)
           AuthService.isLoggedIn = true;

@@ -335,6 +335,8 @@ mixin MessageReceivingMixin {
       'channelId': dataMap['channel'],
       'metadata': dataMap['metadata'],
       'isOwnMessage': isOwnMessage,
+      if (dataMap['originalRecipient'] != null)
+        'originalRecipient': dataMap['originalRecipient'],
       // Include profile data so UI doesn't need to query cache
       'displayName': displayName,
       'picture': picture,
