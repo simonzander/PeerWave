@@ -91,7 +91,6 @@ mixin PermanentIdentityKeyStore implements IdentityKeyStore {
       debugPrint(
         '[IDENTITY_KEY_STORE] ⚠️ Remote identity decrypt failed - removing entry: $e',
       );
-      await _forceRegenerateIdentity(reason: 'remote-identity-decrypt-failed');
       try {
         await storage.deleteEncrypted(
           _storeName,

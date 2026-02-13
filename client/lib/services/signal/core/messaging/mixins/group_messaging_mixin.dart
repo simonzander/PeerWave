@@ -767,6 +767,42 @@ mixin GroupMessagingMixin {
     });
   }
 
+  /// Re-request sender keys for queued messages (best-effort, in-memory only).
+  Future<void> retryPendingSenderKeyRequests() async {
+    if (_pendingSenderKeyMessages.isEmpty) return;
+
+    debugPrint(
+      '[GROUP] Retrying sender key requests for ${_pendingSenderKeyMessages.length} pending entries',
+    );
+
+    final keys = _pendingSenderKeyMessages.keys.toList();
+    for (final key in keys) {
+      final parts = key.split(':');
+      if (parts.length < 3) continue;
+
+      final groupId = parts[0];
+      final userId = parts[1];
+      final deviceId = int.tryParse(parts[2]);
+      if (deviceId == null) continue;
+
+      try {
+        await requestSenderKeyFromDevice(
+          groupId: groupId,
+          targetUserId: userId,
+          targetDeviceId: deviceId,
+        );
+      } catch (e) {
+        debugPrint('[GROUP] Retry targeted sender key request failed: $e');
+      }
+
+      try {
+        await requestSenderKey(groupId, userId, deviceId);
+      } catch (e) {
+        debugPrint('[GROUP] Retry sender key request failed: $e');
+      }
+    }
+  }
+
   // ========================================================================
   // Additional methods for screen compatibility (match old SignalService API)
   // ========================================================================

@@ -115,7 +115,6 @@ mixin MessageReceivingMixin {
         debugPrint(
           '[RECEIVE] Sender key missing - queued for retry, skipping healing',
         );
-        deleteItemFromServer(itemId);
         return;
       }
 

@@ -894,12 +894,22 @@ mixin PermanentPreKeyStore implements PreKeyStore {
 
       // Upload missing PreKeys
       final preKeysToUpload = <PreKeyRecord>[];
+      bool hadCorruptKeys = false;
       for (final id in missingOnServer) {
         try {
           final preKey = await loadPreKey(id);
           preKeysToUpload.add(preKey);
         } catch (e) {
           debugPrint('[PRE_KEY_MANAGER] Failed to load PreKey $id: $e');
+          hadCorruptKeys = true;
+          try {
+            await removePreKey(id, sendToServer: false);
+            debugPrint('[PRE_KEY_MANAGER] Removed corrupt PreKey $id');
+          } catch (removeError) {
+            debugPrint(
+              '[PRE_KEY_MANAGER] Failed to remove corrupt PreKey $id: $removeError',
+            );
+          }
         }
       }
 
@@ -908,6 +918,16 @@ mixin PermanentPreKeyStore implements PreKeyStore {
         debugPrint(
           '[PRE_KEY_MANAGER] ✓ Uploaded ${preKeysToUpload.length} missing PreKeys',
         );
+      }
+
+      if (hadCorruptKeys) {
+        try {
+          await checkPreKeys();
+        } catch (e) {
+          debugPrint(
+            '[PRE_KEY_MANAGER] PreKey regen after corruption failed: $e',
+          );
+        }
       }
     } catch (e, stack) {
       debugPrint('[PRE_KEY_MANAGER] Error syncing PreKey IDs: $e');

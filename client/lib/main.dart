@@ -565,10 +565,27 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           '[LIFECYCLE] ⚠️ Reconnection complete but active server not connected',
         );
       }
+
+      await _retryPendingSenderKeys();
     } catch (e) {
       debugPrint('[LIFECYCLE] ❌ Failed to reconnect servers: $e');
       // Don't throw - allow app to continue functioning
       // Sockets will retry connection according to their configuration
+    }
+  }
+
+  Future<void> _retryPendingSenderKeys() async {
+    try {
+      if (!ServerSettingsService.instance.isSignalClientInitialized()) {
+        return;
+      }
+
+      final signalClient = ServerSettingsService.instance.getSignalClient();
+      if (signalClient == null) return;
+
+      await signalClient.messagingService.retryPendingSenderKeyRequests();
+    } catch (e) {
+      debugPrint('[LIFECYCLE] Failed to retry sender key requests: $e');
     }
   }
 

@@ -712,22 +712,26 @@ class SessionManager with PermanentSessionStore {
     try {
       debugPrint('[SESSION_MANAGER] Handling identity key change for $userId');
 
-      // Delete all sessions with this user (all devices)
-      // We only know the userId, not specific deviceIds
-      // In a full implementation, you'd enumerate all sessions for this user
-
-      // For now, delete the primary session (device 1)
-      final primaryAddress = SignalProtocolAddress(userId, 1);
-      if (await containsSession(primaryAddress)) {
-        await deleteSession(primaryAddress);
-        _clearSessionCache(userId, 1);
+      final deviceIds = await getAllDeviceSessions(userId);
+      if (deviceIds.isEmpty) {
+        final primaryAddress = SignalProtocolAddress(userId, 1);
+        if (await containsSession(primaryAddress)) {
+          await deleteSession(primaryAddress);
+          _clearSessionCache(userId, 1);
+          debugPrint(
+            '[SESSION_MANAGER] ✓ Deleted primary session with $userId due to identity key change',
+          );
+        }
+      } else {
+        for (final deviceId in deviceIds) {
+          final address = SignalProtocolAddress(userId, deviceId);
+          await deleteSession(address);
+          _clearSessionCache(userId, deviceId);
+        }
         debugPrint(
-          '[SESSION_MANAGER] ✓ Deleted primary session with $userId due to identity key change',
+          '[SESSION_MANAGER] ✓ Deleted ${deviceIds.length} session(s) with $userId due to identity key change',
         );
       }
-
-      // TODO: Implement session enumeration to delete ALL sessions for this user
-      // This would require enhancing the session store to query by userId
 
       // The new identity key will be trusted automatically on next session establishment
       debugPrint(
