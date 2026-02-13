@@ -71,7 +71,7 @@ dependencies:
   flutter_image_compress: ^2.3.0
   record: ^6.1.2
   permission_handler: ^12.0.1
-  flutter_local_notifications: ^20.0.0  # Android/iOS native notifications
+  flutter_local_notifications: ^20.1.0  # Android/iOS native notifications
   local_auth: ^3.0.0  # Biometric authentication (Face ID, Touch ID, fingerprint)
   just_audio: ^0.10.5
   audioplayers: ^6.1.0  # For Windows desktop audio playback
