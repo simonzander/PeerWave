@@ -17,8 +17,8 @@ class VersionInfo {
   static const String repository = 'https://github.com/simonzander/PeerWave';
 
   // Client version
-  static const String version = '1.3.3';
-  static const int buildNumber = 41;
+  static const String version = '1.3.4';
+  static const int buildNumber = 42;
   static const String fullVersion = '$version+$buildNumber';
 
   // Server compatibility
@@ -26,7 +26,7 @@ class VersionInfo {
   static const String maxServerVersion = '1.4.0';
 
   // Server version (for reference)
-  static const String serverVersion = '1.3.3';
+  static const String serverVersion = '1.3.4';
   static const String minClientVersion = '1.3.0';
   static const String maxClientVersion = '1.4.0';
 

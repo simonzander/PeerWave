@@ -1,5 +1,5 @@
-🚀 What's New in PeerWave v1.3.3
+🚀 What's New in PeerWave v1.3.4
 
 🐛 Bug Fixes
-• enhance PreKey validation by adding fingerprint comparison for corruption detection
+• update OTP generation to use a 5-digit format
 
