@@ -8,7 +8,6 @@ import 'server_settings_service.dart';
 import 'ice_config_service.dart';
 import 'user_profile_service.dart';
 import 'message_cleanup_service.dart';
-import 'message_listener_service.dart';
 import 'notification_service.dart' as desktop;
 import 'notification_service_android.dart';
 import 'notification_listener_service.dart';
@@ -328,18 +327,12 @@ class PostLoginInitService {
       // PHASE 4: Communication Services (SEQUENTIAL)
       // ========================================
 
-      // Step 7: Initialize Message Listener
+      // Step 7: Notification services
       currentStep++;
-      onProgress?.call(
-        'Setting up message listeners...',
-        currentStep,
-        totalSteps,
-      );
+      onProgress?.call('Setting up notifications...', currentStep, totalSteps);
       debugPrint(
-        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing message listeners...',
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing notifications...',
       );
-      MessageListenerService.instance.initialize();
-      debugPrint('[POST_LOGIN_INIT] ✓ Message listeners ready');
 
       // Initialize notification services
       await SoundService.instance.initialize();

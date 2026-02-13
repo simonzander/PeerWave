@@ -6,7 +6,6 @@ import 'dart:async';
 import 'dart:convert';
 import '../services/video_conference_service.dart';
 import '../services/api_service.dart';
-import '../services/message_listener_service.dart';
 import '../services/user_profile_service.dart';
 import '../services/meeting_service.dart';
 import '../services/server_settings_service.dart';
@@ -166,14 +165,6 @@ class _MeetingVideoConferenceViewState
         debugPrint('[MeetingVideo] Service obtained from Provider');
 
         _attachServiceListener();
-
-        // Register with MessageListenerService for E2EE
-        MessageListenerService.instance.registerVideoConferenceService(
-          _service!,
-        );
-        debugPrint(
-          '[MeetingVideo] Registered VideoConferenceService with MessageListener',
-        );
 
         // Schedule join after build
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -357,12 +348,6 @@ class _MeetingVideoConferenceViewState
       _service?.removeListener(_onServiceUpdated);
       _serviceListenerAttached = false;
     }
-
-    // Unregister from MessageListenerService
-    MessageListenerService.instance.unregisterVideoConferenceService();
-    debugPrint(
-      '[MeetingVideo] Unregistered VideoConferenceService from MessageListener',
-    );
 
     super.dispose();
   }

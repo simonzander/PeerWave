@@ -280,11 +280,18 @@ class SessionManager with PermanentSessionStore {
           }
 
           if (cachedAt != null && _isCacheFresh(cachedAt)) {
+            if (await containsSession(address)) {
+              debugPrint(
+                '[SESSION_MANAGER] Using cached session for ${bundle.userId}:${bundle.deviceId}',
+              );
+              successCount++;
+              continue;
+            }
+
+            _clearSessionCache(bundle.userId, bundle.deviceId);
             debugPrint(
-              '[SESSION_MANAGER] Using cached session for ${bundle.userId}:${bundle.deviceId}',
+              '[SESSION_MANAGER] Cached session missing for ${bundle.userId}:${bundle.deviceId}, rebuilding',
             );
-            successCount++;
-            continue;
           }
 
           final isValid = await validateSessionWithBundle(address, bundle);

@@ -64,7 +64,6 @@ class ListenerRegistry {
       // Register group message listeners
       await GroupListeners.register(
         messagingService,
-        unreadMessagesProvider: unreadMessagesProvider,
         currentUserId: currentUserId,
       );
 

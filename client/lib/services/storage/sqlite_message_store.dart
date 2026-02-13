@@ -554,6 +554,48 @@ class SqliteMessageStore {
     }
   }
 
+  /// Update message metadata (merges with existing metadata)
+  Future<void> updateMessageMetadata(
+    String itemId,
+    Map<String, dynamic> metadata,
+  ) async {
+    final db = await DatabaseHelper.database;
+
+    Map<String, dynamic> merged = {};
+    try {
+      final existing = await db.query(
+        'messages',
+        columns: ['metadata'],
+        where: 'item_id = ?',
+        whereArgs: [itemId],
+        limit: 1,
+      );
+
+      if (existing.isNotEmpty && existing.first['metadata'] != null) {
+        try {
+          merged =
+              jsonDecode(existing.first['metadata'] as String)
+                  as Map<String, dynamic>;
+        } catch (e) {
+          debugPrint('[SQLITE_MESSAGE_STORE] Failed to parse metadata: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('[SQLITE_MESSAGE_STORE] Failed to read metadata: $e');
+    }
+
+    merged.addAll(metadata);
+
+    await db.update(
+      'messages',
+      {'metadata': jsonEncode(merged)},
+      where: 'item_id = ?',
+      whereArgs: [itemId],
+    );
+
+    debugPrint('[SQLITE_MESSAGE_STORE] Updated metadata for: $itemId');
+  }
+
   /// Mark message as delivered
   Future<void> markAsDelivered(String itemId) async {
     await updateMessageStatus(itemId, 'delivered');

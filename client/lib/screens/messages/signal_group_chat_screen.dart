@@ -592,6 +592,20 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
 
       debugPrint('[SIGNAL_GROUP] Message added to UI');
 
+      // Clear unread badge immediately while this channel is open
+      if (!isOwnMessage) {
+        try {
+          if (!mounted) return;
+          final provider = Provider.of<UnreadMessagesProvider>(
+            context,
+            listen: false,
+          );
+          provider.markChannelAsRead(widget.channelUuid);
+        } catch (e) {
+          debugPrint('[SIGNAL_GROUP] Error clearing unread badge: $e');
+        }
+      }
+
       // Send read receipt (only for others' messages)
       if (!isOwnMessage) {
         await _sendReadReceiptForMessage(itemId);

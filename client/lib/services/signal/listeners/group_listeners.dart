@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import '../../socket_service.dart'
     if (dart.library.io) '../../socket_service_native.dart';
 import '../core/messaging/messaging_service.dart';
-import '../../../providers/unread_messages_provider.dart';
 import '../../event_bus.dart';
 
 /// Socket.IO listeners for group encrypted messages
@@ -19,13 +18,11 @@ import '../../event_bus.dart';
 class GroupListeners {
   static const String _registrationName = 'GroupListeners';
   static bool _registered = false;
-  static UnreadMessagesProvider? _unreadMessagesProvider;
   static String? _currentUserId;
 
   /// Register all group message listeners
   static Future<void> register(
     MessagingService messagingService, {
-    UnreadMessagesProvider? unreadMessagesProvider,
     String? currentUserId,
   }) async {
     if (_registered) {
@@ -33,7 +30,6 @@ class GroupListeners {
       return;
     }
 
-    _unreadMessagesProvider = unreadMessagesProvider;
     _currentUserId = currentUserId;
 
     final socket = SocketService.instance;
@@ -52,34 +48,13 @@ class GroupListeners {
           '[GROUP_LISTENERS] Received groupItem: type=$type, channel=$channel, itemId=$itemId',
         );
 
-        // Update unread count for group messages (ONLY for messages from OTHER users)
-        if (_unreadMessagesProvider != null &&
-            channel != null &&
-            type != null &&
-            !isOwnMessage) {
-          // Check if this is an activity notification type
-          const activityTypes = {
-            'emote',
-            'mention',
-            'missingcall',
-            'addtochannel',
-            'removefromchannel',
-            'permissionchange',
-          };
-
-          if (activityTypes.contains(type)) {
-            // Activity notification - increment activity counter
-            if (itemId != null) {
-              _unreadMessagesProvider!.incrementActivityNotification(itemId);
-              debugPrint(
-                '[GROUP_LISTENERS] ✓ Activity notification: $type ($itemId)',
-              );
-            }
-          } else {
-            // Regular message - increment channel counter
-            _unreadMessagesProvider!.incrementIfBadgeType(type, channel, true);
-          }
+        final serverId = dataMap['serverId'] ?? dataMap['_serverId'];
+        final eventData = Map<String, dynamic>.from(dataMap);
+        if (serverId is String && serverId.isNotEmpty) {
+          eventData['serverId'] = serverId;
         }
+        eventData['channelId'] ??= channel;
+        eventData['isOwnMessage'] = isOwnMessage;
 
         // Emit EventBus event for new group message/item
         if (type != null && channel != null && !isOwnMessage) {
@@ -97,12 +72,12 @@ class GroupListeners {
             debugPrint(
               '[GROUP_LISTENERS] → EVENT_BUS: newMessage (group) - type=$type, channel=$channel',
             );
-            EventBus.instance.emit(AppEvent.newMessage, dataMap);
+            EventBus.instance.emit(AppEvent.newMessage, eventData);
           } else if (activityTypes.contains(type)) {
             debugPrint(
               '[GROUP_LISTENERS] → EVENT_BUS: newNotification (group) - type=$type, channel=$channel',
             );
-            EventBus.instance.emit(AppEvent.newNotification, dataMap);
+            EventBus.instance.emit(AppEvent.newNotification, eventData);
           }
         }
 
@@ -278,7 +253,6 @@ class GroupListeners {
       registrationName: _registrationName,
     );
 
-    _unreadMessagesProvider = null;
     _currentUserId = null;
 
     _registered = false;

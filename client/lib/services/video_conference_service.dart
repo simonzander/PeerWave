@@ -12,7 +12,6 @@ import 'audio_processor_service.dart';
 import 'api_service.dart';
 import 'server_settings_service.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
-import 'message_listener_service.dart';
 import 'windows_e2ee_manager.dart';
 import 'sound_service.dart';
 import '../core/events/event_bus.dart' as app_events;
@@ -94,6 +93,7 @@ class VideoConferenceService extends ChangeNotifier {
       false; // Track if user is viewing full-screen (vs overlay mode)
   double _overlayPositionX = 100;
   double _overlayPositionY = 100;
+  bool _persistenceEnabled = true;
 
   // EventBus subscriptions for E2EE key exchange (1-to-1 for all channels)
   StreamSubscription? _keyRequestSubscription;
@@ -319,16 +319,6 @@ class VideoConferenceService extends ChangeNotifier {
       service._currentChannelId = channelId;
       debugPrint('[PreJoin][TEST] ✓ Channel ID set on service instance');
 
-      // Register service with MessageListenerService to handle key requests
-      debugPrint(
-        '[PreJoin][TEST] 📝 Registering service with MessageListenerService...',
-      );
-      final messageListener = MessageListenerService.instance;
-      messageListener.registerVideoConferenceService(service);
-      debugPrint(
-        '[PreJoin][TEST] ✓ Service registered, ready to respond to key requests',
-      );
-
       // Initialize E2EE (generate key, create KeyProvider, initialize sender key)
       await service._initializeE2EE();
 
@@ -451,7 +441,7 @@ class VideoConferenceService extends ChangeNotifier {
         service._keyReceivedCompleter = null;
       }
 
-      // Wait for key response (handled by MessageListenerService)
+      // Wait for key response (handled by EventBus listeners)
       service._keyReceivedCompleter = Completer<bool>();
 
       // Timeout after 10 seconds
@@ -1025,6 +1015,7 @@ class VideoConferenceService extends ChangeNotifier {
       _isOverlayVisible = false; // Start hidden - user is in full-view
 
       notifyListeners();
+      _savePersistence();
 
       debugPrint('[VideoConf] Joining room for channel: $channelId');
 
@@ -1732,8 +1723,15 @@ class VideoConferenceService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Disable persistence for companion windows to avoid shared state clashes
+  void setPersistenceEnabled(bool enabled) {
+    _persistenceEnabled = enabled;
+  }
+
   /// NEW: Save state to LocalStorage for rejoin
   Future<void> _savePersistence() async {
+    if (!_persistenceEnabled) return;
+
     try {
       final prefs = await SharedPreferences.getInstance();
 
@@ -1762,6 +1760,8 @@ class VideoConferenceService extends ChangeNotifier {
 
   /// NEW: Clear persistence from LocalStorage
   Future<void> _clearPersistence() async {
+    if (!_persistenceEnabled) return;
+
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('shouldRejoin');

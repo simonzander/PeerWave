@@ -45,6 +45,7 @@ mixin MessageCachingMixin {
       'senderKeyRequest',
       'fileKeyRequest',
       'signal:senderKeyDistribution',
+      'signal:session_reset_request',
       // Call signaling
       'call_notification',
     };

@@ -620,6 +620,19 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
     debugPrint('[DM_SCREEN] ✓ Message added to UI');
 
+    // Clear unread badge immediately while this conversation is open
+    if (!isOwnMessage && mounted) {
+      try {
+        final provider = Provider.of<UnreadMessagesProvider>(
+          context,
+          listen: false,
+        );
+        provider.markDirectMessageAsRead(widget.recipientUuid);
+      } catch (e) {
+        debugPrint('[DM_SCREEN] Error clearing unread badge: $e');
+      }
+    }
+
     // Auto-scroll to new message
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients && mounted) {

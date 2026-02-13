@@ -728,7 +728,17 @@ mixin GroupMessagingMixin {
         '[GROUP] Message queued (${_pendingSenderKeyMessages[queueKey]!.length} pending for $sender:$senderDeviceId)',
       );
 
-      // Request sender key from server
+      // Request sender key from the specific device, then fall back to server request
+      try {
+        await requestSenderKeyFromDevice(
+          groupId: groupId,
+          targetUserId: sender,
+          targetDeviceId: senderDeviceId,
+        );
+      } catch (e) {
+        debugPrint('[GROUP] ⚠️ Targeted sender key request failed: $e');
+      }
+
       await requestSenderKey(groupId, sender, senderDeviceId);
       throw Exception('Sender key not available yet - message queued');
     }

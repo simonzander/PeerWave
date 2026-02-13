@@ -1,12 +1,14 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../../socket_service.dart'
     if (dart.library.io) '../../../../socket_service_native.dart';
 import '../../../../../core/events/event_bus.dart' as app_events;
 import '../../../../user_profile_service.dart';
 import '../../../../storage/sqlite_group_message_store.dart';
+import '../../../../storage/sqlite_message_store.dart';
 import '../../../../event_bus.dart';
 import '../../encryption_service.dart';
 import '../../session_manager.dart';
@@ -32,6 +34,13 @@ mixin MessageReceivingMixin {
     required Map<String, dynamic> data,
     required String sender,
     required int senderDeviceId,
+  });
+  Future<String> send1to1Message({
+    required String recipientUserId,
+    required String type,
+    required String payload,
+    String? itemId,
+    int? targetDeviceId,
   });
   Future<String> decryptGroupMessage(
     Map<String, dynamic> data,
@@ -89,8 +98,23 @@ mixin MessageReceivingMixin {
     } catch (e) {
       debugPrint('[RECEIVE] ✗ Decryption error: $e');
 
+      final errorLower = e.toString().toLowerCase();
+      final needsRemoteReset =
+          errorLower.contains('bad mac') ||
+          errorLower.contains('invalid message');
+
       if (e.toString().contains('DuplicateMessageException')) {
         debugPrint('[RECEIVE] Duplicate message - already processed');
+        deleteItemFromServer(itemId);
+        return;
+      }
+
+      if (e.toString().contains(
+        'Sender key not available yet - message queued',
+      )) {
+        debugPrint(
+          '[RECEIVE] Sender key missing - queued for retry, skipping healing',
+        );
         deleteItemFromServer(itemId);
         return;
       }
@@ -126,6 +150,15 @@ mixin MessageReceivingMixin {
 
         if (success) {
           debugPrint('[RECEIVE] ✅ Session successfully rebuilt');
+
+          if (needsRemoteReset) {
+            await _sendSessionResetRequest(
+              recipientUserId: sender,
+              recipientDeviceId: senderDeviceId,
+              failedItemId: itemId,
+              reason: 'bad-mac',
+            );
+          }
 
           // Store a system message about the recovery
           await processDecryptedMessage(
@@ -320,6 +353,9 @@ mixin MessageReceivingMixin {
     final picture = senderProfile?['picture']?.toString() ?? '';
     final atName = senderProfile?['atName']?.toString() ?? '';
 
+    final serverId =
+        dataMap['serverId'] ?? dataMap['_serverId'] ?? (kIsWeb ? 'web' : null);
+
     // Emit event with complete message data for UI (including profile data)
     app_events.EventBus.instance.emit(app_events.AppEvent.newMessage, {
       'itemId': itemId,
@@ -335,6 +371,7 @@ mixin MessageReceivingMixin {
       'channelId': dataMap['channel'],
       'metadata': dataMap['metadata'],
       'isOwnMessage': isOwnMessage,
+      if (serverId != null) 'serverId': serverId,
       if (dataMap['originalRecipient'] != null)
         'originalRecipient': dataMap['originalRecipient'],
       // Include profile data so UI doesn't need to query cache
@@ -358,7 +395,8 @@ mixin MessageReceivingMixin {
         type == 'meeting_e2ee_key_response' ||
         type == 'sender_key_request' ||
         type == 'sender_key_response' ||
-        type == 'signal:senderKeyDistribution';
+        type == 'signal:senderKeyDistribution' ||
+        type == 'signal:session_reset_request';
   }
 
   /// Handle system messages
@@ -419,6 +457,161 @@ mixin MessageReceivingMixin {
         '[RECEIVE] Sender key system message: $type - triggering callbacks',
       );
       await triggerCallbacks(type, data, message);
+    } else if (type == 'signal:session_reset_request') {
+      debugPrint('[RECEIVE] Session reset request received');
+      String? senderId = data['sender'] as String?;
+      senderId ??= data['senderId'] as String?;
+
+      String? failedItemId;
+
+      int? deviceId;
+      try {
+        final payload = message.isNotEmpty ? jsonDecode(message) : {};
+        final payloadDeviceId = payload['deviceId'];
+        if (payloadDeviceId is int) {
+          deviceId = payloadDeviceId;
+        } else if (payloadDeviceId is String) {
+          deviceId = int.tryParse(payloadDeviceId);
+        }
+        failedItemId = payload['failedItemId'] as String?;
+      } catch (e) {
+        debugPrint('[RECEIVE] Failed to parse session reset payload: $e');
+      }
+
+      deviceId ??= data['senderDevice'] is int
+          ? data['senderDevice'] as int
+          : int.tryParse('${data['senderDevice']}');
+
+      if (senderId != null && deviceId != null) {
+        final address = SignalProtocolAddress(senderId, deviceId);
+        await sessionStore.deleteSession(address);
+        debugPrint(
+          '[RECEIVE] ✓ Session deleted due to reset request: $senderId:$deviceId',
+        );
+
+        try {
+          await sessionStore.establishSessionWithUser(senderId);
+          debugPrint('[RECEIVE] ✓ Session rebuilt after reset request');
+        } catch (e) {
+          debugPrint(
+            '[RECEIVE] Failed to rebuild session after reset request: $e',
+          );
+        }
+
+        if (failedItemId != null) {
+          await _retryFailedMessage(failedItemId, targetDeviceId: deviceId);
+        }
+      }
+    }
+  }
+
+  Future<void> _sendSessionResetRequest({
+    required String recipientUserId,
+    required int recipientDeviceId,
+    String? failedItemId,
+    String? reason,
+  }) async {
+    try {
+      final payload = jsonEncode({
+        'reason': reason ?? 'reset',
+        'deviceId': currentDeviceId,
+        if (failedItemId != null) 'failedItemId': failedItemId,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+
+      await send1to1Message(
+        recipientUserId: recipientUserId,
+        targetDeviceId: recipientDeviceId,
+        type: 'signal:session_reset_request',
+        payload: payload,
+      );
+
+      debugPrint('[RECEIVE] Session reset request sent to $recipientUserId');
+    } catch (e) {
+      debugPrint('[RECEIVE] Failed to send session reset request: $e');
+    }
+  }
+
+  Future<void> _retryFailedMessage(
+    String itemId, {
+    required int targetDeviceId,
+  }) async {
+    try {
+      final messageStore = await SqliteMessageStore.getInstance();
+      final message = await messageStore.getMessage(itemId);
+
+      if (message == null || message['direction'] != 'sent') {
+        debugPrint('[RECEIVE] Retry skipped - message not found or not sent');
+        return;
+      }
+
+      final metadata =
+          (message['metadata'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+      final retryCountsRaw = metadata['retryCountByDevice'];
+      final retryCounts = retryCountsRaw is Map<String, dynamic>
+          ? Map<String, dynamic>.from(retryCountsRaw)
+          : <String, dynamic>{};
+      final deviceKey = targetDeviceId.toString();
+      final retryCount = retryCounts[deviceKey] is int
+          ? retryCounts[deviceKey] as int
+          : int.tryParse('${retryCounts[deviceKey]}') ?? 0;
+
+      if (retryCount >= 2) {
+        await messageStore.updateMessageStatus(itemId, 'retry_failed');
+        debugPrint('[RECEIVE] Retry limit reached for $itemId');
+        return;
+      }
+
+      final nextCount = retryCount + 1;
+      retryCounts[deviceKey] = nextCount;
+
+      final updatedMetadata = <String, dynamic>{
+        ...metadata,
+        'retryCountByDevice': retryCounts,
+        'retrying': true,
+        'retryReason': 'session_reset',
+        'lastRetryAt': DateTime.now().toIso8601String(),
+        'lastRetryDeviceId': targetDeviceId,
+      };
+
+      await messageStore.updateMessageMetadata(itemId, updatedMetadata);
+      await messageStore.updateMessageStatus(itemId, 'retrying');
+
+      final recipientId =
+          (metadata['originalRecipient'] as String?) ??
+          (message['sender'] as String?);
+      final messageType = message['type'] as String? ?? 'message';
+      final payload = message['message'] as String? ?? '';
+
+      if (recipientId == null || payload.isEmpty) {
+        debugPrint('[RECEIVE] Retry skipped - missing recipient or payload');
+        return;
+      }
+
+      final newItemId = const Uuid().v4();
+
+      await send1to1Message(
+        recipientUserId: recipientId,
+        type: messageType,
+        payload: payload,
+        itemId: newItemId,
+        targetDeviceId: targetDeviceId,
+      );
+
+      await messageStore.updateMessageMetadata(newItemId, {
+        'retryOf': itemId,
+        'retryAttempt': nextCount,
+        'retryDeviceId': targetDeviceId,
+      });
+
+      await messageStore.updateMessageMetadata(itemId, updatedMetadata);
+      await messageStore.updateMessageStatus(itemId, 'sent');
+
+      debugPrint(
+        '[RECEIVE] Retry sent for $itemId as $newItemId (attempt $nextCount, device $targetDeviceId)',
+      );
+    } catch (e) {
+      debugPrint('[RECEIVE] Failed to retry message $itemId: $e');
     }
   }
 
@@ -428,10 +621,14 @@ mixin MessageReceivingMixin {
     Map<String, dynamic> data,
     String message,
   ) async {
+    final serverId =
+        data['serverId'] ?? data['_serverId'] ?? (kIsWeb ? 'web' : null);
+    final baseData = {...data, if (serverId != null) 'serverId': serverId};
+
     // Emit EventBus events for system message types
     if (type == 'call_notification') {
       app_events.EventBus.instance.emit(app_events.AppEvent.incomingCall, {
-        ...data,
+        ...baseData,
         'decryptedMessage': message,
       });
     } else if (type == 'meeting_e2ee_key_request') {
@@ -444,7 +641,7 @@ mixin MessageReceivingMixin {
       }
 
       app_events.EventBus.instance.emit(app_events.AppEvent.meetingKeyRequest, {
-        ...data,
+        ...baseData,
         ...payload, // Merge payload fields (requesterId, meetingId, etc.)
         'decryptedMessage': message,
       });
@@ -460,7 +657,7 @@ mixin MessageReceivingMixin {
       }
 
       app_events.EventBus.instance.emit(app_events.AppEvent.meetingKeyResponse, {
-        ...data,
+        ...baseData,
         ...payload, // Merge payload fields (meetingId, encryptedKey, timestamp)
         'decryptedMessage': message,
       });
@@ -474,7 +671,7 @@ mixin MessageReceivingMixin {
       }
 
       app_events.EventBus.instance.emit(app_events.AppEvent.videoKeyRequest, {
-        ...data,
+        ...baseData,
         ...payload, // Merge payload fields (requesterId, channelId, etc.)
         'decryptedMessage': message,
       });
@@ -488,7 +685,7 @@ mixin MessageReceivingMixin {
       }
 
       app_events.EventBus.instance.emit(app_events.AppEvent.videoKeyResponse, {
-        ...data,
+        ...baseData,
         ...payload, // Merge payload fields (channelId, encryptedKey, timestamp)
         'decryptedMessage': message,
       });
@@ -502,7 +699,7 @@ mixin MessageReceivingMixin {
       }
 
       app_events.EventBus.instance.emit(app_events.AppEvent.senderKeyRequest, {
-        ...data,
+        ...baseData,
         ...payload, // Merge payload fields (requesterId, targetUserId, groupId, etc.)
         'decryptedMessage': message,
       });
@@ -516,7 +713,7 @@ mixin MessageReceivingMixin {
       }
 
       app_events.EventBus.instance.emit(app_events.AppEvent.senderKeyResponse, {
-        ...data,
+        ...baseData,
         ...payload, // Merge payload fields (responderId, requesterId, groupId, etc.)
         'decryptedMessage': message,
       });

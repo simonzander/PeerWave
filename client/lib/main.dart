@@ -25,7 +25,6 @@ import 'services/server_connection_service.dart';
 import 'widgets/server_unavailable_overlay.dart';
 // Role management imports
 import 'providers/role_provider.dart';
-import 'providers/notification_provider.dart';
 import 'providers/navigation_state_provider.dart';
 import 'services/role_api_service.dart';
 import 'web_config.dart';
@@ -77,7 +76,7 @@ import 'services/idb_factory_web.dart'
 import 'services/network_checker_service.dart';
 import 'services/filesystem_checker_service.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // ========================================
@@ -661,7 +660,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             apiService: RoleApiService(baseUrl: widget.serverUrl),
           ),
         ),
-        ChangeNotifierProvider(create: (context) => NotificationProvider()),
         // File Transfer Stats Provider
         ChangeNotifierProvider(
           create: (context) => FileTransferStatsProvider(),
