@@ -120,6 +120,7 @@ dev_dependencies:
 dependency_overrides:
   passkeys_web:
     path: local_packages/passkeys_web
+  record_linux: ^1.3.0
 
 # Configuration for flutter_launcher_icons
 flutter_launcher_icons:
