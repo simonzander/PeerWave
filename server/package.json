@@ -15,7 +15,7 @@
   "author": "Simon Zander",
   "license": "AGPL-3.0-only",
   "dependencies": {
-    "@sequelize/sqlite3": "^7.0.0-alpha.47",
+    "@sequelize/sqlite3": "^7.0.0-alpha.48",
     "bcrypt": "^6.0.0",
     "bulma-toast": "^2.4.4",
     "connect-session-sequelize": "^8.0.5",

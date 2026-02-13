@@ -838,15 +838,15 @@ packages:
     dependency: "direct main"
     description:
       name: go_router
-      sha256: eff94d2a6fc79fa8b811dde79c7549808c2346037ee107a1121b4a644c745f2a
+      sha256: "7974313e217a7771557add6ff2238acb63f635317c35fa590d348fb238f00896"
       url: "https://pub.dev"
     source: hosted
-    version: "17.0.1"
+    version: "17.1.0"
   google_fonts:
     dependency: "direct main"
     description:
       name: google_fonts
-      sha256: bf1fe61d4a53420a94cbbd4326e07702d247757926f6955af9667765a8324413
+      sha256: c30eef5e7cd26eb89cc8065b4390ac86ce579f2fcdbe35220891c6278b5460da
       url: "https://pub.dev"
     source: hosted
     version: "8.0.0"
@@ -910,10 +910,10 @@ packages:
     dependency: "direct main"
     description:
       name: idb_shim
-      sha256: "7dcec5fa6bef3be4666384a28527e1476a84e0e3b72c44d9cfde9d2417bd1769"
+      sha256: "6e5c7249b6b2abfd5045d481d8073046369f6ab0decf94f4546af9587988b67c"
       url: "https://pub.dev"
     source: hosted
-    version: "2.8.1"
+    version: "2.8.2+1"
   idb_sqflite:
     dependency: "direct main"
     description:

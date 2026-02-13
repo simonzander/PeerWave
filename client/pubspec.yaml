@@ -34,8 +34,8 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  google_fonts: ^8.0.0  # Google Fonts für schöne Schriftarten
-  go_router: ^17.0.1
+  google_fonts: ^8.0.1  # Google Fonts für schöne Schriftarten
+  go_router: ^17.1.0
   http: ^1.5.0
   provider: ^6.1.2
   app_links: ^7.0.0
@@ -49,7 +49,7 @@ dependencies:
   dio_cookie_manager: ^3.3.0
   web: ^1.1.1
   libsignal_protocol_dart: ^0.7.4
-  idb_shim: ^2.8.1
+  idb_shim: ^2.8.2+1
   idb_sqflite: ^1.3.5  # For persistent IndexedDB on native platforms
   intl: ^0.20.2
   flutter_markdown_plus: ^1.0.1  # Replaced discontinued flutter_markdown
